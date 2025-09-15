@@ -13,9 +13,11 @@
         .container {
             width: 100%;
             background: white;
-            padding: 30px;
+            padding: 20px;
             border-radius: 15px;
             box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            box-sizing: border-box;   /* évite que le padding fasse dépasser le tableau */
+            overflow-x: auto;         /* ajoute un scroll horizontal si besoin */
         }
         img.logo {
             max-width: 120px;
@@ -29,6 +31,7 @@
         table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: fixed;   /* force l'adaptation à la largeur */
             font-size: 14px;
         }
         th, td {
