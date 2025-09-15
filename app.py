@@ -1,9 +1,9 @@
 from flask import Flask, render_template, request
-import json, os, datetime, uuid
+import json, os, datetime, uuid, pytz
 
 app = Flask(__name__)
 
-# Emplacement du fichier sur le disque persistant Render
+# Fichier de données stocké sur le disque persistant Render
 DATA_FILE = "/mnt/data/data.json"
 
 def load_data():
@@ -13,7 +13,7 @@ def load_data():
     return []
 
 def save_data(data):
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)  # s'assurer que le dossier existe
+    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
@@ -21,6 +21,7 @@ def save_data(data):
 def index():
     if request.method == "POST":
         demandes = load_data()
+        paris_tz = pytz.timezone("Europe/Paris")
         new_demande = {
             "id": str(uuid.uuid4()),
             "nom": request.form["nom"],
@@ -29,7 +30,7 @@ def index():
             "mail": request.form["mail"],
             "motif": request.form["motif"],
             "details": request.form["details"],
-            "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
             "attribution": "",
             "statut": "Non traité",
             "commentaire": ""
