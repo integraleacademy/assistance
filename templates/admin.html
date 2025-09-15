@@ -79,7 +79,10 @@
                         </select>
                     </td>
                     <td>
-                        <button type="button" class="comment-btn" onclick="openCommentModal('{{ d.id }}', '{{ d.commentaire|escape }}')">✏️ Ajouter / Modifier</button>
+                        <button type="button" class="comment-btn" 
+                                onclick="event.preventDefault(); openCommentModal('{{ d.id }}', `{{ d.commentaire|escape }}`)">
+                            ✏️ Ajouter / Modifier
+                        </button>
                         <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
                     </td>
                     <td class="actions">
@@ -100,8 +103,8 @@
             <h3>📝 Commentaire</h3>
             <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
             <div style="margin-top:10px; text-align:right;">
-                <button onclick="closeCommentModal()">❌ Annuler</button>
-                <button onclick="saveComment()">💾 Enregistrer</button>
+                <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
+                <button type="button" onclick="saveComment()">💾 Enregistrer</button>
             </div>
         </div>
     </div>
