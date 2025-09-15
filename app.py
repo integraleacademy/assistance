@@ -106,8 +106,10 @@ def envoyer_mail_confirmation(demande):
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
         print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
+        return True
     except Exception as e:
         print("❌ Erreur envoi mail confirmation :", e)
+        return False
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -135,7 +137,8 @@ def index():
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
             "attribution": "",
             "statut": "Non traité",
-            "commentaire": ""
+            "commentaire": "",
+            "mail_confirme": ""
         }
         demandes.append(new_demande)
         save_data(demandes)
@@ -154,15 +157,17 @@ def admin():
         demande_id = request.form.get("id")
 
         if action == "update":
+            paris_tz = pytz.timezone("Europe/Paris")
             for d in demandes:
                 if d["id"] == demande_id:
                     d["attribution"] = request.form.get("attribution")
                     nouveau_statut = request.form.get("statut")
                     d["commentaire"] = request.form.get("commentaire")
 
-                    # Si statut passe à "Traité", envoi mail stagiaire
+                    # Si statut passe à "Traité", envoi mail stagiaire + date
                     if d["statut"] != "Traité" and nouveau_statut == "Traité":
-                        envoyer_mail_confirmation(d)
+                        if envoyer_mail_confirmation(d):
+                            d["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
 
                     d["statut"] = nouveau_statut
             save_data(demandes)
