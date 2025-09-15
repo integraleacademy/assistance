@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Dossier stagiaire - Intégrale Academy</title>
+    <style>
+        body {background-color: #fdfaf5; font-family: Arial, sans-serif;}
+        .container {max-width: 600px; margin: 50px auto; background: white; padding: 30px;
+                    border-radius: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.1); text-align: center;}
+        h2 {margin-bottom: 10px;}
+        h3 {margin-bottom: 20px; color: #444;}
+        img.logo {max-width: 150px; margin-bottom: 20px;}
+        label {display: block; text-align: left; margin: 10px 0 5px; font-weight: bold;}
+        input, select, button, textarea {width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 8px;
+                               border: 1px solid #ccc; font-size: 14px;}
+        textarea {resize: vertical;}
+        button {background-color: #198754; color: white; border: none; cursor: pointer; font-weight: bold;}
+        button:hover {background-color: #146c43;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
+        <h2>Dossier stagiaire Intégrale Academy</h2>
+        <h3>Étape 1 : Demande à formuler</h3>
+        <form method="POST">
+            <label>Nom :</label>
+            <input type="text" name="nom" required>
+            <label>Prénom :</label>
+            <input type="text" name="prenom" required>
+            <label>Téléphone :</label>
+            <input type="text" name="telephone" required>
+            <label>Email :</label>
+            <input type="email" name="mail" required>
+            <label>Motif de la demande :</label>
+            <select name="motif" required>
+                <option value="Attestation">Demande d’attestation / certificat</option>
+                <option value="Diplome">Demande de diplôme</option>
+                <option value="Absence">Absence(s)</option>
+                <option value="Autre">Autre demande</option>
+            </select>
+            <label>Votre demande (détails) :</label>
+            <textarea name="details" rows="4" required></textarea>
+            <button type="submit">Envoyer ma demande</button>
+        </form>
+    </div>
+</body>
+</html>

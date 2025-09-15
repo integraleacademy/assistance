@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Administration - Intégrale Academy</title>
+    <style>
+        body {background-color: #fdfaf5; font-family: Arial, sans-serif;}
+        .container {max-width: 1200px; margin: 50px auto; background: white; padding: 30px;
+                    border-radius: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.1);}
+        img.logo {max-width: 120px; display: block; margin: 0 auto 20px;}
+        h2 {text-align: center; margin-bottom: 30px;}
+        table {width: 100%; border-collapse: collapse; font-size: 14px;}
+        th, td {border: 1px solid #ddd; padding: 10px; text-align: center;}
+        th {background-color: #f4c45a; color: #333;}
+        select, input[type="text"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
+        .actions button, .actions a {padding: 6px 10px; margin: 2px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;}
+        .save {background-color: #198754; color: white;}
+        .delete {background-color: #dc3545; color: white;}
+        .print {background-color: #0d6efd; color: white; text-decoration: none; display: inline-block;}
+        .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+        .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
+        <h2>📋 Gestion des demandes stagiaires</h2>
+        <table>
+            <tr>
+                <th>Nom</th>
+                <th>Prénom</th>
+                <th>Téléphone</th>
+                <th>Email</th>
+                <th>Motif</th>
+                <th>Détails</th>
+                <th>Date</th>
+                <th>Attribué à</th>
+                <th>Statut</th>
+                <th>Commentaire</th>
+                <th>Actions</th>
+            </tr>
+            {% for d in demandes %}
+            <tr>
+                <form method="POST">
+                    <td>{{ d.nom }}</td>
+                    <td>{{ d.prenom }}</td>
+                    <td>{{ d.telephone }}</td>
+                    <td>{{ d.mail }}</td>
+                    <td>{{ d.motif }}</td>
+                    <td>{{ d.details }}</td>
+                    <td>{{ d.date }}</td>
+                    <td>
+                        <select name="attribution">
+                            <option value="">--</option>
+                            <option value="Elsa" {% if d.attribution == "Elsa" %}selected{% endif %}>Elsa</option>
+                            <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
+                        </select>
+                    </td>
+                    <td>
+                        {% if d.statut == "Non traité" %}
+                            <span class="status-red">Non traité</span>
+                        {% else %}
+                            <span class="status-green">Traité</span>
+                        {% endif %}
+                        <select name="statut" style="margin-top:5px;">
+                            <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
+                            <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
+                        </select>
+                    </td>
+                    <td><input type="text" name="commentaire" value="{{ d.commentaire }}"></td>
+                    <td class="actions">
+                        <input type="hidden" name="id" value="{{ d.id }}">
+                        <button type="submit" name="action" value="update" class="save">💾</button>
+                        <button type="submit" name="action" value="delete" class="delete">🗑️</button>
+                        <a href="/imprimer/{{ d.id }}" target="_blank" class="print">🖨️</a>
+                    </td>
+                </form>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>

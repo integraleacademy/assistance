@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Impression demande</title>
+    <style>
+        body {font-family: Arial, sans-serif; margin: 40px;}
+        .box {border: 1px solid #000; padding: 20px;}
+    </style>
+</head>
+<body>
+    {% if demande %}
+    <div class="box">
+        <h2>Demande stagiaire</h2>
+        <p><strong>Nom :</strong> {{ demande.nom }}</p>
+        <p><strong>Prénom :</strong> {{ demande.prenom }}</p>
+        <p><strong>Téléphone :</strong> {{ demande.telephone }}</p>
+        <p><strong>Email :</strong> {{ demande.mail }}</p>
+        <p><strong>Motif :</strong> {{ demande.motif }}</p>
+        <p><strong>Détails :</strong> {{ demande.details }}</p>
+        <p><strong>Date :</strong> {{ demande.date }}</p>
+        <p><strong>Attribué à :</strong> {{ demande.attribution }}</p>
+        <p><strong>Statut :</strong> {{ demande.statut }}</p>
+        <p><strong>Commentaire :</strong> {{ demande.commentaire }}</p>
+    </div>
+    {% else %}
+    <p>Demande introuvable.</p>
+    {% endif %}
+</body>
+</html>
