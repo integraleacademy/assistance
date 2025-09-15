@@ -1,9 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request
 import json, os, datetime, uuid
 
 app = Flask(__name__)
 
-DATA_FILE = "data.json"
+# Emplacement du fichier sur le disque persistant Render
+DATA_FILE = "/mnt/data/data.json"
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -12,6 +13,7 @@ def load_data():
     return []
 
 def save_data(data):
+    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)  # s'assurer que le dossier existe
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
