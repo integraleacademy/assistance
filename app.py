@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, send_from_directory, url_for
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
 from werkzeug.utils import secure_filename
@@ -37,7 +37,7 @@ def envoyer_mail(demande):
     """
 
     if demande["justificatif"]:
-        contenu += f"\nJustificatif : {demande['justificatif']}"
+        contenu += f"\nJustificatif : {url_for('download_file', filename=demande['justificatif'], _external=True)}"
 
     msg = MIMEText(contenu, "plain", "utf-8")
     msg["Subject"] = sujet
@@ -86,13 +86,13 @@ def index():
         demandes = load_data()
         paris_tz = pytz.timezone("Europe/Paris")
 
-        justificatif_path = ""
+        justificatif_filename = ""
         if "justificatif" in request.files:
             f = request.files["justificatif"]
             if f and f.filename != "":
                 filename = secure_filename(f.filename)
-                justificatif_path = os.path.join(UPLOAD_FOLDER, filename)
-                f.save(justificatif_path)
+                f.save(os.path.join(UPLOAD_FOLDER, filename))
+                justificatif_filename = filename
 
         new_demande = {
             "id": str(uuid.uuid4()),
@@ -102,7 +102,7 @@ def index():
             "mail": request.form["mail"],
             "motif": request.form["motif"],
             "details": request.form["details"],
-            "justificatif": justificatif_path,
+            "justificatif": justificatif_filename,
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
             "attribution": "",
             "statut": "Non traité",
@@ -148,6 +148,11 @@ def imprimer(demande_id):
     demandes = load_data()
     demande = next((d for d in demandes if d["id"] == demande_id), None)
     return render_template("imprimer.html", demande=demande)
+
+# Route pour télécharger les justificatifs
+@app.route("/uploads/<filename>")
+def download_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 if __name__ == "__main__":
     app.run(debug=True)
