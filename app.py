@@ -1,11 +1,14 @@
 from flask import Flask, render_template, request
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# Fichier de données stocké sur le disque persistant Render
+# Dossier persistant Render
 DATA_FILE = "/mnt/data/data.json"
+UPLOAD_FOLDER = "/mnt/data/uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -32,6 +35,9 @@ def envoyer_mail(demande):
     Date : {demande['date']}
     """
 
+    if demande["justificatif"]:
+        contenu += f"\nJustificatif : {demande['justificatif']}"
+
     msg = MIMEText(contenu, "plain", "utf-8")
     msg["Subject"] = sujet
     msg["From"] = os.getenv("SMTP_USER")
@@ -50,6 +56,15 @@ def index():
     if request.method == "POST":
         demandes = load_data()
         paris_tz = pytz.timezone("Europe/Paris")
+
+        justificatif_path = ""
+        if "justificatif" in request.files:
+            f = request.files["justificatif"]
+            if f and f.filename != "":
+                filename = secure_filename(f.filename)
+                justificatif_path = os.path.join(UPLOAD_FOLDER, filename)
+                f.save(justificatif_path)
+
         new_demande = {
             "id": str(uuid.uuid4()),
             "nom": request.form["nom"],
@@ -58,6 +73,7 @@ def index():
             "mail": request.form["mail"],
             "motif": request.form["motif"],
             "details": request.form["details"],
+            "justificatif": justificatif_path,
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
             "attribution": "",
             "statut": "Non traité",
@@ -66,7 +82,6 @@ def index():
         demandes.append(new_demande)
         save_data(demandes)
 
-        # Envoi du mail
         envoyer_mail(new_demande)
 
         return render_template("confirmation.html")
