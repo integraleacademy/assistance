@@ -77,6 +77,12 @@
                             <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
                             <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
                         </select>
+
+                        {% if d.mail_confirme %}
+                            <div style="font-size:12px; color:#198754; margin-top:4px;">
+                                📩 Mail envoyé le {{ d.mail_confirme }}
+                            </div>
+                        {% endif %}
                     </td>
                     <td>
                         <button type="button" class="comment-btn" 
