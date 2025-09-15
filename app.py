@@ -106,7 +106,7 @@ def envoyer_mail_confirmation(demande):
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
         print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
-        demande["mail_contenu"] = contenu  # stocke le contenu du mail
+        demande["mail_contenu"] = contenu  # ✅ stocke le contenu du mail
         return True
     except Exception as e:
         print("❌ Erreur envoi mail confirmation :", e)
@@ -166,6 +166,7 @@ def admin():
                     d["attribution"] = request.form.get("attribution")
                     nouveau_statut = request.form.get("statut")
                     d["commentaire"] = request.form.get("commentaire")
+                    d["details"] = request.form.get("details")  # ✅ sauvegarde modif admin
 
                     # Si statut passe à "Traité"
                     if d["statut"] != "Traité" and nouveau_statut == "Traité":
