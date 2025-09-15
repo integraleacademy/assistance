@@ -79,8 +79,10 @@
                         </select>
 
                         {% if d.mail_confirme %}
-                            <div style="font-size:12px; color:#198754; margin-top:4px;">
-                                ✅ Mail envoyé le {{ d.mail_confirme }}
+                            <div style="font-size:12px; margin-top:4px;">
+                                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
+                                    ✅ Mail envoyé le {{ d.mail_confirme }}
+                                </a>
                             </div>
                         {% elif d.mail_erreur %}
                             <div style="font-size:12px; color:#dc3545; margin-top:4px;">
