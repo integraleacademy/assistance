@@ -80,7 +80,7 @@ def envoyer_mail_accuse(demande):
     except Exception as e:
         print("❌ Erreur envoi accusé :", e)
 
-# 📩 Mail au stagiaire quand traité
+# 📩 Mail au stagiaire quand traité (avec commentaire)
 def envoyer_mail_confirmation(demande):
     sujet = "Votre demande a été traitée - Intégrale Academy"
     contenu = f"""
@@ -90,6 +90,7 @@ def envoyer_mail_confirmation(demande):
 
     📌 Motif : {demande['motif']}
     📝 Détails : {demande['details']}
+    💬 Commentaire : {demande['commentaire'] if demande['commentaire'] else "Aucun commentaire ajouté."}
 
     Cordialement,  
     L'équipe Intégrale Academy
