@@ -18,6 +18,9 @@
         <p><strong>Email :</strong> {{ demande.mail }}</p>
         <p><strong>Motif :</strong> {{ demande.motif }}</p>
         <p><strong>Détails :</strong> {{ demande.details }}</p>
+        {% if demande.justificatif and demande.justificatif != "" %}
+        <p><strong>Justificatif :</strong> {{ demande.justificatif }}</p>
+        {% endif %}
         <p><strong>Date :</strong> {{ demande.date }}</p>
         <p><strong>Attribué à :</strong> {{ demande.attribution }}</p>
         <p><strong>Statut :</strong> {{ demande.statut }}</p>
