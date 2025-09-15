@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Demande d'assistance - Intégrale Academy</title>
+    <title>Dossier stagiaire - Intégrale Academy</title>
     <style>
         body {background-color: #fdfaf5; font-family: Arial, sans-serif;}
         .container {max-width: 600px; margin: 50px auto; background: white; padding: 30px;
@@ -21,9 +21,9 @@
 <body>
     <div class="container">
         <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
-        <h2>Demande d'assistance Intégrale Academy</h2>
-        <h3>Informations à compléter :</h3>
-        <form method="POST">
+        <h2>Dossier stagiaire Intégrale Academy</h2>
+        <h3>Étape 1 : Demande à formuler</h3>
+        <form method="POST" enctype="multipart/form-data">
             <label>Nom :</label>
             <input type="text" name="nom" required>
             <label>Prénom :</label>
@@ -33,17 +33,30 @@
             <label>Email :</label>
             <input type="email" name="mail" required>
             <label>Motif de la demande :</label>
-            <select name="motif" required>
+            <select name="motif" id="motif" required onchange="toggleJustificatif()">
                 <option value="Attestation">Demande d’attestation / certificat</option>
                 <option value="Diplome">Demande de diplôme</option>
                 <option value="Absence">Absence(s)</option>
-                <option value="Contrat">Contrat d'apprentissage</option>
                 <option value="Autre">Autre demande</option>
             </select>
+
+            <div id="justificatifDiv" style="display:none; margin-top:15px;">
+                <label>Justificatif d’absence (PDF ou image) :</label>
+                <input type="file" name="justificatif" accept=".pdf,.jpg,.jpeg,.png">
+            </div>
+
             <label>Votre demande (détails) :</label>
             <textarea name="details" rows="4" required></textarea>
             <button type="submit">Envoyer ma demande</button>
         </form>
     </div>
+
+    <script>
+    function toggleJustificatif() {
+        let motif = document.getElementById("motif").value;
+        let justificatifDiv = document.getElementById("justificatifDiv");
+        justificatifDiv.style.display = (motif === "Absence") ? "block" : "none";
+    }
+    </script>
 </body>
 </html>
