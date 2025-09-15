@@ -106,6 +106,7 @@ def envoyer_mail_confirmation(demande):
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
         print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
+        demande["mail_contenu"] = contenu  # stocke le contenu du mail
         return True
     except Exception as e:
         print("❌ Erreur envoi mail confirmation :", e)
@@ -139,7 +140,8 @@ def index():
             "statut": "Non traité",
             "commentaire": "",
             "mail_confirme": "",
-            "mail_erreur": ""
+            "mail_erreur": "",
+            "mail_contenu": ""
         }
         demandes.append(new_demande)
         save_data(demandes)
@@ -189,10 +191,16 @@ def imprimer(demande_id):
     demande = next((d for d in demandes if d["id"] == demande_id), None)
     return render_template("imprimer.html", demande=demande)
 
-# Route pour télécharger les justificatifs
 @app.route("/uploads/<filename>")
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+# 🔎 Voir le contenu du mail envoyé
+@app.route("/voir_mail/<demande_id>")
+def voir_mail(demande_id):
+    demandes = load_data()
+    demande = next((d for d in demandes if d["id"] == demande_id), None)
+    return render_template("voir_mail.html", demande=demande)
 
 if __name__ == "__main__":
     app.run(debug=True)
