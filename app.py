@@ -78,7 +78,7 @@ def envoyer_mail_accuse(demande):
             serveur.send_message(msg)
         print(f"✅ Accusé de réception envoyé à {demande['mail']}")
     except Exception as e:
-        print("❌ Erreur envoi accusé :", e)
+        print("❌ Erreur envoi mail accusé :", e)
 
 # 📩 Mail au stagiaire quand traité (avec commentaire)
 def envoyer_mail_confirmation(demande):
@@ -138,7 +138,8 @@ def index():
             "attribution": "",
             "statut": "Non traité",
             "commentaire": "",
-            "mail_confirme": ""
+            "mail_confirme": "",
+            "mail_erreur": ""
         }
         demandes.append(new_demande)
         save_data(demandes)
@@ -164,10 +165,14 @@ def admin():
                     nouveau_statut = request.form.get("statut")
                     d["commentaire"] = request.form.get("commentaire")
 
-                    # Si statut passe à "Traité", envoi mail stagiaire + date
+                    # Si statut passe à "Traité"
                     if d["statut"] != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             d["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+                            d["mail_erreur"] = ""
+                        else:
+                            d["mail_confirme"] = ""
+                            d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
 
                     d["statut"] = nouveau_statut
             save_data(demandes)
