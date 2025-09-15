@@ -12,7 +12,7 @@
         table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
         th, td {border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; word-wrap: break-word;}
         th {background-color: #f4c45a; color: #333;}
-        select {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
+        select, textarea, input[type="text"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
         .actions button, .actions a {padding: 6px 10px; margin: 2px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;}
         .save {background-color: #198754; color: white;}
         .delete {background-color: #dc3545; color: white;}
@@ -51,7 +51,9 @@
                     <td>{{ d.telephone }}</td>
                     <td>{{ d.mail }}</td>
                     <td>{{ d.motif }}</td>
-                    <td>{{ d.details }}</td>
+                    <td>
+                        <textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea>
+                    </td>
                     <td>
                         {% if d.justificatif and d.justificatif != "" %}
                             <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
