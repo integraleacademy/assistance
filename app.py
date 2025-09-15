@@ -21,6 +21,7 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+# 📩 Mail à l’admin
 def envoyer_mail(demande):
     sujet = f"Nouvelle demande stagiaire - {demande['motif']}"
     contenu = f"""
@@ -47,9 +48,37 @@ def envoyer_mail(demande):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
-        print("✅ Mail envoyé avec succès")
+        print("✅ Mail envoyé aux admins")
     except Exception as e:
-        print("❌ Erreur envoi mail :", e)
+        print("❌ Erreur envoi mail admin :", e)
+
+# 📩 Mail au stagiaire quand traité
+def envoyer_mail_confirmation(demande):
+    sujet = "Votre demande a été traitée - Intégrale Academy"
+    contenu = f"""
+    Bonjour {demande['prenom']} {demande['nom']},
+
+    Nous vous informons que votre demande a été traitée.
+
+    📌 Motif : {demande['motif']}
+    📝 Détails : {demande['details']}
+
+    Cordialement,
+    L'équipe Intégrale Academy
+    """
+
+    msg = MIMEText(contenu, "plain", "utf-8")
+    msg["Subject"] = sujet
+    msg["From"] = os.getenv("SMTP_USER")
+    msg["To"] = demande["mail"]
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
+            serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+            serveur.send_message(msg)
+        print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
+    except Exception as e:
+        print("❌ Erreur envoi mail confirmation :", e)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -98,8 +127,14 @@ def admin():
             for d in demandes:
                 if d["id"] == demande_id:
                     d["attribution"] = request.form.get("attribution")
-                    d["statut"] = request.form.get("statut")
+                    nouveau_statut = request.form.get("statut")
                     d["commentaire"] = request.form.get("commentaire")
+
+                    # Si statut passe à "Traité", envoi mail stagiaire
+                    if d["statut"] != "Traité" and nouveau_statut == "Traité":
+                        envoyer_mail_confirmation(d)
+
+                    d["statut"] = nouveau_statut
             save_data(demandes)
 
         elif action == "delete":
