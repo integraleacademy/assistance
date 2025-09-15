@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request
-import json, os, datetime, uuid, pytz
+import json, os, datetime, uuid, pytz, smtplib
+from email.mime.text import MIMEText
 
 app = Flask(__name__)
 
@@ -16,6 +17,33 @@ def save_data(data):
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+def envoyer_mail(demande):
+    sujet = f"Nouvelle demande stagiaire - {demande['motif']}"
+    contenu = f"""
+    Nouvelle demande reçue :
+
+    Nom : {demande['nom']}
+    Prénom : {demande['prenom']}
+    Téléphone : {demande['telephone']}
+    Email : {demande['mail']}
+    Motif : {demande['motif']}
+    Détails : {demande['details']}
+    Date : {demande['date']}
+    """
+
+    msg = MIMEText(contenu, "plain", "utf-8")
+    msg["Subject"] = sujet
+    msg["From"] = os.getenv("SMTP_USER")
+    msg["To"] = "elsaduq83@gmail.com, ecole@integraleacademy.com"
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
+            serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+            serveur.send_message(msg)
+        print("✅ Mail envoyé avec succès")
+    except Exception as e:
+        print("❌ Erreur envoi mail :", e)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -37,6 +65,10 @@ def index():
         }
         demandes.append(new_demande)
         save_data(demandes)
+
+        # Envoi du mail
+        envoyer_mail(new_demande)
+
         return render_template("confirmation.html")
     return render_template("index.html")
 
