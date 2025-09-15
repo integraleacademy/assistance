@@ -52,18 +52,46 @@ def envoyer_mail(demande):
     except Exception as e:
         print("❌ Erreur envoi mail admin :", e)
 
+# 📩 Mail au stagiaire - accusé de réception
+def envoyer_mail_accuse(demande):
+    sujet = "Accusé de réception - Intégrale Academy"
+    contenu = f"""
+    Bonjour {demande['prenom']} {demande['nom']},
+
+    📩 Nous avons bien reçu votre demande.  
+    ⏳ Elle sera traitée dans les meilleurs délais.  
+
+    ✅ Vous recevrez un mail lorsque votre demande aura été traitée.  
+
+    Merci à vous,  
+    L'équipe Intégrale Academy
+    """
+
+    msg = MIMEText(contenu, "plain", "utf-8")
+    msg["Subject"] = sujet
+    msg["From"] = os.getenv("SMTP_USER")
+    msg["To"] = demande["mail"]
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
+            serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+            serveur.send_message(msg)
+        print(f"✅ Accusé de réception envoyé à {demande['mail']}")
+    except Exception as e:
+        print("❌ Erreur envoi accusé :", e)
+
 # 📩 Mail au stagiaire quand traité
 def envoyer_mail_confirmation(demande):
     sujet = "Votre demande a été traitée - Intégrale Academy"
     contenu = f"""
     Bonjour {demande['prenom']} {demande['nom']},
 
-    Nous vous informons que votre demande a été traitée.
+    ✅ Nous vous informons que votre demande a été traitée.
 
     📌 Motif : {demande['motif']}
     📝 Détails : {demande['details']}
 
-    Cordialement,
+    Cordialement,  
     L'équipe Intégrale Academy
     """
 
@@ -111,7 +139,8 @@ def index():
         demandes.append(new_demande)
         save_data(demandes)
 
-        envoyer_mail(new_demande)
+        envoyer_mail(new_demande)        # mail admin
+        envoyer_mail_accuse(new_demande) # accusé stagiaire
 
         return render_template("confirmation.html")
     return render_template("index.html")
