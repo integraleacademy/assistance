@@ -51,7 +51,7 @@
                     <td>{{ d.details }}</td>
                     <td>
                         {% if d.justificatif and d.justificatif != "" %}
-                            <a href="{{ d.justificatif }}" target="_blank">📎 Voir</a>
+                            <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
                         {% else %}
                             -
                         {% endif %}
