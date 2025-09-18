@@ -49,7 +49,9 @@
                     <td>{{ d.nom }}</td>
                     <td>{{ d.prenom }}</td>
                     <td>{{ d.telephone }}</td>
-                    <td>{{ d.mail }}</td>
+                    <td>
+                        <input type="text" name="mail" value="{{ d.mail }}" style="width:95%;">
+                    </td>
                     <td>{{ d.motif }}</td>
                     <td>
                         <textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea>
