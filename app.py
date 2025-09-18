@@ -164,9 +164,10 @@ def admin():
             for d in demandes:
                 if d["id"] == demande_id:
                     d["attribution"] = request.form.get("attribution")
-                    nouveau_statut = request.form.get("statut")
+                    d["mail"] = request.form.get("mail") or d["mail"]  # ✅ sauvegarde modif email
+                    d["details"] = request.form.get("details")
                     d["commentaire"] = request.form.get("commentaire")
-                    d["details"] = request.form.get("details")  # ✅ sauvegarde modif admin
+                    nouveau_statut = request.form.get("statut")
 
                     # Si statut passe à "Traité"
                     if d["statut"] != "Traité" and nouveau_statut == "Traité":
@@ -178,7 +179,8 @@ def admin():
                             d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
 
                     d["statut"] = nouveau_statut
-            save_data(demandes)
+
+            save_data(demandes)  # ✅ sauvegarde bien après chaque modif
 
         elif action == "delete":
             demandes = [d for d in demandes if d["id"] != demande_id]
