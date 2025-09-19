@@ -205,11 +205,18 @@ def voir_mail(demande_id):
     demande = next((d for d in demandes if d["id"] == demande_id), None)
     return render_template("voir_mail.html", demande=demande)
 
-# 🔄 API pour l’auto-refresh
+# 🔄 API pour l’auto-refresh (avec anti-cache)
 @app.route("/api/demandes")
 def api_demandes():
     demandes = load_data()
-    return json.dumps(demandes, ensure_ascii=False), 200, {"Content-Type": "application/json"}
+    response = app.response_class(
+        response=json.dumps(demandes, ensure_ascii=False),
+        status=200,
+        mimetype="application/json"
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 if __name__ == "__main__":
     app.run(debug=True)
