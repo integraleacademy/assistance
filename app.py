@@ -208,6 +208,7 @@ def voir_mail(demande_id):
 # 🔄 API pour l’auto-refresh (anti-cache)
 @app.route("/api/demandes")
 def api_demandes():
+    print("✅ Route /api/demandes appelée")  # <-- DEBUG LOG
     demandes = load_data()
     response = app.response_class(
         response=json.dumps(demandes, ensure_ascii=False),
