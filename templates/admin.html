@@ -49,73 +49,7 @@
                 </tr>
             </thead>
             <tbody id="demandes-body">
-                {% for d in demandes %}
-                <tr>
-                    <form method="POST">
-                        <td>{{ d.nom }}</td>
-                        <td>{{ d.prenom }}</td>
-                        <td>{{ d.telephone }}</td>
-                        <td>
-                            <input type="text" name="mail" value="{{ d.mail }}" style="width:95%;">
-                        </td>
-                        <td>{{ d.motif }}</td>
-                        <td>
-                            <textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea>
-                        </td>
-                        <td>
-                            {% if d.justificatif and d.justificatif != "" %}
-                                <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                        <td>{{ d.date }}</td>
-                        <td>
-                            <select name="attribution">
-                                <option value="">--</option>
-                                <option value="Elsa" {% if d.attribution == "Elsa" %}selected{% endif %}>Elsa</option>
-                                <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
-                            </select>
-                        </td>
-                        <td>
-                            {% if d.statut == "Non traité" %}
-                                <span class="status-red">Non traité</span>
-                            {% else %}
-                                <span class="status-green">Traité</span>
-                            {% endif %}
-                            <select name="statut" style="margin-top:5px;">
-                                <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
-                                <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
-                            </select>
-
-                            {% if d.mail_confirme %}
-                                <div style="font-size:12px; margin-top:4px;">
-                                    <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
-                                        ✅ Mail envoyé le {{ d.mail_confirme }}
-                                    </a>
-                                </div>
-                            {% elif d.mail_erreur %}
-                                <div style="font-size:12px; color:#dc3545; margin-top:4px;">
-                                    {{ d.mail_erreur }}
-                                </div>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <button type="button" class="comment-btn" 
-                                    onclick="event.preventDefault(); openCommentModal('{{ d.id }}', `{{ d.commentaire|escape }}`)">
-                                ✏️ Ajouter / Modifier
-                            </button>
-                            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
-                        </td>
-                        <td class="actions">
-                            <input type="hidden" name="id" value="{{ d.id }}">
-                            <button type="submit" name="action" value="update" class="save">💾</button>
-                            <button type="submit" name="action" value="delete" class="delete">🗑️</button>
-                            <a href="/imprimer/{{ d.id }}" target="_blank" class="print">🖨️</a>
-                        </td>
-                    </form>
-                </tr>
-                {% endfor %}
+                <!-- rempli par JS -->
             </tbody>
         </table>
     </div>
@@ -155,13 +89,16 @@
 
     // Rafraîchissement auto
     function updateTable() {
+        console.log("🔄 updateTable lancé");
         fetch("/api/demandes")
             .then(response => response.json())
             .then(data => {
+                console.log("✅ Données reçues :", data);
+
                 let tbody = document.getElementById("demandes-body");
                 let currentInputs = {};
 
-                // Sauvegarde des saisies actuelles
+                // sauvegarder ce que l'admin a déjà saisi
                 document.querySelectorAll("#demandes-body form").forEach(form => {
                     let id = form.querySelector("input[name='id']").value;
                     currentInputs[id] = {
@@ -173,71 +110,74 @@
                     };
                 });
 
-                // Reconstruit les lignes
+                // reconstruire le tableau
                 let html = "";
                 data.forEach(d => {
                     html += `
                     <tr>
-                      <form method="POST">
-                        <td>${d.nom}</td>
-                        <td>${d.prenom}</td>
-                        <td>${d.telephone}</td>
-                        <td><input type="text" name="mail" value="${currentInputs[d.id]?.mail || d.mail}" style="width:95%;"></td>
-                        <td>${d.motif}</td>
-                        <td><textarea name="details" rows="3" style="width:95%;">${currentInputs[d.id]?.details || d.details}</textarea></td>
-                        <td>${d.justificatif ? `<a href="/uploads/${d.justificatif}" target="_blank">📎 Voir</a>` : "-"}</td>
-                        <td>${d.date}</td>
-                        <td>
-                            <select name="attribution">
-                                <option value="">--</option>
-                                <option value="Elsa" ${(currentInputs[d.id]?.attribution || d.attribution)=="Elsa" ? "selected":""}>Elsa</option>
-                                <option value="Clément" ${(currentInputs[d.id]?.attribution || d.attribution)=="Clément" ? "selected":""}>Clément</option>
-                            </select>
-                        </td>
-                        <td>
-                            ${(currentInputs[d.id]?.statut || d.statut)=="Non traité"
-                              ? '<span class="status-red">Non traité</span>'
-                              : '<span class="status-green">Traité</span>'}
-                            <select name="statut" style="margin-top:5px;">
-                                <option value="Non traité" ${(currentInputs[d.id]?.statut || d.statut)=="Non traité" ? "selected":""}>Non traité</option>
-                                <option value="Traité" ${(currentInputs[d.id]?.statut || d.statut)=="Traité" ? "selected":""}>Traité</option>
-                            </select>
-                            ${d.mail_confirme 
-                              ? `<div style="font-size:12px; margin-top:4px;">
-                                    <a href="/voir_mail/${d.id}" target="_blank" style="color:#198754; text-decoration:none;">
-                                        ✅ Mail envoyé le ${d.mail_confirme}
-                                    </a>
-                                 </div>`
-                              : (d.mail_erreur ? `<div style="font-size:12px; color:#dc3545; margin-top:4px;">${d.mail_erreur}</div>` : "")
-                            }
-                        </td>
-                        <td>
-                            <button type="button" class="comment-btn" onclick="event.preventDefault(); openCommentModal('${d.id}', \`${currentInputs[d.id]?.commentaire || d.commentaire || ""}\`)">✏️ Ajouter / Modifier</button>
-                            <input type="hidden" name="commentaire" id="commentaire-${d.id}" value="${currentInputs[d.id]?.commentaire || d.commentaire || ""}">
-                        </td>
-                        <td class="actions">
-                            <input type="hidden" name="id" value="${d.id}">
-                            <button type="submit" name="action" value="update" class="save">💾</button>
-                            <button type="submit" name="action" value="delete" class="delete">🗑️</button>
-                            <a href="/imprimer/${d.id}" target="_blank" class="print">🖨️</a>
-                        </td>
-                      </form>
+                        <form method="POST">
+                            <td>${d.nom}</td>
+                            <td>${d.prenom}</td>
+                            <td>${d.telephone}</td>
+                            <td><input type="text" name="mail" value="${currentInputs[d.id]?.mail || d.mail}" style="width:95%;"></td>
+                            <td>${d.motif}</td>
+                            <td><textarea name="details" rows="3" style="width:95%;">${currentInputs[d.id]?.details || d.details}</textarea></td>
+                            <td>${d.justificatif ? `<a href="/uploads/${d.justificatif}" target="_blank">📎 Voir</a>` : "-"}</td>
+                            <td>${d.date}</td>
+                            <td>
+                                <select name="attribution">
+                                    <option value="">--</option>
+                                    <option value="Elsa" ${(currentInputs[d.id]?.attribution || d.attribution)=="Elsa" ? "selected":""}>Elsa</option>
+                                    <option value="Clément" ${(currentInputs[d.id]?.attribution || d.attribution)=="Clément" ? "selected":""}>Clément</option>
+                                </select>
+                            </td>
+                            <td>
+                                ${(currentInputs[d.id]?.statut || d.statut)=="Non traité"
+                                  ? '<span class="status-red">Non traité</span>'
+                                  : '<span class="status-green">Traité</span>'}
+                                <select name="statut" style="margin-top:5px;">
+                                    <option value="Non traité" ${(currentInputs[d.id]?.statut || d.statut)=="Non traité" ? "selected":""}>Non traité</option>
+                                    <option value="Traité" ${(currentInputs[d.id]?.statut || d.statut)=="Traité" ? "selected":""}>Traité</option>
+                                </select>
+                                ${d.mail_confirme 
+                                  ? `<div style="font-size:12px; margin-top:4px;">
+                                        <a href="/voir_mail/${d.id}" target="_blank" style="color:#198754; text-decoration:none;">
+                                            ✅ Mail envoyé le ${d.mail_confirme}
+                                        </a>
+                                     </div>`
+                                  : (d.mail_erreur ? `<div style="font-size:12px; color:#dc3545; margin-top:4px;">${d.mail_erreur}</div>` : "")
+                                }
+                            </td>
+                            <td>
+                                <button type="button" class="comment-btn" onclick="event.preventDefault(); openCommentModal('${d.id}', \`${currentInputs[d.id]?.commentaire || d.commentaire || ""}\`)">✏️ Ajouter / Modifier</button>
+                                <input type="hidden" name="commentaire" id="commentaire-${d.id}" value="${currentInputs[d.id]?.commentaire || d.commentaire || ""}">
+                            </td>
+                            <td class="actions">
+                                <input type="hidden" name="id" value="${d.id}">
+                                <button type="submit" name="action" value="update" class="save">💾</button>
+                                <button type="submit" name="action" value="delete" class="delete">🗑️</button>
+                                <a href="/imprimer/${d.id}" target="_blank" class="print">🖨️</a>
+                            </td>
+                        </form>
                     </tr>`;
                 });
 
                 tbody.innerHTML = html;
 
-                // Mets à jour l'heure en haut
+                // maj bandeau
                 let now = new Date();
                 let options = { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", second: "2-digit" };
                 document.getElementById("last-update").innerText =
                     "⏳ Dernière mise à jour : " + now.toLocaleDateString("fr-FR") + " " + now.toLocaleTimeString("fr-FR", options);
+            })
+            .catch(error => {
+                console.error("❌ Erreur dans updateTable :", error);
             });
     }
 
-    // Auto-refresh toutes les 15 secondes + exécution immédiate
+    // auto-refresh
+    updateTable();
     setInterval(updateTable, 15000);
-    updateTable(); // 🔥 première mise à jour directe au chargement
     </script>
 </body>
 </html>
