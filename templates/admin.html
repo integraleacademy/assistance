@@ -235,8 +235,9 @@
             });
     }
 
-    // Auto-refresh toutes les 15 secondes
+    // Auto-refresh toutes les 15 secondes + exécution immédiate
     setInterval(updateTable, 15000);
+    updateTable(); // 🔥 première mise à jour directe au chargement
     </script>
 </body>
 </html>
