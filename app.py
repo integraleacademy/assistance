@@ -205,5 +205,11 @@ def voir_mail(demande_id):
     demande = next((d for d in demandes if d["id"] == demande_id), None)
     return render_template("voir_mail.html", demande=demande)
 
+# 🔄 API pour l’auto-refresh
+@app.route("/api/demandes")
+def api_demandes():
+    demandes = load_data()
+    return json.dumps(demandes, ensure_ascii=False), 200, {"Content-Type": "application/json"}
+
 if __name__ == "__main__":
     app.run(debug=True)
