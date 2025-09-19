@@ -87,10 +87,9 @@
             let hiddenInput = document.getElementById("commentaire-" + currentCommentId);
             hiddenInput.value = newComment;
 
-            // Trouver le formulaire update de la ligne et le soumettre automatiquement
-            let form = hiddenInput.closest("tr").querySelector("form[action=''][method='POST']");
+            // soumettre directement le formulaire de la ligne
+            let form = hiddenInput.closest("form");
             if (form) {
-                // Forcer action=update
                 form.querySelector("button[name='action'][value='update']").click();
             }
         }
@@ -108,15 +107,15 @@
                 let currentInputs = {};
 
                 // sauvegarder saisies
-                document.querySelectorAll("#demandes-body tr").forEach(row => {
-                    let id = row.querySelector("input[name='id']")?.value;
+                document.querySelectorAll("#demandes-body form").forEach(form => {
+                    let id = form.querySelector("input[name='id']")?.value;
                     if (id) {
                         currentInputs[id] = {
-                            mail: row.querySelector("input[name='mail']").value,
-                            details: row.querySelector("textarea[name='details']").value,
-                            commentaire: row.querySelector("input[name='commentaire']").value,
-                            attribution: row.querySelector("select[name='attribution']").value,
-                            statut: row.querySelector("select[name='statut']").value
+                            mail: form.querySelector("input[name='mail']").value,
+                            details: form.querySelector("textarea[name='details']").value,
+                            commentaire: form.querySelector("input[name='commentaire']").value,
+                            attribution: form.querySelector("select[name='attribution']").value,
+                            statut: form.querySelector("select[name='statut']").value
                         };
                     }
                 });
@@ -125,6 +124,7 @@
                 let html = "";
                 data.forEach(d => {
                     html += `
+                    <form method="POST">
                     <tr>
                         <td>${d.nom}</td>
                         <td>${d.prenom}</td>
@@ -163,22 +163,13 @@
                             <input type="hidden" name="commentaire" id="commentaire-${d.id}" value="${currentInputs[d.id]?.commentaire || d.commentaire || ""}">
                         </td>
                         <td class="actions">
-                            <form method="POST" style="display:inline;">
-                                <input type="hidden" name="id" value="${d.id}">
-                                <input type="hidden" name="mail" value="${currentInputs[d.id]?.mail || d.mail}">
-                                <input type="hidden" name="details" value="${currentInputs[d.id]?.details || d.details}">
-                                <input type="hidden" name="commentaire" value="${currentInputs[d.id]?.commentaire || d.commentaire || ""}">
-                                <input type="hidden" name="attribution" value="${currentInputs[d.id]?.attribution || d.attribution}">
-                                <input type="hidden" name="statut" value="${currentInputs[d.id]?.statut || d.statut}">
-                                <button type="submit" name="action" value="update" class="save">💾</button>
-                            </form>
-                            <form method="POST" style="display:inline;">
-                                <input type="hidden" name="id" value="${d.id}">
-                                <button type="submit" name="action" value="delete" class="delete">🗑️</button>
-                            </form>
+                            <input type="hidden" name="id" value="${d.id}">
+                            <button type="submit" name="action" value="update" class="save">💾</button>
+                            <button type="submit" name="action" value="delete" class="delete">🗑️</button>
                             <a href="/imprimer/${d.id}" target="_blank" class="print">🖨️</a>
                         </td>
-                    </tr>`;
+                    </tr>
+                    </form>`;
                 });
 
                 tbody.innerHTML = html;
