@@ -9,7 +9,8 @@
                     box-shadow: 0 0 15px rgba(0,0,0,0.1); box-sizing: border-box; overflow-x:auto;}
         img.logo {max-width: 120px; display: block; margin: 0 auto 20px;}
         h2 {text-align: center; margin-bottom: 10px;}
-        #last-update {text-align:center; margin-bottom:20px; font-size:14px; color:#666;}
+        #last-update {text-align:center; margin-bottom:5px; font-size:14px; color:#666;}
+        #debug {text-align:center; margin-bottom:20px; font-size:12px; color:#555;}
         table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
         th, td {border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; word-wrap: break-word;}
         th {background-color: #f4c45a; color: #333;}
@@ -30,6 +31,7 @@
         <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
         <h2>📋 Gestion des demandes stagiaires</h2>
         <div id="last-update">⏳ Dernière mise à jour : jamais</div>
+        <div id="debug">⏳ En attente de données...</div>
 
         <table>
             <thead>
@@ -87,30 +89,15 @@
         closeCommentModal();
     }
 
-    // Rafraîchissement auto
     function updateTable() {
-        console.log("🔄 updateTable lancé");
         fetch("/api/demandes")
             .then(response => response.json())
             .then(data => {
-                console.log("✅ Données reçues :", data);
+                // Debug visible dans la page
+                document.getElementById("debug").innerText =
+                    "✅ Données reçues : " + data.length + " demandes (à " + new Date().toLocaleTimeString("fr-FR") + ")";
 
                 let tbody = document.getElementById("demandes-body");
-                let currentInputs = {};
-
-                // sauvegarder ce que l'admin a déjà saisi
-                document.querySelectorAll("#demandes-body form").forEach(form => {
-                    let id = form.querySelector("input[name='id']").value;
-                    currentInputs[id] = {
-                        mail: form.querySelector("input[name='mail']").value,
-                        details: form.querySelector("textarea[name='details']").value,
-                        commentaire: form.querySelector("input[name='commentaire']").value,
-                        attribution: form.querySelector("select[name='attribution']").value,
-                        statut: form.querySelector("select[name='statut']").value
-                    };
-                });
-
-                // reconstruire le tableau
                 let html = "";
                 data.forEach(d => {
                     html += `
@@ -119,38 +106,30 @@
                             <td>${d.nom}</td>
                             <td>${d.prenom}</td>
                             <td>${d.telephone}</td>
-                            <td><input type="text" name="mail" value="${currentInputs[d.id]?.mail || d.mail}" style="width:95%;"></td>
+                            <td><input type="text" name="mail" value="${d.mail}" style="width:95%;"></td>
                             <td>${d.motif}</td>
-                            <td><textarea name="details" rows="3" style="width:95%;">${currentInputs[d.id]?.details || d.details}</textarea></td>
+                            <td><textarea name="details" rows="3" style="width:95%;">${d.details}</textarea></td>
                             <td>${d.justificatif ? `<a href="/uploads/${d.justificatif}" target="_blank">📎 Voir</a>` : "-"}</td>
                             <td>${d.date}</td>
                             <td>
                                 <select name="attribution">
                                     <option value="">--</option>
-                                    <option value="Elsa" ${(currentInputs[d.id]?.attribution || d.attribution)=="Elsa" ? "selected":""}>Elsa</option>
-                                    <option value="Clément" ${(currentInputs[d.id]?.attribution || d.attribution)=="Clément" ? "selected":""}>Clément</option>
+                                    <option value="Elsa" ${d.attribution=="Elsa" ? "selected":""}>Elsa</option>
+                                    <option value="Clément" ${d.attribution=="Clément" ? "selected":""}>Clément</option>
                                 </select>
                             </td>
                             <td>
-                                ${(currentInputs[d.id]?.statut || d.statut)=="Non traité"
+                                ${d.statut=="Non traité"
                                   ? '<span class="status-red">Non traité</span>'
                                   : '<span class="status-green">Traité</span>'}
                                 <select name="statut" style="margin-top:5px;">
-                                    <option value="Non traité" ${(currentInputs[d.id]?.statut || d.statut)=="Non traité" ? "selected":""}>Non traité</option>
-                                    <option value="Traité" ${(currentInputs[d.id]?.statut || d.statut)=="Traité" ? "selected":""}>Traité</option>
+                                    <option value="Non traité" ${d.statut=="Non traité" ? "selected":""}>Non traité</option>
+                                    <option value="Traité" ${d.statut=="Traité" ? "selected":""}>Traité</option>
                                 </select>
-                                ${d.mail_confirme 
-                                  ? `<div style="font-size:12px; margin-top:4px;">
-                                        <a href="/voir_mail/${d.id}" target="_blank" style="color:#198754; text-decoration:none;">
-                                            ✅ Mail envoyé le ${d.mail_confirme}
-                                        </a>
-                                     </div>`
-                                  : (d.mail_erreur ? `<div style="font-size:12px; color:#dc3545; margin-top:4px;">${d.mail_erreur}</div>` : "")
-                                }
                             </td>
                             <td>
-                                <button type="button" class="comment-btn" onclick="event.preventDefault(); openCommentModal('${d.id}', \`${currentInputs[d.id]?.commentaire || d.commentaire || ""}\`)">✏️ Ajouter / Modifier</button>
-                                <input type="hidden" name="commentaire" id="commentaire-${d.id}" value="${currentInputs[d.id]?.commentaire || d.commentaire || ""}">
+                                <button type="button" class="comment-btn" onclick="event.preventDefault(); openCommentModal('${d.id}', \`${d.commentaire || ""}\`)">✏️ Ajouter / Modifier</button>
+                                <input type="hidden" name="commentaire" id="commentaire-${d.id}" value="${d.commentaire || ""}">
                             </td>
                             <td class="actions">
                                 <input type="hidden" name="id" value="${d.id}">
@@ -164,14 +143,14 @@
 
                 tbody.innerHTML = html;
 
-                // maj bandeau
+                // Met à jour l'heure
                 let now = new Date();
                 let options = { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", second: "2-digit" };
                 document.getElementById("last-update").innerText =
                     "⏳ Dernière mise à jour : " + now.toLocaleDateString("fr-FR") + " " + now.toLocaleTimeString("fr-FR", options);
             })
             .catch(error => {
-                console.error("❌ Erreur dans updateTable :", error);
+                document.getElementById("debug").innerText = "❌ Erreur updateTable : " + error;
             });
     }
 
