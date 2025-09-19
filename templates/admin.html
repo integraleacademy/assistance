@@ -84,7 +84,15 @@
     function saveComment() {
         if (currentCommentId) {
             let newComment = document.getElementById("modalComment").value;
-            document.getElementById("commentaire-" + currentCommentId).value = newComment;
+            let hiddenInput = document.getElementById("commentaire-" + currentCommentId);
+            hiddenInput.value = newComment;
+
+            // Trouver le formulaire update de la ligne et le soumettre automatiquement
+            let form = hiddenInput.closest("tr").querySelector("form[action=''][method='POST']");
+            if (form) {
+                // Forcer action=update
+                form.querySelector("button[name='action'][value='update']").click();
+            }
         }
         closeCommentModal();
     }
