@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect
 import json, os, datetime, uuid, pytz, smtplib
-from email.mime_text import MIMEText
+from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
@@ -8,13 +8,14 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
+# Fichiers persistants (Render)
 DATA_FILE = "/mnt/data/data.json"
 UPLOAD_FOLDER = "/mnt/data/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# -----------------------
+# -------------------------------------------------------------------
 # Utils
-# -----------------------
+# -------------------------------------------------------------------
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -24,6 +25,7 @@ def load_data():
                 data.setdefault("compteur_traitees", 0)
                 return data
             else:
+                # compat ancien format (liste brute)
                 return {"demandes": data, "compteur_traitees": 0}
     return {"demandes": [], "compteur_traitees": 0}
 
@@ -39,10 +41,11 @@ def supprimer_fichier(filename):
     if os.path.exists(chemin):
         os.remove(chemin)
 
-# -----------------------
-# Mails (admin, accusé, confirmé)
-# -----------------------
+# -------------------------------------------------------------------
+# Emails (admin, accusé de réception, confirmation traité avec PJ)
+# -------------------------------------------------------------------
 def envoyer_mail_admin(demande):
+    """Mail aux admins à chaque nouvelle demande"""
     sujet = f"Nouvelle demande stagiaire - {demande['motif']}"
     contenu = f"""
     Nouvelle demande reçue :
@@ -72,6 +75,7 @@ def envoyer_mail_admin(demande):
         print("❌ Erreur envoi mail admin :", e)
 
 def envoyer_mail_accuse(demande):
+    """Accusé de réception au stagiaire"""
     sujet = "Accusé de réception - Intégrale Academy"
     contenu = f"""
     Bonjour {demande['prenom']} {demande['nom']},
@@ -97,7 +101,7 @@ def envoyer_mail_accuse(demande):
         print("❌ Erreur envoi mail accusé :", e)
 
 def envoyer_mail_confirmation(demande):
-    """Mail de confirmation avec TOUTES les PJ sauvegardées pour la demande + stockage du contenu pour 'voir le mail'"""
+    """Mail de confirmation avec TOUTES les PJ sauvegardées pour la demande + stockage du contenu pour /voir_mail"""
     sujet = "Votre demande a été traitée - Intégrale Academy"
     contenu = f"""
     Bonjour {demande['prenom']} {demande['nom']},
@@ -118,6 +122,7 @@ def envoyer_mail_confirmation(demande):
     msg["From"] = os.getenv("SMTP_USER")
     msg["To"] = demande["mail"]
 
+    # Joindre toutes les PJ sauvegardées
     for pj in demande.get("pieces_jointes", []):
         chemin = os.path.join(UPLOAD_FOLDER, pj)
         if os.path.exists(chemin):
@@ -133,16 +138,16 @@ def envoyer_mail_confirmation(demande):
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
         print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
-        # 🔥 on garde une copie affichable
+        # On garde une copie affichable
         demande["mail_contenu"] = f"Sujet : {sujet}\n\n{contenu}"
         return True
     except Exception as e:
         print("❌ Erreur envoi mail confirmation :", e)
         return False
 
-# -----------------------
+# -------------------------------------------------------------------
 # Routes
-# -----------------------
+# -------------------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -173,13 +178,13 @@ def index():
             "commentaire": "",
             "mail_confirme": "",
             "mail_erreur": "",
-            "mail_contenu": "",          # ✅ pour /voir_mail
+            "mail_contenu": "",
             "pieces_jointes": []
         }
         demandes.append(new_demande)
         save_data(data)
 
-        # mails rétablis
+        # Mails : admin + accusé
         envoyer_mail_admin(new_demande)
         envoyer_mail_accuse(new_demande)
 
@@ -193,6 +198,7 @@ def admin():
 
     if request.method == "POST":
         action = request.form.get("action")
+        # si clic sur le bouton de suppression PJ (name="delete_pj" value="nom.ext")
         if not action and request.form.get("delete_pj"):
             action = "delete_pj"
 
@@ -219,7 +225,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # Envoi du mail si on passe à "Traité" (et stocke le contenu pour /voir_mail)
+                    # Envoi du mail si changement vers "Traité"
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -244,7 +250,7 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete":
-            # supprime justificatif + PJ, puis la demande
+            # Supprime justificatif + toutes les PJ, puis la demande
             to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
@@ -268,16 +274,15 @@ def imprimer(demande_id):
     demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
     return render_template("imprimer.html", demande=demande)
 
-@app.route("/uploads/<filename>")
-def download_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
-
-# ✅ Voir le contenu du mail envoyé
 @app.route("/voir_mail/<demande_id>")
 def voir_mail(demande_id):
     data = load_data()
     demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
     return render_template("voir_mail.html", demande=demande)
+
+@app.route("/uploads/<filename>")
+def download_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 if __name__ == "__main__":
     app.run(debug=True)
