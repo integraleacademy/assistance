@@ -8,11 +8,11 @@
         .container {width: 100%; background: white; padding: 20px; border-radius: 15px;
                     box-shadow: 0 0 15px rgba(0,0,0,0.1); box-sizing: border-box; overflow-x:auto;}
         img.logo {max-width: 120px; display: block; margin: 0 auto 20px;}
-        h2 {text-align: center; margin-bottom: 30px;}
+        h2, h3 {text-align: center; margin-bottom: 15px;}
         table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
         th, td {border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; word-wrap: break-word;}
         th {background-color: #f4c45a; color: #333;}
-        select, textarea, input[type="text"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
+        select, textarea, input[type="text"], input[type="file"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
         .actions button, .actions a {padding: 6px 10px; margin: 2px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;}
         .save {background-color: #198754; color: white;}
         .delete {background-color: #dc3545; color: white;}
@@ -28,6 +28,12 @@
     <div class="container">
         <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
         <h2>📋 Gestion des demandes stagiaires</h2>
+
+        <div style="text-align:center; margin-bottom:20px;">
+            <h3>✅ Total traitées : {{ compteur_traitees }}</h3>
+            <h3>⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</h3>
+        </div>
+
         <table>
             <tr>
                 <th>Nom</th>
@@ -41,11 +47,12 @@
                 <th>Attribué à</th>
                 <th>Statut</th>
                 <th>Commentaire</th>
+                <th>Pièces jointes (à envoyer)</th>
                 <th>Actions</th>
             </tr>
             {% for d in demandes %}
             <tr>
-                <form method="POST">
+                <form method="POST" enctype="multipart/form-data">
                     <td>{{ d.nom }}</td>
                     <td>{{ d.prenom }}</td>
                     <td>{{ d.telephone }}</td>
@@ -101,6 +108,9 @@
                         </button>
                         <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
                     </td>
+                    <td>
+                        <input type="file" name="pj" multiple>
+                    </td>
                     <td class="actions">
                         <input type="hidden" name="id" value="{{ d.id }}">
                         <button type="submit" name="action" value="update" class="save">💾</button>
@@ -131,20 +141,4 @@
     function openCommentModal(demandeId, commentaire) {
         currentCommentId = demandeId;
         document.getElementById("modalComment").value = commentaire;
-        document.getElementById("commentModal").style.display = "block";
-    }
-
-    function closeCommentModal() {
-        document.getElementById("commentModal").style.display = "none";
-    }
-
-    function saveComment() {
-        if (currentCommentId) {
-            let newComment = document.getElementById("modalComment").value;
-            document.getElementById("commentaire-" + currentCommentId).value = newComment;
-        }
-        closeCommentModal();
-    }
-    </script>
-</body>
-</html>
+        document.getElementById("commentModal").style.display =
