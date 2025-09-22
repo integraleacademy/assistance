@@ -3,6 +3,7 @@ import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
+from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
 
@@ -42,108 +43,227 @@ def supprimer_fichier(filename):
         os.remove(chemin)
 
 # -------------------------------------------------------------------
-# Emails (admin, accusé de réception, confirmation traité avec PJ)
+# Email helper: HTML + texte + logo inline + PJ
 # -------------------------------------------------------------------
-def envoyer_mail_admin(demande):
-    """Mail aux admins à chaque nouvelle demande"""
-    sujet = f"Nouvelle demande stagiaire - {demande['motif']}"
-    contenu = f"""
-    Nouvelle demande reçue :
-
-    Nom : {demande['nom']}
-    Prénom : {demande['prenom']}
-    Téléphone : {demande['telephone']}
-    Email : {demande['mail']}
-    Motif : {demande['motif']}
-    Détails : {demande['details']}
-    Date : {demande['date']}
+def _build_brand_header():
+    # Couleurs en cohérence avec ton admin (jaune #f4c45a, bleu liens)
+    return """
+    <div style="padding:16px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:12px;">
+      <img src="cid:logo_cid" alt="Intégrale Academy" style="height:40px;display:block;">
+      <div style="font-weight:700;font-size:16px;color:#111;">Intégrale Academy</div>
+    </div>
     """
-    if demande.get("justificatif"):
-        contenu += f"\nJustificatif : {url_for('download_file', filename=demande['justificatif'], _external=True)}"
 
-    msg = MIMEText(contenu, "plain", "utf-8")
-    msg["Subject"] = sujet
-    msg["From"] = os.getenv("SMTP_USER")
-    msg["To"] = "elsaduq83@gmail.com, ecole@integraleacademy.com"
+def _wrap_html(title_html, body_html):
+    return f"""
+    <html>
+      <body style="background:#f7f7f7;margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;">
+        <div style="max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;">
+          {_build_brand_header()}
+          <div style="padding:22px;">
+            {title_html}
+            <div style="font-size:14px;line-height:1.6;color:#222;">
+              {body_html}
+            </div>
+          </div>
+          <div style="padding:12px 22px;color:#777;font-size:12px;border-top:1px solid #f0f0f0;">
+            Merci de ne pas répondre directement à ce message automatique.
+          </div>
+        </div>
+      </body>
+    </html>
+    """
 
+def _attach_logo(related_part):
+    """Attache le logo static/logo.png si présent, sous CID logo_cid."""
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
-            serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
-            serveur.send_message(msg)
-        print("✅ Mail envoyé aux admins")
+        logo_path = os.path.join(app.root_path, "static", "logo.png")
+        if os.path.exists(logo_path):
+            with open(logo_path, "rb") as f:
+                img = MIMEImage(f.read())
+                img.add_header("Content-ID", "<logo_cid>")
+                img.add_header("Content-Disposition", "inline", filename="logo.png")
+                related_part.attach(img)
     except Exception as e:
-        print("❌ Erreur envoi mail admin :", e)
+        print("⚠️ Impossible d’attacher le logo :", e)
 
-def envoyer_mail_accuse(demande):
-    """Accusé de réception au stagiaire"""
-    sujet = "Accusé de réception - Intégrale Academy"
-    contenu = f"""
-    Bonjour {demande['prenom']} {demande['nom']},
-
-    📩 Nous avons bien reçu votre demande.
-    ⏳ Elle sera traitée dans les meilleurs délais.
-    ✅ Vous recevrez un mail lorsque votre demande aura été traitée.
-
-    Merci à vous,
-    L'équipe Intégrale Academy
+def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
     """
-    msg = MIMEText(contenu, "plain", "utf-8")
-    msg["Subject"] = sujet
-    msg["From"] = os.getenv("SMTP_USER")
-    msg["To"] = demande["mail"]
-
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
-            serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
-            serveur.send_message(msg)
-        print(f"✅ Accusé de réception envoyé à {demande['mail']}")
-    except Exception as e:
-        print("❌ Erreur envoi mail accusé :", e)
-
-def envoyer_mail_confirmation(demande):
-    """Mail de confirmation avec TOUTES les PJ sauvegardées pour la demande + stockage du contenu pour /voir_mail"""
-    sujet = "Votre demande a été traitée - Intégrale Academy"
-    contenu = f"""
-    Bonjour {demande['prenom']} {demande['nom']},
-
-    ✅ Votre demande a été traitée.
-
-    📌 Motif : {demande['motif']}
-    📝 Détails : {demande['details']}
-    💬 Commentaire : {demande['commentaire'] if demande.get('commentaire') else "Aucun commentaire ajouté."}
-
-    Cordialement,
-    L'équipe Intégrale Academy
+    Construit un email multipart correct :
+      mixed
+        └─ related
+            └─ alternative (text/plain + text/html)
+        + pièces jointes
+    + logo inline (cid:logo_cid) si dispo.
     """
-
-    msg = MIMEMultipart()
-    msg.attach(MIMEText(contenu, "plain", "utf-8"))
-    msg["Subject"] = sujet
+    # Top-level: mixed
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
-    msg["To"] = demande["mail"]
+    msg["To"] = to_emails
 
-    # Joindre toutes les PJ sauvegardées
-    for pj in demande.get("pieces_jointes", []):
-        chemin = os.path.join(UPLOAD_FOLDER, pj)
-        if os.path.exists(chemin):
+    # related (pour inline images)
+    related = MIMEMultipart("related")
+    msg.attach(related)
+
+    # alternative (texte + html)
+    alt = MIMEMultipart("alternative")
+    related.attach(alt)
+
+    alt.attach(MIMEText(plain_text, "plain", "utf-8"))
+    alt.attach(MIMEText(html_body, "html", "utf-8"))
+
+    # logo inline
+    _attach_logo(related)
+
+    # pièces jointes (optionnel)
+    if attachments_paths:
+        for chemin in attachments_paths:
+            if not chemin or not os.path.exists(chemin):
+                continue
             with open(chemin, "rb") as f:
                 part = MIMEBase("application", "octet-stream")
                 part.set_payload(f.read())
                 encoders.encode_base64(part)
-                part.add_header("Content-Disposition", f"attachment; filename={pj}")
+                part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(chemin)}")
                 msg.attach(part)
 
+    # envoi
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
-        print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
-        # On garde une copie affichable
-        demande["mail_contenu"] = f"Sujet : {sujet}\n\n{contenu}"
         return True
     except Exception as e:
-        print("❌ Erreur envoi mail confirmation :", e)
+        print("❌ Erreur envoi email :", e)
         return False
+
+# -------------------------------------------------------------------
+# Emails (admin, accusé de réception, confirmation traité avec PJ)
+# -------------------------------------------------------------------
+def envoyer_mail_admin(demande):
+    sujet = f"Nouvelle demande stagiaire — {demande['motif']}"
+    # Texte brut (fallback)
+    plain = (
+        "Nouvelle demande reçue :\n\n"
+        f"Nom: {demande['nom']}\n"
+        f"Prénom: {demande['prenom']}\n"
+        f"Téléphone: {demande['telephone']}\n"
+        f"Email: {demande['mail']}\n"
+        f"Motif: {demande['motif']}\n"
+        f"Détails: {demande['details']}\n"
+        f"Date: {demande['date']}\n"
+    )
+    if demande.get("justificatif"):
+        plain += f"Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
+
+    # HTML
+    details_rows = f"""
+      <tr><td style="padding:6px 0;color:#555;">Nom</td><td style="padding:6px 0;"><strong>{demande['nom']}</strong></td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Prénom</td><td style="padding:6px 0;"><strong>{demande['prenom']}</strong></td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Téléphone</td><td style="padding:6px 0;">{demande['telephone']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Email</td><td style="padding:6px 0;">{demande['mail']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Motif</td><td style="padding:6px 0;">{demande['motif']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Détails</td><td style="padding:6px 0;">{demande['details']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Date</td><td style="padding:6px 0;">{demande['date']}</td></tr>
+    """
+    if demande.get("justificatif"):
+        link = url_for('download_file', filename=demande['justificatif'], _external=True)
+        details_rows += f"""<tr><td style="padding:6px 0;color:#555;">Justificatif</td>
+                            <td style="padding:6px 0;"><a href="{link}" style="color:#0d6efd;text-decoration:none;">📎 Télécharger</a></td></tr>"""
+
+    html = _wrap_html(
+        '<h1 style="margin:0 0 12px;font-size:20px;">Nouvelle demande stagiaire</h1>',
+        f"""
+        <p style="margin:0 0 12px;">Une nouvelle demande a été soumise sur le site.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">{details_rows}</table>
+        """
+    )
+
+    ok = send_email_html(
+        to_emails="elsaduq83@gmail.com, ecole@integraleacademy.com",
+        subject=sujet,
+        plain_text=plain,
+        html_body=html,
+        attachments_paths=None
+    )
+    print("✅ Mail admin envoyé" if ok else "❌ Échec mail admin")
+
+def envoyer_mail_accuse(demande):
+    sujet = "Accusé de réception — Intégrale Academy"
+    plain = (
+        f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
+        "Nous avons bien reçu votre demande.\n"
+        "Elle sera traitée dans les meilleurs délais.\n"
+        "Vous recevrez un mail lorsque votre demande aura été traitée.\n\n"
+        "L'équipe Intégrale Academy\n"
+    )
+    html = _wrap_html(
+        '<h1 style="margin:0 0 12px;font-size:20px;">Accusé de réception</h1>',
+        f"""
+        <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
+        <p>Nous avons bien reçu votre demande. Elle sera traitée dans les meilleurs délais.</p>
+        <p style="margin:0">Vous recevrez un mail lorsque votre demande aura été traitée.</p>
+        """
+    )
+
+    ok = send_email_html(
+        to_emails=demande["mail"],
+        subject=sujet,
+        plain_text=plain,
+        html_body=html,
+        attachments_paths=None
+    )
+    print(f"✅ Accusé envoyé à {demande['mail']}" if ok else "❌ Échec accusé")
+
+def envoyer_mail_confirmation(demande):
+    """Mail 'Traité' avec toutes les PJ sauvegardées + stockage du HTML pour /voir_mail"""
+    sujet = "Votre demande a été traitée — Intégrale Academy"
+
+    # Fallback texte
+    plain = (
+        f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
+        "Votre demande a été traitée.\n\n"
+        f"Motif : {demande['motif']}\n"
+        f"Détails : {demande['details']}\n"
+        f"Commentaire : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n\n"
+        "L'équipe Intégrale Academy\n"
+    )
+
+    # HTML
+    body_html = f"""
+      <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
+      <p style="margin:0 0 8px;">✅ Votre demande a été traitée.</p>
+      <div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:12px 14px;margin:12px 0;">
+        <div style="margin:4px 0;"><strong>Motif :</strong> {demande['motif']}</div>
+        <div style="margin:4px 0;"><strong>Détails :</strong> {demande['details']}</div>
+        <div style="margin:4px 0;"><strong>Commentaire :</strong> {demande.get('commentaire') or 'Aucun commentaire ajouté.'}</div>
+      </div>
+      {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
+      <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
+    """
+    html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">Demande traitée</h1>', body_html)
+
+    # Prépare les chemins de PJ
+    pj_paths = []
+    for pj in demande.get("pieces_jointes", []):
+        chemin = os.path.join(UPLOAD_FOLDER, pj)
+        if os.path.exists(chemin):
+            pj_paths.append(chemin)
+
+    ok = send_email_html(
+        to_emails=demande["mail"],
+        subject=sujet,
+        plain_text=plain,
+        html_body=html,
+        attachments_paths=pj_paths
+    )
+
+    if ok:
+        # Conserver un aperçu pour /voir_mail
+        demande["mail_contenu"] = f"Sujet : {sujet}\n\n{plain}"
+        demande["mail_html"] = html
+    return ok
 
 # -------------------------------------------------------------------
 # Routes
@@ -179,6 +299,7 @@ def index():
             "mail_confirme": "",
             "mail_erreur": "",
             "mail_contenu": "",
+            "mail_html": "",
             "pieces_jointes": []
         }
         demandes.append(new_demande)
