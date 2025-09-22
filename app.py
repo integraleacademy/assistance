@@ -40,9 +40,69 @@ def supprimer_fichier(filename):
         os.remove(chemin)
 
 # -----------------------
-# Mail "Traité" (avec toutes les PJ stockées)
+# Mails (admin, accusé, confirmé)
 # -----------------------
+def envoyer_mail_admin(demande):
+    """Mail aux admins à chaque nouvelle demande"""
+    sujet = f"Nouvelle demande stagiaire - {demande['motif']}"
+    contenu = f"""
+    Nouvelle demande reçue :
+
+    Nom : {demande['nom']}
+    Prénom : {demande['prenom']}
+    Téléphone : {demande['telephone']}
+    Email : {demande['mail']}
+    Motif : {demande['motif']}
+    Détails : {demande['details']}
+    Date : {demande['date']}
+    """
+
+    if demande.get("justificatif"):
+        contenu += f"\nJustificatif : {url_for('download_file', filename=demande['justificatif'], _external=True)}"
+
+    msg = MIMEText(contenu, "plain", "utf-8")
+    msg["Subject"] = sujet
+    msg["From"] = os.getenv("SMTP_USER")
+    # adapte si tu veux plusieurs destinataires
+    msg["To"] = "elsaduq83@gmail.com, ecole@integraleacademy.com"
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
+            serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+            serveur.send_message(msg)
+        print("✅ Mail envoyé aux admins")
+    except Exception as e:
+        print("❌ Erreur envoi mail admin :", e)
+
+def envoyer_mail_accuse(demande):
+    """Accusé de réception au stagiaire"""
+    sujet = "Accusé de réception - Intégrale Academy"
+    contenu = f"""
+    Bonjour {demande['prenom']} {demande['nom']},
+
+    📩 Nous avons bien reçu votre demande.
+    ⏳ Elle sera traitée dans les meilleurs délais.
+    ✅ Vous recevrez un mail lorsque votre demande aura été traitée.
+
+    Merci à vous,
+    L'équipe Intégrale Academy
+    """
+
+    msg = MIMEText(contenu, "plain", "utf-8")
+    msg["Subject"] = sujet
+    msg["From"] = os.getenv("SMTP_USER")
+    msg["To"] = demande["mail"]
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
+            serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+            serveur.send_message(msg)
+        print(f"✅ Accusé de réception envoyé à {demande['mail']}")
+    except Exception as e:
+        print("❌ Erreur envoi mail accusé :", e)
+
 def envoyer_mail_confirmation(demande):
+    """Mail de confirmation avec TOUTES les PJ sauvegardées pour la demande"""
     sujet = "Votre demande a été traitée - Intégrale Academy"
     contenu = f"""
     Bonjour {demande['prenom']} {demande['nom']},
@@ -53,7 +113,7 @@ def envoyer_mail_confirmation(demande):
     📝 Détails : {demande['details']}
     💬 Commentaire : {demande['commentaire'] if demande.get('commentaire') else "Aucun commentaire ajouté."}
 
-    Cordialement,  
+    Cordialement,
     L'équipe Intégrale Academy
     """
 
@@ -78,7 +138,7 @@ def envoyer_mail_confirmation(demande):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
-        print(f"✅ Mail envoyé à {demande['mail']}")
+        print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
         return True
     except Exception as e:
         print("❌ Erreur envoi mail confirmation :", e)
@@ -122,6 +182,10 @@ def index():
         demandes.append(new_demande)
         save_data(data)
 
+        # ✅ rétabli : envoi admin + accusé de réception
+        envoyer_mail_admin(new_demande)
+        envoyer_mail_accuse(new_demande)
+
         return render_template("confirmation.html")
     return render_template("index.html")
 
@@ -131,12 +195,9 @@ def admin():
     demandes = data["demandes"]
 
     if request.method == "POST":
-        # Supporte soit 'action' classique, soit un bouton "delete_pj" dédié
         action = request.form.get("action")
         if not action and request.form.get("delete_pj"):
             action = "delete_pj"
-            request.form = request.form.copy()
-            request.form["pj_name"] = request.form.get("delete_pj")
 
         demande_id = request.form.get("id")
 
@@ -177,7 +238,7 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete_pj":
-            pj_name = request.form.get("pj_name")
+            pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
             for d in demandes:
                 if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
                     d["pieces_jointes"].remove(pj_name)
@@ -186,7 +247,7 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete":
-            # Supprime les fichiers (justificatif + toutes les PJ), puis la demande
+            # Supprime justificatif + toutes les PJ, puis la demande
             to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
@@ -203,6 +264,12 @@ def admin():
     return render_template("admin.html",
                            demandes=demandes,
                            compteur_traitees=data["compteur_traitees"])
+
+@app.route("/imprimer/<demande_id>")
+def imprimer(demande_id):
+    data = load_data()
+    demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
+    return render_template("imprimer.html", demande=demande)
 
 @app.route("/uploads/<filename>")
 def download_file(filename):
