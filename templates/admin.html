@@ -52,6 +52,7 @@
             </tr>
             {% for d in demandes %}
             <tr>
+                <!-- ✅ enctype ajouté -->
                 <form method="POST" enctype="multipart/form-data">
                     <td>{{ d.nom }}</td>
                     <td>{{ d.prenom }}</td>
@@ -141,4 +142,20 @@
     function openCommentModal(demandeId, commentaire) {
         currentCommentId = demandeId;
         document.getElementById("modalComment").value = commentaire;
-        document.getElementById("commentModal").style.display =
+        document.getElementById("commentModal").style.display = "block";
+    }
+
+    function closeCommentModal() {
+        document.getElementById("commentModal").style.display = "none";
+    }
+
+    function saveComment() {
+        if (currentCommentId) {
+            let newComment = document.getElementById("modalComment").value;
+            document.getElementById("commentaire-" + currentCommentId).value = newComment;
+        }
+        closeCommentModal();
+    }
+    </script>
+</body>
+</html>
