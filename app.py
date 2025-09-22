@@ -46,7 +46,7 @@ def supprimer_fichier(filename):
 # Email helper: HTML + texte + logo inline + PJ
 # -------------------------------------------------------------------
 def _build_brand_header():
-    # Couleurs en cohérence avec ton admin (jaune #f4c45a, bleu liens)
+    # Couleurs cohérentes (jaune #f4c45a, liens bleus)
     return """
     <div style="padding:16px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:12px;">
       <img src="cid:logo_cid" alt="Intégrale Academy" style="height:40px;display:block;">
@@ -96,27 +96,22 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         + pièces jointes
     + logo inline (cid:logo_cid) si dispo.
     """
-    # Top-level: mixed
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
     msg["To"] = to_emails
 
-    # related (pour inline images)
     related = MIMEMultipart("related")
     msg.attach(related)
 
-    # alternative (texte + html)
     alt = MIMEMultipart("alternative")
     related.attach(alt)
 
     alt.attach(MIMEText(plain_text, "plain", "utf-8"))
     alt.attach(MIMEText(html_body, "html", "utf-8"))
 
-    # logo inline
     _attach_logo(related)
 
-    # pièces jointes (optionnel)
     if attachments_paths:
         for chemin in attachments_paths:
             if not chemin or not os.path.exists(chemin):
@@ -128,7 +123,6 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
                 part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(chemin)}")
                 msg.attach(part)
 
-    # envoi
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
@@ -142,38 +136,38 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
 # Emails (admin, accusé de réception, confirmation traité avec PJ)
 # -------------------------------------------------------------------
 def envoyer_mail_admin(demande):
-    sujet = f"Nouvelle demande stagiaire — {demande['motif']}"
-    # Texte brut (fallback)
+    sujet = f"🆕 Nouvelle demande stagiaire — {demande['motif']}"
+    # Texte brut (fallback) avec emojis
     plain = (
-        "Nouvelle demande reçue :\n\n"
-        f"Nom: {demande['nom']}\n"
-        f"Prénom: {demande['prenom']}\n"
-        f"Téléphone: {demande['telephone']}\n"
-        f"Email: {demande['mail']}\n"
-        f"Motif: {demande['motif']}\n"
-        f"Détails: {demande['details']}\n"
-        f"Date: {demande['date']}\n"
+        "🆕 Nouvelle demande reçue :\n\n"
+        f"👤 Nom: {demande['nom']}\n"
+        f"👤 Prénom: {demande['prenom']}\n"
+        f"📞 Téléphone: {demande['telephone']}\n"
+        f"✉️ Email: {demande['mail']}\n"
+        f"📌 Motif: {demande['motif']}\n"
+        f"📝 Détails: {demande['details']}\n"
+        f"📅 Date: {demande['date']}\n"
     )
     if demande.get("justificatif"):
-        plain += f"Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
+        plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
     # HTML
     details_rows = f"""
-      <tr><td style="padding:6px 0;color:#555;">Nom</td><td style="padding:6px 0;"><strong>{demande['nom']}</strong></td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Prénom</td><td style="padding:6px 0;"><strong>{demande['prenom']}</strong></td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Téléphone</td><td style="padding:6px 0;">{demande['telephone']}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Email</td><td style="padding:6px 0;">{demande['mail']}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Motif</td><td style="padding:6px 0;">{demande['motif']}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Détails</td><td style="padding:6px 0;">{demande['details']}</td></tr>
-      <tr><td style="padding:6px 0;color:#555;">Date</td><td style="padding:6px 0;">{demande['date']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">👤 Nom</td><td style="padding:6px 0;"><strong>{demande['nom']}</strong></td></tr>
+      <tr><td style="padding:6px 0;color:#555;">👤 Prénom</td><td style="padding:6px 0;"><strong>{demande['prenom']}</strong></td></tr>
+      <tr><td style="padding:6px 0;color:#555;">📞 Téléphone</td><td style="padding:6px 0;">{demande['telephone']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">✉️ Email</td><td style="padding:6px 0;">{demande['mail']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">📌 Motif</td><td style="padding:6px 0;">{demande['motif']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">📝 Détails</td><td style="padding:6px 0;">{demande['details']}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">📅 Date</td><td style="padding:6px 0;">{demande['date']}</td></tr>
     """
     if demande.get("justificatif"):
         link = url_for('download_file', filename=demande['justificatif'], _external=True)
-        details_rows += f"""<tr><td style="padding:6px 0;color:#555;">Justificatif</td>
-                            <td style="padding:6px 0;"><a href="{link}" style="color:#0d6efd;text-decoration:none;">📎 Télécharger</a></td></tr>"""
+        details_rows += f"""<tr><td style="padding:6px 0;color:#555;">📎 Justificatif</td>
+                            <td style="padding:6px 0;"><a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a></td></tr>"""
 
     html = _wrap_html(
-        '<h1 style="margin:0 0 12px;font-size:20px;">Nouvelle demande stagiaire</h1>',
+        '<h1 style="margin:0 0 12px;font-size:20px;">🆕 Nouvelle demande stagiaire</h1>',
         f"""
         <p style="margin:0 0 12px;">Une nouvelle demande a été soumise sur le site.</p>
         <table style="width:100%;border-collapse:collapse;font-size:14px;">{details_rows}</table>
@@ -190,20 +184,23 @@ def envoyer_mail_admin(demande):
     print("✅ Mail admin envoyé" if ok else "❌ Échec mail admin")
 
 def envoyer_mail_accuse(demande):
-    sujet = "Accusé de réception — Intégrale Academy"
+    sujet = "📩 Accusé de réception — Intégrale Academy"
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
-        "Nous avons bien reçu votre demande.\n"
-        "Elle sera traitée dans les meilleurs délais.\n"
-        "Vous recevrez un mail lorsque votre demande aura été traitée.\n\n"
+        "📩 Nous avons bien reçu votre demande.\n"
+        "⏳ Elle sera traitée dans les meilleurs délais.\n"
+        "✅ Vous recevrez un mail lorsque votre demande aura été traitée.\n\n"
+        "🙏 Merci de votre confiance,\n"
         "L'équipe Intégrale Academy\n"
     )
     html = _wrap_html(
-        '<h1 style="margin:0 0 12px;font-size:20px;">Accusé de réception</h1>',
+        '<h1 style="margin:0 0 12px;font-size:20px;">📩 Accusé de réception</h1>',
         f"""
         <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
-        <p>Nous avons bien reçu votre demande. Elle sera traitée dans les meilleurs délais.</p>
-        <p style="margin:0">Vous recevrez un mail lorsque votre demande aura été traitée.</p>
+        <p>📩 Nous avons bien reçu votre demande.</p>
+        <p>⏳ Elle sera traitée dans les meilleurs délais.</p>
+        <p style="margin:0">✅ Vous recevrez un mail lorsque votre demande aura été traitée.</p>
+        <p style="margin:16px 0 0;">🙏 Merci de votre confiance,<br>L'équipe Intégrale Academy</p>
         """
     )
 
@@ -218,33 +215,32 @@ def envoyer_mail_accuse(demande):
 
 def envoyer_mail_confirmation(demande):
     """Mail 'Traité' avec toutes les PJ sauvegardées + stockage du HTML pour /voir_mail"""
-    sujet = "Votre demande a été traitée — Intégrale Academy"
+    sujet = "✅ Votre demande a été traitée — Intégrale Academy"
 
-    # Fallback texte
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
-        "Votre demande a été traitée.\n\n"
-        f"Motif : {demande['motif']}\n"
-        f"Détails : {demande['details']}\n"
-        f"Commentaire : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n\n"
+        "✅ Votre demande a été traitée.\n\n"
+        f"📌 Motif : {demande['motif']}\n"
+        f"📝 Détails : {demande['details']}\n"
+        f"💬 Commentaire : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
+        f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
+        "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
 
-    # HTML
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
-      <p style="margin:0 0 8px;">✅ Votre demande a été traitée.</p>
+      <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
       <div style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;padding:12px 14px;margin:12px 0;">
-        <div style="margin:4px 0;"><strong>Motif :</strong> {demande['motif']}</div>
-        <div style="margin:4px 0;"><strong>Détails :</strong> {demande['details']}</div>
-        <div style="margin:4px 0;"><strong>Commentaire :</strong> {demande.get('commentaire') or 'Aucun commentaire ajouté.'}</div>
+        <div style="margin:4px 0;"><strong>📌 Motif :</strong> {demande['motif']}</div>
+        <div style="margin:4px 0;"><strong>📝 Détails :</strong> {demande['details']}</div>
+        <div style="margin:4px 0;"><strong>💬 Commentaire :</strong> {demande.get('commentaire') or 'Aucun commentaire ajouté.'}</div>
       </div>
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
-    html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">Demande traitée</h1>', body_html)
+    html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
-    # Prépare les chemins de PJ
     pj_paths = []
     for pj in demande.get("pieces_jointes", []):
         chemin = os.path.join(UPLOAD_FOLDER, pj)
@@ -260,7 +256,6 @@ def envoyer_mail_confirmation(demande):
     )
 
     if ok:
-        # Conserver un aperçu pour /voir_mail
         demande["mail_contenu"] = f"Sujet : {sujet}\n\n{plain}"
         demande["mail_html"] = html
     return ok
@@ -319,7 +314,6 @@ def admin():
 
     if request.method == "POST":
         action = request.form.get("action")
-        # si clic sur le bouton de suppression PJ (name="delete_pj" value="nom.ext")
         if not action and request.form.get("delete_pj"):
             action = "delete_pj"
 
@@ -346,7 +340,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # Envoi du mail si changement vers "Traité"
+                    # Envoi du mail si passage à "Traité"
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
