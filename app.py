@@ -12,9 +12,8 @@ DATA_FILE = "/mnt/data/data.json"
 UPLOAD_FOLDER = "/mnt/data/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-
 # -----------------------
-# Fonctions utilitaires
+# Utils
 # -----------------------
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -28,21 +27,20 @@ def load_data():
                 return {"demandes": data, "compteur_traitees": 0}
     return {"demandes": [], "compteur_traitees": 0}
 
-
 def save_data(data):
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-
 def supprimer_fichier(filename):
+    if not filename:
+        return
     chemin = os.path.join(UPLOAD_FOLDER, filename)
     if os.path.exists(chemin):
         os.remove(chemin)
 
-
 # -----------------------
-# Mails
+# Mail "Traité" (avec toutes les PJ stockées)
 # -----------------------
 def envoyer_mail_confirmation(demande):
     sujet = "Votre demande a été traitée - Intégrale Academy"
@@ -65,17 +63,16 @@ def envoyer_mail_confirmation(demande):
     msg["From"] = os.getenv("SMTP_USER")
     msg["To"] = demande["mail"]
 
-    # joindre toutes les PJ enregistrées
-    if demande.get("pieces_jointes"):
-        for pj in demande["pieces_jointes"]:
-            chemin = os.path.join(UPLOAD_FOLDER, pj)
-            if os.path.exists(chemin):
-                with open(chemin, "rb") as f:
-                    part = MIMEBase("application", "octet-stream")
-                    part.set_payload(f.read())
-                    encoders.encode_base64(part)
-                    part.add_header("Content-Disposition", f"attachment; filename={pj}")
-                    msg.attach(part)
+    # Joindre toutes les PJ sauvegardées
+    for pj in demande.get("pieces_jointes", []):
+        chemin = os.path.join(UPLOAD_FOLDER, pj)
+        if os.path.exists(chemin):
+            with open(chemin, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"attachment; filename={pj}")
+                msg.attach(part)
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
@@ -86,7 +83,6 @@ def envoyer_mail_confirmation(demande):
     except Exception as e:
         print("❌ Erreur envoi mail confirmation :", e)
         return False
-
 
 # -----------------------
 # Routes
@@ -101,7 +97,7 @@ def index():
         justificatif_filename = ""
         if "justificatif" in request.files:
             f = request.files["justificatif"]
-            if f and f.filename != "":
+            if f and f.filename:
                 filename = secure_filename(f.filename)
                 f.save(os.path.join(UPLOAD_FOLDER, filename))
                 justificatif_filename = filename
@@ -129,14 +125,19 @@ def index():
         return render_template("confirmation.html")
     return render_template("index.html")
 
-
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     data = load_data()
     demandes = data["demandes"]
 
     if request.method == "POST":
+        # Supporte soit 'action' classique, soit un bouton "delete_pj" dédié
         action = request.form.get("action")
+        if not action and request.form.get("delete_pj"):
+            action = "delete_pj"
+            request.form = request.form.copy()
+            request.form["pj_name"] = request.form.get("delete_pj")
+
         demande_id = request.form.get("id")
 
         if action == "update":
@@ -145,23 +146,28 @@ def admin():
                     d["mail"] = request.form.get("mail") or d["mail"]
                     d["details"] = request.form.get("details")
                     d["commentaire"] = request.form.get("commentaire")
-                    nouveau_statut = request.form.get("statut") or d["statut"]
+                    d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
+                    ancien_statut = d.get("statut", "Non traité")
+                    nouveau_statut = request.form.get("statut") or ancien_statut
 
-                    # ajout de PJ
+                    # Ajout de PJ persistantes
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
                                 filename = secure_filename(f.filename)
                                 filepath = os.path.join(UPLOAD_FOLDER, filename)
                                 f.save(filepath)
+                                d.setdefault("pieces_jointes", [])
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # envoi mail si traité
-                    if d["statut"] != "Traité" and nouveau_statut == "Traité":
+                    # Envoi du mail si on passe à "Traité"
+                    if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
-                            d["mail_confirme"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                            paris_tz = pytz.timezone("Europe/Paris")
+                            d["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+                            d["mail_erreur"] = ""
                         else:
                             d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
 
@@ -180,28 +186,27 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete":
-            demande_to_delete = None
+            # Supprime les fichiers (justificatif + toutes les PJ), puis la demande
+            to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
-                    demande_to_delete = d
+                    to_remove = d
                     break
-            if demande_to_delete:
-                if demande_to_delete.get("justificatif"):
-                    supprimer_fichier(demande_to_delete["justificatif"])
-                for pj in demande_to_delete.get("pieces_jointes", []):
+            if to_remove:
+                supprimer_fichier(to_remove.get("justificatif"))
+                for pj in to_remove.get("pieces_jointes", []):
                     supprimer_fichier(pj)
-                data["demandes"].remove(demande_to_delete)
+                data["demandes"].remove(to_remove)
                 save_data(data)
             return redirect(url_for("admin"))
 
-    return render_template("admin.html", demandes=demandes,
+    return render_template("admin.html",
+                           demandes=demandes,
                            compteur_traitees=data["compteur_traitees"])
-
 
 @app.route("/uploads/<filename>")
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
-
 
 if __name__ == "__main__":
     app.run(debug=True)
