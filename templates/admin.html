@@ -19,9 +19,6 @@
         .print {background-color: #0d6efd; color: white; text-decoration: none; display: inline-block;}
         .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
         .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
-        .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
-        .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
-        .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
     </style>
 </head>
 <body>
@@ -38,124 +35,60 @@
             <tr>
                 <th>Nom</th>
                 <th>Prénom</th>
-                <th>Téléphone</th>
                 <th>Email</th>
                 <th>Motif</th>
                 <th>Détails</th>
                 <th>Justificatif</th>
+                <th>Pièces jointes</th>
                 <th>Date</th>
-                <th>Attribué à</th>
                 <th>Statut</th>
                 <th>Commentaire</th>
-                <th>Pièces jointes (à envoyer)</th>
                 <th>Actions</th>
             </tr>
             {% for d in demandes %}
             <tr>
-                <!-- ✅ enctype ajouté -->
                 <form method="POST" enctype="multipart/form-data">
                     <td>{{ d.nom }}</td>
                     <td>{{ d.prenom }}</td>
-                    <td>{{ d.telephone }}</td>
-                    <td>
-                        <input type="text" name="mail" value="{{ d.mail }}" style="width:95%;">
-                    </td>
+                    <td><input type="text" name="mail" value="{{ d.mail }}"></td>
                     <td>{{ d.motif }}</td>
+                    <td><textarea name="details" rows="3">{{ d.details }}</textarea></td>
                     <td>
-                        <textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea>
+                        {% if d.justificatif %}
+                            <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
+                        {% else %}-{% endif %}
                     </td>
                     <td>
-                        {% if d.justificatif and d.justificatif != "" %}
-                            <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
+                        {% if d.pieces_jointes %}
+                            {% for pj in d.pieces_jointes %}
+                                <div>
+                                    <a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>
+                                    <button type="submit" name="action" value="delete_pj" style="background:red;color:white;">❌</button>
+                                    <input type="hidden" name="pj_name" value="{{ pj }}">
+                                </div>
+                            {% endfor %}
                         {% else %}
                             -
                         {% endif %}
+                        <input type="file" name="pj" multiple>
                     </td>
                     <td>{{ d.date }}</td>
                     <td>
-                        <select name="attribution">
-                            <option value="">--</option>
-                            <option value="Elsa" {% if d.attribution == "Elsa" %}selected{% endif %}>Elsa</option>
-                            <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
-                        </select>
-                    </td>
-                    <td>
-                        {% if d.statut == "Non traité" %}
-                            <span class="status-red">Non traité</span>
-                        {% else %}
-                            <span class="status-green">Traité</span>
-                        {% endif %}
-                        <select name="statut" style="margin-top:5px;">
+                        <select name="statut">
                             <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
                             <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
                         </select>
-
-                        {% if d.mail_confirme %}
-                            <div style="font-size:12px; margin-top:4px;">
-                                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
-                                    ✅ Mail envoyé le {{ d.mail_confirme }}
-                                </a>
-                            </div>
-                        {% elif d.mail_erreur %}
-                            <div style="font-size:12px; color:#dc3545; margin-top:4px;">
-                                {{ d.mail_erreur }}
-                            </div>
-                        {% endif %}
                     </td>
-                    <td>
-                        <button type="button" class="comment-btn" 
-                                onclick="event.preventDefault(); openCommentModal('{{ d.id }}', `{{ d.commentaire|escape }}`)">
-                            ✏️ Ajouter / Modifier
-                        </button>
-                        <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
-                    </td>
-                    <td>
-                        <input type="file" name="pj" multiple>
-                    </td>
+                    <td><textarea name="commentaire">{{ d.commentaire }}</textarea></td>
                     <td class="actions">
                         <input type="hidden" name="id" value="{{ d.id }}">
                         <button type="submit" name="action" value="update" class="save">💾</button>
-                        <button type="submit" name="action" value="delete" class="delete">🗑️</button>
-                        <a href="/imprimer/{{ d.id }}" target="_blank" class="print">🖨️</a>
+                        <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('Supprimer la demande ?')">🗑️</button>
                     </td>
                 </form>
             </tr>
             {% endfor %}
         </table>
     </div>
-
-    <!-- Fenêtre modale -->
-    <div id="commentModal" class="modal">
-        <div class="modal-content">
-            <h3>📝 Commentaire</h3>
-            <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
-            <div style="margin-top:10px; text-align:right;">
-                <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
-                <button type="button" onclick="saveComment()">💾 Enregistrer</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-    let currentCommentId = null;
-
-    function openCommentModal(demandeId, commentaire) {
-        currentCommentId = demandeId;
-        document.getElementById("modalComment").value = commentaire;
-        document.getElementById("commentModal").style.display = "block";
-    }
-
-    function closeCommentModal() {
-        document.getElementById("commentModal").style.display = "none";
-    }
-
-    function saveComment() {
-        if (currentCommentId) {
-            let newComment = document.getElementById("modalComment").value;
-            document.getElementById("commentaire-" + currentCommentId).value = newComment;
-        }
-        closeCommentModal();
-    }
-    </script>
 </body>
 </html>
