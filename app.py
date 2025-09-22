@@ -26,6 +26,7 @@ def load_data():
                 data.setdefault("compteur_traitees", 0)
                 return data
             else:
+                # compat ancien format (liste brute)
                 return {"demandes": data, "compteur_traitees": 0}
     return {"demandes": [], "compteur_traitees": 0}
 
@@ -45,22 +46,22 @@ def supprimer_fichier(filename):
 # Email helper: HTML responsive (tables) + texte + logo inline + PJ
 # -------------------------------------------------------------------
 def _brand_header_table():
-    """Header en <table> (compatible clients email) + logo inline."""
+    """Header en <table> (compatible email) avec logo compact centré."""
     return """
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
         <tr>
-          <td align="center" style="padding:0;margin:0;">
+          <td align="center" style="padding:16px 16px 8px 16px;margin:0;">
             <img src="cid:logo_cid" alt="Intégrale Academy"
-                 style="display:block;width:100%;max-width:600px;height:auto;">
+                 height="56"
+                 style="display:block;height:56px;width:auto;max-width:220px;">
           </td>
         </tr>
         <tr>
-          <td align="center" style="padding:10px 16px 0 16px;margin:0;
-                                    font-weight:700;font-size:18px;color:#111;">
+          <td align="center" style="padding:0 16px 10px 16px;margin:0;
+                                    font-weight:700;font-size:16px;color:#111;">
             Intégrale Academy
           </td>
         </tr>
-        <tr><td style="height:10px;line-height:10px;font-size:0;">&nbsp;</td></tr>
         <tr><td style="border-bottom:1px solid #f0f0f0;"></td></tr>
       </table>
     """
@@ -356,6 +357,7 @@ def admin():
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
+                    # Ajout de PJ persistantes
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -366,6 +368,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
+                    # Passage à "Traité" => envoi mail + compteur
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -390,6 +393,7 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete":
+            # Supprime justificatif + toutes les PJ, puis la demande
             to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
