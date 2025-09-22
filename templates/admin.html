@@ -22,6 +22,8 @@
         .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
         .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
         .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
+        .pj-item {display:flex; align-items:center; gap:6px; justify-content:center; margin-bottom:4px;}
+        .btn-del-pj {background:#dc3545;color:#fff;border:none;border-radius:4px;cursor:pointer;padding:2px 6px;}
     </style>
 </head>
 <body>
@@ -51,24 +53,31 @@
             </tr>
             {% for d in demandes %}
             <tr>
+                <!-- Un formulaire par ligne -->
                 <form method="POST" enctype="multipart/form-data">
                     <td>{{ d.nom }}</td>
                     <td>{{ d.prenom }}</td>
                     <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
                     <td>{{ d.motif }}</td>
                     <td><textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea></td>
+
+                    <!-- Justificatif -->
                     <td>
                         {% if d.justificatif %}
                             <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
-                        {% else %}-{% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
                     </td>
+
+                    <!-- Pièces jointes -->
                     <td>
                         {% if d.pieces_jointes %}
                             {% for pj in d.pieces_jointes %}
-                                <div>
+                                <div class="pj-item">
                                     <a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>
-                                    <button type="submit" name="action" value="delete_pj" style="background:#dc3545;color:white;border:none;border-radius:4px;cursor:pointer;">❌</button>
-                                    <input type="hidden" name="pj_name" value="{{ pj }}">
+                                    <!-- Bouton supprimer PJ (sans casser la mise en page) -->
+                                    <button type="submit" name="delete_pj" value="{{ pj }}" class="btn-del-pj" title="Supprimer cette PJ">❌</button>
                                 </div>
                             {% endfor %}
                         {% else %}
@@ -76,7 +85,19 @@
                         {% endif %}
                         <input type="file" name="pj" multiple>
                     </td>
+
                     <td>{{ d.date }}</td>
+
+                    <!-- Attribué à (REMIS à sa place pour éviter le décalage) -->
+                    <td>
+                        <select name="attribution">
+                            <option value="">--</option>
+                            <option value="Elsa" {% if d.attribution == "Elsa" %}selected{% endif %}>Elsa</option>
+                            <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
+                        </select>
+                    </td>
+
+                    <!-- Statut -->
                     <td>
                         {% if d.statut == "Non traité" %}
                             <span class="status-red">Non traité</span>
@@ -88,17 +109,21 @@
                             <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
                         </select>
                     </td>
+
+                    <!-- Commentaire via modale (comme avant) -->
                     <td>
-                        <button type="button" class="comment-btn" 
+                        <button type="button" class="comment-btn"
                                 onclick="event.preventDefault(); openCommentModal('{{ d.id }}', `{{ d.commentaire|escape }}`)">
                             ✏️ Ajouter / Modifier
                         </button>
                         <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
                     </td>
+
+                    <!-- Actions -->
                     <td class="actions">
                         <input type="hidden" name="id" value="{{ d.id }}">
                         <button type="submit" name="action" value="update" class="save">💾</button>
-                        <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('Supprimer la demande ?')">🗑️</button>
+                        <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('Supprimer la demande et ses fichiers ?')">🗑️</button>
                         <a href="/imprimer/{{ d.id }}" target="_blank" class="print">🖨️</a>
                     </td>
                 </form>
@@ -107,7 +132,7 @@
         </table>
     </div>
 
-    <!-- Fenêtre modale commentaire -->
+    <!-- Fenêtre modale commentaire (identique à avant) -->
     <div id="commentModal" class="modal">
         <div class="modal-content">
             <h3>📝 Commentaire</h3>
@@ -127,11 +152,9 @@
         document.getElementById("modalComment").value = commentaire;
         document.getElementById("commentModal").style.display = "block";
     }
-
     function closeCommentModal() {
         document.getElementById("commentModal").style.display = "none";
     }
-
     function saveComment() {
         if (currentCommentId) {
             let newComment = document.getElementById("modalComment").value;
