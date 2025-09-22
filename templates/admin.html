@@ -23,17 +23,23 @@
         .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
         .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
 
-        /* --- Amélioration visuelle de la colonne PJ --- */
-        .pj-cell {min-width: 220px;}
-        .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;}
-        .pj-chip {display: inline-flex; align-items: center; gap: 6px; max-width: 200px;
-                  padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa;}
-        .pj-name {display: inline-block; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-                  color: #0d6efd; text-decoration: none;}
-        .pj-del {background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer;
-                 line-height: 1; padding: 0 4px;}
+        /* ===== Amélioration visuelle & anti-débordement pour la colonne PJ ===== */
+        td, th { position: relative; } /* aide à clipper proprement */
+        .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}      /* la cellule clippe tout dépassement */
+        .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
+        .pj-chip {
+            display: flex; align-items: center; gap: 6px;
+            max-width: 100%; min-width: 0;              /* ne dépasse jamais la cellule */
+            padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa;
+        }
+        .pj-name {
+            flex: 1 1 auto; min-width: 0;               /* autorise l’ellipse */
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            color: #0d6efd; text-decoration: none;
+        }
+        .pj-del {flex: 0 0 auto; background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer; line-height: 1; padding: 0 4px;}
         .pj-empty {color:#999; font-size:12px;}
-        .pj-input {margin-top:6px;}
+        .pj-input {margin-top:6px; width: 95%;}
     </style>
 </head>
 <body>
@@ -80,7 +86,7 @@
                         {% endif %}
                     </td>
 
-                    <!-- Pièces jointes (beaux "chips") -->
+                    <!-- Pièces jointes (chips responsives, ellipsis, pas de dépassement) -->
                     <td class="pj-cell">
                         <div class="pj-wrap">
                             {% if d.pieces_jointes and d.pieces_jointes|length > 0 %}
