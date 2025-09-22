@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory, url_for
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -20,13 +20,13 @@ def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, dict):  # nouvelle structure
+            if isinstance(data, dict):
                 if "demandes" not in data:
                     data["demandes"] = []
                 if "compteur_traitees" not in data:
                     data["compteur_traitees"] = 0
                 return data
-            else:  # compatibilité ancien format (liste seule)
+            else:
                 return {"demandes": data, "compteur_traitees": 0}
     return {"demandes": [], "compteur_traitees": 0}
 
@@ -213,6 +213,7 @@ def admin():
                                 f.save(filepath)
                                 fichiers_pj.append(filepath)
 
+                    # envoi du mail si statut passe en Traité
                     if d["statut"] != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d, fichiers_pj):
                             data["compteur_traitees"] += 1
@@ -225,10 +226,12 @@ def admin():
                     d["statut"] = nouveau_statut
 
             save_data(data)
+            return redirect(url_for("admin"))  # ✅ recharge après update
 
         elif action == "delete":
             data["demandes"] = [d for d in demandes if d["id"] != demande_id]
             save_data(data)
+            return redirect(url_for("admin"))  # ✅ recharge après suppression
 
     return render_template("admin.html", demandes=demandes,
                            compteur_traitees=data["compteur_traitees"])
