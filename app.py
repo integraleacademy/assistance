@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect
 import json, os, datetime, uuid, pytz, smtplib
-from email.mime.text import MIMEText
+from email.mime_text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
@@ -43,7 +43,6 @@ def supprimer_fichier(filename):
 # Mails (admin, accusé, confirmé)
 # -----------------------
 def envoyer_mail_admin(demande):
-    """Mail aux admins à chaque nouvelle demande"""
     sujet = f"Nouvelle demande stagiaire - {demande['motif']}"
     contenu = f"""
     Nouvelle demande reçue :
@@ -56,14 +55,12 @@ def envoyer_mail_admin(demande):
     Détails : {demande['details']}
     Date : {demande['date']}
     """
-
     if demande.get("justificatif"):
         contenu += f"\nJustificatif : {url_for('download_file', filename=demande['justificatif'], _external=True)}"
 
     msg = MIMEText(contenu, "plain", "utf-8")
     msg["Subject"] = sujet
     msg["From"] = os.getenv("SMTP_USER")
-    # adapte si tu veux plusieurs destinataires
     msg["To"] = "elsaduq83@gmail.com, ecole@integraleacademy.com"
 
     try:
@@ -75,7 +72,6 @@ def envoyer_mail_admin(demande):
         print("❌ Erreur envoi mail admin :", e)
 
 def envoyer_mail_accuse(demande):
-    """Accusé de réception au stagiaire"""
     sujet = "Accusé de réception - Intégrale Academy"
     contenu = f"""
     Bonjour {demande['prenom']} {demande['nom']},
@@ -87,7 +83,6 @@ def envoyer_mail_accuse(demande):
     Merci à vous,
     L'équipe Intégrale Academy
     """
-
     msg = MIMEText(contenu, "plain", "utf-8")
     msg["Subject"] = sujet
     msg["From"] = os.getenv("SMTP_USER")
@@ -102,7 +97,7 @@ def envoyer_mail_accuse(demande):
         print("❌ Erreur envoi mail accusé :", e)
 
 def envoyer_mail_confirmation(demande):
-    """Mail de confirmation avec TOUTES les PJ sauvegardées pour la demande"""
+    """Mail de confirmation avec TOUTES les PJ sauvegardées pour la demande + stockage du contenu pour 'voir le mail'"""
     sujet = "Votre demande a été traitée - Intégrale Academy"
     contenu = f"""
     Bonjour {demande['prenom']} {demande['nom']},
@@ -123,7 +118,6 @@ def envoyer_mail_confirmation(demande):
     msg["From"] = os.getenv("SMTP_USER")
     msg["To"] = demande["mail"]
 
-    # Joindre toutes les PJ sauvegardées
     for pj in demande.get("pieces_jointes", []):
         chemin = os.path.join(UPLOAD_FOLDER, pj)
         if os.path.exists(chemin):
@@ -139,6 +133,8 @@ def envoyer_mail_confirmation(demande):
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
         print(f"✅ Mail de confirmation envoyé à {demande['mail']}")
+        # 🔥 on garde une copie affichable
+        demande["mail_contenu"] = f"Sujet : {sujet}\n\n{contenu}"
         return True
     except Exception as e:
         print("❌ Erreur envoi mail confirmation :", e)
@@ -177,12 +173,13 @@ def index():
             "commentaire": "",
             "mail_confirme": "",
             "mail_erreur": "",
+            "mail_contenu": "",          # ✅ pour /voir_mail
             "pieces_jointes": []
         }
         demandes.append(new_demande)
         save_data(data)
 
-        # ✅ rétabli : envoi admin + accusé de réception
+        # mails rétablis
         envoyer_mail_admin(new_demande)
         envoyer_mail_accuse(new_demande)
 
@@ -222,7 +219,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # Envoi du mail si on passe à "Traité"
+                    # Envoi du mail si on passe à "Traité" (et stocke le contenu pour /voir_mail)
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -247,7 +244,7 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete":
-            # Supprime justificatif + toutes les PJ, puis la demande
+            # supprime justificatif + PJ, puis la demande
             to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
@@ -274,6 +271,13 @@ def imprimer(demande_id):
 @app.route("/uploads/<filename>")
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+# ✅ Voir le contenu du mail envoyé
+@app.route("/voir_mail/<demande_id>")
+def voir_mail(demande_id):
+    data = load_data()
+    demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
+    return render_template("voir_mail.html", demande=demande)
 
 if __name__ == "__main__":
     app.run(debug=True)
