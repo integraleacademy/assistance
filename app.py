@@ -12,6 +12,7 @@ DATA_FILE = "/mnt/data/data.json"
 UPLOAD_FOLDER = "/mnt/data/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+
 # -----------------------
 # Fonctions utilitaires
 # -----------------------
@@ -27,15 +28,18 @@ def load_data():
                 return {"demandes": data, "compteur_traitees": 0}
     return {"demandes": [], "compteur_traitees": 0}
 
+
 def save_data(data):
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+
 def supprimer_fichier(filename):
     chemin = os.path.join(UPLOAD_FOLDER, filename)
     if os.path.exists(chemin):
         os.remove(chemin)
+
 
 # -----------------------
 # Mails
@@ -83,6 +87,7 @@ def envoyer_mail_confirmation(demande):
         print("❌ Erreur envoi mail confirmation :", e)
         return False
 
+
 # -----------------------
 # Routes
 # -----------------------
@@ -123,6 +128,7 @@ def index():
 
         return render_template("confirmation.html")
     return render_template("index.html")
+
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
@@ -180,7 +186,6 @@ def admin():
                     demande_to_delete = d
                     break
             if demande_to_delete:
-                # supprimer les fichiers liés
                 if demande_to_delete.get("justificatif"):
                     supprimer_fichier(demande_to_delete["justificatif"])
                 for pj in demande_to_delete.get("pieces_jointes", []):
@@ -192,9 +197,11 @@ def admin():
     return render_template("admin.html", demandes=demandes,
                            compteur_traitees=data["compteur_traitees"])
 
+
 @app.route("/uploads/<filename>")
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
