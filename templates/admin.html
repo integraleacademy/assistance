@@ -22,8 +22,18 @@
         .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
         .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
         .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
-        .pj-item {display:flex; align-items:center; gap:6px; justify-content:center; margin-bottom:4px;}
-        .btn-del-pj {background:#dc3545;color:#fff;border:none;border-radius:4px;cursor:pointer;padding:2px 6px;}
+
+        /* --- Amélioration visuelle de la colonne PJ --- */
+        .pj-cell {min-width: 220px;}
+        .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;}
+        .pj-chip {display: inline-flex; align-items: center; gap: 6px; max-width: 200px;
+                  padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa;}
+        .pj-name {display: inline-block; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                  color: #0d6efd; text-decoration: none;}
+        .pj-del {background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer;
+                 line-height: 1; padding: 0 4px;}
+        .pj-empty {color:#999; font-size:12px;}
+        .pj-input {margin-top:6px;}
     </style>
 </head>
 <body>
@@ -66,29 +76,32 @@
                         {% if d.justificatif %}
                             <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
                         {% else %}
-                            -
+                            <span class="pj-empty">—</span>
                         {% endif %}
                     </td>
 
-                    <!-- Pièces jointes -->
-                    <td>
-                        {% if d.pieces_jointes %}
-                            {% for pj in d.pieces_jointes %}
-                                <div class="pj-item">
-                                    <a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>
-                                    <!-- Bouton supprimer PJ (sans casser la mise en page) -->
-                                    <button type="submit" name="delete_pj" value="{{ pj }}" class="btn-del-pj" title="Supprimer cette PJ">❌</button>
-                                </div>
-                            {% endfor %}
-                        {% else %}
-                            -
-                        {% endif %}
-                        <input type="file" name="pj" multiple>
+                    <!-- Pièces jointes (beaux "chips") -->
+                    <td class="pj-cell">
+                        <div class="pj-wrap">
+                            {% if d.pieces_jointes and d.pieces_jointes|length > 0 %}
+                                {% for pj in d.pieces_jointes %}
+                                    <div class="pj-chip" title="{{ pj }}">
+                                        <span>📎</span>
+                                        <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
+                                        <!-- Supprimer cette PJ -->
+                                        <button type="submit" name="delete_pj" value="{{ pj }}" class="pj-del" title="Supprimer">×</button>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <span class="pj-empty">—</span>
+                            {% endif %}
+                        </div>
+                        <input type="file" name="pj" multiple class="pj-input">
                     </td>
 
                     <td>{{ d.date }}</td>
 
-                    <!-- Attribué à (REMIS à sa place pour éviter le décalage) -->
+                    <!-- Attribué à -->
                     <td>
                         <select name="attribution">
                             <option value="">--</option>
@@ -110,7 +123,7 @@
                         </select>
                     </td>
 
-                    <!-- Commentaire via modale (comme avant) -->
+                    <!-- Commentaire via modale -->
                     <td>
                         <button type="button" class="comment-btn"
                                 onclick="event.preventDefault(); openCommentModal('{{ d.id }}', `{{ d.commentaire|escape }}`)">
@@ -132,7 +145,7 @@
         </table>
     </div>
 
-    <!-- Fenêtre modale commentaire (identique à avant) -->
+    <!-- Fenêtre modale commentaire -->
     <div id="commentModal" class="modal">
         <div class="modal-content">
             <h3>📝 Commentaire</h3>
