@@ -156,16 +156,19 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
 def envoyer_mail_admin(demande):
     sujet = f"🆕 Nouvelle demande stagiaire — {demande['motif']}"
     plain = (
-        "Nouvelle demande reçue :\n\n"
-        f"Nom: {demande['nom']}\n"
-        f"Prénom: {demande['prenom']}\n"
-        f"Téléphone: {demande['telephone']}\n"
-        f"Email: {demande['mail']}\n"
-        f"Motif: {demande['motif']}\n"
-        f"Détails: {demande['details']}\n"
-        f"Date: {demande['date']}\n"
+        "🆕 Nouvelle demande reçue :\n\n"
+        f"👤 Nom: {demande['nom']}\n"
+        f"👤 Prénom: {demande['prenom']}\n"
+        f"📞 Téléphone: {demande['telephone']}\n"
+        f"✉️ Email: {demande['mail']}\n"
+        f"📌 Motif: {demande['motif']}\n"
+        f"📝 Détails: {demande['details']}\n"
+        f"📅 Date: {demande['date']}\n"
     )
+    if demande.get("justificatif"):
+        plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
+    # 🔹 Alignement avec 2 colonnes
     rows = f"""
       <tr><td style="padding:6px 0;width:120px;color:#555;">👤 Nom</td>
           <td style="padding:6px 0;"><strong>{demande['nom']}</strong></td></tr>
@@ -189,42 +192,91 @@ def envoyer_mail_admin(demande):
 
     html = _wrap_html(
         '<h1 style="margin:0 0 12px;font-size:20px;">🆕 Nouvelle demande stagiaire</h1>',
-        f"<p>Une nouvelle demande a été soumise sur le site.</p><table width='100%'>{rows}</table>"
+        f"""
+        <p style="margin:0 0 12px;">Une nouvelle demande a été soumise sur le site.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" 
+               style="border-collapse:collapse;font-size:14px;">{rows}</table>
+        """
     )
     send_email_html("elsaduq83@gmail.com, ecole@integraleacademy.com", sujet, plain, html)
+
+def envoyer_mail_accuse(demande):
+    sujet = "📩 Accusé de réception — Intégrale Academy"
+    plain = (
+        f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
+        "📩 Nous avons bien reçu votre demande.\n"
+        "⏳ Elle sera traitée dans les meilleurs délais.\n"
+        "✅ Vous recevrez un mail lorsque votre demande aura été traitée.\n\n"
+        "🙏 Merci de votre confiance,\n"
+        "L'équipe Intégrale Academy\n"
+    )
+    html = _wrap_html(
+        '<h1 style="margin:0 0 12px;font-size:20px;">📩 Accusé de réception</h1>',
+        f"""
+        <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
+        <p>📩 Nous avons bien reçu votre demande.</p>
+        <p>⏳ Elle sera traitée dans les meilleurs délais.</p>
+        <p style="margin:0">✅ Vous recevrez un mail lorsque votre demande aura été traitée.</p>
+        <p style="margin:16px 0 0;">🙏 Merci de votre confiance,<br>L'équipe Intégrale Academy</p>
+        """
+    )
+    send_email_html(demande["mail"], sujet, plain, html)
 
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
-        f"Votre demande a été traitée.\n\n"
-        f"Motif : {demande['motif']}\n"
-        f"Détails : {demande['details']}\n"
-        f"Notre réponse : {demande.get('commentaire') or 'Aucune réponse ajoutée.'}\n"
+        "✅ Votre demande a été traitée.\n\n"
+        f"📌 Motif : {demande['motif']}\n"
+        f"📝 Détails : {demande['details']}\n"
+        f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucune réponse ajoutée.'}\n"
+        f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
+        "Cordialement,\n"
+        "L'équipe Intégrale Academy\n"
     )
+
+    # 🔹 Encadré jaune pour la réponse
     commentaire_html = f"""
-      <div style="margin:12px 0;padding:12px;background:#fff8e5;
-                  border:1px solid #f0dca6;border-radius:6px;font-size:14px;color:#333;">
-        <strong>✍️ Notre réponse :</strong><br>{demande.get('commentaire') or 'Aucune réponse ajoutée.'}
+      <div style="margin:12px 0;padding:12px;
+                  background:#fff8e5;
+                  border:1px solid #f0dca6;
+                  border-radius:6px;
+                  font-family:Arial,Helvetica,sans-serif;
+                  font-size:14px;color:#333;">
+        <strong>✍️ Notre réponse :</strong><br>
+        {demande.get('commentaire') or 'Aucune réponse ajoutée.'}
       </div>
     """
+
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
-      <p>✅ Votre demande a été traitée.</p>
-      <table style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;width:100%;">
-        <tr><td style="padding:12px;"><strong>📌 Motif :</strong> {demande['motif']}<br>
-                <strong>📝 Détails :</strong> {demande['details']}</td></tr>
+      <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+             style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;">
+        <tr>
+          <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;">
+            <div style="margin:4px 0;"><strong>📌 Motif :</strong> {demande['motif']}</div>
+            <div style="margin:4px 0;"><strong>📝 Détails :</strong> {demande['details']}</div>
+          </td>
+        </tr>
       </table>
       {commentaire_html}
-      <p>Cordialement,<br>L'équipe Intégrale Academy</p>
+      {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
+      <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
+
     pj_paths = []
     for pj in demande.get("pieces_jointes", []):
         chemin = os.path.join(UPLOAD_FOLDER, pj)
         if os.path.exists(chemin):
             pj_paths.append(chemin)
-    send_email_html(demande["mail"], sujet, plain, html, attachments_paths=pj_paths)
+
+    ok = send_email_html(demande["mail"], sujet, plain, html, attachments_paths=pj_paths)
+    if ok:
+        demande["mail_contenu"] = f"Sujet : {sujet}\n\n{plain}"
+        demande["mail_html"] = html
+    return ok
 
 # -------------------------------------------------------------------
 # Routes
@@ -235,6 +287,7 @@ def index():
         data = load_data()
         demandes = data["demandes"]
         paris_tz = pytz.timezone("Europe/Paris")
+
         justificatif_filename = ""
         if "justificatif" in request.files:
             f = request.files["justificatif"]
@@ -242,6 +295,7 @@ def index():
                 filename = secure_filename(f.filename)
                 f.save(os.path.join(UPLOAD_FOLDER, filename))
                 justificatif_filename = filename
+
         new_demande = {
             "id": str(uuid.uuid4()),
             "nom": request.form["nom"],
@@ -252,13 +306,21 @@ def index():
             "details": request.form["details"],
             "justificatif": justificatif_filename,
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+            "attribution": "",
             "statut": "Non traité",
             "commentaire": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
             "pieces_jointes": []
         }
         demandes.append(new_demande)
         save_data(data)
+
         envoyer_mail_admin(new_demande)
+        envoyer_mail_accuse(new_demande)
+
         return render_template("confirmation.html")
     return render_template("index.html")
 
@@ -269,17 +331,10 @@ def admin():
 
     if request.method == "POST":
         action = request.form.get("action")
-        demande_id = request.form.get("id")
+        if not action and request.form.get("delete_pj"):
+            action = "delete_pj"
 
-        if action == "delete":
-            to_remove = next((d for d in demandes if d["id"] == demande_id), None)
-            if to_remove:
-                supprimer_fichier(to_remove.get("justificatif"))
-                for pj in to_remove.get("pieces_jointes", []):
-                    supprimer_fichier(pj)
-                data["demandes"].remove(to_remove)
-                save_data(data)
-            return redirect(url_for("admin"))
+        demande_id = request.form.get("id")
 
         if action == "update":
             for d in demandes:
@@ -287,22 +342,29 @@ def admin():
                     d["mail"] = request.form.get("mail") or d["mail"]
                     d["details"] = request.form.get("details")
                     d["commentaire"] = request.form.get("commentaire")
-                    ancien_statut = d["statut"]
+                    d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
+                    ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
+
+                    if "pj" in request.files:
+                        for f in request.files.getlist("pj"):
+                            if f and f.filename:
+                                filename = secure_filename(f.filename)
+                                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                                f.save(filepath)
+                                d.setdefault("pieces_jointes", [])
+                                if filename not in d["pieces_jointes"]:
+                                    d["pieces_jointes"].append(filename)
+
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
-                        envoyer_mail_confirmation(d)
-                        data["compteur_traitees"] += 1
+                        if envoyer_mail_confirmation(d):
+                            data["compteur_traitees"] += 1
+                            paris_tz = pytz.timezone("Europe/Paris")
+                            d["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+                            d["mail_erreur"] = ""
+                        else:
+                            d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
+
                     d["statut"] = nouveau_statut
-            save_data(data)
-            return redirect(url_for("admin"))
 
-    return render_template("admin.html",
-                           demandes=demandes,
-                           compteur_traitees=data["compteur_traitees"])
-
-@app.route("/uploads/<filename>")
-def download_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
-
-if __name__ == "__main__":
-    app.run(debug=True)
+            save_data(data
