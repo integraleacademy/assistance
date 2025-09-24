@@ -251,11 +251,24 @@ def envoyer_mail_confirmation(demande):
         "✅ Votre demande a été traitée.\n\n"
         f"📌 Motif : {demande['motif']}\n"
         f"📝 Détails : {demande['details']}\n"
-        f"💬 Commentaire : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
+        f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucune réponse ajoutée.'}\n"
         f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
+
+    # 🔹 Encadré visuel pour la réponse
+    commentaire_html = f"""
+      <div style="margin:12px 0;padding:12px;
+                  background:#fff8e5;
+                  border:1px solid #f0dca6;
+                  border-radius:6px;
+                  font-family:Arial,Helvetica,sans-serif;
+                  font-size:14px;color:#333;">
+        <strong>✍️ Notre réponse :</strong><br>
+        {demande.get('commentaire') or 'Aucune réponse ajoutée.'}
+      </div>
+    """
 
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
@@ -267,14 +280,16 @@ def envoyer_mail_confirmation(demande):
           <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;">
             <div style="margin:4px 0;"><strong>📌 Motif :</strong> {demande['motif']}</div>
             <div style="margin:4px 0;"><strong>📝 Détails :</strong> {demande['details']}</div>
-            <div style="margin:4px 0;"><strong>💬 Commentaire :</strong> {demande.get('commentaire') or 'Aucun commentaire ajouté.'}</div>
           </td>
         </tr>
       </table>
 
+      {commentaire_html}
+
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
+
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
     pj_paths = []
@@ -373,59 +388,4 @@ def admin():
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
                             paris_tz = pytz.timezone("Europe/Paris")
-                            d["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
-                            d["mail_erreur"] = ""
-                        else:
-                            d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
-
-                    d["statut"] = nouveau_statut
-
-            save_data(data)
-            return redirect(url_for("admin"))
-
-        elif action == "delete_pj":
-            pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
-            for d in demandes:
-                if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
-                    d["pieces_jointes"].remove(pj_name)
-                    supprimer_fichier(pj_name)
-            save_data(data)
-            return redirect(url_for("admin"))
-
-        elif action == "delete":
-            # Supprime justificatif + toutes les PJ, puis la demande
-            to_remove = None
-            for d in demandes:
-                if d["id"] == demande_id:
-                    to_remove = d
-                    break
-            if to_remove:
-                supprimer_fichier(to_remove.get("justificatif"))
-                for pj in to_remove.get("pieces_jointes", []):
-                    supprimer_fichier(pj)
-                data["demandes"].remove(to_remove)
-                save_data(data)
-            return redirect(url_for("admin"))
-
-    return render_template("admin.html",
-                           demandes=demandes,
-                           compteur_traitees=data["compteur_traitees"])
-
-@app.route("/imprimer/<demande_id>")
-def imprimer(demande_id):
-    data = load_data()
-    demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
-    return render_template("imprimer.html", demande=demande)
-
-@app.route("/voir_mail/<demande_id>")
-def voir_mail(demande_id):
-    data = load_data()
-    demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
-    return render_template("voir_mail.html", demande=demande)
-
-@app.route("/uploads/<filename>")
-def download_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
-
-if __name__ == "__main__":
-    app.run(debug=True)
+                            d["mail_confirme"] = datetime.datetime.now(paris_tz
