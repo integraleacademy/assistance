@@ -168,7 +168,7 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
-    # ✅ Alignement 2 colonnes
+    # ✅ tableau bien aligné
     rows = f"""
       <tr><td style="padding:6px 0;width:120px;color:#555;">👤 Nom</td>
           <td style="padding:6px 0;"><strong>{demande['nom']}</strong></td></tr>
@@ -366,9 +366,4 @@ def admin():
 
         elif action == "delete":
             to_remove = None
-            for d in demandes:
-                if d["id"] == demande_id:
-                    to_remove = d
-                    break
-            if to_remove:
-                supprimer
+            for
