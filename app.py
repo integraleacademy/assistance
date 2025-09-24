@@ -168,7 +168,7 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
-    # 🔹 Alignement avec 2 colonnes
+    # ✅ Alignement 2 colonnes
     rows = f"""
       <tr><td style="padding:6px 0;width:120px;color:#555;">👤 Nom</td>
           <td style="padding:6px 0;"><strong>{demande['nom']}</strong></td></tr>
@@ -192,11 +192,7 @@ def envoyer_mail_admin(demande):
 
     html = _wrap_html(
         '<h1 style="margin:0 0 12px;font-size:20px;">🆕 Nouvelle demande stagiaire</h1>',
-        f"""
-        <p style="margin:0 0 12px;">Une nouvelle demande a été soumise sur le site.</p>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" 
-               style="border-collapse:collapse;font-size:14px;">{rows}</table>
-        """
+        f"<p>Une nouvelle demande a été soumise sur le site.</p><table width='100%'>{rows}</table>"
     )
     send_email_html("elsaduq83@gmail.com, ecole@integraleacademy.com", sujet, plain, html)
 
@@ -216,7 +212,7 @@ def envoyer_mail_accuse(demande):
         <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
         <p>📩 Nous avons bien reçu votre demande.</p>
         <p>⏳ Elle sera traitée dans les meilleurs délais.</p>
-        <p style="margin:0">✅ Vous recevrez un mail lorsque votre demande aura été traitée.</p>
+        <p>✅ Vous recevrez un mail lorsque votre demande aura été traitée.</p>
         <p style="margin:16px 0 0;">🙏 Merci de votre confiance,<br>L'équipe Intégrale Academy</p>
         """
     )
@@ -235,34 +231,23 @@ def envoyer_mail_confirmation(demande):
         "L'équipe Intégrale Academy\n"
     )
 
-    # 🔹 Encadré jaune pour la réponse
     commentaire_html = f"""
-      <div style="margin:12px 0;padding:12px;
-                  background:#fff8e5;
-                  border:1px solid #f0dca6;
-                  border-radius:6px;
-                  font-family:Arial,Helvetica,sans-serif;
-                  font-size:14px;color:#333;">
-        <strong>✍️ Notre réponse :</strong><br>
-        {demande.get('commentaire') or 'Aucune réponse ajoutée.'}
+      <div style="margin:12px 0;padding:12px;background:#fff8e5;
+                  border:1px solid #f0dca6;border-radius:6px;font-size:14px;color:#333;">
+        <strong>✍️ Notre réponse :</strong><br>{demande.get('commentaire') or 'Aucune réponse ajoutée.'}
       </div>
     """
 
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
-      <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
-      <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
-             style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;">
-        <tr>
-          <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;">
-            <div style="margin:4px 0;"><strong>📌 Motif :</strong> {demande['motif']}</div>
-            <div style="margin:4px 0;"><strong>📝 Détails :</strong> {demande['details']}</div>
-          </td>
-        </tr>
+      <p>✅ Votre demande a été traitée.</p>
+      <table style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;width:100%;">
+        <tr><td style="padding:12px;"><strong>📌 Motif :</strong> {demande['motif']}<br>
+                <strong>📝 Détails :</strong> {demande['details']}</td></tr>
       </table>
       {commentaire_html}
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
-      <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
+      <p>Cordialement,<br>L'équipe Intégrale Academy</p>
     """
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
@@ -367,4 +352,23 @@ def admin():
 
                     d["statut"] = nouveau_statut
 
-            save_data(data
+            save_data(data)
+            return redirect(url_for("admin"))
+
+        elif action == "delete_pj":
+            pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
+            for d in demandes:
+                if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
+                    d["pieces_jointes"].remove(pj_name)
+                    supprimer_fichier(pj_name)
+            save_data(data)
+            return redirect(url_for("admin"))
+
+        elif action == "delete":
+            to_remove = None
+            for d in demandes:
+                if d["id"] == demande_id:
+                    to_remove = d
+                    break
+            if to_remove:
+                supprimer
