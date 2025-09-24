@@ -366,4 +366,14 @@ def admin():
 
         elif action == "delete":
             to_remove = None
-            for
+            for d in demandes:
+                if d["id"] == demande_id:
+                    to_remove = d
+                    break
+            if to_remove:
+                supprimer_fichier(to_remove.get("justificatif"))
+                for pj in to_remove.get("pieces_jointes", []):
+                    supprimer_fichier(pj)
+                data["demandes"].remove(to_remove)
+                save_data(data)
+            return redirect
