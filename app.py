@@ -193,32 +193,21 @@ def envoyer_mail_admin(demande):
     )
     send_email_html("elsaduq83@gmail.com, ecole@integraleacademy.com", sujet, plain, html)
 
-def envoyer_mail_accuse(demande):
-    sujet = "📩 Accusé de réception — Intégrale Academy"
-    plain = f"Bonjour {demande['prenom']} {demande['nom']},\n\nNous avons bien reçu votre demande."
-    html = _wrap_html(
-        '<h1 style="margin:0 0 12px;font-size:20px;">📩 Accusé de réception</h1>',
-        f"<p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p><p>Nous avons bien reçu votre demande.</p>"
-    )
-    send_email_html(demande["mail"], sujet, plain, html)
-
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
-        "Votre demande a été traitée.\n\n"
+        f"Votre demande a été traitée.\n\n"
         f"Motif : {demande['motif']}\n"
         f"Détails : {demande['details']}\n"
         f"Notre réponse : {demande.get('commentaire') or 'Aucune réponse ajoutée.'}\n"
     )
-
     commentaire_html = f"""
       <div style="margin:12px 0;padding:12px;background:#fff8e5;
                   border:1px solid #f0dca6;border-radius:6px;font-size:14px;color:#333;">
         <strong>✍️ Notre réponse :</strong><br>{demande.get('commentaire') or 'Aucune réponse ajoutée.'}
       </div>
     """
-
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
       <p>✅ Votre demande a été traitée.</p>
@@ -270,9 +259,46 @@ def index():
         demandes.append(new_demande)
         save_data(data)
         envoyer_mail_admin(new_demande)
-        envoyer_mail_accuse(new_demande)
         return render_template("confirmation.html")
     return render_template("index.html")
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin():
+    data = load_data()
+    demandes = data["demandes"]
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        demande_id = request.form.get("id")
+
+        if action == "delete":
+            to_remove = next((d for d in demandes if d["id"] == demande_id), None)
+            if to_remove:
+                supprimer_fichier(to_remove.get("justificatif"))
+                for pj in to_remove.get("pieces_jointes", []):
+                    supprimer_fichier(pj)
+                data["demandes"].remove(to_remove)
+                save_data(data)
+            return redirect(url_for("admin"))
+
+        if action == "update":
+            for d in demandes:
+                if d["id"] == demande_id:
+                    d["mail"] = request.form.get("mail") or d["mail"]
+                    d["details"] = request.form.get("details")
+                    d["commentaire"] = request.form.get("commentaire")
+                    ancien_statut = d["statut"]
+                    nouveau_statut = request.form.get("statut") or ancien_statut
+                    if ancien_statut != "Traité" and nouveau_statut == "Traité":
+                        envoyer_mail_confirmation(d)
+                        data["compteur_traitees"] += 1
+                    d["statut"] = nouveau_statut
+            save_data(data)
+            return redirect(url_for("admin"))
+
+    return render_template("admin.html",
+                           demandes=demandes,
+                           compteur_traitees=data["compteur_traitees"])
 
 @app.route("/uploads/<filename>")
 def download_file(filename):
