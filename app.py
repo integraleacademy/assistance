@@ -46,6 +46,7 @@ def supprimer_fichier(filename):
 # Email helper: HTML responsive (tables) + texte + logo inline + PJ
 # -------------------------------------------------------------------
 def _brand_header_table():
+    """Header en <table> (compatible email) avec logo compact centré."""
     return """
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
         <tr>
@@ -66,6 +67,7 @@ def _brand_header_table():
     """
 
 def _wrap_html(title_html, body_html):
+    """Gabarit responsive basé sur tables (600px max, 100% mobile)."""
     return f"""
 <!DOCTYPE html>
 <html>
@@ -75,9 +77,9 @@ def _wrap_html(title_html, body_html):
       <tr>
         <td align="center" style="padding:24px;">
           <!-- Carte -->
-          <table role="presentation" cellpadding="0" cellspacing="0"
-                 style="margin:0 auto;border-collapse:collapse;max-width:600px;width:100%;
-                        background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;text-align:left;">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+                 style="border-collapse:collapse;max-width:600px;width:100%;
+                        background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
             <tr>
               <td style="padding:0;">
                 {_brand_header_table()}
@@ -87,8 +89,19 @@ def _wrap_html(title_html, body_html):
             <!-- Contenu -->
             <tr>
               <td style="padding:22px;">
-                {title_html}
-                {body_html}
+                <!-- Titre -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                  <tr><td style="font-family:Arial,Helvetica,sans-serif;">{title_html}</td></tr>
+                </table>
+
+                <!-- Corps -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#222;">
+                      {body_html}
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
 
@@ -109,6 +122,7 @@ def _wrap_html(title_html, body_html):
     """
 
 def _attach_logo(related_part):
+    """Attache le logo static/logo.png si présent, sous CID logo_cid."""
     try:
         logo_path = os.path.join(app.root_path, "static", "logo.png")
         if os.path.exists(logo_path):
@@ -121,6 +135,13 @@ def _attach_logo(related_part):
         print("⚠️ Impossible d’attacher le logo :", e)
 
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
+    """
+    Structure email:
+      mixed
+        └─ related
+            └─ alternative (text/plain + text/html)
+        + attachments
+    """
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
@@ -175,26 +196,33 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
+    # ✅ Tableau aligné : 2 colonnes (label fixe)
     rows = f"""
-      <tr><td style="padding:4px 8px;color:#555;width:90px;">👤 Nom</td><td style="padding:4px 8px;"><strong>{demande['nom']}</strong></td></tr>
-      <tr><td style="padding:4px 8px;color:#555;">👤 Prénom</td><td style="padding:4px 8px;"><strong>{demande['prenom']}</strong></td></tr>
-      <tr><td style="padding:4px 8px;color:#555;">📞 Téléphone</td><td style="padding:4px 8px;">{demande['telephone']}</td></tr>
-      <tr><td style="padding:4px 8px;color:#555;">✉️ Email</td><td style="padding:4px 8px;">{demande['mail']}</td></tr>
-      <tr><td style="padding:4px 8px;color:#555;">📌 Motif</td><td style="padding:4px 8px;">{demande['motif']}</td></tr>
-      <tr><td style="padding:4px 8px;color:#555;">📝 Détails</td><td style="padding:4px 8px;">{demande['details']}</td></tr>
-      <tr><td style="padding:4px 8px;color:#555;">📅 Date</td><td style="padding:4px 8px;">{demande['date']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Nom</td>
+          <td style="padding:6px 8px;"><strong>{demande['nom']}</strong></td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Prénom</td>
+          <td style="padding:6px 8px;"><strong>{demande['prenom']}</strong></td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:150px;">📞 Téléphone</td>
+          <td style="padding:6px 8px;">{demande['telephone']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:150px;">✉️ Email</td>
+          <td style="padding:6px 8px;">{demande['mail']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:150px;">📌 Motif</td>
+          <td style="padding:6px 8px;">{demande['motif']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:150px;">📝 Détails</td>
+          <td style="padding:6px 8px;">{demande['details']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:150px;">📅 Date</td>
+          <td style="padding:6px 8px;">{demande['date']}</td></tr>
     """
     if demande.get("justificatif"):
         link = url_for('download_file', filename=demande['justificatif'], _external=True)
-        rows += f"""<tr><td style="padding:4px 8px;color:#555;">📎 Justificatif</td>
-                    <td style="padding:4px 8px;"><a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a></td></tr>"""
+        rows += f"""<tr><td style="padding:6px 8px;color:#555;width:150px;">📎 Justificatif</td>
+                    <td style="padding:6px 8px;"><a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a></td></tr>"""
 
     html = _wrap_html(
         '<h1 style="margin:0 0 12px;font-size:20px;">🆕 Nouvelle demande stagiaire</h1>',
         f"""
         <p style="margin:0 0 12px;">Une nouvelle demande a été soumise sur le site.</p>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-               style="border-collapse:collapse;font-size:14px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;">
           {rows}
         </table>
         """
@@ -231,7 +259,7 @@ def envoyer_mail_confirmation(demande):
         "✅ Votre demande a été traitée.\n\n"
         f"📌 Motif : {demande['motif']}\n"
         f"📝 Détails : {demande['details']}\n"
-        f"💬 Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
+        f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
         f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
@@ -261,6 +289,7 @@ def envoyer_mail_confirmation(demande):
 
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
+
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
     pj_paths = []
@@ -393,7 +422,7 @@ def admin():
                 save_data(data)
             return redirect(url_for("admin"))
 
-    # GET: toujours renvoyer la page
+    # Toujours retourner quelque chose pour GET
     return render_template("admin.html",
                            demandes=demandes,
                            compteur_traitees=data["compteur_traitees"])
