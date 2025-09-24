@@ -21,12 +21,12 @@ def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, dict):
-                data.setdefault("demandes", [])
-                data.setdefault("compteur_traitees", 0)
-                return data
-            else:
-                return {"demandes": data, "compteur_traitees": 0}
+        if isinstance(data, dict):
+            data.setdefault("demandes", [])
+            data.setdefault("compteur_traitees", 0)
+            return data
+        else:  # compat ancien format (liste brute)
+            return {"demandes": data, "compteur_traitees": 0}
     return {"demandes": [], "compteur_traitees": 0}
 
 def save_data(data):
@@ -42,80 +42,87 @@ def supprimer_fichier(filename):
         os.remove(chemin)
 
 # -------------------------------------------------------------------
-# Email helper
+# Email helper: HTML responsive (tables) + texte + logo inline + PJ
 # -------------------------------------------------------------------
 def _brand_header_table():
+    """Header en <table> (compatible email) avec logo compact centré."""
     return """
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-        <tr>
-          <td align="center" style="padding:16px 16px 8px 16px;margin:0;">
-            <img src="cid:logo_cid" alt="Intégrale Academy"
-                 height="56"
-                 style="display:block;height:56px;width:auto;max-width:220px;">
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding:0 16px 10px 16px;margin:0;
-                                    font-weight:700;font-size:16px;color:#111;">
-            Intégrale Academy
-          </td>
-        </tr>
-        <tr><td style="border-bottom:1px solid #f0f0f0;"></td></tr>
-      </table>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <tr>
+        <td align="center" style="padding:16px 16px 8px 16px;margin:0;">
+          <img src="cid:logo_cid" alt="Intégrale Academy" height="56" style="display:block;height:56px;width:auto;max-width:220px;">
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding:0 16px 10px 16px;margin:0; font-weight:700;font-size:16px;color:#111;">
+          Intégrale Academy
+        </td>
+      </tr>
+      <tr><td style="border-bottom:1px solid #f0f0f0;"></td></tr>
+    </table>
     """
 
 def _wrap_html(title_html, body_html):
+    """Gabarit responsive basé sur tables (600px max, 100% mobile)."""
     return f"""
-<!DOCTYPE html>
-<html>
-  <body style="margin:0;padding:0;background:#f7f7f7;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-           style="border-collapse:collapse;background:#f7f7f7;">
-      <tr>
-        <td align="center" style="padding:24px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
-                 style="border-collapse:collapse;max-width:600px;width:100%;
-                        background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
-            <tr><td style="padding:0;">{_brand_header_table()}</td></tr>
-            <tr>
-              <td style="padding:22px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                  <tr><td style="font-family:Arial,Helvetica,sans-serif;">{title_html}</td></tr>
-                </table>
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                  <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#222;">
-                      {body_html}
-                  </td></tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:12px 22px;color:#777;font-size:12px;border-top:1px solid #f0f0f0;
-                         font-family:Arial,Helvetica,sans-serif;">
-                Merci de ne pas répondre directement à ce message automatique.
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
+    <!DOCTYPE html>
+    <html>
+    <body style="margin:0;padding:0;background:#f7f7f7;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f7f7f7;">
+        <tr>
+          <td align="center" style="padding:24px;">
+            <!-- Carte -->
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;max-width:600px;width:100%; background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
+              <tr>
+                <td style="padding:0;">{_brand_header_table()}</td>
+              </tr>
+              <!-- Contenu -->
+              <tr>
+                <td style="padding:22px;">
+                  <!-- Titre -->
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                    <tr><td style="font-family:Arial,Helvetica,sans-serif;">{title_html}</td></tr>
+                  </table>
+                  <!-- Corps -->
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                    <tr>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#222;">
+                        {body_html}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <!-- Footer -->
+              <tr>
+                <td style="padding:12px 22px;color:#777;font-size:12px;border-top:1px solid #f0f0f0; font-family:Arial,Helvetica,sans-serif;">
+                  Merci de ne pas répondre directement à ce message automatique.
+                </td>
+              </tr>
+            </table>
+            <!-- /Carte -->
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
     """
 
 def _attach_logo(related_part):
+    """Attache le logo static/logo.png si présent, sous CID logo_cid."""
     try:
         logo_path = os.path.join(app.root_path, "static", "logo.png")
         if os.path.exists(logo_path):
             with open(logo_path, "rb") as f:
                 img = MIMEImage(f.read())
-                img.add_header("Content-ID", "<logo_cid>")
-                img.add_header("Content-Disposition", "inline", filename="logo.png")
-                related_part.attach(img)
+            img.add_header("Content-ID", "<logo_cid>")
+            img.add_header("Content-Disposition", "inline", filename="logo.png")
+            related_part.attach(img)
     except Exception as e:
         print("⚠️ Impossible d’attacher le logo :", e)
 
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
+    """ Structure email: mixed └─ related └─ alternative (text/plain + text/html) + attachments """
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
@@ -123,6 +130,7 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
 
     related = MIMEMultipart("related")
     msg.attach(related)
+
     alt = MIMEMultipart("alternative")
     related.attach(alt)
     alt.attach(MIMEText(plain_text, "plain", "utf-8"))
@@ -137,9 +145,9 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
             with open(chemin, "rb") as f:
                 part = MIMEBase("application", "octet-stream")
                 part.set_payload(f.read())
-                encoders.encode_base64(part)
-                part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(chemin)}")
-                msg.attach(part)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(chemin)}")
+            msg.attach(part)
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
@@ -151,10 +159,11 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         return False
 
 # -------------------------------------------------------------------
-# Emails
+# Emails (admin, accusé, confirmation)
 # -------------------------------------------------------------------
 def envoyer_mail_admin(demande):
     sujet = f"🆕 Nouvelle demande stagiaire — {demande['motif']}"
+
     plain = (
         "🆕 Nouvelle demande reçue :\n\n"
         f"👤 Nom: {demande['nom']}\n"
@@ -168,36 +177,37 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
-    # ✅ tableau bien aligné
     rows = f"""
-      <tr><td style="padding:6px 0;width:120px;color:#555;">👤 Nom</td>
-          <td style="padding:6px 0;"><strong>{demande['nom']}</strong></td></tr>
-      <tr><td style="padding:6px 0;width:120px;color:#555;">👤 Prénom</td>
-          <td style="padding:6px 0;"><strong>{demande['prenom']}</strong></td></tr>
-      <tr><td style="padding:6px 0;width:120px;color:#555;">📞 Téléphone</td>
-          <td style="padding:6px 0;">{demande['telephone']}</td></tr>
-      <tr><td style="padding:6px 0;width:120px;color:#555;">✉️ Email</td>
-          <td style="padding:6px 0;">{demande['mail']}</td></tr>
-      <tr><td style="padding:6px 0;width:120px;color:#555;">📌 Motif</td>
-          <td style="padding:6px 0;">{demande['motif']}</td></tr>
-      <tr><td style="padding:6px 0;width:120px;color:#555;">📝 Détails</td>
-          <td style="padding:6px 0;">{demande['details']}</td></tr>
-      <tr><td style="padding:6px 0;width:120px;color:#555;">📅 Date</td>
-          <td style="padding:6px 0;">{demande['date']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;width:120px;">👤 Nom</td><td><strong>{demande['nom']}</strong></td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">👤 Prénom</td><td><strong>{demande['prenom']}</strong></td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">📞 Téléphone</td><td>{demande['telephone']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">✉️ Email</td><td>{demande['mail']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">📌 Motif</td><td>{demande['motif']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">📝 Détails</td><td>{demande['details']}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">📅 Date</td><td>{demande['date']}</td></tr>
     """
     if demande.get("justificatif"):
         link = url_for('download_file', filename=demande['justificatif'], _external=True)
-        rows += f"""<tr><td style="padding:6px 0;width:120px;color:#555;">📎 Justificatif</td>
-                    <td style="padding:6px 0;"><a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a></td></tr>"""
+        rows += f"""<tr><td style="padding:6px 8px;color:#555;">📎 Justificatif</td>
+                    <td><a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a></td></tr>"""
 
     html = _wrap_html(
         '<h1 style="margin:0 0 12px;font-size:20px;">🆕 Nouvelle demande stagiaire</h1>',
-        f"<p>Une nouvelle demande a été soumise sur le site.</p><table width='100%'>{rows}</table>"
+        f"""
+        <p style="margin:0 0 12px;">Une nouvelle demande a été soumise sur le site.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+               style="border-collapse:collapse;font-size:14px;">
+          {rows}
+        </table>
+        """
     )
+
     send_email_html("elsaduq83@gmail.com, ecole@integraleacademy.com", sujet, plain, html)
+
 
 def envoyer_mail_accuse(demande):
     sujet = "📩 Accusé de réception — Intégrale Academy"
+
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
         "📩 Nous avons bien reçu votre demande.\n"
@@ -206,49 +216,59 @@ def envoyer_mail_accuse(demande):
         "🙏 Merci de votre confiance,\n"
         "L'équipe Intégrale Academy\n"
     )
+
     html = _wrap_html(
         '<h1 style="margin:0 0 12px;font-size:20px;">📩 Accusé de réception</h1>',
         f"""
         <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
         <p>📩 Nous avons bien reçu votre demande.</p>
         <p>⏳ Elle sera traitée dans les meilleurs délais.</p>
-        <p>✅ Vous recevrez un mail lorsque votre demande aura été traitée.</p>
+        <p style="margin:0">✅ Vous recevrez un mail lorsque votre demande aura été traitée.</p>
         <p style="margin:16px 0 0;">🙏 Merci de votre confiance,<br>L'équipe Intégrale Academy</p>
         """
     )
+
     send_email_html(demande["mail"], sujet, plain, html)
+
 
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
+
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
         f"📌 Motif : {demande['motif']}\n"
         f"📝 Détails : {demande['details']}\n"
-        f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucune réponse ajoutée.'}\n"
+        f"💬 Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
         f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
 
-    commentaire_html = f"""
-      <div style="margin:12px 0;padding:12px;background:#fff8e5;
-                  border:1px solid #f0dca6;border-radius:6px;font-size:14px;color:#333;">
-        <strong>✍️ Notre réponse :</strong><br>{demande.get('commentaire') or 'Aucune réponse ajoutée.'}
-      </div>
-    """
-
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
-      <p>✅ Votre demande a été traitée.</p>
-      <table style="background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;width:100%;">
-        <tr><td style="padding:12px;"><strong>📌 Motif :</strong> {demande['motif']}<br>
-                <strong>📝 Détails :</strong> {demande['details']}</td></tr>
+      <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
+
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+             style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;">
+        <tr>
+          <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;">
+            <div style="margin:4px 0;"><strong>📌 Motif :</strong> {demande['motif']}</div>
+            <div style="margin:4px 0;"><strong>📝 Détails :</strong> {demande['details']}</div>
+
+            <div style="margin:12px 0; padding:10px; background:#fff8e5; border:1px solid #f5c542; border-radius:6px;">
+              <strong>✍️ Notre réponse :</strong><br>
+              {demande.get('commentaire') or 'Aucun commentaire ajouté.'}
+            </div>
+          </td>
+        </tr>
       </table>
-      {commentaire_html}
+
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
-      <p>Cordialement,<br>L'équipe Intégrale Academy</p>
+
+      <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
+
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
     pj_paths = []
@@ -271,6 +291,7 @@ def index():
     if request.method == "POST":
         data = load_data()
         demandes = data["demandes"]
+
         paris_tz = pytz.timezone("Europe/Paris")
 
         justificatif_filename = ""
@@ -300,6 +321,7 @@ def index():
             "mail_html": "",
             "pieces_jointes": []
         }
+
         demandes.append(new_demande)
         save_data(data)
 
@@ -307,7 +329,9 @@ def index():
         envoyer_mail_accuse(new_demande)
 
         return render_template("confirmation.html")
+
     return render_template("index.html")
+
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
@@ -328,9 +352,11 @@ def admin():
                     d["details"] = request.form.get("details")
                     d["commentaire"] = request.form.get("commentaire")
                     d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
+
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
+                    # Ajout de PJ persistantes
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -341,6 +367,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
+                    # Passage à "Traité" => envoi mail + compteur
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -356,24 +383,3 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete_pj":
-            pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
-            for d in demandes:
-                if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
-                    d["pieces_jointes"].remove(pj_name)
-                    supprimer_fichier(pj_name)
-            save_data(data)
-            return redirect(url_for("admin"))
-
-        elif action == "delete":
-            to_remove = None
-            for d in demandes:
-                if d["id"] == demande_id:
-                    to_remove = d
-                    break
-            if to_remove:
-                supprimer_fichier(to_remove.get("justificatif"))
-                for pj in to_remove.get("pieces_jointes", []):
-                    supprimer_fichier(pj)
-                data["demandes"].remove(to_remove)
-                save_data(data)
-            return redirect
