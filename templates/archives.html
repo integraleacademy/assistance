@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Archives - Intégrale Academy</title>
+  <style>
+    body {background-color:#fdfaf5; font-family:Arial, sans-serif; margin:0; padding:20px;}
+    .container {background:white; padding:20px; border-radius:15px; box-shadow:0 0 15px rgba(0,0,0,0.1);}
+    table {width:100%; border-collapse:collapse; font-size:14px;}
+    th, td {border:1px solid #ddd; padding:8px; text-align:center;}
+    th {background:#f4c45a;}
+    input[type="text"] {padding:6px; border-radius:6px; border:1px solid #ccc; width:250px;}
+    .search {margin-bottom:15px;}
+    a {text-decoration:none; color:#0d6efd;}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>📦 Archives des demandes</h2>
+    <form method="GET" class="search">
+      <input type="text" name="q" placeholder="Rechercher (nom, prénom, mail)" value="{{ query }}">
+      <button type="submit">🔍 Rechercher</button>
+    </form>
+    <table>
+      <tr>
+        <th>Nom</th>
+        <th>Prénom</th>
+        <th>Email</th>
+        <th>Motif</th>
+        <th>Détails</th>
+        <th>Date</th>
+      </tr>
+      {% for a in archives %}
+      <tr>
+        <td>{{ a.nom }}</td>
+        <td>{{ a.prenom }}</td>
+        <td>{{ a.mail }}</td>
+        <td>{{ a.motif }}</td>
+        <td>{{ a.details }}</td>
+        <td>{{ a.date }}</td>
+      </tr>
+      {% endfor %}
+      {% if archives|length == 0 %}
+      <tr><td colspan="6">Aucune archive trouvée.</td></tr>
+      {% endif %}
+    </table>
+  </div>
+</body>
+</html>
