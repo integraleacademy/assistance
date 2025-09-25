@@ -7,20 +7,34 @@
     body {background-color:#fdfaf5; font-family:Arial, sans-serif; margin:0; padding:20px;}
     .container {background:white; padding:20px; border-radius:15px; box-shadow:0 0 15px rgba(0,0,0,0.1);}
     table {width:100%; border-collapse:collapse; font-size:14px;}
-    th, td {border:1px solid #ddd; padding:8px; text-align:center;}
+    th, td {border:1px solid #ddd; padding:10px; text-align:center; vertical-align:middle; word-wrap:break-word;}
     th {background:#f4c45a;}
-    input[type="text"] {padding:6px; border-radius:6px; border:1px solid #ccc; width:250px;}
-    .search {margin-bottom:15px;}
+    input[type="text"] {padding:6px; border-radius:6px; border:1px solid #ccc; width:280px;}
+    .search {margin-bottom:15px; display:flex; gap:8px; align-items:center;}
     a {text-decoration:none; color:#0d6efd;}
+    .topbar {display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+    .back {display:inline-block; padding:8px 14px; background:#6c757d; color:#fff; border-radius:8px;}
+    .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+    .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+    .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
+    .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
+    .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
+    .pj-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color:#0d6efd; text-decoration: none; }
+    .pj-empty {color:#999; font-size:12px;}
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>📦 Archives des demandes</h2>
+    <div class="topbar">
+      <h2>📦 Archives des demandes</h2>
+      <a class="back" href="{{ url_for('admin') }}">⬅️ Retour admin</a>
+    </div>
+
     <form method="GET" class="search">
-      <input type="text" name="q" placeholder="Rechercher (nom, prénom, mail)" value="{{ query }}">
+      <input type="text" name="q" placeholder="Rechercher (nom, prénom, mail, motif, détails)" value="{{ query }}">
       <button type="submit">🔍 Rechercher</button>
     </form>
+
     <table>
       <tr>
         <th>Nom</th>
@@ -28,7 +42,13 @@
         <th>Email</th>
         <th>Motif</th>
         <th>Détails</th>
+        <th>Justificatif</th>
+        <th>Pièces jointes</th>
         <th>Date</th>
+        <th>Attribué à</th>
+        <th>Statut</th>
+        <th>Commentaire</th>
+        <th>Mail</th>
       </tr>
       {% for a in archives %}
       <tr>
@@ -36,12 +56,62 @@
         <td>{{ a.prenom }}</td>
         <td>{{ a.mail }}</td>
         <td>{{ a.motif }}</td>
-        <td>{{ a.details }}</td>
+        <td style="text-align:left">{{ a.details }}</td>
+
+        <!-- Justificatif -->
+        <td>
+          {% if a.justificatif %}
+            <a href="{{ url_for('download_file', filename=a.justificatif) }}" target="_blank">📎 Voir</a>
+          {% else %}
+            <span class="pj-empty">—</span>
+          {% endif %}
+        </td>
+
+        <!-- Pièces jointes -->
+        <td class="pj-cell">
+          <div class="pj-wrap">
+            {% if a.pieces_jointes and a.pieces_jointes|length > 0 %}
+              {% for pj in a.pieces_jointes %}
+              <div class="pj-chip" title="{{ pj }}">
+                <span>📎</span>
+                <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
+              </div>
+              {% endfor %}
+            {% else %}
+              <span class="pj-empty">—</span>
+            {% endif %}
+          </div>
+        </td>
+
         <td>{{ a.date }}</td>
+        <td>{{ a.attribution or "—" }}</td>
+
+        <!-- Statut -->
+        <td>
+          {% if a.statut == "Non traité" %}
+            <span class="status-red">Non traité</span>
+          {% else %}
+            <span class="status-green">Traité</span>
+          {% endif %}
+        </td>
+
+        <!-- Commentaire -->
+        <td style="text-align:left">{{ a.commentaire or "—" }}</td>
+
+        <!-- Mail -->
+        <td>
+          {% if a.mail_confirme %}
+            ✅ Envoyé le {{ a.mail_confirme }}
+          {% elif a.mail_erreur %}
+            ❌ {{ a.mail_erreur }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
       {% if archives|length == 0 %}
-      <tr><td colspan="6">Aucune archive trouvée.</td></tr>
+      <tr><td colspan="12">Aucune archive trouvée.</td></tr>
       {% endif %}
     </table>
   </div>
