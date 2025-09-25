@@ -1,197 +1,191 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <title>Administration - Intégrale Academy</title>
-    <style>
-        body {background-color: #fdfaf5; font-family: Arial, sans-serif; margin:0; padding:20px;}
-        .container {width: 100%; background: white; padding: 20px; border-radius: 15px;
-                    box-shadow: 0 0 15px rgba(0,0,0,0.1); box-sizing: border-box; overflow-x:auto;}
-        img.logo {max-width: 120px; display: block; margin: 0 auto 20px;}
-        h2, h3 {text-align: center; margin-bottom: 15px;}
-        table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
-        th, td {border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; word-wrap: break-word;}
-        th {background-color: #f4c45a; color: #333;}
-        select, textarea, input[type="text"], input[type="file"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
-        .actions button, .actions a {padding: 6px 10px; margin: 2px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;}
-        .save {background-color: #198754; color: white;}
-        .delete {background-color: #dc3545; color: white;}
-        .print {background-color: #0d6efd; color: white; text-decoration: none; display: inline-block;}
-        .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
-        .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
-        .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
-        .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
-        .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
-
-        /* ===== Colonne PJ propre, sans débordement ===== */
-        .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
-        .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
-        .pj-chip {
-            display: inline-flex; align-items: center; gap: 6px;
-            max-width: 100%; min-width: 0;
-            padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa;
-        }
-        .pj-name {
-            flex: 1 1 auto; min-width: 0;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            color: #0d6efd; text-decoration: none;
-        }
-        .pj-del {flex: 0 0 auto; background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer; line-height: 1; padding: 0 4px;}
-        .pj-empty {color:#999; font-size:12px;}
-        .pj-input {margin-top:6px; width:95%;}
-    </style>
+  <meta charset="UTF-8">
+  <title>Administration - Intégrale Academy</title>
+  <style>
+    body {background-color: #fdfaf5; font-family: Arial, sans-serif; margin:0; padding:20px;}
+    .container {width: 100%; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.1); box-sizing: border-box; overflow-x:auto;}
+    img.logo {max-width: 120px; display: block; margin: 0 auto 20px;}
+    h2, h3 {text-align: center; margin-bottom: 15px;}
+    table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
+    th, td {border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; word-wrap: break-word;}
+    th {background-color: #f4c45a; color: #333;}
+    select, textarea, input[type="text"], input[type="file"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
+    .actions button, .actions a {padding: 6px 10px; margin: 2px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;}
+    .save {background-color: #198754; color: white;}
+    .delete {background-color: #dc3545; color: white;}
+    .print {background-color: #0d6efd; color: white; text-decoration: none; display: inline-block;}
+    .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+    .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+    .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
+    .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
+    .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
+    /* ===== Colonne PJ propre, sans débordement ===== */
+    .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
+    .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
+    .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
+    .pj-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #0d6efd; text-decoration: none; }
+    .pj-del {flex: 0 0 auto; background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer; line-height: 1; padding: 0 4px;}
+    .pj-empty {color:#999; font-size:12px;}
+    .pj-input {margin-top:6px; width:95%;}
+    /* Bouton Archives */
+    .archives-btn {
+      display:inline-block; 
+      margin-top:10px; 
+      padding:8px 14px; 
+      background:#6c757d; 
+      color:#fff; 
+      border-radius:8px; 
+      text-decoration:none;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
-        <h2>📋 Gestion des demandes stagiaires</h2>
+  <div class="container">
+    <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
+    <h2>📋 Gestion des demandes stagiaires</h2>
 
-        <div style="text-align:center; margin-bottom:20px;">
-            <h3>✅ Total traitées : {{ compteur_traitees }}</h3>
-            <h3>⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</h3>
-        </div>
-
-        <table>
-            <tr>
-                <th>Nom</th>
-                <th>Prénom</th>
-                <th>Email</th>
-                <th>Motif</th>
-                <th>Détails</th>
-                <th>Justificatif</th>
-                <th>Pièces jointes</th>
-                <th>Date</th>
-                <th>Attribué à</th>
-                <th>Statut</th>
-                <th>Commentaire</th>
-                <th>Actions</th>
-            </tr>
-            {% for d in demandes %}
-            <tr>
-                <!-- Un formulaire par ligne -->
-                <form method="POST" enctype="multipart/form-data">
-                    <td>{{ d.nom }}</td>
-                    <td>{{ d.prenom }}</td>
-                    <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
-                    <td>{{ d.motif }}</td>
-                    <td><textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea></td>
-
-                    <!-- Justificatif -->
-                    <td>
-                        {% if d.justificatif %}
-                            <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
-                        {% else %}
-                            <span class="pj-empty">—</span>
-                        {% endif %}
-                    </td>
-
-                    <!-- Pièces jointes -->
-                    <td class="pj-cell">
-                        <div class="pj-wrap">
-                            {% if d.pieces_jointes and d.pieces_jointes|length > 0 %}
-                                {% for pj in d.pieces_jointes %}
-                                    <div class="pj-chip" title="{{ pj }}">
-                                        <span>📎</span>
-                                        <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
-                                        <!-- Supprimer cette PJ -->
-                                        <button type="submit" name="delete_pj" value="{{ pj }}" class="pj-del" title="Supprimer">×</button>
-                                    </div>
-                                {% endfor %}
-                            {% else %}
-                                <span class="pj-empty">—</span>
-                            {% endif %}
-                        </div>
-                        <input type="file" name="pj" multiple class="pj-input">
-                    </td>
-
-                    <td>{{ d.date }}</td>
-
-                    <!-- Attribué à -->
-                    <td>
-                        <select name="attribution">
-                            <option value="">--</option>
-                            <option value="Elsa" {% if d.attribution == "Elsa" %}selected{% endif %}>Elsa</option>
-                            <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
-                        </select>
-                    </td>
-
-                    <!-- Statut + lien Voir mail -->
-                    <td>
-                        {% if d.statut == "Non traité" %}
-                            <span class="status-red">Non traité</span>
-                        {% else %}
-                            <span class="status-green">Traité</span>
-                        {% endif %}
-                        <select name="statut" style="margin-top:5px;">
-                            <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
-                            <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
-                        </select>
-
-                        {% if d.mail_confirme %}
-                            <div style="font-size:12px; margin-top:4px;">
-                                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
-                                    ✅ Mail envoyé le {{ d.mail_confirme }}
-                                </a>
-                            </div>
-                        {% elif d.mail_erreur %}
-                            <div style="font-size:12px; color:#dc3545; margin-top:4px;">
-                                {{ d.mail_erreur }}
-                            </div>
-                        {% endif %}
-                    </td>
-
-                    <!-- Commentaire via modale -->
-                    <td>
-                        <button type="button" class="comment-btn"
-                                onclick="event.preventDefault(); openCommentModal('{{ d.id }}', `{{ d.commentaire|escape }}`)">
-                            ✏️ Ajouter / Modifier
-                        </button>
-                        <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
-                    </td>
-
-                    <!-- Actions -->
-                    <td class="actions">
-                        <input type="hidden" name="id" value="{{ d.id }}">
-                        <button type="submit" name="action" value="update" class="save">💾</button>
-                        <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('Supprimer la demande et ses fichiers ?')">🗑️</button>
-                        <a href="/imprimer/{{ d.id }}" target="_blank" class="print">🖨️</a>
-                    </td>
-                </form>
-            </tr>
-            {% endfor %}
-        </table>
+    <div style="text-align:center; margin-bottom:20px;">
+      <h3>✅ Total traitées : {{ compteur_traitees }}</h3>
+      <h3>⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</h3>
+      <a href="{{ url_for('archives') }}" class="archives-btn">📦 Consulter les archives</a>
     </div>
 
-    <!-- Fenêtre modale commentaire -->
-    <div id="commentModal" class="modal">
-        <div class="modal-content">
-            <h3>📝 Commentaire</h3>
-            <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
-            <div style="margin-top:10px; text-align:right;">
-                <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
-                <button type="button" onclick="saveComment()">💾 Enregistrer</button>
+    <table>
+      <tr>
+        <th>Nom</th>
+        <th>Prénom</th>
+        <th>Email</th>
+        <th>Motif</th>
+        <th>Détails</th>
+        <th>Justificatif</th>
+        <th>Pièces jointes</th>
+        <th>Date</th>
+        <th>Attribué à</th>
+        <th>Statut</th>
+        <th>Commentaire</th>
+        <th>Actions</th>
+      </tr>
+      {% for d in demandes %}
+      <tr>
+        <!-- Un formulaire par ligne -->
+        <form method="POST" enctype="multipart/form-data">
+          <td>{{ d.nom }}</td>
+          <td>{{ d.prenom }}</td>
+          <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
+          <td>{{ d.motif }}</td>
+          <td><textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea></td>
+
+          <!-- Justificatif -->
+          <td>
+            {% if d.justificatif %}
+              <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
+            {% else %}
+              <span class="pj-empty">—</span>
+            {% endif %}
+          </td>
+
+          <!-- Pièces jointes -->
+          <td class="pj-cell">
+            <div class="pj-wrap">
+              {% if d.pieces_jointes and d.pieces_jointes|length > 0 %}
+                {% for pj in d.pieces_jointes %}
+                <div class="pj-chip" title="{{ pj }}">
+                  <span>📎</span>
+                  <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
+                  <!-- Supprimer cette PJ -->
+                  <button type="submit" name="delete_pj" value="{{ pj }}" class="pj-del" title="Supprimer">×</button>
+                </div>
+                {% endfor %}
+              {% else %}
+                <span class="pj-empty">—</span>
+              {% endif %}
             </div>
-        </div>
+            <input type="file" name="pj" multiple class="pj-input">
+          </td>
+
+          <td>{{ d.date }}</td>
+
+          <!-- Attribué à -->
+          <td>
+            <select name="attribution">
+              <option value="">--</option>
+              <option value="Elsa" {% if d.attribution == "Elsa" %}selected{% endif %}>Elsa</option>
+              <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
+            </select>
+          </td>
+
+          <!-- Statut + lien Voir mail -->
+          <td>
+            {% if d.statut == "Non traité" %}
+              <span class="status-red">Non traité</span>
+            {% else %}
+              <span class="status-green">Traité</span>
+            {% endif %}
+
+            <select name="statut" style="margin-top:5px;">
+              <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
+              <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
+            </select>
+
+            {% if d.mail_confirme %}
+              <div style="font-size:12px; margin-top:4px;">
+                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;"> ✅ Mail envoyé le {{ d.mail_confirme }} </a>
+              </div>
+            {% elif d.mail_erreur %}
+              <div style="font-size:12px; color:#dc3545; margin-top:4px;"> {{ d.mail_erreur }} </div>
+            {% endif %}
+          </td>
+
+          <!-- Commentaire via modale -->
+          <td>
+            <button type="button" class="comment-btn" onclick="event.preventDefault(); openCommentModal('{{ d.id }}', {{ d.commentaire|escape }})"> ✏️ Ajouter / Modifier </button>
+            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+          </td>
+
+          <!-- Actions -->
+          <td class="actions">
+            <input type="hidden" name="id" value="{{ d.id }}">
+            <button type="submit" name="action" value="update" class="save">💾</button>
+            <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('Archiver la demande ?')">🗑️</button>
+            <a href="/imprimer/{{ d.id }}" target="_blank" class="print">🖨️</a>
+          </td>
+        </form>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <!-- Fenêtre modale commentaire -->
+  <div id="commentModal" class="modal">
+    <div class="modal-content">
+      <h3>📝 Commentaire</h3>
+      <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
+      <div style="margin-top:10px; text-align:right;">
+        <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
+        <button type="button" onclick="saveComment()">💾 Enregistrer</button>
+      </div>
     </div>
+  </div>
 
-    <script>
+  <script>
     let currentCommentId = null;
-
     function openCommentModal(demandeId, commentaire) {
-        currentCommentId = demandeId;
-        document.getElementById("modalComment").value = commentaire;
-        document.getElementById("commentModal").style.display = "block";
+      currentCommentId = demandeId;
+      document.getElementById("modalComment").value = commentaire;
+      document.getElementById("commentModal").style.display = "block";
     }
     function closeCommentModal() {
-        document.getElementById("commentModal").style.display = "none";
+      document.getElementById("commentModal").style.display = "none";
     }
     function saveComment() {
-        if (currentCommentId) {
-            let newComment = document.getElementById("modalComment").value;
-            document.getElementById("commentaire-" + currentCommentId).value = newComment;
-        }
-        closeCommentModal();
+      if (currentCommentId) {
+        let newComment = document.getElementById("modalComment").value;
+        document.getElementById("commentaire-" + currentCommentId).value = newComment;
+      }
+      closeCommentModal();
     }
-    </script>
+  </script>
 </body>
 </html>
