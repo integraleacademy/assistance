@@ -23,12 +23,13 @@ def load_data():
             data = json.load(f)
             if isinstance(data, dict):
                 data.setdefault("demandes", [])
+                data.setdefault("archives", [])            # ✅ Archives
                 data.setdefault("compteur_traitees", 0)
                 return data
             else:
                 # compat ancien format (liste brute)
-                return {"demandes": data, "compteur_traitees": 0}
-    return {"demandes": [], "compteur_traitees": 0}
+                return {"demandes": data, "archives": [], "compteur_traitees": 0}
+    return {"demandes": [], "archives": [], "compteur_traitees": 0}
 
 def save_data(data):
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
@@ -48,77 +49,63 @@ def supprimer_fichier(filename):
 def _brand_header_table():
     """Header en <table> (compatible email) avec logo compact centré."""
     return """
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-        <tr>
-          <td align="center" style="padding:16px 16px 8px 16px;margin:0;">
-            <img src="cid:logo_cid" alt="Intégrale Academy"
-                 height="56"
-                 style="display:block;height:56px;width:auto;max-width:220px;">
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding:0 16px 10px 16px;margin:0;
-                                    font-weight:700;font-size:16px;color:#111;">
-            Intégrale Academy
-          </td>
-        </tr>
-        <tr><td style="border-bottom:1px solid #f0f0f0;"></td></tr>
-      </table>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <tr>
+        <td align="center" style="padding:16px 16px 8px 16px;margin:0;">
+          <img src="cid:logo_cid" alt="Intégrale Academy" height="56" style="display:block;height:56px;width:auto;max-width:220px;">
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding:0 16px 10px 16px;margin:0; font-weight:700;font-size:16px;color:#111;">
+          Intégrale Academy
+        </td>
+      </tr>
+      <tr><td style="border-bottom:1px solid #f0f0f0;"></td></tr>
+    </table>
     """
 
 def _wrap_html(title_html, body_html):
     """Gabarit responsive basé sur tables (600px max, 100% mobile)."""
     return f"""
-<!DOCTYPE html>
-<html>
-  <body style="margin:0;padding:0;background:#f7f7f7;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-           style="border-collapse:collapse;background:#f7f7f7;">
-      <tr>
-        <td align="center" style="padding:24px;">
-          <!-- Carte -->
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
-                 style="border-collapse:collapse;max-width:600px;width:100%;
-                        background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
-            <tr>
-              <td style="padding:0;">
-                {_brand_header_table()}
-              </td>
-            </tr>
-
-            <!-- Contenu -->
-            <tr>
-              <td style="padding:22px;">
-                <!-- Titre -->
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-                  <tr><td style="font-family:Arial,Helvetica,sans-serif;">{title_html}</td></tr>
-                </table>
-
-                <!-- Corps -->
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-                  <tr>
-                    <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#222;">
-                      {body_html}
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-
-            <!-- Footer -->
-            <tr>
-              <td style="padding:12px 22px;color:#777;font-size:12px;border-top:1px solid #f0f0f0;
-                         font-family:Arial,Helvetica,sans-serif;">
-                Merci de ne pas répondre directement à ce message automatique.
-              </td>
-            </tr>
-          </table>
-          <!-- /Carte -->
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
+    <!DOCTYPE html>
+    <html>
+    <body style="margin:0;padding:0;background:#f7f7f7;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f7f7f7;">
+        <tr>
+          <td align="center" style="padding:24px;">
+            <!-- Carte -->
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;max-width:600px;width:100%; background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
+              <tr><td style="padding:0;">{_brand_header_table()}</td></tr>
+              <!-- Contenu -->
+              <tr>
+                <td style="padding:22px;">
+                  <!-- Titre -->
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                    <tr><td style="font-family:Arial,Helvetica,sans-serif;">{title_html}</td></tr>
+                  </table>
+                  <!-- Corps -->
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                    <tr>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#222;">
+                        {body_html}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <!-- Footer -->
+              <tr>
+                <td style="padding:12px 22px;color:#777;font-size:12px;border-top:1px solid #f0f0f0; font-family:Arial,Helvetica,sans-serif;">
+                  Merci de ne pas répondre directement à ce message automatique.
+                </td>
+              </tr>
+            </table>
+            <!-- /Carte -->
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
     """
 
 def _attach_logo(related_part):
@@ -135,11 +122,9 @@ def _attach_logo(related_part):
         print("⚠️ Impossible d’attacher le logo :", e)
 
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
-    """
-    Structure email:
-      mixed
+    """ Structure email: mixed
         └─ related
-            └─ alternative (text/plain + text/html)
+           └─ alternative (text/plain + text/html)
         + attachments
     """
     msg = MIMEMultipart("mixed")
@@ -149,10 +134,8 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
 
     related = MIMEMultipart("related")
     msg.attach(related)
-
     alt = MIMEMultipart("alternative")
     related.attach(alt)
-
     alt.attach(MIMEText(plain_text, "plain", "utf-8"))
     alt.attach(MIMEText(html_body, "html", "utf-8"))
 
@@ -196,7 +179,6 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
-    # ✅ Tableau aligné : 2 colonnes (label fixe)
     rows = f"""
       <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Nom</td>
           <td style="padding:6px 8px;"><strong>{demande['nom']}</strong></td></tr>
@@ -216,7 +198,9 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         link = url_for('download_file', filename=demande['justificatif'], _external=True)
         rows += f"""<tr><td style="padding:6px 8px;color:#555;width:150px;">📎 Justificatif</td>
-                    <td style="padding:6px 8px;"><a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a></td></tr>"""
+                      <td style="padding:6px 8px;">
+                        <a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a>
+                      </td></tr>"""
 
     html = _wrap_html(
         '<h1 style="margin:0 0 12px;font-size:20px;">🆕 Nouvelle demande stagiaire</h1>',
@@ -253,7 +237,6 @@ def envoyer_mail_accuse(demande):
 
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
-
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
@@ -264,32 +247,24 @@ def envoyer_mail_confirmation(demande):
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
-
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
       <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
-
-      <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
-             style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;">
         <tr>
           <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;">
             <div style="margin:4px 0;"><strong>📌 Motif :</strong> {demande['motif']}</div>
             <div style="margin:4px 0;"><strong>📝 Détails :</strong> {demande['details']}</div>
-
-            <div style="margin:12px 0;padding:12px;background:#fff8e5;
-                        border:1px solid #f0dca6;border-radius:6px;">
+            <div style="margin:12px 0;padding:12px;background:#fff8e5; border:1px solid #f0dca6;border-radius:6px;">
               <strong>✍️ Notre réponse :</strong><br>
               {demande.get('commentaire') or 'Aucun commentaire ajouté.'}
             </div>
           </td>
         </tr>
       </table>
-
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
-
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
-
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
     pj_paths = []
@@ -344,10 +319,18 @@ def index():
         demandes.append(new_demande)
         save_data(data)
 
-        envoyer_mail_admin(new_demande)
-        envoyer_mail_accuse(new_demande)
+        # Envois mail (inchangés)
+        try:
+            envoyer_mail_admin(new_demande)
+        except Exception as e:
+            print("⚠️ Envoi mail admin échoué :", e)
+        try:
+            envoyer_mail_accuse(new_demande)
+        except Exception as e:
+            print("⚠️ Envoi mail accusé échoué :", e)
 
         return render_template("confirmation.html")
+
     return render_template("index.html")
 
 @app.route("/admin", methods=["GET", "POST"])
@@ -369,6 +352,7 @@ def admin():
                     d["details"] = request.form.get("details")
                     d["commentaire"] = request.form.get("commentaire")
                     d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
+
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
@@ -394,8 +378,9 @@ def admin():
                             d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
 
                     d["statut"] = nouveau_statut
+                    save_data(data)
+                    break
 
-            save_data(data)
             return redirect(url_for("admin"))
 
         elif action == "delete_pj":
@@ -404,28 +389,44 @@ def admin():
                 if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
                     d["pieces_jointes"].remove(pj_name)
                     supprimer_fichier(pj_name)
-            save_data(data)
+                    save_data(data)
+                    break
             return redirect(url_for("admin"))
 
         elif action == "delete":
-            # Supprime justificatif + toutes les PJ, puis la demande
+            # ✅ Déplacement en archives (ne supprime pas les fichiers)
             to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
                     to_remove = d
                     break
             if to_remove:
-                supprimer_fichier(to_remove.get("justificatif"))
-                for pj in to_remove.get("pieces_jointes", []):
-                    supprimer_fichier(pj)
                 data["demandes"].remove(to_remove)
+                data["archives"].append(to_remove)
                 save_data(data)
             return redirect(url_for("admin"))
 
-    # Toujours retourner quelque chose pour GET
-    return render_template("admin.html",
-                           demandes=demandes,
-                           compteur_traitees=data["compteur_traitees"])
+    # GET
+    return render_template("admin.html", demandes=demandes, compteur_traitees=data["compteur_traitees"])
+
+@app.route("/archives", methods=["GET"])
+def archives():
+    data = load_data()
+    archives = data["archives"]
+
+    query = request.args.get("q", "").strip().lower()
+    if query:
+        def _match(a):
+            return (
+                query in (a.get("nom","").lower()) or
+                query in (a.get("prenom","").lower()) or
+                query in (a.get("mail","").lower()) or
+                query in (a.get("motif","").lower()) or
+                query in (a.get("details","").lower())
+            )
+        archives = [a for a in archives if _match(a)]
+
+    return render_template("archives.html", archives=archives, query=query)
 
 @app.route("/imprimer/<demande_id>")
 def imprimer(demande_id):
