@@ -22,8 +22,9 @@ def load_data():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, dict):
+                # ✅ on garantit les clés attendues
                 data.setdefault("demandes", [])
-                data.setdefault("archives", [])            # ✅ Archives
+                data.setdefault("archives", [])           # <-- archives
                 data.setdefault("compteur_traitees", 0)
                 return data
             else:
@@ -122,11 +123,7 @@ def _attach_logo(related_part):
         print("⚠️ Impossible d’attacher le logo :", e)
 
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
-    """ Structure email: mixed
-        └─ related
-           └─ alternative (text/plain + text/html)
-        + attachments
-    """
+    """ Structure email: mixed └─ related └─ alternative (text/plain + text/html) + attachments """
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
@@ -179,6 +176,7 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
+    # ✅ Tableau aligné : 2 colonnes (label fixe)
     rows = f"""
       <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Nom</td>
           <td style="padding:6px 8px;"><strong>{demande['nom']}</strong></td></tr>
@@ -297,14 +295,30 @@ def index():
                 f.save(os.path.join(UPLOAD_FOLDER, filename))
                 justificatif_filename = filename
 
+        # ✅ Vérification doublon (Nom+Prénom+Mail+Motif+Details)
+        nom_in = request.form["nom"].strip()
+        prenom_in = request.form["prenom"].strip()
+        mail_in = request.form["mail"].strip()
+        motif_in = request.form["motif"].strip()
+        details_in = request.form["details"].strip()
+
+        is_doublon = any(
+            d.get("nom","").strip().lower() == nom_in.lower() and
+            d.get("prenom","").strip().lower() == prenom_in.lower() and
+            d.get("mail","").strip().lower() == mail_in.lower() and
+            d.get("motif","").strip().lower() == motif_in.lower() and
+            d.get("details","").strip().lower() == details_in.lower()
+            for d in demandes
+        )
+
         new_demande = {
             "id": str(uuid.uuid4()),
-            "nom": request.form["nom"],
-            "prenom": request.form["prenom"],
+            "nom": nom_in,
+            "prenom": prenom_in,
             "telephone": request.form["telephone"],
-            "mail": request.form["mail"],
-            "motif": request.form["motif"],
-            "details": request.form["details"],
+            "mail": mail_in,
+            "motif": motif_in,
+            "details": details_in,
             "justificatif": justificatif_filename,
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
             "attribution": "",
@@ -314,7 +328,8 @@ def index():
             "mail_erreur": "",
             "mail_contenu": "",
             "mail_html": "",
-            "pieces_jointes": []
+            "pieces_jointes": [],
+            "is_doublon": is_doublon   # ✅ marquage doublon
         }
         demandes.append(new_demande)
         save_data(data)
@@ -394,7 +409,7 @@ def admin():
             return redirect(url_for("admin"))
 
         elif action == "delete":
-            # ✅ Déplacement en archives (ne supprime pas les fichiers)
+            # ✅ Déplacement dans les archives (ne supprime PAS les fichiers)
             to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
@@ -402,7 +417,7 @@ def admin():
                     break
             if to_remove:
                 data["demandes"].remove(to_remove)
-                data["archives"].append(to_remove)
+                data["archives"].append(to_remove)   # <-- archive au lieu de supprimer
                 save_data(data)
             return redirect(url_for("admin"))
 
