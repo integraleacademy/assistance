@@ -14,14 +14,15 @@
     a {text-decoration:none; color:#0d6efd;}
     .topbar {display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
     .back {display:inline-block; padding:8px 14px; background:#6c757d; color:#fff; border-radius:8px;}
-    .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
-    .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+    .status-red {color:#fff; background-color:#dc3545; font-weight:bold; padding:4px 8px; border-radius:5px;}
+    .status-green {color:#fff; background-color:#198754; font-weight:bold; padding:4px 8px; border-radius:5px;}
     .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
     .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
     .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
     .pj-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color:#0d6efd; text-decoration: none; }
     .pj-empty {color:#999; font-size:12px;}
-    .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
+    .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px;}
+    .del-btn {background:#dc3545; color:#fff; border:none; padding:4px 8px; border-radius:6px; cursor:pointer;}
   </style>
 </head>
 <body>
@@ -31,6 +32,16 @@
       <a class="back" href="{{ url_for('admin') }}">⬅️ Retour admin</a>
     </div>
 
+    <!-- Bouton vider toutes les archives -->
+    <form method="POST" style="margin-bottom:15px;">
+      <button type="submit" name="action" value="clear" 
+              onclick="return confirm('Supprimer toutes les archives ?')" 
+              style="background:#dc3545; color:#fff; border:none; padding:6px 12px; border-radius:8px; cursor:pointer;">
+        🗑️ Vider toutes les archives
+      </button>
+    </form>
+
+    <!-- Barre de recherche -->
     <form method="GET" class="search">
       <input type="text" name="q" placeholder="Rechercher (nom, prénom, mail, motif, détails)" value="{{ query }}">
       <button type="submit">🔍 Rechercher</button>
@@ -50,15 +61,11 @@
         <th>Statut</th>
         <th>Commentaire</th>
         <th>Mail</th>
+        <th>Actions</th>
       </tr>
       {% for a in archives %}
       <tr>
-        <td>
-          {{ a.nom }}
-          {% if a.is_doublon %}
-            <span class="dup-badge">⚠️ Doublon</span>
-          {% endif %}
-        </td>
+        <td>{{ a.nom }} {% if a.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
         <td>{{ a.prenom }}</td>
         <td>{{ a.mail }}</td>
         <td>{{ a.motif }}</td>
@@ -114,10 +121,20 @@
             —
           {% endif %}
         </td>
+
+        <!-- Actions -->
+        <td>
+          <form method="POST" style="margin:0;">
+            <input type="hidden" name="id" value="{{ a.id }}">
+            <button type="submit" name="action" value="delete_one" 
+                    onclick="return confirm('Supprimer cette archive ?')" 
+                    class="del-btn">🗑️</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
       {% if archives|length == 0 %}
-      <tr><td colspan="12">Aucune archive trouvée.</td></tr>
+      <tr><td colspan="13">Aucune archive trouvée.</td></tr>
       {% endif %}
     </table>
   </div>
