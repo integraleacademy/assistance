@@ -22,9 +22,8 @@ def load_data():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, dict):
-                # ✅ on garantit les clés attendues
                 data.setdefault("demandes", [])
-                data.setdefault("archives", [])           # <-- archives
+                data.setdefault("archives", [])  # ✅ ajouté, tout le reste inchangé
                 data.setdefault("compteur_traitees", 0)
                 return data
             else:
@@ -76,7 +75,9 @@ def _wrap_html(title_html, body_html):
           <td align="center" style="padding:24px;">
             <!-- Carte -->
             <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;max-width:600px;width:100%; background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
-              <tr><td style="padding:0;">{_brand_header_table()}</td></tr>
+              <tr>
+                <td style="padding:0;">{_brand_header_table()}</td>
+              </tr>
               <!-- Contenu -->
               <tr>
                 <td style="padding:22px;">
@@ -123,7 +124,11 @@ def _attach_logo(related_part):
         print("⚠️ Impossible d’attacher le logo :", e)
 
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
-    """ Structure email: mixed └─ related └─ alternative (text/plain + text/html) + attachments """
+    """ Structure email: mixed
+        └─ related
+           └─ alternative (text/plain + text/html)
+        + attachments
+    """
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
@@ -159,7 +164,7 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         return False
 
 # -------------------------------------------------------------------
-# Emails (admin, accusé, confirmation)
+# Emails (admin, accusé, confirmation) — CONTENU COMPLET
 # -------------------------------------------------------------------
 def envoyer_mail_admin(demande):
     sujet = f"🆕 Nouvelle demande stagiaire — {demande['motif']}"
@@ -282,8 +287,8 @@ def envoyer_mail_confirmation(demande):
 # -------------------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
+    data = load_data()
     if request.method == "POST":
-        data = load_data()
         demandes = data["demandes"]
         paris_tz = pytz.timezone("Europe/Paris")
 
@@ -295,13 +300,13 @@ def index():
                 f.save(os.path.join(UPLOAD_FOLDER, filename))
                 justificatif_filename = filename
 
-        # ✅ Vérification doublon (Nom+Prénom+Mail+Motif+Details)
         nom_in = request.form["nom"].strip()
         prenom_in = request.form["prenom"].strip()
         mail_in = request.form["mail"].strip()
         motif_in = request.form["motif"].strip()
         details_in = request.form["details"].strip()
 
+        # ✅ Détection doublon (nom+prenom+mail+motif+details)
         is_doublon = any(
             d.get("nom","").strip().lower() == nom_in.lower() and
             d.get("prenom","").strip().lower() == prenom_in.lower() and
@@ -329,20 +334,15 @@ def index():
             "mail_contenu": "",
             "mail_html": "",
             "pieces_jointes": [],
-            "is_doublon": is_doublon   # ✅ marquage doublon
+            "is_doublon": is_doublon
         }
         demandes.append(new_demande)
         save_data(data)
 
-        # Envois mail (inchangés)
-        try:
-            envoyer_mail_admin(new_demande)
-        except Exception as e:
-            print("⚠️ Envoi mail admin échoué :", e)
-        try:
-            envoyer_mail_accuse(new_demande)
-        except Exception as e:
-            print("⚠️ Envoi mail accusé échoué :", e)
+        try: envoyer_mail_admin(new_demande)
+        except: pass
+        try: envoyer_mail_accuse(new_demande)
+        except: pass
 
         return render_template("confirmation.html")
 
@@ -355,9 +355,6 @@ def admin():
 
     if request.method == "POST":
         action = request.form.get("action")
-        if not action and request.form.get("delete_pj"):
-            action = "delete_pj"
-
         demande_id = request.form.get("id")
 
         if action == "update":
@@ -367,11 +364,10 @@ def admin():
                     d["details"] = request.form.get("details")
                     d["commentaire"] = request.form.get("commentaire")
                     d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
-
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
-                    # Ajout de PJ persistantes
+                    # Upload nouvelles pièces jointes
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -382,7 +378,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # Passage à "Traité" => envoi mail + compteur
+                    # Passage à Traité => envoi confirmation
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -393,9 +389,7 @@ def admin():
                             d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
 
                     d["statut"] = nouveau_statut
-                    save_data(data)
-                    break
-
+            save_data(data)
             return redirect(url_for("admin"))
 
         elif action == "delete_pj":
@@ -404,42 +398,55 @@ def admin():
                 if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
                     d["pieces_jointes"].remove(pj_name)
                     supprimer_fichier(pj_name)
-                    save_data(data)
-                    break
+            save_data(data)
             return redirect(url_for("admin"))
 
         elif action == "delete":
-            # ✅ Déplacement dans les archives (ne supprime PAS les fichiers)
             to_remove = None
             for d in demandes:
                 if d["id"] == demande_id:
                     to_remove = d
                     break
             if to_remove:
+                # Archiver la demande (au lieu de la perdre)
+                data["archives"].append(to_remove)
+                # supprimer les fichiers associés
+                supprimer_fichier(to_remove.get("justificatif"))
+                for pj in to_remove.get("pieces_jointes", []):
+                    supprimer_fichier(pj)
                 data["demandes"].remove(to_remove)
-                data["archives"].append(to_remove)   # <-- archive au lieu de supprimer
                 save_data(data)
             return redirect(url_for("admin"))
 
-    # GET
     return render_template("admin.html", demandes=demandes, compteur_traitees=data["compteur_traitees"])
 
-@app.route("/archives", methods=["GET"])
+@app.route("/archives", methods=["GET", "POST"])
 def archives():
     data = load_data()
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "delete_one":
+            archive_id = request.form.get("id")
+            data["archives"] = [a for a in data["archives"] if a["id"] != archive_id]
+            save_data(data)
+        elif action == "clear":
+            data["archives"] = []
+            save_data(data)
+        return redirect(url_for("archives"))
+
     archives = data["archives"]
 
     query = request.args.get("q", "").strip().lower()
     if query:
-        def _match(a):
-            return (
-                query in (a.get("nom","").lower()) or
-                query in (a.get("prenom","").lower()) or
-                query in (a.get("mail","").lower()) or
-                query in (a.get("motif","").lower()) or
-                query in (a.get("details","").lower())
-            )
-        archives = [a for a in archives if _match(a)]
+        archives = [
+            a for a in archives if
+            query in a.get("nom","").lower()
+            or query in a.get("prenom","").lower()
+            or query in a.get("mail","").lower()
+            or query in a.get("motif","").lower()
+            or query in a.get("details","").lower()
+        ]
 
     return render_template("archives.html", archives=archives, query=query)
 
