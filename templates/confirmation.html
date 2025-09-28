@@ -1,17 +1,77 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <title>Confirmation</title>
-    <style>
-        body {background-color: #fdfaf5; font-family: Arial, sans-serif; text-align:center;}
-        .box {max-width: 500px; margin: 100px auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.1);}
-    </style>
+  <meta charset="UTF-8">
+  <title>Demande envoyée</title>
+  <style>
+    body {
+      background: #f7f7f7;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      padding: 40px 30px;
+      border-radius: 16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+      animation: fadeIn 0.5s ease;
+    }
+    .icon {
+      font-size: 50px;
+      color: #0d6efd;
+      margin-bottom: 15px;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      color: #0d6efd;
+    }
+    p {
+      color: #444;
+      font-size: 15px;
+      line-height: 1.6;
+      margin: 8px 0;
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 20px;
+      background: #198754;
+      color: white;
+      font-weight: bold;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: background 0.3s;
+    }
+    .btn:hover {
+      background: #157347;
+    }
+    @keyframes fadeIn {
+      from {opacity: 0; transform: translateY(20px);}
+      to {opacity: 1; transform: translateY(0);}
+    }
+  </style>
 </head>
 <body>
-    <div class="box">
-        <h2>✅ Nous avons bien reçu votre demande.</h2>
-        <p>Elle sera traitée dans les meilleurs délais.</p>
+  <div class="wrapper">
+    <div class="card">
+      <div class="icon">📩</div>
+      <h2>Demande envoyée avec succès</h2>
+      <p>Votre demande a bien été transmise à <strong>Intégrale Academy</strong>.</p>
+      <p>⏳ Nous reviendrons vers vous dans les meilleurs délais.</p>
+      <a href="/" class="btn">⬅️ Retour à l’accueil</a>
     </div>
+  </div>
 </body>
 </html>
