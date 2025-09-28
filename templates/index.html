@@ -1,99 +1,131 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <title>Demande d'assistance - Intégrale Academy</title>
-    <style>
-        body {
-          background-color: #fdfaf5;
-          font-family: Arial, sans-serif;
-          margin:0;
-          padding:0;
-        }
-        .container {
-          max-width: 600px;
-          margin: 50px auto;
-          background: white;
-          padding: 30px;
-          border-radius: 15px;
-          box-shadow: 0 0 15px rgba(0,0,0,0.1);
-          text-align: center;
-        }
-        h2 {margin-bottom: 10px;}
-        h3 {margin-bottom: 20px; color: #444;}
-        img.logo {max-width: 150px; margin-bottom: 20px;}
-        label {
-          display: block;
-          text-align: left;
-          margin: 10px 0 5px;
-          font-weight: bold;
-        }
-        input, select, textarea {
-          width: 100%;
-          padding: 10px;
-          margin-bottom: 15px;
-          border-radius: 8px;
-          border: 1px solid #ccc;
-          font-size: 14px;
-        }
-        textarea {resize: vertical;}
-        .btn {
-          background-color: #0d6efd; /* ✅ bleu uniforme */
-          color: white;
-          border: none;
-          cursor: pointer;
-          font-weight: bold;
-          border-radius: 8px;
-          padding: 12px;
-          font-size: 15px;
-          width: 100%;
-          transition: background 0.3s;
-        }
-        .btn:hover {
-          background-color: #0b5ed7;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demande d'assistance - Intégrale Academy</title>
+  <style>
+    body {
+      background-color: #f5f7fa;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      width: 95%;
+      max-width: 500px;
+      background: white;
+      padding: 25px;
+      border-radius: 15px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    img.logo {
+      max-width: 120px;
+      margin-bottom: 15px;
+    }
+    h2 {
+      margin-bottom: 10px;
+      font-size: 22px;
+      color: #0d6efd;
+    }
+    h3 {
+      margin-bottom: 20px;
+      color: #555;
+      font-size: 16px;
+    }
+    label {
+      display: block;
+      text-align: left;
+      margin: 10px 0 5px;
+      font-weight: bold;
+      font-size: 14px;
+      color: #333;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 15px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    textarea {
+      resize: vertical;
+      line-height: 1.4;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 4px rgba(13,110,253,0.3);
+    }
+    button {
+      background-color: #0d6efd;
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      width: 100%;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #0b5ed7;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
-        <h2>Demande d'assistance Intégrale Academy</h2>
-        <h3>Informations à compléter :</h3>
-        <form method="POST" enctype="multipart/form-data">
-            <label>Nom :</label>
-            <input type="text" name="nom" required>
-            <label>Prénom :</label>
-            <input type="text" name="prenom" required>
-            <label>Téléphone :</label>
-            <input type="text" name="telephone" required>
-            <label>Email :</label>
-            <input type="email" name="mail" required>
-            <label>Motif de la demande :</label>
-            <select name="motif" id="motif" required onchange="toggleJustificatif()">
-                <option value="Attestation">Demande d’attestation / certificat</option>
-                <option value="Diplome">Demande de diplôme</option>
-                <option value="Absence">Absence(s)</option>
-                <option value="Contrats">Contrat d'apprentissage</option>
-                <option value="Autre">Autre demande</option>
-            </select>
+  <div class="container">
+    <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
+    <h2>📋 Demande d'assistance</h2>
+    <h3>Merci de compléter les informations ci-dessous :</h3>
 
-            <div id="justificatifDiv" style="display:none; margin-top:15px;">
-                <label>Justificatif d’absence (PDF ou image) :</label>
-                <input type="file" name="justificatif" accept=".pdf,.jpg,.jpeg,.png">
-            </div>
+    <form method="POST" enctype="multipart/form-data">
+      <label>Nom :</label>
+      <input type="text" name="nom" required>
 
-            <label>Votre demande (détails) :</label>
-            <textarea name="details" rows="4" required></textarea>
-            <button type="submit" class="btn">Envoyer ma demande</button>
-        </form>
-    </div>
+      <label>Prénom :</label>
+      <input type="text" name="prenom" required>
 
-    <script>
+      <label>Téléphone :</label>
+      <input type="text" name="telephone" required>
+
+      <label>Email :</label>
+      <input type="email" name="mail" required>
+
+      <label>Motif de la demande :</label>
+      <select name="motif" id="motif" required onchange="toggleJustificatif()">
+        <option value="Attestation">Demande d’attestation / certificat</option>
+        <option value="Diplome">Demande de diplôme</option>
+        <option value="Absence">Absence(s)</option>
+        <option value="Contrats">Contrat d'apprentissage</option>
+        <option value="Autre">Autre demande</option>
+      </select>
+
+      <div id="justificatifDiv" style="display:none; margin-top:15px;">
+        <label>📎 Justificatif d’absence (PDF ou image) :</label>
+        <input type="file" name="justificatif" accept=".pdf,.jpg,.jpeg,.png">
+      </div>
+
+      <label>Votre demande (détails) :</label>
+      <textarea name="details" rows="4" required></textarea>
+
+      <button type="submit">Envoyer ma demande</button>
+    </form>
+  </div>
+
+  <script>
     function toggleJustificatif() {
-        let motif = document.getElementById("motif").value;
-        let justificatifDiv = document.getElementById("justificatifDiv");
-        justificatifDiv.style.display = (motif === "Absence") ? "block" : "none";
+      let motif = document.getElementById("motif").value;
+      let justificatifDiv = document.getElementById("justificatifDiv");
+      justificatifDiv.style.display = (motif === "Absence") ? "block" : "none";
     }
-    </script>
+  </script>
 </body>
 </html>
