@@ -141,7 +141,12 @@
 
           <!-- Commentaire via modale -->
           <td>
-            <button type="button" class="comment-btn" onclick="event.preventDefault(); openCommentModal('{{ d.id }}', {{ d.commentaire|escape }})"> ✏️ Ajouter / Modifier </button>
+            <button type="button" 
+              class="comment-btn" 
+              data-id="{{ d.id }}" 
+              data-comment="{{ d.commentaire|escapejs }}">
+              ✏️ Ajouter / Modifier
+            </button>
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
           </td>
 
@@ -172,14 +177,20 @@
 
   <script>
     let currentCommentId = null;
+
+    // Ouvre la modale et injecte le commentaire
     function openCommentModal(demandeId, commentaire) {
       currentCommentId = demandeId;
-      document.getElementById("modalComment").value = commentaire;
+      document.getElementById("modalComment").value = commentaire || "";
       document.getElementById("commentModal").style.display = "block";
     }
+
+    // Ferme la modale
     function closeCommentModal() {
       document.getElementById("commentModal").style.display = "none";
     }
+
+    // Sauvegarde dans le champ hidden
     function saveComment() {
       if (currentCommentId) {
         let newComment = document.getElementById("modalComment").value;
@@ -187,6 +198,13 @@
       }
       closeCommentModal();
     }
+
+    // Ajout des listeners sur tous les boutons
+    document.querySelectorAll(".comment-btn").forEach(btn => {
+      btn.addEventListener("click", function() {
+        openCommentModal(this.dataset.id, this.dataset.comment);
+      });
+    });
   </script>
 </body>
 </html>
