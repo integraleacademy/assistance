@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -181,7 +181,6 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
-    # ✅ Tableau aligné : 2 colonnes (label fixe)
     rows = f"""
       <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Nom</td>
           <td style="padding:6px 8px;"><strong>{demande['nom']}</strong></td></tr>
@@ -240,6 +239,13 @@ def envoyer_mail_accuse(demande):
 
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
+    # Lien "Répondre" (URL absolue)
+    try:
+        lien_repondre = url_for('repondre', demande_id=demande['id'], _external=True)
+    except Exception:
+        # fallback très rare hors contexte requête
+        lien_repondre = f"https://assistance-alw9.onrender.com/repondre/{demande['id']}"
+
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
@@ -247,6 +253,7 @@ def envoyer_mail_confirmation(demande):
         f"📝 Détails : {demande['details']}\n"
         f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
         f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
+        f"📩 Pour nous répondre : {lien_repondre}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
@@ -266,6 +273,12 @@ def envoyer_mail_confirmation(demande):
         </tr>
       </table>
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
+      <p style="margin:16px 0;"> 
+        <a href="{lien_repondre}" 
+           style="display:inline-block;padding:10px 16px;background:#0d6efd;color:#fff;border-radius:6px;text-decoration:none;">
+          📩 Répondre
+        </a>
+      </p>
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
@@ -334,7 +347,8 @@ def index():
             "mail_contenu": "",
             "mail_html": "",
             "pieces_jointes": [],
-            "is_doublon": is_doublon
+            "is_doublon": is_doublon,
+            "reponses": []  # ✅ prépare le stockage des réponses
         }
         demandes.append(new_demande)
         save_data(data)
@@ -461,6 +475,28 @@ def voir_mail(demande_id):
     data = load_data()
     demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
     return render_template("voir_mail.html", demande=demande)
+
+# -------------------------------------------------------------------
+# ✅ Nouvelle route : formulaire public de réponse
+# -------------------------------------------------------------------
+@app.route("/repondre/<demande_id>", methods=["GET", "POST"])
+def repondre(demande_id):
+    data = load_data()
+    demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
+    if not demande:
+        abort(404)
+
+    if request.method == "POST":
+        reponse = request.form.get("reponse", "").strip()
+        if reponse:
+            demande.setdefault("reponses", []).append({
+                "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "message": reponse
+            })
+            save_data(data)
+            return render_template("merci_reponse.html", demande=demande)
+
+    return render_template("repondre.html", demande=demande)
 
 @app.route("/uploads/<filename>")
 def download_file(filename):
