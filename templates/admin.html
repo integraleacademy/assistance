@@ -20,7 +20,7 @@
     .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
     .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
     .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
-    .modal-content {background: #fff; margin: 5% auto; padding: 20px; border-radius: 10px; width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
+    .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
     .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
     .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
     .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
@@ -111,7 +111,7 @@
             </select>
           </td>
 
-          <!-- Statut -->
+          <!-- Statut + lien Voir mail -->
           <td>
             {% if d.statut == "Non traité" %}
               <span class="status-red">Non traité</span>
@@ -122,11 +122,24 @@
               <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
               <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
             </select>
+
+            {% if d.mail_confirme %}
+              <div style="font-size:12px; margin-top:4px;">
+                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
+                  ✅ Mail envoyé le {{ d.mail_confirme }}
+                </a>
+              </div>
+            {% elif d.mail_erreur %}
+              <div style="font-size:12px; color:#dc3545; margin-top:4px;"> {{ d.mail_erreur }} </div>
+            {% endif %}
           </td>
 
-          <!-- Commentaire -->
+          <!-- Commentaire via modale -->
           <td>
-            <textarea name="commentaire" rows="3" style="width:95%;">{{ d.commentaire }}</textarea>
+            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>
+              ✏️ Ajouter / Modifier
+            </button>
+            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
           </td>
 
           <!-- Réponses -->
@@ -176,7 +189,49 @@
     </table>
   </div>
 
+  <!-- Modale Commentaire -->
+  <div id="commentModal" class="modal">
+    <div class="modal-content">
+      <h3>📝 Commentaire</h3>
+      <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
+      <div style="margin-top:10px; text-align:right;">
+        <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
+        <button type="button" onclick="saveComment()">💾 Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    let currentCommentId = null;
+
+    function openCommentModal(demandeId, commentaire) {
+      currentCommentId = demandeId;
+      document.getElementById("modalComment").value = commentaire || "";
+      document.getElementById("commentModal").style.display = "block";
+    }
+
+    function closeCommentModal() {
+      document.getElementById("commentModal").style.display = "none";
+    }
+
+    function saveComment() {
+      if (currentCommentId) {
+        let newComment = document.getElementById("modalComment").value;
+        document.getElementById("commentaire-" + currentCommentId).value = newComment;
+      }
+      closeCommentModal();
+    }
+
+    // Ajout listeners
+    document.querySelectorAll(".comment-btn").forEach(btn => {
+      btn.addEventListener("click", function() {
+        let raw = this.dataset.comment;
+        let parsed = "";
+        try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
+        openCommentModal(this.dataset.id, parsed);
+      });
+    });
+
     function openResponseModal(id) {
       document.getElementById("responseModal-" + id).style.display = "block";
     }
