@@ -227,20 +227,20 @@ def envoyer_mail_confirmation(demande):
 
     repondre_url = url_for("repondre", demande_id=demande["id"], _external=True)
 
-    # --- Version plain text (moins d'emojis) ---
+    # --- Version texte brut ---
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
         f"Motif : {demande['motif']}\n"
         f"Détails : {demande['details']}\n"
-        f"Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
+        f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
         f"{'Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
         f"👉 Pour répondre, cliquez ici : {repondre_url}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
 
-    # --- Version HTML avec design sobre ---
+    # --- Version HTML ---
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
       <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
@@ -255,7 +255,7 @@ def envoyer_mail_confirmation(demande):
             <div style="margin:4px 0;"><strong>Détails :</strong> {demande['details']}</div>
             <div style="margin:12px 0;padding:12px;background:#fff8e5;
                         border:1px solid #f0dca6;border-radius:6px;">
-              <strong>Notre réponse :</strong><br>
+              <strong>✍️ Notre réponse :</strong><br>
               {demande.get('commentaire') or 'Aucun commentaire ajouté.'}
             </div>
           </td>
@@ -292,6 +292,7 @@ def envoyer_mail_confirmation(demande):
         demande["mail_contenu"] = f"Sujet : {sujet}\n\n{plain}"
         demande["mail_html"] = html
     return ok
+
 
 
 
