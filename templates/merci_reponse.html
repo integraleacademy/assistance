@@ -2,22 +2,76 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Merci</title>
+  <title>Merci pour votre réponse</title>
   <style>
-    body {background:#f7f7f7; font-family:Arial,sans-serif; text-align:center; padding:50px;}
-    .card {
-      display:inline-block; background:#fff; padding:30px; border-radius:12px;
-      box-shadow:0 2px 8px rgba(0,0,0,0.1); max-width:500px;
+    body {
+      background: #f7f7f7;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
     }
-    h2 {color:#198754;}
-    p {font-size:15px; color:#444;}
+    .wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      padding: 40px 30px;
+      border-radius: 16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+      animation: fadeIn 0.5s ease;
+    }
+    .icon {
+      font-size: 50px;
+      color: #198754;
+      margin-bottom: 15px;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      color: #198754;
+    }
+    p {
+      color: #444;
+      font-size: 15px;
+      line-height: 1.6;
+      margin: 8px 0;
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 20px;
+      background: #0d6efd;
+      color: white;
+      font-weight: bold;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: background 0.3s;
+    }
+    .btn:hover {
+      background: #0b5ed7;
+    }
+    @keyframes fadeIn {
+      from {opacity: 0; transform: translateY(20px);}
+      to {opacity: 1; transform: translateY(0);}
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>✅ Merci {{ demande.prenom }}</h2>
-    <p>Votre réponse a bien été transmise à Intégrale Academy.</p>
-    <p>Nous vous recontacterons rapidement.</p>
+  <div class="wrapper">
+    <div class="card">
+      <div class="icon">✅</div>
+      <h2>Merci {{ demande.prenom }}</h2>
+      <p>Votre réponse a bien été transmise à <strong>Intégrale Academy</strong>.</p>
+      <p>Nous reviendrons vers vous dans les meilleurs délais.</p>
+      <a href="/" class="btn">⬅️ Retour à l’accueil</a>
+    </div>
   </div>
 </body>
 </html>
