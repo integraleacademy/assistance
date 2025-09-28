@@ -35,6 +35,10 @@
       color:#fff; border-radius:8px; text-decoration:none;
     }
     .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
+    /* Bloc réponses */
+    .reponses-box {margin-top:8px; text-align:left; font-size:13px; background:#f9f9f9; padding:6px; border-radius:6px; max-height:120px; overflow-y:auto;}
+    .reponses-box p {margin:4px 0;}
+    .reponses-box em {color:#555; font-size:12px;}
   </style>
 </head>
 <body>
@@ -60,12 +64,11 @@
         <th>Date</th>
         <th>Attribué à</th>
         <th>Statut</th>
-        <th>Commentaire</th>
+        <th>Commentaire / Réponses</th>
         <th>Actions</th>
       </tr>
       {% for d in demandes %}
       <tr>
-        <!-- Un formulaire par ligne -->
         <form method="POST" enctype="multipart/form-data">
           <td>
             {{ d.nom }}
@@ -95,7 +98,6 @@
                 <div class="pj-chip" title="{{ pj }}">
                   <span>📎</span>
                   <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
-                  <!-- Supprimer cette PJ -->
                   <button type="submit" name="delete_pj" value="{{ pj }}" class="pj-del" title="Supprimer">×</button>
                 </div>
                 {% endfor %}
@@ -117,7 +119,7 @@
             </select>
           </td>
 
-          <!-- Statut + lien Voir mail -->
+          <!-- Statut -->
           <td>
             {% if d.statut == "Non traité" %}
               <span class="status-red">Non traité</span>
@@ -139,7 +141,7 @@
             {% endif %}
           </td>
 
-          <!-- Commentaire via modale -->
+          <!-- Commentaire + Réponses -->
           <td>
             <button type="button" 
               class="comment-btn" 
@@ -148,6 +150,15 @@
               ✏️ Ajouter / Modifier
             </button>
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+
+            {% if d.reponses and d.reponses|length > 0 %}
+              <div class="reponses-box">
+                <strong>📩 Réponses reçues :</strong>
+                {% for rep in d.reponses %}
+                  <p><em>{{ rep.date }}</em><br>{{ rep.message }}</p>
+                {% endfor %}
+              </div>
+            {% endif %}
           </td>
 
           <!-- Actions -->
@@ -196,7 +207,6 @@
       closeCommentModal();
     }
 
-    // Ajout des listeners sur tous les boutons
     document.querySelectorAll(".comment-btn").forEach(btn => {
       btn.addEventListener("click", function() {
         let raw = this.dataset.comment;
