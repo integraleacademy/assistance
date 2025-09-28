@@ -181,6 +181,7 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
+    # ✅ Tableau aligné : 2 colonnes (label fixe)
     rows = f"""
       <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Nom</td>
           <td style="padding:6px 8px;"><strong>{demande['nom']}</strong></td></tr>
@@ -239,13 +240,6 @@ def envoyer_mail_accuse(demande):
 
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
-    # Lien "Répondre" (URL absolue)
-    try:
-        lien_repondre = url_for('repondre', demande_id=demande['id'], _external=True)
-    except Exception:
-        # fallback très rare hors contexte requête
-        lien_repondre = f"https://assistance-alw9.onrender.com/repondre/{demande['id']}"
-
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
@@ -253,7 +247,7 @@ def envoyer_mail_confirmation(demande):
         f"📝 Détails : {demande['details']}\n"
         f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
         f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
-        f"📩 Pour nous répondre : {lien_repondre}\n\n"
+        f"📩 Pour nous répondre : {url_for('repondre', demande_id=demande['id'], _external=True)}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
@@ -274,7 +268,7 @@ def envoyer_mail_confirmation(demande):
       </table>
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
       <p style="margin:16px 0;"> 
-        <a href="{lien_repondre}" 
+        <a href="{url_for('repondre', demande_id=demande['id'], _external=True)}" 
            style="display:inline-block;padding:10px 16px;background:#0d6efd;color:#fff;border-radius:6px;text-decoration:none;">
           📩 Répondre
         </a>
@@ -477,22 +471,49 @@ def voir_mail(demande_id):
     return render_template("voir_mail.html", demande=demande)
 
 # -------------------------------------------------------------------
-# ✅ Nouvelle route : formulaire public de réponse
+# ✅ Nouvelle route : formulaire public de réponse (avec PJ) + réimport archives + retour "Non traité"
 # -------------------------------------------------------------------
 @app.route("/repondre/<demande_id>", methods=["GET", "POST"])
 def repondre(demande_id):
     data = load_data()
+
+    # 1) Cherche dans demandes
     demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
+
+    # 2) Sinon, chercher dans archives et réimporter
+    if not demande:
+        demande = next((a for a in data["archives"] if a["id"] == demande_id), None)
+        if demande:
+            data["archives"] = [a for a in data["archives"] if a["id"] != demande_id]
+            demande["statut"] = "Non traité"
+            data["demandes"].append(demande)
+            save_data(data)  # persiste le move
+
     if not demande:
         abort(404)
 
     if request.method == "POST":
         reponse = request.form.get("reponse", "").strip()
-        if reponse:
+
+        # Gestion PJ unique ou multiple (input name="pj" multiple)
+        pj_list = []
+        if "pj" in request.files:
+            files = request.files.getlist("pj")
+            for f in files:
+                if f and f.filename:
+                    filename = secure_filename(f.filename)
+                    filepath = os.path.join(UPLOAD_FOLDER, filename)
+                    f.save(filepath)
+                    pj_list.append(filename)
+
+        if reponse or pj_list:
             demande.setdefault("reponses", []).append({
-                "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
-                "message": reponse
+                "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+                "message": reponse,
+                "pj": pj_list
             })
+            # 🔄 Repasser automatiquement en "Non traité"
+            demande["statut"] = "Non traité"
             save_data(data)
             return render_template("merci_reponse.html", demande=demande)
 
