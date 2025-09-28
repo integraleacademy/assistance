@@ -430,7 +430,7 @@ def admin():
                 save_data(data)
             return redirect(url_for("admin"))
 
-    return render_template("admin.html", demandes=demandes, compteur_traitees=data["compteur_traitees"])
+    return render_template("admin.html", demandes=reversed(demandes), compteur_traitees=data["compteur_traitees"])
 
 @app.route("/archives", methods=["GET", "POST"])
 def archives():
