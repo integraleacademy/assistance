@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -23,11 +23,10 @@ def load_data():
             data = json.load(f)
             if isinstance(data, dict):
                 data.setdefault("demandes", [])
-                data.setdefault("archives", [])  # ✅ ajouté, tout le reste inchangé
+                data.setdefault("archives", [])
                 data.setdefault("compteur_traitees", 0)
                 return data
             else:
-                # compat ancien format (liste brute)
                 return {"demandes": data, "archives": [], "compteur_traitees": 0}
     return {"demandes": [], "archives": [], "compteur_traitees": 0}
 
@@ -44,10 +43,9 @@ def supprimer_fichier(filename):
         os.remove(chemin)
 
 # -------------------------------------------------------------------
-# Email helper: HTML responsive (tables) + texte + logo inline + PJ
+# Email helper
 # -------------------------------------------------------------------
 def _brand_header_table():
-    """Header en <table> (compatible email) avec logo compact centré."""
     return """
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
       <tr>
@@ -65,7 +63,6 @@ def _brand_header_table():
     """
 
 def _wrap_html(title_html, body_html):
-    """Gabarit responsive basé sur tables (600px max, 100% mobile)."""
     return f"""
     <!DOCTYPE html>
     <html>
@@ -73,19 +70,15 @@ def _wrap_html(title_html, body_html):
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f7f7f7;">
         <tr>
           <td align="center" style="padding:24px;">
-            <!-- Carte -->
             <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;max-width:600px;width:100%; background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
               <tr>
                 <td style="padding:0;">{_brand_header_table()}</td>
               </tr>
-              <!-- Contenu -->
               <tr>
                 <td style="padding:22px;">
-                  <!-- Titre -->
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
                     <tr><td style="font-family:Arial,Helvetica,sans-serif;">{title_html}</td></tr>
                   </table>
-                  <!-- Corps -->
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
                     <tr>
                       <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#222;">
@@ -95,14 +88,12 @@ def _wrap_html(title_html, body_html):
                   </table>
                 </td>
               </tr>
-              <!-- Footer -->
               <tr>
                 <td style="padding:12px 22px;color:#777;font-size:12px;border-top:1px solid #f0f0f0; font-family:Arial,Helvetica,sans-serif;">
                   Merci de ne pas répondre directement à ce message automatique.
                 </td>
               </tr>
             </table>
-            <!-- /Carte -->
           </td>
         </tr>
       </table>
@@ -111,7 +102,6 @@ def _wrap_html(title_html, body_html):
     """
 
 def _attach_logo(related_part):
-    """Attache le logo static/logo.png si présent, sous CID logo_cid."""
     try:
         logo_path = os.path.join(app.root_path, "static", "logo.png")
         if os.path.exists(logo_path):
@@ -124,11 +114,6 @@ def _attach_logo(related_part):
         print("⚠️ Impossible d’attacher le logo :", e)
 
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
-    """ Structure email: mixed
-        └─ related
-           └─ alternative (text/plain + text/html)
-        + attachments
-    """
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
@@ -164,7 +149,7 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         return False
 
 # -------------------------------------------------------------------
-# Emails (admin, accusé, confirmation) — CONTENU COMPLET
+# Emails (admin, accusé, confirmation)
 # -------------------------------------------------------------------
 def envoyer_mail_admin(demande):
     sujet = f"🆕 Nouvelle demande stagiaire — {demande['motif']}"
@@ -181,7 +166,6 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
 
-    # ✅ Tableau aligné : 2 colonnes (label fixe)
     rows = f"""
       <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Nom</td>
           <td style="padding:6px 8px;"><strong>{demande['nom']}</strong></td></tr>
@@ -247,7 +231,6 @@ def envoyer_mail_confirmation(demande):
         f"📝 Détails : {demande['details']}\n"
         f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
         f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
-        f"📩 Pour nous répondre : {url_for('repondre', demande_id=demande['id'], _external=True)}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
@@ -267,12 +250,6 @@ def envoyer_mail_confirmation(demande):
         </tr>
       </table>
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
-      <p style="margin:16px 0;"> 
-        <a href="{url_for('repondre', demande_id=demande['id'], _external=True)}" 
-           style="display:inline-block;padding:10px 16px;background:#0d6efd;color:#fff;border-radius:6px;text-decoration:none;">
-          📩 Répondre
-        </a>
-      </p>
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
@@ -313,7 +290,6 @@ def index():
         motif_in = request.form["motif"].strip()
         details_in = request.form["details"].strip()
 
-        # ✅ Détection doublon (nom+prenom+mail+motif+details)
         is_doublon = any(
             d.get("nom","").strip().lower() == nom_in.lower() and
             d.get("prenom","").strip().lower() == prenom_in.lower() and
@@ -341,8 +317,8 @@ def index():
             "mail_contenu": "",
             "mail_html": "",
             "pieces_jointes": [],
-            "is_doublon": is_doublon,
-            "reponses": []  # ✅ prépare le stockage des réponses
+            "reponses": [],
+            "is_doublon": is_doublon
         }
         demandes.append(new_demande)
         save_data(data)
@@ -375,7 +351,6 @@ def admin():
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
-                    # Upload nouvelles pièces jointes
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -386,7 +361,6 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # Passage à Traité => envoi confirmation
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -416,9 +390,7 @@ def admin():
                     to_remove = d
                     break
             if to_remove:
-                # Archiver la demande (au lieu de la perdre)
                 data["archives"].append(to_remove)
-                # supprimer les fichiers associés
                 supprimer_fichier(to_remove.get("justificatif"))
                 for pj in to_remove.get("pieces_jointes", []):
                     supprimer_fichier(pj)
@@ -470,52 +442,51 @@ def voir_mail(demande_id):
     demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
     return render_template("voir_mail.html", demande=demande)
 
-# -------------------------------------------------------------------
-# ✅ Nouvelle route : formulaire public de réponse (avec PJ) + réimport archives + retour "Non traité"
-# -------------------------------------------------------------------
 @app.route("/repondre/<demande_id>", methods=["GET", "POST"])
 def repondre(demande_id):
     data = load_data()
+    demande = next(
+        (d for d in data["demandes"] if d["id"] == demande_id),
+        None
+    )
 
-    # 1) Cherche dans demandes
-    demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
-
-    # 2) Sinon, chercher dans archives et réimporter
+    # Si la demande n'est plus dans demandes, chercher dans archives
     if not demande:
-        demande = next((a for a in data["archives"] if a["id"] == demande_id), None)
-        if demande:
-            data["archives"] = [a for a in data["archives"] if a["id"] != demande_id]
-            demande["statut"] = "Non traité"
+        demande = next(
+            (a for a in data["archives"] if a["id"] == demande_id),
+            None
+        )
+        if not demande:
+            return "Demande introuvable", 404
+        # Si la demande est dans les archives et qu'on reçoit une réponse,
+        # on la ramène dans demandes actives
+        if request.method == "POST":
+            data["archives"].remove(demande)
             data["demandes"].append(demande)
-            save_data(data)  # persiste le move
-
-    if not demande:
-        abort(404)
 
     if request.method == "POST":
-        reponse = request.form.get("reponse", "").strip()
+        message = request.form.get("message", "").strip()
+        paris_tz = pytz.timezone("Europe/Paris")
 
-        # Gestion PJ unique ou multiple (input name="pj" multiple)
-        pj_list = []
+        # Gestion des pièces jointes dans la réponse
+        pj_files = []
         if "pj" in request.files:
-            files = request.files.getlist("pj")
-            for f in files:
+            for f in request.files.getlist("pj"):
                 if f and f.filename:
                     filename = secure_filename(f.filename)
-                    filepath = os.path.join(UPLOAD_FOLDER, filename)
-                    f.save(filepath)
-                    pj_list.append(filename)
+                    f.save(os.path.join(UPLOAD_FOLDER, filename))
+                    pj_files.append(filename)
 
-        if reponse or pj_list:
-            demande.setdefault("reponses", []).append({
-                "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-                "message": reponse,
-                "pj": pj_list
-            })
-            # 🔄 Repasser automatiquement en "Non traité"
-            demande["statut"] = "Non traité"
-            save_data(data)
-            return render_template("merci_reponse.html", demande=demande)
+        nouvelle_reponse = {
+            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+            "message": message,
+            "pj": pj_files
+        }
+        demande.setdefault("reponses", []).append(nouvelle_reponse)
+        demande["statut"] = "Non traité"
+
+        save_data(data)
+        return render_template("merci_reponse.html")
 
     return render_template("repondre.html", demande=demande)
 
