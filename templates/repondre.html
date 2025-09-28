@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Réponse à votre demande</title>
+  <style>
+    body {font-family: Arial, sans-serif; background:#f9f9f9; padding:30px;}
+    .box {background:#fff; padding:20px; border-radius:10px; max-width:600px; margin:auto; box-shadow:0 0 10px rgba(0,0,0,0.1);}
+    textarea {width:100%; height:150px; margin-bottom:15px; padding:10px; border-radius:6px; border:1px solid #ccc;}
+    button {background:#0d6efd; color:#fff; padding:10px 16px; border:none; border-radius:6px; cursor:pointer;}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>📩 Répondre à Intégrale Academy</h2>
+    <p>Bonjour {{ demande.prenom }}, vous pouvez nous écrire directement ci-dessous :</p>
+    <form method="post">
+      <textarea name="reponse" placeholder="Votre message..." required></textarea>
+      <button type="submit">Envoyer</button>
+    </form>
+  </div>
+</body>
+</html>
