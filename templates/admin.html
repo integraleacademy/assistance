@@ -144,7 +144,7 @@
             <button type="button" 
               class="comment-btn" 
               data-id="{{ d.id }}" 
-              data-comment='{{ d.commentaire|tojson }}'>
+              data-comment='{{ d.commentaire|tojson|safe }}'>
               ✏️ Ajouter / Modifier
             </button>
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
@@ -178,19 +178,16 @@
   <script>
     let currentCommentId = null;
 
-    // Ouvre la modale et injecte le commentaire
     function openCommentModal(demandeId, commentaire) {
       currentCommentId = demandeId;
       document.getElementById("modalComment").value = commentaire || "";
       document.getElementById("commentModal").style.display = "block";
     }
 
-    // Ferme la modale
     function closeCommentModal() {
       document.getElementById("commentModal").style.display = "none";
     }
 
-    // Sauvegarde dans le champ hidden
     function saveComment() {
       if (currentCommentId) {
         let newComment = document.getElementById("modalComment").value;
@@ -202,7 +199,14 @@
     // Ajout des listeners sur tous les boutons
     document.querySelectorAll(".comment-btn").forEach(btn => {
       btn.addEventListener("click", function() {
-        openCommentModal(this.dataset.id, this.dataset.comment);
+        let raw = this.dataset.comment;
+        let parsed = "";
+        try {
+          parsed = JSON.parse(raw);
+        } catch(e) {
+          parsed = raw;
+        }
+        openCommentModal(this.dataset.id, parsed);
       });
     });
   </script>
