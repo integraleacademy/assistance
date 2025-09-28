@@ -486,7 +486,8 @@ def repondre(demande_id):
         demande["statut"] = "Non traité"
 
         save_data(data)
-        return render_template("merci_reponse.html")
+        return render_template("merci_reponse.html", demande=demande)
+
 
     return render_template("repondre.html", demande=demande)
 
