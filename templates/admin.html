@@ -20,8 +20,7 @@
     .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
     .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
     .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
-    .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
-    /* ===== Colonne PJ propre, sans débordement ===== */
+    .modal-content {background: #fff; margin: 5% auto; padding: 20px; border-radius: 10px; width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
     .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
     .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
     .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
@@ -29,16 +28,13 @@
     .pj-del {flex: 0 0 auto; background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer; line-height: 1; padding: 0 4px;}
     .pj-empty {color:#999; font-size:12px;}
     .pj-input {margin-top:6px; width:95%;}
-    /* Bouton Archives */
-    .archives-btn {
-      display:inline-block; margin-top:10px; padding:8px 14px; background:#6c757d;
-      color:#fff; border-radius:8px; text-decoration:none;
-    }
+    .archives-btn {display:inline-block; margin-top:10px; padding:8px 14px; background:#6c757d; color:#fff; border-radius:8px; text-decoration:none;}
     .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
-    /* Bloc réponses */
-    .reponses-box {margin-top:8px; text-align:left; font-size:13px; background:#f9f9f9; padding:6px; border-radius:6px; max-height:120px; overflow-y:auto;}
-    .reponses-box p {margin:4px 0;}
-    .reponses-box em {color:#555; font-size:12px;}
+    .response-btn {background:#17a2b8; color:#fff; border:none; padding:6px 10px; border-radius:5px; cursor:pointer; font-size:13px;}
+    .response-block {margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#f9f9f9; text-align:left;}
+    .response-date {font-size:12px; color:#555; margin-bottom:6px;}
+    .response-text {margin-bottom:6px; white-space:pre-wrap;}
+    .response-pj a {display:block; font-size:13px; color:#0d6efd; text-decoration:none;}
   </style>
 </head>
 <body>
@@ -64,18 +60,14 @@
         <th>Date</th>
         <th>Attribué à</th>
         <th>Statut</th>
-        <th>Commentaire / Réponses</th>
+        <th>Commentaire</th>
+        <th>Réponses</th>
         <th>Actions</th>
       </tr>
       {% for d in demandes %}
       <tr>
         <form method="POST" enctype="multipart/form-data">
-          <td>
-            {{ d.nom }}
-            {% if d.is_doublon %}
-              <span class="dup-badge">⚠️ Doublon</span>
-            {% endif %}
-          </td>
+          <td>{{ d.nom }} {% if d.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
           <td>{{ d.prenom }}</td>
           <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
           <td>{{ d.motif }}</td>
@@ -126,38 +118,25 @@
             {% else %}
               <span class="status-green">Traité</span>
             {% endif %}
-
             <select name="statut" style="margin-top:5px;">
               <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
               <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
             </select>
-
-            {% if d.mail_confirme %}
-              <div style="font-size:12px; margin-top:4px;">
-                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;"> ✅ Mail envoyé le {{ d.mail_confirme }} </a>
-              </div>
-            {% elif d.mail_erreur %}
-              <div style="font-size:12px; color:#dc3545; margin-top:4px;"> {{ d.mail_erreur }} </div>
-            {% endif %}
           </td>
 
-          <!-- Commentaire + Réponses -->
+          <!-- Commentaire -->
           <td>
-            <button type="button" 
-              class="comment-btn" 
-              data-id="{{ d.id }}" 
-              data-comment='{{ d.commentaire|tojson|safe }}'>
-              ✏️ Ajouter / Modifier
-            </button>
-            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+            <textarea name="commentaire" rows="3" style="width:95%;">{{ d.commentaire }}</textarea>
+          </td>
 
+          <!-- Réponses -->
+          <td>
             {% if d.reponses and d.reponses|length > 0 %}
-              <div class="reponses-box">
-                <strong>📩 Réponses reçues :</strong>
-                {% for rep in d.reponses %}
-                  <p><em>{{ rep.date }}</em><br>{{ rep.message }}</p>
-                {% endfor %}
-              </div>
+              <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">
+                👁 Voir ({{ d.reponses|length }})
+              </button>
+            {% else %}
+              <span class="pj-empty">—</span>
             {% endif %}
           </td>
 
@@ -170,55 +149,40 @@
           </td>
         </form>
       </tr>
+
+      <!-- Modale Réponses -->
+      <div id="responseModal-{{ d.id }}" class="modal">
+        <div class="modal-content">
+          <h3>📩 Réponses de {{ d.prenom }} {{ d.nom }}</h3>
+          {% for r in d.reponses %}
+          <div class="response-block">
+            <div class="response-date">📅 {{ r.date }}</div>
+            <div class="response-text">{{ r.message }}</div>
+            {% if r.pj and r.pj|length > 0 %}
+              <div class="response-pj">
+                {% for pj in r.pj %}
+                  <a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+          <div style="text-align:right;">
+            <button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button>
+          </div>
+        </div>
+      </div>
       {% endfor %}
     </table>
   </div>
 
-  <!-- Fenêtre modale commentaire -->
-  <div id="commentModal" class="modal">
-    <div class="modal-content">
-      <h3>📝 Commentaire</h3>
-      <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
-      <div style="margin-top:10px; text-align:right;">
-        <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
-        <button type="button" onclick="saveComment()">💾 Enregistrer</button>
-      </div>
-    </div>
-  </div>
-
   <script>
-    let currentCommentId = null;
-
-    function openCommentModal(demandeId, commentaire) {
-      currentCommentId = demandeId;
-      document.getElementById("modalComment").value = commentaire || "";
-      document.getElementById("commentModal").style.display = "block";
+    function openResponseModal(id) {
+      document.getElementById("responseModal-" + id).style.display = "block";
     }
-
-    function closeCommentModal() {
-      document.getElementById("commentModal").style.display = "none";
+    function closeResponseModal(id) {
+      document.getElementById("responseModal-" + id).style.display = "none";
     }
-
-    function saveComment() {
-      if (currentCommentId) {
-        let newComment = document.getElementById("modalComment").value;
-        document.getElementById("commentaire-" + currentCommentId).value = newComment;
-      }
-      closeCommentModal();
-    }
-
-    document.querySelectorAll(".comment-btn").forEach(btn => {
-      btn.addEventListener("click", function() {
-        let raw = this.dataset.comment;
-        let parsed = "";
-        try {
-          parsed = JSON.parse(raw);
-        } catch(e) {
-          parsed = raw;
-        }
-        openCommentModal(this.dataset.id, parsed);
-      });
-    });
   </script>
 </body>
 </html>
