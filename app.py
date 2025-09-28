@@ -224,6 +224,9 @@ def envoyer_mail_accuse(demande):
 
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
+
+    repondre_url = url_for("repondre", demande_id=demande["id"], _external=True)
+
     plain = (
         f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
@@ -231,12 +234,27 @@ def envoyer_mail_confirmation(demande):
         f"📝 Détails : {demande['details']}\n"
         f"✍️ Notre réponse : {demande.get('commentaire') or 'Aucun commentaire ajouté.'}\n"
         f"{'📎 Des pièces jointes sont incluses.' if demande.get('pieces_jointes') else ''}\n\n"
+        f"👉 Pour répondre, cliquez ici : {repondre_url}\n\n"
         "Cordialement,\n"
         "L'équipe Intégrale Academy\n"
     )
+
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
       <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
+
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+        <tr>
+          <td>
+            <a href="{repondre_url}" 
+               style="display:inline-block;padding:12px 20px;background:#0d6efd;color:white;
+                      text-decoration:none;border-radius:6px;font-weight:bold;">
+              📩 Répondre à ce message
+            </a>
+          </td>
+        </tr>
+      </table>
+
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;">
         <tr>
           <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;">
