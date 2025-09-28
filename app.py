@@ -203,7 +203,7 @@ def envoyer_mail_admin(demande):
 def envoyer_mail_accuse(demande):
     sujet = "📩 Accusé de réception — Intégrale Academy"
     plain = (
-        f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
+        f"Bonjour {demande['prenom']},\n\n"
         "📩 Nous avons bien reçu votre demande.\n"
         "⏳ Elle sera traitée dans les meilleurs délais.\n"
         "✅ Vous recevrez un mail lorsque votre demande aura été traitée.\n\n"
@@ -213,7 +213,7 @@ def envoyer_mail_accuse(demande):
     html = _wrap_html(
         '<h1 style="margin:0 0 12px;font-size:20px;">📩 Accusé de réception</h1>',
         f"""
-        <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
+        <p>Bonjour <strong>{demande['prenom']}</strong>,</p>
         <p>📩 Nous avons bien reçu votre demande.</p>
         <p>⏳ Elle sera traitée dans les meilleurs délais.</p>
         <p style="margin:0">✅ Vous recevrez un mail lorsque votre demande aura été traitée.</p>
@@ -229,7 +229,7 @@ def envoyer_mail_confirmation(demande):
 
     # --- Version texte brut ---
     plain = (
-        f"Bonjour {demande['prenom']} {demande['nom']},\n\n"
+        f"Bonjour {demande['prenom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
         f"Motif : {demande['motif']}\n"
         f"Détails : {demande['details']}\n"
@@ -242,7 +242,7 @@ def envoyer_mail_confirmation(demande):
 
     # --- Version HTML ---
     body_html = f"""
-      <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
+      <p>Bonjour <strong>{demande['prenom']}</strong>,</p>
       <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
 
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%" 
