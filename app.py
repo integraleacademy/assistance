@@ -243,34 +243,36 @@ def envoyer_mail_confirmation(demande):
       <p>Bonjour <strong>{demande['prenom']} {demande['nom']}</strong>,</p>
       <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
 
-<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:20px 0; text-align:center;">
-  <tr>
-    <td align="center">
-      <a href="{repondre_url}" 
-         style="display:inline-block;padding:14px 28px;background:#0d6efd;color:white;
-                text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">
-        📩 Répondre à ce message
-      </a>
-    </td>
-  </tr>
-</table>
-
-
-      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;border-radius:8px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" 
+             style="border-collapse:collapse;background:#f9fafb;border:1px solid #eef0f2;
+                    border-radius:8px;margin:16px 0;">
         <tr>
-          <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;">
+          <td style="padding:12px 14px;font-family:Arial,Helvetica,sans-serif;
+                     font-size:14px;color:#222;">
             <div style="margin:4px 0;"><strong>📌 Motif :</strong> {demande['motif']}</div>
             <div style="margin:4px 0;"><strong>📝 Détails :</strong> {demande['details']}</div>
-            <div style="margin:12px 0;padding:12px;background:#fff8e5; border:1px solid #f0dca6;border-radius:6px;">
+            <div style="margin:12px 0;padding:12px;background:#fff8e5;
+                        border:1px solid #f0dca6;border-radius:6px;">
               <strong>✍️ Notre réponse :</strong><br>
               {demande.get('commentaire') or 'Aucun commentaire ajouté.'}
+            </div>
+
+            <!-- ✅ Bouton Répondre placé après "Notre réponse" -->
+            <div style="margin:20px 0; text-align:center;">
+              <a href="{repondre_url}" 
+                 style="display:inline-block;padding:14px 28px;background:#0d6efd;color:white;
+                        text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">
+                📩 Répondre à ce message
+              </a>
             </div>
           </td>
         </tr>
       </table>
+
       {"<p style='margin:8px 0;'>📎 Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
+
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
     pj_paths = []
@@ -284,6 +286,8 @@ def envoyer_mail_confirmation(demande):
         demande["mail_contenu"] = f"Sujet : {sujet}\n\n{plain}"
         demande["mail_html"] = html
     return ok
+
+
 
 # -------------------------------------------------------------------
 # Routes
