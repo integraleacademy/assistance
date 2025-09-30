@@ -301,6 +301,7 @@ def envoyer_mail_confirmation(demande):
 # -------------------------------------------------------------------
 # Routes
 # -------------------------------------------------------------------
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     data = load_data()
@@ -360,9 +361,17 @@ def index():
         try: envoyer_mail_accuse(new_demande)
         except: pass
 
-        return render_template("confirmation.html")
+        # ✅ redirection après POST
+        return redirect(url_for("confirmation"))
 
+    # ✅ affichage normal quand GET
     return render_template("index.html")
+
+
+@app.route("/confirmation")
+def confirmation():
+    return render_template("confirmation.html")
+
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
