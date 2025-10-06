@@ -11,7 +11,7 @@
     table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
     th, td {border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; word-wrap: break-word;}
     th {background-color: #f4c45a; color: #333;}
-    select, textarea, input[type="text"], input[type="file"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
+    select, textarea, input[type="text"], input[type="file"], input[type="email"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
     .actions button, .actions a {padding: 6px 10px; margin: 2px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;}
     .save {background-color: #198754; color: white;}
     .delete {background-color: #dc3545; color: white;}
@@ -35,12 +35,35 @@
     .response-date {font-size:12px; color:#555; margin-bottom:6px;}
     .response-text {margin-bottom:6px; white-space:pre-wrap;}
     .response-pj a {display:block; font-size:13px; color:#0d6efd; text-decoration:none;}
+    .add-form {margin:20px auto; text-align:center; background:#f9f9f9; padding:15px; border-radius:10px; max-width:600px;}
+    .add-form input, .add-form select {margin:5px; width:calc(45%);}
+    .add-form button {background:#0d6efd; color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer;}
   </style>
 </head>
 <body>
   <div class="container">
     <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
     <h2>📋 Gestion des demandes stagiaires</h2>
+
+    <!-- Bloc Ajout manuel -->
+    <div class="add-form">
+      <h3>➕ Ajouter une demande manuellement</h3>
+      <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <input type="text" name="telephone" placeholder="Téléphone">
+        <input type="email" name="mail" placeholder="Email (par défaut ecole@integraleacademy.com)">
+        <select name="motif">
+          <option value="Attestation">Attestation</option>
+          <option value="Diplome">Diplôme</option>
+          <option value="Absence">Absence</option>
+          <option value="Contrats">Contrat</option>
+          <option value="Autre" selected>Autre</option>
+        </select>
+        <input type="text" name="details" placeholder="Détails de la demande" required style="width:90%;">
+        <br><br>
+        <button type="submit">➕ Créer</button>
+      </form>
+    </div>
 
     <div style="text-align:center; margin-bottom:20px;">
       <h3>✅ Total traitées : {{ compteur_traitees }}</h3>
@@ -222,7 +245,6 @@
       closeCommentModal();
     }
 
-    // Ajout listeners
     document.querySelectorAll(".comment-btn").forEach(btn => {
       btn.addEventListener("click", function() {
         let raw = this.dataset.comment;
