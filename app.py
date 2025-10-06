@@ -382,7 +382,36 @@ def admin():
         action = request.form.get("action")
         demande_id = request.form.get("id")
 
-        if action == "update":
+        # ✅ Ajout manuel depuis admin
+        if action == "add":
+            paris_tz = pytz.timezone("Europe/Paris")
+            new_demande = {
+                "id": str(uuid.uuid4()),
+                "nom": "Vaillant",
+                "prenom": "Clément",
+                "telephone": request.form.get("telephone", ""),
+                "mail": request.form.get("mail", "ecole@integraleacademy.com"),
+                "motif": request.form.get("motif", "Autre"),
+                "details": request.form.get("details", ""),
+                "justificatif": "",
+                "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+                "attribution": "Clément",
+                "statut": "Non traité",
+                "commentaire": "",
+                "mail_confirme": "",
+                "mail_erreur": "",
+                "mail_contenu": "",
+                "mail_html": "",
+                "pieces_jointes": [],
+                "reponses": [],
+                "is_doublon": False
+            }
+            data["demandes"].append(new_demande)
+            save_data(data)
+            return redirect(url_for("admin"))
+
+        # ✅ Mise à jour d'une demande
+        elif action == "update":
             for d in demandes:
                 if d["id"] == demande_id:
                     d["mail"] = request.form.get("mail") or d["mail"]
@@ -414,6 +443,33 @@ def admin():
                     d["statut"] = nouveau_statut
             save_data(data)
             return redirect(url_for("admin"))
+
+        # ✅ Suppression PJ
+        elif action == "delete_pj":
+            pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
+            for d in demandes:
+                if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
+                    d["pieces_jointes"].remove(pj_name)
+                    supprimer_fichier(pj_name)
+            save_data(data)
+            return redirect(url_for("admin"))
+
+        # ✅ Suppression (archiver)
+        elif action == "delete":
+            to_remove = None
+            for d in demandes:
+                if d["id"] == demande_id:
+                    to_remove = d
+                    break
+            if to_remove:
+                data["archives"].append(to_remove)
+                supprimer_fichier(to_remove.get("justificatif"))
+                for pj in to_remove.get("pieces_jointes", []):
+                    supprimer_fichier(pj)
+                data["demandes"].remove(to_remove)
+                save_data(data)
+            return redirect(url_for("admin"))
+
 
         elif action == "delete_pj":
             pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
