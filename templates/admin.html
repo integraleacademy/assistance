@@ -20,7 +20,7 @@
     .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
     .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
     .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
-    .modal-content {background: #fff; margin: 10% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
+    .modal-content {background: #fff; margin: 8% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
     .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
     .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
     .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
@@ -35,9 +35,6 @@
     .response-date {font-size:12px; color:#555; margin-bottom:6px;}
     .response-text {margin-bottom:6px; white-space:pre-wrap;}
     .response-pj a {display:block; font-size:13px; color:#0d6efd; text-decoration:none;}
-    .add-form {margin:20px auto; text-align:center; background:#f9f9f9; padding:15px; border-radius:10px; max-width:600px;}
-    .add-form input, .add-form select {margin:5px; width:calc(45%);}
-    .add-form button {background:#0d6efd; color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer;}
   </style>
 </head>
 <body>
@@ -45,24 +42,38 @@
     <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
     <h2>📋 Gestion des demandes stagiaires</h2>
 
-    <!-- Bloc Ajout manuel -->
-    <div class="add-form">
-      <h3>➕ Ajouter une demande manuellement</h3>
-      <form method="POST">
-        <input type="hidden" name="action" value="add">
-        <input type="text" name="telephone" placeholder="Téléphone">
-        <input type="email" name="mail" placeholder="Email (par défaut ecole@integraleacademy.com)">
-        <select name="motif">
-          <option value="Attestation">Attestation</option>
-          <option value="Diplome">Diplôme</option>
-          <option value="Absence">Absence</option>
-          <option value="Contrats">Contrat</option>
-          <option value="Autre" selected>Autre</option>
-        </select>
-        <input type="text" name="details" placeholder="Détails de la demande" required style="width:90%;">
-        <br><br>
-        <button type="submit">➕ Créer</button>
-      </form>
+    <!-- Bouton Ajout manuel -->
+    <div style="text-align:center; margin-bottom:20px;">
+      <button type="button" onclick="openAddModal()" 
+              style="background:#0d6efd; color:#fff; padding:10px 16px; border:none; border-radius:6px; cursor:pointer;">
+        ➕ Ajouter une demande
+      </button>
+    </div>
+
+    <!-- Modale Ajout -->
+    <div id="addModal" class="modal">
+      <div class="modal-content">
+        <h3>➕ Nouvelle demande manuelle</h3>
+        <form method="POST">
+          <input type="hidden" name="action" value="add">
+          <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
+          <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
+          <select name="motif" style="width:100%; margin:6px 0;">
+            <option value="Attestation">Attestation</option>
+            <option value="Diplome">Diplôme</option>
+            <option value="Absence">Absence</option>
+            <option value="Contrats">Contrat</option>
+            <option value="Autre" selected>Autre</option>
+          </select>
+          <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
+          <div style="margin-top:10px; text-align:right;">
+            <button type="button" onclick="closeAddModal()">❌ Annuler</button>
+            <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
+              ➕ Créer
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
 
     <div style="text-align:center; margin-bottom:20px;">
@@ -259,6 +270,13 @@
     }
     function closeResponseModal(id) {
       document.getElementById("responseModal-" + id).style.display = "none";
+    }
+
+    function openAddModal() {
+      document.getElementById("addModal").style.display = "block";
+    }
+    function closeAddModal() {
+      document.getElementById("addModal").style.display = "none";
     }
   </script>
 </body>
