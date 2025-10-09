@@ -50,6 +50,18 @@
       </button>
     </div>
 
+    <!-- Bouton Archiver toutes les traitées -->
+<div style="text-align:center; margin-bottom:20px;">
+  <form method="POST" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
+    <input type="hidden" name="action" value="delete_all_traitees">
+    <button type="submit" 
+            style="background:#dc3545; color:#fff; padding:10px 16px; border:none; border-radius:6px; cursor:pointer;">
+      🗑️ Archiver toutes les demandes traitées
+    </button>
+  </form>
+</div>
+
+
     <!-- Modale Ajout -->
     <div id="addModal" class="modal">
       <div class="modal-content">
