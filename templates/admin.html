@@ -12,16 +12,29 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 10px;
+      margin-bottom: 15px;
     }
-    .topbar h2 {
+    .logo-square {
+      max-width: 70px;
+      border-radius: 0; /* ✅ carré */
+    }
+    .title-block {
+      text-align: center;
+    }
+    .title-block h2 {
       margin: 0;
       font-size: 20px;
     }
-    .logo-small {
-      max-width: 70px;
-      border-radius: 50%;
+    .counters-inline {
+      margin-top: 4px;
+      font-size: 14px;
     }
+    .counters-inline span {
+      margin: 0 8px;
+      font-weight: bold;
+    }
+    .counters-inline .ok { color:#198754; }
+    .counters-inline .pending { color:#f39c12; }
     .actions-top {
       display: flex;
       gap: 8px;
@@ -36,16 +49,6 @@
     .btn.blue { background:#0d6efd; color:#fff; }
     .btn.red { background:#dc3545; color:#fff; }
     .btn.grey { background:#6c757d; color:#fff; text-decoration:none; display:inline-block; }
-
-    /* Compteurs */
-    .counters {
-      text-align: center;
-      margin-bottom: 15px;
-      font-size: 15px;
-    }
-    .counters span { margin: 0 10px; font-weight: bold; }
-    .counters .ok { color:#198754; }
-    .counters .pending { color:#f39c12; }
 
     /* Tableau */
     table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
@@ -70,7 +73,7 @@
     .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
     .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
     .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
-    .pj-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #0d6efd; text-decoration: none; }
+    .pj-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color:#0d6efd; text-decoration: none; }
     .pj-del {flex: 0 0 auto; background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer; line-height: 1; padding: 0 4px;}
     .pj-empty {color:#999; font-size:12px;}
     .pj-input {margin-top:6px; width:95%;}
@@ -88,8 +91,16 @@
 
     <!-- Topbar compact -->
     <div class="topbar">
-      <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo-small">
-      <h2>📋 Gestion des demandes stagiaires</h2>
+      <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo-square">
+
+      <div class="title-block">
+        <h2>📋 Gestion des demandes stagiaires</h2>
+        <div class="counters-inline">
+          <span class="ok">✅ Traitées : {{ compteur_traitees }}</span>
+          <span class="pending">⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</span>
+        </div>
+      </div>
+
       <div class="actions-top">
         <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
 
@@ -100,12 +111,6 @@
 
         <a href="{{ url_for('archives') }}" class="btn grey">📦 Archives</a>
       </div>
-    </div>
-
-    <!-- Compteurs -->
-    <div class="counters">
-      <span class="ok">✅ Traitées : {{ compteur_traitees }}</span>
-      <span class="pending">⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</span>
     </div>
 
     <!-- Modale Ajout -->
