@@ -2,63 +2,226 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Assistance - Intégrale Academy</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Administration - Intégrale Academy</title>
   <style>
-    body {background-color:#fdfaf5; font-family:Arial, sans-serif; margin:0; padding:20px;}
-    .container {width:100%; background:#fff; padding:20px; border-radius:15px; box-shadow:0 0 15px rgba(0,0,0,.1); box-sizing:border-box; overflow-x:auto;}
+    body {
+      background-color:#fdfaf5;
+      font-family:Arial, sans-serif;
+      margin:0;
+      padding:20px;
+    }
+    .container {
+      width:100%;
+      background:#fff;
+      padding:20px;
+      border-radius:15px;
+      box-shadow:0 0 15px rgba(0,0,0,.1);
+      box-sizing:border-box;
+      overflow-x:auto;
+    }
 
     /* Topbar */
-    .topbar {display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;}
-    .logo-square {width:100px; height:auto; border-radius:0;}
-    .title-block {text-align:center; flex:1;}
-    .title-block h2 {margin:0; font-size:22px;}
-    .counters-inline {margin-top:6px; font-size:15px;}
-    .counters-inline span {margin:0 8px; font-weight:bold;}
-    .ok {color:#198754;} .pending {color:#f39c12;}
-    .actions-top {display:flex; gap:8px; align-items:center;}
-    .btn {padding:8px 14px; border-radius:6px; border:none; cursor:pointer; font-size:13px;}
-    .btn.blue{background:#0d6efd;color:#fff;} .btn.red{background:#dc3545;color:#fff;}
-    .btn.grey{background:#6c757d;color:#fff; text-decoration:none; display:inline-block;}
+    .topbar {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:20px;
+    }
+    .logo-square {
+      width:100px;
+      height:auto;
+      border-radius:0;
+    }
+    .title-block {
+      text-align:center;
+      flex:1;
+    }
+    .title-block h2 {
+      margin:0;
+      font-size:22px;
+    }
+    .counters-inline {
+      margin-top:6px;
+      font-size:15px;
+    }
+    .counters-inline span {
+      margin:0 8px;
+      font-weight:bold;
+    }
+    .ok {color:#198754;}
+    .pending {color:#f39c12;}
+    .actions-top {
+      display:flex;
+      gap:8px;
+    }
+    .btn {
+      padding:8px 14px;
+      border-radius:6px;
+      border:none;
+      cursor:pointer;
+      font-size:13px;
+    }
+    .btn.blue {background:#0d6efd;color:#fff;}
+    .btn.red {background:#dc3545;color:#fff;}
+    .btn.grey {background:#6c757d;color:#fff;text-decoration:none;display:inline-block;}
 
     /* Tableau */
-    table {width:100%; border-collapse:collapse; table-layout:fixed; font-size:14px;}
-    th, td {border:1px solid #ddd; padding:8px; text-align:center; vertical-align:middle; word-wrap:break-word;}
-    th {background:#f4c45a; color:#333;}
-    select, textarea, input[type="text"], input[type="file"], input[type="email"] {padding:5px; border-radius:5px; border:1px solid #ccc; width:90%;}
+    table {
+      width:100%;
+      border-collapse:collapse;
+      table-layout:fixed;
+      font-size:14px;
+    }
+    th, td {
+      border:1px solid #ddd;
+      padding:8px;
+      text-align:center;
+      vertical-align:middle;
+      word-wrap:break-word;
+    }
+    th {
+      background:#f4c45a;
+      color:#333;
+    }
+    select, textarea, input[type="text"], input[type="file"], input[type="email"] {
+      padding:5px;
+      border-radius:5px;
+      border:1px solid #ccc;
+      width:90%;
+    }
 
     /* Aperçu détails + bouton */
-    .detail-preview {font-size:13px; color:#333; margin-bottom:6px; min-height:18px;}
-    .detail-btn {background:#ffc107; border:none; padding:6px 10px; border-radius:5px; cursor:pointer; font-size:13px;}
+    .detail-preview {
+      font-size:13px;
+      color:#333;
+      margin-bottom:6px;
+      min-height:18px;
+    }
+    .detail-btn {
+      background:#ffc107;
+      border:none;
+      padding:6px 10px;
+      border-radius:5px;
+      cursor:pointer;
+      font-size:13px;
+    }
 
     /* Actions alignées */
-    .actions {display:flex; justify-content:center; align-items:center; gap:6px; flex-wrap:nowrap; min-width:150px;}
-    .actions button, .actions a {display:inline-block; padding:6px 8px; margin:0; border:none; border-radius:6px; font-size:13px; cursor:pointer; flex:0 0 auto;}
-    .save{background:#198754;color:#fff;} .delete{background:#dc3545;color:#fff;}
-    .print{background:#0d6efd;color:#fff; text-decoration:none; display:inline-block;}
+    td.actions {border:none;} /* ✅ supprime la bordure de la cellule Actions */
+    .actions {
+      display:inline-flex;
+      justify-content:center;
+      align-items:center;
+      gap:4px;
+      white-space:nowrap;
+    }
+    .actions button, .actions a {
+      display:inline-block;
+      padding:4px 6px;
+      margin:0;
+      border:none;
+      border-radius:6px;
+      font-size:12px;
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+    .save {background:#198754;color:#fff;}
+    .delete {background:#dc3545;color:#fff;}
+    .print {background:#0d6efd;color:#fff;text-decoration:none;display:inline-block;}
 
     /* Statuts */
-    .status-red{color:#fff;background:#dc3545;font-weight:bold;padding:4px 8px;border-radius:5px;}
-    .status-green{color:#fff;background:#198754;font-weight:bold;padding:4px 8px;border-radius:5px;}
+    .status-red {
+      color:#fff;
+      background:#dc3545;
+      font-weight:bold;
+      padding:4px 8px;
+      border-radius:5px;
+    }
+    .status-green {
+      color:#fff;
+      background:#198754;
+      font-weight:bold;
+      padding:4px 8px;
+      border-radius:5px;
+    }
 
     /* PJ */
     .pj-cell {min-width:200px; max-width:240px; overflow:hidden;}
     .pj-wrap {display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-start;}
-    .pj-chip {display:inline-flex; align-items:center; gap:6px; max-width:100%; min-width:0; padding:4px 8px; border:1px solid #e5e7eb; border-radius:9999px; background:#f8f9fa;}
-    .pj-name {flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#0d6efd; text-decoration:none;}
-    .pj-del {flex:0 0 auto; background:transparent; border:none; color:#dc3545; font-weight:700; cursor:pointer; line-height:1; padding:0 4px;}
-    .pj-empty{color:#999; font-size:12px;} .pj-input{margin-top:6px; width:95%;}
+    .pj-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      max-width:100%;
+      min-width:0;
+      padding:4px 8px;
+      border:1px solid #e5e7eb;
+      border-radius:9999px;
+      background:#f8f9fa;
+    }
+    .pj-name {
+      flex:1 1 auto;
+      min-width:0;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      color:#0d6efd;
+      text-decoration:none;
+    }
+    .pj-del {
+      flex:0 0 auto;
+      background:transparent;
+      border:none;
+      color:#dc3545;
+      font-weight:700;
+      cursor:pointer;
+      line-height:1;
+      padding:0 4px;
+    }
+    .pj-empty {color:#999; font-size:12px;}
+    .pj-input {margin-top:6px; width:95%;}
     .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
 
     /* Réponses */
-    .response-btn{background:#17a2b8;color:#fff;border:none;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:13px;}
-    .response-block{margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#f9f9f9; text-align:left;}
-    .response-date{font-size:12px; color:#555; margin-bottom:6px;}
-    .response-text{margin-bottom:6px; white-space:pre-wrap;} .response-pj a{display:block;font-size:13px;color:#0d6efd;text-decoration:none;}
+    .response-btn {
+      background:#17a2b8;
+      color:#fff;
+      border:none;
+      padding:6px 10px;
+      border-radius:5px;
+      cursor:pointer;
+      font-size:13px;
+    }
+    .response-block {
+      margin-bottom:12px;
+      padding:10px;
+      border:1px solid #ddd;
+      border-radius:8px;
+      background:#f9f9f9;
+      text-align:left;
+    }
+    .response-date {font-size:12px; color:#555; margin-bottom:6px;}
+    .response-text {margin-bottom:6px; white-space:pre-wrap;}
+    .response-pj a {display:block;font-size:13px;color:#0d6efd;text-decoration:none;}
 
     /* Modales */
-    .modal {display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,.5);}
-    .modal-content {background:#fff; margin:8% auto; padding:20px; border-radius:10px; width:500px; max-width:90%; box-shadow:0 0 15px rgba(0,0,0,.3);}
+    .modal {
+      display:none;
+      position:fixed;
+      z-index:1000;
+      left:0; top:0;
+      width:100%; height:100%;
+      background:rgba(0,0,0,.5);
+    }
+    .modal-content {
+      background:#fff;
+      margin:8% auto;
+      padding:20px;
+      border-radius:10px;
+      width:500px;
+      max-width:90%;
+      box-shadow:0 0 15px rgba(0,0,0,.3);
+    }
   </style>
 </head>
 <body>
@@ -71,7 +234,7 @@
         <h2>📋 Gestion des demandes stagiaires</h2>
         <div class="counters-inline">
           <span class="ok">✅ Traitées : {{ compteur_traitees }}</span>
-          <span class="pending">⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</span>
+          <span class="pending">⏳ À traiter : {{ demandes|selectattr('statut','equalto','Non traité')|list|length }}</span>
         </div>
       </div>
       <div class="actions-top">
@@ -84,37 +247,22 @@
       </div>
     </div>
 
-    <!-- Modale Ajout -->
-    <div id="addModal" class="modal">
-      <div class="modal-content">
-        <h3>➕ Nouvelle demande manuelle</h3>
-        <form method="POST">
-          <input type="hidden" name="action" value="add">
-          <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
-          <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
-          <select name="motif" style="width:100%; margin:6px 0;">
-            <option value="Attestation">Attestation</option>
-            <option value="Diplome">Diplôme</option>
-            <option value="Absence">Absence</option>
-            <option value="Contrats">Contrat</option>
-            <option value="Autre" selected>Autre</option>
-          </select>
-          <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
-          <div style="margin-top:10px; text-align:right;">
-            <button type="button" onclick="closeAddModal()">❌ Annuler</button>
-            <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">➕ Créer</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Tableau demandes -->
+    <!-- Tableau -->
     <table>
       <tr>
-        <th>Nom</th><th>Prénom</th><th>Email</th><th>Motif</th>
-        <th>Détails</th><th>Justificatif</th><th>Pièces jointes</th>
-        <th>Date</th><th>Attribué à</th><th>Statut</th><th>Commentaire</th>
-        <th>Réponses</th><th>Actions</th>
+        <th>Nom</th>
+        <th>Prénom</th>
+        <th>Email</th>
+        <th>Motif</th>
+        <th>Détails</th>
+        <th>Justificatif</th>
+        <th>Pièces jointes</th>
+        <th>Date</th>
+        <th>Attribué à</th>
+        <th>Statut</th>
+        <th>Commentaire</th>
+        <th>Réponses</th>
+        <th>Actions</th>
       </tr>
 
       {% for d in demandes %}
@@ -125,7 +273,7 @@
           <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
           <td>{{ d.motif }}</td>
 
-          <!-- Détails : aperçu + modal édition -->
+          <!-- Détails -->
           <td>
             <div class="detail-preview" id="preview-{{ d.id }}">
               {% if d.details %}{{ d.details[:60] }}{% if d.details|length>60 %}…{% endif %}{% else %}—{% endif %}
@@ -154,16 +302,14 @@
                             onclick="this.form.pj_name.value='{{ pj }}'">×</button>
                   </div>
                 {% endfor %}
-              {% else %}
-                <span class="pj-empty">—</span>
-              {% endif %}
+              {% else %}<span class="pj-empty">—</span>{% endif %}
             </div>
             <input type="file" name="pj" multiple class="pj-input">
           </td>
 
           <td>{{ d.date }}</td>
 
-          <!-- Attribué à -->
+          <!-- Attribution -->
           <td>
             <select name="attribution">
               <option value="">--</option>
@@ -174,29 +320,23 @@
 
           <!-- Statut -->
           <td>
-            {% if d.statut=='Non traité' %}<span class="status-red">Non traité</span>
-            {% else %}<span class="status-green">Traité</span>{% endif %}
+            {% if d.statut=='Non traité' %}<span class="status-red">Non traité</span>{% else %}<span class="status-green">Traité</span>{% endif %}
             <select name="statut" style="margin-top:5px;">
               <option value="Non traité" {% if d.statut=='Non traité' %}selected{% endif %}>Non traité</option>
               <option value="Traité" {% if d.statut=='Traité' %}selected{% endif %}>Traité</option>
             </select>
             {% if d.mail_confirme %}
               <div style="font-size:12px; margin-top:4px;">
-                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
-                  ✅ Mail envoyé le {{ d.mail_confirme }}
-                </a>
+                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">✅ Mail envoyé le {{ d.mail_confirme }}</a>
               </div>
             {% elif d.mail_erreur %}
               <div style="font-size:12px; color:#dc3545; margin-top:4px;">{{ d.mail_erreur }}</div>
             {% endif %}
           </td>
 
-          <!-- Commentaire (SAFE via data-attribute) -->
+          <!-- Commentaire -->
           <td>
-            <button type="button"
-                    class="detail-btn"
-                    data-comment='{{ d.commentaire|tojson|safe }}'
-                    onclick="openCommentFromBtn(this,'{{ d.id }}')">✏️ Ajouter / Modifier</button>
+            <button type="button" class="detail-btn" onclick="openCommentModal('{{ d.id }}', {{ d.commentaire|tojson|safe }})">✏️ Ajouter / Modifier</button>
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
           </td>
 
@@ -218,7 +358,7 @@
         </form>
       </tr>
 
-      <!-- Modal Réponses -->
+      <!-- Modales -->
       <div id="responseModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📩 Réponses de {{ d.prenom }} {{ d.nom }}</h3>
@@ -239,7 +379,6 @@
         </div>
       </div>
 
-      <!-- Modal Détails -->
       <div id="detailModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
@@ -254,7 +393,7 @@
     </table>
   </div>
 
-  <!-- Modal Commentaire générique -->
+  <!-- Modal Commentaire -->
   <div id="commentModal" class="modal">
     <div class="modal-content">
       <h3>📝 Commentaire</h3>
@@ -267,45 +406,49 @@
   </div>
 
   <script>
-    /* ---------- Commentaire ---------- */
     let currentCommentId = null;
-
-    function openCommentFromBtn(btn, id){
+    function openCommentModal(id, txt){
       currentCommentId = id;
-      let raw = btn.dataset.comment || "";
-      let val = "";
-      try { val = JSON.parse(raw); if (val == null) val = ""; }
-      catch(e) { val = raw || ""; }
-      document.getElementById('modalComment').value = val;
+      document.getElementById('modalComment').value = txt || '';
       document.getElementById('commentModal').style.display='block';
     }
-    function closeCommentModal(){ document.getElementById('commentModal').style.display='none'; }
+    function closeCommentModal(){
+      document.getElementById('commentModal').style.display='none';
+    }
     function saveComment(){
       if(currentCommentId){
-        document.getElementById('commentaire-'+currentCommentId).value =
-          document.getElementById('modalComment').value;
+        document.getElementById('commentaire-'+currentCommentId).value=document.getElementById('modalComment').value;
       }
       closeCommentModal();
     }
 
-    /* ---------- Détails (modal + preview + hidden) ---------- */
-    function openDetailModal(id){ document.getElementById('detailModal-'+id).style.display='block'; }
-    function closeDetailModal(id){ document.getElementById('detailModal-'+id).style.display='none'; }
+    function openDetailModal(id){
+      document.getElementById('detailModal-'+id).style.display='block';
+    }
+    function closeDetailModal(id){
+      document.getElementById('detailModal-'+id).style.display='none';
+    }
     function saveDetail(id){
-      const val = document.getElementById('detailArea-'+id).value || '';
-      document.getElementById('details-'+id).value = val;
-      const prev = document.getElementById('preview-'+id);
-      prev.textContent = val.length>60 ? val.slice(0,60)+'…' : (val || '—');
+      const val=document.getElementById('detailArea-'+id).value||'';
+      document.getElementById('details-'+id).value=val;
+      const prev=document.getElementById('preview-'+id);
+      prev.textContent=val.length>60?val.slice(0,60)+'…':(val||'—');
       closeDetailModal(id);
     }
 
-    /* ---------- Réponses ---------- */
-    function openResponseModal(id){ document.getElementById('responseModal-'+id).style.display='block'; }
-    function closeResponseModal(id){ document.getElementById('responseModal-'+id).style.display='none'; }
+    function openResponseModal(id){
+      document.getElementById('responseModal-'+id).style.display='block';
+    }
+    function closeResponseModal(id){
+      document.getElementById('responseModal-'+id).style.display='none';
+    }
 
-    /* ---------- Ajout ---------- */
-    function openAddModal(){ document.getElementById('addModal').style.display='block'; }
-    function closeAddModal(){ document.getElementById('addModal').style.display='none'; }
+    function openAddModal(){
+      document.getElementById('addModal').style.display='block';
+    }
+    function closeAddModal(){
+      document.getElementById('addModal').style.display='none';
+    }
   </script>
 </body>
 </html>
