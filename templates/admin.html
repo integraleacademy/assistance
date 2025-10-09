@@ -15,19 +15,20 @@
       margin-bottom: 15px;
     }
     .logo-square {
-      max-width: 70px;
-      border-radius: 0; /* ✅ carré */
+      width: 120px;   /* ✅ logo plus grand */
+      height: auto;
+      border-radius: 0; /* carré */
     }
     .title-block {
       text-align: center;
     }
     .title-block h2 {
       margin: 0;
-      font-size: 20px;
+      font-size: 22px;
     }
     .counters-inline {
       margin-top: 4px;
-      font-size: 14px;
+      font-size: 15px;
     }
     .counters-inline span {
       margin: 0 8px;
@@ -77,7 +78,6 @@
     .pj-del {flex: 0 0 auto; background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer; line-height: 1; padding: 0 4px;}
     .pj-empty {color:#999; font-size:12px;}
     .pj-input {margin-top:6px; width:95%;}
-    .archives-btn {display:inline-block; margin-top:10px; padding:8px 14px; background:#6c757d; color:#fff; border-radius:8px; text-decoration:none;}
     .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
     .response-btn {background:#17a2b8; color:#fff; border:none; padding:6px 10px; border-radius:5px; cursor:pointer; font-size:13px;}
     .response-block {margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#f9f9f9; text-align:left;}
@@ -89,7 +89,7 @@
 <body>
   <div class="container">
 
-    <!-- Topbar compact -->
+    <!-- Topbar -->
     <div class="topbar">
       <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo-square">
 
@@ -103,58 +103,21 @@
 
       <div class="actions-top">
         <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
-
         <form method="POST" style="display:inline;" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
           <input type="hidden" name="action" value="delete_all_traitees">
           <button type="submit" class="btn red">🗑️ Archiver traitées</button>
         </form>
-
         <a href="{{ url_for('archives') }}" class="btn grey">📦 Archives</a>
-      </div>
-    </div>
-
-    <!-- Modale Ajout -->
-    <div id="addModal" class="modal">
-      <div class="modal-content">
-        <h3>➕ Nouvelle demande manuelle</h3>
-        <form method="POST">
-          <input type="hidden" name="action" value="add">
-          <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
-          <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
-          <select name="motif" style="width:100%; margin:6px 0;">
-            <option value="Attestation">Attestation</option>
-            <option value="Diplome">Diplôme</option>
-            <option value="Absence">Absence</option>
-            <option value="Contrats">Contrat</option>
-            <option value="Autre" selected>Autre</option>
-          </select>
-          <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
-          <div style="margin-top:10px; text-align:right;">
-            <button type="button" onclick="closeAddModal()">❌ Annuler</button>
-            <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
-              ➕ Créer
-            </button>
-          </div>
-        </form>
       </div>
     </div>
 
     <!-- Tableau demandes -->
     <table>
       <tr>
-        <th>Nom</th>
-        <th>Prénom</th>
-        <th>Email</th>
-        <th>Motif</th>
-        <th>Détails</th>
-        <th>Justificatif</th>
-        <th>Pièces jointes</th>
-        <th>Date</th>
-        <th>Attribué à</th>
-        <th>Statut</th>
-        <th>Commentaire</th>
-        <th>Réponses</th>
-        <th>Actions</th>
+        <th>Nom</th><th>Prénom</th><th>Email</th><th>Motif</th>
+        <th>Détails</th><th>Justificatif</th><th>Pièces jointes</th>
+        <th>Date</th><th>Attribué à</th><th>Statut</th><th>Commentaire</th>
+        <th>Réponses</th><th>Actions</th>
       </tr>
       {% for d in demandes %}
       <tr>
@@ -164,17 +127,11 @@
           <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
           <td>{{ d.motif }}</td>
           <td><textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea></td>
-
-          <!-- Justificatif -->
           <td>
             {% if d.justificatif %}
               <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
-            {% else %}
-              <span class="pj-empty">—</span>
-            {% endif %}
+            {% else %}<span class="pj-empty">—</span>{% endif %}
           </td>
-
-          <!-- Pièces jointes -->
           <td class="pj-cell">
             <div class="pj-wrap">
               {% if d.pieces_jointes and d.pieces_jointes|length > 0 %}
@@ -182,19 +139,14 @@
                 <div class="pj-chip" title="{{ pj }}">
                   <span>📎</span>
                   <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
-                  <button type="submit" name="delete_pj" value="{{ pj }}" class="pj-del" title="Supprimer">×</button>
+                  <button type="submit" name="delete_pj" value="{{ pj }}" class="pj-del">×</button>
                 </div>
                 {% endfor %}
-              {% else %}
-                <span class="pj-empty">—</span>
-              {% endif %}
+              {% else %}<span class="pj-empty">—</span>{% endif %}
             </div>
             <input type="file" name="pj" multiple class="pj-input">
           </td>
-
           <td>{{ d.date }}</td>
-
-          <!-- Attribué à -->
           <td>
             <select name="attribution">
               <option value="">--</option>
@@ -202,19 +154,14 @@
               <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
             </select>
           </td>
-
-          <!-- Statut -->
           <td>
             {% if d.statut == "Non traité" %}
               <span class="status-red">Non traité</span>
-            {% else %}
-              <span class="status-green">Traité</span>
-            {% endif %}
+            {% else %}<span class="status-green">Traité</span>{% endif %}
             <select name="statut" style="margin-top:5px;">
               <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
               <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
             </select>
-
             {% if d.mail_confirme %}
               <div style="font-size:12px; margin-top:4px;">
                 <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
@@ -222,30 +169,18 @@
                 </a>
               </div>
             {% elif d.mail_erreur %}
-              <div style="font-size:12px; color:#dc3545; margin-top:4px;"> {{ d.mail_erreur }} </div>
+              <div style="font-size:12px; color:#dc3545; margin-top:4px;">{{ d.mail_erreur }}</div>
             {% endif %}
           </td>
-
-          <!-- Commentaire -->
           <td>
-            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>
-              ✏️ Ajouter / Modifier
-            </button>
+            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>✏️ Ajouter / Modifier</button>
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
           </td>
-
-          <!-- Réponses -->
           <td>
             {% if d.reponses and d.reponses|length > 0 %}
-              <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">
-                👁 Voir ({{ d.reponses|length }})
-              </button>
-            {% else %}
-              <span class="pj-empty">—</span>
-            {% endif %}
+              <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">👁 Voir ({{ d.reponses|length }})</button>
+            {% else %}<span class="pj-empty">—</span>{% endif %}
           </td>
-
-          <!-- Actions -->
           <td class="actions">
             <input type="hidden" name="id" value="{{ d.id }}">
             <button type="submit" name="action" value="update" class="save">💾</button>
@@ -272,9 +207,7 @@
             {% endif %}
           </div>
           {% endfor %}
-          <div style="text-align:right;">
-            <button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button>
-          </div>
+          <div style="text-align:right;"><button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button></div>
         </div>
       </div>
       {% endfor %}
@@ -295,17 +228,12 @@
 
   <script>
     let currentCommentId = null;
-
     function openCommentModal(demandeId, commentaire) {
       currentCommentId = demandeId;
       document.getElementById("modalComment").value = commentaire || "";
       document.getElementById("commentModal").style.display = "block";
     }
-
-    function closeCommentModal() {
-      document.getElementById("commentModal").style.display = "none";
-    }
-
+    function closeCommentModal() { document.getElementById("commentModal").style.display = "none"; }
     function saveComment() {
       if (currentCommentId) {
         let newComment = document.getElementById("modalComment").value;
@@ -313,29 +241,17 @@
       }
       closeCommentModal();
     }
-
     document.querySelectorAll(".comment-btn").forEach(btn => {
       btn.addEventListener("click", function() {
-        let raw = this.dataset.comment;
-        let parsed = "";
+        let raw = this.dataset.comment; let parsed = "";
         try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
         openCommentModal(this.dataset.id, parsed);
       });
     });
-
-    function openResponseModal(id) {
-      document.getElementById("responseModal-" + id).style.display = "block";
-    }
-    function closeResponseModal(id) {
-      document.getElementById("responseModal-" + id).style.display = "none";
-    }
-
-    function openAddModal() {
-      document.getElementById("addModal").style.display = "block";
-    }
-    function closeAddModal() {
-      document.getElementById("addModal").style.display = "none";
-    }
+    function openResponseModal(id) { document.getElementById("responseModal-" + id).style.display = "block"; }
+    function closeResponseModal(id) { document.getElementById("responseModal-" + id).style.display = "none"; }
+    function openAddModal() { document.getElementById("addModal").style.display = "block"; }
+    function closeAddModal() { document.getElementById("addModal").style.display = "none"; }
   </script>
 </body>
 </html>
