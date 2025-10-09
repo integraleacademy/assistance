@@ -224,10 +224,8 @@ def envoyer_mail_accuse(demande):
 
 def envoyer_mail_confirmation(demande):
     sujet = "✅ Votre demande a été traitée — Intégrale Academy"
-
     repondre_url = url_for("repondre", demande_id=demande["id"], _external=True)
 
-    # --- Version texte brut ---
     plain = (
         f"Bonjour {demande['prenom']},\n\n"
         "✅ Votre demande a été traitée.\n\n"
@@ -240,7 +238,6 @@ def envoyer_mail_confirmation(demande):
         "L'équipe Intégrale Academy\n"
     )
 
-    # --- Version HTML ---
     body_html = f"""
       <p>Bonjour <strong>{demande['prenom']}</strong>,</p>
       <p style="margin:0 0 8px;">✅ <strong>Votre demande a été traitée.</strong></p>
@@ -278,7 +275,6 @@ def envoyer_mail_confirmation(demande):
       {"<p style='margin:8px 0;'>Des pièces jointes sont incluses avec ce message.</p>" if demande.get("pieces_jointes") else ""}
       <p style="margin:16px 0 0;">Cordialement,<br>L'équipe Intégrale Academy</p>
     """
-
     html = _wrap_html('<h1 style="margin:0 0 12px;font-size:20px;">✅ Demande traitée</h1>', body_html)
 
     pj_paths = []
@@ -293,15 +289,9 @@ def envoyer_mail_confirmation(demande):
         demande["mail_html"] = html
     return ok
 
-
-
-
-
-
 # -------------------------------------------------------------------
 # Routes
 # -------------------------------------------------------------------
-
 @app.route("/", methods=["GET", "POST"])
 def index():
     data = load_data()
@@ -361,17 +351,13 @@ def index():
         try: envoyer_mail_accuse(new_demande)
         except: pass
 
-        # ✅ redirection après POST
         return redirect(url_for("confirmation"))
 
-    # ✅ affichage normal quand GET
     return render_template("index.html")
-
 
 @app.route("/confirmation")
 def confirmation():
     return render_template("confirmation.html")
-
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
@@ -382,7 +368,7 @@ def admin():
         action = request.form.get("action")
         demande_id = request.form.get("id")
 
-        # ✅ Ajout manuel depuis admin
+        # Ajout manuel
         if action == "add":
             paris_tz = pytz.timezone("Europe/Paris")
             new_demande = {
@@ -410,18 +396,23 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # ✅ Mise à jour d'une demande
+        # Mise à jour
         elif action == "update":
             for d in demandes:
                 if d["id"] == demande_id:
                     d["mail"] = request.form.get("mail") or d["mail"]
-                    d["details"] = request.form.get("details")
+
+                    # ✅ n'écrase pas si non fourni
+                    new_details = request.form.get("details")
+                    if new_details is not None:
+                        d["details"] = new_details
+
                     d["commentaire"] = request.form.get("commentaire")
                     d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
-                    # Upload de nouvelles PJ
+                    # Upload nouvelles PJ
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -446,9 +437,9 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # ✅ Suppression d'une PJ
+        # Suppression d'une PJ
         elif action == "delete_pj":
-            pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
+            pj_name = request.form.get("pj_name")
             if demande_id and pj_name:
                 for d in demandes:
                     if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
@@ -458,7 +449,7 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # ✅ Archiver une demande (ancienne action "delete")
+        # Archiver une demande
         elif action == "delete":
             to_remove = None
             for d in demandes:
@@ -474,7 +465,7 @@ def admin():
                 save_data(data)
             return redirect(url_for("admin"))
 
-        # ✅ Archiver TOUTES les demandes traitées
+        # Archiver toutes les "Traité"
         elif action == "delete_all_traitees":
             traitees = [d for d in demandes if d.get("statut") == "Traité"]
             for d in traitees:
@@ -487,8 +478,6 @@ def admin():
             return redirect(url_for("admin"))
 
     return render_template("admin.html", demandes=demandes, compteur_traitees=data["compteur_traitees"])
-
-
 
 @app.route("/archives", methods=["GET", "POST"])
 def archives():
@@ -535,21 +524,13 @@ def voir_mail(demande_id):
 @app.route("/repondre/<demande_id>", methods=["GET", "POST"])
 def repondre(demande_id):
     data = load_data()
-    demande = next(
-        (d for d in data["demandes"] if d["id"] == demande_id),
-        None
-    )
+    demande = next((d for d in data["demandes"] if d["id"] == demande_id), None)
 
-    # Si la demande n'est plus dans demandes, chercher dans archives
+    # Si plus dans demandes, chercher dans archives
     if not demande:
-        demande = next(
-            (a for a in data["archives"] if a["id"] == demande_id),
-            None
-        )
+        demande = next((a for a in data["archives"] if a["id"] == demande_id), None)
         if not demande:
             return "Demande introuvable", 404
-        # Si la demande est dans les archives et qu'on reçoit une réponse,
-        # on la ramène dans demandes actives
         if request.method == "POST":
             data["archives"].remove(demande)
             data["demandes"].append(demande)
@@ -558,7 +539,6 @@ def repondre(demande_id):
         message = request.form.get("message", "").strip()
         paris_tz = pytz.timezone("Europe/Paris")
 
-        # Gestion des pièces jointes dans la réponse
         pj_files = []
         if "pj" in request.files:
             for f in request.files.getlist("pj"):
@@ -577,7 +557,6 @@ def repondre(demande_id):
 
         save_data(data)
         return render_template("merci_reponse.html", demande=demande)
-
 
     return render_template("repondre.html", demande=demande)
 
