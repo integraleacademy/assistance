@@ -493,7 +493,7 @@ def admin():
         query=query
     )
 
-    @app.route("/archives", methods=["GET", "POST"])
+@app.route("/archives", methods=["GET", "POST"])
 def archives():
     data = load_data()
 
@@ -523,7 +523,6 @@ def archives():
         ]
 
     return render_template("archives.html", archives=archives, query=query)
-
 
 @app.route("/imprimer/<demande_id>")
 def imprimer(demande_id):
