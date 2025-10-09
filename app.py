@@ -401,18 +401,15 @@ def admin():
             for d in demandes:
                 if d["id"] == demande_id:
                     d["mail"] = request.form.get("mail") or d["mail"]
-
-                    # ✅ n'écrase pas si non fourni
                     new_details = request.form.get("details")
                     if new_details is not None:
                         d["details"] = new_details
-
                     d["commentaire"] = request.form.get("commentaire")
                     d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
-                    # Upload nouvelles PJ
+                    # Upload PJ
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -423,7 +420,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # Passage à "Traité" => mail + compteur
+                    # Passage à "Traité"
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -477,51 +474,24 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-    return render_template("admin.html", demandes=demandes, compteur_traitees=data["compteur_traitees"])
-
-@app.route("/archives", methods=["GET", "POST"])
-def archives():
-    data = load_data()
-
-    if request.method == "POST":
-        action = request.form.get("action")
-        if action == "delete_one":
-            archive_id = request.form.get("id")
-            data["archives"] = [a for a in data["archives"] if a["id"] != archive_id]
-            save_data(data)
-        elif action == "clear":
-            data["archives"] = []
-            save_data(data)
-        return redirect(url_for("archives"))
-
-    archives = data["archives"]
-
+    # ✅ Ajout recherche (GET)
     query = request.args.get("q", "").strip().lower()
     if query:
-        archives = [
-            a for a in archives if
-            query in str(a.get("nom", "")).lower()
-            or query in str(a.get("prenom", "")).lower()
-            or query in str(a.get("mail", "")).lower()
-            or query in str(a.get("motif", "")).lower()
-            or query in str(a.get("details", "")).lower()
+        demandes = [
+            d for d in demandes if
+            query in d.get("nom", "").lower()
+            or query in d.get("prenom", "").lower()
+            or query in d.get("mail", "").lower()
+            or query in d.get("motif", "").lower()
+            or query in d.get("details", "").lower()
         ]
 
-    return render_template("archives.html", archives=archives, query=query)
-
-
-    query = request.args.get("q", "").strip().lower()
-    if query:
-        archives = [
-            a for a in archives if
-            query in a.get("nom","").lower()
-            or query in a.get("prenom","").lower()
-            or query in a.get("mail","").lower()
-            or query in a.get("motif","").lower()
-            or query in a.get("details","").lower()
-        ]
-
-    return render_template("archives.html", archives=archives, query=query)
+    return render_template(
+        "admin.html",
+        demandes=demandes,
+        compteur_traitees=data["compteur_traitees"],
+        query=query
+    )
 
 @app.route("/imprimer/<demande_id>")
 def imprimer(demande_id):
