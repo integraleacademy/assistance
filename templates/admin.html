@@ -9,7 +9,7 @@
 
     /* Topbar */
     .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-    .logo-square { width: 140px; height: auto; border-radius: 0; }
+    .logo-square { width: 90px; height: auto; border-radius: 0; }
     .title-block { text-align: center; flex: 1; }
     .title-block h2 { margin: 0; font-size: 22px; }
     .counters-inline { margin-top: 6px; font-size: 15px; }
@@ -32,7 +32,10 @@
     .actions {
       display: flex;
       justify-content: center;
+      align-items: center;
       gap: 6px;
+      flex-wrap: nowrap; /* ✅ empêche le retour à la ligne */
+      min-width: 140px;  /* ✅ largeur mini réservée */
     }
     .actions button, .actions a {
       display: inline-block;
@@ -42,6 +45,7 @@
       border-radius: 6px;
       font-size: 13px;
       cursor: pointer;
+      flex: 0 0 auto; /* ✅ empêche de se réduire */
     }
     .save {background-color: #198754; color: white;}
     .delete {background-color: #dc3545; color: white;}
@@ -171,7 +175,7 @@
         </form>
       </tr>
 
-      <!-- Modale Réponses -->
+      <!-- Modales Réponses & Détails -->
       <div id="responseModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📩 Réponses de {{ d.prenom }} {{ d.nom }}</h3>
@@ -192,7 +196,6 @@
         </div>
       </div>
 
-      <!-- Modale Détails -->
       <div id="detailModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
