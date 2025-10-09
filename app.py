@@ -421,6 +421,7 @@ def admin():
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
+                    # Upload de nouvelles PJ
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -431,6 +432,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
+                    # Passage à "Traité" => mail + compteur
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -444,17 +446,19 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # ✅ Suppression PJ
+        # ✅ Suppression d'une PJ
         elif action == "delete_pj":
             pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
-            for d in demandes:
-                if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
-                    d["pieces_jointes"].remove(pj_name)
-                    supprimer_fichier(pj_name)
+            if demande_id and pj_name:
+                for d in demandes:
+                    if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
+                        d["pieces_jointes"].remove(pj_name)
+                        supprimer_fichier(pj_name)
+                        break
             save_data(data)
             return redirect(url_for("admin"))
 
-        # ✅ Suppression (archiver)
+        # ✅ Archiver une demande (ancienne action "delete")
         elif action == "delete":
             to_remove = None
             for d in demandes:
@@ -470,43 +474,20 @@ def admin():
                 save_data(data)
             return redirect(url_for("admin"))
 
-
-        elif action == "delete_pj":
-            pj_name = request.form.get("pj_name") or request.form.get("delete_pj")
-            for d in demandes:
-                if d["id"] == demande_id and pj_name in d.get("pieces_jointes", []):
-                    d["pieces_jointes"].remove(pj_name)
-                    supprimer_fichier(pj_name)
+        # ✅ Archiver TOUTES les demandes traitées
+        elif action == "delete_all_traitees":
+            traitees = [d for d in demandes if d.get("statut") == "Traité"]
+            for d in traitees:
+                data["archives"].append(d)
+                supprimer_fichier(d.get("justificatif"))
+                for pj in d.get("pieces_jointes", []):
+                    supprimer_fichier(pj)
+                data["demandes"].remove(d)
             save_data(data)
             return redirect(url_for("admin"))
-
-        elif action == "delete":
-            to_remove = None
-            for d in demandes:
-                if d["id"] == demande_id:
-                    to_remove = d
-                    break
-            if to_remove:
-                data["archives"].append(to_remove)
-                supprimer_fichier(to_remove.get("justificatif"))
-                for pj in to_remove.get("pieces_jointes", []):
-                    supprimer_fichier(pj)
-                data["demandes"].remove(to_remove)
-                save_data(data)
-            return redirect(url_for("admin"))
-
-                elif action == "delete_all_traitees":
-        traitees = [d for d in demandes if d.get("statut") == "Traité"]
-        for d in traitees:
-            data["archives"].append(d)
-            supprimer_fichier(d.get("justificatif"))
-            for pj in d.get("pieces_jointes", []):
-                supprimer_fichier(pj)
-            data["demandes"].remove(d)
-        save_data(data)
-        return redirect(url_for("admin"))
 
     return render_template("admin.html", demandes=demandes, compteur_traitees=data["compteur_traitees"])
+
 
 
 @app.route("/archives", methods=["GET", "POST"])
