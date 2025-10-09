@@ -34,8 +34,8 @@
       justify-content: center;
       align-items: center;
       gap: 6px;
-      flex-wrap: nowrap; /* ✅ empêche le retour à la ligne */
-      min-width: 140px;  /* ✅ largeur mini réservée */
+      flex-wrap: nowrap;
+      min-width: 140px;
     }
     .actions button, .actions a {
       display: inline-block;
@@ -45,7 +45,7 @@
       border-radius: 6px;
       font-size: 13px;
       cursor: pointer;
-      flex: 0 0 auto; /* ✅ empêche de se réduire */
+      flex: 0 0 auto;
     }
     .save {background-color: #198754; color: white;}
     .delete {background-color: #dc3545; color: white;}
@@ -118,7 +118,13 @@
           <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
           <td>{{ d.motif }}</td>
           <td>
-            <div class="detail-preview">{{ d.details[:60] }}{% if d.details|length > 60 %}...{% endif %}</div>
+            <div class="detail-preview">
+              {% if d.details %}
+                {{ d.details[:60] }}{% if d.details|length > 60 %}...{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </div>
             <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir</button>
           </td>
           <td>
@@ -199,7 +205,7 @@
       <div id="detailModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
-          <p style="white-space:pre-wrap;">{{ d.details }}</p>
+          <p style="white-space:pre-wrap;">{{ d.details or "—" }}</p>
           <div style="text-align:right;"><button onclick="closeDetailModal('{{ d.id }}')">❌ Fermer</button></div>
         </div>
       </div>
