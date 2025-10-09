@@ -484,6 +484,7 @@ def admin():
             or query in d.get("mail", "").lower()
             or query in d.get("motif", "").lower()
             or query in d.get("details", "").lower()
+            or query in d.get("attribution", "").lower() 
         ]
 
     return render_template(
