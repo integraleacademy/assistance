@@ -15,38 +15,18 @@
       margin-bottom: 15px;
     }
     .logo-square {
-      width: 120px;   /* ✅ logo plus grand */
+      width: 120px;
       height: auto;
-      border-radius: 0; /* carré */
+      border-radius: 0;
     }
-    .title-block {
-      text-align: center;
-    }
-    .title-block h2 {
-      margin: 0;
-      font-size: 22px;
-    }
-    .counters-inline {
-      margin-top: 4px;
-      font-size: 15px;
-    }
-    .counters-inline span {
-      margin: 0 8px;
-      font-weight: bold;
-    }
+    .title-block { text-align: center; }
+    .title-block h2 { margin: 0; font-size: 22px; }
+    .counters-inline { margin-top: 4px; font-size: 15px; }
+    .counters-inline span { margin: 0 8px; font-weight: bold; }
     .counters-inline .ok { color:#198754; }
     .counters-inline .pending { color:#f39c12; }
-    .actions-top {
-      display: flex;
-      gap: 8px;
-    }
-    .btn {
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: none;
-      cursor: pointer;
-      font-size: 13px;
-    }
+    .actions-top { display: flex; gap: 8px; }
+    .btn { padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; }
     .btn.blue { background:#0d6efd; color:#fff; }
     .btn.red { background:#dc3545; color:#fff; }
     .btn.grey { background:#6c757d; color:#fff; text-decoration:none; display:inline-block; }
@@ -67,10 +47,13 @@
     .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
     .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
 
-    /* Commentaires / réponses */
-    .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
+    /* Commentaires / réponses / détails */
+    .comment-btn, .detail-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
+    .response-btn {background:#17a2b8; color:#fff; border:none; padding:6px 10px; border-radius:5px; cursor:pointer; font-size:13px;}
+
     .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
-    .modal-content {background: #fff; margin: 8% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
+    .modal-content {background: #fff; margin: 8% auto; padding: 20px; border-radius: 10px; width: 500px; max-width: 90%; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
+    
     .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
     .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
     .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
@@ -79,7 +62,6 @@
     .pj-empty {color:#999; font-size:12px;}
     .pj-input {margin-top:6px; width:95%;}
     .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
-    .response-btn {background:#17a2b8; color:#fff; border:none; padding:6px 10px; border-radius:5px; cursor:pointer; font-size:13px;}
     .response-block {margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#f9f9f9; text-align:left;}
     .response-date {font-size:12px; color:#555; margin-bottom:6px;}
     .response-text {margin-bottom:6px; white-space:pre-wrap;}
@@ -112,31 +94,30 @@
     </div>
 
     <!-- Modale Ajout -->
-<div id="addModal" class="modal">
-  <div class="modal-content">
-    <h3>➕ Nouvelle demande manuelle</h3>
-    <form method="POST">
-      <input type="hidden" name="action" value="add">
-      <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
-      <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
-      <select name="motif" style="width:100%; margin:6px 0;">
-        <option value="Attestation">Attestation</option>
-        <option value="Diplome">Diplôme</option>
-        <option value="Absence">Absence</option>
-        <option value="Contrats">Contrat</option>
-        <option value="Autre" selected>Autre</option>
-      </select>
-      <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
-      <div style="margin-top:10px; text-align:right;">
-        <button type="button" onclick="closeAddModal()">❌ Annuler</button>
-        <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
-          ➕ Créer
-        </button>
+    <div id="addModal" class="modal">
+      <div class="modal-content">
+        <h3>➕ Nouvelle demande manuelle</h3>
+        <form method="POST">
+          <input type="hidden" name="action" value="add">
+          <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
+          <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
+          <select name="motif" style="width:100%; margin:6px 0;">
+            <option value="Attestation">Attestation</option>
+            <option value="Diplome">Diplôme</option>
+            <option value="Absence">Absence</option>
+            <option value="Contrats">Contrat</option>
+            <option value="Autre" selected>Autre</option>
+          </select>
+          <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
+          <div style="margin-top:10px; text-align:right;">
+            <button type="button" onclick="closeAddModal()">❌ Annuler</button>
+            <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
+              ➕ Créer
+            </button>
+          </div>
+        </form>
       </div>
-    </form>
-  </div>
-</div>
-
+    </div>
 
     <!-- Tableau demandes -->
     <table>
@@ -153,7 +134,13 @@
           <td>{{ d.prenom }}</td>
           <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
           <td>{{ d.motif }}</td>
-          <td><textarea name="details" rows="3" style="width:95%;">{{ d.details }}</textarea></td>
+          <!-- ✅ Nouvelle gestion Détails -->
+          <td>
+            <div class="detail-preview">
+              {{ d.details[:100] }}{% if d.details|length > 100 %}...{% endif %}
+            </div>
+            <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir</button>
+          </td>
           <td>
             {% if d.justificatif %}
               <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
@@ -237,6 +224,17 @@
           <div style="text-align:right;"><button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button></div>
         </div>
       </div>
+
+      <!-- Modale Détails -->
+      <div id="detailModal-{{ d.id }}" class="modal">
+        <div class="modal-content">
+          <h3>📝 Détails de la demande</h3>
+          <p style="white-space:pre-wrap;">{{ d.details }}</p>
+          <div style="text-align:right; margin-top:10px;">
+            <button onclick="closeDetailModal('{{ d.id }}')">❌ Fermer</button>
+          </div>
+        </div>
+      </div>
       {% endfor %}
     </table>
   </div>
@@ -277,6 +275,8 @@
     });
     function openResponseModal(id) { document.getElementById("responseModal-" + id).style.display = "block"; }
     function closeResponseModal(id) { document.getElementById("responseModal-" + id).style.display = "none"; }
+    function openDetailModal(id) { document.getElementById("detailModal-" + id).style.display = "block"; }
+    function closeDetailModal(id) { document.getElementById("detailModal-" + id).style.display = "none"; }
     function openAddModal() { document.getElementById("addModal").style.display = "block"; }
     function closeAddModal() { document.getElementById("addModal").style.display = "none"; }
   </script>
