@@ -4,87 +4,60 @@
   <meta charset="UTF-8">
   <title>Administration - Intégrale Academy</title>
   <style>
-    body {background-color: #fdfaf5; font-family: Arial, sans-serif; margin:0; padding:20px;}
-    .container {width: 100%; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.1); box-sizing: border-box; overflow-x:auto;}
+    body {background-color:#fdfaf5; font-family:Arial, sans-serif; margin:0; padding:20px;}
+    .container {width:100%; background:#fff; padding:20px; border-radius:15px; box-shadow:0 0 15px rgba(0,0,0,.1); box-sizing:border-box; overflow-x:auto;}
 
     /* Topbar */
-    .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-    .logo-square { width: 90px; height: auto; border-radius: 0; }
-    .title-block { text-align: center; flex: 1; }
-    .title-block h2 { margin: 0; font-size: 22px; }
-    .counters-inline { margin-top: 6px; font-size: 15px; }
-    .counters-inline span { margin: 0 8px; font-weight: bold; }
-    .counters-inline .ok { color:#198754; }
-    .counters-inline .pending { color:#f39c12; }
-    .actions-top { display: flex; gap: 8px; }
-    .btn { padding: 8px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; }
-    .btn.blue { background:#0d6efd; color:#fff; }
-    .btn.red { background:#dc3545; color:#fff; }
-    .btn.grey { background:#6c757d; color:#fff; text-decoration:none; display:inline-block; }
+    .topbar {display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;}
+    .logo-square {width:100px; height:auto; border-radius:0;}
+    .title-block {text-align:center; flex:1;}
+    .title-block h2 {margin:0; font-size:22px;}
+    .counters-inline {margin-top:6px; font-size:15px;}
+    .counters-inline span {margin:0 8px; font-weight:bold;}
+    .ok {color:#198754;} .pending {color:#f39c12;}
+    .actions-top {display:flex; gap:8px;}
+    .btn {padding:8px 14px; border-radius:6px; border:none; cursor:pointer; font-size:13px;}
+    .btn.blue{background:#0d6efd;color:#fff;} .btn.red{background:#dc3545;color:#fff;}
+    .btn.grey{background:#6c757d;color:#fff; text-decoration:none; display:inline-block;}
 
     /* Tableau */
-    table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
-    th, td {border: 1px solid #ddd; padding: 8px; text-align: center; vertical-align: middle; word-wrap: break-word;}
-    th {background-color: #f4c45a; color: #333;}
-    select, textarea, input[type="text"], input[type="file"], input[type="email"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
+    table {width:100%; border-collapse:collapse; table-layout:fixed; font-size:14px;}
+    th, td {border:1px solid #ddd; padding:8px; text-align:center; vertical-align:middle; word-wrap:break-word;}
+    th {background:#f4c45a; color:#333;}
+    select, textarea, input[type="text"], input[type="file"], input[type="email"] {padding:5px; border-radius:5px; border:1px solid #ccc; width:90%;}
 
-    /* Boutons d’action alignés */
-    .actions {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: nowrap;
-      white-space: nowrap;   /* empêche le retour à la ligne */
-      min-width: 160px;      /* réserve la place */
-    }
-    .actions button, .actions a {
-      display: inline-block;
-      width: 38px;           /* taille uniforme */
-      height: 32px;
-      padding: 0;
-      margin: 0;
-      text-align: center;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      line-height: 32px;
-      cursor: pointer;
-      flex: 0 0 auto;
-    }
-    .save {background-color: #198754; color: white;}
-    .delete {background-color: #dc3545; color: white;}
-    .print {background-color: #0d6efd; color: white; text-decoration: none;}
+    /* Aperçu détails + bouton */
+    .detail-preview {font-size:13px; color:#333; margin-bottom:6px; min-height:18px;}
+    .detail-btn {background:#ffc107; border:none; padding:6px 10px; border-radius:5px; cursor:pointer; font-size:13px;}
+
+    /* Actions alignées */
+    .actions {display:flex; justify-content:center; align-items:center; gap:6px; flex-wrap:nowrap; min-width:150px;}
+    .actions button, .actions a {display:inline-block; padding:6px 8px; margin:0; border:none; border-radius:6px; font-size:13px; cursor:pointer; flex:0 0 auto;}
+    .save{background:#198754;color:#fff;} .delete{background:#dc3545;color:#fff;}
+    .print{background:#0d6efd;color:#fff; text-decoration:none; display:inline-block;}
 
     /* Statuts */
-    .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
-    .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+    .status-red{color:#fff;background:#dc3545;font-weight:bold;padding:4px 8px;border-radius:5px;}
+    .status-green{color:#fff;background:#198754;font-weight:bold;padding:4px 8px;border-radius:5px;}
 
-    /* Commentaires / détails / réponses */
-    .comment-btn, .detail-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
-    .response-btn {background:#17a2b8; color:#fff; border:none; padding:6px 10px; border-radius:5px; cursor:pointer; font-size:13px;}
-
-    /* Prévisualisation détail */
-    .detail-preview { text-align:left; font-size:13px; color:#333; }
-
-    /* Modales */
-    .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
-    .modal-content {background: #fff; margin: 8% auto; padding: 20px; border-radius: 10px; width: 500px; max-width: 90%; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
-    
     /* PJ */
-    .pj-cell {min-width: 200px; max-width: 240px; overflow: hidden;}
-    .pj-wrap {display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;}
-    .pj-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f8f9fa; }
-    .pj-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color:#0d6efd; text-decoration: none; }
-    .pj-del {flex: 0 0 auto; background: transparent; border: none; color: #dc3545; font-weight: 700; cursor: pointer; line-height: 1; padding: 0 4px;}
-    .pj-empty {color:#999; font-size:12px;}
-    .pj-input {margin-top:6px; width:95%;}
+    .pj-cell {min-width:200px; max-width:240px; overflow:hidden;}
+    .pj-wrap {display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-start;}
+    .pj-chip {display:inline-flex; align-items:center; gap:6px; max-width:100%; min-width:0; padding:4px 8px; border:1px solid #e5e7eb; border-radius:9999px; background:#f8f9fa;}
+    .pj-name {flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#0d6efd; text-decoration:none;}
+    .pj-del {flex:0 0 auto; background:transparent; border:none; color:#dc3545; font-weight:700; cursor:pointer; line-height:1; padding:0 4px;}
+    .pj-empty{color:#999; font-size:12px;} .pj-input{margin-top:6px; width:95%;}
     .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
 
-    .response-block {margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#f9f9f9; text-align:left;}
-    .response-date {font-size:12px; color:#555; margin-bottom:6px;}
-    .response-text {margin-bottom:6px; white-space:pre-wrap;}
-    .response-pj a {display:block; font-size:13px; color:#0d6efd; text-decoration:none;}
+    /* Réponses */
+    .response-btn{background:#17a2b8;color:#fff;border:none;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:13px;}
+    .response-block{margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#f9f9f9; text-align:left;}
+    .response-date{font-size:12px; color:#555; margin-bottom:6px;}
+    .response-text{margin-bottom:6px; white-space:pre-wrap;} .response-pj a{display:block;font-size:13px;color:#0d6efd;text-decoration:none;}
+
+    /* Modales */
+    .modal {display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,.5);}
+    .modal-content {background:#fff; margin:8% auto; padding:20px; border-radius:10px; width:500px; max-width:90%; box-shadow:0 0 15px rgba(0,0,0,.3);}
   </style>
 </head>
 <body>
@@ -102,11 +75,36 @@
       </div>
       <div class="actions-top">
         <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
+        <!-- bouton d’archivage massif (si bloc back present) -->
         <form method="POST" style="display:inline;" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
           <input type="hidden" name="action" value="delete_all_traitees">
           <button type="submit" class="btn red">🗑️ Archiver traitées</button>
         </form>
         <a href="{{ url_for('archives') }}" class="btn grey">📦 Archives</a>
+      </div>
+    </div>
+
+    <!-- Modale Ajout -->
+    <div id="addModal" class="modal">
+      <div class="modal-content">
+        <h3>➕ Nouvelle demande manuelle</h3>
+        <form method="POST">
+          <input type="hidden" name="action" value="add">
+          <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
+          <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
+          <select name="motif" style="width:100%; margin:6px 0;">
+            <option value="Attestation">Attestation</option>
+            <option value="Diplome">Diplôme</option>
+            <option value="Absence">Absence</option>
+            <option value="Contrats">Contrat</option>
+            <option value="Autre" selected>Autre</option>
+          </select>
+          <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
+          <div style="margin-top:10px; text-align:right;">
+            <button type="button" onclick="closeAddModal()">❌ Annuler</button>
+            <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">➕ Créer</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -118,46 +116,45 @@
         <th>Date</th><th>Attribué à</th><th>Statut</th><th>Commentaire</th>
         <th>Réponses</th><th>Actions</th>
       </tr>
+
       {% for d in demandes %}
       <tr>
         <form method="POST" enctype="multipart/form-data">
           <td>{{ d.nom }} {% if d.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
           <td>{{ d.prenom }}</td>
-          <td><input type="text" name="mail" value="{{ d.mail or '' }}" style="width:95%;"></td>
-          <td>{{ d.motif or '' }}</td>
+          <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
+          <td>{{ d.motif }}</td>
 
-          <!-- Détails avec aperçu et modal -->
+          <!-- Détails : aperçu + modal édition -->
           <td>
-            <div class="detail-preview">
-              {% if d.details %}
-                {{ d.details[:60] }}{% if d.details|length > 60 %}...{% endif %}
-              {% else %}
-                —
-              {% endif %}
+            <div class="detail-preview" id="preview-{{ d.id }}">
+              {% if d.details %}{{ d.details[:60] }}{% if d.details|length>60 %}…{% endif %}{% else %}—{% endif %}
             </div>
-            <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir</button>
+            <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir / Modifier</button>
+            <!-- la valeur est renvoyée par ce hidden -->
+            <input type="hidden" name="details" id="details-{{ d.id }}" value="{{ d.details or '' }}">
           </td>
 
           <!-- Justificatif -->
           <td>
             {% if d.justificatif %}
               <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
-            {% else %}
-              <span class="pj-empty">—</span>
-            {% endif %}
+            {% else %}<span class="pj-empty">—</span>{% endif %}
           </td>
 
           <!-- Pièces jointes -->
           <td class="pj-cell">
             <div class="pj-wrap">
-              {% if d.pieces_jointes and d.pieces_jointes|length > 0 %}
+              {% if d.pieces_jointes and d.pieces_jointes|length>0 %}
                 {% for pj in d.pieces_jointes %}
-                <div class="pj-chip" title="{{ pj }}">
-                  <span>📎</span>
-                  <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
-                  <!-- Remarque : si tu veux que la suppression PJ passe bien par action=delete_pj, on pourra ajuster côté app -->
-                  <button type="submit" name="delete_pj" value="{{ pj }}" class="pj-del" title="Supprimer">×</button>
-                </div>
+                  <div class="pj-chip" title="{{ pj }}">
+                    <span>📎</span>
+                    <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
+                    <!-- on renseigne le hidden pj_name et on soumet avec action=delete_pj -->
+                    <button type="submit" class="pj-del" title="Supprimer"
+                            name="action" value="delete_pj"
+                            onclick="this.form.pj_name.value='{{ pj }}'">×</button>
+                  </div>
                 {% endfor %}
               {% else %}
                 <span class="pj-empty">—</span>
@@ -166,29 +163,25 @@
             <input type="file" name="pj" multiple class="pj-input">
           </td>
 
-          <td>{{ d.date or '' }}</td>
+          <td>{{ d.date }}</td>
 
-          <!-- Attributaire -->
+          <!-- Attribué à -->
           <td>
             <select name="attribution">
               <option value="">--</option>
-              <option value="Elsa" {% if d.attribution == "Elsa" %}selected{% endif %}>Elsa</option>
-              <option value="Clément" {% if d.attribution == "Clément" %}selected{% endif %}>Clément</option>
+              <option value="Elsa" {% if d.attribution=='Elsa' %}selected{% endif %}>Elsa</option>
+              <option value="Clément" {% if d.attribution=='Clément' %}selected{% endif %}>Clément</option>
             </select>
           </td>
 
           <!-- Statut -->
           <td>
-            {% if d.statut == "Non traité" %}
-              <span class="status-red">Non traité</span>
-            {% else %}
-              <span class="status-green">Traité</span>
-            {% endif %}
+            {% if d.statut=='Non traité' %}<span class="status-red">Non traité</span>
+            {% else %}<span class="status-green">Traité</span>{% endif %}
             <select name="statut" style="margin-top:5px;">
-              <option value="Non traité" {% if d.statut == "Non traité" %}selected{% endif %}>Non traité</option>
-              <option value="Traité" {% if d.statut == "Traité" %}selected{% endif %}>Traité</option>
+              <option value="Non traité" {% if d.statut=='Non traité' %}selected{% endif %}>Non traité</option>
+              <option value="Traité" {% if d.statut=='Traité' %}selected{% endif %}>Traité</option>
             </select>
-
             {% if d.mail_confirme %}
               <div style="font-size:12px; margin-top:4px;">
                 <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
@@ -196,32 +189,27 @@
                 </a>
               </div>
             {% elif d.mail_erreur %}
-              <div style="font-size:12px; color:#dc3545; margin-top:4px;"> {{ d.mail_erreur }} </div>
+              <div style="font-size:12px; color:#dc3545; margin-top:4px;">{{ d.mail_erreur }}</div>
             {% endif %}
           </td>
 
-          <!-- Commentaire (modal) -->
+          <!-- Commentaire -->
           <td>
-            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>
-              ✏️ Ajouter / Modifier
-            </button>
-            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire or '' }}">
+            <button type="button" class="detail-btn" onclick="openCommentModal('{{ d.id }}', {{ d.commentaire|tojson|safe }})">✏️ Ajouter / Modifier</button>
+            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
           </td>
 
           <!-- Réponses -->
           <td>
-            {% if d.reponses and d.reponses|length > 0 %}
-              <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">
-                👁 Voir ({{ d.reponses|length }})
-              </button>
-            {% else %}
-              <span class="pj-empty">—</span>
-            {% endif %}
+            {% if d.reponses and d.reponses|length>0 %}
+              <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">👁 Voir ({{ d.reponses|length }})</button>
+            {% else %}<span class="pj-empty">—</span>{% endif %}
           </td>
 
           <!-- Actions -->
           <td class="actions">
             <input type="hidden" name="id" value="{{ d.id }}">
+            <input type="hidden" name="pj_name" value=""> <!-- rempli au clic sur × -->
             <button type="submit" name="action" value="update" class="save" title="Enregistrer">💾</button>
             <button type="submit" name="action" value="delete" class="delete" title="Archiver" onclick="return confirm('Archiver la demande ?')">🗑️</button>
             <a href="/imprimer/{{ d.id }}" target="_blank" class="print" title="Imprimer">🖨️</a>
@@ -229,7 +217,7 @@
         </form>
       </tr>
 
-      <!-- Modale Réponses -->
+      <!-- Modal Réponses -->
       <div id="responseModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📩 Réponses de {{ d.prenom }} {{ d.nom }}</h3>
@@ -237,10 +225,10 @@
           <div class="response-block">
             <div class="response-date">📅 {{ r.date }}</div>
             <div class="response-text">{{ r.message }}</div>
-            {% if r.pj and r.pj|length > 0 %}
+            {% if r.pj and r.pj|length>0 %}
               <div class="response-pj">
                 {% for pj in r.pj %}
-                  <a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>
+                <a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>
                 {% endfor %}
               </div>
             {% endif %}
@@ -250,19 +238,22 @@
         </div>
       </div>
 
-      <!-- Modale Détails -->
+      <!-- Modal Détails -->
       <div id="detailModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
-          <p style="white-space:pre-wrap;">{{ d.details or "—" }}</p>
-          <div style="text-align:right;"><button onclick="closeDetailModal('{{ d.id }}')">❌ Fermer</button></div>
+          <textarea id="detailArea-{{ d.id }}" rows="8" style="width:100%;">{{ d.details or '' }}</textarea>
+          <div style="margin-top:10px; text-align:right;">
+            <button onclick="closeDetailModal('{{ d.id }}')">❌ Annuler</button>
+            <button onclick="saveDetail('{{ d.id }}')" style="background:#198754;color:#fff;padding:6px 10px;border:none;border-radius:6px;cursor:pointer;">💾 Enregistrer</button>
+          </div>
         </div>
       </div>
       {% endfor %}
     </table>
   </div>
 
-  <!-- Modale Commentaire (globale) -->
+  <!-- Modal Commentaire générique -->
   <div id="commentModal" class="modal">
     <div class="modal-content">
       <h3>📝 Commentaire</h3>
@@ -274,66 +265,37 @@
     </div>
   </div>
 
-  <!-- Modale Ajout demande (globale) -->
-  <div id="addModal" class="modal">
-    <div class="modal-content">
-      <h3>➕ Nouvelle demande manuelle</h3>
-      <form method="POST">
-        <input type="hidden" name="action" value="add">
-        <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
-        <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
-        <select name="motif" style="width:100%; margin:6px 0;">
-          <option value="Attestation">Attestation</option>
-          <option value="Diplome">Diplôme</option>
-          <option value="Absence">Absence</option>
-          <option value="Contrats">Contrat</option>
-          <option value="Autre" selected>Autre</option>
-        </select>
-        <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
-        <div style="margin-top:10px; text-align:right;">
-          <button type="button" onclick="closeAddModal()">❌ Annuler</button>
-          <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
-            ➕ Créer
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <script>
+    /* ---------- Commentaire ---------- */
     let currentCommentId = null;
-
-    function openCommentModal(demandeId, commentaire) {
-      currentCommentId = demandeId;
-      document.getElementById("modalComment").value = commentaire || "";
-      document.getElementById("commentModal").style.display = "block";
-    }
-    function closeCommentModal() { document.getElementById("commentModal").style.display = "none"; }
-    function saveComment() {
-      if (currentCommentId) {
-        let newComment = document.getElementById("modalComment").value;
-        document.getElementById("commentaire-" + currentCommentId).value = newComment;
+    function openCommentModal(id, txt){ currentCommentId = id; document.getElementById('modalComment').value = txt || ''; document.getElementById('commentModal').style.display='block'; }
+    function closeCommentModal(){ document.getElementById('commentModal').style.display='none'; }
+    function saveComment(){
+      if(currentCommentId){
+        document.getElementById('commentaire-'+currentCommentId).value = document.getElementById('modalComment').value;
       }
       closeCommentModal();
     }
 
-    document.querySelectorAll(".comment-btn").forEach(btn => {
-      btn.addEventListener("click", function() {
-        let raw = this.dataset.comment;
-        let parsed = "";
-        try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
-        openCommentModal(this.dataset.id, parsed);
-      });
-    });
+    /* ---------- Détails (modal + preview + hidden) ---------- */
+    function openDetailModal(id){ document.getElementById('detailModal-'+id).style.display='block'; }
+    function closeDetailModal(id){ document.getElementById('detailModal-'+id).style.display='none'; }
+    function saveDetail(id){
+      const val = document.getElementById('detailArea-'+id).value || '';
+      document.getElementById('details-'+id).value = val;
+      // met à jour l’aperçu (60 chars)
+      const prev = document.getElementById('preview-'+id);
+      prev.textContent = val.length>60 ? val.slice(0,60)+'…' : (val || '—');
+      closeDetailModal(id);
+    }
 
-    function openResponseModal(id) { document.getElementById("responseModal-" + id).style.display = "block"; }
-    function closeResponseModal(id) { document.getElementById("responseModal-" + id).style.display = "none"; }
+    /* ---------- Réponses ---------- */
+    function openResponseModal(id){ document.getElementById('responseModal-'+id).style.display='block'; }
+    function closeResponseModal(id){ document.getElementById('responseModal-'+id).style.display='none'; }
 
-    function openDetailModal(id) { document.getElementById("detailModal-" + id).style.display = "block"; }
-    function closeDetailModal(id) { document.getElementById("detailModal-" + id).style.display = "none"; }
-
-    function openAddModal() { document.getElementById("addModal").style.display = "block"; }
-    function closeAddModal() { document.getElementById("addModal").style.display = "none"; }
+    /* ---------- Ajout ---------- */
+    function openAddModal(){ document.getElementById('addModal').style.display='block'; }
+    function closeAddModal(){ document.getElementById('addModal').style.display='none'; }
   </script>
 </body>
 </html>
