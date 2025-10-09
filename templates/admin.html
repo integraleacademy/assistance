@@ -6,18 +6,64 @@
   <style>
     body {background-color: #fdfaf5; font-family: Arial, sans-serif; margin:0; padding:20px;}
     .container {width: 100%; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.1); box-sizing: border-box; overflow-x:auto;}
-    img.logo {max-width: 120px; display: block; margin: 0 auto 20px;}
-    h2, h3 {text-align: center; margin-bottom: 15px;}
+
+    /* Topbar compact */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .topbar h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+    .logo-small {
+      max-width: 70px;
+      border-radius: 50%;
+    }
+    .actions-top {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn.blue { background:#0d6efd; color:#fff; }
+    .btn.red { background:#dc3545; color:#fff; }
+    .btn.grey { background:#6c757d; color:#fff; text-decoration:none; display:inline-block; }
+
+    /* Compteurs */
+    .counters {
+      text-align: center;
+      margin-bottom: 15px;
+      font-size: 15px;
+    }
+    .counters span { margin: 0 10px; font-weight: bold; }
+    .counters .ok { color:#198754; }
+    .counters .pending { color:#f39c12; }
+
+    /* Tableau */
     table {width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px;}
     th, td {border: 1px solid #ddd; padding: 10px; text-align: center; vertical-align: middle; word-wrap: break-word;}
     th {background-color: #f4c45a; color: #333;}
     select, textarea, input[type="text"], input[type="file"], input[type="email"] {padding: 5px; border-radius: 5px; border: 1px solid #ccc; width: 90%;}
+
+    /* Boutons ligne */
     .actions button, .actions a {padding: 6px 10px; margin: 2px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;}
     .save {background-color: #198754; color: white;}
     .delete {background-color: #dc3545; color: white;}
     .print {background-color: #0d6efd; color: white; text-decoration: none; display: inline-block;}
+
+    /* Statuts */
     .status-red {color: #fff; background-color: #dc3545; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
     .status-green {color: #fff; background-color: #198754; font-weight: bold; padding: 4px 8px; border-radius: 5px;}
+
+    /* Commentaires / réponses */
     .comment-btn {background: #ffc107; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;}
     .modal {display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);}
     .modal-content {background: #fff; margin: 8% auto; padding: 20px; border-radius: 10px; width: 400px; box-shadow: 0 0 15px rgba(0,0,0,0.3);}
@@ -39,28 +85,28 @@
 </head>
 <body>
   <div class="container">
-    <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
-    <h2>📋 Gestion des demandes stagiaires</h2>
 
-    <!-- Bouton Ajout manuel -->
-    <div style="text-align:center; margin-bottom:20px;">
-      <button type="button" onclick="openAddModal()" 
-              style="background:#0d6efd; color:#fff; padding:10px 16px; border:none; border-radius:6px; cursor:pointer;">
-        ➕ Ajouter une demande
-      </button>
+    <!-- Topbar compact -->
+    <div class="topbar">
+      <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo-small">
+      <h2>📋 Gestion des demandes stagiaires</h2>
+      <div class="actions-top">
+        <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
+
+        <form method="POST" style="display:inline;" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
+          <input type="hidden" name="action" value="delete_all_traitees">
+          <button type="submit" class="btn red">🗑️ Archiver traitées</button>
+        </form>
+
+        <a href="{{ url_for('archives') }}" class="btn grey">📦 Archives</a>
+      </div>
     </div>
 
-    <!-- Bouton Archiver toutes les traitées -->
-<div style="text-align:center; margin-bottom:20px;">
-  <form method="POST" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
-    <input type="hidden" name="action" value="delete_all_traitees">
-    <button type="submit" 
-            style="background:#dc3545; color:#fff; padding:10px 16px; border:none; border-radius:6px; cursor:pointer;">
-      🗑️ Archiver toutes les demandes traitées
-    </button>
-  </form>
-</div>
-
+    <!-- Compteurs -->
+    <div class="counters">
+      <span class="ok">✅ Traitées : {{ compteur_traitees }}</span>
+      <span class="pending">⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</span>
+    </div>
 
     <!-- Modale Ajout -->
     <div id="addModal" class="modal">
@@ -88,12 +134,7 @@
       </div>
     </div>
 
-    <div style="text-align:center; margin-bottom:20px;">
-      <h3>✅ Total traitées : {{ compteur_traitees }}</h3>
-      <h3>⏳ À traiter : {{ demandes|selectattr('statut', 'equalto', 'Non traité')|list|length }}</h3>
-      <a href="{{ url_for('archives') }}" class="archives-btn">📦 Consulter les archives</a>
-    </div>
-
+    <!-- Tableau demandes -->
     <table>
       <tr>
         <th>Nom</th>
@@ -157,7 +198,7 @@
             </select>
           </td>
 
-          <!-- Statut + lien Voir mail -->
+          <!-- Statut -->
           <td>
             {% if d.statut == "Non traité" %}
               <span class="status-red">Non traité</span>
@@ -180,7 +221,7 @@
             {% endif %}
           </td>
 
-          <!-- Commentaire via modale -->
+          <!-- Commentaire -->
           <td>
             <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>
               ✏️ Ajouter / Modifier
