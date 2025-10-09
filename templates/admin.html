@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Administration - Intégrale Academy</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
     body {background-color:#fdfaf5; font-family:Arial, sans-serif; margin:0; padding:20px;}
     .container {width:100%; background:#fff; padding:20px; border-radius:15px; box-shadow:0 0 15px rgba(0,0,0,.1); box-sizing:border-box; overflow-x:auto;}
@@ -15,7 +16,7 @@
     .counters-inline {margin-top:6px; font-size:15px;}
     .counters-inline span {margin:0 8px; font-weight:bold;}
     .ok {color:#198754;} .pending {color:#f39c12;}
-    .actions-top {display:flex; gap:8px;}
+    .actions-top {display:flex; gap:8px; align-items:center;}
     .btn {padding:8px 14px; border-radius:6px; border:none; cursor:pointer; font-size:13px;}
     .btn.blue{background:#0d6efd;color:#fff;} .btn.red{background:#dc3545;color:#fff;}
     .btn.grey{background:#6c757d;color:#fff; text-decoration:none; display:inline-block;}
@@ -75,7 +76,6 @@
       </div>
       <div class="actions-top">
         <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
-        <!-- bouton d’archivage massif (si bloc back present) -->
         <form method="POST" style="display:inline;" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
           <input type="hidden" name="action" value="delete_all_traitees">
           <button type="submit" class="btn red">🗑️ Archiver traitées</button>
@@ -131,7 +131,6 @@
               {% if d.details %}{{ d.details[:60] }}{% if d.details|length>60 %}…{% endif %}{% else %}—{% endif %}
             </div>
             <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir / Modifier</button>
-            <!-- la valeur est renvoyée par ce hidden -->
             <input type="hidden" name="details" id="details-{{ d.id }}" value="{{ d.details or '' }}">
           </td>
 
@@ -150,7 +149,6 @@
                   <div class="pj-chip" title="{{ pj }}">
                     <span>📎</span>
                     <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
-                    <!-- on renseigne le hidden pj_name et on soumet avec action=delete_pj -->
                     <button type="submit" class="pj-del" title="Supprimer"
                             name="action" value="delete_pj"
                             onclick="this.form.pj_name.value='{{ pj }}'">×</button>
@@ -193,9 +191,12 @@
             {% endif %}
           </td>
 
-          <!-- Commentaire -->
+          <!-- Commentaire (SAFE via data-attribute) -->
           <td>
-            <button type="button" class="detail-btn" onclick="openCommentModal('{{ d.id }}', {{ d.commentaire|tojson|safe }})">✏️ Ajouter / Modifier</button>
+            <button type="button"
+                    class="detail-btn"
+                    data-comment='{{ d.commentaire|tojson|safe }}'
+                    onclick="openCommentFromBtn(this,'{{ d.id }}')">✏️ Ajouter / Modifier</button>
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
           </td>
 
@@ -209,7 +210,7 @@
           <!-- Actions -->
           <td class="actions">
             <input type="hidden" name="id" value="{{ d.id }}">
-            <input type="hidden" name="pj_name" value=""> <!-- rempli au clic sur × -->
+            <input type="hidden" name="pj_name" value="">
             <button type="submit" name="action" value="update" class="save" title="Enregistrer">💾</button>
             <button type="submit" name="action" value="delete" class="delete" title="Archiver" onclick="return confirm('Archiver la demande ?')">🗑️</button>
             <a href="/imprimer/{{ d.id }}" target="_blank" class="print" title="Imprimer">🖨️</a>
@@ -268,11 +269,21 @@
   <script>
     /* ---------- Commentaire ---------- */
     let currentCommentId = null;
-    function openCommentModal(id, txt){ currentCommentId = id; document.getElementById('modalComment').value = txt || ''; document.getElementById('commentModal').style.display='block'; }
+
+    function openCommentFromBtn(btn, id){
+      currentCommentId = id;
+      let raw = btn.dataset.comment || "";
+      let val = "";
+      try { val = JSON.parse(raw); if (val == null) val = ""; }
+      catch(e) { val = raw || ""; }
+      document.getElementById('modalComment').value = val;
+      document.getElementById('commentModal').style.display='block';
+    }
     function closeCommentModal(){ document.getElementById('commentModal').style.display='none'; }
     function saveComment(){
       if(currentCommentId){
-        document.getElementById('commentaire-'+currentCommentId).value = document.getElementById('modalComment').value;
+        document.getElementById('commentaire-'+currentCommentId).value =
+          document.getElementById('modalComment').value;
       }
       closeCommentModal();
     }
@@ -283,7 +294,6 @@
     function saveDetail(id){
       const val = document.getElementById('detailArea-'+id).value || '';
       document.getElementById('details-'+id).value = val;
-      // met à jour l’aperçu (60 chars)
       const prev = document.getElementById('preview-'+id);
       prev.textContent = val.length>60 ? val.slice(0,60)+'…' : (val || '—');
       closeDetailModal(id);
