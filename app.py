@@ -500,6 +500,20 @@ def archives():
     if query:
         archives = [
             a for a in archives if
+            query in str(a.get("nom", "")).lower()
+            or query in str(a.get("prenom", "")).lower()
+            or query in str(a.get("mail", "")).lower()
+            or query in str(a.get("motif", "")).lower()
+            or query in str(a.get("details", "")).lower()
+        ]
+
+    return render_template("archives.html", archives=archives, query=query)
+
+
+    query = request.args.get("q", "").strip().lower()
+    if query:
+        archives = [
+            a for a in archives if
             query in a.get("nom","").lower()
             or query in a.get("prenom","").lower()
             or query in a.get("mail","").lower()
