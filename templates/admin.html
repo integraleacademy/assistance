@@ -3,233 +3,381 @@
 <head>
   <meta charset="UTF-8">
   <title>Administration - Intégrale Academy</title>
+
   <style>
+    /* -----------------------------------------------------------
+       Layout global
+    ----------------------------------------------------------- */
     body {
-      background-color:#fdfaf5;
-      font-family:Arial, sans-serif;
-      margin:0;
-      padding:20px;
+      background-color: #fdfaf5;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
     }
+
     .container {
-      width:100%;
-      background:#fff;
-      padding:20px;
-      border-radius:15px;
-      box-shadow:0 0 15px rgba(0,0,0,.1);
-      box-sizing:border-box;
-      overflow-x:auto;
+      width: 100%;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 15px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.1);
+      box-sizing: border-box;
+      overflow-x: auto;
     }
 
-    /* Topbar */
+    /* -----------------------------------------------------------
+       Topbar (logo + titre + compteurs + actions)
+    ----------------------------------------------------------- */
     .topbar {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      margin-bottom:20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      gap: 16px;
     }
+
     .logo-square {
-      width:100px;
-      height:auto;
-      border-radius:0;
+      width: 100px;     /* taille du logo (carrée) */
+      height: auto;
+      border-radius: 0; /* pas arrondi */
+      display: block;
     }
+
     .title-block {
-      text-align:center;
-      flex:1;
+      flex: 1;
+      text-align: center;
     }
+
     .title-block h2 {
-      margin:0;
-      font-size:22px;
+      margin: 0;
+      font-size: 22px;
     }
+
     .counters-inline {
-      margin-top:6px;
-      font-size:15px;
+      margin-top: 6px;
+      font-size: 15px;
     }
+
     .counters-inline span {
-      margin:0 8px;
-      font-weight:bold;
+      margin: 0 8px;
+      font-weight: bold;
     }
-    .ok {color:#198754;}
-    .pending {color:#f39c12;}
+
+    .ok {
+      color: #198754;
+    }
+
+    .pending {
+      color: #f39c12;
+    }
+
     .actions-top {
-      display:flex;
-      gap:8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
     }
+
     .btn {
-      padding:8px 14px;
-      border-radius:6px;
-      border:none;
-      cursor:pointer;
-      font-size:13px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
     }
-    .btn.blue {background:#0d6efd;color:#fff;}
-    .btn.red {background:#dc3545;color:#fff;}
-    .btn.grey {background:#6c757d;color:#fff;text-decoration:none;display:inline-block;}
 
-    /* Tableau */
+    .btn.blue {
+      background: #0d6efd;
+      color: #ffffff;
+    }
+
+    .btn.red {
+      background: #dc3545;
+      color: #ffffff;
+    }
+
+    .btn.grey {
+      background: #6c757d;
+      color: #ffffff;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    /* -----------------------------------------------------------
+       Tableau principal
+    ----------------------------------------------------------- */
     table {
-      width:100%;
-      border-collapse:collapse;
-      table-layout:fixed;
-      font-size:14px;
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;  /* colonnes fixes pour que ça reste propre */
+      font-size: 14px;
     }
+
     th, td {
-      border:1px solid #ddd;
-      padding:8px;
-      text-align:center;
-      vertical-align:middle;
-      word-wrap:break-word;
+      border: 1px solid #dddddd;
+      padding: 8px;
+      text-align: center;
+      vertical-align: middle;
+      word-wrap: break-word;
     }
+
     th {
-      background:#f4c45a;
-      color:#333;
-    }
-    select, textarea, input[type="text"], input[type="file"], input[type="email"] {
-      padding:5px;
-      border-radius:5px;
-      border:1px solid #ccc;
-      width:90%;
+      background: #f4c45a;
+      color: #333333;
     }
 
-    /* Aperçu détails + bouton */
+    select,
+    textarea,
+    input[type="text"],
+    input[type="file"],
+    input[type="email"] {
+      padding: 5px;
+      border-radius: 5px;
+      border: 1px solid #cccccc;
+      width: 90%;
+    }
+
+    /* -----------------------------------------------------------
+       Détails (aperçu + bouton voir/modifier)
+    ----------------------------------------------------------- */
     .detail-preview {
-      font-size:13px;
-      color:#333;
-      margin-bottom:6px;
-      min-height:18px;
+      font-size: 13px;
+      color: #333333;
+      margin-bottom: 6px;
+      min-height: 18px;  /* pour éviter que le bouton remonte si vide */
+      text-align: left;
+      white-space: pre-wrap;
     }
+
     .detail-btn {
-      background:#ffc107;
-      border:none;
-      padding:6px 10px;
-      border-radius:5px;
-      cursor:pointer;
-      font-size:13px;
+      background: #ffc107;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
     }
 
-    /* Actions alignées */
-    td.actions {border:none;} /* ✅ supprime la bordure de la cellule Actions */
+    /* -----------------------------------------------------------
+       Cellule d'actions (alignée + sans bordure de cellule)
+    ----------------------------------------------------------- */
+    td.actions {
+      border: none;                 /* supprime la bordure de cette cellule */
+      border-left: none !important; /* renforce la suppression */
+      border-right: none !important;
+      border-top: none !important;
+      border-bottom: none !important;
+    }
+
     .actions {
-      display:inline-flex;
-      justify-content:center;
-      align-items:center;
-      gap:4px;
-      white-space:nowrap;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
     }
-    .actions button, .actions a {
-      display:inline-block;
-      padding:4px 6px;
-      margin:0;
-      border:none;
-      border-radius:6px;
-      font-size:12px;
-      cursor:pointer;
-      flex:0 0 auto;
-    }
-    .save {background:#198754;color:#fff;}
-    .delete {background:#dc3545;color:#fff;}
-    .print {background:#0d6efd;color:#fff;text-decoration:none;display:inline-block;}
 
-    /* Statuts */
+    .actions button,
+    .actions a {
+      display: inline-block;
+      padding: 4px 6px;
+      margin: 0;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      flex: 0 0 auto;
+      line-height: 1.2;
+    }
+
+    .save {
+      background: #198754;
+      color: #ffffff;
+    }
+
+    .delete {
+      background: #dc3545;
+      color: #ffffff;
+    }
+
+    .print {
+      background: #0d6efd;
+      color: #ffffff;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    /* -----------------------------------------------------------
+       Statuts
+    ----------------------------------------------------------- */
     .status-red {
-      color:#fff;
-      background:#dc3545;
-      font-weight:bold;
-      padding:4px 8px;
-      border-radius:5px;
+      color: #ffffff;
+      background: #dc3545;
+      font-weight: bold;
+      padding: 4px 8px;
+      border-radius: 5px;
+      display: inline-block;
+      margin-bottom: 4px;
     }
+
     .status-green {
-      color:#fff;
-      background:#198754;
-      font-weight:bold;
-      padding:4px 8px;
-      border-radius:5px;
+      color: #ffffff;
+      background: #198754;
+      font-weight: bold;
+      padding: 4px 8px;
+      border-radius: 5px;
+      display: inline-block;
+      margin-bottom: 4px;
     }
 
-    /* PJ */
-    .pj-cell {min-width:200px; max-width:240px; overflow:hidden;}
-    .pj-wrap {display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-start;}
+    /* -----------------------------------------------------------
+       Pièces jointes
+    ----------------------------------------------------------- */
+    .pj-cell {
+      min-width: 200px;
+      max-width: 240px;
+      overflow: hidden;
+    }
+
+    .pj-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-start;
+    }
+
     .pj-chip {
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      max-width:100%;
-      min-width:0;
-      padding:4px 8px;
-      border:1px solid #e5e7eb;
-      border-radius:9999px;
-      background:#f8f9fa;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      min-width: 0;
+      padding: 4px 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 9999px;
+      background: #f8f9fa;
     }
+
     .pj-name {
-      flex:1 1 auto;
-      min-width:0;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      color:#0d6efd;
-      text-decoration:none;
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #0d6efd;
+      text-decoration: none;
     }
+
     .pj-del {
-      flex:0 0 auto;
-      background:transparent;
-      border:none;
-      color:#dc3545;
-      font-weight:700;
-      cursor:pointer;
-      line-height:1;
-      padding:0 4px;
+      flex: 0 0 auto;
+      background: transparent;
+      border: none;
+      color: #dc3545;
+      font-weight: 700;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 4px;
     }
-    .pj-empty {color:#999; font-size:12px;}
-    .pj-input {margin-top:6px; width:95%;}
-    .dup-badge {color:#dc3545; font-weight:bold; margin-left:6px; white-space:nowrap;}
 
-    /* Réponses */
+    .pj-empty {
+      color: #999999;
+      font-size: 12px;
+    }
+
+    .pj-input {
+      margin-top: 6px;
+      width: 95%;
+    }
+
+    .dup-badge {
+      color: #dc3545;
+      font-weight: bold;
+      margin-left: 6px;
+      white-space: nowrap;
+    }
+
+    /* -----------------------------------------------------------
+       Réponses (modal d’affichage)
+    ----------------------------------------------------------- */
     .response-btn {
-      background:#17a2b8;
-      color:#fff;
-      border:none;
-      padding:6px 10px;
-      border-radius:5px;
-      cursor:pointer;
-      font-size:13px;
+      background: #17a2b8;
+      color: #ffffff;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
     }
-    .response-block {
-      margin-bottom:12px;
-      padding:10px;
-      border:1px solid #ddd;
-      border-radius:8px;
-      background:#f9f9f9;
-      text-align:left;
-    }
-    .response-date {font-size:12px; color:#555; margin-bottom:6px;}
-    .response-text {margin-bottom:6px; white-space:pre-wrap;}
-    .response-pj a {display:block;font-size:13px;color:#0d6efd;text-decoration:none;}
 
-    /* Modales */
-    .modal {
-      display:none;
-      position:fixed;
-      z-index:1000;
-      left:0; top:0;
-      width:100%; height:100%;
-      background:rgba(0,0,0,.5);
+    .response-block {
+      margin-bottom: 12px;
+      padding: 10px;
+      border: 1px solid #dddddd;
+      border-radius: 8px;
+      background: #f9f9f9;
+      text-align: left;
     }
+
+    .response-date {
+      font-size: 12px;
+      color: #555555;
+      margin-bottom: 6px;
+    }
+
+    .response-text {
+      margin-bottom: 6px;
+      white-space: pre-wrap;
+    }
+
+    .response-pj a {
+      display: block;
+      font-size: 13px;
+      color: #0d6efd;
+      text-decoration: none;
+    }
+
+    /* -----------------------------------------------------------
+       Modales (génériques)
+    ----------------------------------------------------------- */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+    }
+
     .modal-content {
-      background:#fff;
-      margin:8% auto;
-      padding:20px;
-      border-radius:10px;
-      width:500px;
-      max-width:90%;
-      box-shadow:0 0 15px rgba(0,0,0,.3);
+      background: #ffffff;
+      margin: 8% auto;
+      padding: 20px;
+      border-radius: 10px;
+      width: 500px;
+      max-width: 90%;
+      box-shadow: 0 0 15px rgba(0,0,0,0.3);
     }
   </style>
 </head>
+
 <body>
   <div class="container">
 
-    <!-- Topbar -->
+    <!-- =========================================================
+         TOPBAR
+    ========================================================== -->
     <div class="topbar">
-      <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo-square">
+
+      <!-- Logo -->
+      <img
+        src="/static/logo.png"
+        alt="Logo Intégrale Academy"
+        class="logo-square"
+      >
+
+      <!-- Titre + compteurs -->
       <div class="title-block">
         <h2>📋 Gestion des demandes stagiaires</h2>
         <div class="counters-inline">
@@ -237,18 +385,100 @@
           <span class="pending">⏳ À traiter : {{ demandes|selectattr('statut','equalto','Non traité')|list|length }}</span>
         </div>
       </div>
+
+      <!-- Actions top (Ajouter / Archiver / Archives) -->
       <div class="actions-top">
-        <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
-        <form method="POST" style="display:inline;" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
+        <button
+          type="button"
+          class="btn blue"
+          onclick="openAddModal()"
+        >
+          ➕ Ajouter
+        </button>
+
+        <form
+          method="POST"
+          style="display:inline;"
+          onsubmit="return confirm('Archiver toutes les demandes traitées ?')"
+        >
           <input type="hidden" name="action" value="delete_all_traitees">
           <button type="submit" class="btn red">🗑️ Archiver traitées</button>
         </form>
-        <a href="{{ url_for('archives') }}" class="btn grey">📦 Archives</a>
+
+        <a
+          class="btn grey"
+          href="{{ url_for('archives') }}"
+        >
+          📦 Archives
+        </a>
+      </div>
+
+    </div> <!-- /topbar -->
+
+
+    <!-- =========================================================
+         MODALE : AJOUT MANUEL D’UNE DEMANDE
+         (⚠️ C’était le bloc manquant — sans lui, le bouton ne peut
+          rien ouvrir. Le voici restauré.)
+    ========================================================== -->
+    <div id="addModal" class="modal">
+      <div class="modal-content">
+        <h3>➕ Nouvelle demande manuelle</h3>
+
+        <form method="POST">
+          <input type="hidden" name="action" value="add">
+
+          <input
+            type="text"
+            name="telephone"
+            placeholder="Téléphone"
+            style="width:100%; margin:6px 0;"
+          >
+
+          <input
+            type="email"
+            name="mail"
+            placeholder="Email (défaut : ecole@integraleacademy.com)"
+            style="width:100%; margin:6px 0;"
+          >
+
+          <select
+            name="motif"
+            style="width:100%; margin:6px 0;"
+          >
+            <option value="Attestation">Attestation</option>
+            <option value="Diplome">Diplôme</option>
+            <option value="Absence">Absence</option>
+            <option value="Contrats">Contrat</option>
+            <option value="Autre" selected>Autre</option>
+          </select>
+
+          <textarea
+            name="details"
+            placeholder="Détails de la demande"
+            required
+            rows="3"
+            style="width:100%; margin:6px 0;"
+          ></textarea>
+
+          <div style="margin-top:10px; text-align:right;">
+            <button type="button" onclick="closeAddModal()">❌ Annuler</button>
+            <button
+              type="submit"
+              style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;"
+            >➕ Créer</button>
+          </div>
+
+        </form>
       </div>
     </div>
 
-    <!-- Tableau -->
+
+    <!-- =========================================================
+         TABLEAU DES DEMANDES
+    ========================================================== -->
     <table>
+
       <tr>
         <th>Nom</th>
         <th>Prénom</th>
@@ -267,188 +497,397 @@
 
       {% for d in demandes %}
       <tr>
-        <form method="POST" enctype="multipart/form-data">
-          <td>{{ d.nom }} {% if d.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
-          <td>{{ d.prenom }}</td>
-          <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
-          <td>{{ d.motif }}</td>
 
-          <!-- Détails -->
+        <!-- Chaque ligne est un formulaire pour Enregistrer / Archiver / PJ -->
+        <form method="POST" enctype="multipart/form-data">
+
+          <!-- Nom -->
           <td>
-            <div class="detail-preview" id="preview-{{ d.id }}">
-              {% if d.details %}{{ d.details[:60] }}{% if d.details|length>60 %}…{% endif %}{% else %}—{% endif %}
+            {{ d.nom }}
+            {% if d.is_doublon %}
+              <span class="dup-badge">⚠️ Doublon</span>
+            {% endif %}
+          </td>
+
+          <!-- Prénom -->
+          <td>
+            {{ d.prenom }}
+          </td>
+
+          <!-- Email -->
+          <td>
+            <input
+              type="text"
+              name="mail"
+              value="{{ d.mail }}"
+              style="width:95%;"
+            >
+          </td>
+
+          <!-- Motif -->
+          <td>
+            {{ d.motif }}
+          </td>
+
+          <!-- Détails : aperçu + modal édition + hidden pour POST -->
+          <td>
+            <div
+              id="preview-{{ d.id }}"
+              class="detail-preview"
+            >
+              {% if d.details %}
+                {{ d.details[:60] }}{% if d.details|length > 60 %}…{% endif %}
+              {% else %}
+                —
+              {% endif %}
             </div>
-            <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir / Modifier</button>
-            <input type="hidden" name="details" id="details-{{ d.id }}" value="{{ d.details or '' }}">
+
+            <button
+              type="button"
+              class="detail-btn"
+              onclick="openDetailModal('{{ d.id }}')"
+            >
+              👁 Voir / Modifier
+            </button>
+
+            <!-- La valeur finale postée -->
+            <input
+              type="hidden"
+              name="details"
+              id="details-{{ d.id }}"
+              value="{{ d.details or '' }}"
+            >
           </td>
 
           <!-- Justificatif -->
           <td>
             {% if d.justificatif %}
-              <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
-            {% else %}<span class="pj-empty">—</span>{% endif %}
+              <a
+                href="{{ url_for('download_file', filename=d.justificatif) }}"
+                target="_blank"
+              >📎 Voir</a>
+            {% else %}
+              <span class="pj-empty">—</span>
+            {% endif %}
           </td>
 
           <!-- Pièces jointes -->
           <td class="pj-cell">
             <div class="pj-wrap">
-              {% if d.pieces_jointes and d.pieces_jointes|length>0 %}
+              {% if d.pieces_jointes and d.pieces_jointes|length > 0 %}
                 {% for pj in d.pieces_jointes %}
                   <div class="pj-chip" title="{{ pj }}">
                     <span>📎</span>
-                    <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
-                    <button type="submit" class="pj-del" title="Supprimer"
-                            name="action" value="delete_pj"
-                            onclick="this.form.pj_name.value='{{ pj }}'">×</button>
+                    <a
+                      class="pj-name"
+                      href="{{ url_for('download_file', filename=pj) }}"
+                      target="_blank"
+                    >{{ pj }}</a>
+
+                    <!-- Bouton supprimer cette PJ -->
+                    <button
+                      type="submit"
+                      class="pj-del"
+                      title="Supprimer"
+                      name="action"
+                      value="delete_pj"
+                      onclick="this.form.pj_name.value='{{ pj }}'"
+                    >×</button>
                   </div>
                 {% endfor %}
-              {% else %}<span class="pj-empty">—</span>{% endif %}
+              {% else %}
+                <span class="pj-empty">—</span>
+              {% endif %}
             </div>
-            <input type="file" name="pj" multiple class="pj-input">
+
+            <input
+              type="file"
+              name="pj"
+              multiple
+              class="pj-input"
+            >
           </td>
 
-          <td>{{ d.date }}</td>
+          <!-- Date -->
+          <td>
+            {{ d.date }}
+          </td>
 
           <!-- Attribution -->
           <td>
             <select name="attribution">
               <option value="">--</option>
-              <option value="Elsa" {% if d.attribution=='Elsa' %}selected{% endif %}>Elsa</option>
-              <option value="Clément" {% if d.attribution=='Clément' %}selected{% endif %}>Clément</option>
+              <option value="Elsa" {% if d.attribution == 'Elsa' %}selected{% endif %}>Elsa</option>
+              <option value="Clément" {% if d.attribution == 'Clément' %}selected{% endif %}>Clément</option>
             </select>
           </td>
 
-          <!-- Statut -->
+          <!-- Statut + message d’envoi -->
           <td>
-            {% if d.statut=='Non traité' %}<span class="status-red">Non traité</span>{% else %}<span class="status-green">Traité</span>{% endif %}
+            {% if d.statut == 'Non traité' %}
+              <span class="status-red">Non traité</span>
+            {% else %}
+              <span class="status-green">Traité</span>
+            {% endif %}
+
             <select name="statut" style="margin-top:5px;">
-              <option value="Non traité" {% if d.statut=='Non traité' %}selected{% endif %}>Non traité</option>
-              <option value="Traité" {% if d.statut=='Traité' %}selected{% endif %}>Traité</option>
+              <option value="Non traité" {% if d.statut == 'Non traité' %}selected{% endif %}>Non traité</option>
+              <option value="Traité" {% if d.statut == 'Traité' %}selected{% endif %}>Traité</option>
             </select>
+
             {% if d.mail_confirme %}
               <div style="font-size:12px; margin-top:4px;">
-                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">✅ Mail envoyé le {{ d.mail_confirme }}</a>
+                <a
+                  href="/voir_mail/{{ d.id }}"
+                  target="_blank"
+                  style="color:#198754; text-decoration:none;"
+                >
+                  ✅ Mail envoyé le {{ d.mail_confirme }}
+                </a>
               </div>
             {% elif d.mail_erreur %}
-              <div style="font-size:12px; color:#dc3545; margin-top:4px;">{{ d.mail_erreur }}</div>
+              <div style="font-size:12px; color:#dc3545; margin-top:4px;">
+                {{ d.mail_erreur }}
+              </div>
             {% endif %}
           </td>
 
-          <!-- Commentaire -->
+          <!-- Commentaire : bouton (ouvre modal générique) + hidden -->
           <td>
-            <button type="button" class="detail-btn" onclick="openCommentModal('{{ d.id }}', {{ d.commentaire|tojson|safe }})">✏️ Ajouter / Modifier</button>
-            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+            <button
+              type="button"
+              class="detail-btn"
+              onclick="openCommentModal('{{ d.id }}', {{ d.commentaire|tojson|safe }})"
+            >
+              ✏️ Ajouter / Modifier
+            </button>
+
+            <input
+              type="hidden"
+              name="commentaire"
+              id="commentaire-{{ d.id }}"
+              value="{{ d.commentaire }}"
+            >
           </td>
 
           <!-- Réponses -->
           <td>
-            {% if d.reponses and d.reponses|length>0 %}
-              <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">👁 Voir ({{ d.reponses|length }})</button>
-            {% else %}<span class="pj-empty">—</span>{% endif %}
+            {% if d.reponses and d.reponses|length > 0 %}
+              <button
+                type="button"
+                class="response-btn"
+                onclick="openResponseModal('{{ d.id }}')"
+              >
+                👁 Voir ({{ d.reponses|length }})
+              </button>
+            {% else %}
+              <span class="pj-empty">—</span>
+            {% endif %}
           </td>
 
-          <!-- Actions -->
+          <!-- Actions (sans bordure, alignées) -->
           <td class="actions">
             <input type="hidden" name="id" value="{{ d.id }}">
             <input type="hidden" name="pj_name" value="">
-            <button type="submit" name="action" value="update" class="save" title="Enregistrer">💾</button>
-            <button type="submit" name="action" value="delete" class="delete" title="Archiver" onclick="return confirm('Archiver la demande ?')">🗑️</button>
-            <a href="/imprimer/{{ d.id }}" target="_blank" class="print" title="Imprimer">🖨️</a>
+            <button
+              type="submit"
+              name="action"
+              value="update"
+              class="save"
+              title="Enregistrer"
+            >💾</button>
+
+            <button
+              type="submit"
+              name="action"
+              value="delete"
+              class="delete"
+              title="Archiver"
+              onclick="return confirm('Archiver la demande ?')"
+            >🗑️</button>
+
+            <a
+              href="/imprimer/{{ d.id }}"
+              target="_blank"
+              class="print"
+              title="Imprimer"
+            >🖨️</a>
           </td>
+
         </form>
       </tr>
 
-      <!-- Modales -->
+      <!-- ------------------------------------------------------
+           MODALE : RÉPONSES (par demande)
+      ------------------------------------------------------- -->
       <div id="responseModal-{{ d.id }}" class="modal">
         <div class="modal-content">
           <h3>📩 Réponses de {{ d.prenom }} {{ d.nom }}</h3>
+
           {% for r in d.reponses %}
           <div class="response-block">
             <div class="response-date">📅 {{ r.date }}</div>
             <div class="response-text">{{ r.message }}</div>
-            {% if r.pj and r.pj|length>0 %}
+
+            {% if r.pj and r.pj|length > 0 %}
               <div class="response-pj">
                 {% for pj in r.pj %}
-                <a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>
+                  <a
+                    href="{{ url_for('download_file', filename=pj) }}"
+                    target="_blank"
+                  >📎 {{ pj }}</a>
                 {% endfor %}
               </div>
             {% endif %}
           </div>
           {% endfor %}
-          <div style="text-align:right;"><button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button></div>
-        </div>
-      </div>
 
-      <div id="detailModal-{{ d.id }}" class="modal">
-        <div class="modal-content">
-          <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
-          <textarea id="detailArea-{{ d.id }}" rows="8" style="width:100%;">{{ d.details or '' }}</textarea>
-          <div style="margin-top:10px; text-align:right;">
-            <button onclick="closeDetailModal('{{ d.id }}')">❌ Annuler</button>
-            <button onclick="saveDetail('{{ d.id }}')" style="background:#198754;color:#fff;padding:6px 10px;border:none;border-radius:6px;cursor:pointer;">💾 Enregistrer</button>
+          <div style="text-align:right;">
+            <button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button>
           </div>
         </div>
       </div>
+
+      <!-- ------------------------------------------------------
+           MODALE : DÉTAILS (édition)
+      ------------------------------------------------------- -->
+      <div id="detailModal-{{ d.id }}" class="modal">
+        <div class="modal-content">
+          <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
+
+          <textarea
+            id="detailArea-{{ d.id }}"
+            rows="8"
+            style="width:100%;"
+          >{{ d.details or '' }}</textarea>
+
+          <div style="margin-top:10px; text-align:right;">
+            <button onclick="closeDetailModal('{{ d.id }}')">❌ Annuler</button>
+            <button
+              onclick="saveDetail('{{ d.id }}')"
+              style="background:#198754; color:#fff; padding:6px 10px; border:none; border-radius:6px; cursor:pointer;"
+            >
+              💾 Enregistrer
+            </button>
+          </div>
+        </div>
+      </div>
+
       {% endfor %}
     </table>
-  </div>
 
-  <!-- Modal Commentaire -->
+  </div> <!-- /container -->
+
+
+  <!-- =========================================================
+       MODALE : COMMENTAIRE (générique, 1 pour toute la page)
+  ========================================================== -->
   <div id="commentModal" class="modal">
     <div class="modal-content">
       <h3>📝 Commentaire</h3>
-      <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
+
+      <textarea
+        id="modalComment"
+        rows="6"
+        style="width:100%;"
+      ></textarea>
+
       <div style="margin-top:10px; text-align:right;">
-        <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
-        <button type="button" onclick="saveComment()">💾 Enregistrer</button>
+        <button
+          type="button"
+          onclick="closeCommentModal()"
+        >❌ Annuler</button>
+
+        <button
+          type="button"
+          onclick="saveComment()"
+          style="background:#198754; color:#fff; padding:6px 10px; border:none; border-radius:6px; cursor:pointer;"
+        >💾 Enregistrer</button>
       </div>
     </div>
   </div>
 
+
+  <!-- =========================================================
+       SCRIPTS
+  ========================================================== -->
   <script>
+    /* --------------------------------------------------------
+       Commentaires (modal générique)
+    --------------------------------------------------------- */
     let currentCommentId = null;
-    function openCommentModal(id, txt){
+
+    function openCommentModal(id, txt) {
       currentCommentId = id;
       document.getElementById('modalComment').value = txt || '';
-      document.getElementById('commentModal').style.display='block';
+      document.getElementById('commentModal').style.display = 'block';
     }
-    function closeCommentModal(){
-      document.getElementById('commentModal').style.display='none';
+
+    function closeCommentModal() {
+      document.getElementById('commentModal').style.display = 'none';
     }
-    function saveComment(){
-      if(currentCommentId){
-        document.getElementById('commentaire-'+currentCommentId).value=document.getElementById('modalComment').value;
+
+    function saveComment() {
+      if (currentCommentId) {
+        const value = document.getElementById('modalComment').value;
+        const hidden = document.getElementById('commentaire-' + currentCommentId);
+        if (hidden) hidden.value = value;
       }
       closeCommentModal();
     }
 
-    function openDetailModal(id){
-      document.getElementById('detailModal-'+id).style.display='block';
+
+    /* --------------------------------------------------------
+       Détails (par demande) : open / close / save + preview
+    --------------------------------------------------------- */
+    function openDetailModal(id) {
+      document.getElementById('detailModal-' + id).style.display = 'block';
     }
-    function closeDetailModal(id){
-      document.getElementById('detailModal-'+id).style.display='none';
+
+    function closeDetailModal(id) {
+      document.getElementById('detailModal-' + id).style.display = 'none';
     }
-    function saveDetail(id){
-      const val=document.getElementById('detailArea-'+id).value||'';
-      document.getElementById('details-'+id).value=val;
-      const prev=document.getElementById('preview-'+id);
-      prev.textContent=val.length>60?val.slice(0,60)+'…':(val||'—');
+
+    function saveDetail(id) {
+      const area = document.getElementById('detailArea-' + id);
+      const val = (area && area.value) ? area.value : '';
+      const hidden = document.getElementById('details-' + id);
+      if (hidden) hidden.value = val;
+
+      const prev = document.getElementById('preview-' + id);
+      if (prev) {
+        prev.textContent = val
+          ? (val.length > 60 ? val.slice(0, 60) + '…' : val)
+          : '—';
+      }
+
       closeDetailModal(id);
     }
 
-    function openResponseModal(id){
-      document.getElementById('responseModal-'+id).style.display='block';
-    }
-    function closeResponseModal(id){
-      document.getElementById('responseModal-'+id).style.display='none';
+
+    /* --------------------------------------------------------
+       Réponses : modals
+    --------------------------------------------------------- */
+    function openResponseModal(id) {
+      document.getElementById('responseModal-' + id).style.display = 'block';
     }
 
-    function openAddModal(){
-      document.getElementById('addModal').style.display='block';
+    function closeResponseModal(id) {
+      document.getElementById('responseModal-' + id).style.display = 'none';
     }
-    function closeAddModal(){
-      document.getElementById('addModal').style.display='none';
+
+
+    /* --------------------------------------------------------
+       Ajout : modal (restauré)
+    --------------------------------------------------------- */
+    function openAddModal() {
+      document.getElementById('addModal').style.display = 'block';
+    }
+
+    function closeAddModal() {
+      document.getElementById('addModal').style.display = 'none';
     }
   </script>
+
 </body>
 </html>
