@@ -495,6 +495,17 @@ def admin():
                 save_data(data)
             return redirect(url_for("admin"))
 
+                elif action == "delete_all_traitees":
+        traitees = [d for d in demandes if d.get("statut") == "Traité"]
+        for d in traitees:
+            data["archives"].append(d)
+            supprimer_fichier(d.get("justificatif"))
+            for pj in d.get("pieces_jointes", []):
+                supprimer_fichier(pj)
+            data["demandes"].remove(d)
+        save_data(data)
+        return redirect(url_for("admin"))
+
     return render_template("admin.html", demandes=demandes, compteur_traitees=data["compteur_traitees"])
 
 
