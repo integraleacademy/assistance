@@ -493,6 +493,38 @@ def admin():
         query=query
     )
 
+    @app.route("/archives", methods=["GET", "POST"])
+def archives():
+    data = load_data()
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "delete_one":
+            archive_id = request.form.get("id")
+            data["archives"] = [a for a in data["archives"] if a["id"] != archive_id]
+            save_data(data)
+        elif action == "clear":
+            data["archives"] = []
+            save_data(data)
+        return redirect(url_for("archives"))
+
+    archives = data["archives"]
+
+    # ✅ Recherche dans archives
+    query = request.args.get("q", "").strip().lower()
+    if query:
+        archives = [
+            a for a in archives if
+            query in str(a.get("nom", "")).lower()
+            or query in str(a.get("prenom", "")).lower()
+            or query in str(a.get("mail", "")).lower()
+            or query in str(a.get("motif", "")).lower()
+            or query in str(a.get("details", "")).lower()
+        ]
+
+    return render_template("archives.html", archives=archives, query=query)
+
+
 @app.route("/imprimer/<demande_id>")
 def imprimer(demande_id):
     data = load_data()
