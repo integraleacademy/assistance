@@ -580,5 +580,32 @@ def repondre(demande_id):
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
+    # ------------------------------------------------------------
+# ✅ Route publique pour la plateforme principale (suivi assistance)
+# ------------------------------------------------------------
+@app.route("/data.json")
+def data_json():
+    """
+    Retourne le nombre de demandes à traiter (statut 'A TRAITER' ou 'Non traité')
+    """
+    try:
+        data = load_data()
+        demandes = data.get("demandes", [])
+        a_traiter = [d for d in demandes if d.get("statut", "").strip().lower() in ["a traiter", "non traité"]]
+        count = len(a_traiter)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+        }
+        return {"a_traiter": count}, 200, headers
+
+    except Exception as e:
+        print("⚠️ Erreur /data.json :", e)
+        return {"a_traiter": -1, "error": str(e)}, 500, {
+            "Access-Control-Allow-Origin": "*"
+        }
+
+
 if __name__ == "__main__":
     app.run(debug=True)
