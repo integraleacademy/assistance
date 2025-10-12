@@ -315,102 +315,7 @@
     </div>
   </div>
 
-  <script>
-    let currentCommentId = null;
 
-    function openCommentModal(demandeId, commentaire) {
-      currentCommentId = demandeId;
-      document.getElementById("modalComment").value = commentaire || "";
-      document.getElementById("commentModal").style.display = "block";
-    }
-    function closeCommentModal() {document.getElementById("commentModal").style.display = "none";}
-    function saveComment() {
-      if (currentCommentId) {
-        let newComment = document.getElementById("modalComment").value;
-        document.getElementById("commentaire-" + currentCommentId).value = newComment;
-      }
-      closeCommentModal();
-    }
-    document.querySelectorAll(".comment-btn").forEach(btn => {
-      btn.addEventListener("click", function() {
-        let raw = this.dataset.comment;
-        let parsed = "";
-        try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
-        openCommentModal(this.dataset.id, parsed);
-      });
-    });
-
-    function openDetailModal(id){document.getElementById('detailModal-'+id).style.display='block';}
-    function closeDetailModal(id){document.getElementById('detailModal-'+id).style.display='none';}
-    function saveDetail(id){
-      const val=document.getElementById('detailArea-'+id).value||'';
-      document.getElementById('details-'+id).value=val;
-      const prev=document.getElementById('preview-'+id);
-      prev.textContent=val.length>60?val.slice(0,60)+'…':(val||'—');
-      closeDetailModal(id);
-    }
-
-    function openResponseModal(id){document.getElementById('responseModal-'+id).style.display='block';}
-    function closeResponseModal(id){document.getElementById('responseModal-'+id).style.display='none';}
-
-    function openAddModal(){document.getElementById('addModal').style.display='block';}
-    function closeAddModal(){document.getElementById('addModal').style.display='none';}
-
-      // --- Aperçu mail avant envoi ---
-let currentMailId = null;
-
-document.querySelectorAll('select[name="statut"]').forEach(select => {
-  select.addEventListener('change', function (event) {
-    if (this.value === "Traité") {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const form = this.closest('form');
-      currentMailId = form.querySelector('input[name="id"]').value;
-
-      // On remet le select sur "Non traité" tant que ce n’est pas confirmé
-      this.value = "Non traité";
-
-      // 🔒 Empêche le submit automatique du formulaire
-      form.addEventListener('submit', e => e.preventDefault(), { once: true });
-
-      // Charge l’aperçu du mail
-      fetch(`/preview_mail/${currentMailId}`)
-        .then(res => res.text())
-        .then(html => {
-          document.getElementById("mailPreviewFrame").srcdoc = html;
-          document.getElementById("mailPreviewModal").style.display = "block";
-        })
-        .catch(() => alert("Erreur lors du chargement de l'aperçu du mail."));
-    }
-  });
-});
-
-function closeMailPreview() {
-  document.getElementById("mailPreviewModal").style.display = "none";
-  currentMailId = null;
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  const btn = document.getElementById("confirmSendBtn");
-  if (btn) {
-    btn.addEventListener("click", function () {
-      if (!currentMailId) return;
-      fetch(`/send_mail_confirm/${currentMailId}`, { method: "POST" })
-        .then(r => r.json())
-        .then(data => {
-          if (data.success) {
-            alert("✅ Mail envoyé avec succès !");
-            location.reload();
-          } else {
-            alert("❌ " + (data.error || "Erreur d’envoi"));
-          }
-        })
-        .catch(() => alert("Erreur de communication avec le serveur."));
-    });
-  }
-});
-</script>
 
 <!-- ✅ Modal d'aperçu mail (à laisser sous le script, hors <script>) -->
 <div id="mailPreviewModal" class="modal" style="display:none; z-index:2000;">
@@ -425,6 +330,56 @@ document.addEventListener("DOMContentLoaded", () => {
     </div>
   </div>
 </div>
+
+  <!-- ✅ Et seulement ici ton script -->
+<script>
+  let currentMailId = null;
+  let mailModal = document.getElementById("mailPreviewModal");
+  let mailFrame = document.getElementById("mailPreviewFrame");
+  let confirmBtn = document.getElementById("confirmSendBtn");
+
+  document.querySelectorAll('select[name="statut"]').forEach(select => {
+    select.addEventListener('change', function (event) {
+      if (this.value === "Traité") {
+        event.preventDefault();
+
+        const form = this.closest("form");
+        currentMailId = form.querySelector('input[name="id"]').value;
+        this.value = "Non traité";
+        form.onsubmit = (e) => e.preventDefault();
+
+        fetch(`/preview_mail/${currentMailId}`)
+          .then(r => r.text())
+          .then(html => {
+            mailFrame.srcdoc = html;
+            mailModal.style.display = "block";
+          })
+          .catch(() => alert("Erreur de chargement du mail"));
+      }
+    });
+  });
+
+  function closeMailPreview() {
+    mailModal.style.display = "none";
+    currentMailId = null;
+  }
+
+  confirmBtn.addEventListener("click", () => {
+    if (!currentMailId) return;
+    fetch(`/send_mail_confirm/${currentMailId}`, { method: "POST" })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          alert("✅ Mail envoyé avec succès !");
+          closeMailPreview();
+          location.reload();
+        } else {
+          alert("❌ " + (data.error || "Erreur d’envoi"));
+        }
+      })
+      .catch(() => alert("Erreur de communication avec le serveur."));
+  });
+</script>
 
 </body>
 </html>
