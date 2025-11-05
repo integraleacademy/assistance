@@ -94,6 +94,33 @@
     /* Modales */
     .modal {display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,.5);}
     .modal-content {background:#fff; margin:8% auto; padding:20px; border-radius:10px; width:500px; max-width:90%; box-shadow:0 0 15px rgba(0,0,0,.3);}
+
+    /* === Barre de filtres attribution === */
+.filter-bar {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.filter-btn {
+  background: #eee;
+  border: 1px solid #ccc;
+  border-radius: 20px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+.filter-btn:hover {
+  background: #f4c45a;
+  color: #222;
+}
+.filter-btn.active {
+  background: #0d6efd;
+  color: white;
+  border-color: #0d6efd;
+}
+
   </style>
 </head>
 <body>
@@ -119,6 +146,16 @@
       </div>
     </div>
 
+    <!-- 🔽 Filtres d'attribution -->
+<div class="filter-bar" style="text-align:center; margin:20px 0;">
+  <button class="filter-btn active" data-filter="">👥 Tous</button>
+  <button class="filter-btn" data-filter="Elsa">👩 Elsa</button>
+  <button class="filter-btn" data-filter="Clément">👨 Clément</button>
+  <button class="filter-btn" data-filter="Mohamed">👨 Mohamed</button>
+  <button class="filter-btn" data-filter="Non attribué">⚪ Non attribué</button>
+</div>
+
+
     <!-- Modal Ajout -->
 <div id="addModal" class="modal">
   <div class="modal-content">
@@ -134,6 +171,14 @@
         <option value="Contrats">Contrat</option>
         <option value="Autre" selected>Autre</option>
       </select>
+      <!-- 🔽 Nouveau champ pour choisir la personne -->
+<select name="attribution" style="width:100%; margin:6px 0;">
+  <option value="">Attribué à...</option>
+  <option value="Elsa">Elsa</option>
+  <option value="Clément" selected>Clément</option>
+  <option value="Mohamed">Mohamed</option>
+</select>
+
       <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
       <div style="margin-top:10px; text-align:right;">
         <button type="button" onclick="closeAddModal()">❌ Annuler</button>
