@@ -7,7 +7,35 @@ from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
 
+from functools import wraps
+from werkzeug.security import check_password_hash, generate_password_hash
+from flask import session, flash
+
+# ---------- USERS (chargés depuis les variables d'environnement) ----------
+# Si tu as mis les variables dans Render / .env : on les lit ici.
+USERS = {
+    os.getenv("USER_ELSA_EMAIL", "elsaduq83@gmail.com").lower(): {
+        "name": "Elsa",
+        "role": "user",
+        # si tu veux stocker le mot de passe en clair (pas top), on lit USER_ELSA_PASS
+        # Si tu préfères stocker un hash dans env, remplace par la valeur hashée
+        "pass": os.getenv("USER_ELSA_PASS", "Lv15052021@")
+    },
+    os.getenv("USER_MOHAMED_EMAIL", "accueil@integraleacademy.com").lower(): {
+        "name": "Mohamed",
+        "role": "user",
+        "pass": os.getenv("USER_MOHAMED_PASS", "Lv15052021@")
+    },
+    os.getenv("USER_CLEMENT_EMAIL", "clement@integraleacademy.com").lower(): {
+        "name": "Clément",
+        "role": "admin",   # Clément = super-admin (voit tout)
+        "pass": os.getenv("USER_CLEMENT_PASS", "Lv15052021@")
+    }
+}
+
+
 app = Flask(__name__)
+app.secret_key = "cle-flask-secrete-2024"
 
 # Fichiers persistants (Render)
 DATA_FILE = "/mnt/data/data.json"
@@ -147,6 +175,23 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
     except Exception as e:
         print("❌ Erreur envoi email :", e)
         return False
+
+# --------------- Auth helpers ---------------
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("user_email"):
+            return redirect(url_for("login", next=request.path))
+        return f(*args, **kwargs)
+    return wrapper
+
+def current_user():
+    # retourne dict utilisateur (email, name, role) ou None
+    ue = session.get("user_email")
+    if not ue: 
+        return None
+    return USERS.get(ue.lower())
+
 
 # -------------------------------------------------------------------
 # Emails (admin, accusé, confirmation)
@@ -359,10 +404,46 @@ def index():
 def confirmation():
     return render_template("confirmation.html")
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = USERS.get(email)
+        if not user:
+            flash("Identifiants incorrects", "error")
+            return redirect(url_for("login"))
+        # Comparaison simple (si tu utilises des hashes, remplace par check_password_hash)
+        expected = user.get("pass")
+        if expected and password == expected:
+            # ok
+            session["user_email"] = email
+            session["user_name"] = user.get("name")
+            session["user_role"] = user.get("role")
+            next_url = request.args.get("next") or url_for("admin")
+            return redirect(next_url)
+        else:
+            flash("Identifiants incorrects", "error")
+            return redirect(url_for("login"))
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.pop("user_email", None)
+    session.pop("user_name", None)
+    session.pop("user_role", None)
+    return redirect(url_for("login"))
+    
+
 @app.route("/admin", methods=["GET", "POST"])
+@login_required
 def admin():
     data = load_data()
     demandes = data["demandes"]
+        # 🔐 Identifier l'utilisateur connecté
+    user = current_user()  # récupère les infos de session
+    user_name = user["name"] if user else None
+    user_role = user["role"] if user else "user"
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -486,6 +567,14 @@ def admin():
             or query in d.get("details", "").lower()
             or query in d.get("attribution", "").lower() 
         ]
+
+           # 🔒 Filtrage automatique selon la personne connectée
+    if user_role != "admin" and user_name:
+        demandes = [
+            d for d in demandes
+            if (d.get("attribution") or "").strip().lower() == user_name.lower()
+        ]
+ 
 
     return render_template(
         "admin.html",
