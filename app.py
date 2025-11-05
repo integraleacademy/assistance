@@ -381,7 +381,7 @@ def admin():
                 "details": request.form.get("details", ""),
                 "justificatif": "",
                 "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
-                "attribution": "Clément",
+                "attribution": request.form.get("attribution", "Clément"),
                 "statut": "Non traité",
                 "commentaire": "",
                 "mail_confirme": "",
