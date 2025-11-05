@@ -126,6 +126,30 @@
 <body>
   <div class="container">
 
+ <!-- 🧭 Bandeau utilisateur connecté -->
+<div style="display:flex;align-items:center;justify-content:space-between;
+            background:linear-gradient(90deg,#fef8e1,#f4c45a);
+            padding:12px 25px;border-radius:12px;margin-bottom:25px;">
+  
+  <div style="display:flex;align-items:center;gap:12px;">
+    <img src="/static/logo.png" alt="Logo" style="height:45px;width:auto;">
+    <div style="font-size:16px;font-weight:600;color:#333;">
+      Connecté en tant que 
+      <span style="color:#000;">{{ session.get('user_name') }}</span>
+      {% if session.get('user_role') == 'admin' %}
+        <span style="color:#007b00;font-weight:500;">(Administrateur)</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <a href="{{ url_for('logout') }}" 
+     style="background:#d33;color:white;padding:8px 18px;border-radius:8px;
+            text-decoration:none;font-weight:500;">
+    🔒 Déconnexion
+  </a>
+</div>
+   
+
     <!-- Topbar -->
     <div class="topbar">
       <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo-square">
