@@ -380,6 +380,45 @@
 
     function openAddModal(){document.getElementById('addModal').style.display='block';}
     function closeAddModal(){document.getElementById('addModal').style.display='none';}
+
+// === 🔍 Filtres attribution avec mémorisation locale ===
+function applyFilter(filter) {
+  document.querySelectorAll(".filter-btn").forEach(b => {
+    if (b.dataset.filter === filter) b.classList.add("active");
+    else b.classList.remove("active");
+  });
+
+  document.querySelectorAll("table tr").forEach((row, i) => {
+    if (i === 0) return; // skip header
+    const cell = row.querySelector("select[name='attribution']");
+    if (!cell) return;
+
+    const value = cell.value.trim() || "Non attribué";
+    if (filter === "" || value === filter) {
+      row.style.display = "";
+    } else {
+      row.style.display = "none";
+    }
+  });
+}
+
+// 🔄 Appliquer le filtre sauvegardé au chargement
+document.addEventListener("DOMContentLoaded", () => {
+  const savedFilter = localStorage.getItem("activeFilter") || "";
+  applyFilter(savedFilter);
+});
+
+// 🖱️ Clic sur les boutons
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const filter = btn.dataset.filter;
+    localStorage.setItem("activeFilter", filter);
+    applyFilter(filter);
+  });
+});
+
+
+    
   </script>
 </body>
 </html>
