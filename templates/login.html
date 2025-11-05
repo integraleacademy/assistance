@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Connexion - Admin</title></head>
+<body style="font-family:Arial, sans-serif;padding:40px;">
+  <div style="max-width:420px;margin:40px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.06);">
+    <h2>Connexion administration</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul>
+        {% for cat, msg in messages %}
+          <li style="color: red;">{{ msg }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    <form method="POST">
+      <input type="email" name="email" placeholder="Email" required style="width:100%;padding:8px;margin:8px 0;">
+      <input type="password" name="password" placeholder="Mot de passe" required style="width:100%;padding:8px;margin:8px 0;">
+      <div style="text-align:right;">
+        <button type="submit" style="background:#0d6efd;color:white;padding:8px 14px;border:none;border-radius:6px;cursor:pointer;">Se connecter</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>
