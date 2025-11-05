@@ -1,25 +1,129 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
-<head><meta charset="utf-8"><title>Connexion - Admin</title></head>
-<body style="font-family:Arial, sans-serif;padding:40px;">
-  <div style="max-width:420px;margin:40px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.06);">
-    <h2>Connexion administration</h2>
+<head>
+  <meta charset="UTF-8">
+  <title>Connexion — Intégrale Academy</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(135deg, #fff9e6 0%, #f4c45a 100%);
+    }
+
+    .login-card {
+      background: white;
+      border-radius: 18px;
+      padding: 50px 55px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+      width: 380px;
+      text-align: center;
+      animation: fadeIn 0.8s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo {
+      max-width: 130px;
+      margin-bottom: 20px;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+
+    h2 {
+      margin-bottom: 25px;
+      font-size: 22px;
+      color: #222;
+      font-weight: 600;
+    }
+
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 15px;
+      transition: 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #f4c45a;
+      box-shadow: 0 0 0 3px rgba(244,196,90,0.25);
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 12px;
+      background: linear-gradient(90deg, #f4c45a, #ffd774);
+      color: #222;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    button:hover {
+      background: linear-gradient(90deg, #ffd774, #f4c45a);
+      transform: translateY(-1px);
+    }
+
+    .error {
+      background: #ffeaea;
+      color: #c00;
+      padding: 8px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .footer {
+      margin-top: 25px;
+      font-size: 13px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <img src="/static/logo.png" alt="Intégrale Academy" class="logo">
+    <h2>Accès sécurisé</h2>
+
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <ul>
-        {% for cat, msg in messages %}
-          <li style="color: red;">{{ msg }}</li>
+        {% for category, msg in messages %}
+          <div class="error">{{ msg }}</div>
         {% endfor %}
-        </ul>
       {% endif %}
     {% endwith %}
+
     <form method="POST">
-      <input type="email" name="email" placeholder="Email" required style="width:100%;padding:8px;margin:8px 0;">
-      <input type="password" name="password" placeholder="Mot de passe" required style="width:100%;padding:8px;margin:8px 0;">
-      <div style="text-align:right;">
-        <button type="submit" style="background:#0d6efd;color:white;padding:8px 14px;border:none;border-radius:6px;cursor:pointer;">Se connecter</button>
-      </div>
+      <input type="email" name="email" placeholder="Adresse e-mail" required>
+      <input type="password" name="password" placeholder="Mot de passe" required>
+      <button type="submit">Se connecter</button>
     </form>
+
+    <div class="footer">© Intégrale Academy — Accès réservé</div>
   </div>
 </body>
 </html>
