@@ -126,28 +126,27 @@
 <body>
   <div class="container">
 
- <!-- 🧭 Bandeau utilisateur connecté -->
+<!-- 🧭 Bandeau utilisateur connecté (version allégée) -->
 <div style="display:flex;align-items:center;justify-content:space-between;
-            background:linear-gradient(90deg,#fef8e1,#f4c45a);
-            padding:12px 25px;border-radius:12px;margin-bottom:25px;">
+            background:linear-gradient(90deg,#fff8dc,#f4c45a);
+            padding:8px 18px;border-radius:10px;margin-bottom:18px;
+            box-shadow:0 1px 3px rgba(0,0,0,0.05);font-size:15px;">
   
-  <div style="display:flex;align-items:center;gap:12px;">
-    <img src="/static/logo.png" alt="Logo" style="height:45px;width:auto;">
-    <div style="font-size:16px;font-weight:600;color:#333;">
-      Connecté en tant que 
-      <span style="color:#000;">{{ session.get('user_name') }}</span>
-      {% if session.get('user_role') == 'admin' %}
-        <span style="color:#007b00;font-weight:500;">(Administrateur)</span>
-      {% endif %}
-    </div>
+  <div style="font-weight:500;color:#333;">
+    👋 Connecté en tant que 
+    <span style="font-weight:600;color:#000;">{{ session.get('user_name') }}</span>
+    {% if session.get('user_role') == 'admin' %}
+      <span style="color:#007b00;font-weight:500;">(Administrateur)</span>
+    {% endif %}
   </div>
 
   <a href="{{ url_for('logout') }}" 
-     style="background:#d33;color:white;padding:8px 18px;border-radius:8px;
-            text-decoration:none;font-weight:500;">
+     style="background:#d33;color:white;padding:6px 14px;border-radius:8px;
+            text-decoration:none;font-weight:500;font-size:14px;">
     🔒 Déconnexion
   </a>
 </div>
+
    
 
     <!-- Topbar -->
