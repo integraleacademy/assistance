@@ -508,9 +508,21 @@ def admin():
                 "reponses": [],
                 "is_doublon": False
             }
+
             data["demandes"].append(new_demande)
             save_data(data)
+
+            # 📨 Si la nouvelle demande est attribuée à Mohamed → envoyer le mail
+            if new_demande["attribution"].strip() == "Mohamed":
+                try:
+                    envoyer_mail_attribution_mohamed(new_demande)
+                    print(f"📨 Notification envoyée (ajout manuel) pour {new_demande['prenom']} {new_demande['nom']}")
+                except Exception as e:
+                    print("⚠️ Erreur envoi mail attribution Mohamed (ajout manuel) :", e)
+
             return redirect(url_for("admin"))
+
+
 
         # ✏️ Mise à jour d'une demande existante
         elif action == "update":
