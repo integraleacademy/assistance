@@ -337,6 +337,8 @@ def envoyer_mail_confirmation(demande):
 def envoyer_mail_attribution_mohamed(demande):
     """Envoie un mail à znaw83@gmail.com + copie à Clément quand la demande est attribuée à Mohamed"""
     sujet = f"📩 Nouvelle demande attribuée à Mohamed — {demande.get('motif','')}"
+    lien_admin = "https://assistance-alw9.onrender.com/admin"
+
     plain = (
         f"Une demande vient d'être attribuée à Mohamed.\n\n"
         f"👤 {demande.get('prenom','')} {demande.get('nom','')}\n"
@@ -344,7 +346,7 @@ def envoyer_mail_attribution_mohamed(demande):
         f"📅 {demande.get('date','')}\n"
         f"📌 Motif : {demande.get('motif','')}\n"
         f"📝 Détails : {demande.get('details','')}\n\n"
-        "➡️ Connectez-vous à la plateforme pour la traiter."
+        f"➡️ Connectez-vous à la plateforme pour la traiter : {lien_admin}"
     )
 
     html = _wrap_html(
@@ -360,11 +362,15 @@ def envoyer_mail_attribution_mohamed(demande):
           <tr><td style="padding:6px 8px;">📌 Motif</td><td>{demande.get('motif','')}</td></tr>
           <tr><td style="padding:6px 8px;">📝 Détails</td><td>{demande.get('details','')}</td></tr>
         </table>
-        <p style="margin-top:14px;">➡️ Connectez-vous à la plateforme pour la traiter.</p>
+        <p style="margin-top:16px;">
+          ➡️ <a href="{lien_admin}" style="color:#0d6efd;text-decoration:none;font-weight:bold;">
+          Se connecter à la plateforme pour traiter la demande</a>
+        </p>
         """
     )
 
     send_email_html("znaw83@gmail.com, clement@integraleacademy.com", sujet, plain, html)
+
 
 
 
