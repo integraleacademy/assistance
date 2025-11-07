@@ -274,13 +274,15 @@
           <td>{{ d.date }}</td>
 
           <!-- Attribution -->
-          <td>
-            <select name="attribution">
-              <option value="">--</option>
-              <option value="Elsa" {% if d.attribution=='Elsa' %}selected{% endif %}>Elsa</option>
-              <option value="Clément" {% if d.attribution=='Clément' %}selected{% endif %}>Clément</option>
-            </select>
-          </td>
+    <td>
+  <select name="attribution">
+    <option value="">--</option>
+    <option value="Elsa" {% if d.attribution=='Elsa' %}selected{% endif %}>Elsa</option>
+    <option value="Clément" {% if d.attribution=='Clément' %}selected{% endif %}>Clément</option>
+    <option value="Mohamed" {% if d.attribution=='Mohamed' %}selected{% endif %}>Mohamed</option>
+  </select>
+</td>
+
 
           <!-- Statut -->
           <td>
