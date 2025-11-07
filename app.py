@@ -334,6 +334,40 @@ def envoyer_mail_confirmation(demande):
         demande["mail_html"] = html
     return ok
 
+def envoyer_mail_attribution_mohamed(demande):
+    """Envoie un mail à znaw83@gmail.com + copie à Clément quand la demande est attribuée à Mohamed"""
+    sujet = f"📩 Nouvelle demande attribuée à Mohamed — {demande.get('motif','')}"
+    plain = (
+        f"Une demande vient d'être attribuée à Mohamed.\n\n"
+        f"👤 {demande.get('prenom','')} {demande.get('nom','')}\n"
+        f"📧 {demande.get('mail','')}\n"
+        f"📅 {demande.get('date','')}\n"
+        f"📌 Motif : {demande.get('motif','')}\n"
+        f"📝 Détails : {demande.get('details','')}\n\n"
+        "➡️ Connectez-vous à la plateforme pour la traiter."
+    )
+
+    html = _wrap_html(
+        '<h1 style="margin:0 0 12px;font-size:20px;">📩 Nouvelle demande attribuée à Mohamed</h1>',
+        f"""
+        <p>Une demande vient d'être <strong>attribuée à Mohamed</strong>.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" 
+               style="border-collapse:collapse;font-size:14px;">
+          <tr><td style="padding:6px 8px;">👤 Nom</td><td>{demande.get('nom','')}</td></tr>
+          <tr><td style="padding:6px 8px;">👤 Prénom</td><td>{demande.get('prenom','')}</td></tr>
+          <tr><td style="padding:6px 8px;">📧 Email</td><td>{demande.get('mail','')}</td></tr>
+          <tr><td style="padding:6px 8px;">📅 Date</td><td>{demande.get('date','')}</td></tr>
+          <tr><td style="padding:6px 8px;">📌 Motif</td><td>{demande.get('motif','')}</td></tr>
+          <tr><td style="padding:6px 8px;">📝 Détails</td><td>{demande.get('details','')}</td></tr>
+        </table>
+        <p style="margin-top:14px;">➡️ Connectez-vous à la plateforme pour la traiter.</p>
+        """
+    )
+
+    send_email_html("znaw83@gmail.com, clement@integraleacademy.com", sujet, plain, html)
+
+
+
 # -------------------------------------------------------------------
 # Routes
 # -------------------------------------------------------------------
@@ -440,7 +474,8 @@ def logout():
 def admin():
     data = load_data()
     demandes = data["demandes"]
-        # 🔐 Identifier l'utilisateur connecté
+
+    # 🔐 Identifier l'utilisateur connecté
     user = current_user()  # récupère les infos de session
     user_name = user["name"] if user else None
     user_role = user["role"] if user else "user"
@@ -449,7 +484,7 @@ def admin():
         action = request.form.get("action")
         demande_id = request.form.get("id")
 
-        # Ajout manuel
+        # ➕ Ajout manuel
         if action == "add":
             paris_tz = pytz.timezone("Europe/Paris")
             new_demande = {
@@ -477,7 +512,7 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # Mise à jour
+        # ✏️ Mise à jour d'une demande existante
         elif action == "update":
             for d in demandes:
                 if d["id"] == demande_id:
@@ -486,11 +521,23 @@ def admin():
                     if new_details is not None:
                         d["details"] = new_details
                     d["commentaire"] = request.form.get("commentaire")
-                    d["attribution"] = request.form.get("attribution", d.get("attribution", ""))
+                    ancienne_attribution = d.get("attribution", "").strip()
+                    nouvelle_attribution = request.form.get("attribution", "").strip()
+                    d["attribution"] = nouvelle_attribution or ancienne_attribution
+
+                    # 🔔 Notification automatique si attribution = Mohamed
+                    if nouvelle_attribution == "Mohamed" and ancienne_attribution != "Mohamed":
+                        try:
+                            envoyer_mail_attribution_mohamed(d)
+                            print(f"📨 Notification envoyée (attribution Mohamed) pour {d.get('prenom')} {d.get('nom')}")
+                        except Exception as e:
+                            print("⚠️ Erreur envoi mail attribution Mohamed :", e)
+
+                    # ✅ Gestion du statut
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
-                    # Upload PJ
+                    # 📎 Upload de pièces jointes
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -501,7 +548,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # Passage à "Traité"
+                    # 📨 Passage à "Traité" → envoi mail auto
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -515,7 +562,7 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # Suppression d'une PJ
+        # ❌ Suppression d'une pièce jointe
         elif action == "delete_pj":
             pj_name = request.form.get("pj_name")
             if demande_id and pj_name:
@@ -527,13 +574,9 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # Archiver une demande
+        # 🗑️ Archiver une demande
         elif action == "delete":
-            to_remove = None
-            for d in demandes:
-                if d["id"] == demande_id:
-                    to_remove = d
-                    break
+            to_remove = next((d for d in demandes if d["id"] == demande_id), None)
             if to_remove:
                 data["archives"].append(to_remove)
                 supprimer_fichier(to_remove.get("justificatif"))
@@ -543,7 +586,7 @@ def admin():
                 save_data(data)
             return redirect(url_for("admin"))
 
-        # Archiver toutes les "Traité"
+        # 🧹 Archiver toutes les demandes traitées
         elif action == "delete_all_traitees":
             traitees = [d for d in demandes if d.get("statut") == "Traité"]
             for d in traitees:
@@ -555,7 +598,7 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-    # ✅ Ajout recherche (GET)
+    # 🔍 Recherche (GET)
     query = request.args.get("q", "").strip().lower()
     if query:
         demandes = [
@@ -565,16 +608,15 @@ def admin():
             or query in d.get("mail", "").lower()
             or query in d.get("motif", "").lower()
             or query in d.get("details", "").lower()
-            or query in d.get("attribution", "").lower() 
+            or query in d.get("attribution", "").lower()
         ]
 
-           # 🔒 Filtrage automatique selon la personne connectée
+    # 🔒 Filtrage automatique selon l'utilisateur connecté
     if user_role != "admin" and user_name:
         demandes = [
             d for d in demandes
             if (d.get("attribution") or "").strip().lower() == user_name.lower()
         ]
- 
 
     return render_template(
         "admin.html",
@@ -582,6 +624,7 @@ def admin():
         compteur_traitees=data["compteur_traitees"],
         query=query
     )
+
 
 @app.route("/archives", methods=["GET", "POST"], endpoint="archives")
 def archives():
