@@ -167,7 +167,6 @@
       background-color: #084fc6;
     }
 
-    /* ✅ Version mobile améliorée */
     @media (max-width: 600px) {
       .formations-group {
         flex-direction: column;
@@ -275,13 +274,28 @@
       });
     });
 
-    // 🔒 Validation : au moins une case cochée
+    // 🔒 Validation + redirection conditionnelle
     form.addEventListener('submit', (e) => {
       const checkboxes = document.querySelectorAll('input[name="formations[]"]');
       const isChecked = Array.from(checkboxes).some(cb => cb.checked);
       if (!isChecked) {
         e.preventDefault();
         alert("Veuillez sélectionner au moins une formation avant d'envoyer votre demande.");
+        return;
+      }
+
+      // ✅ Vérifie les redirections spécifiques
+      const checkedValues = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+
+      if (checkedValues.includes("Chauffeur VTC")) {
+        e.preventDefault();
+        window.location.href = "https://www.integraleacademy.com/rdvvtc";
+      } 
+      else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
+        e.preventDefault();
+        window.location.href = "https://www.integraleacademy.com/rdvconfirmedirigeant";
       }
     });
 
