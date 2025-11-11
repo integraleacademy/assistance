@@ -50,24 +50,16 @@
     }
 
     /* === BOUTONS DOMAINES === */
-    h3.helper {
-      text-align: center;
-      margin-bottom: 12px;
-      color: #333;
-      font-weight: 600;
-      font-size: 16px;
-    }
-
     .formations-group {
       display: flex;
       justify-content: center;
       flex-wrap: wrap;
       gap: 14px;
-      margin-bottom: 20px;
+      margin-bottom: 15px;
     }
 
     .formations-group button {
-      flex: 1 1 48%;
+      flex: 1 1 30%;
       background-color: #f4c45a;
       color: #000;
       border: none;
@@ -80,19 +72,41 @@
       box-shadow: 0 3px 6px rgba(0, 0, 0, 0.12);
     }
 
-    .formations-group button:hover {
-      transform: scale(1.03);
-      box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
-    }
-
-    .formations-group button:active {
-      transform: scale(0.97);
-    }
-
     .formations-group button.active {
       background: linear-gradient(90deg, #0d6efd, #2563eb);
       color: white;
       box-shadow: 0 5px 12px rgba(13, 110, 253, 0.4);
+    }
+
+    .checkbox-list {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+      margin-bottom: 20px;
+      background: #fafafa;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 12px 15px;
+    }
+
+    .checkbox-list.active {
+      display: flex;
+    }
+
+    .checkbox-list label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      color: #333;
+      cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #0d6efd;
     }
 
     input, select, textarea {
@@ -137,33 +151,13 @@
 
     /* ✅ Version mobile améliorée */
     @media (max-width: 600px) {
-      .container {
-        margin: 15px;
-        padding: 25px 16px 35px;
-        border-radius: 14px;
-      }
-
       .formations-group {
         flex-direction: column;
-        gap: 16px;
+        gap: 10px;
       }
 
       .formations-group button {
         width: 100%;
-        font-size: 17px;
-        padding: 16px;
-      }
-
-      h2 {
-        font-size: 20px;
-      }
-
-      p.subtitle {
-        font-size: 14px;
-      }
-
-      input, select, textarea {
-        font-size: 16px;
       }
     }
   </style>
@@ -175,26 +169,15 @@
     <p class="subtitle">Merci de compléter le formulaire ci-dessous. Un conseiller vous contactera rapidement.</p>
 
     <form method="POST">
-
       <div class="section-title">Je souhaite être rappelé concernant :</div>
-
-      <h3 class="helper">💡 Choisissez le domaine qui vous concerne :</h3>
 
       <div class="formations-group">
         <button type="button" class="category-btn active" data-cat="securite">Métiers de la Sécurité Privée</button>
         <button type="button" class="category-btn" data-cat="bts">BTS en Alternance</button>
+        <button type="button" class="category-btn" data-cat="vtc">Chauffeur VTC</button>
       </div>
 
-      <div id="formationSelect">
-        <select name="formation" required>
-          <option value="">-- Sélectionnez une formation --</option>
-          <option value="Agent de prévention et de sécurité (APS)">Agent de prévention et de sécurité (APS)</option>
-          <option value="Agent de protection physique des personnes (A3P)">Agent de protection physique des personnes (A3P)</option>
-          <option value="Dirigeant d'entreprise de sécurité privée (DESP)">Dirigeant d'entreprise de sécurité privée (DESP)</option>
-          <option value="Agent de sécurité incendie (SSIAP)">Agent de sécurité incendie (SSIAP)</option>
-          <option value="Chauffeur VTC">Chauffeur VTC</option>
-        </select>
-      </div>
+      <div id="formationsContainer"></div>
 
       <div class="section-title">Vos informations :</div>
       <input type="text" name="nom" placeholder="Nom" required>
@@ -220,15 +203,14 @@
 
   <script>
     const catButtons = document.querySelectorAll('.category-btn');
-    const select = document.querySelector('select[name="formation"]');
+    const formationsContainer = document.getElementById('formationsContainer');
 
     const options = {
       securite: [
         "Agent de prévention et de sécurité (APS)",
         "Agent de protection physique des personnes (A3P)",
         "Dirigeant d'entreprise de sécurité privée (DESP)",
-        "Agent de sécurité incendie (SSIAP)",
-        "Chauffeur VTC"
+        "Agent de sécurité incendie (SSIAP)"
       ],
       bts: [
         "BTS Management Opérationnel de la Sécurité (MOS)",
@@ -237,21 +219,37 @@
         "BTS Négociation et Digitalisation de la Relation Client (NDRC)",
         "BTS Professions Immobilières (PI)",
         "BTS Comptabilité Gestion (CG)"
+      ],
+      vtc: [
+        "Chauffeur VTC"
       ]
     };
+
+    function renderCheckboxList(cat) {
+      formationsContainer.innerHTML = ""; // clean
+      const list = document.createElement('div');
+      list.classList.add('checkbox-list', 'active');
+      options[cat].forEach(f => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'formations[]';
+        checkbox.value = f;
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(f));
+        list.appendChild(label);
+      });
+      formationsContainer.appendChild(list);
+    }
+
+    // Initial
+    renderCheckboxList('securite');
 
     catButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         catButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const cat = btn.dataset.cat;
-        select.innerHTML = '<option value="">-- Sélectionnez une formation --</option>';
-        options[cat].forEach(f => {
-          const opt = document.createElement('option');
-          opt.value = f;
-          opt.textContent = f;
-          select.appendChild(opt);
-        });
+        renderCheckboxList(btn.dataset.cat);
       });
     });
   </script>
