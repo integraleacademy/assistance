@@ -55,7 +55,7 @@
       justify-content: center;
       flex-wrap: wrap;
       gap: 14px;
-      margin-bottom: 15px;
+      margin-bottom: 20px;
     }
 
     .formations-group button {
@@ -78,35 +78,52 @@
       box-shadow: 0 5px 12px rgba(13, 110, 253, 0.4);
     }
 
+    /* === CASES À COCHER STYLÉES === */
     .checkbox-list {
       display: none;
       flex-direction: column;
       gap: 10px;
       margin-top: 10px;
       margin-bottom: 20px;
-      background: #fafafa;
+      background: #fff;
       border: 1px solid #ddd;
       border-radius: 12px;
-      padding: 12px 15px;
+      padding: 14px 18px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
     }
 
     .checkbox-list.active {
       display: flex;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from {opacity: 0; transform: translateY(-5px);}
+      to {opacity: 1; transform: translateY(0);}
     }
 
     .checkbox-list label {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       font-size: 15px;
-      color: #333;
+      color: #222;
+      background: #fafafa;
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: all 0.2s;
       cursor: pointer;
     }
 
-    input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
+    .checkbox-list label:hover {
+      background: #f1f5ff;
+    }
+
+    .checkbox-list input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
       accent-color: #0d6efd;
+      cursor: pointer;
     }
 
     input, select, textarea {
@@ -158,6 +175,10 @@
 
       .formations-group button {
         width: 100%;
+      }
+
+      .checkbox-list label {
+        font-size: 16px;
       }
     }
   </style>
@@ -226,7 +247,7 @@
     };
 
     function renderCheckboxList(cat) {
-      formationsContainer.innerHTML = ""; // clean
+      formationsContainer.innerHTML = "";
       const list = document.createElement('div');
       list.classList.add('checkbox-list', 'active');
       options[cat].forEach(f => {
@@ -242,7 +263,6 @@
       formationsContainer.appendChild(list);
     }
 
-    // Initial
     renderCheckboxList('securite');
 
     catButtons.forEach(btn => {
