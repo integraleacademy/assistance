@@ -4,6 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Demande de rappel - Intégrale Academy</title>
+
+  <!-- ✅ Google Tag Manager (même conteneur que Wix) -->
+  <script>
+  (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id=GTM-PKTXJCXF'+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-PKTXJCXF');
+  </script>
+
   <style>
     html, body {
       background-color: #fdfaf5;
@@ -165,6 +175,17 @@
       background-color: #084fc6;
     }
 
+    .success-banner {
+      display: none;
+      background: #198754;
+      color: white;
+      text-align: center;
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+
     @media (max-width: 600px) {
       .formations-group {
         flex-direction: column;
@@ -181,11 +202,14 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <img src="/static/logo.png" class="logo" alt="Logo Intégrale Academy">
     <h2>📞 Demande de rappel téléphonique</h2>
     <p class="subtitle">Merci de compléter le formulaire ci-dessous. Un conseiller vous contactera rapidement.</p>
+
+    <div id="successBanner" class="success-banner">✅ Votre demande a bien été envoyée !</div>
 
     <form id="rappelForm" method="POST">
       <div class="section-title">Je souhaite être rappelé concernant :</div>
@@ -224,6 +248,7 @@
     const catButtons = document.querySelectorAll('.category-btn');
     const formationsContainer = document.getElementById('formationsContainer');
     const form = document.getElementById('rappelForm');
+    const successBanner = document.getElementById('successBanner');
 
     const options = {
       securite: [
@@ -272,31 +297,31 @@
       });
     });
 
-    // 🔒 Validation + redirection conditionnelle (nouvel onglet)
     form.addEventListener('submit', (e) => {
       const checkboxes = document.querySelectorAll('input[name="formations[]"]');
-      const isChecked = Array.from(checkboxes).some(cb => cb.checked);
-      if (!isChecked) {
+      const checkedValues = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+
+      if (checkedValues.length === 0) {
         e.preventDefault();
         alert("Veuillez sélectionner au moins une formation avant d'envoyer votre demande.");
         return;
       }
 
-      const checkedValues = Array.from(checkboxes)
-        .filter(cb => cb.checked)
-        .map(cb => cb.value);
+      // ✅ Affichage du bandeau vert
+      e.preventDefault();
+      successBanner.style.display = "block";
+      setTimeout(() => successBanner.style.display = "none", 1200);
 
-      if (checkedValues.includes("Chauffeur VTC")) {
-        e.preventDefault();
-        window.open("https://www.integraleacademy.com/rdvvtc", "_blank");
-      } 
-      else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
-        e.preventDefault();
-        window.open("https://www.integraleacademy.com/rdvconfirmedirigeant", "_blank");
-      }
+      setTimeout(() => {
+        if (checkedValues.includes("Chauffeur VTC")) {
+          window.open("https://www.integraleacademy.com/rdvvtc", "_blank");
+        } else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
+          window.open("https://www.integraleacademy.com/rdvconfirmedirigeant", "_blank");
+        }
+      }, 800);
     });
 
-    // 📱 Corrige le blocage du scroll sur mobile (clavier)
+    // 📱 Mobile scroll fix
     document.querySelectorAll('input, textarea, select').forEach(el => {
       el.addEventListener('focus', () => {
         setTimeout(() => {
