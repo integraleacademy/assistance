@@ -806,7 +806,7 @@ def rappel():
             plain = (
                 f"Bonjour {prenom},\n\n"
                 f"Nous avons bien reçu votre demande de rappel concernant la formation : {formation}.\n"
-                f"Notre équipe vous contactera {plage.lower()} au {telephone}.\n\n"
+                f"Notre équipe vous contactera prochainement au {telephone}.\n\n"
                 "Merci pour votre intérêt et à très bientôt !\n"
                 "— L'équipe Intégrale Academy"
             )
@@ -817,7 +817,7 @@ def rappel():
                 <p>Bonjour <strong>{prenom}</strong>,</p>
                 <p>Nous avons bien reçu votre demande de rappel concernant la formation :</p>
                 <p><strong>{formation}</strong></p>
-                <p>Notre équipe vous contactera <strong>{plage.lower()}</strong> au <strong>{telephone}</strong>.</p>
+                <p>Notre équipe vous contactera prochainement au <strong>{telephone}</strong>.</p>
                 <p style="margin-top:10px;">Merci pour votre intérêt et à très bientôt !<br>— L'équipe Intégrale Academy</p>
                 """
             )
