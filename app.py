@@ -755,6 +755,85 @@ def data_json():
         return {"a_traiter": -1, "error": str(e)}, 500, {
             "Access-Control-Allow-Origin": "*"
         }
+# ------------------------------------------------------------
+# 🧩 PAGE : Demande de rappel téléphonique
+# ------------------------------------------------------------
+@app.route("/rappel", methods=["GET", "POST"])
+def rappel():
+    data = load_data()
+
+    if request.method == "POST":
+        paris_tz = pytz.timezone("Europe/Paris")
+
+        nom = request.form.get("nom", "").strip()
+        prenom = request.form.get("prenom", "").strip()
+        mail = request.form.get("mail", "").strip()
+        telephone = request.form.get("telephone", "").strip()
+        formation = request.form.get("formation", "").strip()
+        commentaire = request.form.get("commentaire", "").strip()
+        plage = request.form.get("plage", "").strip()
+
+        # 💾 Enregistrement dans data.json
+        new_demande = {
+            "id": str(uuid.uuid4()),
+            "nom": nom,
+            "prenom": prenom,
+            "telephone": telephone,
+            "mail": mail,
+            "motif": f"Demande de rappel – {formation}",
+            "details": f"Créée via le formulaire de rappel.\nPréférence horaire : {plage}\n{commentaire}",
+            "justificatif": "",
+            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+            "attribution": "Mohamed",
+            "statut": "A rappeler",
+            "commentaire": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+            "plage": plage
+        }
+
+        data["demandes"].append(new_demande)
+        save_data(data)
+
+        # 📨 Accusé de réception au candidat
+        try:
+            sujet = "📞 Nous avons bien reçu votre demande de rappel"
+            plain = (
+                f"Bonjour {prenom},\n\n"
+                f"Nous avons bien reçu votre demande de rappel concernant la formation : {formation}.\n"
+                f"Notre équipe vous contactera {plage.lower()} au {telephone}.\n\n"
+                "Merci pour votre intérêt et à très bientôt !\n"
+                "— L'équipe Intégrale Academy"
+            )
+
+            html = _wrap_html(
+                '<h1 style="margin:0 0 12px;font-size:20px;">📞 Demande de rappel reçue</h1>',
+                f"""
+                <p>Bonjour <strong>{prenom}</strong>,</p>
+                <p>Nous avons bien reçu votre demande de rappel concernant la formation :</p>
+                <p><strong>{formation}</strong></p>
+                <p>Notre équipe vous contactera <strong>{plage.lower()}</strong> au <strong>{telephone}</strong>.</p>
+                <p style="margin-top:10px;">Merci pour votre intérêt et à très bientôt !<br>— L'équipe Intégrale Academy</p>
+                """
+            )
+            send_email_html(mail, sujet, plain, html)
+        except Exception as e:
+            print("⚠️ Erreur envoi mail rappel :", e)
+
+        # 📨 Notification interne à Mohamed
+        try:
+            envoyer_mail_attribution_mohamed(new_demande)
+        except Exception as e:
+            print("⚠️ Erreur envoi mail Mohamed :", e)
+
+        return render_template("confirmation.html")
+
+    return render_template("rappel.html")
 
 
 if __name__ == "__main__":
