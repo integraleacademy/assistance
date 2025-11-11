@@ -831,9 +831,16 @@ def rappel():
         except Exception as e:
             print("⚠️ Erreur envoi mail Mohamed :", e)
 
-        return render_template("confirmation.html")
+        # 🔁 Redirections automatiques selon la formation choisie
+        if formation == "Chauffeur VTC":
+            return redirect("https://www.integraleacademy.com/rdvvtc")
+        elif formation == "Dirigeant d'entreprise de sécurité privée (DESP)":
+            return redirect("https://www.integraleacademy.com/rdvconfirmedirigeant")
+        else:
+            return render_template("confirmation.html")
 
     return render_template("rappel.html")
+
 
 
 if __name__ == "__main__":
