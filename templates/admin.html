@@ -120,11 +120,34 @@
   color: white;
   border-color: #0d6efd;
 }
+    .status-remind{
+      color:#fff;
+      background:#0d6efd;
+      font-weight:bold;
+      padding:3px 6px;
+      border-radius:5px;
+    }
+    .plage-info{
+      font-size:11px;
+      margin-top:4px;
+      color:#0d6efd;
+      font-weight:500;
+    }
+
+    
 
   </style>
 </head>
 <body>
   <div class="container">
+
+    {% set rappels_en_attente = demandes|selectattr('statut','equalto','A rappeler')|selectattr('attribution','equalto','Mohamed')|list %}
+{% if rappels_en_attente|length > 0 %}
+  <div style="background:#0d6efd;color:white;padding:10px 20px;margin-bottom:20px;
+              border-radius:10px;font-weight:bold;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
+    🔔 Vous avez {{ rappels_en_attente|length }} rappel{{ 's' if rappels_en_attente|length > 1 else '' }} téléphonique{{ 's' if rappels_en_attente|length > 1 else '' }} en attente
+  </div>
+{% endif %}
 
 <!-- 🧭 Bandeau utilisateur connecté (version allégée) -->
 <div style="display:flex;align-items:center;justify-content:space-between;
@@ -156,7 +179,10 @@
         <h2>📋 Gestion des demandes stagiaires</h2>
         <div class="counters-inline">
           <span class="ok">✅ Traitées : {{ compteur_traitees }}</span>
-          <span class="pending">⏳ À traiter : {{ demandes|selectattr('statut','equalto','Non traité')|list|length }}</span>
+          <span class="pending">
+  ⏳ À traiter / A rappeler :
+  {{ demandes|selectattr('statut','in',['Non traité','A rappeler'])|list|length }}
+</span>
         </div>
       </div>
       <div class="actions-top">
@@ -176,6 +202,7 @@
   <button class="filter-btn" data-filter="Clément">👨 Clément</button>
   <button class="filter-btn" data-filter="Mohamed">👨 Mohamed</button>
   <button class="filter-btn" data-filter="Non attribué">⚪ Non attribué</button>
+  <button class="filter-btn" data-filter="A rappeler">📞 A rappeler</button>
 </div>
 
 
@@ -285,18 +312,39 @@
 
 
           <!-- Statut -->
+                    <!-- Statut -->
           <td>
-            {% if d.statut=='Non traité' %}<span class="status-red">Non traité</span>{% else %}<span class="status-green">Traité</span>{% endif %}
+            {% if d.statut == 'Non traité' %}
+              <span class="status-red">Non traité</span>
+            {% elif d.statut == 'Traité' %}
+              <span class="status-green">Traité</span>
+            {% elif d.statut == 'A rappeler' %}
+              <span class="status-remind">📞 A rappeler</span>
+            {% else %}
+              <span class="status-red">{{ d.statut }}</span>
+            {% endif %}
+
             <select name="statut" style="margin-top:5px;">
               <option value="Non traité" {% if d.statut=='Non traité' %}selected{% endif %}>Non traité</option>
               <option value="Traité" {% if d.statut=='Traité' %}selected{% endif %}>Traité</option>
+              <option value="A rappeler" {% if d.statut=='A rappeler' %}selected{% endif %}>A rappeler</option>
             </select>
+
+            {% if d.plage %}
+              <div class="plage-info">🕒 Plage préférée : {{ d.plage }}</div>
+            {% endif %}
+
             {% if d.mail_confirme %}
-              <div style="font-size:11px; margin-top:4px;"><a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">✅ Mail envoyé le {{ d.mail_confirme }}</a></div>
+              <div style="font-size:11px; margin-top:4px;">
+                <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
+                  ✅ Mail envoyé le {{ d.mail_confirme }}
+                </a>
+              </div>
             {% elif d.mail_erreur %}
               <div style="font-size:11px; color:#dc3545; margin-top:4px;">{{ d.mail_erreur }}</div>
             {% endif %}
           </td>
+
 
           <!-- Commentaire -->
           <td>
