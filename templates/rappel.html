@@ -50,7 +50,6 @@
       margin-bottom: 10px;
     }
 
-    /* === BOUTONS DOMAINES === */
     .formations-group {
       display: flex;
       justify-content: center;
@@ -79,7 +78,6 @@
       box-shadow: 0 5px 12px rgba(13, 110, 253, 0.4);
     }
 
-    /* === CASES À COCHER STYLÉES === */
     .checkbox-list {
       display: none;
       flex-direction: column;
@@ -274,7 +272,7 @@
       });
     });
 
-    // 🔒 Validation + redirection conditionnelle
+    // 🔒 Validation + redirection conditionnelle (nouvel onglet)
     form.addEventListener('submit', (e) => {
       const checkboxes = document.querySelectorAll('input[name="formations[]"]');
       const isChecked = Array.from(checkboxes).some(cb => cb.checked);
@@ -284,18 +282,17 @@
         return;
       }
 
-      // ✅ Vérifie les redirections spécifiques
       const checkedValues = Array.from(checkboxes)
         .filter(cb => cb.checked)
         .map(cb => cb.value);
 
       if (checkedValues.includes("Chauffeur VTC")) {
         e.preventDefault();
-        window.location.href = "https://www.integraleacademy.com/rdvvtc";
+        window.open("https://www.integraleacademy.com/rdvvtc", "_blank");
       } 
       else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
         e.preventDefault();
-        window.location.href = "https://www.integraleacademy.com/rdvconfirmedirigeant";
+        window.open("https://www.integraleacademy.com/rdvconfirmedirigeant", "_blank");
       }
     });
 
