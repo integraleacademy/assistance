@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demande de rappel - Intégrale Academy</title>
+  <style>
+    body {
+      background-color: #fdfaf5;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    img.logo {
+      max-width: 150px;
+      display: block;
+      margin: 0 auto 20px;
+    }
+    h2 {
+      color: #0d6efd;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 26px;
+    }
+    p.subtitle {
+      text-align: center;
+      color: #555;
+      margin-bottom: 30px;
+    }
+    .section-title {
+      font-weight: bold;
+      color: #333;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    .formations-group {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .formations-group button {
+      background-color: #f4c45a;
+      color: #000;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.3s;
+    }
+    .formations-group button.active {
+      background-color: #0d6efd;
+      color: #fff;
+    }
+    select, input, textarea, button.submit {
+      width: 100%;
+      padding: 12px;
+      margin-top: 8px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+    textarea {
+      resize: vertical;
+    }
+    button.submit {
+      background-color: #0d6efd;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      transition: background 0.3s;
+    }
+    button.submit:hover {
+      background-color: #0b5ed7;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img src="/static/logo.png" class="logo" alt="Logo Intégrale Academy">
+    <h2>📞 Demande de rappel téléphonique</h2>
+    <p class="subtitle">Merci de compléter le formulaire ci-dessous. Un conseiller vous contactera rapidement.</p>
+
+    <form method="POST">
+
+      <div class="section-title">Je souhaite être rappelé concernant :</div>
+      <div class="formations-group">
+        <button type="button" class="category-btn active" data-cat="securite">Métiers de la Sécurité Privée</button>
+        <button type="button" class="category-btn" data-cat="bts">BTS en Alternance</button>
+      </div>
+
+      <div id="formationSelect">
+        <select name="formation" required>
+          <option value="">-- Sélectionnez une formation --</option>
+          <option value="Agent de prévention et de sécurité (APS)">Agent de prévention et de sécurité (APS)</option>
+          <option value="Agent de protection physique des personnes (A3P)">Agent de protection physique des personnes (A3P)</option>
+          <option value="Dirigeant d'entreprise de sécurité privée (DESP)">Dirigeant d'entreprise de sécurité privée (DESP)</option>
+          <option value="Agent de sécurité incendie (SSIAP)">Agent de sécurité incendie (SSIAP)</option>
+          <option value="Chauffeur VTC">Chauffeur VTC</option>
+        </select>
+      </div>
+
+      <div class="section-title">Vos informations :</div>
+      <input type="text" name="nom" placeholder="Nom" required>
+      <input type="text" name="prenom" placeholder="Prénom" required>
+      <input type="tel" name="telephone" placeholder="Numéro de téléphone" required>
+      <input type="email" name="mail" placeholder="Adresse e-mail" required>
+
+      <div class="section-title">Votre commentaire (facultatif) :</div>
+      <textarea name="commentaire" rows="3" placeholder="Exemple : merci de me rappeler au plus vite, je souhaite des infos sur le financement..."></textarea>
+
+      <div class="section-title">Mes préférences de rappel :</div>
+      <select name="plage" required>
+        <option value="N'importe quand">N'importe quand</option>
+        <option value="10h00 - 12h00">10h00 - 12h00</option>
+        <option value="12h00 - 14h00">12h00 - 14h00</option>
+        <option value="14h00 - 16h00">14h00 - 16h00</option>
+        <option value="16h00 - 18h00">16h00 - 18h00</option>
+      </select>
+
+      <button type="submit" class="submit">📞 Envoyer ma demande</button>
+    </form>
+  </div>
+
+  <script>
+    const catButtons = document.querySelectorAll('.category-btn');
+    const select = document.querySelector('select[name="formation"]');
+
+    const options = {
+      securite: [
+        "Agent de prévention et de sécurité (APS)",
+        "Agent de protection physique des personnes (A3P)",
+        "Dirigeant d'entreprise de sécurité privée (DESP)",
+        "Agent de sécurité incendie (SSIAP)",
+        "Chauffeur VTC"
+      ],
+      bts: [
+        "BTS Management Opérationnel de la Sécurité (MOS)",
+        "BTS Management Commercial Opérationnel (MCO)",
+        "BTS Commerce International (CI)",
+        "BTS Négociation et Digitalisation de la Relation Client (NDRC)",
+        "BTS Professions Immobilières (PI)",
+        "BTS Comptabilité Gestion (CG)"
+      ]
+    };
+
+    catButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        catButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const cat = btn.dataset.cat;
+        select.innerHTML = '<option value="">-- Sélectionnez une formation --</option>';
+        options[cat].forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f;
+          opt.textContent = f;
+          select.appendChild(opt);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
