@@ -265,9 +265,7 @@
         "BTS Professions Immobilières (PI)",
         "BTS Comptabilité Gestion (CG)"
       ],
-      vtc: [
-        "Chauffeur VTC"
-      ]
+      vtc: ["Chauffeur VTC"]
     };
 
     function renderCheckboxList(cat) {
@@ -297,31 +295,34 @@
       });
     });
 
+    // ✅ Gestion de l'envoi + redirection propre
     form.addEventListener('submit', (e) => {
+      e.preventDefault(); // bloque le rechargement natif
+
       const checkboxes = document.querySelectorAll('input[name="formations[]"]');
       const checkedValues = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
 
       if (checkedValues.length === 0) {
-        e.preventDefault();
         alert("Veuillez sélectionner au moins une formation avant d'envoyer votre demande.");
         return;
       }
 
-      // ✅ Affichage du bandeau vert
-      e.preventDefault();
+      // ✅ Affichage du bandeau de confirmation
       successBanner.style.display = "block";
       setTimeout(() => successBanner.style.display = "none", 1200);
 
+      // ✅ Redirection différée vers Wix (ouvre bien dans un nouvel onglet)
       setTimeout(() => {
         if (checkedValues.includes("Chauffeur VTC")) {
           window.open("https://www.integraleacademy.com/reservationrdvvtc?source=formulaire", "_blank");
-        } else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
-          window.open("https://www.integraleacademy.com/rdvconfirmedirigeant", "_blank");
+        } 
+        else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
+          window.open("https://www.integraleacademy.com/rdvconfirmedirigeant?source=formulaire", "_blank");
         }
       }, 800);
     });
 
-    // 📱 Mobile scroll fix
+    // 📱 Fix clavier mobile
     document.querySelectorAll('input, textarea, select').forEach(el => {
       el.addEventListener('focus', () => {
         setTimeout(() => {
@@ -332,4 +333,3 @@
   </script>
 </body>
 </html>
-
