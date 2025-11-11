@@ -5,19 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Demande de rappel - Intégrale Academy</title>
   <style>
-    body {
+    html, body {
       background-color: #fdfaf5;
       font-family: "Inter", Arial, sans-serif;
       margin: 0;
       padding: 0;
+      overscroll-behavior: contain;
     }
 
     .container {
       max-width: 600px;
-      margin: 20px auto;
+      margin: 10px auto;
       background: #fff;
-      padding: 28px 22px 40px;
-      border-radius: 18px;
+      padding: 20px 16px 30px;
+      border-radius: 12px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     }
 
@@ -189,7 +190,7 @@
     <h2>📞 Demande de rappel téléphonique</h2>
     <p class="subtitle">Merci de compléter le formulaire ci-dessous. Un conseiller vous contactera rapidement.</p>
 
-    <form method="POST">
+    <form id="rappelForm" method="POST">
       <div class="section-title">Je souhaite être rappelé concernant :</div>
 
       <div class="formations-group">
@@ -225,6 +226,7 @@
   <script>
     const catButtons = document.querySelectorAll('.category-btn');
     const formationsContainer = document.getElementById('formationsContainer');
+    const form = document.getElementById('rappelForm');
 
     const options = {
       securite: [
@@ -270,6 +272,25 @@
         catButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         renderCheckboxList(btn.dataset.cat);
+      });
+    });
+
+    // 🔒 Validation : au moins une case cochée
+    form.addEventListener('submit', (e) => {
+      const checkboxes = document.querySelectorAll('input[name="formations[]"]');
+      const isChecked = Array.from(checkboxes).some(cb => cb.checked);
+      if (!isChecked) {
+        e.preventDefault();
+        alert("Veuillez sélectionner au moins une formation avant d'envoyer votre demande.");
+      }
+    });
+
+    // 📱 Corrige le blocage du scroll sur mobile (clavier)
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+      el.addEventListener('focus', () => {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
       });
     });
   </script>
