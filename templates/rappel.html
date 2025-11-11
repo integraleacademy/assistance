@@ -185,21 +185,6 @@
       margin-bottom: 20px;
       font-weight: 600;
     }
-
-    @media (max-width: 600px) {
-      .formations-group {
-        flex-direction: column;
-        gap: 10px;
-      }
-
-      .formations-group button {
-        width: 100%;
-      }
-
-      .checkbox-list label {
-        font-size: 16px;
-      }
-    }
   </style>
 </head>
 
@@ -209,9 +194,7 @@
     <h2>📞 Demande de rappel téléphonique</h2>
     <p class="subtitle">Merci de compléter le formulaire ci-dessous. Un conseiller vous contactera rapidement.</p>
 
-    <div id="successBanner" class="success-banner">✅ Votre demande a bien été envoyée !</div>
-
-    <form id="rappelForm" method="POST">
+    <form id="rappelForm" method="POST" action="/rappel">
       <div class="section-title">Je souhaite être rappelé concernant :</div>
 
       <div class="formations-group">
@@ -248,7 +231,6 @@
     const catButtons = document.querySelectorAll('.category-btn');
     const formationsContainer = document.getElementById('formationsContainer');
     const form = document.getElementById('rappelForm');
-    const successBanner = document.getElementById('successBanner');
 
     const options = {
       securite: [
@@ -284,7 +266,6 @@
       });
       formationsContainer.appendChild(list);
     }
-
     renderCheckboxList('securite');
 
     catButtons.forEach(btn => {
@@ -295,40 +276,21 @@
       });
     });
 
-    // ✅ Gestion de l'envoi + redirection propre
-    form.addEventListener('submit', (e) => {
-      e.preventDefault(); // bloque le rechargement natif
+    // ✅ Ajout du lien vers Wix sans bloquer le POST Flask
+    form.addEventListener('submit', function() {
+      const checkedValues = Array.from(document.querySelectorAll('input[name="formations[]"]:checked')).map(cb => cb.value);
 
-      const checkboxes = document.querySelectorAll('input[name="formations[]"]');
-      const checkedValues = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
-
-      if (checkedValues.length === 0) {
-        alert("Veuillez sélectionner au moins une formation avant d'envoyer votre demande.");
-        return;
+      if (checkedValues.includes("Chauffeur VTC")) {
+        setTimeout(() => {
+          window.open("https://www.integraleacademy.com/rdvvtc?source=formulaire", "_blank");
+        }, 1000);
       }
 
-      // ✅ Affichage du bandeau de confirmation
-      successBanner.style.display = "block";
-      setTimeout(() => successBanner.style.display = "none", 1200);
-
-      // ✅ Redirection différée vers Wix (ouvre bien dans un nouvel onglet)
-      setTimeout(() => {
-        if (checkedValues.includes("Chauffeur VTC")) {
-          window.open("https://www.integraleacademy.com/reservationrdvvtc?source=formulaire", "_blank");
-        } 
-        else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
-          window.open("https://www.integraleacademy.com/rdvconfirmedirigeant?source=formulaire", "_blank");
-        }
-      }, 800);
-    });
-
-    // 📱 Fix clavier mobile
-    document.querySelectorAll('input, textarea, select').forEach(el => {
-      el.addEventListener('focus', () => {
+      if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
         setTimeout(() => {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 300);
-      });
+          window.open("https://www.integraleacademy.com/rdvconfirmedirigeant?source=formulaire", "_blank");
+        }, 1000);
+      }
     });
   </script>
 </body>
