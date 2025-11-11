@@ -454,24 +454,34 @@
     function openAddModal(){document.getElementById('addModal').style.display='block';}
     function closeAddModal(){document.getElementById('addModal').style.display='none';}
 
-// === 🔍 Filtres attribution avec mémorisation locale ===
+// === 🔍 Filtres attribution + statut "A rappeler" avec mémorisation locale ===
 function applyFilter(filter) {
+  // 🔹 Gérer le visuel des boutons
   document.querySelectorAll(".filter-btn").forEach(b => {
     if (b.dataset.filter === filter) b.classList.add("active");
     else b.classList.remove("active");
   });
 
+  // 🔹 Appliquer le filtre sur chaque ligne du tableau
   document.querySelectorAll("table tr").forEach((row, i) => {
     if (i === 0) return; // skip header
-    const cell = row.querySelector("select[name='attribution']");
-    if (!cell) return;
 
-    const value = cell.value.trim() || "Non attribué";
-    if (filter === "" || value === filter) {
-      row.style.display = "";
-    } else {
-      row.style.display = "none";
-    }
+    const attributionSelect = row.querySelector("select[name='attribution']");
+    const statutSelect = row.querySelector("select[name='statut']");
+    if (!attributionSelect || !statutSelect) return;
+
+    const attribution = attributionSelect.value.trim() || "Non attribué";
+    const statut = statutSelect.value.trim();
+
+    let show = false;
+
+    // 🧩 Logique de filtrage
+    if (filter === "") show = true; // Tous
+    else if (filter === "Non attribué" && !attributionSelect.value) show = true;
+    else if (filter === "A rappeler" && statut === "A rappeler") show = true;
+    else if (attribution === filter) show = true;
+
+    row.style.display = show ? "" : "none";
   });
 }
 
@@ -481,7 +491,7 @@ document.addEventListener("DOMContentLoaded", () => {
   applyFilter(savedFilter);
 });
 
-// 🖱️ Clic sur les boutons
+// 🖱️ Clic sur les boutons de filtre
 document.querySelectorAll(".filter-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const filter = btn.dataset.filter;
@@ -489,6 +499,7 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
     applyFilter(filter);
   });
 });
+
 
 
     
