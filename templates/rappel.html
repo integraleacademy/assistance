@@ -185,6 +185,21 @@
       margin-bottom: 20px;
       font-weight: 600;
     }
+
+    @media (max-width: 600px) {
+      .formations-group {
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .formations-group button {
+        width: 100%;
+      }
+
+      .checkbox-list label {
+        font-size: 16px;
+      }
+    }
   </style>
 </head>
 
@@ -194,7 +209,9 @@
     <h2>📞 Demande de rappel téléphonique</h2>
     <p class="subtitle">Merci de compléter le formulaire ci-dessous. Un conseiller vous contactera rapidement.</p>
 
-    <form id="rappelForm" method="POST" action="/rappel">
+    <div id="successBanner" class="success-banner">✅ Votre demande a bien été envoyée !</div>
+
+    <form id="rappelForm" method="POST">
       <div class="section-title">Je souhaite être rappelé concernant :</div>
 
       <div class="formations-group">
@@ -202,6 +219,9 @@
         <button type="button" class="category-btn" data-cat="bts">BTS en Alternance</button>
         <button type="button" class="category-btn" data-cat="vtc">Chauffeur VTC</button>
       </div>
+
+      <!-- ✅ Champ caché comme avant pour le back Flask -->
+      <input type="hidden" name="formation" value="">
 
       <div id="formationsContainer"></div>
 
@@ -231,6 +251,7 @@
     const catButtons = document.querySelectorAll('.category-btn');
     const formationsContainer = document.getElementById('formationsContainer');
     const form = document.getElementById('rappelForm');
+    const successBanner = document.getElementById('successBanner');
 
     const options = {
       securite: [
@@ -266,6 +287,8 @@
       });
       formationsContainer.appendChild(list);
     }
+
+    // Afficher par défaut la liste "sécurité"
     renderCheckboxList('securite');
 
     catButtons.forEach(btn => {
@@ -276,21 +299,46 @@
       });
     });
 
-    // ✅ Ajout du lien vers Wix sans bloquer le POST Flask
-    form.addEventListener('submit', function() {
-      const checkedValues = Array.from(document.querySelectorAll('input[name="formations[]"]:checked')).map(cb => cb.value);
+    // ✅ Gestion de l'envoi : validation + remplissage du champ "formation" + ouverture Wix
+    form.addEventListener('submit', (e) => {
+      const checkboxes = document.querySelectorAll('input[name="formations[]"]');
+      const checkedValues = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
 
+      // Au moins une case cochée obligatoire
+      if (checkedValues.length === 0) {
+        e.preventDefault();
+        alert("Veuillez sélectionner au moins une formation avant d'envoyer votre demande.");
+        return;
+      }
+
+      // Remplir le champ "formation" comme avant pour le back Flask
+      const hiddenFormation = document.querySelector('input[name="formation"]');
+      if (hiddenFormation) {
+        hiddenFormation.value = checkedValues.join(', ');
+      }
+
+      // Petit feedback visuel (optionnel, disparaît vite)
+      successBanner.style.display = "block";
+      setTimeout(() => successBanner.style.display = "none", 1200);
+
+      // Ouvrir les pages Wix dans un nouvel onglet, sans empêcher l'envoi du formulaire
       if (checkedValues.includes("Chauffeur VTC")) {
-        setTimeout(() => {
-          window.open("https://www.integraleacademy.com/rdvvtc?source=formulaire", "_blank");
-        }, 1000);
+        window.open("https://www.integraleacademy.com/reservationrdvvtc?source=formulaire", "_blank");
+      } else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
+        window.open("https://www.integraleacademy.com/rdvconfirmedirigeant?source=formulaire", "_blank");
       }
+      // ⚠️ Pas de e.preventDefault() ici : le POST vers Flask continue normalement
+    });
 
-      if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
+    // 📱 Fix clavier mobile
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+      el.addEventListener('focus', () => {
         setTimeout(() => {
-          window.open("https://www.integraleacademy.com/rdvconfirmedirigeant?source=formulaire", "_blank");
-        }, 1000);
-      }
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
+      });
     });
   </script>
 </body>
