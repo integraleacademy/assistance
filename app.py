@@ -513,6 +513,7 @@ def admin():
                 "pieces_jointes": [],
                 "reponses": [],
                 "is_doublon": False
+                "rappel_date": request.form.get("rappel_date", ""),
             }
 
             data["demandes"].append(new_demande)
@@ -539,6 +540,7 @@ def admin():
                     if new_details is not None:
                         d["details"] = new_details
                     d["commentaire"] = request.form.get("commentaire")
+                    d["rappel_date"] = request.form.get("rappel_date", d.get("rappel_date", ""))
                     ancienne_attribution = d.get("attribution", "").strip()
                     nouvelle_attribution = request.form.get("attribution", "").strip()
                     d["attribution"] = nouvelle_attribution or ancienne_attribution
