@@ -271,13 +271,27 @@
 
 
     <!-- Tableau -->
-    <table>
+   <table>
       <tr>
-        <th>Nom</th><th>Prénom</th><th>Email</th><th>Motif</th>
-        <th>Détails</th><th>Justificatif</th><th>Pièces jointes</th>
-        <th>Date</th><th>Attribué à</th><th>Statut</th><th>Commentaire</th>
-        <th>Réponses</th><th>Actions</th>
+        <th>Nom</th>
+        <th>Prénom</th>
+        <th>Email</th>
+        <th>Motif</th>
+        <th>Détails</th>
+        <th>Justificatif</th>
+        <th>Pièces jointes</th>
+        <th>Date</th>
+        <th>Attribué à</th>
+        <th>Statut</th>
+
+        <!-- ✅ Nouvelle colonne -->
+        <th>Rappel</th>
+
+        <th>Commentaire</th>
+        <th>Réponses</th>
+        <th>Actions</th>
       </tr>
+
 
       {% for d in demandes %}
       <tr>
@@ -361,6 +375,26 @@
               <div style="font-size:11px; color:#dc3545; margin-top:4px;">{{ d.mail_erreur }}</div>
             {% endif %}
           </td>
+
+          <!-- Date de rappel -->
+<td>
+    <input type="date" name="rappel_date" value="{{ d.rappel_date }}" style="width:95%; font-size:12px;">
+
+    {% if d.rappel_date %}
+        {% set today = now().strftime('%Y-%m-%d') %}
+        
+        {% if d.rappel_date < today %}
+        <div style="margin-top:4px; color:white; background:#dc3545; padding:3px 6px; border-radius:6px; font-size:11px;">
+            ⚠️ Retard
+        </div>
+        {% elif d.rappel_date == today %}
+        <div style="margin-top:4px; color:white; background:#f39c12; padding:3px 6px; border-radius:6px; font-size:11px;">
+            📞 Aujourd'hui
+        </div>
+        {% endif %}
+    {% endif %}
+</td>
+
 
 
           <!-- Commentaire -->
