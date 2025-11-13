@@ -37,6 +37,13 @@ USERS = {
 app = Flask(__name__)
 app.secret_key = "cle-flask-secrete-2024"
 
+from datetime import date
+
+@app.context_processor
+def inject_now():
+    return {"now": date.today}
+
+
 # Fichiers persistants (Render)
 DATA_FILE = "/mnt/data/data.json"
 UPLOAD_FOLDER = "/mnt/data/uploads"
@@ -638,12 +645,7 @@ def admin():
             if (d.get("attribution") or "").strip().lower() == user_name.lower()
         ]
 
-    # --- Injecter "now" dans les templates pour comparer les dates ---
-    from datetime import date
 
-    @app.context_processor
-    def inject_now():
-        return {"now": date.today}
 
     return render_template(
         "admin.html",
