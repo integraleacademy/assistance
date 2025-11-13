@@ -512,8 +512,9 @@ def admin():
                 "mail_html": "",
                 "pieces_jointes": [],
                 "reponses": [],
-                "is_doublon": False
-                "rappel_date": request.form.get("rappel_date", ""),
+                "is_doublon": False,
+                "rappel_date": request.form.get("rappel_date", "")
+
             }
 
             data["demandes"].append(new_demande)
@@ -631,12 +632,18 @@ def admin():
             or query in d.get("attribution", "").lower()
         ]
 
-    # 🔒 Filtrage automatique selon l'utilisateur connecté
     if user_role != "admin" and user_name:
         demandes = [
             d for d in demandes
             if (d.get("attribution") or "").strip().lower() == user_name.lower()
         ]
+
+    # --- Injecter "now" dans les templates pour comparer les dates ---
+    from datetime import date
+
+    @app.context_processor
+    def inject_now():
+        return {"now": date.today}
 
     return render_template(
         "admin.html",
@@ -644,6 +651,7 @@ def admin():
         compteur_traitees=data["compteur_traitees"],
         query=query
     )
+
 
 
 @app.route("/archives", methods=["GET", "POST"], endpoint="archives")
