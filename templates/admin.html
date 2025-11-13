@@ -206,14 +206,20 @@
 </div>
 
 
-    <!-- Modal Ajout -->
+ <!-- Modal Ajout -->
 <div id="addModal" class="modal">
   <div class="modal-content">
     <h3>➕ Nouvelle demande manuelle</h3>
     <form method="POST">
       <input type="hidden" name="action" value="add">
+
+      <!-- Téléphone -->
       <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
+
+      <!-- Email -->
       <input type="email" name="mail" placeholder="Email (défaut : ecole@integraleacademy.com)" style="width:100%; margin:6px 0;">
+
+      <!-- Motif -->
       <select name="motif" style="width:100%; margin:6px 0;">
         <option value="Attestation">Attestation</option>
         <option value="Diplome">Diplôme</option>
@@ -221,24 +227,35 @@
         <option value="Contrats">Contrat</option>
         <option value="Autre" selected>Autre</option>
       </select>
-      <!-- 🔽 Nouveau champ pour choisir la personne -->
-<select name="attribution" style="width:100%; margin:6px 0;">
-  <option value="">Attribué à...</option>
-  <option value="Elsa">Elsa</option>
-  <option value="Clément" selected>Clément</option>
-  <option value="Mohamed">Mohamed</option>
-</select>
 
+      <!-- Attribution -->
+      <select name="attribution" style="width:100%; margin:6px 0;">
+        <option value="">Attribué à...</option>
+        <option value="Elsa">Elsa</option>
+        <option value="Clément" selected>Clément</option>
+        <option value="Mohamed">Mohamed</option>
+      </select>
+
+      <!-- Détails -->
       <textarea name="details" placeholder="Détails de la demande" required rows="3" style="width:100%; margin:6px 0;"></textarea>
+
+      <!-- 📅 DATE DE RAPPEL (NOUVEAU CHAMP) -->
+      <label style="font-weight:bold; margin-top:10px; display:block;">📅 Date de rappel</label>
+      <input type="date" name="rappel_date" style="width:100%; margin:6px 0;">
+
+      <!-- Boutons -->
       <div style="margin-top:10px; text-align:right;">
         <button type="button" onclick="closeAddModal()">❌ Annuler</button>
-        <button type="submit" style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
+        <button type="submit"
+                style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
           ➕ Créer
         </button>
       </div>
+
     </form>
   </div>
 </div>
+
 
     <!-- ✅ Barre de recherche -->
 <form method="GET" action="/admin" class="search-bar" style="text-align:center; margin-bottom:20px;">
