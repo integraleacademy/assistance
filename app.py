@@ -970,30 +970,35 @@ def admin_hebergement():
     if tri == "session":
         hebergements = sorted(hebergements, key=lambda x: x.get("session", ""))
 
-    # 🟢 Mise à jour paiement
+    # ------------------------------------------------------------------
+    # 🟢 MISE À JOUR (Paiement / Mode / Suppression)
+    # ------------------------------------------------------------------
     if request.method == "POST":
         action = request.form.get("action")
         resa_id = request.form.get("id")
 
-        for h in hebergements:
+        # 🔥 CORRECTION : on parcourt TOUS les hébergements, pas la liste filtrée
+        for h in data["hebergements"]:
             if h["id"] == resa_id:
 
-                # ➤ Suppression ligne
+                # ➤ Suppression
                 if action == "delete":
                     data["hebergements"].remove(h)
                     save_data(data)
                     return redirect(url_for("admin_hebergement"))
 
-                # ➤ Paiement
+                # ➤ Paiement Payé / Non payé
                 if action == "paiement":
                     h["paiement"] = request.form.get("value")
                     if h["paiement"] == "Payé":
                         paris_tz = pytz.timezone("Europe/Paris")
                         h["date_paiement"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+                    else:
+                        h["date_paiement"] = ""
                     save_data(data)
                     return "", 204
 
-                # ➤ Mode paiement
+                # ➤ Mode paiement (Chèque / Espèces)
                 if action == "mode":
                     h["mode_paiement"] = request.form.get("value")
                     save_data(data)
@@ -1001,7 +1006,10 @@ def admin_hebergement():
 
         save_data(data)
 
+    # ------------------------------------------------------------------
+
     return render_template("admin_hebergement.html", hebergements=hebergements)
+
 
 # ------------------------------------------------------------
 # 🏨 API publique pour la plateforme principale : hébergement
