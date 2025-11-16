@@ -60,6 +60,7 @@ def load_data():
                 data.setdefault("demandes", [])
                 data.setdefault("archives", [])
                 data.setdefault("compteur_traitees", 0)
+                data.setdefault("hebergements", [])
                 return data
             else:
                 return {"demandes": data, "archives": [], "compteur_traitees": 0}
@@ -853,7 +854,102 @@ def rappel():
 
     return render_template("rappel.html")
 
+@app.route("/hebergement", methods=["GET", "POST"])
+def hebergement():
+    data = load_data()
+    paris_tz = pytz.timezone("Europe/Paris")
 
+    if request.method == "POST":
+        nom = request.form.get("nom", "").strip()
+        prenom = request.form.get("prenom", "").strip()
+        telephone = request.form.get("telephone", "").strip()
+        session = request.form.get("session", "").strip()
+
+        new_resa = {
+            "id": str(uuid.uuid4()),
+            "nom": nom,
+            "prenom": prenom,
+            "telephone": telephone,
+            "session": session,
+            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+        }
+
+        data["hebergements"].append(new_resa)
+        save_data(data)
+
+        # 📧 Mail au candidat
+        subject = "🏨 Votre réservation d’hébergement a bien été enregistrée"
+        plain = (
+            f"Bonjour {prenom},\n\n"
+            "Votre demande de réservation d’hébergement pour votre formation APR a bien été prise en compte.\n\n"
+            f"📅 Dates sélectionnées : {session}\n"
+            "💶 Le règlement de 300€ devra être effectué impérativement à votre arrivée (chèque ou espèces) dans une enveloppe portant votre nom.\n\n"
+            "À très bientôt,\nIntégrale Academy"
+        )
+
+        html = _wrap_html(
+            '<h2 style="margin:0 0 10px;">🏨 Réservation d’hébergement confirmée</h2>',
+            f"""
+            <p>Bonjour <strong>{prenom}</strong>,</p>
+            <p>Votre réservation d’hébergement a bien été enregistrée.</p>
+
+            <p><strong>📅 Dates :</strong> {session}</p>
+
+            <p><strong>💶 Montant :</strong> 300€ pour toute la durée de la formation.<br>
+            Ce montant devra être réglé <b>à votre arrivée</b> en chèque ou en espèces, dans une enveloppe portant votre nom.</p>
+
+            <p>Nous restons disponibles si besoin.<br>
+            <strong>L’équipe Intégrale Academy</strong></p>
+            """
+        )
+
+        try:
+            send_email_html("no-reply@integraleacademy.com", subject, plain, html)
+        except:
+            pass
+
+        # 📧 Mail interne admin
+        subject_admin = f"🏨 Nouvelle réservation hébergement – {prenom} {nom}"
+
+        plain_admin = (
+            f"Nouvelle réservation APR :\n\n"
+            f"Nom : {nom}\n"
+            f"Prénom : {prenom}\n"
+            f"Téléphone : {telephone}\n"
+            f"Session : {session}\n"
+            f"Date : {new_resa['date']}\n"
+        )
+
+        html_admin = _wrap_html(
+            '<h2>🏨 Nouvelle réservation hébergement</h2>',
+            f"""
+            <p><strong>Nom :</strong> {nom}</p>
+            <p><strong>Prénom :</strong> {prenom}</p>
+            <p><strong>Téléphone :</strong> {telephone}</p>
+            <p><strong>Session :</strong> {session}</p>
+            <p><strong>Date :</strong> {new_resa['date']}</p>
+            """
+        )
+
+        try:
+            send_email_html("ecole@integraleacademy.com, clement@integraleacademy.com", subject_admin, plain_admin, html_admin)
+        except:
+            pass
+
+        return redirect(url_for("hebergement_confirmation"))
+
+    return render_template("hebergement.html")
+
+    @app.route("/hebergement_confirmation")
+def hebergement_confirmation():
+    return render_template("hebergement_confirmation.html")
+
+@app.route("/admin_hebergement")
+@login_required
+def admin_hebergement():
+    data = load_data()
+    hebergements = data.get("hebergements", [])
+    return render_template("admin_hebergement.html", hebergements=hebergements)
 
 if __name__ == "__main__":
     app.run(debug=True)
