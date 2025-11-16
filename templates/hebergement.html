@@ -55,26 +55,25 @@
             padding:12px;
         }
 
-        /* --- Bouton CTA --- */
+        /* --- Bouton CTA (version affinée) --- */
         .btn-submit {
             background:#0D6EFD;
             border:none;
-            padding:15px;
-            border-radius:14px;
-            font-size:20px;
-            font-weight:700;
+            padding:12px;            /* Hauteur réduite */
+            border-radius:10px;
+            font-size:17px;           /* Police réduite */
+            font-weight:600;
             color:white !important;
-            transition:0.25s ease-in-out;
-            box-shadow:0 4px 18px rgba(13,110,253,0.35);
+            transition:0.2s ease-in-out;
+            box-shadow:0 3px 14px rgba(13,110,253,0.25);
         }
 
         .btn-submit:hover {
             background:#0B5ED7 !important;
-            transform: translateY(-2px);
-            box-shadow:0 7px 24px rgba(13,110,253,0.45);
+            transform: translateY(-1px);
+            box-shadow:0 6px 18px rgba(13,110,253,0.35);
         }
 
-        /* Mobile */
         @media (max-width: 600px) {
             .card {
                 padding:20px;
@@ -83,6 +82,11 @@
 
             h3 {
                 font-size:22px;
+            }
+
+            .btn-submit {
+                font-size:16px;
+                padding:11px;
             }
 
             .encadre {
@@ -121,14 +125,12 @@
             La participation financière est de <b>300 euros</b> pour toute la durée de la formation (samedis, dimanches et jours fériés inclus).
         </p>
 
-        <!-- ENCADRÉ IMPORTANT -->
         <div class="encadre">
             ⚠️ <strong>Important :</strong><br>
             Le règlement devra être effectué <strong>le jour de votre arrivée</strong> (💶 chèque ou espèces).<br>
             👉 Merci de préparer <strong>une enveloppe portant votre nom</strong>.
         </div>
 
-        <!-- FORMULAIRE -->
         <form action="/hebergement" method="POST">
 
             <label>👤 Nom :</label>
