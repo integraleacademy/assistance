@@ -1003,6 +1003,34 @@ def admin_hebergement():
 
     return render_template("admin_hebergement.html", hebergements=hebergements)
 
+# ------------------------------------------------------------
+# 🏨 API publique pour la plateforme principale : hébergement
+# ------------------------------------------------------------
+@app.route("/hebergement_data.json")
+def hebergement_data():
+    try:
+        data = load_data()
+        hebergements = data.get("hebergements", [])
+
+        total = len(hebergements)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+        }
+
+        return {
+            "total": total
+        }, 200, headers
+
+    except Exception as e:
+        return {
+            "total": -1,
+            "error": str(e)
+        }, 500, {
+            "Access-Control-Allow-Origin": "*"
+        }
+
 
 if __name__ == "__main__":
     app.run(debug=True)
