@@ -10,8 +10,10 @@ body {
     background:#f5f6f8;
 }
 
-.container {
-    max-width: 1300px !important;
+/* Conteneur global beaucoup plus large */
+.container-admin {
+    max-width: 1600px;
+    margin:auto;
 }
 
 /* Logo */
@@ -32,7 +34,7 @@ body {
 
 .search-block {
     flex:1;
-    min-width:270px;
+    min-width:280px;
 }
 
 .action-block {
@@ -40,12 +42,13 @@ body {
     gap:15px;
 }
 
-/* Table */
+/* TABLE — pleine largeur */
 .table-container {
     background:white;
     padding:25px;
-    border-radius:14px;
+    border-radius:18px;
     box-shadow:0 6px 18px rgba(0,0,0,0.07);
+    width:100%;
 }
 
 /* Boutons Pay/Mode */
@@ -73,24 +76,24 @@ body {
 
 <body class="p-4">
 
-<div class="container text-center">
+<div class="container-admin text-center">
 
     <!-- LOGO -->
     <img src="/static/logo.png" class="logo-admin">
 
     <h3 class="mb-4">Gestion des hébergements APR</h3>
 
-    <!-- ZONE ENTIÈRE DU HAUT -->
+    <!-- ZONE DU HAUT -->
     <div class="top-bar">
 
-        <!-- ➤ Recherche -->
+        <!-- Recherche -->
         <form method="GET" action="/admin_hebergement" class="search-block d-flex">
             <input type="text" name="q" class="form-control me-2"
                    placeholder="Rechercher nom, email, session…">
             <button class="btn btn-primary">Rechercher</button>
         </form>
 
-        <!-- ➤ Actions droite -->
+        <!-- Actions -->
         <div class="action-block">
             <a href="/admin_hebergement?tri=session" class="btn btn-secondary">
                 Trier par session
@@ -103,6 +106,7 @@ body {
 
     </div>
 
+    <!-- TABLEAU FULL WIDTH -->
     <div class="table-container">
 
         <table class="table table-hover align-middle">
