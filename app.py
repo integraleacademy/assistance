@@ -1013,6 +1013,8 @@ def hebergement_data():
         hebergements = data.get("hebergements", [])
 
         total = len(hebergements)
+        non_payes = len([h for h in hebergements if h.get("paiement") != "Payé"])
+        payes = total - non_payes
 
         headers = {
             "Content-Type": "application/json",
@@ -1020,16 +1022,17 @@ def hebergement_data():
         }
 
         return {
-            "total": total
+            "total": total,
+            "payes": payes,
+            "non_payes": non_payes
         }, 200, headers
 
     except Exception as e:
         return {
             "total": -1,
             "error": str(e)
-        }, 500, {
-            "Access-Control-Allow-Origin": "*"
-        }
+        }, 500, {"Access-Control-Allow-Origin": "*"}
+
 
 
 if __name__ == "__main__":
