@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Administration - Hébergement APR</title>
+  <style>
+    body {
+      background-color:#fdfaf5;
+      font-family:Arial, sans-serif;
+      margin:0;
+      padding:20px;
+    }
+    .container {
+      width:100%;
+      background:#fff;
+      padding:20px;
+      border-radius:15px;
+      box-shadow:0 0 15px rgba(0,0,0,.1);
+      box-sizing:border-box;
+      overflow-x:auto;
+    }
+    h2 {
+      text-align:center;
+      color:#0d6efd;
+      margin-bottom:25px;
+    }
+
+    table {
+      width:100%;
+      border-collapse:collapse;
+      table-layout:auto;
+      font-size:14px;
+    }
+    th, td {
+      border:1px solid #ddd;
+      padding:8px;
+      text-align:center;
+    }
+    th {
+      background:#f4c45a;
+      color:#333;
+    }
+    tr:nth-child(even){background:#f9f9f9;}
+    tr:nth-child(odd){background:#fff;}
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <h2>🏨 Gestion des réservations d’hébergement – APR</h2>
+
+  <table>
+    <tr>
+      <th>Nom</th>
+      <th>Prénom</th>
+      <th>Téléphone</th>
+      <th>Session</th>
+      <th>Date de réservation</th>
+    </tr>
+
+    {% for r in hebergements %}
+    <tr>
+      <td>{{ r.nom }}</td>
+      <td>{{ r.prenom }}</td>
+      <td>{{ r.telephone }}</td>
+      <td>{{ r.session }}</td>
+      <td>{{ r.date }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+</div>
+
+</body>
+</html>
