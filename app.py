@@ -874,6 +874,8 @@ def hebergement():
             "telephone": telephone,
             "session": session,
             "mail": mail,
+            "cle_numero": "",
+            "cle_etat": "A donner",
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
 
             # 🟢 Ajout obligatoire
@@ -985,6 +987,18 @@ def admin_hebergement():
         # 🔥 CORRECTION : on parcourt TOUS les hébergements, pas la liste filtrée
         for h in data["hebergements"]:
             if h["id"] == resa_id:
+            if action == "cle_numero":
+    h["cle_numero"] = request.form.get("value", "")
+    save_data(data)
+    return "", 204
+
+if action == "cle_etat":
+    h["cle_etat"] = request.form.get("value", "")
+    save_data(data)
+    return "", 204
+
+    
+
 
                 # ➤ Suppression
                 if action == "delete":
