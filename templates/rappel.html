@@ -323,12 +323,6 @@
       successBanner.style.display = "block";
       setTimeout(() => successBanner.style.display = "none", 1200);
 
-      // Ouvrir les pages Wix dans un nouvel onglet, sans empêcher l'envoi du formulaire
-      if (checkedValues.includes("Chauffeur VTC")) {
-        window.open("https://www.integraleacademy.com/reservationrdvvtc?source=formulaire", "_blank");
-      } else if (checkedValues.includes("Dirigeant d'entreprise de sécurité privée (DESP)")) {
-        window.open("https://www.integraleacademy.com/rdvconfirmedirigeant?source=formulaire", "_blank");
-      }
       // ⚠️ Pas de e.preventDefault() ici : le POST vers Flask continue normalement
     });
 
@@ -349,3 +343,4 @@ if (window.top !== window.self) {
 </script>
 </body>
 </html>
+
