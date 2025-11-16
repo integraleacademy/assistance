@@ -972,41 +972,41 @@ def admin_hebergement():
             or q in h.get("session", "").lower()
         ]
 
-    # 🔽 Tri par date de formation
+    # 🔽 Tri
     tri = request.args.get("tri")
     if tri == "session":
         hebergements = sorted(hebergements, key=lambda x: x.get("session", ""))
 
     # ------------------------------------------------------------------
-    # 🟢 MISE À JOUR (Paiement / Mode / Suppression)
+    # 🟢 MISE À JOUR DES RÉSERVATIONS (POST)
     # ------------------------------------------------------------------
     if request.method == "POST":
         action = request.form.get("action")
         resa_id = request.form.get("id")
 
-        # 🔥 CORRECTION : on parcourt TOUS les hébergements, pas la liste filtrée
+        # On parcourt TOUS les hébergements (pas filtrés)
         for h in data["hebergements"]:
             if h["id"] == resa_id:
-            if action == "cle_numero":
-    h["cle_numero"] = request.form.get("value", "")
-    save_data(data)
-    return "", 204
 
-if action == "cle_etat":
-    h["cle_etat"] = request.form.get("value", "")
-    save_data(data)
-    return "", 204
+                # 🔑 Numéro de clé
+                if action == "cle_numero":
+                    h["cle_numero"] = request.form.get("value", "")
+                    save_data(data)
+                    return "", 204
 
-    
+                # 🔑 État de clé
+                if action == "cle_etat":
+                    h["cle_etat"] = request.form.get("value", "")
+                    save_data(data)
+                    return "", 204
 
-
-                # ➤ Suppression
+                # 🗑️ Supprimer
                 if action == "delete":
                     data["hebergements"].remove(h)
                     save_data(data)
                     return redirect(url_for("admin_hebergement"))
 
-                # ➤ Paiement Payé / Non payé
+                # 💵 Paiement (Payé / Non payé)
                 if action == "paiement":
                     h["paiement"] = request.form.get("value")
                     if h["paiement"] == "Payé":
@@ -1017,7 +1017,7 @@ if action == "cle_etat":
                     save_data(data)
                     return "", 204
 
-                # ➤ Mode paiement (Chèque / Espèces)
+                # 💳 Mode de paiement
                 if action == "mode":
                     h["mode_paiement"] = request.form.get("value")
                     save_data(data)
