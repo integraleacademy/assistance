@@ -10,59 +10,78 @@
     <style>
         body {
             background:#f4f5f7;
-            font-family: Arial, sans-serif;
+            font-family: "Inter", Arial, sans-serif;
         }
 
         .container {
-            max-width: 750px;
+            max-width: 780px;
         }
 
         .card {
-            border-radius: 18px;
+            border-radius: 20px;
             border: none;
-            padding: 30px;
-            box-shadow: 0 8px 28px rgba(0,0,0,0.09);
+            padding: 35px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.08);
             background:white;
         }
 
         /* Logo */
         .logo {
-            max-width: 150px;
-            max-height: 85px;
-            width: auto;
-            height: auto;
-            display:block;
-            margin: 0 auto 20px auto;
+            width:140px;
+            margin-bottom:20px;
         }
 
-        /* Encadré règlement */
+        h3 {
+            font-weight:700;
+            font-size:26px;
+        }
+
+        /* Texte principal */
+        .intro p {
+            font-size:16px;
+            line-height:1.6;
+        }
+
+        /* Encadré */
         .encadre {
             background:#fff3cd;
             border-left:6px solid #f4c45a;
-            padding:16px 18px;
-            border-radius:10px;
-            margin-top:20px;
-            margin-bottom:25px;
-            font-size:16px;
-            color:#876500;
-            line-height:1.5;
+            padding:18px 20px;
+            border-radius:12px;
+            margin-top:22px;
+            margin-bottom:28px;
+            font-size:15.8px;
+            color:#7a6300;
         }
 
-        label {
-            font-weight:600;
-            margin-top:10px;
+        /* Champs flottants */
+        .form-floating label {
+            color:#666 !important;
+        }
+        .form-floating input,
+        .form-floating select {
+            border-radius: 10px;
+            border:1px solid #d8d8d8;
         }
 
-        /* Bouton */
+        .form-floating input:focus,
+        .form-floating select:focus {
+            border:1px solid #0b63ff;
+            box-shadow:0 0 0 0.2rem rgba(0,123,255,0.15);
+        }
+
+        /* Bouton Material */
         .btn-submit {
             background:#0061ff;
             border:none;
-            padding:15px;
-            border-radius:12px;
+            padding:16px;
+            border-radius:14px;
             font-size:18px;
-            font-weight:bold;
-            color:white; /* 🔥 Texte blanc pour bien voir */
-            transition:0.25s ease-in-out;
+            font-weight:700;
+            color:white;
+            letter-spacing:0.3px;
+            transition:0.25s;
+            box-shadow:0 4px 14px rgba(0,0,0,0.12);
         }
 
         .btn-submit:hover {
@@ -70,21 +89,9 @@
             transform: translateY(-2px);
         }
 
-        /* Mobile */
         @media (max-width: 600px) {
-            .card {
-                padding:20px;
-                border-radius:14px;
-            }
-
-            h3 {
-                font-size:22px;
-            }
-
-            .encadre {
-                font-size:14px;
-                padding:14px;
-            }
+            .card { padding:25px; }
+            h3 { font-size:22px; }
         }
     </style>
 </head>
@@ -93,66 +100,77 @@
 
 <div class="container mt-4 mb-5">
 
-    <div class="text-center mb-3">
+    <div class="text-center">
         <img src="/static/logo.png" class="logo">
     </div>
 
     <div class="card">
 
-        <h3 class="text-center mb-3">
+        <h3 class="text-center mb-4">
             🏨 Réservation hébergement – Formation APR
         </h3>
 
-        <p class="mb-3">
-            Vous souhaitez être hébergé lors de votre formation 
-            <strong>Agent de protection rapprochée</strong> ?
-        </p>
+        <div class="intro">
+            <p>
+                Vous souhaitez être hébergé lors de votre formation <strong>Agent de protection rapprochée</strong> ?
+            </p>
 
-        <p>
-            Notre établissement propose un hébergement sur place comprenant :
-            <b>dortoir collectif, douches, cuisine équipée, salle de bain, toilettes, machine à laver et sèche-linge.</b>
-        </p>
+            <p>
+                Notre établissement propose un hébergement sur place comprenant :
+                <strong>dortoir collectif, douches, cuisine équipée, salle de bain, toilettes, machine à laver et sèche-linge.</strong>
+            </p>
 
-        <p>
-            La participation financière est de <b>300 euros</b> pour toute la durée de la formation
-            (samedis, dimanches et jours fériés inclus).
-        </p>
+            <p>
+                La participation financière est de <strong>300 euros</strong> pour toute la durée de la formation (samedis, dimanches et jours fériés inclus).
+            </p>
+        </div>
 
-        <!-- ENCADRE IMPORTANT -->
+        <!-- Encadré Important -->
         <div class="encadre">
             ⚠️ <strong>Important :</strong><br>
-            Le règlement devra être effectué <strong>le jour de votre arrivée</strong>  
-            (💶 chèque ou espèces).<br>
+            Le règlement devra être effectué <strong>le jour de votre arrivée</strong> (💶 chèque ou espèces).<br>
             👉 Merci de préparer <strong>une enveloppe portant votre nom</strong>.
         </div>
 
         <form action="/hebergement" method="POST">
 
-            <label>👤 Nom :</label>
-            <input type="text" name="nom" class="form-control" required>
+            <div class="form-floating mb-3">
+                <input type="text" name="nom" class="form-control" id="nom" placeholder="Nom" required>
+                <label for="nom">👤 Nom</label>
+            </div>
 
-            <label>👤 Prénom :</label>
-            <input type="text" name="prenom" class="form-control" required>
+            <div class="form-floating mb-3">
+                <input type="text" name="prenom" class="form-control" id="prenom" placeholder="Prénom" required>
+                <label for="prenom">👤 Prénom</label>
+            </div>
 
-            <label>📱 Téléphone portable :</label>
-            <input type="text" name="telephone" class="form-control" required>
+            <div class="form-floating mb-3">
+                <input type="text" name="telephone" class="form-control" id="telephone" placeholder="Téléphone portable" required>
+                <label for="telephone">📱 Téléphone portable</label>
+            </div>
 
-            <label>📧 Email :</label>
-            <input type="email" name="email" class="form-control" required>
+            <div class="form-floating mb-3">
+                <input type="email" name="email" class="form-control" id="email" placeholder="Email" required>
+                <label for="email">📧 Email</label>
+            </div>
 
-            <label>📅 Dates de formation :</label>
-            <select name="session" class="form-select" required>
-                <option value="Du 5 janvier au 16 mars 2026">Du 5 janvier au 16 mars 2026</option>
-                <option value="Du 15 avril au 18 juin 2026">Du 15 avril au 18 juin 2026</option>
-                <option value="Du 1er septembre au 30 octobre 2026">Du 1er septembre au 30 octobre 2026</option>
-            </select>
+            <div class="form-floating mb-4">
+                <select name="session" class="form-select" id="session" required>
+                    <option value="Du 5 janvier au 16 mars 2026">Du 5 janvier au 16 mars 2026</option>
+                    <option value="Du 15 avril au 18 juin 2026">Du 15 avril au 18 juin 2026</option>
+                    <option value="Du 1er septembre au 30 octobre 2026">Du 1er septembre au 30 octobre 2026</option>
+                </select>
+                <label for="session">📅 Dates de formation</label>
+            </div>
 
-            <button class="btn btn-submit w-100 mt-4">
+            <button class="btn btn-submit w-100 mt-3">
                 ✔️ Valider ma réservation
             </button>
+
         </form>
 
     </div>
+
 </div>
 
 </body>
