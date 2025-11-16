@@ -863,7 +863,9 @@ def hebergement():
         nom = request.form.get("nom", "").strip()
         prenom = request.form.get("prenom", "").strip()
         telephone = request.form.get("telephone", "").strip()
+        mail = request.form.get("email", "").strip()
         session = request.form.get("session", "").strip()
+
 
         new_resa = {
             "id": str(uuid.uuid4()),
@@ -871,6 +873,7 @@ def hebergement():
             "prenom": prenom,
             "telephone": telephone,
             "session": session,
+            "mail": mail,
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
         }
 
@@ -904,7 +907,7 @@ def hebergement():
         )
 
         try:
-            send_email_html("no-reply@integraleacademy.com", subject, plain, html)
+            send_email_html(mail, subject, plain, html)
         except:
             pass
 
@@ -945,12 +948,61 @@ def hebergement_confirmation():
     return render_template("hebergement_confirmation.html")
 
 
-@app.route("/admin_hebergement")
+@app.route("/admin_hebergement", methods=["GET", "POST"])
 @login_required
 def admin_hebergement():
     data = load_data()
     hebergements = data.get("hebergements", [])
+
+    # 🔍 Recherche
+    q = request.args.get("q", "").strip().lower()
+    if q:
+        hebergements = [
+            h for h in hebergements
+            if q in h.get("nom", "").lower()
+            or q in h.get("prenom", "").lower()
+            or q in h.get("mail", "").lower()
+            or q in h.get("session", "").lower()
+        ]
+
+    # 🔽 Tri par date de formation
+    tri = request.args.get("tri")
+    if tri == "session":
+        hebergements = sorted(hebergements, key=lambda x: x.get("session", ""))
+
+    # 🟢 Mise à jour paiement
+    if request.method == "POST":
+        action = request.form.get("action")
+        resa_id = request.form.get("id")
+
+        for h in hebergements:
+            if h["id"] == resa_id:
+
+                # ➤ Suppression ligne
+                if action == "delete":
+                    data["hebergements"].remove(h)
+                    save_data(data)
+                    return redirect(url_for("admin_hebergement"))
+
+                # ➤ Paiement
+                if action == "paiement":
+                    h["paiement"] = request.form.get("value")
+                    if h["paiement"] == "Payé":
+                        paris_tz = pytz.timezone("Europe/Paris")
+                        h["date_paiement"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+                    save_data(data)
+                    return "", 204
+
+                # ➤ Mode paiement
+                if action == "mode":
+                    h["mode_paiement"] = request.form.get("value")
+                    save_data(data)
+                    return "", 204
+
+        save_data(data)
+
     return render_template("admin_hebergement.html", hebergements=hebergements)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
