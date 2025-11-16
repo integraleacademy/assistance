@@ -32,11 +32,13 @@ body {
 }
 
 .btn-pay {
-    min-width: 90px;
+    min-width: 100px;
+    font-weight:600;
 }
 
 .btn-mode {
-    min-width: 90px;
+    min-width: 100px;
+    font-weight:600;
 }
 
 /* ---------- Impression ---------- */
@@ -186,7 +188,8 @@ function updatePaiement(id, value) {
     formData.append("id", id);
     formData.append("value", value);
 
-    fetch("/admin_hebergement", { method:"POST", body:formData });
+    fetch("/admin_hebergement", { method:"POST", body:formData })
+        .then(() => location.reload());
 }
 
 function updateMode(id, value) {
@@ -195,7 +198,8 @@ function updateMode(id, value) {
     formData.append("id", id);
     formData.append("value", value);
 
-    fetch("/admin_hebergement", { method:"POST", body:formData });
+    fetch("/admin_hebergement", { method:"POST", body:formData })
+        .then(() => location.reload());
 }
 </script>
 
