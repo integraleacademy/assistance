@@ -51,12 +51,10 @@ body {
     width:100%;
 }
 
-/* Boutons Pay/Mode */
 .btn-pay, .btn-mode {
     min-width: 90px;
 }
 
-/* Impression */
 @media print {
     button, .btn, form, .logo-admin, .top-bar, a {
         display:none !important;
@@ -119,6 +117,11 @@ body {
                     <th>Session</th>
                     <th>Paiement</th>
                     <th>Mode</th>
+
+                    <!-- 🔑 Colonnes ajoutées -->
+                    <th>Clé</th>
+                    <th>État clé</th>
+
                     <th>Date paiement</th>
                     <th>Supp.</th>
                 </tr>
@@ -163,6 +166,37 @@ body {
                         </div>
                     </td>
 
+                    <!-- 🔑 Numéro de clé -->
+                    <td>
+                        <input type="text" class="form-control form-control-sm"
+                               style="width:80px;"
+                               value="{{ h.cle_numero or '' }}"
+                               onchange="updateCleNumero('{{h.id}}', this.value)">
+                    </td>
+
+                    <!-- 🔑 État de la clé -->
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm 
+                                {% if h.cle_etat == 'A donner' %}btn-primary{% else %}btn-outline-primary{% endif %}"
+                                onclick="updateCleEtat('{{h.id}}', 'A donner')">
+                                🟦 À donner
+                            </button>
+
+                            <button class="btn btn-sm 
+                                {% if h.cle_etat == 'Donnee' %}btn-success{% else %}btn-outline-success{% endif %}"
+                                onclick="updateCleEtat('{{h.id}}', 'Donnee')">
+                                🟩 Donnée
+                            </button>
+
+                            <button class="btn btn-sm 
+                                {% if h.cle_etat == 'Restituee' %}btn-warning{% else %}btn-outline-warning{% endif %}"
+                                onclick="updateCleEtat('{{h.id}}', 'Restituee')">
+                                🟧 Restituée
+                            </button>
+                        </div>
+                    </td>
+
                     <td>{{h.date_paiement or ''}}</td>
 
                     <td>
@@ -196,6 +230,24 @@ function updatePaiement(id, value) {
 function updateMode(id, value) {
     const formData = new FormData();
     formData.append("action", "mode");
+    formData.append("id", id);
+    formData.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:formData })
+        .then(() => location.reload());
+}
+
+function updateCleNumero(id, value) {
+    const formData = new FormData();
+    formData.append("action", "cle_numero");
+    formData.append("id", id);
+    formData.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:formData })
+        .then(() => location.reload());
+}
+
+function updateCleEtat(id, value) {
+    const formData = new FormData();
+    formData.append("action", "cle_etat");
     formData.append("id", id);
     formData.append("value", value);
     fetch("/admin_hebergement", { method:"POST", body:formData })
