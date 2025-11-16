@@ -10,9 +10,11 @@ body {
     background:#f5f6f8;
 }
 
-/* Conteneur global beaucoup plus large */
+/* ————————————————
+   CONTENEUR GLOBAL
+——————————————— */
 .container-admin {
-    max-width: 1600px;
+    max-width: 1650px;
     margin:auto;
 }
 
@@ -22,7 +24,7 @@ body {
     margin-bottom:20px;
 }
 
-/* Zone du haut */
+/* Top bar */
 .top-bar {
     display:flex;
     justify-content:space-between;
@@ -32,42 +34,76 @@ body {
     flex-wrap:wrap;
 }
 
-.search-block {
-    flex:1;
-    min-width:280px;
-}
-
-.action-block {
-    display:flex;
-    gap:15px;
-}
-
-/* TABLE — pleine largeur */
+/* ————————————————
+   TABLE COMPACT
+——————————————— */
 .table-container {
     background:white;
-    padding:25px;
+    padding:22px;
     border-radius:18px;
     box-shadow:0 6px 18px rgba(0,0,0,0.07);
     width:100%;
 }
 
-.btn-pay, .btn-mode {
-    min-width: 90px;
+.table th, .table td {
+    padding:6px 8px !important;
+    font-size:14px;
+    vertical-align:middle;
 }
 
+/* Session large */
+.col-session {
+    max-width:220px;
+    white-space:normal !important;
+}
+
+/* Numéro de clé */
+.key-input {
+    width:60px !important;
+    padding:3px 4px;
+    font-size:14px;
+}
+
+/* ————————————————
+   BOUTONS ÉTAT DES CLÉS
+——————————————— */
+.btn-etat {
+    padding:4px 10px;
+    border-radius:6px;
+    font-size:13px;
+    font-weight:600;
+    border:1px solid #ccc;
+    background:#f8f8f8;
+    cursor:pointer;
+}
+
+.btn-etat.active {
+    color:white;
+}
+
+.btn-etat.adonner.active {
+    background:#6c757d;
+    border-color:#6c757d;
+}
+
+.btn-etat.donnee.active {
+    background:#0d6efd;
+    border-color:#0d6efd;
+}
+
+.btn-etat.restituee.active {
+    background:#F4C45A;
+    border-color:#F4C45A;
+    color:black !important;
+}
+
+/* Impression */
 @media print {
     button, .btn, form, .logo-admin, .top-bar, a {
         display:none !important;
     }
-
-    body {
-        background:white !important;
-    }
-
-    table {
-        width:100% !important;
-        font-size:14px;
-    }
+    body { background:white !important; }
+    table { width:100% !important; font-size:14px; }
 }
 </style>
 </head>
@@ -85,26 +121,25 @@ body {
     <div class="top-bar">
 
         <!-- Recherche -->
-        <form method="GET" action="/admin_hebergement" class="search-block d-flex">
+        <form method="GET" action="/admin_hebergement" class="search-block d-flex" style="flex:1;min-width:280px;">
             <input type="text" name="q" class="form-control me-2"
                    placeholder="Rechercher nom, email, session…">
             <button class="btn btn-primary">Rechercher</button>
         </form>
 
         <!-- Actions -->
-        <div class="action-block">
+        <div class="d-flex gap-2">
             <a href="/admin_hebergement?tri=session" class="btn btn-secondary">
                 Trier par session
             </a>
-
             <button onclick="window.print()" class="btn btn-dark">
-                🖨️ Imprimer la liste
+                🖨️ Imprimer
             </button>
         </div>
 
     </div>
 
-    <!-- TABLEAU FULL WIDTH -->
+    <!-- TABLEAU -->
     <div class="table-container">
 
         <table class="table table-hover align-middle">
@@ -114,14 +149,11 @@ body {
                     <th>Prénom</th>
                     <th>Téléphone</th>
                     <th>Email</th>
-                    <th>Session</th>
+                    <th class="col-session">Session</th>
                     <th>Paiement</th>
                     <th>Mode</th>
-
-                    <!-- 🔑 Colonnes ajoutées -->
                     <th>Clé</th>
                     <th>État clé</th>
-
                     <th>Date paiement</th>
                     <th>Supp.</th>
                 </tr>
@@ -130,23 +162,31 @@ body {
             <tbody>
                 {% for h in hebergements %}
                 <tr id="row-{{h.id}}">
+
                     <td>{{h.nom}}</td>
                     <td>{{h.prenom}}</td>
-                    <td>{{h.telephone}}</td>
+
+                    <td>
+                        <a href="tel:{{h.telephone}}" class="text-success fw-bold">
+                            {{h.telephone}}
+                        </a>
+                    </td>
+
                     <td>{{h.mail}}</td>
-                    <td>{{h.session}}</td>
+
+                    <td class="col-session">{{h.session}}</td>
 
                     <!-- Paiement -->
                     <td>
                         <div class="btn-group">
-                            <button class="btn btn-sm btn-pay {% if h.paiement == 'Payé' %}btn-success{% else %}btn-outline-success{% endif %}"
+                            <button class="btn btn-sm {% if h.paiement == 'Payé' %}btn-success{% else %}btn-outline-success{% endif %}"
                                     onclick="updatePaiement('{{h.id}}', 'Payé')">
-                                🟢 Payé
+                                Payé
                             </button>
 
-                            <button class="btn btn-sm btn-pay {% if h.paiement != 'Payé' %}btn-danger{% else %}btn-outline-danger{% endif %}"
+                            <button class="btn btn-sm {% if h.paiement != 'Payé' %}btn-danger{% else %}btn-outline-danger{% endif %}"
                                     onclick="updatePaiement('{{h.id}}', 'Non payé')">
-                                🔴 Non payé
+                                Non payé
                             </button>
                         </div>
                     </td>
@@ -154,51 +194,52 @@ body {
                     <!-- Mode paiement -->
                     <td>
                         <div class="btn-group">
-                            <button class="btn btn-sm btn-mode {% if h.mode_paiement == 'Chèque' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+                            <button class="btn btn-sm {% if h.mode_paiement == 'Chèque' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
                                     onclick="updateMode('{{h.id}}', 'Chèque')">
-                                🧾 Chèque
+                                Chèque
                             </button>
 
-                            <button class="btn btn-sm btn-mode {% if h.mode_paiement == 'Espèces' %}btn-warning{% else %}btn-outline-warning{% endif %}"
+                            <button class="btn btn-sm {% if h.mode_paiement == 'Espèces' %}btn-warning{% else %}btn-outline-warning{% endif %}"
                                     onclick="updateMode('{{h.id}}', 'Espèces')">
-                                💶 Espèces
+                                Espèces
                             </button>
                         </div>
                     </td>
 
-                    <!-- 🔑 Numéro de clé -->
+                    <!-- Numéro de clé -->
                     <td>
-                        <input type="text" class="form-control form-control-sm"
-                               style="width:80px;"
+                        <input type="text" class="key-input"
                                value="{{ h.cle_numero or '' }}"
                                onchange="updateCleNumero('{{h.id}}', this.value)">
                     </td>
 
-                    <!-- 🔑 État de la clé -->
+                    <!-- État clé -->
                     <td>
-                        <div class="btn-group">
-                            <button class="btn btn-sm 
-                                {% if h.cle_etat == 'A donner' %}btn-primary{% else %}btn-outline-primary{% endif %}"
+                        <div class="d-flex gap-1">
+                            <button 
+                                class="btn-etat adonner {% if h.cle_etat == 'A donner' %}active{% endif %}"
                                 onclick="updateCleEtat('{{h.id}}', 'A donner')">
-                                🟦 À donner
+                                À donner
                             </button>
 
-                            <button class="btn btn-sm 
-                                {% if h.cle_etat == 'Donnee' %}btn-success{% else %}btn-outline-success{% endif %}"
+                            <button 
+                                class="btn-etat donnee {% if h.cle_etat == 'Donnee' %}active{% endif %}"
                                 onclick="updateCleEtat('{{h.id}}', 'Donnee')">
-                                🟩 Donnée
+                                Donnée
                             </button>
 
-                            <button class="btn btn-sm 
-                                {% if h.cle_etat == 'Restituee' %}btn-warning{% else %}btn-outline-warning{% endif %}"
+                            <button 
+                                class="btn-etat restituee {% if h.cle_etat == 'Restituee' %}active{% endif %}"
                                 onclick="updateCleEtat('{{h.id}}', 'Restituee')">
-                                🟧 Restituée
+                                Restituée
                             </button>
                         </div>
                     </td>
 
+                    <!-- Date paiement -->
                     <td>{{h.date_paiement or ''}}</td>
 
+                    <!-- Supprimer -->
                     <td>
                         <form method="POST" action="/admin_hebergement">
                             <input type="hidden" name="id" value="{{h.id}}">
@@ -219,38 +260,38 @@ body {
 
 <script>
 function updatePaiement(id, value) {
-    const formData = new FormData();
-    formData.append("action", "paiement");
-    formData.append("id", id);
-    formData.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:formData })
+    const fd = new FormData();
+    fd.append("action", "paiement");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
         .then(() => location.reload());
 }
 
 function updateMode(id, value) {
-    const formData = new FormData();
-    formData.append("action", "mode");
-    formData.append("id", id);
-    formData.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:formData })
+    const fd = new FormData();
+    fd.append("action", "mode");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
         .then(() => location.reload());
 }
 
 function updateCleNumero(id, value) {
-    const formData = new FormData();
-    formData.append("action", "cle_numero");
-    formData.append("id", id);
-    formData.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:formData })
+    const fd = new FormData();
+    fd.append("action", "cle_numero");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
         .then(() => location.reload());
 }
 
 function updateCleEtat(id, value) {
-    const formData = new FormData();
-    formData.append("action", "cle_etat");
-    formData.append("id", id);
-    formData.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:formData })
+    const fd = new FormData();
+    fd.append("action", "cle_etat");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
         .then(() => location.reload());
 }
 </script>
