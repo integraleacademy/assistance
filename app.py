@@ -866,7 +866,7 @@ def hebergement():
         mail = request.form.get("email", "").strip()
         session = request.form.get("session", "").strip()
 
-
+        # 🔥 ICI : bien dans la fonction + indenté correctement
         new_resa = {
             "id": str(uuid.uuid4()),
             "nom": nom,
@@ -874,13 +874,18 @@ def hebergement():
             "telephone": telephone,
             "session": session,
             "mail": mail,
-            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+
+            # 🟢 Ajout obligatoire
+            "paiement": "Non payé",
+            "mode_paiement": "",
+            "date_paiement": ""
         }
 
         data["hebergements"].append(new_resa)
         save_data(data)
 
-        # 📧 Mail au candidat
+        # --- Envoi des mails ---
         subject = "🏨 Votre réservation d’hébergement a bien été enregistrée"
         plain = (
             f"Bonjour {prenom},\n\n"
@@ -911,9 +916,8 @@ def hebergement():
         except:
             pass
 
-        # 📧 Mail interne admin
+        # -- Mail admin interne --
         subject_admin = f"🏨 Nouvelle réservation hébergement – {prenom} {nom}"
-
         plain_admin = (
             f"Nouvelle réservation APR :\n\n"
             f"Nom : {nom}\n"
@@ -942,6 +946,7 @@ def hebergement():
         return redirect(url_for("hebergement_confirmation"))
 
     return render_template("hebergement.html")
+
 
 @app.route("/hebergement_confirmation")
 def hebergement_confirmation():
