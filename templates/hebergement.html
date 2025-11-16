@@ -25,7 +25,6 @@
             background:white;
         }
 
-        /* Logo */
         .logo {
             width:140px;
             margin-bottom:20px;
@@ -36,13 +35,11 @@
             font-size:26px;
         }
 
-        /* Texte principal */
         .intro p {
             font-size:16px;
             line-height:1.6;
         }
 
-        /* Encadré */
         .encadre {
             background:#fff3cd;
             border-left:6px solid #f4c45a;
@@ -54,10 +51,6 @@
             color:#7a6300;
         }
 
-        /* Champs flottants */
-        .form-floating label {
-            color:#666 !important;
-        }
         .form-floating input,
         .form-floating select {
             border-radius: 10px;
@@ -70,7 +63,7 @@
             box-shadow:0 0 0 0.2rem rgba(0,123,255,0.15);
         }
 
-        /* Bouton Material */
+        /* Bouton corrigé */
         .btn-submit {
             background:#0061ff;
             border:none;
@@ -79,13 +72,12 @@
             font-size:18px;
             font-weight:700;
             color:white;
-            letter-spacing:0.3px;
-            transition:0.25s;
+            transition:0.25s ease;
             box-shadow:0 4px 14px rgba(0,0,0,0.12);
         }
 
         .btn-submit:hover {
-            background:#004ed1;
+            background:#1a79ff !important;   /* bleu clair lisible */
             transform: translateY(-2px);
         }
 
@@ -125,7 +117,6 @@
             </p>
         </div>
 
-        <!-- Encadré Important -->
         <div class="encadre">
             ⚠️ <strong>Important :</strong><br>
             Le règlement devra être effectué <strong>le jour de votre arrivée</strong> (💶 chèque ou espèces).<br>
@@ -156,9 +147,14 @@
 
             <div class="form-floating mb-4">
                 <select name="session" class="form-select" id="session" required>
+
+                    <!-- 👉 Ajout de toutes les dates -->
                     <option value="Du 5 janvier au 16 mars 2026">Du 5 janvier au 16 mars 2026</option>
-                    <option value="Du 15 avril au 18 juin 2026">Du 15 avril au 18 juin 2026</option>
-                    <option value="Du 1er septembre au 30 octobre 2026">Du 1er septembre au 30 octobre 2026</option>
+                    <option value="Du 30 mars au 2 juin 2026">Du 30 mars au 2 juin 2026</option>
+                    <option value="Du 8 juin au 4 août 2026">Du 8 juin au 4 août 2026</option>
+                    <option value="Du 1er septembre au 27 octobre 2026">Du 1er septembre au 27 octobre 2026</option>
+                    <option value="Du 9 novembre 2026 au 19 janvier 2027">Du 9 novembre 2026 au 19 janvier 2027</option>
+
                 </select>
                 <label for="session">📅 Dates de formation</label>
             </div>
