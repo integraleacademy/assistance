@@ -9,29 +9,81 @@
 
     <style>
         body {
-            background:#f5f6f8;
+            background:#f4f5f7;
+            font-family: Arial, sans-serif;
         }
+
         .container {
-            max-width: 650px;
+            max-width: 750px;
         }
+
         .card {
-            border-radius: 14px;
+            border-radius: 18px;
             border: none;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+            padding: 30px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.09);
+            background:white;
         }
+
+        /* Logo */
+        .logo {
+            max-width: 150px;
+            max-height: 85px;
+            width: auto;
+            height: auto;
+            display:block;
+            margin: 0 auto 20px auto;
+        }
+
+        /* Encadré règlement */
         .encadre {
-            background:#fff7d6;
-            border-left:4px solid #f4c45a;
-            padding:14px;
-            border-radius:8px;
-            margin-top:15px;
-            margin-bottom:20px;
-            font-size:15px;
-            font-weight:500;
+            background:#fff3cd;
+            border-left:6px solid #f4c45a;
+            padding:16px 18px;
+            border-radius:10px;
+            margin-top:20px;
+            margin-bottom:25px;
+            font-size:16px;
+            color:#876500;
+            line-height:1.5;
         }
+
         label {
             font-weight:600;
-            margin-top:8px;
+            margin-top:10px;
+        }
+
+        /* Bouton */
+        .btn-submit {
+            background:#0061ff;
+            border:none;
+            padding:15px;
+            border-radius:12px;
+            font-size:18px;
+            font-weight:bold;
+            transition:0.25s ease-in-out;
+        }
+
+        .btn-submit:hover {
+            background:#004ed1;
+            transform: translateY(-2px);
+        }
+
+        /* Mobile */
+        @media (max-width: 600px) {
+            .card {
+                padding:20px;
+                border-radius:14px;
+            }
+
+            h3 {
+                font-size:22px;
+            }
+
+            .encadre {
+                font-size:14px;
+                padding:14px;
+            }
         }
     </style>
 </head>
@@ -41,55 +93,58 @@
 <div class="container mt-4 mb-5">
 
     <div class="text-center mb-3">
-        <img src="/static/logo.png" style="width:110px;">
+        <img src="/static/logo.png" class="logo">
     </div>
 
-    <div class="card p-4">
+    <div class="card">
 
         <h3 class="text-center mb-3">
             🏨 Réservation hébergement – Formation APR
         </h3>
 
         <p class="mb-3">
-            Vous souhaitez être hébergé lors de votre formation agent de protection rapprochée ?
+            🙋‍♂️ Vous souhaitez être hébergé lors de votre formation <strong>Agent de protection rapprochée</strong> ?
         </p>
 
         <p>
-            Nous proposons un hébergement sur place avec :
+            🛏️ Notre établissement propose un hébergement sur place comprenant :
             <b>dortoir collectif, douches, cuisine équipée, salle de bain, toilettes, machine à laver et sèche-linge.</b>
         </p>
 
         <p>
-            La participation financière est de <b>300 euros</b> pour toute la durée de la formation (samedis, dimanches et jours fériés inclus).
+            💰 La participation financière est de <b>300 euros</b> pour toute la durée de la formation (samedis, dimanches et jours fériés inclus).
         </p>
 
+        <!-- ENCADRE MIEUX FORMATÉ -->
         <div class="encadre">
-            ⚠️ <b>Le règlement devra être effectué le jour de votre arrivée</b> (chèque ou espèces),
-            <br>dans une enveloppe portant votre nom.
+            ⚠️ <strong>Important :</strong><br>
+            Le règlement devra être effectué <strong>le jour de votre arrivée</strong>  
+            (💶 chèque ou espèces).<br>
+            👉 Merci de préparer <strong>une enveloppe portant votre nom</strong>.
         </div>
 
         <form action="/hebergement" method="POST">
 
-            <label>Nom :</label>
+            <label>👤 Nom :</label>
             <input type="text" name="nom" class="form-control" required>
 
-            <label>Prénom :</label>
+            <label>👤 Prénom :</label>
             <input type="text" name="prenom" class="form-control" required>
 
-            <label>Téléphone portable :</label>
+            <label>📱 Téléphone portable :</label>
             <input type="text" name="telephone" class="form-control" required>
 
-            <label>Email :</label>
+            <label>📧 Email :</label>
             <input type="email" name="email" class="form-control" required>
 
-            <label>Dates de formation :</label>
+            <label>📅 Dates de formation :</label>
             <select name="session" class="form-select" required>
                 <option value="Du 5 janvier au 16 mars 2026">Du 5 janvier au 16 mars 2026</option>
                 <option value="Du 15 avril au 18 juin 2026">Du 15 avril au 18 juin 2026</option>
                 <option value="Du 1er septembre au 30 octobre 2026">Du 1er septembre au 30 octobre 2026</option>
             </select>
 
-            <button class="btn btn-primary w-100 mt-4" style="background:#0056ff; font-size:17px;">
+            <button class="btn btn-submit w-100 mt-4">
                 ✔️ Valider ma réservation
             </button>
         </form>
