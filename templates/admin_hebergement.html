@@ -9,22 +9,68 @@
 body {
     background:#f5f6f8;
 }
+
+.container {
+    max-width: 1500px !important;
+}
+
 .table-container {
     background:white;
-    padding:20px;
-    border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
+    padding:25px;
+    border-radius:14px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.07);
 }
+
+.logo-admin {
+    width:130px;
+    margin-bottom:20px;
+}
+
 .btn-small {
-    padding:3px 10px;
+    padding:4px 10px;
     font-size:13px;
 }
-.logo-admin {
-    width:120px;
-    margin-bottom:15px;
+
+.btn-pay {
+    min-width: 90px;
 }
-input, select {
-    font-size:14px;
+
+.btn-mode {
+    min-width: 90px;
+}
+
+/* ---------- Impression ---------- */
+@media print {
+
+    body {
+        background:white !important;
+    }
+
+    /* On cache les boutons, formulaires, logo */
+    button, .btn, form, .logo-admin, .d-flex, a {
+        display:none !important;
+    }
+
+    h3 {
+        text-align:center;
+        margin:20px 0;
+        font-size:24px;
+    }
+
+    .table-container {
+        box-shadow:none !important;
+        padding:0;
+    }
+
+    table {
+        width:100% !important;
+        font-size:14px;
+    }
+
+    th, td {
+        border:1px solid #000 !important;
+        padding:6px !important;
+    }
 }
 </style>
 </head>
@@ -40,26 +86,26 @@ input, select {
 
     <h3 class="text-center mb-4">Gestion des hébergements APR</h3>
 
-    <!-- Barre outils -->
+    <!-- BARRE D'OUTILS -->
     <div class="d-flex justify-content-between mb-3">
 
-        <!-- ▪ Recherche -->
+        <!-- Recherche -->
         <form method="GET" action="/admin_hebergement" class="d-flex">
             <input type="text" name="q" class="form-control me-2" placeholder="Rechercher nom, email, session…">
             <button class="btn btn-primary">Rechercher</button>
         </form>
 
-        <!-- ▪ Tri -->
+        <!-- Tri -->
         <a href="/admin_hebergement?tri=session" class="btn btn-secondary">Trier par session</a>
 
-        <!-- ▪ Impression -->
+        <!-- Impression -->
         <button onclick="window.print()" class="btn btn-dark">🖨️ Imprimer la liste</button>
     </div>
 
     <div class="table-container">
 
-        <table class="table table-striped">
-            <thead>
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
                 <tr>
                     <th>Nom</th>
                     <th>Prénom</th>
@@ -84,21 +130,32 @@ input, select {
 
                     <!-- Paiement -->
                     <td>
-                        <select class="form-select form-select-sm"
-                                onchange="updatePaiement('{{h.id}}', this.value)">
-                            <option value="Non payé" {% if h.paiement != 'Payé' %}selected{% endif %}>🔴 Non payé</option>
-                            <option value="Payé" {% if h.paiement == 'Payé' %}selected{% endif %}>🟢 Payé</option>
-                        </select>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-pay {% if h.paiement == 'Payé' %}btn-success{% else %}btn-outline-success{% endif %}"
+                                    onclick="updatePaiement('{{h.id}}', 'Payé')">
+                                🟢 Payé
+                            </button>
+
+                            <button class="btn btn-sm btn-pay {% if h.paiement != 'Payé' %}btn-danger{% else %}btn-outline-danger{% endif %}"
+                                    onclick="updatePaiement('{{h.id}}', 'Non payé')">
+                                🔴 Non payé
+                            </button>
+                        </div>
                     </td>
 
                     <!-- Mode paiement -->
                     <td>
-                        <select class="form-select form-select-sm"
-                                onchange="updateMode('{{h.id}}', this.value)">
-                            <option value="">—</option>
-                            <option value="Chèque" {% if h.mode_paiement == 'Chèque' %}selected{% endif %}>🧾 Chèque</option>
-                            <option value="Espèces" {% if h.mode_paiement == 'Espèces' %}selected{% endif %}>💶 Espèces</option>
-                        </select>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-mode {% if h.mode_paiement == 'Chèque' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+                                    onclick="updateMode('{{h.id}}', 'Chèque')">
+                                🧾 Chèque
+                            </button>
+
+                            <button class="btn btn-sm btn-mode {% if h.mode_paiement == 'Espèces' %}btn-warning{% else %}btn-outline-warning{% endif %}"
+                                    onclick="updateMode('{{h.id}}', 'Espèces')">
+                                💶 Espèces
+                            </button>
+                        </div>
                     </td>
 
                     <!-- Date paiement -->
