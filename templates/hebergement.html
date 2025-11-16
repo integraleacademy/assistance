@@ -1,67 +1,101 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Réservation hébergement formation agent de protection rapprochée</title>
-  <style>
-    body {background:#fdfaf5;font-family:Arial;padding:20px;}
-    .container {
-      max-width: 600px; margin:auto; background:#fff; padding:25px;
-      border-radius:15px; box-shadow:0 4px 15px rgba(0,0,0,0.1);
-    }
-    img {max-width:120px; display:block; margin:auto;}
-    h2 {text-align:center; color:#0d6efd; font-size:22px;}
-    p {line-height:1.6; color:#444;}
-    label {display:block; margin:12px 0 5px; font-weight:bold;}
-    input, select, button {
-      width:100%; padding:10px; margin-bottom:15px; border-radius:8px;
-      border:1px solid #ccc; font-size:15px;
-    }
-    button {background:#0d6efd; color:white; cursor:pointer;}
-    button:hover {background:#0b5ed7;}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Réservation hébergement – Formation APR</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background:#f5f6f8;
+        }
+        .container {
+            max-width: 650px;
+        }
+        .card {
+            border-radius: 14px;
+            border: none;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+        }
+        .encadre {
+            background:#fff7d6;
+            border-left:4px solid #f4c45a;
+            padding:14px;
+            border-radius:8px;
+            margin-top:15px;
+            margin-bottom:20px;
+            font-size:15px;
+            font-weight:500;
+        }
+        label {
+            font-weight:600;
+            margin-top:8px;
+        }
+    </style>
 </head>
+
 <body>
-  <div class="container">
 
-    <img src="/static/logo.png">
+<div class="container mt-4 mb-5">
 
-    <h2>Réservation hébergement – Formation APR</h2>
+    <div class="text-center mb-3">
+        <img src="/static/logo.png" style="width:110px;">
+    </div>
 
-    <p>
-      Vous souhaitez être hébergé lors de votre formation agent de protection rapprochée ?
-      <br><br>
-      Nous proposons un hébergement sur place au sein du centre de formation avec :
-      <strong>dortoir collectif, douches, cuisine équipée, salle de bain, toilettes, machine à laver et sèche-linge</strong>.
-      <br><br>
-      La participation financière est de <strong>300 euros</strong> pour toute la durée de la formation
-      (samedis, dimanches et jours fériés inclus).  
-      <br><br>
-      Le règlement devra être effectué <strong>le jour de votre arrivée (chèque ou espèces)</strong>, dans une enveloppe portant votre nom.
-    </p>
+    <div class="card p-4">
 
-    <form method="POST">
-      <label>Nom :</label>
-      <input type="text" name="nom" required>
+        <h3 class="text-center mb-3">
+            🏨 Réservation hébergement – Formation APR
+        </h3>
 
-      <label>Prénom :</label>
-      <input type="text" name="prenom" required>
+        <p class="mb-3">
+            Vous souhaitez être hébergé lors de votre formation agent de protection rapprochée ?
+        </p>
 
-      <label>Téléphone portable :</label>
-      <input type="text" name="telephone" required>
+        <p>
+            Nous proposons un hébergement sur place avec :
+            <b>dortoir collectif, douches, cuisine équipée, salle de bain, toilettes, machine à laver et sèche-linge.</b>
+        </p>
 
-      <label>Dates de formation :</label>
-      <select name="session" required>
-        <option value="Du 5 janvier au 16 mars 2026">Du 5 janvier au 16 mars 2026</option>
-        <option value="Du 30 mars au 2 juin 2026">Du 30 mars au 2 juin 2026</option>
-        <option value="Du 8 juin au 4 août 2026">Du 8 juin au 4 août 2026</option>
-        <option value="Du 1er septembre au 27 octobre 2026">Du 1er septembre au 27 octobre 2026</option>
-        <option value="Du 9 novembre 2026 au 19 janvier 2027">Du 9 novembre 2026 au 19 janvier 2027</option>
-      </select>
+        <p>
+            La participation financière est de <b>300 euros</b> pour toute la durée de la formation (samedis, dimanches et jours fériés inclus).
+        </p>
 
-      <button type="submit">Valider ma réservation</button>
-    </form>
+        <div class="encadre">
+            ⚠️ <b>Le règlement devra être effectué le jour de votre arrivée</b> (chèque ou espèces),
+            <br>dans une enveloppe portant votre nom.
+        </div>
 
-  </div>
+        <form action="/hebergement" method="POST">
+
+            <label>Nom :</label>
+            <input type="text" name="nom" class="form-control" required>
+
+            <label>Prénom :</label>
+            <input type="text" name="prenom" class="form-control" required>
+
+            <label>Téléphone portable :</label>
+            <input type="text" name="telephone" class="form-control" required>
+
+            <label>Email :</label>
+            <input type="email" name="email" class="form-control" required>
+
+            <label>Dates de formation :</label>
+            <select name="session" class="form-select" required>
+                <option value="Du 5 janvier au 16 mars 2026">Du 5 janvier au 16 mars 2026</option>
+                <option value="Du 15 avril au 18 juin 2026">Du 15 avril au 18 juin 2026</option>
+                <option value="Du 1er septembre au 30 octobre 2026">Du 1er septembre au 30 octobre 2026</option>
+            </select>
+
+            <button class="btn btn-primary w-100 mt-4" style="background:#0056ff; font-size:17px;">
+                ✔️ Valider ma réservation
+            </button>
+        </form>
+
+    </div>
+</div>
+
 </body>
 </html>
