@@ -940,9 +940,10 @@ def hebergement():
 
     return render_template("hebergement.html")
 
-    @app.route("/hebergement_confirmation")
+@app.route("/hebergement_confirmation")
 def hebergement_confirmation():
     return render_template("hebergement_confirmation.html")
+
 
 @app.route("/admin_hebergement")
 @login_required
