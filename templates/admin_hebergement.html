@@ -1,76 +1,146 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Administration - Hébergement APR</title>
-  <style>
-    body {
-      background-color:#fdfaf5;
-      font-family:Arial, sans-serif;
-      margin:0;
-      padding:20px;
-    }
-    .container {
-      width:100%;
-      background:#fff;
-      padding:20px;
-      border-radius:15px;
-      box-shadow:0 0 15px rgba(0,0,0,.1);
-      box-sizing:border-box;
-      overflow-x:auto;
-    }
-    h2 {
-      text-align:center;
-      color:#0d6efd;
-      margin-bottom:25px;
-    }
+<meta charset="UTF-8">
+<title>Admin Hébergement — Intégrale Academy</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
-    table {
-      width:100%;
-      border-collapse:collapse;
-      table-layout:auto;
-      font-size:14px;
-    }
-    th, td {
-      border:1px solid #ddd;
-      padding:8px;
-      text-align:center;
-    }
-    th {
-      background:#f4c45a;
-      color:#333;
-    }
-    tr:nth-child(even){background:#f9f9f9;}
-    tr:nth-child(odd){background:#fff;}
-  </style>
+<style>
+body {
+    background:#f5f6f8;
+}
+.table-container {
+    background:white;
+    padding:20px;
+    border-radius:12px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.08);
+}
+.btn-small {
+    padding:3px 10px;
+    font-size:13px;
+}
+.logo-admin {
+    width:120px;
+    margin-bottom:15px;
+}
+input, select {
+    font-size:14px;
+}
+</style>
 </head>
-<body>
+
+<body class="p-4">
 
 <div class="container">
 
-  <h2>🏨 Gestion des réservations d’hébergement – APR</h2>
+    <!-- LOGO -->
+    <div class="text-center">
+        <img src="/static/logo.png" class="logo-admin">
+    </div>
 
-  <table>
-    <tr>
-      <th>Nom</th>
-      <th>Prénom</th>
-      <th>Téléphone</th>
-      <th>Session</th>
-      <th>Date de réservation</th>
-    </tr>
+    <h3 class="text-center mb-4">Gestion des hébergements APR</h3>
 
-    {% for r in hebergements %}
-    <tr>
-      <td>{{ r.nom }}</td>
-      <td>{{ r.prenom }}</td>
-      <td>{{ r.telephone }}</td>
-      <td>{{ r.session }}</td>
-      <td>{{ r.date }}</td>
-    </tr>
-    {% endfor %}
-  </table>
+    <!-- Barre outils -->
+    <div class="d-flex justify-content-between mb-3">
+
+        <!-- ▪ Recherche -->
+        <form method="GET" action="/admin_hebergement" class="d-flex">
+            <input type="text" name="q" class="form-control me-2" placeholder="Rechercher nom, email, session…">
+            <button class="btn btn-primary">Rechercher</button>
+        </form>
+
+        <!-- ▪ Tri -->
+        <a href="/admin_hebergement?tri=session" class="btn btn-secondary">Trier par session</a>
+
+        <!-- ▪ Impression -->
+        <button onclick="window.print()" class="btn btn-dark">🖨️ Imprimer la liste</button>
+    </div>
+
+    <div class="table-container">
+
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Prénom</th>
+                    <th>Téléphone</th>
+                    <th>Email</th>
+                    <th>Session</th>
+                    <th>Paiement</th>
+                    <th>Mode</th>
+                    <th>Date paiement</th>
+                    <th>Supp.</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for h in hebergements %}
+                <tr id="row-{{h.id}}">
+                    <td>{{h.nom}}</td>
+                    <td>{{h.prenom}}</td>
+                    <td>{{h.telephone}}</td>
+                    <td>{{h.mail}}</td>
+                    <td>{{h.session}}</td>
+
+                    <!-- Paiement -->
+                    <td>
+                        <select class="form-select form-select-sm"
+                                onchange="updatePaiement('{{h.id}}', this.value)">
+                            <option value="Non payé" {% if h.paiement != 'Payé' %}selected{% endif %}>🔴 Non payé</option>
+                            <option value="Payé" {% if h.paiement == 'Payé' %}selected{% endif %}>🟢 Payé</option>
+                        </select>
+                    </td>
+
+                    <!-- Mode paiement -->
+                    <td>
+                        <select class="form-select form-select-sm"
+                                onchange="updateMode('{{h.id}}', this.value)">
+                            <option value="">—</option>
+                            <option value="Chèque" {% if h.mode_paiement == 'Chèque' %}selected{% endif %}>🧾 Chèque</option>
+                            <option value="Espèces" {% if h.mode_paiement == 'Espèces' %}selected{% endif %}>💶 Espèces</option>
+                        </select>
+                    </td>
+
+                    <!-- Date paiement -->
+                    <td>{{h.date_paiement or ''}}</td>
+
+                    <!-- Suppression -->
+                    <td>
+                        <form method="POST" action="/admin_hebergement">
+                            <input type="hidden" name="id" value="{{h.id}}">
+                            <input type="hidden" name="action" value="delete">
+                            <button class="btn btn-danger btn-small">🗑️</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+
+        </table>
+
+    </div>
 
 </div>
+
+<script>
+function updatePaiement(id, value) {
+    const formData = new FormData();
+    formData.append("action", "paiement");
+    formData.append("id", id);
+    formData.append("value", value);
+
+    fetch("/admin_hebergement", { method:"POST", body:formData });
+}
+
+function updateMode(id, value) {
+    const formData = new FormData();
+    formData.append("action", "mode");
+    formData.append("id", id);
+    formData.append("value", value);
+
+    fetch("/admin_hebergement", { method:"POST", body:formData });
+}
+</script>
 
 </body>
 </html>
