@@ -5,6 +5,15 @@
   <title>Administration - Intégrale Academy</title>
   <style>
 
+    .status-relancer {
+  color: #fff;
+  background: #6f42c1; /* violet */
+  font-weight: bold;
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+
+
     .status-call1, .status-call2, .status-remind {
   display: inline-block;
   margin-bottom: 4px;
@@ -385,6 +394,8 @@
   {% elif d.statut == 'Pas de réponse 2ème appel' %}
     <span class="status-call2">📞 2ème appel – Pas de réponse</span>
 
+  {% elif d.statut == 'A relancer' %}
+    <span class="status-relancer">🔄 A relancer</span>
   {% else %}
     <span class="status-red">{{ d.statut }}</span>
   {% endif %}
@@ -401,6 +412,11 @@
     <option value="Pas de réponse 2ème appel" {% if d.statut=='Pas de réponse 2ème appel' %}selected{% endif %}>
       Pas de réponse 2ème appel
     </option>
+
+    <option value="A relancer" {% if d.statut=='A relancer' %}selected{% endif %}>
+      A relancer
+    </option>
+
   </select>
 
   {% if d.plage %}
