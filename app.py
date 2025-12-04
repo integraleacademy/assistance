@@ -1062,27 +1062,32 @@ def hebergement_data():
 
         
 @app.route("/admin/update-field", methods=["POST"])
+@login_required
 def update_field():
-    data = request.get_json()
-    demande_id = str(data.get("id"))
-    field = data.get("field")
-    value = data.get("value")
+    payload = request.get_json() or {}
+    demande_id = str(payload.get("id", ""))
+    field = payload.get("field")
+    value = payload.get("value")
 
-    # Charger la base (data.json)
-    with open("data.json", "r", encoding="utf-8") as f:
-        db = json.load(f)
+    if not demande_id or not field:
+        return jsonify({"ok": False, "error": "missing params"}), 400
 
-    # Mise à jour de la demande ciblée
-    for d in db:
+    # On utilise la même mécanique que partout : load_data / save_data
+    data = load_data()
+    demandes = data.get("demandes", [])
+    updated = False
+
+    for d in demandes:
         if str(d.get("id")) == demande_id:
             d[field] = value
+            updated = True
             break
 
-    # Sauvegarde
-    with open("data.json", "w", encoding="utf-8") as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
-
-    return jsonify({"ok": True})
+    if updated:
+        save_data(data)
+        return jsonify({"ok": True})
+    else:
+        return jsonify({"ok": False, "error": "demande not found"}), 404
 
 
 
