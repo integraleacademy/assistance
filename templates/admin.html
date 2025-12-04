@@ -631,6 +631,48 @@ document.querySelectorAll("select[name='statut']").forEach(select => {
   });
 });
 
+    // === 🎨 Mise à jour VISUELLE du badge statut après changement ===
+function updateStatusBadge(selectElement) {
+    const td = selectElement.closest("td");
+
+    // On cherche le badge (le <span> affiché au-dessus du select)
+    const badge = td.querySelector("span");
+    if (!badge) return;
+
+    const value = selectElement.value;
+
+    // On met à jour la classe + le texte
+    if (value === "Non traité") {
+        badge.className = "status-red";
+        badge.textContent = "Non traité";
+
+    } else if (value === "Traité") {
+        badge.className = "status-green";
+        badge.textContent = "Traité";
+
+    } else if (value === "A rappeler") {
+        badge.className = "status-remind";
+        badge.textContent = "📞 A rappeler";
+
+    } else if (value === "Pas de réponse 1er appel") {
+        badge.className = "status-call1";
+        badge.textContent = "📞 1er appel – Pas de réponse";
+
+    } else if (value === "Pas de réponse 2ème appel") {
+        badge.className = "status-call2";
+        badge.textContent = "📞 2ème appel – Pas de réponse";
+    }
+}
+
+// On active la mise à jour visuelle en même temps que l’autosave
+document.querySelectorAll("select[name='statut']").forEach(select => {
+    select.addEventListener("change", function () {
+        updateStatusBadge(this);
+    });
+});
+
+    
+
 
 
 
