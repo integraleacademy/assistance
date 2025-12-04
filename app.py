@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect, jsonify
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -1059,6 +1059,30 @@ def hebergement_data():
             "total": -1,
             "error": str(e)
         }, 500, {"Access-Control-Allow-Origin": "*"}
+
+        
+@app.route("/admin/update-field", methods=["POST"])
+def update_field():
+    data = request.get_json()
+    demande_id = str(data.get("id"))
+    field = data.get("field")
+    value = data.get("value")
+
+    # Charger la base (data.json)
+    with open("data.json", "r", encoding="utf-8") as f:
+        db = json.load(f)
+
+    # Mise à jour de la demande ciblée
+    for d in db:
+        if str(d.get("id")) == demande_id:
+            d[field] = value
+            break
+
+    # Sauvegarde
+    with open("data.json", "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False, indent=2)
+
+    return jsonify({"ok": True})
 
 
 
