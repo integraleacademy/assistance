@@ -594,6 +594,44 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
   });
 });
 
+    // === 🔄 Mise à jour automatique du statut sans cliquer sur Enregistrer ===
+document.querySelectorAll("select[name='statut']").forEach(select => {
+  select.addEventListener("change", async function () {
+
+    const tr = this.closest("tr");
+    const id = tr.querySelector("input[name='id']").value;
+    const newValue = this.value;
+
+    // Feedback visuel immédiat
+    this.style.backgroundColor = "#fff3cd"; // jaune clair
+
+    try {
+      const res = await fetch('/admin/update-field', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: id,
+          field: "statut",
+          value: newValue
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        this.style.backgroundColor = "#d4edda"; // vert clair ✔️
+        setTimeout(() => { this.style.backgroundColor = ""; }, 800);
+      } else {
+        this.style.backgroundColor = "#f8d7da"; // rouge erreur
+      }
+
+    } catch (e) {
+      this.style.backgroundColor = "#f8d7da"; // rouge erreur
+    }
+  });
+});
+
+
 
 
     
