@@ -494,6 +494,7 @@ async function saveComment() {
 
     if (data.ok) {
       document.getElementById("commentaire-" + currentCommentId).value = newComment;
+      document.querySelector(`.comment-btn[data-id="${currentCommentId}"]`).dataset.comment = JSON.stringify(newComment);
       document.getElementById("modalComment").style.backgroundColor = "#d4edda";
       setTimeout(() => {
         document.getElementById("modalComment").style.backgroundColor = "";
