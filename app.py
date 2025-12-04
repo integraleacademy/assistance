@@ -1072,22 +1072,47 @@ def update_field():
     if not demande_id or not field:
         return jsonify({"ok": False, "error": "missing params"}), 400
 
-    # On utilise la même mécanique que partout : load_data / save_data
     data = load_data()
     demandes = data.get("demandes", [])
     updated = False
 
     for d in demandes:
         if str(d.get("id")) == demande_id:
+
+            # --- 1) 🔄 Mise à jour simple du champ ---
+            ancien_statut = d.get("statut")
+            ancienne_attribution = d.get("attribution", "")
+
             d[field] = value
             updated = True
+
+            # --- 2) 🔔 Notification auto si attribution = Mohamed ---
+            if field == "attribution" and value == "Mohamed" and ancienne_attribution != "Mohamed":
+                try:
+                    envoyer_mail_attribution_mohamed(d)
+                except Exception as e:
+                    print("⚠️ Erreur mail attribution automatique :", e)
+
+            # --- 3) ✉️ Mail de confirmation si statut passe à Traité ---
+            if field == "statut" and value == "Traité" and ancien_statut != "Traité":
+                try:
+                    if envoyer_mail_confirmation(d):
+                        data["compteur_traitees"] += 1
+                        paris_tz = pytz.timezone("Europe/Paris")
+                        d["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+                        d["mail_erreur"] = ""
+                    else:
+                        d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
+                except Exception as e:
+                    print("⚠️ Erreur mail confirmation :", e)
+
             break
 
     if updated:
         save_data(data)
         return jsonify({"ok": True})
-    else:
-        return jsonify({"ok": False, "error": "demande not found"}), 404
+
+    return jsonify({"ok": False, "error": "demande not found"}), 404
 
 
 
