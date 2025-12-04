@@ -516,13 +516,46 @@
       document.getElementById("commentModal").style.display = "block";
     }
     function closeCommentModal() {document.getElementById("commentModal").style.display = "none";}
-    function saveComment() {
-      if (currentCommentId) {
-        let newComment = document.getElementById("modalComment").value;
-        document.getElementById("commentaire-" + currentCommentId).value = newComment;
-      }
-      closeCommentModal();
+    async function saveComment() {
+  if (!currentCommentId) return;
+
+  let newComment = document.getElementById("modalComment").value;
+
+  // Feedback visuel dans la modale
+  document.getElementById("modalComment").style.backgroundColor = "#fff3cd";
+
+  try {
+    const res = await fetch('/admin/update-field', {
+      method: 'POST',
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: currentCommentId,
+        field: "commentaire",
+        value: newComment
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.ok) {
+      // Met à jour l'input hidden dans le tableau
+      document.getElementById("commentaire-" + currentCommentId).value = newComment;
+
+      document.getElementById("modalComment").style.backgroundColor = "#d4edda"; // vert
+      setTimeout(() => {
+        document.getElementById("modalComment").style.backgroundColor = "";
+      }, 800);
+    } else {
+      document.getElementById("modalComment").style.backgroundColor = "#f8d7da"; // rouge
     }
+
+  } catch (e) {
+    document.getElementById("modalComment").style.backgroundColor = "#f8d7da"; // rouge
+  }
+
+  closeCommentModal();
+}
+
     document.querySelectorAll(".comment-btn").forEach(btn => {
       btn.addEventListener("click", function() {
         let raw = this.dataset.comment;
