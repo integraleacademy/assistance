@@ -660,12 +660,12 @@ document.querySelectorAll("select[name='statut']").forEach(select => {
     });
 });
 
-    // === 🔄 Autosave Attribution ===
+ // === 🔄 Autosave Attribution (corrigé) ===
 document.querySelectorAll("select[name='attribution']").forEach(select => {
   select.addEventListener("change", async function () {
 
     const tr = this.closest("tr");
-    const id = tr.querySelector("input[name='id']").value;
+    const id = tr.dataset.id;  // ⬅️ 100% FIABLE
     const newValue = this.value;
 
     this.style.backgroundColor = "#fff3cd"; // jaune
@@ -695,6 +695,7 @@ document.querySelectorAll("select[name='attribution']").forEach(select => {
     }
   });
 });
+
 
     // === 🔄 Autosave Date de rappel ===
 document.querySelectorAll("input[name='rappel_date']").forEach(input => {
