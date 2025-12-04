@@ -319,6 +319,8 @@
 
 {% for d in demandes %}
 <tr data-id="{{ d.id }}">
+  <input type="hidden" name="id" value="{{ d.id }}">
+
 
     <td>{{ d.nom }} {% if d.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
     <td>{{ d.prenom }}</td>
