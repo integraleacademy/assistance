@@ -5,6 +5,15 @@
   <title>Administration - Intégrale Academy</title>
   <style>
 
+    .status-relaunch {
+  color:#fff;
+  background:#7b2cbf; /* violet */
+  font-weight:bold;
+  padding:3px 6px;
+  border-radius:5px;
+}
+
+
     .status-call1, .status-call2, .status-remind {
   display: inline-block;
   margin-bottom: 4px;
@@ -392,6 +401,8 @@
             <span class="status-call1">📞 1er appel – Pas de réponse</span>
         {% elif d.statut == 'Pas de réponse 2ème appel' %}
             <span class="status-call2">📞 2ème appel – Pas de réponse</span>
+        {% elif d.statut == 'A relancer' %}
+            <span class="status-relaunch">🔁 A relancer</span>
         {% else %}
             <span class="status-red">{{ d.statut }}</span>
         {% endif %}
@@ -406,6 +417,10 @@
             <option value="Pas de réponse 2ème appel" {% if d.statut=='Pas de réponse 2ème appel' %}selected{% endif %}>
                 Pas de réponse 2ème appel
             </option>
+            <option value="A relancer" {% if d.statut=='A relancer' %}selected{% endif %}>
+                A relancer
+            </option>
+
         </select>
 
     </td>
@@ -638,8 +653,13 @@ function updateStatusBadge(selectElement) {
   } else if (value === "Pas de réponse 2ème appel") {
     badge.className = "status-call2";
     badge.textContent = "📞 2ème appel – Pas de réponse";
+
+  } else if (value === "A relancer") {
+    badge.className = "status-relaunch";
+    badge.textContent = "🔁 A relancer";
   }
 }
+
 
 
 // === 🔄 AUTOSAVE ATTRIBUTION ===
