@@ -445,34 +445,7 @@
 {% endfor %}
 
 
-      <!-- Modales -->
-      <div id="responseModal-{{ d.id }}" class="modal">
-        <div class="modal-content">
-          <h3>📩 Réponses de {{ d.prenom }} {{ d.nom }}</h3>
-          {% for r in d.reponses %}
-          <div class="response-block">
-            <div class="response-date">📅 {{ r.date }}</div>
-            <div class="response-text">{{ r.message }}</div>
-            {% if r.pj and r.pj|length>0 %}
-              <div class="response-pj">{% for pj in r.pj %}<a href="{{ url_for('download_file', filename=pj) }}" target="_blank">📎 {{ pj }}</a>{% endfor %}</div>
-            {% endif %}
-          </div>
-          {% endfor %}
-          <div style="text-align:right;"><button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button></div>
-        </div>
-      </div>
-
-      <div id="detailModal-{{ d.id }}" class="modal">
-        <div class="modal-content">
-          <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
-          <textarea id="detailArea-{{ d.id }}" rows="8" style="width:100%;">{{ d.details or '' }}</textarea>
-          <div style="margin-top:10px; text-align:right;">
-            <button onclick="closeDetailModal('{{ d.id }}')">❌ Annuler</button>
-            <button onclick="saveDetail('{{ d.id }}')" style="background:#198754;color:#fff;padding:6px 10px;border:none;border-radius:6px;cursor:pointer;">💾 Enregistrer</button>
-          </div>
-        </div>
-      </div>
-      {% endfor %}
+      
     </table>
   </div>
 
