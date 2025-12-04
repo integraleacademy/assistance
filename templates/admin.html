@@ -564,9 +564,9 @@ function applyFilter(filter) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const savedFilter = localStorage.getItem("activeFilter") || "";
-  applyFilter(savedFilter);
+  applyFilter(""); // Toujours afficher tout au chargement
 });
+
 
 document.querySelectorAll(".filter-btn").forEach(btn => {
   btn.addEventListener("click", () => {
