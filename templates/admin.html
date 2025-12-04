@@ -317,152 +317,133 @@
         <th>Actions</th>
       </tr>
 
+{% for d in demandes %}
+<tr data-id="{{ d.id }}">
 
-      {% for d in demandes %}
-      <tr>
-        <form method="POST" enctype="multipart/form-data">
-          <td>{{ d.nom }} {% if d.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
-          <td>{{ d.prenom }}</td>
-          <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>
-          <td>{{ d.motif }}</td>
+    <td>{{ d.nom }} {% if d.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
+    <td>{{ d.prenom }}</td>
 
-          <!-- Détails -->
-          <td>
-            <div class="detail-preview" id="preview-{{ d.id }}">
-              {% if d.details %}{{ d.details[:60] }}{% if d.details|length>60 %}…{% endif %}{% else %}—{% endif %}
-            </div>
-            <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir / Modifier</button>
-            <input type="hidden" name="details" id="details-{{ d.id }}" value="{{ d.details or '' }}">
-          </td>
+    <!-- Email -->
+    <td>
+        <input type="text" name="mail" value="{{ d.mail }}" style="width:95%;">
+    </td>
 
-          <!-- Justificatif -->
-          <td>{% if d.justificatif %}<a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>{% else %}<span class="pj-empty">—</span>{% endif %}</td>
+    <!-- Motif -->
+    <td>{{ d.motif }}</td>
 
-          <!-- Pièces jointes -->
-          <td class="pj-cell">
-            <div class="pj-wrap">
-              {% if d.pieces_jointes and d.pieces_jointes|length>0 %}
+    <!-- Détails -->
+    <td>
+        <div class="detail-preview" id="preview-{{ d.id }}">
+            {% if d.details %}{{ d.details[:60] }}{% if d.details|length>60 %}…{% endif %}{% else %}—{% endif %}
+        </div>
+        <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir / Modifier</button>
+        <input type="hidden" name="details" id="details-{{ d.id }}" value="{{ d.details or '' }}">
+    </td>
+
+    <!-- Justificatif -->
+    <td>
+        {% if d.justificatif %}
+            <a href="{{ url_for('download_file', filename=d.justificatif) }}" target="_blank">📎 Voir</a>
+        {% else %}
+            <span class="pj-empty">—</span>
+        {% endif %}
+    </td>
+
+    <!-- Pièces jointes -->
+    <td class="pj-cell">
+        <div class="pj-wrap">
+            {% if d.pieces_jointes and d.pieces_jointes|length>0 %}
                 {% for pj in d.pieces_jointes %}
                 <div class="pj-chip" title="{{ pj }}">
-                  <span>📎</span>
-                  <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
-                  <button type="submit" class="pj-del" title="Supprimer" name="action" value="delete_pj" onclick="this.form.pj_name.value='{{ pj }}'">×</button>
+                    <span>📎</span>
+                    <a class="pj-name" href="{{ url_for('download_file', filename=pj) }}" target="_blank">{{ pj }}</a>
+                    <button class="pj-del" data-pj="{{ pj }}" data-id="{{ d.id }}">×</button>
                 </div>
                 {% endfor %}
-              {% else %}<span class="pj-empty">—</span>{% endif %}
-            </div>
-            <input type="file" name="pj" multiple class="pj-input">
-          </td>
+            {% else %}
+                <span class="pj-empty">—</span>
+            {% endif %}
+        </div>
+        <input type="file" name="pj" multiple class="pj-input">
+    </td>
 
-          <td>{{ d.date }}</td>
+    <td>{{ d.date }}</td>
 
-          <!-- Attribution -->
+    <!-- Attribution -->
     <td>
-  <select name="attribution">
-    <option value="">--</option>
-    <option value="Elsa" {% if d.attribution=='Elsa' %}selected{% endif %}>Elsa</option>
-    <option value="Clément" {% if d.attribution=='Clément' %}selected{% endif %}>Clément</option>
-    <option value="Mohamed" {% if d.attribution=='Mohamed' %}selected{% endif %}>Mohamed</option>
-  </select>
-</td>
+        <select name="attribution">
+            <option value="">--</option>
+            <option value="Elsa" {% if d.attribution=='Elsa' %}selected{% endif %}>Elsa</option>
+            <option value="Clément" {% if d.attribution=='Clément' %}selected{% endif %}>Clément</option>
+            <option value="Mohamed" {% if d.attribution=='Mohamed' %}selected{% endif %}>Mohamed</option>
+        </select>
+    </td>
 
+    <!-- Statut -->
+    <td>
 
-<!-- Statut -->
-<td>
-
-  {% if d.statut == 'Non traité' %}
-    <span class="status-red">Non traité</span>
-
-  {% elif d.statut == 'Traité' %}
-    <span class="status-green">Traité</span>
-
-  {% elif d.statut == 'A rappeler' %}
-    <span class="status-remind">📞 A rappeler</span>
-
-  {% elif d.statut == 'Pas de réponse 1er appel' %}
-    <span class="status-call1">📞 1er appel – Pas de réponse</span>
-
-  {% elif d.statut == 'Pas de réponse 2ème appel' %}
-    <span class="status-call2">📞 2ème appel – Pas de réponse</span>
-
-  {% else %}
-    <span class="status-red">{{ d.statut }}</span>
-  {% endif %}
-
-  <select name="statut" style="margin-top:5px;">
-    <option value="Non traité" {% if d.statut=='Non traité' %}selected{% endif %}>Non traité</option>
-    <option value="Traité" {% if d.statut=='Traité' %}selected{% endif %}>Traité</option>
-    <option value="A rappeler" {% if d.statut=='A rappeler' %}selected{% endif %}>A rappeler</option>
-
-    <option value="Pas de réponse 1er appel" {% if d.statut=='Pas de réponse 1er appel' %}selected{% endif %}>
-      Pas de réponse 1er appel
-    </option>
-
-    <option value="Pas de réponse 2ème appel" {% if d.statut=='Pas de réponse 2ème appel' %}selected{% endif %}>
-      Pas de réponse 2ème appel
-    </option>
-  </select>
-
-  {% if d.plage %}
-    <div class="plage-info">🕒 Plage préférée : {{ d.plage }}</div>
-  {% endif %}
-
-  {% if d.mail_confirme %}
-    <div style="font-size:11px; margin-top:4px;">
-      <a href="/voir_mail/{{ d.id }}" target="_blank" style="color:#198754; text-decoration:none;">
-        ✅ Mail envoyé le {{ d.mail_confirme }}
-      </a>
-    </div>
-  {% elif d.mail_erreur %}
-    <div style="font-size:11px; color:#dc3545; margin-top:4px;">{{ d.mail_erreur }}</div>
-  {% endif %}
-
-</td>
-
-          <!-- Date de rappel -->
-<td>
-    <input type="date" name="rappel_date" value="{{ d.rappel_date }}" style="width:95%; font-size:12px;">
-
-    {% if d.rappel_date %}
-        {% set today = now().strftime('%Y-%m-%d') %}
-        
-        {% if d.rappel_date < today %}
-        <div style="margin-top:4px; color:white; background:#dc3545; padding:3px 6px; border-radius:6px; font-size:11px;">
-            ⚠️ Retard
-        </div>
-        {% elif d.rappel_date == today %}
-        <div style="margin-top:4px; color:white; background:#f39c12; padding:3px 6px; border-radius:6px; font-size:11px;">
-            📞 Aujourd'hui
-        </div>
+        {% if d.statut == 'Non traité' %}
+            <span class="status-red">Non traité</span>
+        {% elif d.statut == 'Traité' %}
+            <span class="status-green">Traité</span>
+        {% elif d.statut == 'A rappeler' %}
+            <span class="status-remind">📞 A rappeler</span>
+        {% elif d.statut == 'Pas de réponse 1er appel' %}
+            <span class="status-call1">📞 1er appel – Pas de réponse</span>
+        {% elif d.statut == 'Pas de réponse 2ème appel' %}
+            <span class="status-call2">📞 2ème appel – Pas de réponse</span>
+        {% else %}
+            <span class="status-red">{{ d.statut }}</span>
         {% endif %}
-    {% endif %}
-</td>
 
+        <select name="statut" style="margin-top:5px;">
+            <option value="Non traité" {% if d.statut=='Non traité' %}selected{% endif %}>Non traité</option>
+            <option value="Traité" {% if d.statut=='Traité' %}selected{% endif %}>Traité</option>
+            <option value="A rappeler" {% if d.statut=='A rappeler' %}selected{% endif %}>A rappeler</option>
+            <option value="Pas de réponse 1er appel" {% if d.statut=='Pas de réponse 1er appel' %}selected{% endif %}>
+                Pas de réponse 1er appel
+            </option>
+            <option value="Pas de réponse 2ème appel" {% if d.statut=='Pas de réponse 2ème appel' %}selected{% endif %}>
+                Pas de réponse 2ème appel
+            </option>
+        </select>
 
+    </td>
 
-          <!-- Commentaire -->
-          <td>
-            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>✏️ Ajouter / Modifier</button>
-            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
-          </td>
+    <!-- Date de rappel -->
+    <td>
+        <input type="date" name="rappel_date" value="{{ d.rappel_date }}" style="width:95%; font-size:12%;">
+    </td>
 
-          <!-- Réponses -->
-          <td>
-            {% if d.reponses and d.reponses|length>0 %}
-              <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">👁 Voir ({{ d.reponses|length }})</button>
-            {% else %}<span class="pj-empty">—</span>{% endif %}
-          </td>
+    <!-- Commentaire -->
+    <td>
+        <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>
+            ✏️ Ajouter / Modifier
+        </button>
+        <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+    </td>
 
-          <!-- Actions -->
-          <td class="actions">
-            <input type="hidden" name="id" value="{{ d.id }}">
-            <input type="hidden" name="pj_name" value="">
-            <button type="submit" name="action" value="update" class="save" title="Enregistrer">💾</button>
-            <button type="submit" name="action" value="delete" class="delete" title="Archiver" onclick="return confirm('Archiver la demande ?')">🗑️</button>
-            <a href="/imprimer/{{ d.id }}" target="_blank" class="print" title="Imprimer">🖨️</a>
-          </td>
-        </form>
-      </tr>
+    <!-- Réponses -->
+    <td>
+        {% if d.reponses and d.reponses|length>0 %}
+            <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">
+                👁 Voir ({{ d.reponses|length }})
+            </button>
+        {% else %}
+            <span class="pj-empty">—</span>
+        {% endif %}
+    </td>
+
+    <!-- Actions -->
+    <td class="actions">
+        <button class="save" disabled>💾</button>
+        <button class="delete-entry" data-id="{{ d.id }}">🗑️</button>
+        <a href="/imprimer/{{ d.id }}" target="_blank" class="print">🖨️</a>
+    </td>
+
+</tr>
+{% endfor %}
+
 
       <!-- Modales -->
       <div id="responseModal-{{ d.id }}" class="modal">
