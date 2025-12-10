@@ -6,6 +6,15 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
 <style>
+
+    .nom-cell {
+    text-transform: uppercase;
+}
+
+.prenom-cell {
+    text-transform: capitalize;
+}
+
 body {
     background:#f5f6f8;
 }
@@ -175,15 +184,18 @@ body {
                 {% for h in hebergements %}
                 <tr id="row-{{h.id}}">
 
-                    <td contenteditable="true"
+<td class="nom-cell"
+    contenteditable="true"
     onblur="updateField('{{h.id}}', 'nom', this.innerText)">
     {{h.nom}}
 </td>
 
-                    <td contenteditable="true"
+<td class="prenom-cell"
+    contenteditable="true"
     onblur="updateField('{{h.id}}', 'prenom', this.innerText)">
     {{h.prenom}}
 </td>
+
 
 
                   <td contenteditable="true"
@@ -349,5 +361,6 @@ function updateField(id, field, value) {
 
 </body>
 </html>
+
 
 
