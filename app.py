@@ -1023,7 +1023,25 @@ def admin_hebergement():
                     save_data(data)
                     return "", 204
 
+                # ✏️ Mise à jour générique (nom, prénom, téléphone, mail, session…)
+                if action == "update_field":
+                    field = request.form.get("field")
+                    value = request.form.get("value", "").strip()
+
+                    # Champs autorisés à être modifiés
+                    allowed = {"nom", "prenom", "telephone", "mail", "session"}
+
+                    if field not in allowed:
+                        return "Champ non autorisé", 400
+
+                    h[field] = value
+                    save_data(data)
+                    return "", 204
+
+
         save_data(data)
+
+
 
     # ------------------------------------------------------------------
 
