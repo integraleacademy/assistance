@@ -187,14 +187,16 @@ body {
 <td class="nom-cell"
     contenteditable="true"
     onblur="updateField('{{h.id}}', 'nom', this.innerText)">
-    {{h.nom}}
+    {{ h.nom.upper() }}
 </td>
+
 
 <td class="prenom-cell"
     contenteditable="true"
     onblur="updateField('{{h.id}}', 'prenom', this.innerText)">
-    {{h.prenom}}
+    {{ h.prenom.title() }}
 </td>
+
 
 
 
@@ -361,6 +363,7 @@ function updateField(id, field, value) {
 
 </body>
 </html>
+
 
 
 
