@@ -175,18 +175,36 @@ body {
                 {% for h in hebergements %}
                 <tr id="row-{{h.id}}">
 
-                    <td>{{h.nom}}</td>
-                    <td>{{h.prenom}}</td>
+                    <td contenteditable="true"
+    onblur="updateField('{{h.id}}', 'nom', this.innerText)">
+    {{h.nom}}
+</td>
 
-                    <td>
-                        <a href="tel:{{h.telephone}}" class="text-success fw-bold">
-                            {{h.telephone}}
-                        </a>
-                    </td>
+                    <td contenteditable="true"
+    onblur="updateField('{{h.id}}', 'prenom', this.innerText)">
+    {{h.prenom}}
+</td>
 
-                    <td>{{h.mail}}</td>
 
-                    <td class="col-session">{{h.session}}</td>
+                  <td contenteditable="true"
+    onblur="updateField('{{h.id}}', 'telephone', this.innerText)"
+    class="text-success fw-bold">
+    {{h.telephone}}
+</td>
+
+
+                    <td contenteditable="true"
+    onblur="updateField('{{h.id}}', 'mail', this.innerText)">
+    {{h.mail}}
+</td>
+
+
+                    <td class="col-session"
+    contenteditable="true"
+    onblur="updateField('{{h.id}}', 'session', this.innerText)">
+    {{h.session}}
+</td>
+
 
                     <!-- Paiement -->
                     <td>
@@ -271,6 +289,61 @@ body {
 </div>
 
 <script>
+
+function updatePaiement(id, value) {
+    const fd = new FormData();
+    fd.append("action", "paiement");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
+        .then(() => location.reload());
+}
+
+function updateMode(id, value) {
+    const fd = new FormData();
+    fd.append("action", "mode");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
+        .then(() => location.reload());
+}
+
+function updateCleNumero(id, value) {
+    const fd = new FormData();
+    fd.append("action", "cle_numero");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
+        .then(() => location.reload());
+}
+
+function updateCleEtat(id, value) {
+    const fd = new FormData();
+    fd.append("action", "cle_etat");
+    fd.append("id", id);
+    fd.append("value", value);
+    fetch("/admin_hebergement", { method:"POST", body:fd })
+        .then(() => location.reload());
+}
+
+/* 🔹 NOUVELLE FONCTION POUR LES CELLULES ÉDITABLES */
+function updateField(id, field, value) {
+    const fd = new FormData();
+    fd.append("action", "update_field");
+    fd.append("id", id);
+    fd.append("field", field);
+    fd.append("value", value.trim());
+
+    fetch("/admin_hebergement", { method: "POST", body: fd })
+        .then(response => {
+            if (!response.ok) {
+                console.error("Erreur enregistrement");
+            }
+        })
+        .catch(err => console.error(err));
+}
+    
+    
 function updatePaiement(id, value) {
     const fd = new FormData();
     fd.append("action", "paiement");
@@ -310,3 +383,4 @@ function updateCleEtat(id, value) {
 
 </body>
 </html>
+
