@@ -344,43 +344,10 @@ function updateField(id, field, value) {
 }
     
     
-function updatePaiement(id, value) {
-    const fd = new FormData();
-    fd.append("action", "paiement");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
-}
 
-function updateMode(id, value) {
-    const fd = new FormData();
-    fd.append("action", "mode");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
-}
-
-function updateCleNumero(id, value) {
-    const fd = new FormData();
-    fd.append("action", "cle_numero");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
-}
-
-function updateCleEtat(id, value) {
-    const fd = new FormData();
-    fd.append("action", "cle_etat");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
-}
 </script>
 
 </body>
 </html>
+
 
