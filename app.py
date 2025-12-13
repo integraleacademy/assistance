@@ -656,6 +656,20 @@ def admin():
         query=query
     )
 
+@app.route("/admin-devis")
+@login_required
+def admin_devis():
+    data = load_data()
+
+    # On ne garde que les demandes de devis
+    devis = [
+        d for d in data.get("demandes", [])
+        if d.get("motif") == "Demande de devis détaillé"
+    ]
+
+    return render_template("admin_devis.html", devis=devis)
+
+
 
 
 @app.route("/archives", methods=["GET", "POST"], endpoint="archives")
@@ -1292,6 +1306,7 @@ def demande_devis():
             "mail_html": "",
             "pieces_jointes": [],
             "reponses": [],
+            "statut_devis": "A envoyer",
             "is_doublon": False
         })
         save_data(data_store)
