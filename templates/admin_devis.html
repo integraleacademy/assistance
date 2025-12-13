@@ -92,11 +92,8 @@ button{
     <td>{{ d.nom }}</td>
     <td>{{ d.prenom }}</td>
 
-    <!-- Formation extraite du JSON stocké dans details -->
-    <td>
-        {% set data = d.details | fromjson %}
-        {{ data.formation if data.formation else "—" }}
-    </td>
+    <!-- Formation : affichage simple (pas de fromjson) -->
+    <td>—</td>
 
     <td>
         {% if d.statut_devis == "Envoyé" %}
