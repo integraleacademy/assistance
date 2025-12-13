@@ -1088,6 +1088,81 @@ def demande_devis():
 
         data = request.form.to_dict()
 
+        # ===== Tarifs formations (base) =====
+        TARIFS_FORMATIONS = {
+            "A3P": 4200,
+            "VTC": 1600,
+            "APS": 1650,
+            "DESP_INIT": 4300,
+            "DESP_VAE": 3800
+        }
+
+        formation_code = data.get("formation")
+        tarif = TARIFS_FORMATIONS.get(formation_code, 0)
+
+        cpf = int(data.get("cpf_montant", "0") or 0)
+        reste_a_charge = max(tarif - cpf, 0)
+
+
+        # ===== Plans de financement =====
+        plans = {}
+
+        for nb_mois in [2, 3, 4, 5]:
+            if nb_mois > 0:
+                mensualite = round(reste_a_charge / nb_mois, 2)
+                plans[nb_mois] = {
+                    "nb_paiements": nb_mois,
+                    "montant": mensualite
+                }
+
+        # ===== Date de début de formation =====
+        date_debut_str = data.get("dates", "")
+
+        # Exemple attendu : "8 juin au 4 août 2026 – examen le 5 août 2026"
+        # On récupère "8 juin 2026"
+        date_debut = None
+        try:
+            morceaux = date_debut_str.split("au")[0].strip()  # "8 juin"
+            annee = date_debut_str.split("août")[-1].strip()[:4]  # "2026"
+            date_complete = f"{morceaux} {annee}"
+
+            mois_fr = {
+                "janvier": 1, "février": 2, "mars": 3, "avril": 4,
+                "mai": 5, "juin": 6, "juillet": 7, "août": 8,
+                "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12
+            }
+
+            j, m, a = date_complete.split()
+            date_debut = datetime.date(int(a), mois_fr[m.lower()], int(j))
+        except Exception as e:
+            date_debut = None
+
+
+        # ===== Calcul des échéances =====
+        from dateutil.relativedelta import relativedelta
+
+        echeanciers = {}
+
+        if date_debut:
+            for nb_mois, plan in plans.items():
+                dates_paiement = []
+
+                # on part X mois avant la date de début
+                premiere_echeance = date_debut - relativedelta(months=nb_mois)
+
+                for i in range(nb_mois):
+                    d = premiere_echeance + relativedelta(months=i)
+                    dates_paiement.append(d)
+
+                echeanciers[nb_mois] = {
+                    "montant": plan["montant"],
+                    "dates": dates_paiement
+                }
+
+
+
+
+
         # 🔒 Vérification email / confirmation
         if data.get("mail") != data.get("mail_confirm"):
             return "Erreur : les adresses e-mail ne correspondent pas", 400
@@ -1150,6 +1225,48 @@ def demande_devis():
             label = LABELS.get(k, k.replace("_", " ").capitalize())
             c.drawString(40, y, f"{label} : {v}")
             y -= 16
+
+        # ================= PLAN DE FINANCEMENT =================
+        if y < 200:
+            c.showPage()
+            y = height - 40
+
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, y, "Plan de financement proposé")
+        y -= 25
+
+        c.setFont("Helvetica", 11)
+        c.drawString(40, y, f"Prix de la formation : {tarif} €")
+        y -= 16
+        c.drawString(40, y, f"Montant CPF : {cpf} €")
+        y -= 16
+        c.drawString(40, y, f"Reste à charge : {reste_a_charge} €")
+        y -= 30
+
+        for nb_mois, plan in echeanciers.items():
+            if y < 120:
+                c.showPage()
+                y = height - 40
+
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(
+                40,
+                y,
+                f"Option {nb_mois} paiements – {plan['montant']} € / mois"
+            )
+            y -= 18
+
+            c.setFont("Helvetica", 11)
+            for d in plan["dates"]:
+                c.drawString(
+                    60,
+                    y,
+                    f"{d.strftime('%d/%m/%Y')} : {plan['montant']} €"
+                )
+                y -= 14
+
+            y -= 10
+
 
         c.showPage()
         c.save()
