@@ -200,76 +200,24 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 
 <!-- ================================================= -->
 <script>
-const formation = document.getElementById("formation");
-const datesBloc = document.getElementById("datesBloc");
-const datesSelect = document.getElementById("datesSelect");
-const cnapsBloc = document.getElementById("blocCnaps");
-const franceTravail = document.getElementById("franceTravail");
-const blocFT = document.getElementById("blocFranceTravail");
-const blocPerso = document.getElementById("blocPerso");
-
-const dates = {
-    A3P: [
-        "30 mars au 2 juin 2026 – examen le 3 juin 2026",
-        "8 juin au 4 août 2026 – examen le 5 août 2026",
-        "1 septembre au 27 octobre 2026 – examen le 28 octobre 2026",
-        "9 novembre 2026 au 19 janvier 2027 – examen le 20 janvier 2027"
-    ],
-    APS: [
-        "23 mars au 27 avril 2026 – examen le 28 avril 2026",
-        "26 mai au 29 juin 2026 – examen le 30 juin 2026",
-        "8 juillet au 12 août 2026 – examen le 13 août 2026",
-        "7 septembre au 9 octobre 2026 – examen le 12 octobre 2026",
-        "3 novembre au 8 décembre 2026 – examen le 9 décembre 2026"
-    ],
-    DESP_INIT: [
-        "19 janvier au 2 mars 2026 – examen le 3 mars 2026",
-        "9 mars au 21 avril 2026 – examen le 22 avril 2026",
-        "27 avril au 15 juin 2026 – examen le 16 juin 2026"
-    ]
-};
-
-formation.addEventListener("change", () => {
-    const v = formation.value;
-    datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
-
-    if (dates[v]) {
-        datesBloc.classList.remove("hidden");
-        dates[v].forEach(d => {
-            const o = document.createElement("option");
-            o.value = d;
-            o.textContent = d;
-            datesSelect.appendChild(o);
-        });
-    } else {
-        datesBloc.classList.add("hidden");
-    }
-
-    cnapsBloc.classList.toggle("hidden", !(v === "A3P" || v === "APS"));
-});
-
-franceTravail.addEventListener("change", () => {
-    blocFT.classList.toggle("hidden", franceTravail.value !== "OUI");
-    blocPerso.classList.toggle("hidden", franceTravail.value !== "NON");
-});
-
-<script>
-const formation = document.getElementById("formation");
-const datesBloc = document.getElementById("datesBloc");
-const datesSelect = document.getElementById("datesSelect");
-const cnapsBloc = document.getElementById("blocCnaps");
-const franceTravail = document.getElementById("franceTravail");
-const blocFT = document.getElementById("blocFranceTravail");
-const blocPerso = document.getElementById("blocPerso");
-
-/* ✅ AJOUTE CES LIGNES */
+// ================== ELEMENTS ==================
 const form = document.getElementById("devisForm");
+
 const mail = document.querySelector('input[name="mail"]');
 const mailConfirm = document.querySelector('input[name="mail_confirm"]');
 
+const formation = document.getElementById("formation");
+const datesBloc = document.getElementById("datesBloc");
+const datesSelect = document.getElementById("datesSelect");
+const cnapsBloc = document.getElementById("blocCnaps");
+const franceTravail = document.getElementById("franceTravail");
+const blocFT = document.getElementById("blocFranceTravail");
+const blocPerso = document.getElementById("blocPerso");
+
+// ================== VALIDATION EMAIL ==================
 function showMailError(message) {
   mailConfirm.setCustomValidity(message);
-  mailConfirm.reportValidity(); // affiche le message directement
+  mailConfirm.reportValidity();
 }
 
 mailConfirm.addEventListener("input", () => {
@@ -277,6 +225,7 @@ mailConfirm.addEventListener("input", () => {
     mailConfirm.setCustomValidity("");
     return;
   }
+
   if (mail.value.trim().toLowerCase() !== mailConfirm.value.trim().toLowerCase()) {
     showMailError("Les adresses e-mail ne correspondent pas.");
   } else {
@@ -285,8 +234,9 @@ mailConfirm.addEventListener("input", () => {
 });
 
 mail.addEventListener("input", () => {
-  // Re-check si l'utilisateur modifie l'email principal
-  if (mailConfirm.value) mailConfirm.dispatchEvent(new Event("input"));
+  if (mailConfirm.value) {
+    mailConfirm.dispatchEvent(new Event("input"));
+  }
 });
 
 form.addEventListener("submit", (e) => {
@@ -296,8 +246,8 @@ form.addEventListener("submit", (e) => {
     mailConfirm.focus();
   }
 });
-/* ✅ FIN AJOUT */
 
+// ================== DATES FORMATIONS ==================
 const dates = {
   A3P: [
     "30 mars au 2 juin 2026 – examen le 3 juin 2026",
@@ -338,14 +288,14 @@ formation.addEventListener("change", () => {
   cnapsBloc.classList.toggle("hidden", !(v === "A3P" || v === "APS"));
 });
 
+// ================== FRANCE TRAVAIL ==================
 franceTravail.addEventListener("change", () => {
   blocFT.classList.toggle("hidden", franceTravail.value !== "OUI");
   blocPerso.classList.toggle("hidden", franceTravail.value !== "NON");
 });
 </script>
 
-</script>
-
 </body>
 </html>
+
 
