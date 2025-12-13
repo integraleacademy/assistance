@@ -30,16 +30,18 @@ th, td{
     padding:12px 10px;
     border-bottom:1px solid #eee;
     font-size:14px;
+    vertical-align:middle;
 }
 th{
     text-align:left;
     background:#f0f2f5;
 }
 .badge{
-    padding:6px 10px;
+    padding:6px 12px;
     border-radius:20px;
     font-size:12px;
     font-weight:600;
+    display:inline-block;
 }
 .badge-red{
     background:#fdecea;
@@ -48,6 +50,20 @@ th{
 .badge-green{
     background:#eafaf1;
     color:#1e8449;
+}
+button{
+    border:none;
+    padding:7px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:12px;
+}
+.btn-toggle{
+    background:#0d6efd;
+    color:white;
+}
+.btn-toggle:hover{
+    opacity:0.9;
 }
 </style>
 </head>
@@ -65,6 +81,7 @@ th{
     <th>Prénom</th>
     <th>Formation</th>
     <th>Statut devis</th>
+    <th>Action</th>
 </tr>
 </thead>
 
@@ -74,7 +91,13 @@ th{
     <td>{{ d.date }}</td>
     <td>{{ d.nom }}</td>
     <td>{{ d.prenom }}</td>
-    <td>{{ d.details | safe }}</td>
+
+    <!-- Formation extraite du JSON stocké dans details -->
+    <td>
+        {% set data = d.details | fromjson %}
+        {{ data.formation if data.formation else "—" }}
+    </td>
+
     <td>
         {% if d.statut_devis == "Envoyé" %}
             <span class="badge badge-green">Devis envoyé</span>
@@ -82,10 +105,24 @@ th{
             <span class="badge badge-red">Devis à envoyer</span>
         {% endif %}
     </td>
+
+    <td>
+        <form method="POST" action="{{ url_for('toggle_devis', devis_id=d.id) }}">
+            <button type="submit" class="btn-toggle">
+                {% if d.statut_devis == "Envoyé" %}
+                    Repasser à envoyer
+                {% else %}
+                    Marquer envoyé
+                {% endif %}
+            </button>
+        </form>
+    </td>
 </tr>
 {% else %}
 <tr>
-    <td colspan="5">Aucune demande de devis pour le moment.</td>
+    <td colspan="6" style="text-align:center;padding:25px;">
+        Aucune demande de devis pour le moment.
+    </td>
 </tr>
 {% endfor %}
 </tbody>
