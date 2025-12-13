@@ -8,6 +8,9 @@ from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
 
+from reportlab.platypus import Table, TableStyle
+from reportlab.lib import colors
+
 from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask import session, flash
@@ -1110,199 +1113,180 @@ def hebergement_data():
             "error": str(e)
         }, 500, {"Access-Control-Allow-Origin": "*"}
 
+
 @app.route("/demande-devis", methods=["GET", "POST"])
 def demande_devis():
     if request.method == "POST":
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
-        from reportlab.lib.colors import green, black
+        from reportlab.platypus import Table, TableStyle
+        from reportlab.lib import colors
+        from dateutil.relativedelta import relativedelta
 
         data = request.form.to_dict()
 
-        # ===== Tarifs formations (base) =====
-        TARIFS_FORMATIONS = {
+        # =========================
+        # TARIFS
+        # =========================
+        TARIFS = {
             "A3P": 4200,
-            "VTC": 1600,
             "APS": 1650,
+            "VTC": 1600,
             "DESP_INIT": 4300,
             "DESP_VAE": 3800
         }
 
-        formation_code = data.get("formation")
-        tarif = TARIFS_FORMATIONS.get(formation_code, 0)
+        formation = data.get("formation")
+        tarif = TARIFS.get(formation, 0)
+        cpf = int(data.get("cpf_montant") or 0)
+        reste = max(tarif - cpf, 0)
 
-        cpf = int(data.get("cpf_montant", "0") or 0)
-        reste_a_charge = max(tarif - cpf, 0)
-
-
-        # ===== Plans de financement =====
-        plans = {}
-
-        for nb_mois in [2, 3, 4, 5]:
-            if nb_mois > 0:
-                mensualite = round(reste_a_charge / nb_mois, 2)
-                plans[nb_mois] = {
-                    "nb_paiements": nb_mois,
-                    "montant": mensualite
-                }
-
-        # ===== Date de début de formation =====
-        date_debut_str = data.get("dates", "")
-
-        # Exemple attendu : "8 juin au 4 août 2026 – examen le 5 août 2026"
-        # On récupère "8 juin 2026"
+        # =========================
+        # PARSING DATE DÉBUT
+        # =========================
         date_debut = None
         try:
-            morceaux = date_debut_str.split("au")[0].strip()  # "8 juin"
-            annee = date_debut_str.split("août")[-1].strip()[:4]  # "2026"
-            date_complete = f"{morceaux} {annee}"
-
+            import re
             mois_fr = {
                 "janvier": 1, "février": 2, "mars": 3, "avril": 4,
                 "mai": 5, "juin": 6, "juillet": 7, "août": 8,
                 "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12
             }
+            txt = data.get("dates", "")
+            debut = txt.split("au")[0].strip()
+            jour, mois = debut.split()
+            annee = int(re.search(r"(20\d{2})", txt).group(1))
+            date_debut = datetime.date(annee, mois_fr[mois.lower()], int(jour))
+        except:
+            pass
 
-            j, m, a = date_complete.split()
-            date_debut = datetime.date(int(a), mois_fr[m.lower()], int(j))
-        except Exception as e:
-            date_debut = None
+        # 🔒 Sécurité : si la date n’a pas été comprise
+        if not date_debut:
+            date_debut = datetime.date.today()
 
-
-        # ===== Calcul des échéances =====
-        from dateutil.relativedelta import relativedelta
-
+        # =========================
+        # ÉCHÉANCIERS (2 à 5 mois AVANT la formation)
+        # =========================
         echeanciers = {}
 
-        if date_debut:
-            for nb_mois, plan in plans.items():
-                dates_paiement = []
+        for n in [2, 3, 4, 5]:
+            montant = round(reste / n, 2)
+            dates = []
 
-                # on part X mois avant la date de début
-                premiere_echeance = date_debut - relativedelta(months=nb_mois)
+            premiere_echeance = date_debut - relativedelta(months=n)
 
-                for i in range(nb_mois):
-                    d = premiere_echeance + relativedelta(months=i)
-                    dates_paiement.append(d)
+            for i in range(n):
+                dates.append(premiere_echeance + relativedelta(months=i))
 
-                echeanciers[nb_mois] = {
-                    "montant": plan["montant"],
-                    "dates": dates_paiement
-                }
+            echeanciers[n] = {
+                "montant": montant,
+                "dates": dates
+            }
 
 
-
-
-
-        # 🔒 Vérification email / confirmation
-        if data.get("mail") != data.get("mail_confirm"):
-            return "Erreur : les adresses e-mail ne correspondent pas", 400
-
-        paris_tz = pytz.timezone("Europe/Paris")
-
-        # 🟢 Détection prospect ultra qualifié
-        ultra = (
-            data.get("cpf_consulte") == "OUI" and
-            data.get("france_travail") == "NON" and
-            data.get("financement_perso") == "OUI" and
-            data.get("identite_numerique") == "OUI"
-        )
-
-        # 📄 Génération PDF
-        pdf_name = f"demande_devis_{uuid.uuid4().hex}.pdf"
-        pdf_path = os.path.join("/mnt/data", pdf_name)
-
+        # =========================
+        # PDF
+        # =========================
+        pdf_path = f"/mnt/data/devis_{uuid.uuid4().hex}.pdf"
         c = canvas.Canvas(pdf_path, pagesize=A4)
         width, height = A4
         y = height - 40
 
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(40, y, "Demande de devis – Intégrale Academy")
-        y -= 30
+        # Logo
+        logo = os.path.join(app.root_path, "static", "logo.png")
+        if os.path.exists(logo):
+            c.drawImage(logo, 40, y-60, width=140, mask="auto")
+        y -= 90
 
-        if ultra:
-            c.setFillColor(green)
-            c.setFont("Helvetica-Bold", 18)
-            c.drawString(40, y, "PROSPECT ULTRA QUALIFIÉ")
-            c.setFillColor(black)
-            y -= 40
+        # Titre
+        c.setFont("Helvetica-Bold", 20)
+        c.drawCentredString(width/2, y, "DEVIS & PLAN DE FINANCEMENT")
+        y -= 40
 
+        # Infos
         c.setFont("Helvetica", 11)
-
-        LABELS = {
-            "nom": "Nom",
-            "prenom": "Prénom",
-            "telephone": "Téléphone",
-            "mail": "Adresse e-mail",
-            "formation": "Formation choisie",
-            "dates": "Session choisie",
-
-            "cpf_consulte": "CPF consulté",
-            "cpf_montant": "Montant disponible sur le CPF (€)",
-            "france_travail": "Demande de financement France Travail",
-            "ft_refus_ok": "Acceptation financement personnel en cas de refus FT",
-            "financement_perso": "Financement personnel / CPF suffisant",
-            "identite_numerique": "Identité Numérique La Poste créée",
-
-            "cnaps_ok": "Carte professionnelle CNAPS valide",
-            "garde_vue": "Garde à vue / prise d’empreintes",
-            "titre_sejour": "Titulaire d’un titre de séjour"
-        }
-
-        for k, v in data.items():
-            if y < 60:
-                c.showPage()
-                y = height - 40
-            label = LABELS.get(k, k.replace("_", " ").capitalize())
-            c.drawString(40, y, f"{label} : {v}")
-            y -= 16
-
-        # ================= PLAN DE FINANCEMENT =================
-        if y < 200:
-            c.showPage()
-            y = height - 40
-
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(40, y, "Plan de financement proposé")
+        c.drawString(40, y, f"Nom : {data.get('nom','')}")
+        y -= 15
+        c.drawString(40, y, f"Prénom : {data.get('prenom','')}")
+        y -= 15
+        c.drawString(40, y, f"Formation : {formation}")
         y -= 25
 
+        # Financement
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, y, "Récapitulatif financier")
+        y -= 20
+
         c.setFont("Helvetica", 11)
-        c.drawString(40, y, f"Prix de la formation : {tarif} €")
-        y -= 16
+        c.drawString(40, y, f"Prix formation : {tarif} €")
+        y -= 14
         c.drawString(40, y, f"Montant CPF : {cpf} €")
-        y -= 16
-        c.drawString(40, y, f"Reste à charge : {reste_a_charge} €")
+        y -= 14
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(40, y, f"Reste à charge : {reste} €")
         y -= 30
 
-        for nb_mois, plan in echeanciers.items():
-            if y < 120:
-                c.showPage()
-                y = height - 40
+        # =========================
+        # TABLEAUX DE PAIEMENT (SCÉNARIOS)
+        # =========================
+        for n in sorted(echeanciers.keys()):
 
-            c.setFont("Helvetica-Bold", 12)
+            plan = echeanciers[n]
+
+            if y < 300:
+                c.showPage()
+                y = height - 60
+
+            # Titre du scénario
+            c.setFont("Helvetica-Bold", 14)
             c.drawString(
                 40,
                 y,
-                f"Option {nb_mois} paiements – {plan['montant']} € / mois"
+                f"Option {n} paiements – prélèvements avant le début de formation"
+            )
+            y -= 20
+
+            c.setFont("Helvetica", 11)
+            c.drawString(
+                40,
+                y,
+                f"{n} prélèvements de {plan['montant']} €"
             )
             y -= 18
 
-            c.setFont("Helvetica", 11)
+            # Tableau
+            table_data = [["Date de prélèvement", "Montant"]]
+
             for d in plan["dates"]:
-                c.drawString(
-                    60,
-                    y,
-                    f"{d.strftime('%d/%m/%Y')} : {plan['montant']} €"
-                )
-                y -= 14
+                table_data.append([
+                    d.strftime("%d/%m/%Y"),
+                    f"{plan['montant']} €"
+                ])
 
-            y -= 10
+            table = Table(
+                table_data,
+                colWidths=[260, 120]
+            )
+
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f0f0")),
+                ("GRID", (0,0), (-1,-1), 0.6, colors.grey),
+                ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
+                ("ALIGN", (1,1), (-1,-1), "RIGHT"),
+                ("PADDING", (0,0), (-1,-1), 8),
+            ]))
+
+            tw, th = table.wrap(0, 0)
+            table.drawOn(c, 40, y - th)
+
+            y -= th + 30
 
 
-        c.showPage()
         c.save()
 
-        # 💾 Enregistrement dans data.json
+        # =========================
+        # SAUVEGARDE
+        # =========================
         data_store = load_data()
         data_store["demandes"].append({
             "id": str(uuid.uuid4()),
@@ -1311,44 +1295,34 @@ def demande_devis():
             "telephone": data.get("telephone"),
             "mail": data.get("mail"),
             "motif": "Demande de devis détaillé",
-            "details": json.dumps(data, ensure_ascii=False, indent=2),
-            "justificatif": "",
-            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
-            "attribution": "Clément",
-            "statut": "Non traité",
-            "commentaire": "PROSPECT ULTRA QUALIFIÉ" if ultra else "",
-            "mail_confirme": "",
-            "mail_erreur": "",
-            "mail_contenu": "",
-            "mail_html": "",
-            "pieces_jointes": [],
-            "reponses": [],
-            "statut_devis": "A envoyer",
-            "is_doublon": False
+            "details": json.dumps(data, ensure_ascii=False),
+            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+            "statut_devis": "A envoyer"
         })
         save_data(data_store)
 
-        # ✉️ Envoi mail
         send_email_html(
             "clement@integraleacademy.com",
             "Demande de devis – Intégrale Academy",
-            "Une nouvelle demande de devis détaillée est jointe.",
-            _wrap_html("<h2>Nouvelle demande de devis</h2>", "<p>Voir PDF en pièce jointe.</p>"),
+            "PDF en pièce jointe",
+            _wrap_html("<h2>Nouvelle demande de devis</h2>", "<p>Devis en pièce jointe.</p>"),
             attachments_paths=[pdf_path]
         )
 
-        # 🧹 Nettoyage PDF
-        try:
-            os.remove(pdf_path)
-        except Exception as e:
-            print("⚠️ Impossible de supprimer le PDF :", e)
+        ultra = (
+            data.get("cpf_consulte") == "OUI" and
+            data.get("france_travail") == "NON" and
+            data.get("financement_perso") == "OUI" and
+            data.get("identite_numerique") == "OUI"
+        )
 
-        return redirect(url_for(
-            "confirmation_devis",
-            ultra="1" if ultra else "0"
-        ))
+        return redirect(url_for("confirmation_devis", ultra="1" if ultra else "0"))
+
 
     return render_template("demande_devis.html")
+
+
+
 
 
 @app.route("/confirmation-devis")
