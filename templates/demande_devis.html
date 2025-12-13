@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Demande de devis détaillé – Intégrale Academy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family: Arial, Helvetica, sans-serif;
+    background:#f5f6f8;
+}
+.container{
+    max-width:900px;
+    margin:30px auto;
+    background:white;
+    padding:30px;
+    border-radius:14px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.08);
+}
+h2{
+    margin-top:0;
+}
+h3{
+    margin-top:35px;
+    border-bottom:2px solid #eee;
+    padding-bottom:6px;
+}
+label{
+    display:block;
+    margin-top:15px;
+    font-weight:600;
+}
+input, select{
+    width:100%;
+    padding:12px;
+    margin-top:6px;
+    border-radius:8px;
+    border:1px solid #ccc;
+    font-size:14px;
+}
+.info{
+    font-size:13px;
+    color:#555;
+    margin-top:6px;
+}
+.info a{
+    color:#0d6efd;
+    text-decoration:none;
+}
+button{
+    margin-top:35px;
+    background:#27ae60;
+    color:white;
+    border:none;
+    padding:16px 22px;
+    font-size:16px;
+    border-radius:10px;
+    cursor:pointer;
+    width:100%;
+}
+button:hover{
+    background:#219150;
+}
+.hidden{
+    display:none;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>📝 Demande de devis détaillé</h2>
+<p>Merci de compléter l’ensemble du formulaire. Tous les champs sont obligatoires.</p>
+
+<form method="POST" id="devisForm">
+
+<!-- ================================================= -->
+<h3>Informations générales</h3>
+
+<label>Nom</label>
+<input name="nom" required>
+
+<label>Prénom</label>
+<input name="prenom" required>
+
+<label>Email</label>
+<input type="email" name="mail" required>
+
+<label>Confirmation de l’email</label>
+<input type="email" name="mail_confirm" required>
+
+<label>Numéro de téléphone</label>
+<input name="telephone" required>
+
+<!-- ================================================= -->
+<h3>Choix de la formation</h3>
+
+<label>Formation souhaitée</label>
+<select name="formation" id="formation" required>
+    <option value="">— Sélectionnez —</option>
+    <option value="A3P">Agent de Protection Physique des Personnes (A3P)</option>
+    <option value="APS">Agent de Prévention et de Sécurité (APS)</option>
+    <option value="DESP_INIT">Dirigeant d'entreprise de sécurité (DESP) – initial</option>
+    <option value="DESP_VAE">Dirigeant d'entreprise de sécurité (DESP) – VAE</option>
+    <option value="VTC">Chauffeur VTC</option>
+</select>
+
+<!-- ================================================= -->
+<div id="datesBloc" class="hidden">
+<h3>Choix des dates</h3>
+
+<label>Session souhaitée</label>
+<select name="dates" id="datesSelect">
+    <option value="">— Sélectionnez —</option>
+</select>
+</div>
+
+<!-- ================================================= -->
+<h3>Financement de votre formation</h3>
+
+<p class="info">
+Les réponses à toutes ces questions nous permettront de vous transmettre un devis détaillé avec un plan de financement.<br>
+<b>Attention :</b> le devis transmis ne permet pas de déposer une demande de financement à France Travail.
+</p>
+
+<label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
+<select name="cpf_consulte" required>
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+
+<p class="info">
+👉 <a href="https://moncompteformation.gouv.fr" target="_blank">Accéder à Mon Compte Formation</a>
+</p>
+
+<label>Montant disponible sur mon CPF (en €)</label>
+<input name="cpf_montant" required>
+
+<label>Je souhaite déposer une demande de financement à France Travail</label>
+<select name="france_travail" id="franceTravail" required>
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+
+<div id="blocFranceTravail" class="hidden">
+<label>Si France Travail refuse le financement, suis-je prêt à financer personnellement la formation ?</label>
+<select name="ft_refus_ok">
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+</div>
+
+<div id="blocPerso" class="hidden">
+<label>Je souhaite financer moi-même la formation / je dispose des fonds nécessaires sur mon CPF</label>
+<select name="financement_perso">
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+</div>
+
+<label>J’ai déjà créé mon Identité Numérique La Poste</label>
+<select name="identite_numerique" required>
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+
+<p class="info">
+👉 <a href="https://lidentitenumerique.laposte.fr/" target="_blank">Créer mon identité numérique La Poste</a>
+</p>
+
+<!-- ================================================= -->
+<div id="blocCnaps" class="hidden">
+<h3>Situation CNAPS</h3>
+
+<label>J’ai déjà une carte professionnelle CNAPS en cours de validité</label>
+<select name="cnaps_ok">
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+
+<label>Ai-je déjà fait l’objet d’une garde à vue ou d’une prise d’empreintes ?</label>
+<select name="garde_vue">
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+
+<label>Suis-je titulaire d’un titre de séjour ?</label>
+<select name="titre_sejour">
+    <option value="OUI">OUI</option>
+    <option value="NON">NON</option>
+</select>
+</div>
+
+<button type="submit">📩 Envoyer ma demande de devis</button>
+
+</form>
+</div>
+
+<!-- ================================================= -->
+<script>
+const formation = document.getElementById("formation");
+const datesBloc = document.getElementById("datesBloc");
+const datesSelect = document.getElementById("datesSelect");
+const cnapsBloc = document.getElementById("blocCnaps");
+const franceTravail = document.getElementById("franceTravail");
+const blocFT = document.getElementById("blocFranceTravail");
+const blocPerso = document.getElementById("blocPerso");
+
+const dates = {
+    A3P: [
+        "30 mars au 2 juin 2026 – examen le 3 juin 2026",
+        "8 juin au 4 août 2026 – examen le 5 août 2026",
+        "1 septembre au 27 octobre 2026 – examen le 28 octobre 2026",
+        "9 novembre 2026 au 19 janvier 2027 – examen le 20 janvier 2027"
+    ],
+    APS: [
+        "23 mars au 27 avril 2026 – examen le 28 avril 2026",
+        "26 mai au 29 juin 2026 – examen le 30 juin 2026",
+        "8 juillet au 12 août 2026 – examen le 13 août 2026",
+        "7 septembre au 9 octobre 2026 – examen le 12 octobre 2026",
+        "3 novembre au 8 décembre 2026 – examen le 9 décembre 2026"
+    ],
+    DESP_INIT: [
+        "19 janvier au 2 mars 2026 – examen le 3 mars 2026",
+        "9 mars au 21 avril 2026 – examen le 22 avril 2026",
+        "27 avril au 15 juin 2026 – examen le 16 juin 2026"
+    ]
+};
+
+formation.addEventListener("change", () => {
+    const v = formation.value;
+    datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+
+    if (dates[v]) {
+        datesBloc.classList.remove("hidden");
+        dates[v].forEach(d => {
+            const o = document.createElement("option");
+            o.value = d;
+            o.textContent = d;
+            datesSelect.appendChild(o);
+        });
+    } else {
+        datesBloc.classList.add("hidden");
+    }
+
+    cnapsBloc.classList.toggle("hidden", !(v === "A3P" || v === "APS"));
+});
+
+franceTravail.addEventListener("change", () => {
+    blocFT.classList.toggle("hidden", franceTravail.value !== "OUI");
+    blocPerso.classList.toggle("hidden", franceTravail.value !== "NON");
+});
+</script>
+
+</body>
+</html>

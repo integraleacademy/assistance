@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Demande de devis reçue – Intégrale Academy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family: Arial, Helvetica, sans-serif;
+    background:#f5f6f8;
+}
+.container{
+    max-width:900px;
+    margin:40px auto;
+    background:white;
+    padding:35px;
+    border-radius:14px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.08);
+    text-align:center;
+}
+h1{
+    color:#27ae60;
+}
+p{
+    font-size:16px;
+    line-height:1.6;
+}
+.info{
+    margin-top:20px;
+    font-size:14px;
+    color:#555;
+}
+.block{
+    margin-top:40px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>✅ Demande bien reçue</h1>
+
+    <p>
+        Merci pour votre demande de devis.<br>
+        Nous avons bien reçu l’ensemble de vos informations.
+    </p>
+
+    <p>
+        📄 Notre équipe va analyser votre situation et vous transmettre
+        <strong>un devis détaillé accompagné d’un plan de financement</strong>
+        dans les meilleurs délais.
+    </p>
+
+    <p class="info">
+        Si vous avez la moindre question, vous pouvez nous contacter directement au  
+        <strong>04 22 47 07 68</strong> afin d’échanger avec un conseiller formation.
+    </p>
+
+    <!-- ========================================================= -->
+    <!-- 📞 RDV téléphonique – affichage conditionnel (optionnel) -->
+    <!-- Il suffit de rediriger vers :
+         /confirmation-devis?formation=APS
+         /confirmation-devis?formation=A3P
+         /confirmation-devis?formation=DESP
+         /confirmation-devis?formation=VTC
+    -->
+    <!-- ========================================================= -->
+
+    {% if request.args.get("formation") == "APS" %}
+    <div class="block">
+        <h2>📞 Prendre rendez-vous avec le responsable des formations APS</h2>
+        <div class="calendly-inline-widget"
+             data-url="https://calendly.com/integraleacademy/aps"
+             style="min-width:320px;height:700px;"></div>
+        <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
+    </div>
+    {% endif %}
+
+    {% if request.args.get("formation") == "A3P" %}
+    <div class="block">
+        <h2>📞 Prendre rendez-vous avec le responsable des formations A3P</h2>
+        <div class="calendly-inline-widget"
+             data-url="https://calendly.com/integraleacademy/apr"
+             style="min-width:320px;height:700px;"></div>
+        <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
+    </div>
+    {% endif %}
+
+    {% if request.args.get("formation") == "DESP" %}
+    <div class="block">
+        <h2>📞 Prendre rendez-vous avec le responsable des formations DESP</h2>
+        <div class="calendly-inline-widget"
+             data-url="https://calendly.com/integraleacademy/dirigeant"
+             style="min-width:320px;height:700px;"></div>
+        <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
+    </div>
+    {% endif %}
+
+    {% if request.args.get("formation") == "VTC" %}
+    <div class="block">
+        <h2>📞 Prendre rendez-vous – Chauffeur VTC</h2>
+        <div class="calendly-inline-widget"
+             data-url="https://calendly.com/integraleacademy/chauffeurvtc"
+             style="min-width:320px;height:700px;"></div>
+        <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
+    </div>
+    {% endif %}
+
+</div>
+
+</body>
+</html>
