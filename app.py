@@ -1173,15 +1173,18 @@ def demande_devis():
             montant = round(reste / n, 2)
             dates = []
 
-            premiere_echeance = date_debut - relativedelta(months=n)
+            base = date_debut - relativedelta(months=n)
 
             for i in range(n):
-                dates.append(premiere_echeance + relativedelta(months=i))
+                d = base + relativedelta(months=i)
+                d = d.replace(day=5)
+                dates.append(d)
 
             echeanciers[n] = {
                 "montant": montant,
                 "dates": dates
             }
+
 
 
         # =========================
@@ -1203,14 +1206,39 @@ def demande_devis():
         c.drawCentredString(width/2, y, "DEVIS & PLAN DE FINANCEMENT")
         y -= 40
 
-        # Infos
+        # =========================
+        # INFORMATIONS STAGIAIRE
+        # =========================
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, y, "Informations stagiaire")
+        y -= 20
+        
         c.setFont("Helvetica", 11)
-        c.drawString(40, y, f"Nom : {data.get('nom','')}")
-        y -= 15
-        c.drawString(40, y, f"Prénom : {data.get('prenom','')}")
-        y -= 15
-        c.drawString(40, y, f"Formation : {formation}")
-        y -= 25
+        
+        infos = [
+            ("Nom", data.get("nom")),
+            ("Prénom", data.get("prenom")),
+            ("Téléphone", data.get("telephone")),
+            ("Email", data.get("mail")),
+            ("Formation", formation),
+            ("Dates de formation", data.get("dates")),
+            ("CPF consulté", data.get("cpf_consulte")),
+            ("Montant CPF", f"{cpf} €"),
+            ("France Travail", data.get("france_travail")),
+            ("Financement personnel", data.get("financement_perso")),
+            ("Identité numérique", data.get("identite_numerique")),
+        ]
+        
+        for label, value in infos:
+            if y < 120:
+                c.showPage()
+                y = height - 60
+                c.setFont("Helvetica", 11)
+        
+            c.drawString(40, y, f"{label} : {value or '—'}")
+            y -= 14
+        
+        y -= 20
 
         # Financement
         c.setFont("Helvetica-Bold", 14)
