@@ -669,6 +669,23 @@ def admin_devis():
 
     return render_template("admin_devis.html", devis=devis)
 
+@app.route("/admin-devis/toggle/<devis_id>", methods=["POST"])
+@login_required
+def toggle_devis(devis_id):
+    data = load_data()
+
+    for d in data.get("demandes", []):
+        if d.get("id") == devis_id and d.get("motif") == "Demande de devis détaillé":
+            if d.get("statut_devis") == "Envoyé":
+                d["statut_devis"] = "A envoyer"
+            else:
+                d["statut_devis"] = "Envoyé"
+            break
+
+    save_data(data)
+    return redirect(url_for("admin_devis"))
+
+
 
 
 
