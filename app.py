@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
+from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -1077,6 +1078,137 @@ def hebergement_data():
             "total": -1,
             "error": str(e)
         }, 500, {"Access-Control-Allow-Origin": "*"}
+
+@app.route("/demande-devis", methods=["GET", "POST"])
+def demande_devis():
+    if request.method == "POST":
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.colors import green, black
+
+        data = request.form.to_dict()
+
+        # 🔒 Vérification email / confirmation
+        if data.get("mail") != data.get("mail_confirm"):
+            return "Erreur : les adresses e-mail ne correspondent pas", 400
+
+        paris_tz = pytz.timezone("Europe/Paris")
+
+        # 🟢 Détection prospect ultra qualifié
+        ultra = (
+            data.get("cpf_consulte") == "OUI" and
+            data.get("france_travail") == "NON" and
+            data.get("financement_perso") == "OUI" and
+            data.get("identite_numerique") == "OUI"
+        )
+
+        # 📄 Génération PDF
+        pdf_name = f"demande_devis_{uuid.uuid4().hex}.pdf"
+        pdf_path = os.path.join("/mnt/data", pdf_name)
+
+        c = canvas.Canvas(pdf_path, pagesize=A4)
+        width, height = A4
+        y = height - 40
+
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(40, y, "Demande de devis – Intégrale Academy")
+        y -= 30
+
+        if ultra:
+            c.setFillColor(green)
+            c.setFont("Helvetica-Bold", 18)
+            c.drawString(40, y, "PROSPECT ULTRA QUALIFIÉ")
+            c.setFillColor(black)
+            y -= 40
+
+        c.setFont("Helvetica", 11)
+
+        LABELS = {
+            "nom": "Nom",
+            "prenom": "Prénom",
+            "telephone": "Téléphone",
+            "mail": "Adresse e-mail",
+            "formation": "Formation choisie",
+            "dates": "Session choisie",
+
+            "cpf_consulte": "CPF consulté",
+            "cpf_montant": "Montant disponible sur le CPF (€)",
+            "france_travail": "Demande de financement France Travail",
+            "ft_refus_ok": "Acceptation financement personnel en cas de refus FT",
+            "financement_perso": "Financement personnel / CPF suffisant",
+            "identite_numerique": "Identité Numérique La Poste créée",
+
+            "cnaps_ok": "Carte professionnelle CNAPS valide",
+            "garde_vue": "Garde à vue / prise d’empreintes",
+            "titre_sejour": "Titulaire d’un titre de séjour"
+        }
+
+        for k, v in data.items():
+            if y < 60:
+                c.showPage()
+                y = height - 40
+            label = LABELS.get(k, k.replace("_", " ").capitalize())
+            c.drawString(40, y, f"{label} : {v}")
+            y -= 16
+
+        c.showPage()
+        c.save()
+
+        # 💾 Enregistrement dans data.json
+        data_store = load_data()
+        data_store["demandes"].append({
+            "id": str(uuid.uuid4()),
+            "nom": data.get("nom"),
+            "prenom": data.get("prenom"),
+            "telephone": data.get("telephone"),
+            "mail": data.get("mail"),
+            "motif": "Demande de devis détaillé",
+            "details": json.dumps(data, ensure_ascii=False, indent=2),
+            "justificatif": "",
+            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+            "attribution": "Clément",
+            "statut": "Non traité",
+            "commentaire": "PROSPECT ULTRA QUALIFIÉ" if ultra else "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False
+        })
+        save_data(data_store)
+
+        # ✉️ Envoi mail
+        send_email_html(
+            "clement@integraleacademy.com",
+            "Demande de devis – Intégrale Academy",
+            "Une nouvelle demande de devis détaillée est jointe.",
+            _wrap_html("<h2>Nouvelle demande de devis</h2>", "<p>Voir PDF en pièce jointe.</p>"),
+            attachments_paths=[pdf_path]
+        )
+
+        # 🧹 Nettoyage PDF
+        try:
+            os.remove(pdf_path)
+        except Exception as e:
+            print("⚠️ Impossible de supprimer le PDF :", e)
+
+        return redirect(url_for(
+            "confirmation_devis",
+            formation=data.get("formation")
+        ))
+
+    return render_template("demande_devis.html")
+
+
+@app.route("/confirmation-devis")
+def confirmation_devis():
+    return render_template("confirmation_devis.html")
+
+
+
+        
 
 
 
