@@ -1196,7 +1196,7 @@ def demande_devis():
 
         return redirect(url_for(
             "confirmation_devis",
-            formation=data.get("formation")
+            ultra="1" if ultra else "0"
         ))
 
     return render_template("demande_devis.html")
@@ -1204,7 +1204,8 @@ def demande_devis():
 
 @app.route("/confirmation-devis")
 def confirmation_devis():
-    return render_template("confirmation_devis.html")
+    ultra = request.args.get("ultra") == "1"
+    return render_template("confirmation_devis.html", ultra=ultra)
 
 
 
