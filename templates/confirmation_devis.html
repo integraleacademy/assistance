@@ -32,7 +32,7 @@ p{
     color:#555;
 }
 .block{
-    margin-top:40px;
+    margin-top:45px;
 }
 </style>
 </head>
@@ -56,55 +56,24 @@ p{
 
     <p class="info">
         Si vous avez la moindre question, vous pouvez nous contacter directement au  
-        <strong>04 22 47 07 68</strong> afin d’échanger avec un conseiller formation.
+        <strong>04 22 47 07 68</strong>.
     </p>
 
     <!-- ========================================================= -->
-    <!-- 📞 RDV téléphonique – affichage conditionnel (optionnel) -->
-    <!-- Il suffit de rediriger vers :
-         /confirmation-devis?formation=APS
-         /confirmation-devis?formation=A3P
-         /confirmation-devis?formation=DESP
-         /confirmation-devis?formation=VTC
-    -->
+    <!-- 📞 RDV téléphonique : UNIQUEMENT SI PROFIL ULTRA QUALIFIÉ -->
     <!-- ========================================================= -->
-
-    {% if request.args.get("formation") == "APS" %}
+    {% if ultra %}
     <div class="block">
-        <h2>📞 Prendre rendez-vous avec le responsable des formations APS</h2>
-        <div class="calendly-inline-widget"
-             data-url="https://calendly.com/integraleacademy/aps"
-             style="min-width:320px;height:700px;"></div>
-        <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
-    </div>
-    {% endif %}
+        <h2>📞 Prendre rendez-vous avec un conseiller formation</h2>
+        <p class="info">
+            Votre profil est complet. Un échange rapide peut être réalisé afin
+            de finaliser votre projet de formation.
+        </p>
 
-    {% if request.args.get("formation") == "A3P" %}
-    <div class="block">
-        <h2>📞 Prendre rendez-vous avec le responsable des formations A3P</h2>
         <div class="calendly-inline-widget"
-             data-url="https://calendly.com/integraleacademy/apr"
+             data-url="https://calendly.com/integraleacademy/formation"
              style="min-width:320px;height:700px;"></div>
-        <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
-    </div>
-    {% endif %}
 
-    {% if request.args.get("formation") == "DESP" %}
-    <div class="block">
-        <h2>📞 Prendre rendez-vous avec le responsable des formations DESP</h2>
-        <div class="calendly-inline-widget"
-             data-url="https://calendly.com/integraleacademy/dirigeant"
-             style="min-width:320px;height:700px;"></div>
-        <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
-    </div>
-    {% endif %}
-
-    {% if request.args.get("formation") == "VTC" %}
-    <div class="block">
-        <h2>📞 Prendre rendez-vous – Chauffeur VTC</h2>
-        <div class="calendly-inline-widget"
-             data-url="https://calendly.com/integraleacademy/chauffeurvtc"
-             style="min-width:320px;height:700px;"></div>
         <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
     </div>
     {% endif %}
