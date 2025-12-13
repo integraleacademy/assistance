@@ -2,3 +2,4 @@ flask
 gunicorn
 pytz
 reportlab==4.2.5
+python-dateutil
