@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Demandes de devis — Intégrale Academy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family: Arial, Helvetica, sans-serif;
+    background:#f5f6f8;
+}
+.container{
+    max-width:1200px;
+    margin:30px auto;
+    background:white;
+    padding:25px;
+    border-radius:14px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.08);
+}
+h1{
+    margin-top:0;
+}
+table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:20px;
+}
+th, td{
+    padding:12px 10px;
+    border-bottom:1px solid #eee;
+    font-size:14px;
+}
+th{
+    text-align:left;
+    background:#f0f2f5;
+}
+.badge{
+    padding:6px 10px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:600;
+}
+.badge-red{
+    background:#fdecea;
+    color:#c0392b;
+}
+.badge-green{
+    background:#eafaf1;
+    color:#1e8449;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>📄 Demandes de devis</h1>
+
+<table>
+<thead>
+<tr>
+    <th>Date</th>
+    <th>Nom</th>
+    <th>Prénom</th>
+    <th>Formation</th>
+    <th>Statut devis</th>
+</tr>
+</thead>
+
+<tbody>
+{% for d in devis %}
+<tr>
+    <td>{{ d.date }}</td>
+    <td>{{ d.nom }}</td>
+    <td>{{ d.prenom }}</td>
+    <td>{{ d.details | safe }}</td>
+    <td>
+        {% if d.statut_devis == "Envoyé" %}
+            <span class="badge badge-green">Devis envoyé</span>
+        {% else %}
+            <span class="badge badge-red">Devis à envoyer</span>
+        {% endif %}
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="5">Aucune demande de devis pour le moment.</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+</div>
+</body>
+</html>
