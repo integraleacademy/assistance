@@ -18,6 +18,11 @@ body{
     border-radius:14px;
     box-shadow:0 8px 25px rgba(0,0,0,0.08);
 }
+.container img{
+    display:block;
+    margin:0 auto 25px auto;
+    width:160px;
+}
 h2{
     margin-top:0;
 }
@@ -71,6 +76,8 @@ button:hover{
 <body>
 <div class="container">
 
+<img src="{{ url_for('static', filename='logo.png') }}" alt="Intégrale Academy">
+
 <h2>📝 Demande de devis détaillé</h2>
 <p>Merci de compléter l’ensemble du formulaire. Tous les champs sont obligatoires.</p>
 
@@ -99,7 +106,7 @@ button:hover{
 
 <label>Formation souhaitée</label>
 <select name="formation" id="formation" required>
-    <option value="">— Sélectionnez —</option>
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="A3P">Agent de Protection Physique des Personnes (A3P)</option>
     <option value="APS">Agent de Prévention et de Sécurité (APS)</option>
     <option value="DESP_INIT">Dirigeant d'entreprise de sécurité (DESP) – initial</option>
@@ -112,8 +119,8 @@ button:hover{
 <h3>Choix des dates</h3>
 
 <label>Session souhaitée</label>
-<select name="dates" id="datesSelect">
-    <option value="">— Sélectionnez —</option>
+<select name="dates" id="datesSelect" required>
+    <option value="" disabled selected>— Sélectionnez —</option>
 </select>
 </div>
 
@@ -127,6 +134,7 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 
 <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
 <select name="cpf_consulte" required>
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
@@ -140,6 +148,7 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 
 <label>Je souhaite déposer une demande de financement à France Travail</label>
 <select name="france_travail" id="franceTravail" required>
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
@@ -147,6 +156,7 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 <div id="blocFranceTravail" class="hidden">
 <label>Si France Travail refuse le financement, suis-je prêt à financer personnellement la formation ?</label>
 <select name="ft_refus_ok">
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
@@ -155,6 +165,7 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 <div id="blocPerso" class="hidden">
 <label>Je souhaite financer moi-même la formation / je dispose des fonds nécessaires sur mon CPF</label>
 <select name="financement_perso">
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
@@ -162,6 +173,7 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 
 <label>J’ai déjà créé mon Identité Numérique La Poste</label>
 <select name="identite_numerique" required>
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
@@ -176,18 +188,21 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 
 <label>J’ai déjà une carte professionnelle CNAPS en cours de validité</label>
 <select name="cnaps_ok">
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
 
 <label>Ai-je déjà fait l’objet d’une garde à vue ou d’une prise d’empreintes ?</label>
 <select name="garde_vue">
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
 
 <label>Suis-je titulaire d’un titre de séjour ?</label>
 <select name="titre_sejour">
+    <option value="" disabled selected>— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
@@ -271,7 +286,7 @@ const dates = {
 
 formation.addEventListener("change", () => {
   const v = formation.value;
-  datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+  datesSelect.innerHTML = "<option value='' disabled selected>— Sélectionnez —</option>";
 
   if (dates[v]) {
     datesBloc.classList.remove("hidden");
@@ -297,5 +312,3 @@ franceTravail.addEventListener("change", () => {
 
 </body>
 </html>
-
-
