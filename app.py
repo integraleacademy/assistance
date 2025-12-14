@@ -1169,6 +1169,11 @@ def demande_devis():
         data = request.form.to_dict()
 
         # =========================
+        # DATE DU DEVIS (AVANT TOUT)
+        # =========================
+        date_devis = datetime.date.today()
+
+        # =========================
         # TARIFS
         # =========================
         TARIFS = {
@@ -1203,32 +1208,48 @@ def demande_devis():
         except:
             pass
 
-        # 🔒 Sécurité : si la date n’a pas été comprise
         if not date_debut:
-            date_debut = datetime.date.today()
+            date_debut = date_devis
 
         # =========================
-        # ÉCHÉANCIERS (2 à 5 mois AVANT la formation)
+        # PREMIER PRÉLÈVEMENT
+        # - min 15 jours après devis
+        # - toujours le 5
+        # =========================
+        date_min = date_devis + datetime.timedelta(days=15)
+
+        if date_min.day <= 5:
+            first_prelevement = date_min.replace(day=5)
+        else:
+            first_prelevement = (
+                date_min.replace(day=1) + relativedelta(months=1)
+            ).replace(day=5)
+
+        # =========================
+        # ÉCHÉANCIERS
         # =========================
         echeanciers = {}
 
         for n in [2, 3, 4, 5]:
-            montant = round(reste / n, 2)
+            montant_base = round(reste / n, 2)
+            montants = [montant_base] * n
+
+            ecart = round(reste - sum(montants), 2)
+            montants[-1] += ecart
+
             dates = []
-
-            base = date_debut - relativedelta(months=n)
-
             for i in range(n):
-                d = base + relativedelta(months=i)
+                d = first_prelevement + relativedelta(months=i)
                 d = d.replace(day=5)
-                dates.append(d)
+                dates.append({
+                    "date": d,
+                    "montant": montants[i]
+                })
 
             echeanciers[n] = {
-                "montant": montant,
-                "dates": dates
+                "montants": montants,
+                "echeances": dates
             }
-
-
 
         # =========================
         # PDF
@@ -1238,26 +1259,31 @@ def demande_devis():
         width, height = A4
         y = height - 40
 
-        # Logo
         logo = os.path.join(app.root_path, "static", "logo.png")
         if os.path.exists(logo):
             c.drawImage(logo, 40, y-60, width=140, mask="auto")
         y -= 90
 
-        # Titre
         c.setFont("Helvetica-Bold", 20)
         c.drawCentredString(width/2, y, "DEVIS & PLAN DE FINANCEMENT")
         y -= 40
 
+        c.setFont("Helvetica", 10)
+        c.drawCentredString(
+            width / 2,
+            y,
+            f"Date d’émission du devis : {date_devis.strftime('%d/%m/%Y')}"
+        )
+        y -= 25
+
         # =========================
-        # INFORMATIONS STAGIAIRE
+        # INFOS STAGIAIRE
         # =========================
         c.setFont("Helvetica-Bold", 14)
         c.drawString(40, y, "Informations stagiaire")
         y -= 20
-        
+
         c.setFont("Helvetica", 11)
-        
         infos = [
             ("Nom", data.get("nom")),
             ("Prénom", data.get("prenom")),
@@ -1271,19 +1297,20 @@ def demande_devis():
             ("Financement personnel", data.get("financement_perso")),
             ("Identité numérique", data.get("identite_numerique")),
         ]
-        
+
         for label, value in infos:
             if y < 120:
                 c.showPage()
                 y = height - 60
                 c.setFont("Helvetica", 11)
-        
             c.drawString(40, y, f"{label} : {value or '—'}")
             y -= 14
-        
+
         y -= 20
 
-        # Financement
+        # =========================
+        # RÉCAP FINANCIER
+        # =========================
         c.setFont("Helvetica-Bold", 14)
         c.drawString(40, y, "Récapitulatif financier")
         y -= 20
@@ -1297,48 +1324,37 @@ def demande_devis():
         c.drawString(40, y, f"Reste à charge : {reste} €")
         y -= 30
 
+        c.setFont("Helvetica-Oblique", 9)
+        c.drawString(
+            40,
+            y,
+            "Prélèvements effectués le 5 de chaque mois. "
+            "Premier prélèvement au minimum 15 jours après la date du devis."
+        )
+        y -= 30
+
         # =========================
-        # TABLEAUX DE PAIEMENT (SCÉNARIOS)
+        # TABLEAUX DE PAIEMENT
         # =========================
         for n in sorted(echeanciers.keys()):
-
             plan = echeanciers[n]
 
             if y < 300:
                 c.showPage()
                 y = height - 60
 
-            # Titre du scénario
             c.setFont("Helvetica-Bold", 14)
-            c.drawString(
-                40,
-                y,
-                f"Option {n} paiements – prélèvements avant le début de formation"
-            )
+            c.drawString(40, y, f"Option {n} paiements – prélèvements mensuels")
             y -= 20
 
-            c.setFont("Helvetica", 11)
-            c.drawString(
-                40,
-                y,
-                f"{n} prélèvements de {plan['montant']} €"
-            )
-            y -= 18
-
-            # Tableau
             table_data = [["Date de prélèvement", "Montant"]]
-
-            for d in plan["dates"]:
+            for e in plan["echeances"]:
                 table_data.append([
-                    d.strftime("%d/%m/%Y"),
-                    f"{plan['montant']} €"
+                    e["date"].strftime("%d/%m/%Y"),
+                    f"{e['montant']:.2f} €"
                 ])
 
-            table = Table(
-                table_data,
-                colWidths=[260, 120]
-            )
-
+            table = Table(table_data, colWidths=[260, 120])
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f0f0")),
                 ("GRID", (0,0), (-1,-1), 0.6, colors.grey),
@@ -1349,14 +1365,12 @@ def demande_devis():
 
             tw, th = table.wrap(0, 0)
             table.drawOn(c, 40, y - th)
-
             y -= th + 30
-
 
         c.save()
 
         # =========================
-        # SAUVEGARDE
+        # SAUVEGARDE + MAIL
         # =========================
         data_store = load_data()
         data_store["demandes"].append({
@@ -1368,8 +1382,6 @@ def demande_devis():
             "motif": "Demande de devis détaillé",
             "details": json.dumps(data, ensure_ascii=False),
             "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-        
-            # 👇 champs admin obligatoires
             "statut": "Non traité",
             "attribution": "",
             "commentaire": "",
@@ -1380,16 +1392,11 @@ def demande_devis():
             "pieces_jointes": [],
             "reponses": [],
             "is_doublon": False,
-        
-            # 👇 cohérence avec l’admin
             "rappel_date": "",
             "plage": "",
-        
-            # 👇 spécifique devis
             "statut_devis": "A envoyer",
             "pdf_path": pdf_path
         })
-
 
         save_data(data_store)
 
@@ -1409,7 +1416,6 @@ def demande_devis():
         )
 
         return redirect(url_for("confirmation_devis", ultra="1" if ultra else "0"))
-
 
     return render_template("demande_devis.html")
 
