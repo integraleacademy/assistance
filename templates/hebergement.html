@@ -131,6 +131,13 @@
             👉 A préparer <strong>une enveloppe portant votre nom et prénom</strong>.
         </div>
 
+        {% if erreur_session %}
+<div class="alert alert-danger text-center fw-bold mb-3">
+    {{ erreur_session }}
+</div>
+{% endif %}
+
+
         <form action="/hebergement" method="POST">
 
             <label>👤 Nom :</label>
@@ -154,6 +161,9 @@
                 <option value="Du 9 novembre 2026 au 19 janvier 2027">Du 9 novembre 2026 au 19 janvier 2027</option>
             </select>
 
+            <p id="info-session" style="font-size:14px;color:#555;margin-top:6px;"></p>
+
+
             <button class="btn btn-submit w-100 mt-4">
                 ✔️ Valider ma réservation
             </button>
@@ -162,7 +172,32 @@
     </div>
 </div>
 
+    <script>
+const places = {{ places_restantes | default({}) | tojson | safe }};
+const select = document.querySelector('select[name="session"]');
+const info = document.getElementById("info-session");
+
+if (select && info) {
+    select.addEventListener("change", () => {
+        const s = select.value;
+        if (places[s] !== undefined) {
+            if (places[s] <= 0) {
+                info.textContent = "❌ Session complète";
+                info.style.color = "#b30000";
+            } else {
+                info.textContent = "Places restantes : " + places[s] + " / 10";
+                info.style.color = "#555";
+            }
+        } else {
+            info.textContent = "";
+        }
+    });
+}
+</script>
+
+
 </body>
 </html>
+
 
 
