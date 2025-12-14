@@ -944,7 +944,19 @@ def hebergement():
         mail = request.form.get("email", "").strip()
         session = request.form.get("session", "").strip()
 
-        # 🔥 ICI : bien dans la fonction + indenté correctement
+        # 🚫 LIMITE DE 10 PLACES PAR SESSION (SÉCURISÉ CÔTÉ SERVEUR)
+        nb_places_session = len([
+            h for h in data.get("hebergements", [])
+            if h.get("session") == session
+        ])
+
+        if nb_places_session >= 10:
+            return render_template(
+                "hebergement.html",
+                erreur_session="❌ Notre hébergement est complet (10 places déjà réservées sur 10 places disponibles)."
+            )
+
+        # ✅ ENREGISTREMENT
         new_resa = {
             "id": str(uuid.uuid4()),
             "nom": nom,
@@ -955,8 +967,6 @@ def hebergement():
             "cle_numero": "",
             "cle_etat": "A donner",
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
-
-            # 🟢 Ajout obligatoire
             "paiement": "Non payé",
             "mode_paiement": "",
             "date_paiement": ""
@@ -965,29 +975,24 @@ def hebergement():
         data["hebergements"].append(new_resa)
         save_data(data)
 
-        # --- Envoi des mails ---
+        # --- Mail candidat ---
         subject = "🏨 Votre réservation d’hébergement a bien été enregistrée"
         plain = (
             f"Bonjour {prenom},\n\n"
             "Votre demande de réservation d’hébergement pour votre formation APR a bien été prise en compte.\n\n"
             f"📅 Dates sélectionnées : {session}\n"
-            "💶 Le règlement de 300€ devra être effectué impérativement à votre arrivée (chèque ou espèces) dans une enveloppe portant votre nom.\n\n"
+            "💶 Le règlement de 300€ devra être effectué à votre arrivée (chèque ou espèces).\n\n"
             "À très bientôt,\nIntégrale Academy"
         )
 
         html = _wrap_html(
-            '<h2 style="margin:0 0 10px;">🏨 Réservation d’hébergement confirmée</h2>',
+            "<h2>🏨 Réservation d’hébergement confirmée</h2>",
             f"""
             <p>Bonjour <strong>{prenom}</strong>,</p>
             <p>Votre réservation d’hébergement a bien été enregistrée.</p>
-
             <p><strong>📅 Dates :</strong> {session}</p>
-
-            <p><strong>💶 Montant :</strong> 300€ pour toute la durée de la formation.<br>
-            Ce montant devra être réglé <b>à votre arrivée</b> en chèque ou en espèces, dans une enveloppe portant votre nom.</p>
-
-            <p>Nous restons disponibles si besoin.<br>
-            <strong>L’équipe Intégrale Academy</strong></p>
+            <p><strong>💶 Montant :</strong> 300€ (règlement à l’arrivée)</p>
+            <p>L’équipe Intégrale Academy</p>
             """
         )
 
@@ -996,36 +1001,21 @@ def hebergement():
         except:
             pass
 
-        # -- Mail admin interne --
-        subject_admin = f"🏨 Nouvelle réservation hébergement – {prenom} {nom}"
-        plain_admin = (
-            f"Nouvelle réservation APR :\n\n"
-            f"Nom : {nom}\n"
-            f"Prénom : {prenom}\n"
-            f"Téléphone : {telephone}\n"
-            f"Session : {session}\n"
-            f"Date : {new_resa['date']}\n"
-        )
-
-        html_admin = _wrap_html(
-            '<h2>🏨 Nouvelle réservation hébergement</h2>',
-            f"""
-            <p><strong>Nom :</strong> {nom}</p>
-            <p><strong>Prénom :</strong> {prenom}</p>
-            <p><strong>Téléphone :</strong> {telephone}</p>
-            <p><strong>Session :</strong> {session}</p>
-            <p><strong>Date :</strong> {new_resa['date']}</p>
-            """
-        )
-
+        # --- Mail admin ---
         try:
-            send_email_html("ecole@integraleacademy.com, clement@integraleacademy.com", subject_admin, plain_admin, html_admin)
+            send_email_html(
+                "ecole@integraleacademy.com, clement@integraleacademy.com",
+                f"🏨 Nouvelle réservation hébergement – {prenom} {nom}",
+                plain,
+                html
+            )
         except:
             pass
 
         return redirect(url_for("hebergement_confirmation"))
 
     return render_template("hebergement.html")
+
 
 
 @app.route("/hebergement_confirmation")
