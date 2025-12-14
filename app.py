@@ -989,9 +989,9 @@ def hebergement():
             "<h2>🏨 Réservation d’hébergement confirmée</h2>",
             f"""
             <p>Bonjour <strong>{prenom}</strong>,</p>
-            <p>Votre réservation d’hébergement a bien été enregistrée.</p>
+            <p>Nous avons bien pris en compte votre réservation (hébergement formation Agent de Protection Physique des Personnes).</p>
             <p><strong>📅 Dates :</strong> {session}</p>
-            <p><strong>💶 Montant :</strong> 300€ (règlement à l’arrivée)</p>
+            <p><strong>💶 Le paiement de 300€ devra être effectué lors de votre arrivée (chèque ou espèces), à préparer dans une enveloppe portant votre nom et votre prénom.</p>
             <p>L’équipe Intégrale Academy</p>
             """
         )
