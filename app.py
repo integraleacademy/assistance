@@ -1377,7 +1377,8 @@ def demande_devis():
             "plage": "",
         
             # 👇 spécifique devis
-            "statut_devis": "A envoyer"
+            "statut_devis": "A envoyer",
+            "pdf_path": pdf_path
         })
 
 
@@ -1411,6 +1412,30 @@ def demande_devis():
 def confirmation_devis():
     ultra = request.args.get("ultra") == "1"
     return render_template("confirmation_devis.html", ultra=ultra)
+
+@app.route("/admin-devis/pdf/<devis_id>")
+@login_required
+def voir_pdf_devis(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if not devis:
+        abort(404)
+
+    pdf_path = devis.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        abort(404)
+
+    return send_from_directory(
+        os.path.dirname(pdf_path),
+        os.path.basename(pdf_path)
+    )
+
 
 
 
