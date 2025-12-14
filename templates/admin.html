@@ -458,7 +458,12 @@
 
           <!-- Commentaire -->
           <td>
-            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-comment='{{ d.commentaire|tojson|safe }}'>✏️ Ajouter / Modifier</button>
+            <button type="button" class="comment-btn"
+        data-id="{{ d.id }}"
+        data-comment='{{ (d.commentaire or "") | tojson | safe }}'>
+  ✏️ Ajouter / Modifier
+</button>
+
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
           </td>
 
