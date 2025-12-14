@@ -671,13 +671,22 @@ def admin():
 def admin_devis():
     data = load_data()
 
-    # On ne garde que les demandes de devis
-    devis = [
-        d for d in data.get("demandes", [])
-        if d.get("motif") == "Demande de devis détaillé"
-    ]
+    devis = []
+    for d in data.get("demandes", []):
+        if d.get("motif") == "Demande de devis détaillé":
+
+            # 🔧 Parsing sécurisé du JSON "details"
+            infos = {}
+            try:
+                infos = json.loads(d.get("details", "{}"))
+            except:
+                infos = {}
+
+            d["infos"] = infos
+            devis.append(d)
 
     return render_template("admin_devis.html", devis=devis)
+
 
 @app.route("/admin-devis/toggle/<devis_id>", methods=["POST"])
 @login_required
