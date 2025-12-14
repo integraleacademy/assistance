@@ -493,6 +493,13 @@ def admin():
     data = load_data()
     demandes = data["demandes"]
 
+    # ❌ On exclut les demandes de devis de l'admin principal
+    demandes = [
+        d for d in demandes
+        if d.get("motif") != "Demande de devis détaillé"
+    ]
+
+
     # 🔐 Identifier l'utilisateur connecté
     user = current_user()  # récupère les infos de session
     user_name = user["name"] if user else None
