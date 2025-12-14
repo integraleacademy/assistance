@@ -103,17 +103,30 @@ button{
         {% endif %}
     </td>
 
-    <td>
-        <form method="POST" action="{{ url_for('toggle_devis', devis_id=d.id) }}">
-            <button type="submit" class="btn-toggle">
-                {% if d.statut_devis == "Envoyé" %}
-                    Repasser à envoyer
-                {% else %}
-                    Marquer envoyé
-                {% endif %}
-            </button>
-        </form>
-    </td>
+<td>
+    <!-- Bouton statut envoyé / à envoyer -->
+    <form method="POST" action="{{ url_for('toggle_devis', devis_id=d.id) }}">
+        <button type="submit" class="btn-toggle">
+            {% if d.statut_devis == "Envoyé" %}
+                Repasser à envoyer
+            {% else %}
+                Marquer envoyé
+            {% endif %}
+        </button>
+    </form>
+
+    <!-- Bouton supprimer -->
+    <form method="POST"
+          action="{{ url_for('delete_devis', devis_id=d.id) }}"
+          onsubmit="return confirm('Supprimer définitivement ce devis ?');"
+          style="margin-top:6px;">
+        <button type="submit"
+                style="background:#dc3545;color:white;border:none;padding:7px 14px;border-radius:8px;">
+            🗑️ Supprimer
+        </button>
+    </form>
+</td>
+
 </tr>
 {% else %}
 <tr>
@@ -128,3 +141,4 @@ button{
 </div>
 </body>
 </html>
+
