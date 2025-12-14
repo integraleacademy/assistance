@@ -981,7 +981,7 @@ def hebergement():
             f"Bonjour {prenom},\n\n"
             "Votre demande de réservation d’hébergement pour votre formation APR a bien été prise en compte.\n\n"
             f"📅 Dates sélectionnées : {session}\n"
-            "💶 Le règlement de 300€ devra être effectué à votre arrivée (chèque ou espèces).\n\n"
+            "💶 Le paiement de 300€ devra être effectué lors de votre arrivée (chèque ou espèces), à préparer dans une enveloppe portant votre nom et votre prénom.\n\n"
             "À très bientôt,\nIntégrale Academy"
         )
 
