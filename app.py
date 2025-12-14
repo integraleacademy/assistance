@@ -1325,8 +1325,28 @@ def demande_devis():
             "motif": "Demande de devis détaillé",
             "details": json.dumps(data, ensure_ascii=False),
             "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+        
+            # 👇 champs admin obligatoires
+            "statut": "Non traité",
+            "attribution": "",
+            "commentaire": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+        
+            # 👇 cohérence avec l’admin
+            "rappel_date": "",
+            "plage": "",
+        
+            # 👇 spécifique devis
             "statut_devis": "A envoyer"
         })
+
+
         save_data(data_store)
 
         send_email_html(
