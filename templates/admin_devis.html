@@ -92,8 +92,20 @@ button{
     <td>{{ d.nom }}</td>
     <td>{{ d.prenom }}</td>
 
-    <!-- Formation : affichage simple (pas de fromjson) -->
-    <td>—</td>
+<td>
+    {% set infos = d.details | fromjson %}
+
+    <strong>{{ infos.formation }}</strong><br>
+
+    <small>
+        📅 {{ infos.dates }}<br>
+        CPF : {{ infos.cpf_montant }} €<br>
+        France Travail : {{ infos.france_travail }}<br>
+        Perso : {{ infos.financement_perso }}<br>
+        ID Numérique : {{ infos.identite_numerique }}
+    </small>
+</td>
+
 
     <td>
         {% if d.statut_devis == "Envoyé" %}
@@ -141,4 +153,5 @@ button{
 </div>
 </body>
 </html>
+
 
