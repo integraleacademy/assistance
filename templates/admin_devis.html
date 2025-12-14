@@ -93,18 +93,18 @@ button{
     <td>{{ d.prenom }}</td>
 
 <td>
-    {% set infos = d.details | fromjson %}
-
-    <strong>{{ infos.formation }}</strong><br>
+    <strong>{{ d.infos.formation }}</strong><br>
 
     <small>
-        📅 {{ infos.dates }}<br>
-        CPF : {{ infos.cpf_montant }} €<br>
-        France Travail : {{ infos.france_travail }}<br>
-        Perso : {{ infos.financement_perso }}<br>
-        ID Numérique : {{ infos.identite_numerique }}
+        📅 {{ d.infos.dates }}<br>
+        CPF : {{ d.infos.cpf_montant }} €<br>
+        France Travail : {{ d.infos.france_travail }}<br>
+        Perso : {{ d.infos.financement_perso }}<br>
+        ID Numérique : {{ d.infos.identite_numerique }}
     </small>
 </td>
+
+
 
 
     <td>
@@ -173,6 +173,7 @@ button{
 </div>
 </body>
 </html>
+
 
 
 
