@@ -1492,6 +1492,32 @@ def voir_pdf_devis(devis_id):
         os.path.basename(pdf_path)
     )
 
+@app.route("/devis_data.json")
+def devis_data():
+    try:
+        data = load_data()
+        demandes = data.get("demandes", [])
+
+        devis_a_envoyer = [
+            d for d in demandes
+            if d.get("motif") == "Demande de devis détaillé"
+            and d.get("statut_devis") == "A envoyer"
+        ]
+
+        return {
+            "a_envoyer": len(devis_a_envoyer)
+        }, 200, {
+            "Access-Control-Allow-Origin": "*"
+        }
+
+    except Exception as e:
+        return {
+            "a_envoyer": -1,
+            "error": str(e)
+        }, 500, {
+            "Access-Control-Allow-Origin": "*"
+        }
+
 
 
 
