@@ -1186,7 +1186,11 @@ def demande_devis():
 
         formation = data.get("formation")
         tarif = TARIFS.get(formation, 0)
-        cpf = int(data.get("cpf_montant") or 0)
+        try:
+            cpf = int(float((data.get("cpf_montant") or "0").replace(",", ".").replace(" ", "")))
+        except:
+            cpf = 0
+
         reste = max(tarif - cpf, 0)
 
         # =========================
@@ -1276,37 +1280,74 @@ def demande_devis():
         )
         y -= 25
 
+        def v(key):
+            val = (data.get(key) or "").strip()
+            return val if val else "—"
+
+        def yn(key):
+            val = (data.get(key) or "").strip().upper()
+            return val if val in ("OUI", "NON") else (val or "—")
+
+
         # =========================
-        # INFOS STAGIAIRE
+        # INFOS STAGIAIRE – FORMULAIRE COMPLET
         # =========================
         c.setFont("Helvetica-Bold", 14)
         c.drawString(40, y, "Informations stagiaire")
         y -= 20
-
         c.setFont("Helvetica", 11)
-        infos = [
-            ("Nom", data.get("nom")),
-            ("Prénom", data.get("prenom")),
-            ("Téléphone", data.get("telephone")),
-            ("Email", data.get("mail")),
-            ("Formation", formation),
-            ("Dates de formation", data.get("dates")),
-            ("CPF consulté", data.get("cpf_consulte")),
-            ("Montant CPF", f"{cpf} €"),
-            ("France Travail", data.get("france_travail")),
-            ("Financement personnel", data.get("financement_perso")),
-            ("Identité numérique", data.get("identite_numerique")),
+        
+        lignes = [
+            ("Nom", v("nom")),
+            ("Prénom", v("prenom")),
+            ("Téléphone", v("telephone")),
+            ("Email", v("mail")),
+            ("Confirmation email", v("mail_confirm")),
+        
+            ("Formation", v("formation")),
+            ("Session / Dates", v("dates")),
+        
+            ("CPF consulté", yn("cpf_consulte")),
+            ("Montant CPF", f"{v('cpf_montant')} €"),
+        
+            ("France Travail", yn("france_travail")),
+            ("Si refus France Travail : financement personnel", yn("ft_refus_ok")),
+            ("Financement personnel / fonds disponibles", yn("financement_perso")),
+        
+            ("Identité Numérique La Poste", yn("identite_numerique")),
         ]
-
-        for label, value in infos:
+        
+        for label, value in lignes:
             if y < 120:
                 c.showPage()
                 y = height - 60
                 c.setFont("Helvetica", 11)
-            c.drawString(40, y, f"{label} : {value or '—'}")
+            c.drawString(40, y, f"{label} : {value}")
+            y -= 14
+        
+        # =========================
+        # CNAPS
+        # =========================
+        y -= 10
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, y, "Situation CNAPS")
+        y -= 20
+        c.setFont("Helvetica", 11)
+        
+        cnaps = [
+            ("Carte professionnelle CNAPS valide", yn("cnaps_ok")),
+            ("Garde à vue / prise d’empreintes", yn("garde_vue")),
+            ("Titulaire d’un titre de séjour", yn("titre_sejour")),
+        ]
+        
+        for label, value in cnaps:
+            if y < 120:
+                c.showPage()
+                y = height - 60
+                c.setFont("Helvetica", 11)
+            c.drawString(40, y, f"{label} : {value}")
             y -= 14
 
-        y -= 20
 
         # =========================
         # RÉCAP FINANCIER
