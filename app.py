@@ -730,6 +730,33 @@ def archives():
 
     return render_template("archives.html", archives=archives, query=query)
 
+
+@app.route("/admin-devis/delete/<devis_id>", methods=["POST"])
+@login_required
+def delete_devis(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if devis:
+        # Suppression du PDF s'il existe
+        pdf = devis.get("pdf_path")
+        if pdf and os.path.exists(pdf):
+            try:
+                os.remove(pdf)
+            except:
+                pass
+
+        data["demandes"].remove(devis)
+        save_data(data)
+
+    return redirect(url_for("admin_devis"))
+
+
 @app.route("/imprimer/<demande_id>")
 def imprimer(demande_id):
     data = load_data()
