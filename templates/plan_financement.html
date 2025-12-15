@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Plan de financement — Intégrale Academy</title>
+
+  <style>
+    @page { size: A4; margin: 18mm; }
+
+    body{
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 12px;
+      color:#111;
+    }
+
+    .header{
+      text-align:center;
+      margin-bottom:14px;
+      padding-bottom:10px;
+      border-bottom:1px solid #e6e6e6;
+    }
+
+    .header img{
+      height:70px;
+      width:auto;
+      display:inline-block;
+      margin-bottom:6px;
+    }
+
+    h1{
+      font-size:20px;
+      margin:6px 0 0 0;
+    }
+
+    .bloc{
+      margin-top:14px;
+    }
+
+    .who{
+      margin-top:10px;
+      line-height:1.5;
+    }
+
+    table{
+      width:100%;
+      border-collapse:collapse;
+      margin-top:8px;
+      font-size:12px;
+    }
+
+    th, td{
+      border:1px solid #d6d6d6;
+      padding:8px;
+      vertical-align:top;
+    }
+
+    th{
+      background:#f2f2f2;
+      text-align:left;
+      font-weight:700;
+    }
+
+    .right{ text-align:right; }
+    .center{ text-align:center; }
+
+    .note{
+      margin-top:10px;
+      font-size:10px;
+      color:#555;
+      line-height:1.4;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="header">
+    <!-- Logo : on va le charger via Flask -->
+    <img src="{{ url_for('static', filename='logo2.jpeg') }}" alt="Intégrale Academy">
+    <h1>Plan de financement détaillé</h1>
+  </div>
+
+  <div class="who">
+    <div><strong>{{ prenom }} {{ nom }}</strong></div>
+    <div>{{ formation_label }}</div>
+    <div>Session / Dates : {{ dates }}</div>
+  </div>
+
+  <div class="bloc">
+    <div style="font-weight:700; font-size:14px;">1) Financement par organismes</div>
+
+    <table>
+      <tr>
+        <th>Organisme</th>
+        <th class="right">Montant</th>
+      </tr>
+      <tr>
+        <td>Compte Personnel de Formation (CPF)</td>
+        <td class="right">{{ cpf }} €</td>
+      </tr>
+      <tr>
+        <td>France Travail (sous réserve d’acceptation)</td>
+        <td class="right">{{ ft }} €</td>
+      </tr>
+    </table>
+
+    <table>
+      <tr>
+        <th>Scénario</th>
+        <th class="center">CPF</th>
+        <th class="center">France Travail</th>
+        <th class="center">Reste à charge</th>
+      </tr>
+      <tr>
+        <td>Avec France Travail*</td>
+        <td class="center">{{ cpf }}</td>
+        <td class="center">{{ ft }}</td>
+        <td class="center">{{ reste_avec_ft }}</td>
+      </tr>
+      <tr>
+        <td>Sans France Travail</td>
+        <td class="center">{{ cpf }}</td>
+        <td class="center">0</td>
+        <td class="center">{{ reste_sans_ft }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="bloc">
+    <div style="font-weight:700; font-size:14px;">2) Financement personnel</div>
+    <div style="margin-top:6px;">
+      En cas de refus de financement par France Travail ou à votre convenance, nous proposons un règlement par prélèvements mensuels sans frais.
+    </div>
+
+    {% if echeances and echeances|length > 0 %}
+      <table>
+        <tr>
+          <th>Date de prélèvement</th>
+          <th class="right">Montant</th>
+        </tr>
+        {% for e in echeances %}
+        <tr>
+          <td>{{ e.date }}</td>
+          <td class="right">{{ e.montant }} €</td>
+        </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <div style="margin-top:10px; font-style:italic;">
+        ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
+      </div>
+    {% endif %}
+
+    <div class="note">
+      Prélèvements effectués le 5 de chaque mois. Premier prélèvement le 5 du mois suivant l’inscription.
+      La formation doit être intégralement réglée au plus tard 7 jours avant l’examen.
+    </div>
+  </div>
+
+</body>
+</html>
