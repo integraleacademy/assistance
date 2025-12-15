@@ -1146,6 +1146,46 @@ def hebergement_data():
             "error": str(e)
         }, 500, {"Access-Control-Allow-Origin": "*"}
 
+from dateutil.relativedelta import relativedelta
+
+def build_echeances_mensuelles(reste: float, date_devis: datetime.date, date_examen: datetime.date):
+    """
+    Retourne une liste [{"date": date, "montant": float}, ...]
+    Règle: prélèvement le 5 du mois suivant la date du devis, puis chaque 5.
+    Le total doit être soldé au plus tard J-7 avant l'examen.
+    """
+    if not date_examen:
+        return []
+
+    date_limite = date_examen - datetime.timedelta(days=7)
+
+    # 1er prélèvement = 5 du mois suivant (quoi qu'il arrive)
+    first = (date_devis.replace(day=1) + relativedelta(months=1)).replace(day=5)
+
+    # Si c'est déjà après la date limite -> impossible de proposer des prélèvements
+    if first > date_limite:
+        return []
+
+    # Liste des dates 5/5/5... jusqu'à la date limite
+    dates = []
+    d = first
+    while d <= date_limite:
+        dates.append(d)
+        d = (d + relativedelta(months=1)).replace(day=5)
+
+    n = len(dates)
+    if n == 0:
+        return []
+
+    # Répartition du reste sur n échéances
+    montant_base = round(float(reste) / n, 2)
+    montants = [montant_base] * n
+    ecart = round(float(reste) - sum(montants), 2)
+    montants[-1] += ecart
+
+    return [{"date": dates[i], "montant": montants[i]} for i in range(n)]
+
+
 def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -1162,7 +1202,7 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     # --------------------------------------------------
     # LOGO (chemin Render SAFE)
     # --------------------------------------------------
-    logo = "/mnt/data/logo.png"
+    logo = os.path.join(app.root_path, "static", "logo.png")
     if os.path.exists(logo):
         c.drawImage(logo, 40, y - 55, width=140, mask="auto")
 
@@ -1272,32 +1312,47 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     )
     y -= 25
 
+    
     # --------------------------------------------------
-    # DATES DE PRÉLÈVEMENTS
+    # ÉCHÉANCIER CALCULÉ SELON DATE D’EXAMEN
     # --------------------------------------------------
-    today = datetime.date.today()
-    date_min = today + datetime.timedelta(days=15)
+    date_devis = datetime.date.today()
+    
+    date_examen = None
+    try:
+        date_examen_str = data.get("date_examen")
+        if date_examen_str:
+            date_examen = datetime.datetime.strptime(date_examen_str, "%Y-%m-%d").date()
+    except:
+        date_examen = None
+    
+    echeances = build_echeances_mensuelles(
+        reste=reste_sans_ft,
+        date_devis=date_devis,
+        date_examen=date_examen
+    )
 
-    if date_min.day <= 5:
-        first_prelevement = date_min.replace(day=5)
+
+    # --------------------------------------------------
+    # ÉCHÉANCIER UNIQUE (CALCUL AUTOMATIQUE)
+    # --------------------------------------------------
+    if not echeances:
+        c.setFont("Helvetica-Oblique", 10)
+        c.drawString(
+            40,
+            y,
+            "⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen."
+        )
+        y -= 20
     else:
-        first_prelevement = (date_min.replace(day=1) + relativedelta(months=1)).replace(day=5)
-
-    # --------------------------------------------------
-    # TABLEAUX D’ÉCHÉANCIERS
-    # --------------------------------------------------
-    for n in [2, 3, 4, 5]:
-        montant_base = round(reste_sans_ft / n, 2)
-        montants = [montant_base] * n
-        ecart = round(reste_sans_ft - sum(montants), 2)
-        montants[-1] += ecart
-
         lignes = [["Date de prélèvement", "Montant"]]
-
-        for i in range(n):
-            d = first_prelevement + relativedelta(months=i)
-            lignes.append([d.strftime("%d/%m/%Y"), f"{montants[i]:.2f} €"])
-
+    
+        for e in echeances:
+            lignes.append([
+                e["date"].strftime("%d/%m/%Y"),
+                f"{e['montant']:.2f} €"
+            ])
+    
         table = Table(lignes, colWidths=[180, 120])
         table.setStyle(TableStyle([
             ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f7f7f7")),
@@ -1306,11 +1361,11 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
             ("ALIGN", (1,1), (-1,-1), "RIGHT"),
             ("PADDING", (0,0), (-1,-1), 6),
         ]))
-
+    
         tw, th = table.wrap(0, 0)
         table.drawOn(c, 40, y - th)
-        c.drawString(340, y - 15, f"Option {n} fois")
         y -= th + 25
+
 
     c.save()
     return pdf_path
@@ -1412,45 +1467,8 @@ def demande_devis():
         if not date_debut:
             date_debut = date_devis
 
-        # =========================
-        # PREMIER PRÉLÈVEMENT
-        # - min 15 jours après devis
-        # - toujours le 5
-        # =========================
-        date_min = date_devis + datetime.timedelta(days=15)
 
-        if date_min.day <= 5:
-            first_prelevement = date_min.replace(day=5)
-        else:
-            first_prelevement = (
-                date_min.replace(day=1) + relativedelta(months=1)
-            ).replace(day=5)
 
-        # =========================
-        # ÉCHÉANCIERS
-        # =========================
-        echeanciers = {}
-
-        for n in [2, 3, 4, 5]:
-            montant_base = round(reste / n, 2)
-            montants = [montant_base] * n
-
-            ecart = round(reste - sum(montants), 2)
-            montants[-1] += ecart
-
-            dates = []
-            for i in range(n):
-                d = first_prelevement + relativedelta(months=i)
-                d = d.replace(day=5)
-                dates.append({
-                    "date": d,
-                    "montant": montants[i]
-                })
-
-            echeanciers[n] = {
-                "montants": montants,
-                "echeances": dates
-            }
 
         # =========================
         # PDF
@@ -1460,7 +1478,7 @@ def demande_devis():
         width, height = A4
         y = height - 40
 
-        logo = "/mnt/data/logo.png"
+        logo = os.path.join(app.root_path, "static", "logo.png")
         if os.path.exists(logo):
             c.drawImage(logo, 40, y-60, width=140, mask="auto")
         y -= 90
@@ -1567,43 +1585,13 @@ def demande_devis():
             40,
             y,
             "Prélèvements effectués le 5 de chaque mois. "
-            "Premier prélèvement au minimum 15 jours après la date du devis."
+            "Premier prélèvement le 5 du mois suivant l’inscription. "
+            "La formation doit être intégralement réglée au plus tard 7 jours avant l’examen."
         )
+
         y -= 30
 
-        # =========================
-        # TABLEAUX DE PAIEMENT
-        # =========================
-        for n in sorted(echeanciers.keys()):
-            plan = echeanciers[n]
 
-            if y < 300:
-                c.showPage()
-                y = height - 60
-
-            c.setFont("Helvetica-Bold", 14)
-            c.drawString(40, y, f"Option {n} paiements – prélèvements mensuels")
-            y -= 20
-
-            table_data = [["Date de prélèvement", "Montant"]]
-            for e in plan["echeances"]:
-                table_data.append([
-                    e["date"].strftime("%d/%m/%Y"),
-                    f"{e['montant']:.2f} €"
-                ])
-
-            table = Table(table_data, colWidths=[260, 120])
-            table.setStyle(TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f0f0")),
-                ("GRID", (0,0), (-1,-1), 0.6, colors.grey),
-                ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
-                ("ALIGN", (1,1), (-1,-1), "RIGHT"),
-                ("PADDING", (0,0), (-1,-1), 8),
-            ]))
-
-            tw, th = table.wrap(0, 0)
-            table.drawOn(c, 40, y - th)
-            y -= th + 30
 
         c.save()
 
