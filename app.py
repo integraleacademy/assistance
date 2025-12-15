@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 
 from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -1202,9 +1203,16 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     # --------------------------------------------------
     # LOGO (chemin Render SAFE)
     # --------------------------------------------------
-    logo = os.path.join(app.root_path, "static", "logo2.jpeg")
-    if os.path.exists(logo):
-        c.drawImage(logo, 40, y - 55, width=140)
+    logo_path = os.path.join(app.root_path, "static", "logo2.jpeg")
+    if os.path.exists(logo_path):
+        c.drawImage(
+            ImageReader(logo_path),
+            40,
+            height - 120,
+            width=160,
+            preserveAspectRatio=True,
+            mask="auto"
+        )
 
     # --------------------------------------------------
     # TITRE
@@ -1478,9 +1486,17 @@ def demande_devis():
         width, height = A4
         y = height - 40
 
-        logo = os.path.join(app.root_path, "static", "logo2.jpeg")
-        if os.path.exists(logo):
-            c.drawImage(logo, 40, y-60, width=140)
+        logo_path = os.path.join(app.root_path, "static", "logo2.jpeg")
+        if os.path.exists(logo_path):
+            c.drawImage(
+                ImageReader(logo_path),
+                40,
+                height - 120,
+                width=160,
+                preserveAspectRatio=True,
+                mask="auto"
+            )
+
         y -= 90
 
         c.setFont("Helvetica-Bold", 20)
