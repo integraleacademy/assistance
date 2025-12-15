@@ -214,14 +214,21 @@ button:hover{
     <option value="VTC">Chauffeur VTC</option>
 </select>
 
-<div id="datesBloc" class="hidden">
-<h3>Choix des dates</h3>
+<div id="blocDateExamen" class="hidden">
+  <label>Date de l’examen</label>
+  <input
+      type="date"
+      name="date_examen"
+      id="dateExamen"
+    >
 
-<label>Session souhaitée</label>
-<select name="dates" id="datesSelect">
-    <option value="">— Sélectionnez —</option>
-</select>
+
+  <p class="info">
+    La formation doit être entièrement réglée <b>au plus tard 7 jours avant l’examen</b>.<br>
+    Les prélèvements ont lieu <b>le 5 de chaque mois</b>.
+  </p>
 </div>
+
 
 <h3>Financement de votre formation</h3>
 
@@ -379,6 +386,8 @@ formation.addEventListener("change", () => {
   if (v === "A3P" || v === "APS" || v === "DESP_INIT") {
     datesBloc.classList.remove("hidden");
     datesSelect.required = true;
+    document.getElementById("blocDateExamen").classList.remove("hidden");
+
 
     dates[v].forEach(d => {
       const o = document.createElement("option");
@@ -390,6 +399,8 @@ formation.addEventListener("change", () => {
     datesBloc.classList.add("hidden");
     datesSelect.required = false;
     datesSelect.value = "";
+    document.getElementById("blocDateExamen").classList.add("hidden");
+
   }
 
   cnapsBloc.classList.toggle("hidden", !(v === "A3P" || v === "APS"));
@@ -440,5 +451,6 @@ franceTravail.addEventListener("change", () => {
 
 </body>
 </html>
+
 
 
