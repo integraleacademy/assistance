@@ -226,11 +226,12 @@ button:hover{
 
 <div id="blocDateExamen" class="hidden">
   <label>Date de l’examen</label>
-  <input
-      type="date"
-      name="date_examen"
-      id="dateExamen"
-    >
+<input
+    type="date"
+    name="date_examen"
+    id="dateExamen"
+    readonly
+>
 
 
   <p class="info">
@@ -456,11 +457,48 @@ franceTravail.addEventListener("change", () => {
   }
 });
 
+    /* ================================
+   AUTO-REMPLISSAGE DATE EXAMEN
+================================ */
+datesSelect.addEventListener("change", () => {
+  const texte = datesSelect.value;
+  if (!texte) return;
+
+  const match = texte.match(/examen le (\d{1,2}) ([a-zéû]+) (\d{4})/i);
+  if (!match) return;
+
+  const jour = match[1].padStart(2, "0");
+  const moisTexte = match[2].toLowerCase();
+  const annee = match[3];
+
+  const moisMap = {
+    janvier: "01",
+    février: "02",
+    mars: "03",
+    avril: "04",
+    mai: "05",
+    juin: "06",
+    juillet: "07",
+    août: "08",
+    septembre: "09",
+    octobre: "10",
+    novembre: "11",
+    décembre: "12"
+  };
+
+  if (!moisMap[moisTexte]) return;
+
+  document.getElementById("dateExamen").value =
+    `${annee}-${moisMap[moisTexte]}-${jour}`;
+});
+
+
 
 </script>
 
 </body>
 </html>
+
 
 
 
