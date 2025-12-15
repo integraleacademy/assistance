@@ -1446,7 +1446,12 @@ def demande_devis():
             data.get("identite_numerique") == "OUI"
         )
 
-        return redirect(url_for("confirmation_devis", ultra="1" if ultra else "0"))
+        return redirect(url_for(
+            "confirmation_devis",
+            ultra="1" if ultra else "0",
+            formation=formation
+        ))
+
 
     return render_template("demande_devis.html")
 
@@ -1457,7 +1462,13 @@ def demande_devis():
 @app.route("/confirmation-devis")
 def confirmation_devis():
     ultra = request.args.get("ultra") == "1"
-    return render_template("confirmation_devis.html", ultra=ultra)
+    formation = request.args.get("formation")
+    return render_template(
+        "confirmation_devis.html",
+        ultra=ultra,
+        formation=formation
+    )
+
 
 @app.route("/admin-devis/pdf/<devis_id>")
 @login_required
