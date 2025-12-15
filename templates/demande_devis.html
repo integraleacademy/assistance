@@ -393,7 +393,6 @@ formation.addEventListener("change", () => {
   if (v === "A3P" || v === "APS" || v === "DESP_INIT") {
     datesBloc.classList.remove("hidden");
     datesSelect.required = true;
-    document.getElementById("blocDateExamen").classList.remove("hidden");
 
 
     dates[v].forEach(d => {
@@ -406,7 +405,6 @@ formation.addEventListener("change", () => {
     datesBloc.classList.add("hidden");
     datesSelect.required = false;
     datesSelect.value = "";
-    document.getElementById("blocDateExamen").classList.add("hidden");
 
   }
 
@@ -494,6 +492,7 @@ datesSelect.addEventListener("change", () => {
 
 </body>
 </html>
+
 
 
 
