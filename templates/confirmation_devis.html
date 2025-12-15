@@ -70,9 +70,18 @@ p{
             de finaliser votre projet de formation.
         </p>
 
-        <div class="calendly-inline-widget"
-             data-url="https://calendly.com/integraleacademy/formation"
-             style="min-width:320px;height:700px;"></div>
+{% if formation == "A3P" or formation == "APR" %}
+  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/apr" style="min-width:320px;height:700px;"></div>
+{% elif formation == "VTC" %}
+  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/chauffeurvtc" style="min-width:320px;height:700px;"></div>
+{% elif formation == "DESP_INIT" or formation == "DESP_VAE" or formation == "DIRIGEANT" %}
+  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/dirigeant" style="min-width:320px;height:700px;"></div>
+{% elif formation == "APS" %}
+  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/aps" style="min-width:320px;height:700px;"></div>
+{% else %}
+  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/formation" style="min-width:320px;height:700px;"></div>
+{% endif %}
+
 
         <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
     </div>
@@ -82,3 +91,4 @@ p{
 
 </body>
 </html>
+
