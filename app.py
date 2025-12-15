@@ -1212,25 +1212,48 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     table_org.drawOn(c, 40, y - th)
     y -= th + 30
 
+    # ---------------------------------------------
+    # CALCUL DES DEUX SCÉNARIOS
+    # ---------------------------------------------
+    reste_avec_ft = max(tarif - cpf - montant_ft, 0)
+    reste_sans_ft = max(tarif - cpf, 0)
+
+
     # --------------------------------------------------
-    # 2) FINANCEMENT PERSONNEL
+    # TABLEAU COMPARATIF DES SCÉNARIOS
     # --------------------------------------------------
-    reste = max(tarif - cpf - montant_ft, 0)
+    table_compare = Table([
+        ["Scénario", "CPF", "France Travail", "Reste à charge"],
+        [
+            "Avec France Travail*",
+            f"{cpf:.0f} €",
+            f"{montant_ft:.0f} €",
+            f"{reste_avec_ft:.0f} €"
+        ],
+        [
+            "Sans France Travail",
+            f"{cpf:.0f} €",
+            "0 €",
+            f"{reste_sans_ft:.0f} €"
+        ]
+    ], colWidths=[170, 70, 110, 110])
+    
+    table_compare.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f0f0")),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
+        ("ALIGN", (1,1), (-1,-1), "CENTER"),
+        ("PADDING", (0,0), (-1,-1), 5),
+    ]))
+    
+    tw, th = table_compare.wrap(0, 0)
+    table_compare.drawOn(c, 40, y - th)
+    y -= th + 20
+
 
     c.setFont("Helvetica-Bold", 14)
     c.drawString(40, y, "2) Financement personnel")
     y -= 18
-
-    # CAS AUCUN RESTE À CHARGE
-    if reste <= 0:
-        c.setFont("Helvetica", 10)
-        c.drawString(
-            40,
-            y,
-            "Aucun reste à charge. La formation est intégralement financée par les organismes."
-        )
-        c.save()
-        return pdf_path
 
     # --------------------------------------------------
     # TEXTE EXPLICATIF
@@ -1264,9 +1287,9 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     # TABLEAUX D’ÉCHÉANCIERS
     # --------------------------------------------------
     for n in [2, 3, 4, 5]:
-        montant_base = round(reste / n, 2)
+        montant_base = round(reste_sans_ft / n, 2)
         montants = [montant_base] * n
-        ecart = round(reste - sum(montants), 2)
+        ecart = round(reste_sans_ft - sum(montants), 2)
         montants[-1] += ecart
 
         lignes = [["Date de prélèvement", "Montant"]]
