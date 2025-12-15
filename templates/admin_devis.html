@@ -132,6 +132,23 @@ button{
     </a>
     {% endif %}
 
+{% if d.pdf_client_path %}
+<a href="{{ url_for('voir_pdf_client', devis_id=d.id) }}"
+   target="_blank"
+   style="display:inline-block;
+          margin-bottom:6px;
+          background:#0d6efd;
+          color:white;
+          padding:7px 14px;
+          border-radius:8px;
+          font-size:12px;
+          text-decoration:none;">
+   💶 Plan de financement
+</a>
+{% endif %}
+
+
+
     <!-- Bouton statut envoyé / à envoyer -->
     <form method="POST" action="{{ url_for('toggle_devis', devis_id=d.id) }}">
         <button type="submit" class="btn-toggle">
@@ -173,6 +190,7 @@ button{
 </div>
 </body>
 </html>
+
 
 
 
