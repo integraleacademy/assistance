@@ -6,33 +6,113 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-body{
-    font-family: Arial, Helvetica, sans-serif;
-    background:#f5f6f8;
+:root{
+    --primary:#27ae60;
+    --primary-dark:#219150;
+    --bg:#f4f6f8;
+    --card:#ffffff;
+    --text:#1f2937;
+    --muted:#6b7280;
+    --border:#e5e7eb;
 }
+
+*{
+    box-sizing:border-box;
+}
+
+body{
+    font-family: 'Inter', Arial, Helvetica, sans-serif;
+    background:var(--bg);
+    margin:0;
+    padding:0;
+    color:var(--text);
+}
+
+/* =======================
+   CONTAINER
+======================= */
 .container{
     max-width:900px;
     margin:40px auto;
-    background:white;
-    padding:35px;
-    border-radius:14px;
-    box-shadow:0 8px 25px rgba(0,0,0,0.08);
+    background:var(--card);
+    padding:45px;
+    border-radius:20px;
+    box-shadow:0 12px 30px rgba(0,0,0,0.08);
+}
+
+/* Logo */
+.logo{
+    display:block;
+    margin:0 auto 30px auto;
+    width:180px;
+}
+
+/* =======================
+   TITRES
+======================= */
+h1{
+    text-align:center;
+    color:var(--primary);
+    margin-bottom:15px;
+    font-size:28px;
+}
+
+h2{
+    margin-top:0;
+    font-size:22px;
     text-align:center;
 }
-h1{
-    color:#27ae60;
-}
+
 p{
     font-size:16px;
     line-height:1.6;
+    text-align:center;
 }
+
 .info{
-    margin-top:20px;
+    margin-top:25px;
     font-size:14px;
-    color:#555;
+    color:var(--muted);
 }
+
+/* =======================
+   BLOC INFO
+======================= */
+.confirmation-box{
+    margin-top:30px;
+    padding:25px;
+    border-radius:16px;
+    background:#f9fafb;
+    border:1px solid var(--border);
+}
+
+/* =======================
+   RDV
+======================= */
 .block{
-    margin-top:45px;
+    margin-top:50px;
+    padding-top:40px;
+    border-top:2px solid var(--border);
+}
+
+.calendly-inline-widget{
+    margin-top:25px;
+    border-radius:16px;
+    overflow:hidden;
+}
+
+/* =======================
+   MOBILE
+======================= */
+@media(max-width:600px){
+    .container{
+        padding:30px 20px;
+        margin:20px;
+    }
+
+    h1{
+        font-size:24px;
+    }
 }
 </style>
 </head>
@@ -41,47 +121,52 @@ p{
 
 <div class="container">
 
-    <h1>✅ Demande bien reçue</h1>
+    <!-- LOGO -->
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Intégrale Academy" class="logo">
 
-    <p>
-        Merci pour votre demande de devis.<br>
-        Nous avons bien reçu l’ensemble de vos informations.
-    </p>
+    <h1>✅ Demande de devis bien reçue</h1>
 
-    <p>
-        📄 Notre équipe va analyser votre situation et vous transmettre
-        <strong>un devis détaillé accompagné d’un plan de financement</strong>
-        dans les meilleurs délais.
-    </p>
+    <div class="confirmation-box">
+        <p>
+            Merci pour votre demande.<br>
+            Nous avons bien reçu l’ensemble de vos informations.
+        </p>
 
-    <p class="info">
-        Si vous avez la moindre question, vous pouvez nous contacter directement au  
-        <strong>04 22 47 07 68</strong>.
-    </p>
+        <p>
+            📄 Notre équipe va analyser votre situation afin de vous transmettre  
+            <strong>un devis détaillé accompagné d’un plan de financement personnalisé</strong>
+            dans les meilleurs délais.
+        </p>
+
+        <p class="info">
+            Une question ? Contactez-nous au  
+            <strong>04 22 47 07 68</strong>
+        </p>
+    </div>
 
     <!-- ========================================================= -->
     <!-- 📞 RDV téléphonique : UNIQUEMENT SI PROFIL ULTRA QUALIFIÉ -->
     <!-- ========================================================= -->
     {% if ultra %}
     <div class="block">
+
         <h2>📞 Prendre rendez-vous avec un conseiller formation</h2>
+
         <p class="info">
-            Votre profil est complet. Un échange rapide peut être réalisé afin
-            de finaliser votre projet de formation.
+            Nous vous invitons à prendre un rendez-vous téléphonique avec un conseiller formation afin d'échanger sur votre projet et discuter des modalités d'inscription. 
         </p>
 
-{% if formation == "A3P" or formation == "APR" %}
-  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/apr" style="min-width:320px;height:700px;"></div>
-{% elif formation == "VTC" %}
-  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/chauffeurvtc" style="min-width:320px;height:700px;"></div>
-{% elif formation == "DESP_INIT" or formation == "DESP_VAE" or formation == "DIRIGEANT" %}
-  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/dirigeant" style="min-width:320px;height:700px;"></div>
-{% elif formation == "APS" %}
-  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/aps" style="min-width:320px;height:700px;"></div>
-{% else %}
-  <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/formation" style="min-width:320px;height:700px;"></div>
-{% endif %}
-
+        {% if formation == "A3P" or formation == "APR" %}
+          <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/apr" style="min-width:320px;height:700px;"></div>
+        {% elif formation == "VTC" %}
+          <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/chauffeurvtc" style="min-width:320px;height:700px;"></div>
+        {% elif formation == "DESP_INIT" or formation == "DESP_VAE" or formation == "DIRIGEANT" %}
+          <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/dirigeant" style="min-width:320px;height:700px;"></div>
+        {% elif formation == "APS" %}
+          <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/aps" style="min-width:320px;height:700px;"></div>
+        {% else %}
+          <div class="calendly-inline-widget" data-url="https://calendly.com/integraleacademy/formation" style="min-width:320px;height:700px;"></div>
+        {% endif %}
 
         <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
     </div>
@@ -91,4 +176,3 @@ p{
 
 </body>
 </html>
-
