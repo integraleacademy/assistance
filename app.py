@@ -1202,9 +1202,9 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     # --------------------------------------------------
     # LOGO (chemin Render SAFE)
     # --------------------------------------------------
-    logo = os.path.join(app.root_path, "static", "logo.png")
+    logo = os.path.join(app.root_path, "static", "logo2.jpeg")
     if os.path.exists(logo):
-        c.drawImage(logo, 40, y - 55, width=140, mask="auto")
+        c.drawImage(logo, 40, y - 55, width=140)
 
     # --------------------------------------------------
     # TITRE
@@ -1478,9 +1478,9 @@ def demande_devis():
         width, height = A4
         y = height - 40
 
-        logo = os.path.join(app.root_path, "static", "logo.png")
+        logo = os.path.join(app.root_path, "static", "logo2.jpeg")
         if os.path.exists(logo):
-            c.drawImage(logo, 40, y-60, width=140, mask="auto")
+            c.drawImage(logo, 40, y-60, width=140)
         y -= 90
 
         c.setFont("Helvetica-Bold", 20)
