@@ -1773,6 +1773,34 @@ def devis_data():
         }
 
 
+@app.route("/test-plan-financement")
+def test_plan_financement():
+    echeances = [
+        {"date": "05/04/2026", "montant": "525"},
+        {"date": "05/05/2026", "montant": "525"},
+        {"date": "05/06/2026", "montant": "525"},
+        {"date": "05/07/2026", "montant": "525"},
+        {"date": "05/08/2026", "montant": "525"},
+        {"date": "05/09/2026", "montant": "525"},
+        {"date": "05/10/2026", "montant": "525"},
+        {"date": "05/11/2026", "montant": "525"},
+    ]
+
+    return render_template(
+        "plan_financement.html",
+        prenom="Clément",
+        nom="VAILLANT",
+        formation_label="A3P – Agent de Protection Physique des Personnes",
+        dates="Mars 2026 → Novembre 2026",
+        cpf=3000,
+        ft=1200,
+        reste_avec_ft=0,
+        reste_sans_ft=1200,
+        echeances=echeances
+    )
+
+
+
 
 
         
