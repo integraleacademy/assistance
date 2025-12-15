@@ -1151,23 +1151,31 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     from reportlab.pdfgen import canvas
     from reportlab.platypus import Table, TableStyle
     from reportlab.lib import colors
+    from dateutil.relativedelta import relativedelta
+    import datetime, uuid, os
 
     pdf_path = f"/mnt/data/plan_financement_{uuid.uuid4().hex}.pdf"
     c = canvas.Canvas(pdf_path, pagesize=A4)
     width, height = A4
     y = height - 50
 
-    # LOGO
-    logo = os.path.join(app.root_path, "static", "logo.png")
+    # --------------------------------------------------
+    # LOGO (chemin Render SAFE)
+    # --------------------------------------------------
+    logo = "/mnt/data/logo.png"
     if os.path.exists(logo):
-        c.drawImage(logo, 40, y - 50, width=130, mask="auto")
+        c.drawImage(logo, 40, y - 55, width=140, mask="auto")
 
+    # --------------------------------------------------
     # TITRE
+    # --------------------------------------------------
     c.setFont("Helvetica-Bold", 20)
     c.drawCentredString(width / 2, y - 20, "Plan de financement détaillé")
-    y -= 90
+    y -= 100
 
+    # --------------------------------------------------
     # INFOS STAGIAIRE
+    # --------------------------------------------------
     c.setFont("Helvetica-Bold", 12)
     c.drawString(40, y, f"{data.get('prenom','')} {data.get('nom','')}")
     y -= 18
@@ -1188,16 +1196,16 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
 
     table_org = Table([
         ["Organisme", "Montant"],
-        ["Compte Personnel de Formation (CPF)", f"{cpf} €"],
-        ["France Travail", f"{montant_ft} €"]
+        ["Compte Personnel de Formation (CPF)", f"{cpf:.2f} €"],
+        ["France Travail (sous réserve d’acceptation)", f"{montant_ft:.2f} €"]
     ], colWidths=[300, 120])
 
     table_org.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-        ("PADDING", (0, 0), (-1, -1), 8),
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f0f0")),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
+        ("ALIGN", (1,1), (-1,-1), "RIGHT"),
+        ("PADDING", (0,0), (-1,-1), 8),
     ]))
 
     tw, th = table_org.wrap(0, 0)
@@ -1213,45 +1221,77 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     c.drawString(40, y, "2) Financement personnel")
     y -= 18
 
+    # CAS AUCUN RESTE À CHARGE
+    if reste <= 0:
+        c.setFont("Helvetica", 10)
+        c.drawString(
+            40,
+            y,
+            "Aucun reste à charge. La formation est intégralement financée par les organismes."
+        )
+        c.save()
+        return pdf_path
+
+    # --------------------------------------------------
+    # TEXTE EXPLICATIF
+    # --------------------------------------------------
     c.setFont("Helvetica", 10)
     c.drawString(
         40,
         y,
-        "Dans le cas où vous souhaitez financer personnellement votre formation OU "
-        "si France Travail refuse la demande de financement, nous vous proposons "
-        "un règlement en plusieurs fois par prélèvement mensuel sans frais."
+        "En cas de refus de financement par France Travail ou à votre convenance,"
+    )
+    y -= 14
+    c.drawString(
+        40,
+        y,
+        "nous proposons un règlement par prélèvements mensuels sans frais."
     )
     y -= 25
 
+    # --------------------------------------------------
+    # DATES DE PRÉLÈVEMENTS
+    # --------------------------------------------------
+    today = datetime.date.today()
+    date_min = today + datetime.timedelta(days=15)
+
+    if date_min.day <= 5:
+        first_prelevement = date_min.replace(day=5)
+    else:
+        first_prelevement = (date_min.replace(day=1) + relativedelta(months=1)).replace(day=5)
+
+    # --------------------------------------------------
+    # TABLEAUX D’ÉCHÉANCIERS
+    # --------------------------------------------------
     for n in [2, 3, 4, 5]:
-        montant = round(reste / n, 2)
-        lignes = [["Échéance", "Montant"]]
+        montant_base = round(reste / n, 2)
+        montants = [montant_base] * n
+        ecart = round(reste - sum(montants), 2)
+        montants[-1] += ecart
 
-        total = 0
+        lignes = [["Date de prélèvement", "Montant"]]
+
         for i in range(n):
-            total += montant
-            lignes.append([f"{i + 1}", f"{montant:.2f} €"])
+            d = first_prelevement + relativedelta(months=i)
+            lignes.append([d.strftime("%d/%m/%Y"), f"{montants[i]:.2f} €"])
 
-        ecart = round(reste - total, 2)
-        if ecart != 0:
-            lignes[-1][1] = f"{(montant + ecart):.2f} €"
-
-        table = Table(lignes, colWidths=[120, 120])
+        table = Table(lignes, colWidths=[180, 120])
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f7f7f7")),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-            ("PADDING", (0, 0), (-1, -1), 6),
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f7f7f7")),
+            ("GRID", (0,0), (-1,-1), 0.4, colors.grey),
+            ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
+            ("ALIGN", (1,1), (-1,-1), "RIGHT"),
+            ("PADDING", (0,0), (-1,-1), 6),
         ]))
 
         tw, th = table.wrap(0, 0)
         table.drawOn(c, 40, y - th)
-        c.drawString(180, y - 15, f"Option {n} fois")
-        y -= th + 20
+        c.drawString(340, y - 15, f"Option {n} fois")
+        y -= th + 25
 
     c.save()
     return pdf_path
+
 
 
 
@@ -1370,7 +1410,7 @@ def demande_devis():
         width, height = A4
         y = height - 40
 
-        logo = os.path.join(app.root_path, "static", "logo.png")
+        logo = "/mnt/data/logo.png"
         if os.path.exists(logo):
             c.drawImage(logo, 40, y-60, width=140, mask="auto")
         y -= 90
