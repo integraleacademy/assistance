@@ -6,71 +6,173 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-body{
-    font-family: Arial, Helvetica, sans-serif;
-    background:#f5f6f8;
+:root{
+    --primary:#27ae60;
+    --primary-dark:#219150;
+    --bg:#f4f6f8;
+    --card:#ffffff;
+    --text:#1f2937;
+    --muted:#6b7280;
+    --border:#e5e7eb;
 }
+
+*{
+    box-sizing:border-box;
+}
+
+body{
+    font-family: 'Inter', Arial, Helvetica, sans-serif;
+    background:var(--bg);
+    margin:0;
+    padding:0;
+    color:var(--text);
+}
+
+/* =======================
+   CONTAINER
+======================= */
 .container{
     max-width:900px;
-    margin:30px auto;
-    background:white;
-    padding:30px;
-    border-radius:14px;
-    box-shadow:0 8px 25px rgba(0,0,0,0.08);
+    margin:40px auto;
+    background:var(--card);
+    padding:40px;
+    border-radius:18px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.08);
 }
+
+/* Logo */
 .container img{
     display:block;
-    margin:0 auto 25px auto;
-    width:160px;
+    margin:0 auto 30px auto;
+    width:170px;
 }
+
+/* =======================
+   TITRES
+======================= */
 h2{
-    margin-top:0;
+    margin:0 0 10px 0;
+    font-size:26px;
+    text-align:center;
 }
+
 h3{
-    margin-top:35px;
-    border-bottom:2px solid #eee;
-    padding-bottom:6px;
+    margin-top:45px;
+    font-size:18px;
+    padding-bottom:10px;
+    border-bottom:2px solid var(--border);
 }
+
+/* Intro */
+.container > p{
+    text-align:center;
+    color:var(--muted);
+    margin-bottom:35px;
+}
+
+/* =======================
+   FORM
+======================= */
 label{
     display:block;
-    margin-top:15px;
+    margin-top:18px;
     font-weight:600;
-}
-input, select{
-    width:100%;
-    padding:12px;
-    margin-top:6px;
-    border-radius:8px;
-    border:1px solid #ccc;
     font-size:14px;
 }
+
+input, select{
+    width:100%;
+    padding:14px 14px;
+    margin-top:6px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    font-size:15px;
+    transition:all .2s ease;
+    background:#fff;
+}
+
+input:focus, select:focus{
+    outline:none;
+    border-color:var(--primary);
+    box-shadow:0 0 0 3px rgba(39,174,96,0.15);
+}
+
+/* Infos / aides */
 .info{
     font-size:13px;
-    color:#555;
-    margin-top:6px;
+    color:var(--muted);
+    margin-top:8px;
+    line-height:1.4;
 }
+
 .info a{
-    color:#0d6efd;
+    color:var(--primary);
+    font-weight:600;
     text-decoration:none;
 }
+
+.info a:hover{
+    text-decoration:underline;
+}
+
+/* =======================
+   BLOCS CONDITIONNELS
+======================= */
+#datesBloc,
+#blocFranceTravail,
+#blocPerso,
+#blocCnaps{
+    margin-top:25px;
+    padding:25px;
+    border-radius:14px;
+    background:#f9fafb;
+    border:1px solid var(--border);
+}
+
+/* =======================
+   BOUTON
+======================= */
 button{
-    margin-top:35px;
-    background:#27ae60;
+    margin-top:45px;
+    background:linear-gradient(135deg, var(--primary), var(--primary-dark));
     color:white;
     border:none;
-    padding:16px 22px;
-    font-size:16px;
-    border-radius:10px;
+    padding:18px;
+    font-size:17px;
+    font-weight:600;
+    border-radius:14px;
     cursor:pointer;
     width:100%;
+    transition:all .2s ease;
 }
+
 button:hover{
-    background:#219150;
+    transform:translateY(-1px);
+    box-shadow:0 8px 20px rgba(39,174,96,0.35);
 }
+
+/* =======================
+   UTILITAIRES
+======================= */
 .hidden{
     display:none;
 }
+
+/* =======================
+   MOBILE
+======================= */
+@media(max-width:600px){
+    .container{
+        padding:25px 20px;
+        margin:20px;
+    }
+
+    h2{
+        font-size:22px;
+    }
+}
 </style>
+
 </head>
 
 <body>
@@ -179,7 +281,7 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 </p>
 
 <div id="blocCnaps" class="hidden">
-<h3>Situation CNAPS</h3>
+<h3>Informations complémentaires</h3>
 
 <label>J’ai déjà une carte professionnelle CNAPS en cours de validité</label>
 <select name="cnaps_ok">
@@ -188,14 +290,14 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
     <option value="NON">NON</option>
 </select>
 
-<label>Ai-je déjà fait l’objet d’une garde à vue ou d’une prise d’empreintes ?</label>
+<label>J'ai déjà fait l'objet d’une garde à vue ou d’une prise d’empreintes ? Le CNAPS (Ministère de l'intérieur) vérifie vos antécédents judiciaires sur les 30 dernières années, même si votre casier judiciaire est vierge).</label>
 <select name="garde_vue">
     <option value="">— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
 
-<label>Suis-je titulaire d’un titre de séjour ?</label>
+<label>Je suis titulaire d'un titre de séjour</label>
 <select name="titre_sejour">
     <option value="">— Sélectionnez —</option>
     <option value="OUI">OUI</option>
@@ -297,3 +399,4 @@ franceTravail.addEventListener("change", () => {
 
 </body>
 </html>
+
