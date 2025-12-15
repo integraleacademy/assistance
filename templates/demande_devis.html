@@ -218,7 +218,7 @@ button:hover{
 <h3>Choix des dates</h3>
 
 <label>Session souhaitée</label>
-<select name="dates" id="datesSelect" required>
+<select name="dates" id="datesSelect">
     <option value="">— Sélectionnez —</option>
 </select>
 </div>
@@ -376,8 +376,10 @@ formation.addEventListener("change", () => {
   const v = formation.value;
   datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
 
-  if (dates[v]) {
+  if (v === "A3P" || v === "APS" || v === "DESP_INIT") {
     datesBloc.classList.remove("hidden");
+    datesSelect.required = true;
+
     dates[v].forEach(d => {
       const o = document.createElement("option");
       o.value = d;
@@ -386,17 +388,57 @@ formation.addEventListener("change", () => {
     });
   } else {
     datesBloc.classList.add("hidden");
+    datesSelect.required = false;
+    datesSelect.value = "";
   }
 
   cnapsBloc.classList.toggle("hidden", !(v === "A3P" || v === "APS"));
 });
 
+
 franceTravail.addEventListener("change", () => {
-  blocFT.classList.toggle("hidden", franceTravail.value !== "OUI");
-  blocPerso.classList.toggle("hidden", franceTravail.value !== "NON");
+
+  // Reset
+  blocFT.querySelector("select").required = false;
+  blocPerso.querySelector("select").required = false;
+
+  if (franceTravail.value === "OUI") {
+    blocFT.classList.remove("hidden");
+    blocPerso.classList.add("hidden");
+    blocFT.querySelector("select").required = true;
+  } 
+  else if (franceTravail.value === "NON") {
+    blocPerso.classList.remove("hidden");
+    blocFT.classList.add("hidden");
+    blocPerso.querySelector("select").required = true;
+  } 
+  else {
+    blocFT.classList.add("hidden");
+    blocPerso.classList.add("hidden");
+  }
 });
+
+    form.addEventListener("submit", () => {
+  // Si le bloc dates est caché, on s’assure qu’il ne bloque pas
+  if (datesBloc.classList.contains("hidden")) {
+    datesSelect.required = false;
+    datesSelect.value = "";
+  }
+
+  // France Travail : on sécurise aussi
+  if (blocFT.classList.contains("hidden")) {
+    blocFT.querySelector("select").required = false;
+  }
+
+  if (blocPerso.classList.contains("hidden")) {
+    blocPerso.querySelector("select").required = false;
+  }
+});
+
+
 </script>
 
 </body>
 </html>
+
 
