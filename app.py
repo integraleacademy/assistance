@@ -1146,6 +1146,114 @@ def hebergement_data():
             "error": str(e)
         }, 500, {"Access-Control-Allow-Origin": "*"}
 
+def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+
+    pdf_path = f"/mnt/data/plan_financement_{uuid.uuid4().hex}.pdf"
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    width, height = A4
+    y = height - 50
+
+    # LOGO
+    logo = os.path.join(app.root_path, "static", "logo.png")
+    if os.path.exists(logo):
+        c.drawImage(logo, 40, y - 50, width=130, mask="auto")
+
+    # TITRE
+    c.setFont("Helvetica-Bold", 20)
+    c.drawCentredString(width / 2, y - 20, "Plan de financement détaillé")
+    y -= 90
+
+    # INFOS STAGIAIRE
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, y, f"{data.get('prenom','')} {data.get('nom','')}")
+    y -= 18
+
+    c.setFont("Helvetica", 11)
+    c.drawString(40, y, data.get("formation_label", data.get("formation", "")))
+    y -= 15
+
+    c.drawString(40, y, f"Dates : {data.get('dates','—')}")
+    y -= 35
+
+    # --------------------------------------------------
+    # 1) FINANCEMENT ORGANISMES
+    # --------------------------------------------------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, y, "1) Financement par organismes")
+    y -= 20
+
+    table_org = Table([
+        ["Organisme", "Montant"],
+        ["Compte Personnel de Formation (CPF)", f"{cpf} €"],
+        ["France Travail", f"{montant_ft} €"]
+    ], colWidths=[300, 120])
+
+    table_org.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+        ("PADDING", (0, 0), (-1, -1), 8),
+    ]))
+
+    tw, th = table_org.wrap(0, 0)
+    table_org.drawOn(c, 40, y - th)
+    y -= th + 30
+
+    # --------------------------------------------------
+    # 2) FINANCEMENT PERSONNEL
+    # --------------------------------------------------
+    reste = max(tarif - cpf - montant_ft, 0)
+
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, y, "2) Financement personnel")
+    y -= 18
+
+    c.setFont("Helvetica", 10)
+    c.drawString(
+        40,
+        y,
+        "Dans le cas où vous souhaitez financer personnellement votre formation OU "
+        "si France Travail refuse la demande de financement, nous vous proposons "
+        "un règlement en plusieurs fois par prélèvement mensuel sans frais."
+    )
+    y -= 25
+
+    for n in [2, 3, 4, 5]:
+        montant = round(reste / n, 2)
+        lignes = [["Échéance", "Montant"]]
+
+        total = 0
+        for i in range(n):
+            total += montant
+            lignes.append([f"{i + 1}", f"{montant:.2f} €"])
+
+        ecart = round(reste - total, 2)
+        if ecart != 0:
+            lignes[-1][1] = f"{(montant + ecart):.2f} €"
+
+        table = Table(lignes, colWidths=[120, 120])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f7f7f7")),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+            ("PADDING", (0, 0), (-1, -1), 6),
+        ]))
+
+        tw, th = table.wrap(0, 0)
+        table.drawOn(c, 40, y - th)
+        c.drawString(180, y - 15, f"Option {n} fois")
+        y -= th + 20
+
+    c.save()
+    return pdf_path
+
+
 
 @app.route("/demande-devis", methods=["GET", "POST"])
 def demande_devis():
@@ -1182,6 +1290,15 @@ def demande_devis():
             cpf = 0
 
         reste = max(tarif - cpf, 0)
+
+        # =========================
+        # MONTANT FRANCE TRAVAIL
+        # =========================
+        if data.get("france_travail") == "OUI":
+            montant_ft = max(tarif - cpf, 0)
+        else:
+            montant_ft = 0
+
 
         # =========================
         # PARSING DATE DÉBUT
@@ -1401,6 +1518,20 @@ def demande_devis():
         c.save()
 
         # =========================
+        # PDF CLIENT – PLAN DE FINANCEMENT
+        # =========================
+        pdf_client_path = generer_pdf_plan_financement_client(
+            data={
+                **data,
+                "formation_label": formation
+            },
+            tarif=tarif,
+            cpf=cpf,
+            montant_ft=montant_ft
+        )
+
+
+        # =========================
         # SAUVEGARDE + MAIL
         # =========================
         data_store = load_data()
@@ -1426,6 +1557,7 @@ def demande_devis():
             "rappel_date": "",
             "plage": "",
             "statut_devis": "A envoyer",
+            "pdf_client_path": pdf_client_path,
             "pdf_path": pdf_path
         })
 
@@ -1492,6 +1624,33 @@ def voir_pdf_devis(devis_id):
         os.path.dirname(pdf_path),
         os.path.basename(pdf_path)
     )
+
+@app.route("/admin-devis/pdf-client/<devis_id>")
+@login_required
+def voir_pdf_client(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id
+         and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if not devis:
+        abort(404)
+
+    pdf_client_path = devis.get("pdf_client_path")
+    if not pdf_client_path or not os.path.exists(pdf_client_path):
+        abort(404)
+
+    return send_from_directory(
+        os.path.dirname(pdf_client_path),
+        os.path.basename(pdf_client_path)
+    )
+
+
+
 
 @app.route("/devis_data.json")
 def devis_data():
