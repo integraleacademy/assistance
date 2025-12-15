@@ -1328,6 +1328,33 @@ def demande_devis():
         from dateutil.relativedelta import relativedelta
 
         data = request.form.to_dict()
+        # =========================
+        # DATE D'EXAMEN (OBLIGATOIRE POUR CERTAINES FORMATIONS)
+        # =========================
+        date_examen = None
+        date_examen_str = data.get("date_examen", "").strip()
+        
+        if date_examen_str:
+            try:
+                date_examen = datetime.datetime.strptime(
+                    date_examen_str, "%Y-%m-%d"
+                ).date()
+            except ValueError:
+                date_examen = None
+
+        # =========================
+        # DATE LIMITE DE PAIEMENT
+        # (formation soldée 7 jours avant l’examen)
+        # =========================
+        date_limite_paiement = None
+        
+        if date_examen:
+            date_limite_paiement = date_examen - datetime.timedelta(days=7)
+        
+        print("DATE EXAMEN =", date_examen)
+        print("DATE LIMITE PAIEMENT =", date_limite_paiement)
+
+
 
         # =========================
         # DATE DU DEVIS (AVANT TOUT)
