@@ -78,6 +78,25 @@
       border-radius:8px;
     }
 
+    /* ===== TITRES DE SECTIONS ===== */
+.section-title{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 14px;
+  margin-bottom:10px;
+  border-radius:8px;
+  background:#eaf0f8;
+  color:#0f1f33;
+  font-weight:700;
+  font-size:15px;
+  border-left:6px solid #0f1f33;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+    
+
     /* ===== TABLEAUX ===== */
     table{
       width:100%;
@@ -203,7 +222,8 @@
 
   <!-- ===== BLOC 1 ===== -->
   <div class="bloc">
-    <div class="bloc-title">1) Financement par organismes</div>
+    <div class="bloc-title">Financement par organismes</div>
+
 
     <table>
       <tr>
@@ -244,7 +264,7 @@
 
   <!-- ===== BLOC 2 ===== -->
   <div class="bloc">
-    <div class="bloc-title">2) Financement personnel</div>
+    <div class="section-title">Financement personnel</div>
     <div style="margin-top:6px;">
       En cas de refus de financement par France Travail ou à votre convenance, nous proposons un règlement par prélèvements mensuels sans frais.
     </div>
@@ -276,5 +296,6 @@
 
 </body>
 </html>
+
 
 
