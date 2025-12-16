@@ -147,6 +147,20 @@ button{
 </a>
 {% endif %}
 
+    <a href="{{ url_for('plan_financement_devis', devis_id=d.id) }}"
+   target="_blank"
+   style="display:inline-block;
+          margin-bottom:6px;
+          background:#6f42c1;
+          color:white;
+          padding:7px 14px;
+          border-radius:8px;
+          font-size:12px;
+          text-decoration:none;">
+   🧾 Plan de financement (HTML)
+</a>
+
+
 
 
     <!-- Bouton statut envoyé / à envoyer -->
@@ -190,6 +204,7 @@ button{
 </div>
 </body>
 </html>
+
 
 
 
