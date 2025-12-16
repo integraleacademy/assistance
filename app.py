@@ -1772,6 +1772,41 @@ def devis_data():
             "Access-Control-Allow-Origin": "*"
         }
 
+@app.route("/admin-devis/plan-financement/<devis_id>")
+@login_required
+def plan_financement_devis(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id
+         and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if not devis:
+        abort(404)
+
+    infos = {}
+    try:
+        infos = json.loads(devis.get("details", "{}"))
+    except:
+        pass
+
+    return render_template(
+        "plan_financement.html",
+        prenom=devis.get("prenom"),
+        nom=devis.get("nom"),
+        formation_label=infos.get("formation_label") or infos.get("formation"),
+        dates=infos.get("dates"),
+        cpf=infos.get("cpf_montant", 0),
+        ft=infos.get("montant_ft", 0),
+        reste_avec_ft=infos.get("reste_avec_ft", 0),
+        reste_sans_ft=infos.get("reste_sans_ft", 0),
+        echeances=infos.get("echeances", [])
+    )
+
+
 
 @app.route("/test-plan-financement")
 def test_plan_financement():
