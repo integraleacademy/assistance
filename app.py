@@ -494,18 +494,28 @@ def admin():
     data = load_data()
     demandes = data["demandes"]
 
-    # ❌ On exclut les demandes de devis de l'admin principal
+    # ❌ Exclure les demandes de devis détaillé de l'admin principal
     demandes = [
         d for d in demandes
         if d.get("motif") != "Demande de devis détaillé"
     ]
 
-
     # 🔐 Identifier l'utilisateur connecté
-    user = current_user()  # récupère les infos de session
+    user = current_user()
     user_name = user["name"] if user else None
     user_role = user["role"] if user else "user"
 
+    # ✅ Fonction de parsing de date (AFFICHAGE UNIQUEMENT)
+    def parse_date(d):
+        try:
+            return datetime.datetime.strptime(d.get("date", ""), "%d/%m/%Y %H:%M")
+
+        except:
+            return datetime.datetime.min
+
+    # =====================================================
+    # 🟢 TRAITEMENTS POST (AJOUT / UPDATE / DELETE / ARCHIVE)
+    # =====================================================
     if request.method == "POST":
         action = request.form.get("action")
         demande_id = request.form.get("id")
@@ -534,51 +544,46 @@ def admin():
                 "reponses": [],
                 "is_doublon": False,
                 "rappel_date": request.form.get("rappel_date", "")
-
             }
 
             data["demandes"].append(new_demande)
             save_data(data)
 
-            # 📨 Si la nouvelle demande est attribuée à Mohamed → envoyer le mail
+            # 📧 Notification si attribuée à Mohamed
             if new_demande["attribution"].strip() == "Mohamed":
                 try:
                     envoyer_mail_attribution_mohamed(new_demande)
-                    print(f"📨 Notification envoyée (ajout manuel) pour {new_demande['prenom']} {new_demande['nom']}")
-                except Exception as e:
-                    print("⚠️ Erreur envoi mail attribution Mohamed (ajout manuel) :", e)
+                except:
+                    pass
 
             return redirect(url_for("admin"))
-
-
 
         # ✏️ Mise à jour d'une demande existante
         elif action == "update":
             for d in demandes:
                 if d["id"] == demande_id:
                     d["mail"] = request.form.get("mail") or d["mail"]
-                    new_details = request.form.get("details")
-                    if new_details is not None:
-                        d["details"] = new_details
+                    if request.form.get("details") is not None:
+                        d["details"] = request.form.get("details")
+
                     d["commentaire"] = request.form.get("commentaire")
                     d["rappel_date"] = request.form.get("rappel_date", d.get("rappel_date", ""))
+
                     ancienne_attribution = d.get("attribution", "").strip()
                     nouvelle_attribution = request.form.get("attribution", "").strip()
                     d["attribution"] = nouvelle_attribution or ancienne_attribution
 
-                    # 🔔 Notification automatique si attribution = Mohamed
+                    # 🔔 Notification attribution Mohamed
                     if nouvelle_attribution == "Mohamed" and ancienne_attribution != "Mohamed":
                         try:
                             envoyer_mail_attribution_mohamed(d)
-                            print(f"📨 Notification envoyée (attribution Mohamed) pour {d.get('prenom')} {d.get('nom')}")
-                        except Exception as e:
-                            print("⚠️ Erreur envoi mail attribution Mohamed :", e)
+                        except:
+                            pass
 
-                    # ✅ Gestion du statut
                     ancien_statut = d.get("statut", "Non traité")
                     nouveau_statut = request.form.get("statut") or ancien_statut
 
-                    # 📎 Upload de pièces jointes
+                    # 📎 Upload pièces jointes
                     if "pj" in request.files:
                         for f in request.files.getlist("pj"):
                             if f and f.filename:
@@ -589,7 +594,7 @@ def admin():
                                 if filename not in d["pieces_jointes"]:
                                     d["pieces_jointes"].append(filename)
 
-                    # 📨 Passage à "Traité" → envoi mail auto
+                    # 📨 Passage à Traité
                     if ancien_statut != "Traité" and nouveau_statut == "Traité":
                         if envoyer_mail_confirmation(d):
                             data["compteur_traitees"] += 1
@@ -600,6 +605,7 @@ def admin():
                             d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
 
                     d["statut"] = nouveau_statut
+
             save_data(data)
             return redirect(url_for("admin"))
 
@@ -615,7 +621,7 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
-        # 🗑️ Archiver une demande
+        # 🗑️ Archivage d'une demande
         elif action == "delete":
             to_remove = next((d for d in demandes if d["id"] == demande_id), None)
             if to_remove:
@@ -627,7 +633,7 @@ def admin():
                 save_data(data)
             return redirect(url_for("admin"))
 
-        # 🧹 Archiver toutes les demandes traitées
+        # 🧹 Archivage de toutes les demandes traitées
         elif action == "delete_all_traitees":
             traitees = [d for d in demandes if d.get("statut") == "Traité"]
             for d in traitees:
@@ -639,7 +645,9 @@ def admin():
             save_data(data)
             return redirect(url_for("admin"))
 
+    # =========================
     # 🔍 Recherche (GET)
+    # =========================
     query = request.args.get("q", "").strip().lower()
     if query:
         demandes = [
@@ -652,13 +660,19 @@ def admin():
             or query in d.get("attribution", "").lower()
         ]
 
+    # 👤 Filtre utilisateur (non admin)
     if user_role != "admin" and user_name:
         demandes = [
             d for d in demandes
             if (d.get("attribution") or "").strip().lower() == user_name.lower()
         ]
 
-
+    # 🔽 TRI GLOBAL (plus récentes en premier)
+    demandes = sorted(
+        demandes,
+        key=parse_date,
+        reverse=True
+    )
 
     return render_template(
         "admin.html",
@@ -666,6 +680,7 @@ def admin():
         compteur_traitees=data["compteur_traitees"],
         query=query
     )
+
 
 @app.route("/admin-devis")
 @login_required
