@@ -5,7 +5,11 @@
   <title>Plan de financement — Intégrale Academy</title>
 
   <style>
-    @page { size: A4; margin: 18mm; }
+    @page {
+      size: A4;
+      margin: 10mm;
+}
+
 
     body{
       font-family: Arial, Helvetica, sans-serif;
@@ -124,6 +128,56 @@
       border-radius:6px;
       font-style:italic;
     }
+/* ===== OPTIMISATION IMPRESSION ===== */
+@media print {
+
+  body {
+    font-size: 11px;
+  }
+
+  .header {
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .header img {
+    height: 90px; /* un peu plus petit pour tenir sur 1 page */
+  }
+
+  .bloc {
+    margin-top: 12px;
+  }
+
+  table {
+    margin-top: 6px;
+  }
+
+  th, td {
+    padding: 6px 8px;
+  }
+
+  .who,
+  .note,
+  .alert {
+    padding: 8px 10px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  tr:nth-child(even) td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+    
   </style>
 </head>
 
@@ -222,4 +276,5 @@
 
 </body>
 </html>
+
 
