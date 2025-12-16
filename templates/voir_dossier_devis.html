@@ -48,11 +48,35 @@ p{
 }
 .badge-green{ background:#eafaf1; color:#1e8449; }
 .badge-red{ background:#fdecea; color:#c0392b; }
+
+    .note-interne{
+    background:#f1f3f5;
+    color:#555;
+    padding:10px 16px;
+    border-radius:10px;
+    font-size:13px;
+    margin-bottom:20px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+.note-interne strong{
+    font-weight:600;
+}
+
 </style>
 </head>
 
 <body>
 <div class="container">
+
+    {% if devis.notation_interne == "CHAUD" %}
+<div class="note-interne">
+    🔥 <strong>Dossier prioritaire</strong> —  
+    le candidat est prêt à financer la formation sans aide France Travail.
+</div>
+{% endif %}
+
 
 <h1>📁 Dossier de demande de devis</h1>
 
@@ -158,3 +182,4 @@ p{
 </div>
 </body>
 </html>
+
