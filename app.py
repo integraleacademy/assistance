@@ -1203,7 +1203,7 @@ def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
     # --------------------------------------------------
     # LOGO (chemin Render SAFE)
     # --------------------------------------------------
-    logo_path = os.path.join(app.root_path, "static", "logo2.jpeg")
+    logo_path = os.path.join(app.root_path, "static", "logo2.jpg")
     if os.path.exists(logo_path):
         c.drawImage(
             ImageReader(logo_path),
@@ -1486,7 +1486,7 @@ def demande_devis():
         width, height = A4
         y = height - 40
 
-        logo_path = os.path.join(app.root_path, "static", "logo2.jpeg")
+        logo_path = os.path.join(app.root_path, "static", "logo2.jpg")
         if os.path.exists(logo_path):
             c.drawImage(
                 ImageReader(logo_path),
