@@ -203,7 +203,7 @@
         </tr>
         {% for e in echeances %}
         <tr>
-          <td>{{ e.date }}</td>
+          <td>{{ e.date.strftime('%d/%m/%Y') }}</td>
           <td class="right">{{ e.montant }} €</td>
         </tr>
         {% endfor %}
@@ -222,3 +222,4 @@
 
 </body>
 </html>
+
