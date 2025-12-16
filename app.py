@@ -705,6 +705,33 @@ def toggle_devis(devis_id):
     save_data(data)
     return redirect(url_for("admin_devis"))
 
+@app.route("/admin-devis/dossier/<devis_id>")
+@login_required
+def voir_dossier_devis(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id
+         and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if not devis:
+        abort(404)
+
+    try:
+        infos = json.loads(devis.get("details", "{}"))
+    except:
+        infos = {}
+
+    return render_template(
+        "voir_dossier_devis.html",
+        devis=devis,
+        infos=infos
+    )
+    
+
 
 
 
