@@ -11,83 +11,145 @@
       font-family: Arial, Helvetica, sans-serif;
       font-size: 12px;
       color:#111;
+      background:#ffffff;
     }
 
+    /* ===== EN-TÊTE ===== */
     .header{
-      text-align:center;
-      margin-bottom:14px;
-      padding-bottom:10px;
-      border-bottom:1px solid #e6e6e6;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:14px 18px;
+      margin-bottom:18px;
+      border-radius:10px;
+      background:#0f1f33;
+      color:#fff;
+    }
+
+    .header-left{
+      display:flex;
+      align-items:center;
+      gap:16px;
     }
 
     .header img{
-      height:70px;
+      height:110px; /* LOGO PLUS GROS */
       width:auto;
-      display:inline-block;
-      margin-bottom:6px;
+      display:block;
     }
 
-    h1{
-      font-size:20px;
-      margin:6px 0 0 0;
+    .header-title{
+      line-height:1.3;
     }
 
+    .header-title h1{
+      font-size:22px;
+      margin:0;
+      font-weight:700;
+    }
+
+    .header-title div{
+      font-size:12px;
+      opacity:0.9;
+      margin-top:4px;
+    }
+
+    /* ===== BLOCS ===== */
     .bloc{
-      margin-top:14px;
+      margin-top:18px;
+    }
+
+    .bloc-title{
+      font-weight:700;
+      font-size:15px;
+      margin-bottom:8px;
+      color:#0f1f33;
     }
 
     .who{
-      margin-top:10px;
-      line-height:1.5;
+      margin-top:6px;
+      line-height:1.6;
+      padding:12px 14px;
+      background:#f6f7f9;
+      border-radius:8px;
     }
 
+    /* ===== TABLEAUX ===== */
     table{
       width:100%;
-      border-collapse:collapse;
-      margin-top:8px;
+      border-collapse:separate;
+      border-spacing:0;
+      margin-top:10px;
       font-size:12px;
+      border-radius:8px;
+      overflow:hidden;
     }
 
     th, td{
       border:1px solid #d6d6d6;
-      padding:8px;
+      padding:9px 10px;
       vertical-align:top;
     }
 
     th{
-      background:#f2f2f2;
+      background:#eef1f5;
       text-align:left;
       font-weight:700;
+    }
+
+    tr:nth-child(even) td{
+      background:#fafafa;
     }
 
     .right{ text-align:right; }
     .center{ text-align:center; }
 
+    /* ===== NOTES ===== */
     .note{
-      margin-top:10px;
+      margin-top:12px;
       font-size:10px;
       color:#555;
-      line-height:1.4;
+      line-height:1.5;
+      background:#f6f7f9;
+      padding:10px 12px;
+      border-radius:6px;
+    }
+
+    /* ===== ALERT ===== */
+    .alert{
+      margin-top:10px;
+      padding:10px 12px;
+      background:#fff4e5;
+      border:1px solid #ffd59e;
+      border-radius:6px;
+      font-style:italic;
     }
   </style>
 </head>
 
 <body>
 
+  <!-- ===== HEADER ===== -->
   <div class="header">
-    <!-- Logo : on va le charger via Flask -->
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="Intégrale Academy">
-    <h1>Plan de financement détaillé</h1>
+    <div class="header-left">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="Intégrale Academy">
+      <div class="header-title">
+        <h1>Plan de financement détaillé</h1>
+        <div>Document récapitulatif de votre parcours de formation</div>
+      </div>
+    </div>
   </div>
 
+  <!-- ===== IDENTITÉ ===== -->
   <div class="who">
     <div><strong>{{ prenom }} {{ nom }}</strong></div>
     <div>{{ formation_label }}</div>
     <div>Session / Dates : {{ dates }}</div>
   </div>
 
+  <!-- ===== BLOC 1 ===== -->
   <div class="bloc">
-    <div style="font-weight:700; font-size:14px;">1) Financement par organismes</div>
+    <div class="bloc-title">1) Financement par organismes</div>
 
     <table>
       <tr>
@@ -126,8 +188,9 @@
     </table>
   </div>
 
+  <!-- ===== BLOC 2 ===== -->
   <div class="bloc">
-    <div style="font-weight:700; font-size:14px;">2) Financement personnel</div>
+    <div class="bloc-title">2) Financement personnel</div>
     <div style="margin-top:6px;">
       En cas de refus de financement par France Travail ou à votre convenance, nous proposons un règlement par prélèvements mensuels sans frais.
     </div>
@@ -146,7 +209,7 @@
         {% endfor %}
       </table>
     {% else %}
-      <div style="margin-top:10px; font-style:italic;">
+      <div class="alert">
         ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
       </div>
     {% endif %}
@@ -159,5 +222,3 @@
 
 </body>
 </html>
-
-
