@@ -1699,14 +1699,6 @@ def demande_devis():
 
         save_data(data_store)
 
-        send_email_html(
-            "clement@integraleacademy.com",
-            "Demande de devis – Intégrale Academy",
-            "PDF en pièce jointe",
-            _wrap_html("<h2>Nouvelle demande de devis</h2>", "<p>Devis en pièce jointe.</p>"),
-            attachments_paths=[pdf_path]
-        )
-
         ultra = (
             data.get("cpf_consulte") == "OUI" and
             data.get("france_travail") == "NON" and
