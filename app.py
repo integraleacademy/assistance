@@ -1418,6 +1418,20 @@ def demande_devis():
         from dateutil.relativedelta import relativedelta
 
         data = request.form.to_dict()
+
+        # -------------------------
+        # 🔥 NOTATION INTERNE AUTO
+        # -------------------------
+        notation_interne = ""
+        
+        if (
+            data.get("cpf_consulte") == "OUI"
+            and data.get("france_travail") == "NON"
+            and data.get("financement_perso") == "OUI"
+            and data.get("identite_numerique") == "OUI"
+        ):
+            notation_interne = "CHAUD"
+
         # =========================
         # DATE D'EXAMEN (OBLIGATOIRE POUR CERTAINES FORMATIONS)
         # =========================
@@ -1679,6 +1693,7 @@ def demande_devis():
             "plage": "",
             "statut_devis": "A envoyer",
             "pdf_client_path": pdf_client_path,
+            "notation_interne": notation_interne,
             "pdf_path": pdf_path
         })
 
