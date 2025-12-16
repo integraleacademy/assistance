@@ -116,36 +116,6 @@ button{
     </td>
 
 <td>
-    <!-- Bouton voir PDF -->
-    {% if d.pdf_path %}
-    <a href="{{ url_for('voir_pdf_devis', devis_id=d.id) }}"
-       target="_blank"
-       style="display:inline-block;
-              margin-bottom:6px;
-              background:#198754;
-              color:white;
-              padding:7px 14px;
-              border-radius:8px;
-              font-size:12px;
-              text-decoration:none;">
-        📄 Voir PDF
-    </a>
-    {% endif %}
-
-{% if d.pdf_client_path %}
-<a href="{{ url_for('voir_pdf_client', devis_id=d.id) }}"
-   target="_blank"
-   style="display:inline-block;
-          margin-bottom:6px;
-          background:#0d6efd;
-          color:white;
-          padding:7px 14px;
-          border-radius:8px;
-          font-size:12px;
-          text-decoration:none;">
-   💶 Plan de financement
-</a>
-{% endif %}
 
     <a href="{{ url_for('plan_financement_devis', devis_id=d.id) }}"
    target="_blank"
@@ -218,6 +188,7 @@ button{
 </div>
 </body>
 </html>
+
 
 
 
