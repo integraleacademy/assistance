@@ -277,11 +277,17 @@
   </div>
 
   <!-- ===== IDENTITÉ ===== -->
-  <div class="who">
-    <div><strong>{{ prenom }} {{ nom }}</strong></div>
-    <div>{{ formation_label }}</div>
-    <div>Session / Dates : {{ dates }}</div>
+<div class="who">
+  <div style="font-weight:700;">
+    {{ prenom|upper }} {{ nom|upper }}
   </div>
+  <div style="font-size:11px;color:#555;">
+    {{ email }}
+  </div>
+  <div>{{ formation_label }}</div>
+  <div>Session / Dates : {{ dates }}</div>
+</div>
+
 
   <!-- ===== BLOC 1 ===== -->
   <div class="bloc">
@@ -441,6 +447,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
