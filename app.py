@@ -1709,6 +1709,7 @@ def demande_devis():
             "statut_devis": "A envoyer",
             "pdf_client_path": pdf_client_path,
             "notation_interne": notation_interne,
+            "echeancier_manuel": [],
             "pdf_path": pdf_path
         })
 
@@ -1882,11 +1883,16 @@ def plan_financement_devis(devis_id):
     except:
         date_examen = None
 
-    echeances = build_echeances_mensuelles(
-        reste=reste_sans_ft,
-        date_devis=datetime.date.today(),
-        date_examen=date_examen
-    )
+    # 🔁 Échéancier manuel prioritaire
+    if devis.get("echeancier_manuel"):
+        echeances = devis["echeancier_manuel"]
+    else:
+        echeances = build_echeances_mensuelles(
+            reste=reste_sans_ft,
+            date_devis=datetime.date.today(),
+            date_examen=date_examen
+        )
+
 
     return render_template(
         "plan_financement.html",
@@ -1934,6 +1940,42 @@ def test_plan_financement():
         reste_sans_ft=1200,
         echeances=echeances
     )
+
+@app.route("/admin-devis/echeancier/<devis_id>", methods=["POST"])
+@login_required
+def save_echeancier(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id
+         and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if not devis:
+        abort(404)
+
+    dates = request.form.getlist("date[]")
+    montants = request.form.getlist("montant[]")
+
+    echeancier = []
+    for d, m in zip(dates, montants):
+        if d and m:
+            try:
+                echeancier.append({
+                    "date": d,
+                    "montant": float(m)
+                })
+            except:
+                pass
+
+    devis["echeancier_manuel"] = echeancier
+    save_data(data)
+
+    return redirect(url_for("plan_financement_devis", devis_id=devis_id))
+
+
 
 
 
