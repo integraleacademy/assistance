@@ -276,7 +276,7 @@
       data-reste="{{ reste_sans_ft }}">
 
 
-  <table>
+  <table id="table-echeancier">
     <tr>
       <th>Date de prélèvement</th>
       <th class="right">Montant</th>
@@ -347,7 +347,7 @@ function deleteRow(btn) {
 }
 
 function addRow(){
-  const table = document.querySelector("table");
+  const table = document.querySelector("#table-echeancier");
   const row = document.createElement("tr");
   row.innerHTML = `
     <td><input type="date" name="date[]"></td>
@@ -359,6 +359,7 @@ function addRow(){
   table.appendChild(row);
   recalcMontants();
 }
+
 </script>
 
 
@@ -376,6 +377,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
