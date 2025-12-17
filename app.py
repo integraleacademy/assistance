@@ -1899,6 +1899,7 @@ def plan_financement_devis(devis_id):
         devis=devis,
         prenom=devis.get("prenom"),
         nom=devis.get("nom"),
+        email=devis.get("mail"), 
         formation_label={
             "A3P": "A3P – Agent de Protection Physique des Personnes",
             "APS": "APS – Agent de Prévention et de Sécurité",
