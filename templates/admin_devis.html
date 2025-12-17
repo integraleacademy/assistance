@@ -130,11 +130,12 @@ button{
    🧾 Plan de financement (HTML)
 </a>
 
-    <form method="POST"
+<form method="POST"
       action="{{ url_for('envoyer_plan_financement', devis_id=d.id) }}"
       style="margin-bottom:6px;">
   <button type="submit"
-          style="background:#198754;
+          {% if d.statut_devis == "Envoyé" %}disabled{% endif %}
+          style="background:{% if d.statut_devis == 'Envoyé' %}#adb5bd{% else %}#198754{% endif %};
                  color:white;
                  border:none;
                  padding:7px 14px;
@@ -145,6 +146,7 @@ button{
     📧 Envoyer plan de financement
   </button>
 </form>
+
 
 
     <a href="{{ url_for('voir_dossier_devis', devis_id=d.id) }}"
@@ -205,6 +207,7 @@ button{
 </div>
 </body>
 </html>
+
 
 
 
