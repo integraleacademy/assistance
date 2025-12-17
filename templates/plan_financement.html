@@ -224,6 +224,39 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  /* ============================= */
+  /* AJUSTEMENTS ÉCHÉANCIER PRINT */
+  /* ============================= */
+
+  /* largeur des colonnes */
+  #table-echeancier th:nth-child(1),
+  #table-echeancier td:nth-child(1) {
+    width: 65%;
+  }
+
+  #table-echeancier th:nth-child(2),
+  #table-echeancier td:nth-child(2) {
+    width: 35%;
+    text-align: right !important;
+  }
+
+  /* typographie plus financière */
+  #table-echeancier td {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* enlever les décimales inutiles visuellement */
+  #table-echeancier td input {
+    text-align: right;
+  }
+
+  /* masquer totalement la colonne Action (sécurité) */
+  #table-echeancier th:last-child,
+  #table-echeancier td:last-child {
+    display: none !important;
+  }
+
+  
 }
 
     
@@ -408,6 +441,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
