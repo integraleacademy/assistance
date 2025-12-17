@@ -2021,7 +2021,35 @@ def envoyer_plan_financement(devis_id):
     ) as f:
         pdf_path = f.name
 
-    HTML(html_url).write_pdf(pdf_path)
+    # --------------------------------------------------
+    # Génération HTML LOCAL (sans URL, sans login)
+    # --------------------------------------------------
+    html_content = render_template(
+        "plan_financement.html",
+        devis=devis,
+        prenom=devis.get("prenom"),
+        nom=devis.get("nom"),
+        email=devis.get("mail"),
+        formation_label={
+            "A3P": "A3P – Agent de Protection Physique des Personnes",
+            "APS": "APS – Agent de Prévention et de Sécurité",
+            "VTC": "VTC – Chauffeur de transport avec chauffeur",
+            "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
+            "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
+        }.get(infos.get("formation"), infos.get("formation")),
+        dates=infos.get("dates"),
+        cpf=cpf,
+        ft=ft,
+        reste_avec_ft=reste_avec_ft,
+        reste_sans_ft=reste_sans_ft,
+        echeances=echeances
+    )
+    
+    HTML(
+        string=html_content,
+        base_url=request.host_url
+    ).write_pdf(pdf_path)
+
 
     # --------------------------------------------------
     # 3) Envoi email
