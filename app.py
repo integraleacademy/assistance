@@ -1986,6 +1986,73 @@ def save_echeancier(devis_id):
     return redirect(url_for("plan_financement_devis", devis_id=devis_id))
 
 
+@app.route("/admin-devis/envoyer-plan/<devis_id>", methods=["POST"])
+@login_required
+def envoyer_plan_financement(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id
+         and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if not devis:
+        abort(404)
+
+    pdf_path = devis.get("pdf_client_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        abort(404)
+
+    email = devis.get("mail")
+    prenom = devis.get("prenom", "")
+
+    subject = "📄 Votre plan de financement — Intégrale Academy"
+
+    plain = (
+        f"Bonjour {prenom},\n\n"
+        "Veuillez trouver en pièce jointe votre plan de financement détaillé.\n\n"
+        "Si vous avez la moindre question, notre équipe reste à votre disposition.\n\n"
+        "Cordialement,\n"
+        "Intégrale Academy"
+    )
+
+    html = _wrap_html(
+        "<h1>📄 Votre plan de financement</h1>",
+        f"""
+        <p>Bonjour <strong>{prenom}</strong>,</p>
+        <p>
+          Veuillez trouver en pièce jointe votre
+          <strong>plan de financement détaillé</strong>.
+        </p>
+        <p>
+          Notre équipe reste disponible pour toute question ou pour finaliser
+          votre inscription.
+        </p>
+        <p style="margin-top:16px;">
+          Cordialement,<br>
+          <strong>Intégrale Academy</strong>
+        </p>
+        """
+    )
+
+    send_email_html(
+        to_emails=email,
+        subject=subject,
+        plain_text=plain,
+        html_body=html,
+        attachments_paths=[pdf_path]   # 📎 PDF EN PIÈCE JOINTE
+    )
+
+    # Optionnel : marquer comme envoyé
+    devis["statut_devis"] = "Envoyé"
+    save_data(data)
+
+    return redirect(url_for("admin_devis"))
+
+
+
 
 
 
