@@ -1912,7 +1912,26 @@ def plan_public(token):
     reste_avec_ft = max(tarif - cpf - ft, 0)
     reste_sans_ft = max(tarif - cpf, 0)
 
-    echeances = devis.get("echeancier_manuel") or []
+    # 🔁 Échéancier : manuel PRIORITAIRE, sinon automatique
+    if devis.get("echeancier_manuel") and len(devis["echeancier_manuel"]) > 0:
+        echeances = devis["echeancier_manuel"]
+    else:
+        # date examen
+        date_examen = None
+        try:
+            if infos.get("date_examen"):
+                date_examen = datetime.datetime.strptime(
+                    infos["date_examen"], "%Y-%m-%d"
+                ).date()
+        except:
+            date_examen = None
+    
+        echeances = build_echeances_mensuelles(
+            reste=reste_sans_ft,
+            date_devis=datetime.date.today(),
+            date_examen=date_examen
+        )
+
 
     return render_template(
         "plan_financement.html",
