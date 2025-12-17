@@ -7,7 +7,6 @@ from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
-import tempfile
 
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
