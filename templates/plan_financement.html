@@ -271,7 +271,10 @@
     </div>
 
 {% if echeances and echeances|length > 0 %}
-<form method="post" action="{{ url_for('save_echeancier', devis_id=devis.id) }}">
+<form method="post"
+      action="{{ url_for('save_echeancier', devis_id=devis.id) }}"
+      data-reste="{{ reste_sans_ft }}">
+
 
   <table>
     <tr>
@@ -294,7 +297,7 @@
                value="{{ e.montant }}">
       </td>
       <td class="center">
-        <button type="button" onclick="this.closest('tr').remove()">🗑️</button>
+        <button type="button" onclick="deleteRow(this)">🗑️</button>
       </td>
     </tr>
     {% endfor %}
@@ -307,6 +310,42 @@
 </form>
 
 <script>
+function recalcMontants() {
+  const form = document.querySelector("form[data-reste]");
+  if (!form) return;
+
+  const total = parseFloat(form.dataset.reste);
+  const rows = form.querySelectorAll("table tr");
+  const inputs = [];
+
+  rows.forEach((row, index) => {
+    if (index === 0) return; // skip header
+    const input = row.querySelector('input[name="montant[]"]');
+    if (input) inputs.push(input);
+  });
+
+  if (inputs.length === 0) return;
+
+  const montantParLigne = Math.round((total / inputs.length) * 100) / 100;
+
+  // ajustement sur la dernière ligne pour éviter les écarts de centimes
+  let cumul = 0;
+  inputs.forEach((input, i) => {
+    if (i < inputs.length - 1) {
+      input.value = montantParLigne.toFixed(2);
+      cumul += montantParLigne;
+    } else {
+      input.value = (total - cumul).toFixed(2);
+    }
+  });
+}
+
+function deleteRow(btn) {
+  const row = btn.closest("tr");
+  row.remove();
+  recalcMontants();
+}
+
 function addRow(){
   const table = document.querySelector("table");
   const row = document.createElement("tr");
@@ -314,12 +353,14 @@ function addRow(){
     <td><input type="date" name="date[]"></td>
     <td class="right"><input type="number" step="0.01" name="montant[]"></td>
     <td class="center">
-      <button type="button" onclick="this.closest('tr').remove()">🗑️</button>
+      <button type="button" onclick="deleteRow(this)">🗑️</button>
     </td>
   `;
   table.appendChild(row);
+  recalcMontants();
 }
 </script>
+
 
 {% else %}
 
@@ -335,6 +376,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
