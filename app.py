@@ -1503,6 +1503,7 @@ def demande_devis():
             "statut_devis": "A envoyer",
             "notation_interne": notation_interne,
             "echeancier_manuel": [],
+            "date_devis": date_devis.strftime("%Y-%m-%d"),
             "pdf_path": pdf_path
         })
 
@@ -1682,7 +1683,9 @@ def plan_financement_devis(devis_id):
     else:
         echeances = build_echeances_mensuelles(
             reste=reste_sans_ft,
-            date_devis=datetime.date.today(),
+            date_devis=datetime.datetime.strptime(
+                devis["date_devis"], "%Y-%m-%d"
+            ).date(),
             date_examen=date_examen
         )
 
@@ -1758,12 +1761,14 @@ def save_echeancier(devis_id):
     for d, m in zip(dates, montants):
         if d and m:
             try:
+                date_obj = datetime.datetime.strptime(d, "%Y-%m-%d").date()
                 echeancier.append({
-                    "date": d,
+                    "date": date_obj.strftime("%d/%m/%Y"),  # 👈 FORMAT COMME AVANT
                     "montant": float(m)
                 })
             except:
                 pass
+
 
     # 💾 Sauvegarde de l’échéancier manuel (sans contrôle du reste)
     devis["echeancier_manuel"] = echeancier
@@ -1928,7 +1933,10 @@ def plan_public(token):
     
         echeances = build_echeances_mensuelles(
             reste=reste_sans_ft,
-            date_devis=datetime.date.today(),
+            date_devis=datetime.datetime.strptime(
+                devis["date_devis"], "%Y-%m-%d"
+            ).date(),
+
             date_examen=date_examen
         )
 
