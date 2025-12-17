@@ -340,16 +340,23 @@
     </div>
 
 {% if echeances and echeances|length > 0 %}
+
+{% if devis is defined %}
 <form method="post"
       action="{{ url_for('save_echeancier', devis_id=devis.id) }}"
       data-reste="{{ reste_sans_ft }}">
+{% endif %}
+
 
 
   <table id="table-echeancier">
     <tr>
       <th>Date de prélèvement</th>
       <th class="right">Montant</th>
-      <th class="center">Action</th>
+      {% if devis is defined %}
+<th class="center">Action</th>
+{% endif %}
+
     </tr>
 
     {% for e in echeances %}
@@ -366,18 +373,24 @@
                step="0.01"
                value="{{ e.montant }}">
       </td>
-      <td class="center">
-        <button type="button" onclick="deleteRow(this)">🗑️</button>
-      </td>
+{% if devis is defined %}
+<td class="center">
+  <button type="button" onclick="deleteRow(this)">🗑️</button>
+</td>
+{% endif %}
+
     </tr>
     {% endfor %}
   </table>
 
+{% if devis is defined %}
   <div style="margin-top:10px;">
     <button type="button" onclick="addRow()">➕ Ajouter une échéance</button>
     <button type="submit">💾 Enregistrer l’échéancier</button>
   </div>
 </form>
+{% endif %}
+
 
 <script>
 function recalcMontants() {
@@ -447,6 +460,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
