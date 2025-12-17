@@ -1970,8 +1970,15 @@ def save_echeancier(devis_id):
             except:
                 pass
 
+    # 💰 Vérification du total
+    total = round(sum(e["montant"] for e in echeancier), 2)
+    devis["echeancier_total"] = total
+    
+    devis["echeancier_ok"] = abs(total - reste_sans_ft) < 0.01 if echeancier else True
+    
     devis["echeancier_manuel"] = echeancier
     save_data(data)
+
 
     return redirect(url_for("plan_financement_devis", devis_id=devis_id))
 
