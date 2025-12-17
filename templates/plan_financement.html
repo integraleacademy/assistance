@@ -270,19 +270,59 @@
 
     </div>
 
-    {% if echeances and echeances|length > 0 %}
-      <table>
-        <tr>
-          <th>Date de prélèvement</th>
-          <th class="right">Montant</th>
-        </tr>
-        {% for e in echeances %}
-        <tr>
-          <td>{{ e.date.strftime('%d/%m/%Y') }}</td>
-          <td class="right">{{ e.montant }} €</td>
-        </tr>
-        {% endfor %}
-      </table>
+{% if echeances and echeances|length > 0 %}
+<form method="post" action="{{ url_for('save_echeancier', devis_id=devis.id) }}">
+
+  <table>
+    <tr>
+      <th>Date de prélèvement</th>
+      <th class="right">Montant</th>
+      <th class="center">Action</th>
+    </tr>
+
+    {% for e in echeances %}
+    <tr>
+      <td>
+        <input type="date"
+               name="date[]"
+               value="{% if e.date is defined %}{{ e.date.strftime('%Y-%m-%d') }}{% else %}{{ e.date }}{% endif %}">
+      </td>
+      <td class="right">
+        <input type="number"
+               name="montant[]"
+               step="0.01"
+               value="{{ e.montant }}">
+      </td>
+      <td class="center">
+        <button type="button" onclick="this.closest('tr').remove()">🗑️</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div style="margin-top:10px;">
+    <button type="button" onclick="addRow()">➕ Ajouter une échéance</button>
+    <button type="submit">💾 Enregistrer l’échéancier</button>
+  </div>
+</form>
+
+<script>
+function addRow(){
+  const table = document.querySelector("table");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><input type="date" name="date[]"></td>
+    <td class="right"><input type="number" step="0.01" name="montant[]"></td>
+    <td class="center">
+      <button type="button" onclick="this.closest('tr').remove()">🗑️</button>
+    </td>
+  `;
+  table.appendChild(row);
+}
+</script>
+
+{% else %}
+
     {% else %}
       <div class="alert">
         ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
@@ -296,6 +336,7 @@
 
 </body>
 </html>
+
 
 
 
