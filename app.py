@@ -7,6 +7,8 @@ from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
+from weasyprint import HTML
+import tempfile
 
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
@@ -1997,14 +1999,33 @@ def envoyer_plan_financement(devis_id):
          and d.get("motif") == "Demande de devis détaillé"),
         None
     )
-
     if not devis:
         abort(404)
 
-    pdf_path = devis.get("pdf_client_path")
-    if not pdf_path or not os.path.exists(pdf_path):
-        abort(404)
+    # --------------------------------------------------
+    # 1) URL du HTML du plan de financement
+    # --------------------------------------------------
+    html_url = url_for(
+        "plan_financement_devis",
+        devis_id=devis_id,
+        _external=True
+    )
 
+    # --------------------------------------------------
+    # 2) Génération PDF depuis le HTML
+    # --------------------------------------------------
+    with tempfile.NamedTemporaryFile(
+        suffix=".pdf",
+        delete=False,
+        dir="/mnt/data"
+    ) as f:
+        pdf_path = f.name
+
+    HTML(html_url).write_pdf(pdf_path)
+
+    # --------------------------------------------------
+    # 3) Envoi email
+    # --------------------------------------------------
     email = devis.get("mail")
     prenom = devis.get("prenom", "")
 
@@ -2013,7 +2034,7 @@ def envoyer_plan_financement(devis_id):
     plain = (
         f"Bonjour {prenom},\n\n"
         "Veuillez trouver en pièce jointe votre plan de financement détaillé.\n\n"
-        "Si vous avez la moindre question, notre équipe reste à votre disposition.\n\n"
+        "Notre équipe reste à votre disposition pour toute question.\n\n"
         "Cordialement,\n"
         "Intégrale Academy"
     )
@@ -2023,12 +2044,11 @@ def envoyer_plan_financement(devis_id):
         f"""
         <p>Bonjour <strong>{prenom}</strong>,</p>
         <p>
-          Veuillez trouver en pièce jointe votre
+          Vous trouverez en pièce jointe votre
           <strong>plan de financement détaillé</strong>.
         </p>
         <p>
-          Notre équipe reste disponible pour toute question ou pour finaliser
-          votre inscription.
+          Ce document reprend les modalités de règlement et l’échéancier proposé.
         </p>
         <p style="margin-top:16px;">
           Cordialement,<br>
@@ -2042,14 +2062,18 @@ def envoyer_plan_financement(devis_id):
         subject=subject,
         plain_text=plain,
         html_body=html,
-        attachments_paths=[pdf_path]   # 📎 PDF EN PIÈCE JOINTE
+        attachments_paths=[pdf_path]
     )
 
-    # Optionnel : marquer comme envoyé
+    # --------------------------------------------------
+    # 4) Statut + trace
+    # --------------------------------------------------
     devis["statut_devis"] = "Envoyé"
+    devis["pdf_plan_envoye"] = pdf_path
     save_data(data)
 
     return redirect(url_for("admin_devis"))
+
 
 
 
