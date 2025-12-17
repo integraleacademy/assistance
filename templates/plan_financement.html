@@ -150,6 +150,36 @@
 /* ===== OPTIMISATION IMPRESSION ===== */
 @media print {
 
+    /* ============================= */
+  /* NETTOYAGE POUR IMPRESSION */
+  /* ============================= */
+
+  /* cacher tous les boutons */
+  button {
+    display: none !important;
+  }
+
+  /* cacher la colonne Action */
+  #table-echeancier th:last-child,
+  #table-echeancier td:last-child {
+    display: none !important;
+  }
+
+  /* enlever l'aspect formulaire */
+  input {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    font-size: 11px;
+  }
+
+  /* masquer l’icône calendrier */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    display: none;
+  }
+
+
   body {
     font-size: 11px;
   }
@@ -378,6 +408,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
