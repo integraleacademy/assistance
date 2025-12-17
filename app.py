@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
+mais from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
@@ -7,7 +7,6 @@ from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
-from weasyprint import HTML
 import tempfile
 
 from reportlab.platypus import Table, TableStyle
@@ -1231,199 +1230,6 @@ def build_echeances_mensuelles(reste: float, date_devis: datetime.date, date_exa
     return [{"date": dates[i], "montant": montants[i]} for i in range(n)]
 
 
-def generer_pdf_plan_financement_client(data, tarif, cpf, montant_ft):
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-    from reportlab.platypus import Table, TableStyle
-    from reportlab.lib import colors
-    from dateutil.relativedelta import relativedelta
-    import datetime, uuid, os
-
-    pdf_path = f"/mnt/data/plan_financement_{uuid.uuid4().hex}.pdf"
-    c = canvas.Canvas(pdf_path, pagesize=A4)
-    width, height = A4
-    y = height - 50
-
-    # --------------------------------------------------
-    # LOGO (chemin Render SAFE)
-    # --------------------------------------------------
-    logo_path = os.path.join(app.root_path, "static", "logo.png")
-    if os.path.exists(logo_path):
-        c.drawImage(
-            ImageReader(logo_path),
-            40,
-            height - 120,
-            width=160,
-            preserveAspectRatio=True,
-            mask="auto"
-        )
-
-    # --------------------------------------------------
-    # TITRE
-    # --------------------------------------------------
-    c.setFont("Helvetica-Bold", 20)
-    c.drawCentredString(width / 2, y - 20, "Plan de financement détaillé")
-    y -= 100
-
-    # --------------------------------------------------
-    # INFOS STAGIAIRE
-    # --------------------------------------------------
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(40, y, f"{data.get('prenom','')} {data.get('nom','')}")
-    y -= 18
-
-    c.setFont("Helvetica", 11)
-    c.drawString(40, y, data.get("formation_label", data.get("formation", "")))
-    y -= 15
-
-    c.drawString(40, y, f"Dates : {data.get('dates','—')}")
-    y -= 35
-
-    # --------------------------------------------------
-    # 1) FINANCEMENT ORGANISMES
-    # --------------------------------------------------
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(40, y, "1) Financement par organismes")
-    y -= 20
-
-    table_org = Table([
-        ["Organisme", "Montant"],
-        ["Compte Personnel de Formation (CPF)", f"{cpf:.2f} €"],
-        ["France Travail (sous réserve d’acceptation)", f"{montant_ft:.2f} €"]
-    ], colWidths=[300, 120])
-
-    table_org.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f0f0")),
-        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-        ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
-        ("ALIGN", (1,1), (-1,-1), "RIGHT"),
-        ("PADDING", (0,0), (-1,-1), 8),
-    ]))
-
-    tw, th = table_org.wrap(0, 0)
-    table_org.drawOn(c, 40, y - th)
-    y -= th + 30
-
-    # ---------------------------------------------
-    # CALCUL DES DEUX SCÉNARIOS
-    # ---------------------------------------------
-    reste_avec_ft = max(tarif - cpf - montant_ft, 0)
-    reste_sans_ft = max(tarif - cpf, 0)
-
-
-    # --------------------------------------------------
-    # TABLEAU COMPARATIF DES SCÉNARIOS
-    # --------------------------------------------------
-    table_compare = Table([
-        ["Scénario", "CPF", "France Travail", "Reste à charge"],
-        [
-            "Avec France Travail*",
-            f"{cpf:.0f} €",
-            f"{montant_ft:.0f} €",
-            f"{reste_avec_ft:.0f} €"
-        ],
-        [
-            "Sans France Travail",
-            f"{cpf:.0f} €",
-            "0 €",
-            f"{reste_sans_ft:.0f} €"
-        ]
-    ], colWidths=[170, 70, 110, 110])
-    
-    table_compare.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f0f0f0")),
-        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-        ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
-        ("ALIGN", (1,1), (-1,-1), "CENTER"),
-        ("PADDING", (0,0), (-1,-1), 5),
-    ]))
-    
-    tw, th = table_compare.wrap(0, 0)
-    table_compare.drawOn(c, 40, y - th)
-    y -= th + 20
-
-
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(40, y, "2) Financement personnel")
-    y -= 18
-
-    # --------------------------------------------------
-    # TEXTE EXPLICATIF
-    # --------------------------------------------------
-    c.setFont("Helvetica", 10)
-    c.drawString(
-        40,
-        y,
-        "En cas de refus de financement par France Travail ou à votre convenance,"
-    )
-    y -= 14
-    c.drawString(
-        40,
-        y,
-        "nous proposons un règlement par prélèvements mensuels sans frais."
-    )
-    y -= 25
-
-    
-    # --------------------------------------------------
-    # ÉCHÉANCIER CALCULÉ SELON DATE D’EXAMEN
-    # --------------------------------------------------
-    date_devis = datetime.date.today()
-    
-    date_examen = None
-    try:
-        date_examen_str = data.get("date_examen")
-        if date_examen_str:
-            date_examen = datetime.datetime.strptime(date_examen_str, "%Y-%m-%d").date()
-    except:
-        date_examen = None
-    
-    echeances = build_echeances_mensuelles(
-        reste=reste_sans_ft,
-        date_devis=date_devis,
-        date_examen=date_examen
-    )
-
-
-    # --------------------------------------------------
-    # ÉCHÉANCIER UNIQUE (CALCUL AUTOMATIQUE)
-    # --------------------------------------------------
-    if not echeances:
-        c.setFont("Helvetica-Oblique", 10)
-        c.drawString(
-            40,
-            y,
-            "⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen."
-        )
-        y -= 20
-    else:
-        lignes = [["Date de prélèvement", "Montant"]]
-    
-        for e in echeances:
-            lignes.append([
-                e["date"].strftime("%d/%m/%Y"),
-                f"{e['montant']:.2f} €"
-            ])
-    
-        table = Table(lignes, colWidths=[180, 120])
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f7f7f7")),
-            ("GRID", (0,0), (-1,-1), 0.4, colors.grey),
-            ("FONT", (0,0), (-1,0), "Helvetica-Bold"),
-            ("ALIGN", (1,1), (-1,-1), "RIGHT"),
-            ("PADDING", (0,0), (-1,-1), 6),
-        ]))
-    
-        tw, th = table.wrap(0, 0)
-        table.drawOn(c, 40, y - th)
-        y -= th + 25
-
-
-    c.save()
-    return pdf_path
-
-
-
 
 @app.route("/demande-devis", methods=["GET", "POST"])
 def demande_devis():
@@ -1689,6 +1495,7 @@ def demande_devis():
         data_store = load_data()
         data_store["demandes"].append({
             "id": str(uuid.uuid4()),
+            "token_plan": uuid.uuid4().hex,
             "nom": data.get("nom"),
             "prenom": data.get("prenom"),
             "telephone": data.get("telephone"),
@@ -2002,9 +1809,99 @@ def envoyer_plan_financement(devis_id):
     if not devis:
         abort(404)
 
-         # -------------------------------
-    # Infos formulaire (OBLIGATOIRE)
-    # -------------------------------
+    # ---------------------------------
+    # Lien public sécurisé du plan
+    # ---------------------------------
+    plan_url = url_for(
+        "plan_public",
+        token=devis.get("token_plan"),
+        _external=True
+    )
+
+    # ---------------------------------
+    # Données email
+    # ---------------------------------
+    email = devis.get("mail")
+    prenom = devis.get("prenom", "")
+
+    subject = "📄 Votre plan de financement — Intégrale Academy"
+
+    plain = (
+        f"Bonjour {prenom},\n\n"
+        "Votre plan de financement est disponible en ligne.\n\n"
+        f"👉 {plan_url}\n\n"
+        "Ce lien est personnel et sécurisé.\n\n"
+        "Cordialement,\n"
+        "Intégrale Academy"
+    )
+
+    html = _wrap_html(
+        "<h1>📄 Votre plan de financement</h1>",
+        f"""
+        <p>Bonjour <strong>{prenom}</strong>,</p>
+
+        <p>
+          Votre <strong>plan de financement détaillé</strong> est désormais disponible en ligne.
+        </p>
+
+        <p style="text-align:center;margin:24px 0;">
+          <a href="{plan_url}"
+             style="display:inline-block;
+                    padding:14px 26px;
+                    background:#0d6efd;
+                    color:white;
+                    text-decoration:none;
+                    border-radius:8px;
+                    font-weight:700;">
+            👉 Consulter mon plan de financement
+          </a>
+        </p>
+
+        <p style="font-size:13px;color:#666;">
+          Ce lien est personnel et sécurisé.
+        </p>
+
+        <p style="margin-top:16px;">
+          Cordialement,<br>
+          <strong>Intégrale Academy</strong>
+        </p>
+        """
+    )
+
+    send_email_html(
+        to_emails=email,
+        subject=subject,
+        plain_text=plain,
+        html_body=html
+    )
+
+    # ---------------------------------
+    # Statut + sauvegarde
+    # ---------------------------------
+    devis["statut_devis"] = "Envoyé"
+    devis["date_envoi_plan"] = datetime.datetime.now(
+        pytz.timezone("Europe/Paris")
+    ).strftime("%d/%m/%Y %H:%M")
+
+    save_data(data)
+
+    return redirect(url_for("admin_devis"))
+
+
+@app.route("/plan/<token>")
+def plan_public(token):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("motif") == "Demande de devis détaillé"
+         and d.get("token_plan") == token),
+        None
+    )
+
+    if not devis:
+        return "Lien invalide ou expiré", 404
+
     try:
         infos = json.loads(devis.get("details", "{}"))
     except:
@@ -2027,65 +1924,14 @@ def envoyer_plan_financement(devis_id):
     except:
         cpf = 0
 
-    # France Travail
-    if infos.get("france_travail") == "OUI":
-        ft = max(tarif - cpf, 0)
-    else:
-        ft = 0
-
+    ft = max(tarif - cpf, 0) if infos.get("france_travail") == "OUI" else 0
     reste_avec_ft = max(tarif - cpf - ft, 0)
     reste_sans_ft = max(tarif - cpf, 0)
 
-    # -------------------------------
-    # Date examen
-    # -------------------------------
-    date_examen = None
-    try:
-        if infos.get("date_examen"):
-            date_examen = datetime.datetime.strptime(
-                infos["date_examen"], "%Y-%m-%d"
-            ).date()
-    except:
-        date_examen = None
+    echeances = devis.get("echeancier_manuel") or []
 
-    # -------------------------------
-    # Échéancier
-    # -------------------------------
-    if devis.get("echeancier_manuel"):
-        echeances = devis["echeancier_manuel"]
-    else:
-        echeances = build_echeances_mensuelles(
-            reste=reste_sans_ft,
-            date_devis=datetime.date.today(),
-            date_examen=date_examen
-        )
-   
-
-    # --------------------------------------------------
-    # 1) URL du HTML du plan de financement
-    # --------------------------------------------------
-    html_url = url_for(
-        "plan_financement_devis",
-        devis_id=devis_id,
-        _external=True
-    )
-
-    # --------------------------------------------------
-    # 2) Génération PDF depuis le HTML
-    # --------------------------------------------------
-    with tempfile.NamedTemporaryFile(
-        suffix=".pdf",
-        delete=False,
-        dir="/mnt/data"
-    ) as f:
-        pdf_path = f.name
-
-    # --------------------------------------------------
-    # Génération HTML LOCAL (sans URL, sans login)
-    # --------------------------------------------------
-    html_content = render_template(
+    return render_template(
         "plan_financement.html",
-        devis=devis,
         prenom=devis.get("prenom"),
         nom=devis.get("nom"),
         email=devis.get("mail"),
@@ -2095,7 +1941,7 @@ def envoyer_plan_financement(devis_id):
             "VTC": "VTC – Chauffeur de transport avec chauffeur",
             "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
             "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
-        }.get(infos.get("formation"), infos.get("formation")),
+        }.get(formation, formation),
         dates=infos.get("dates"),
         cpf=cpf,
         ft=ft,
@@ -2103,63 +1949,7 @@ def envoyer_plan_financement(devis_id):
         reste_sans_ft=reste_sans_ft,
         echeances=echeances
     )
-    
-    HTML(
-        string=html_content,
-        base_url=request.host_url
-    ).write_pdf(pdf_path)
 
-
-    # --------------------------------------------------
-    # 3) Envoi email
-    # --------------------------------------------------
-    email = devis.get("mail")
-    prenom = devis.get("prenom", "")
-
-    subject = "📄 Votre plan de financement — Intégrale Academy"
-
-    plain = (
-        f"Bonjour {prenom},\n\n"
-        "Veuillez trouver en pièce jointe votre plan de financement détaillé.\n\n"
-        "Notre équipe reste à votre disposition pour toute question.\n\n"
-        "Cordialement,\n"
-        "Intégrale Academy"
-    )
-
-    html = _wrap_html(
-        "<h1>📄 Votre plan de financement</h1>",
-        f"""
-        <p>Bonjour <strong>{prenom}</strong>,</p>
-        <p>
-          Vous trouverez en pièce jointe votre
-          <strong>plan de financement détaillé</strong>.
-        </p>
-        <p>
-          Ce document reprend les modalités de règlement et l’échéancier proposé.
-        </p>
-        <p style="margin-top:16px;">
-          Cordialement,<br>
-          <strong>Intégrale Academy</strong>
-        </p>
-        """
-    )
-
-    send_email_html(
-        to_emails=email,
-        subject=subject,
-        plain_text=plain,
-        html_body=html,
-        attachments_paths=[pdf_path]
-    )
-
-    # --------------------------------------------------
-    # 4) Statut + trace
-    # --------------------------------------------------
-    devis["statut_devis"] = "Envoyé"
-    devis["pdf_plan_envoye"] = pdf_path
-    save_data(data)
-
-    return redirect(url_for("admin_devis"))
 
 
 
