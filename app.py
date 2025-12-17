@@ -1475,20 +1475,6 @@ def demande_devis():
         c.save()
 
         # =========================
-        # PDF CLIENT – PLAN DE FINANCEMENT
-        # =========================
-        pdf_client_path = generer_pdf_plan_financement_client(
-            data={
-                **data,
-                "formation_label": formation
-            },
-            tarif=tarif,
-            cpf=cpf,
-            montant_ft=montant_ft
-        )
-
-
-        # =========================
         # SAUVEGARDE + MAIL
         # =========================
         data_store = load_data()
@@ -1515,7 +1501,6 @@ def demande_devis():
             "rappel_date": "",
             "plage": "",
             "statut_devis": "A envoyer",
-            "pdf_client_path": pdf_client_path,
             "notation_interne": notation_interne,
             "echeancier_manuel": [],
             "pdf_path": pdf_path
