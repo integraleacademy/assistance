@@ -1896,6 +1896,7 @@ def plan_financement_devis(devis_id):
 
     return render_template(
         "plan_financement.html",
+        devis=devis,
         prenom=devis.get("prenom"),
         nom=devis.get("nom"),
         formation_label={
