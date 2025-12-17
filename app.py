@@ -2002,6 +2002,65 @@ def envoyer_plan_financement(devis_id):
     if not devis:
         abort(404)
 
+         # -------------------------------
+    # Infos formulaire (OBLIGATOIRE)
+    # -------------------------------
+    try:
+        infos = json.loads(devis.get("details", "{}"))
+    except:
+        infos = {}
+
+    formation = infos.get("formation")
+
+    TARIFS = {
+        "A3P": 4200,
+        "APS": 1650,
+        "VTC": 1600,
+        "DESP_INIT": 4300,
+        "DESP_VAE": 3800
+    }
+
+    tarif = TARIFS.get(formation, 0)
+
+    try:
+        cpf = int(float(infos.get("cpf_montant", 0)))
+    except:
+        cpf = 0
+
+    # France Travail
+    if infos.get("france_travail") == "OUI":
+        ft = max(tarif - cpf, 0)
+    else:
+        ft = 0
+
+    reste_avec_ft = max(tarif - cpf - ft, 0)
+    reste_sans_ft = max(tarif - cpf, 0)
+
+    # -------------------------------
+    # Date examen
+    # -------------------------------
+    date_examen = None
+    try:
+        if infos.get("date_examen"):
+            date_examen = datetime.datetime.strptime(
+                infos["date_examen"], "%Y-%m-%d"
+            ).date()
+    except:
+        date_examen = None
+
+    # -------------------------------
+    # Échéancier
+    # -------------------------------
+    if devis.get("echeancier_manuel"):
+        echeances = devis["echeancier_manuel"]
+    else:
+        echeances = build_echeances_mensuelles(
+            reste=reste_sans_ft,
+            date_devis=datetime.date.today(),
+            date_examen=date_examen
+        )
+   
+
     # --------------------------------------------------
     # 1) URL du HTML du plan de financement
     # --------------------------------------------------
