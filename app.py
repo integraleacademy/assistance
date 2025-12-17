@@ -1,4 +1,4 @@
-mais from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib
 from email.mime.text import MIMEText
