@@ -1825,7 +1825,7 @@ def envoyer_plan_financement(devis_id):
         <p>Bonjour <strong>{prenom}</strong>,</p>
 
         <p>
-          Votre <strong>plan de financement détaillé</strong> est désormais disponible en ligne.
+          Vous pouvez consulter le <strong>plan de financement détaillé</strong> de votre formation en cliquant ici :
         </p>
 
         <p style="text-align:center;margin:24px 0;">
@@ -1846,7 +1846,7 @@ def envoyer_plan_financement(devis_id):
         </p>
 
         <p style="margin-top:16px;">
-          Cordialement,<br>
+          Bien cordialement,<br>
           <strong>Intégrale Academy</strong>
         </p>
         """
