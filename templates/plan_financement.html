@@ -159,11 +159,11 @@
     display: none !important;
   }
 
-  /* cacher la colonne Action */
-  #table-echeancier th:last-child,
-  #table-echeancier td:last-child {
+  /* masquer uniquement la colonne Action (3e colonne) côté admin */
+#table-echeancier th:nth-child(3),
+#table-echeancier td:nth-child(3) {
     display: none !important;
-  }
+}
 
   /* enlever l'aspect formulaire */
   input {
@@ -250,11 +250,11 @@
     text-align: right;
   }
 
-  /* masquer totalement la colonne Action (sécurité) */
-  #table-echeancier th:last-child,
-  #table-echeancier td:last-child {
+/* masquer uniquement la colonne Action (3e colonne) côté admin */
+#table-echeancier th:nth-child(3),
+#table-echeancier td:nth-child(3) {
     display: none !important;
-  }
+}
 
   
 }
@@ -460,6 +460,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
