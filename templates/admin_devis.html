@@ -18,23 +18,24 @@ body{
     border-radius:14px;
     box-shadow:0 8px 25px rgba(0,0,0,0.08);
 }
+h1{
+    margin-top:0;
+}
 
-h1{ margin-top:0; }
-
-/* --- barre outils --- */
+/* Outils */
 .tools{
     display:flex;
-    gap:12px;
-    margin-top:20px;
+    align-items:center;
+    gap:10px;
     margin-bottom:15px;
 }
 .tools button{
     border:none;
-    padding:10px 18px;
+    padding:8px 14px;
     border-radius:8px;
     cursor:pointer;
     background:#e9ecef;
-    font-size:14px;
+    font-size:13px;
 }
 .tools button.active{
     background:#0d6efd;
@@ -42,29 +43,27 @@ h1{ margin-top:0; }
 }
 #search{
     flex:1;
-    padding:10px 14px;
+    padding:8px 14px;
     border:1px solid #ccc;
     border-radius:8px;
     font-size:14px;
 }
 
-/* --- tableau --- */
+/* Tableau */
 table{
     width:100%;
     border-collapse:collapse;
-    margin-top:10px;
 }
 thead{
     background:#f0f2f5;
 }
-th,td{
-    padding:12px 10px;
-    font-size:13px;
-    vertical-align:middle;
+th, td{
+    padding:10px 8px;
+    font-size:14px;
     border-bottom:1px solid #eee;
 }
 
-/* alternance gris / blanc */
+/* Alternance */
 tbody tr:nth-child(odd){
     background:#ffffff;
 }
@@ -72,13 +71,12 @@ tbody tr:nth-child(even){
     background:#f7f7f7;
 }
 
-/* badges */
+/* Badges */
 .badge{
-    padding:6px 12px;
-    border-radius:20px;
-    font-size:12px;
+    padding:4px 10px;
+    border-radius:14px;
+    font-size:11px;
     font-weight:600;
-    display:inline-block;
 }
 .badge-red{
     background:#fdecea;
@@ -89,16 +87,26 @@ tbody tr:nth-child(even){
     color:#1e8449;
 }
 
-.action-btn{
-    display:inline-block;
-    margin-right:6px;
-    margin-bottom:6px;
-    padding:7px 12px;
-    border-radius:8px;
-    font-size:12px;
+/* Actions compactes */
+.action-mini{
+    padding:5px 9px;
+    margin-right:4px;
+    border-radius:6px;
+    border:none;
+    font-size:11px;
+    cursor:pointer;
     color:white;
-    text-decoration:none;
 }
+.btn-plan{ background:#6f42c1; }
+.btn-voir{ background:#343a40; }
+.btn-send{ background:#198754; }
+.btn-send.disabled{
+    background:#adb5bd;
+    cursor:not-allowed;
+}
+.btn-change{ background:#0d6efd; }
+.btn-delete{ background:#dc3545; }
+
 </style>
 </head>
 
@@ -107,11 +115,11 @@ tbody tr:nth-child(even){
 
 <h1>📄 Demandes de devis</h1>
 
-<!-- outils -->
+<!-- 🔹 Barre outils -->
 <div class="tools">
-    <button id="btn-tous" class="active">Tous</button>
-    <button id="btn-envoyer">À envoyer</button>
-    <button id="btn-envoyes">Envoyés</button>
+    <button id="filtre-tous" class="active">Tous</button>
+    <button id="filtre-envoyer">À envoyer</button>
+    <button id="filtre-envoyes">Envoyés</button>
     <input type="text" id="search" placeholder="🔍 Rechercher un nom, prénom, formation…">
 </div>
 
@@ -122,139 +130,113 @@ tbody tr:nth-child(even){
     <th>Nom</th>
     <th>Prénom</th>
     <th>Formation</th>
-    <th>Statut devis</th>
-    <th style="width:260px;">Action</th>
+    <th>Statut</th>
+    <th>Action</th>
 </tr>
 </thead>
 
 <tbody id="table-body">
-
 {% for d in devis %}
-<tr 
-  class="row-devis" 
-  data-statut="{{ d.statut_devis }}"
-  data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation ~ ' ' ~ d.date)|lower }}">
+<tr class="row"
+    data-statut="{{ d.statut_devis }}"
+    data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation)|lower }}">
     
     <td>{{ d.date }}</td>
-<td>
-    {{ d.nom }}
-    {% if d.notation_interne == "CHAUD" %}
-        <span style="font-size:16px; margin-left:4px;">🔥</span>
-    {% endif %}
-</td>
+
+    <td>
+        {{ d.nom }}
+        {% if d.notation_interne == "CHAUD" %}
+            <span style="font-size:16px;margin-left:5px;">🔥</span>
+        {% endif %}
+    </td>
 
     <td>{{ d.prenom }}</td>
     <td>{{ d.infos.formation }}</td>
 
     <td>
         {% if d.statut_devis == "Envoyé" %}
-            <span class="badge badge-green">Devis envoyé</span>
+            <span class="badge badge-green">Envoyé</span>
         {% else %}
-            <span class="badge badge-red">Devis à envoyer</span>
+            <span class="badge badge-red">À envoyer</span>
         {% endif %}
     </td>
 
     <td>
-        <a class="action-btn" style="background:#6f42c1;"
+
+        <a href="{{ url_for('plan_financement_devis', devis_id=d.id) }}"
            target="_blank"
-           href="{{ url_for('plan_financement_devis', devis_id=d.id) }}">
-           🧾 Plan de financement
-        </a>
+           class="action-mini btn-plan">📄</a>
+
+        <a href="{{ url_for('voir_dossier_devis', devis_id=d.id) }}"
+           target="_blank"
+           class="action-mini btn-voir">👁️</a>
 
         <form method="POST"
               action="{{ url_for('envoyer_plan_financement', devis_id=d.id) }}"
-              style="display:inline-block;">
-          <button type="submit"
-              class="action-btn"
-              style="background:{% if d.statut_devis == 'Envoyé' %}#adb5bd{% else %}#198754{% endif %};
-                     {% if d.statut_devis == 'Envoyé' %}cursor:not-allowed{% endif %};">
-            📧 Envoyer
-          </button>
+              style="display:inline;">
+            <button type="submit"
+                class="action-mini btn-send {% if d.statut_devis == 'Envoyé' %}disabled{% endif %}">
+                📧
+            </button>
         </form>
 
-        <a class="action-btn" style="background:#343a40;"
-           target="_blank"
-           href="{{ url_for('voir_dossier_devis', devis_id=d.id) }}">
-           👁️ Voir
-        </a>
-
-        <form style="display:inline-block;"
-              method="POST"
-              action="{{ url_for('toggle_devis', devis_id=d.id) }}">
-            <button class="action-btn" style="background:#0d6efd;">Changer</button>
+        <form method="POST"
+              action="{{ url_for('toggle_devis', devis_id=d.id) }}"
+              style="display:inline;">
+            <button class="action-mini btn-change">🔄</button>
         </form>
 
-        <form style="display:inline-block;"
-              method="POST"
-              onsubmit="return confirm('Supprimer ?')"
-              action="{{ url_for('delete_devis', devis_id=d.id) }}">
-            <button class="action-btn" style="background:#dc3545;">🗑️</button>
+        <form method="POST"
+              action="{{ url_for('delete_devis', devis_id=d.id) }}"
+              style="display:inline;"
+              onsubmit="return confirm('Supprimer définitivement ?');">
+            <button class="action-mini btn-delete">🗑️</button>
         </form>
+
     </td>
+
 </tr>
 {% endfor %}
-
 </tbody>
 </table>
-
 </div>
 
 <script>
-// --- recherche live ---
-const searchInput = document.getElementById("search");
-const rows = document.querySelectorAll(".row-devis");
+// --- Recherche instantanée
+const search = document.getElementById("search");
+const rows = document.querySelectorAll(".row");
 
-searchInput.addEventListener("input", () => {
-    const q = searchInput.value.toLowerCase();
+search.addEventListener("input", () => {
+    const q = search.value.toLowerCase();
     rows.forEach(r => {
         r.style.display = r.dataset.search.includes(q) ? "" : "none";
     });
     applyFilter(currentFilter);
 });
 
-// --- filtres ---
 let currentFilter = "tous";
 
-function applyFilter(filter){
-    currentFilter = filter;
+function applyFilter(f){
+    currentFilter = f;
     rows.forEach(r => {
-        const statut = r.dataset.statut;
-        const searchMatch = r.style.display !== "none";
-
-        if(!searchMatch){ return; }
-
-        if(filter === "tous") {
-            r.style.display = "";
-        }
-        else if(filter === "envoyer") {
-            r.style.display = (statut === "A envoyer") ? "" : "none";
-        }
-        else if(filter === "envoyes") {
-            r.style.display = (statut === "Envoyé") ? "" : "none";
-        }
+        if(r.style.display === "none"){ return; }
+        const s = r.dataset.statut;
+        if(f==="tous"){ r.style.display=""; }
+        else if(f==="envoyer"){ r.style.display = (s === "A envoyer") ? "" : "none"; }
+        else if(f==="envoyes"){ r.style.display = (s === "Envoyé") ? "" : "none"; }
     });
 }
-
-// boutons
-document.getElementById("btn-tous").addEventListener("click", e=>{
-    setActive(e.target);
-    applyFilter("tous");
-});
-document.getElementById("btn-envoyer").addEventListener("click", e=>{
-    setActive(e.target);
-    applyFilter("envoyer");
-});
-document.getElementById("btn-envoyes").addEventListener("click", e=>{
-    setActive(e.target);
-    applyFilter("envoyes");
-});
 
 function setActive(btn){
     document.querySelectorAll(".tools button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
 }
+
+document.getElementById("filtre-tous").onclick = e => { setActive(e.target); applyFilter("tous"); };
+document.getElementById("filtre-envoyer").onclick = e => { setActive(e.target); applyFilter("envoyer"); };
+document.getElementById("filtre-envoyes").onclick = e => { setActive(e.target); applyFilter("envoyes"); };
+
 </script>
 
 </body>
 </html>
-
