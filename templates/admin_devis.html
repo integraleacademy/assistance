@@ -18,24 +18,61 @@ body{
     border-radius:14px;
     box-shadow:0 8px 25px rgba(0,0,0,0.08);
 }
-h1{
-    margin-top:0;
+
+h1{ margin-top:0; }
+
+/* --- barre outils --- */
+.tools{
+    display:flex;
+    gap:12px;
+    margin-top:20px;
+    margin-bottom:15px;
 }
+.tools button{
+    border:none;
+    padding:10px 18px;
+    border-radius:8px;
+    cursor:pointer;
+    background:#e9ecef;
+    font-size:14px;
+}
+.tools button.active{
+    background:#0d6efd;
+    color:white;
+}
+#search{
+    flex:1;
+    padding:10px 14px;
+    border:1px solid #ccc;
+    border-radius:8px;
+    font-size:14px;
+}
+
+/* --- tableau --- */
 table{
     width:100%;
     border-collapse:collapse;
-    margin-top:20px;
+    margin-top:10px;
 }
-th, td{
-    padding:12px 10px;
-    border-bottom:1px solid #eee;
-    font-size:14px;
-    vertical-align:middle;
-}
-th{
-    text-align:left;
+thead{
     background:#f0f2f5;
 }
+th,td{
+    padding:12px 10px;
+    font-size:13px;
+    vertical-align:middle;
+    border-bottom:1px solid #eee;
+}
+
+/* alternance gris / blanc */
+tbody tr:nth-child(odd){
+    background:#ffffff;
+}
+tbody tr:nth-child(even){
+    background:#f7f7f7;
+}
+
+/* badges */
 .badge{
     padding:6px 12px;
     border-radius:20px;
@@ -51,19 +88,16 @@ th{
     background:#eafaf1;
     color:#1e8449;
 }
-button{
-    border:none;
-    padding:7px 14px;
+
+.action-btn{
+    display:inline-block;
+    margin-right:6px;
+    margin-bottom:6px;
+    padding:7px 12px;
     border-radius:8px;
-    cursor:pointer;
     font-size:12px;
-}
-.btn-toggle{
-    background:#0d6efd;
     color:white;
-}
-.btn-toggle:hover{
-    opacity:0.9;
+    text-decoration:none;
 }
 </style>
 </head>
@@ -73,6 +107,14 @@ button{
 
 <h1>📄 Demandes de devis</h1>
 
+<!-- outils -->
+<div class="tools">
+    <button id="btn-tous" class="active">Tous</button>
+    <button id="btn-envoyer">À envoyer</button>
+    <button id="btn-envoyes">Envoyés</button>
+    <input type="text" id="search" placeholder="🔍 Rechercher un nom, prénom, formation…">
+</div>
+
 <table>
 <thead>
 <tr>
@@ -81,31 +123,22 @@ button{
     <th>Prénom</th>
     <th>Formation</th>
     <th>Statut devis</th>
-    <th>Action</th>
+    <th style="width:260px;">Action</th>
 </tr>
 </thead>
 
-<tbody>
+<tbody id="table-body">
+
 {% for d in devis %}
-<tr>
+<tr 
+  class="row-devis" 
+  data-statut="{{ d.statut_devis }}"
+  data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation ~ ' ' ~ d.date)|lower }}">
+    
     <td>{{ d.date }}</td>
     <td>{{ d.nom }}</td>
     <td>{{ d.prenom }}</td>
-
-<td>
-    <strong>{{ d.infos.formation }}</strong><br>
-
-    <small>
-        📅 {{ d.infos.dates }}<br>
-        CPF : {{ d.infos.cpf_montant }} €<br>
-        France Travail : {{ d.infos.france_travail }}<br>
-        Perso : {{ d.infos.financement_perso }}<br>
-        ID Numérique : {{ d.infos.identite_numerique }}
-    </small>
-</td>
-
-
-
+    <td>{{ d.infos.formation }}</td>
 
     <td>
         {% if d.statut_devis == "Envoyé" %}
@@ -115,105 +148,106 @@ button{
         {% endif %}
     </td>
 
-<td>
+    <td>
+        <a class="action-btn" style="background:#6f42c1;"
+           target="_blank"
+           href="{{ url_for('plan_financement_devis', devis_id=d.id) }}">
+           🧾 Plan de financement
+        </a>
 
-    <a href="{{ url_for('plan_financement_devis', devis_id=d.id) }}"
-   target="_blank"
-   style="display:inline-block;
-          margin-bottom:6px;
-          background:#6f42c1;
-          color:white;
-          padding:7px 14px;
-          border-radius:8px;
-          font-size:12px;
-          text-decoration:none;">
-   🧾 Plan de financement (HTML)
-</a>
+        <form method="POST"
+              action="{{ url_for('envoyer_plan_financement', devis_id=d.id) }}"
+              style="display:inline-block;">
+          <button type="submit"
+              class="action-btn"
+              style="background:{% if d.statut_devis == 'Envoyé' %}#adb5bd{% else %}#198754{% endif %};
+                     {% if d.statut_devis == 'Envoyé' %}cursor:not-allowed{% endif %};">
+            📧 Envoyer
+          </button>
+        </form>
 
-<form method="POST"
-      action="{{ url_for('envoyer_plan_financement', devis_id=d.id) }}"
-      style="margin-bottom:6px;">
-  <button type="submit"
-          {% if d.statut_devis == "Envoyé" %}disabled{% endif %}
-          style="background:{% if d.statut_devis == 'Envoyé' %}#adb5bd{% else %}#198754{% endif %};
-                 color:white;
-                 border:none;
-                 padding:7px 14px;
-                 border-radius:8px;
-                 font-size:12px;
-                 width:100%;
-                 cursor:pointer;">
-    📧 Envoyer plan de financement
-  </button>
-</form>
+        <a class="action-btn" style="background:#343a40;"
+           target="_blank"
+           href="{{ url_for('voir_dossier_devis', devis_id=d.id) }}">
+           👁️ Voir
+        </a>
 
+        <form style="display:inline-block;"
+              method="POST"
+              action="{{ url_for('toggle_devis', devis_id=d.id) }}">
+            <button class="action-btn" style="background:#0d6efd;">Changer</button>
+        </form>
 
-
-    <a href="{{ url_for('voir_dossier_devis', devis_id=d.id) }}"
-   target="_blank"
-   style="display:inline-block;
-          margin-bottom:6px;
-          background:#343a40;
-          color:white;
-          padding:7px 14px;
-          border-radius:8px;
-          font-size:12px;
-          text-decoration:none;">
-   👁️ Voir dossier
-</a>
-
-
-
-
-
-    <!-- Bouton statut envoyé / à envoyer -->
-    <form method="POST" action="{{ url_for('toggle_devis', devis_id=d.id) }}">
-        <button type="submit" class="btn-toggle">
-            {% if d.statut_devis == "Envoyé" %}
-                Repasser à envoyer
-            {% else %}
-                Marquer envoyé
-            {% endif %}
-        </button>
-    </form>
-
-    <!-- Bouton supprimer -->
-    <form method="POST"
-          action="{{ url_for('delete_devis', devis_id=d.id) }}"
-          onsubmit="return confirm('Supprimer définitivement ce devis ?');"
-          style="margin-top:6px;">
-        <button type="submit"
-                style="background:#dc3545;
-                       color:white;
-                       border:none;
-                       padding:7px 14px;
-                       border-radius:8px;">
-            🗑️ Supprimer
-        </button>
-    </form>
-</td>
-
-</tr>
-{% else %}
-<tr>
-    <td colspan="6" style="text-align:center;padding:25px;">
-        Aucune demande de devis pour le moment.
+        <form style="display:inline-block;"
+              method="POST"
+              onsubmit="return confirm('Supprimer ?')"
+              action="{{ url_for('delete_devis', devis_id=d.id) }}">
+            <button class="action-btn" style="background:#dc3545;">🗑️</button>
+        </form>
     </td>
 </tr>
 {% endfor %}
+
 </tbody>
 </table>
 
 </div>
+
+<script>
+// --- recherche live ---
+const searchInput = document.getElementById("search");
+const rows = document.querySelectorAll(".row-devis");
+
+searchInput.addEventListener("input", () => {
+    const q = searchInput.value.toLowerCase();
+    rows.forEach(r => {
+        r.style.display = r.dataset.search.includes(q) ? "" : "none";
+    });
+    applyFilter(currentFilter);
+});
+
+// --- filtres ---
+let currentFilter = "tous";
+
+function applyFilter(filter){
+    currentFilter = filter;
+    rows.forEach(r => {
+        const statut = r.dataset.statut;
+        const searchMatch = r.style.display !== "none";
+
+        if(!searchMatch){ return; }
+
+        if(filter === "tous") {
+            r.style.display = "";
+        }
+        else if(filter === "envoyer") {
+            r.style.display = (statut === "A envoyer") ? "" : "none";
+        }
+        else if(filter === "envoyes") {
+            r.style.display = (statut === "Envoyé") ? "" : "none";
+        }
+    });
+}
+
+// boutons
+document.getElementById("btn-tous").addEventListener("click", e=>{
+    setActive(e.target);
+    applyFilter("tous");
+});
+document.getElementById("btn-envoyer").addEventListener("click", e=>{
+    setActive(e.target);
+    applyFilter("envoyer");
+});
+document.getElementById("btn-envoyes").addEventListener("click", e=>{
+    setActive(e.target);
+    applyFilter("envoyes");
+});
+
+function setActive(btn){
+    document.querySelectorAll(".tools button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+}
+</script>
+
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
