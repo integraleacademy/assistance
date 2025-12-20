@@ -96,7 +96,12 @@ tbody tr:nth-child(even){
     font-size:11px;
     cursor:pointer;
     color:white;
+    text-decoration:none !important;
 }
+.action-mini:hover{
+    text-decoration:none !important;
+}
+
 .btn-plan{ background:#6f42c1; }
 .btn-voir{ background:#343a40; }
 .btn-send{ background:#198754; }
@@ -202,40 +207,60 @@ tbody tr:nth-child(even){
 </div>
 
 <script>
-// --- Recherche instantanée
 const search = document.getElementById("search");
 const rows = document.querySelectorAll(".row");
 
-search.addEventListener("input", () => {
-    const q = search.value.toLowerCase();
-    rows.forEach(r => {
-        r.style.display = r.dataset.search.includes(q) ? "" : "none";
-    });
-    applyFilter(currentFilter);
-});
-
 let currentFilter = "tous";
 
-function applyFilter(f){
-    currentFilter = f;
+// --- Fonction centrale : applique recherche + filtre ---
+function refreshDisplay() {
+    const q = search.value.toLowerCase();
+
     rows.forEach(r => {
-        if(r.style.display === "none"){ return; }
-        const s = r.dataset.statut;
-        if(f==="tous"){ r.style.display=""; }
-        else if(f==="envoyer"){ r.style.display = (s === "A envoyer") ? "" : "none"; }
-        else if(f==="envoyes"){ r.style.display = (s === "Envoyé") ? "" : "none"; }
+        const matchesSearch = r.dataset.search.includes(q);
+        const statut = r.dataset.statut;
+
+        let matchesFilter = true;
+
+        if (currentFilter === "envoyer") {
+            matchesFilter = (statut === "A envoyer");
+        } else if (currentFilter === "envoyes") {
+            matchesFilter = (statut === "Envoyé");
+        }
+
+        r.style.display = (matchesSearch && matchesFilter) ? "" : "none";
     });
 }
 
+// --- Recherche live ---
+search.addEventListener("input", refreshDisplay);
+
+// --- Changement de filtre ---
 function setActive(btn){
     document.querySelectorAll(".tools button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
 }
 
-document.getElementById("filtre-tous").onclick = e => { setActive(e.target); applyFilter("tous"); };
-document.getElementById("filtre-envoyer").onclick = e => { setActive(e.target); applyFilter("envoyer"); };
-document.getElementById("filtre-envoyes").onclick = e => { setActive(e.target); applyFilter("envoyes"); };
+document.getElementById("filtre-tous").onclick = e => {
+    setActive(e.target);
+    currentFilter = "tous";
+    refreshDisplay();
+};
 
+document.getElementById("filtre-envoyer").onclick = e => {
+    setActive(e.target);
+    currentFilter = "envoyer";
+    refreshDisplay();
+};
+
+document.getElementById("filtre-envoyes").onclick = e => {
+    setActive(e.target);
+    currentFilter = "envoyes";
+    refreshDisplay();
+};
+
+// --- Première mise à jour ---
+refreshDisplay();
 </script>
 
 </body>
