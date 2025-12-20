@@ -136,7 +136,13 @@ tbody tr:nth-child(even){
   data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation ~ ' ' ~ d.date)|lower }}">
     
     <td>{{ d.date }}</td>
-    <td>{{ d.nom }}</td>
+<td>
+    {{ d.nom }}
+    {% if d.notation_interne == "CHAUD" %}
+        <span style="font-size:16px; margin-left:4px;">🔥</span>
+    {% endif %}
+</td>
+
     <td>{{ d.prenom }}</td>
     <td>{{ d.infos.formation }}</td>
 
@@ -251,3 +257,4 @@ function setActive(btn){
 
 </body>
 </html>
+
