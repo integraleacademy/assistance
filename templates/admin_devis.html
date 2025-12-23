@@ -143,7 +143,8 @@ tbody tr:nth-child(even){
 <tbody id="table-body">
 {% for d in devis %}
 <tr class="row"
-    data-statut="{{ d.statut_devis }}"
+    data-statut="{% if d.statut_devis == 'Envoyé' %}envoye{% else %}a_envoyer{% endif %}"
+
     data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation)|lower }}">
     
     <td>{{ d.date }}</td>
@@ -235,10 +236,11 @@ function refreshDisplay() {
         let matchesFilter = true;
 
         if (currentFilter === "envoyer") {
-            matchesFilter = (statut === "À envoyer");
+            matchesFilter = (statut === "a_envoyer");
         } else if (currentFilter === "envoyes") {
-            matchesFilter = (statut === "Envoyé");
+            matchesFilter = (statut === "envoye");
         }
+
 
         r.style.display = (matchesSearch && matchesFilter) ? "" : "none";
     });
@@ -280,4 +282,5 @@ refreshDisplay();
 
 </body>
 </html>
+
 
