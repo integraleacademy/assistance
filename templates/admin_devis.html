@@ -204,13 +204,25 @@ tbody tr:nth-child(even){
 {% endfor %}
 </tbody>
 </table>
+    <!-- 🔹 Légende des actions -->
+<div style="margin-top:20px;padding-top:15px;border-top:1px solid #eee;font-size:13px;color:#444;">
+    <strong>Légende :</strong>
+    <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:12px;">
+        <div><span class="action-mini btn-plan">📄</span> Plan de financement</div>
+        <div><span class="action-mini btn-voir">👁️</span> Voir le dossier</div>
+        <div><span class="action-mini btn-send">📧</span> Envoyer par e-mail</div>
+        <div><span class="action-mini btn-change">🔄</span> Changer le statut</div>
+        <div><span class="action-mini btn-delete">🗑️</span> Supprimer</div>
+    </div>
+</div>
+
 </div>
 
 <script>
 const search = document.getElementById("search");
 const rows = document.querySelectorAll(".row");
 
-let currentFilter = "tous";
+let currentFilter = "envoyer";
 
 // --- Fonction centrale : applique recherche + filtre ---
 function refreshDisplay() {
@@ -223,7 +235,7 @@ function refreshDisplay() {
         let matchesFilter = true;
 
         if (currentFilter === "envoyer") {
-            matchesFilter = (statut === "A envoyer");
+            matchesFilter = (statut === "À envoyer");
         } else if (currentFilter === "envoyes") {
             matchesFilter = (statut === "Envoyé");
         }
@@ -259,9 +271,13 @@ document.getElementById("filtre-envoyes").onclick = e => {
     refreshDisplay();
 };
 
-// --- Première mise à jour ---
+// --- Filtre par défaut : À envoyer ---
+setActive(document.getElementById("filtre-envoyer"));
+currentFilter = "envoyer";
 refreshDisplay();
 </script>
 
+
 </body>
 </html>
+
