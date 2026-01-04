@@ -40,7 +40,23 @@ USERS = {
 
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-app.secret_key = "cle-flask-secrete-2024"
+from datetime import timedelta
+
+app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_ME_LONG_RANDOM")
+
+app.config.update(
+    SESSION_COOKIE_NAME="integrale_assistance_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=True,  # Render = https
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+@app.before_request
+def refresh_session():
+    session.permanent = True
+
+
 
 from datetime import date
 
@@ -463,22 +479,28 @@ def login():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         user = USERS.get(email)
+
         if not user:
             flash("Identifiants incorrects", "error")
             return redirect(url_for("login"))
-        # Comparaison simple (si tu utilises des hashes, remplace par check_password_hash)
+
         expected = user.get("pass")
+
         if expected and password == expected:
-            # ok
             session["user_email"] = email
             session["user_name"] = user.get("name")
             session["user_role"] = user.get("role")
+
+            session.permanent = True  # ✅ cookie persistant (30 jours)
+
             next_url = request.args.get("next") or url_for("admin")
             return redirect(next_url)
-        else:
-            flash("Identifiants incorrects", "error")
-            return redirect(url_for("login"))
+
+        flash("Identifiants incorrects", "error")
+        return redirect(url_for("login"))
+
     return render_template("login.html")
+
 
 @app.route("/logout")
 def logout():
