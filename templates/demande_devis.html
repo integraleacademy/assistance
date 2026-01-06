@@ -251,7 +251,16 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 </p>
 
 <label>Montant disponible sur mon CPF (en €)</label>
-<input name="cpf_montant" required>
+<input
+  type="text"
+  name="cpf_montant"
+  inputmode="numeric"
+  pattern="[0-9]{1,4}"
+  maxlength="4"
+  placeholder="Ex : 2500"
+  required
+>
+
 
 <label>Je souhaite déposer une demande de financement à France Travail</label>
 <select name="france_travail" id="franceTravail" required>
@@ -482,11 +491,21 @@ datesSelect.addEventListener("change", () => {
 });
 
 
+const cpfInput = document.querySelector('input[name="cpf_montant"]');
+
+cpfInput.addEventListener("input", () => {
+  // Supprime tout ce qui n’est pas un chiffre
+  cpfInput.value = cpfInput.value.replace(/\D/g, "").slice(0, 4);
+});
+
+
+
 
 </script>
 
 </body>
 </html>
+
 
 
 
