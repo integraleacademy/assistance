@@ -259,6 +259,12 @@
   
 }
 
+    .page-break {
+  page-break-before: always;
+  break-before: page;
+}
+
+
     
   </style>
 </head>
@@ -270,7 +276,7 @@
     <div class="header-left">
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Intégrale Academy">
       <div class="header-title">
-        <h1>Plan de financement proposé</h1>
+        <h1>Devis formation professionnelle</h1>
       </div>
     </div>
   </div>
@@ -291,20 +297,40 @@
   <div class="bloc">
     <div class="section-title">Devis</div>
 
-    <table>
-      <tr>
-        <th>Numéro de devis</th>
-        <td>{{ devis_num }}</td>
-        <th>Date</th>
-        <td>{{ devis_date }}</td>
-      </tr>
-      <tr>
-        <th>Validité</th>
-        <td>Jusqu’au {{ devis_valid_until }}</td>
-        <th>Période</th>
-        <td>Du {{ date_debut }} au {{ date_fin }}</td>
-      </tr>
-    </table>
+<table>
+  <tr>
+    <th>Numéro de devis</th>
+    <td>{{ devis_num }}</td>
+    <th>Date</th>
+    <td>{{ devis_date }}</td>
+  </tr>
+
+  <tr>
+    <th>Validité</th>
+    <td>Jusqu’au {{ devis_valid_until }}</td>
+    <th>Projet</th>
+    <td>{{ formation_label }} du {{ date_debut }} au {{ date_fin }}</td>
+  </tr>
+
+  <tr>
+    <th>Dossier suivi par</th>
+    <td colspan="3">Clément VAILLANT - Directeur Intégrale Academy</td>
+  </tr>
+
+  <tr>
+    <th>Centre de formation</th>
+    <td colspan="3" style="white-space:pre-line;">
+SASU Intégrale Sécurité Formations
+54 chemin du Carreou
+83480 PUGET SUR ARGENS
+Immatriculée au Registre des commerces et des sociétés de Fréjus RCS 840899884
+NDA n°93830600283
+Autorisation CNAPS FOR-083-2027-02-08-20200755135
+Certification Nationale Qualité QUALIOPI n°03169 délivrée par SGS en date du 21/10/2024 - La certification qualité a été délivrée au titre de la ou des catégories d’actions suivantes : actions de formation, actions de formation en apprentissage.
+    </td>
+  </tr>
+</table>
+
 
     <table>
       <tr>
@@ -324,12 +350,21 @@
       {% endfor %}
 
       <tr>
-        <th colspan="3" class="right">Total devis</th>
-        <th class="right">{{ devis_total }}</th>
+<th colspan="3" class="right">TOTAL TTC</th>
+<th class="right">{{ devis_total }}</th>
+
       </tr>
     </table>
+    <div class="note" style="margin-top:10px;">
+  Formation exonérée de TVA — Art. 261.4.4 a du CGI
+</div>
+
   </div>
 
+<!-- ===== PAGE 2 : PLAN DE FINANCEMENT ===== -->
+<div class="bloc page-break">
+  <div class="section-title">Plan de financement proposé</div>
+</div>
 
 
   <!-- ===== BLOC 1 ===== -->
@@ -503,6 +538,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
