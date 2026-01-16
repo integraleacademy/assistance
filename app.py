@@ -1983,7 +1983,23 @@ def envoyer_plan_financement(devis_id):
 
     email = devis.get("mail")
     prenom = devis.get("prenom", "").strip()
-    formation_label = (devis.get("formation_label") or devis.get("formation") or "").strip()
+    
+    # 🔎 Formation = dans devis["details"] (JSON)
+    try:
+        infos = json.loads(devis.get("details", "{}"))
+    except:
+        infos = {}
+    
+    formation = (infos.get("formation") or "").strip()
+    
+    formation_label = {
+        "A3P": "A3P – Agent de Protection Physique des Personnes",
+        "APS": "APS – Agent de Prévention et de Sécurité",
+        "VTC": "VTC – Chauffeur de transport avec chauffeur",
+        "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
+        "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
+    }.get(formation, formation)
+
 
     subject = "📄 Votre devis détaillé — Intégrale Academy"
 
