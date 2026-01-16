@@ -1979,44 +1979,38 @@ def envoyer_plan_financement(devis_id):
     if not devis:
         abort(404)
 
-    # ---------------------------------
-    # Lien public sécurisé du plan
-    # ---------------------------------
-    plan_url = url_for(
-        "plan_public",
-        token=devis.get("token_plan"),
-        _external=True
-    )
+    plan_url = url_for("plan_public", token=devis.get("token_plan"), _external=True)
 
-    # ---------------------------------
-    # Données email
-    # ---------------------------------
     email = devis.get("mail")
-    prenom = devis.get("prenom", "")
+    prenom = devis.get("prenom", "").strip()
+    formation_label = (devis.get("formation_label") or devis.get("formation") or "").strip()
 
     subject = "📄 Votre devis détaillé — Intégrale Academy"
 
+    # ✅ TEXTE BRUT aligné avec le HTML
     plain = (
         f"Bonjour {prenom},\n\n"
-        "Nous avons bien reçu votre demande de devis et nous vous en remercions.\n"
-        "Votre devis détaillé est disponible en ligne via le lien ci-dessous :\n\n"
+        f"Je fais suite à votre demande de devis concernant notre formation {formation_label}.\n"
+        "Je vous prie de bien vouloir trouver ci-dessous votre devis détaillé :\n\n"
         f"{plan_url}\n\n"
-        "Si vous avez la moindre question, vous pouvez nous contacter au 04 22 47 07 68.\n\n"
-        "Vous pouvez également télécharger le dossier de présentation de nos formations :\n"
+        "Vous pouvez également télécharger le dossier de présentation de notre formation :\n"
         "https://www.integraleacademy.com/dossiersfc\n\n"
+        "Si vous avez la moindre question, n'hésitez pas à nous contacter au 04 22 47 07 68.\n\n"
         "Bien cordialement,\n"
-        "Intégrale Academy"
+        "Clément VAILLANT - Directeur Intégrale Academy\n"
+        "Ce lien est personnel et sécurisé."
     )
 
+    # ✅ HTML = ton “2e texte”, mais avec la vraie variable Python
     html = _wrap_html(
         "<h1>📄 Votre devis détaillé</h1>",
         f"""
         <p>Bonjour <strong>{prenom}</strong>,</p>
 
         <p>
-          Nous avons bien reçu votre demande de devis et nous vous en remercions.
+          Je fais suite à votre demande de devis concernant notre formation <strong>{formation_label}</strong>.
           <br>
-          Voici votre <strong>devis détaillé</strong> :
+          Je vous prie de bien vouloir trouver ci-dessous votre <strong>devis détaillé</strong> :
         </p>
 
         <p style="text-align:center;margin:24px 0 10px;">
@@ -2041,12 +2035,12 @@ def envoyer_plan_financement(devis_id):
                     text-decoration:none;
                     border-radius:8px;
                     font-weight:700;">
-            📎 Télécharger le dossier de présentation
+            📎 Télécharger le dossier de présentation de notre formation
           </a>
         </p>
 
         <p style="margin:0 0 10px;">
-          Si vous avez la moindre question, vous pouvez nous contacter au
+          Si vous avez la moindre question, n'hésitez pas à nous contacter au
           <strong>04 22 47 07 68</strong>.
         </p>
 
@@ -2056,10 +2050,13 @@ def envoyer_plan_financement(devis_id):
 
         <p style="margin-top:16px;">
           Bien cordialement,<br>
-          <strong>Intégrale Academy</strong>
+          <strong>Clément VAILLANT - Directeur Intégrale Academy</strong>
         </p>
         """
     )
+
+    # ... ensuite ton envoi email (smtp/brevo/etc.) avec plain+html
+
 
     # Envoi email
     send_email_html(
