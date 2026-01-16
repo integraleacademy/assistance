@@ -1988,80 +1988,80 @@ def envoyer_plan_financement(devis_id):
         _external=True
     )
 
-   # ---------------------------------
-# Données email
-# ---------------------------------
-email = devis.get("mail")
-prenom = devis.get("prenom", "")
+    # ---------------------------------
+    # Données email
+    # ---------------------------------
+    email = devis.get("mail")
+    prenom = devis.get("prenom", "")
 
-subject = "📄 Votre devis détaillé — Intégrale Academy"
+    subject = "📄 Votre devis détaillé — Intégrale Academy"
 
-plain = (
-    f"Bonjour {prenom},\n\n"
-    "Nous avons bien reçu votre demande de devis et nous vous en remercions.\n"
-    "Votre devis détaillé est disponible en ligne via le lien ci-dessous :\n\n"
-    f"{plan_url}\n\n"
-    "Si vous avez la moindre question, vous pouvez nous contacter au 04 22 47 07 68.\n\n"
-    "Vous pouvez également télécharger le dossier de présentation de nos formations :\n"
-    "https://www.integraleacademy.com/dossiersfc\n\n"
-    "Bien cordialement,\n"
-    "Intégrale Academy"
-)
+    plain = (
+        f"Bonjour {prenom},\n\n"
+        "Nous avons bien reçu votre demande de devis et nous vous en remercions.\n"
+        "Votre devis détaillé est disponible en ligne via le lien ci-dessous :\n\n"
+        f"{plan_url}\n\n"
+        "Si vous avez la moindre question, vous pouvez nous contacter au 04 22 47 07 68.\n\n"
+        "Vous pouvez également télécharger le dossier de présentation de nos formations :\n"
+        "https://www.integraleacademy.com/dossiersfc\n\n"
+        "Bien cordialement,\n"
+        "Intégrale Academy"
+    )
 
-html = _wrap_html(
-    "<h1>📄 Votre devis détaillé</h1>",
-    f"""
-    <p>Bonjour <strong>{prenom}</strong>,</p>
+    html = _wrap_html(
+        "<h1>📄 Votre devis détaillé</h1>",
+        f"""
+        <p>Bonjour <strong>{prenom}</strong>,</p>
 
-    <p>
-      Nous avons bien reçu votre demande de devis et nous vous en remercions.
-      <br>
-      Voici votre <strong>devis détaillé</strong> :
-    </p>
+        <p>
+          Nous avons bien reçu votre demande de devis et nous vous en remercions.
+          <br>
+          Voici votre <strong>devis détaillé</strong> :
+        </p>
 
-    <p style="text-align:center;margin:24px 0 10px;">
-      <a href="{plan_url}"
-         style="display:inline-block;
-                padding:14px 26px;
-                background:#0d6efd;
-                color:white;
-                text-decoration:none;
-                border-radius:8px;
-                font-weight:700;">
-        👉 Consulter mon devis détaillé
-      </a>
-    </p>
+        <p style="text-align:center;margin:24px 0 10px;">
+          <a href="{plan_url}"
+             style="display:inline-block;
+                    padding:14px 26px;
+                    background:#0d6efd;
+                    color:white;
+                    text-decoration:none;
+                    border-radius:8px;
+                    font-weight:700;">
+            👉 Consulter mon devis détaillé
+          </a>
+        </p>
 
-    <p style="text-align:center;margin:10px 0 24px;">
-      <a href="https://www.integraleacademy.com/dossiersfc"
-         style="display:inline-block;
-                padding:14px 26px;
-                background:#0f1f33;
-                color:white;
-                text-decoration:none;
-                border-radius:8px;
-                font-weight:700;">
-        📎 Télécharger le dossier de présentation
-      </a>
-    </p>
+        <p style="text-align:center;margin:10px 0 24px;">
+          <a href="https://www.integraleacademy.com/dossiersfc"
+             style="display:inline-block;
+                    padding:14px 26px;
+                    background:#0f1f33;
+                    color:white;
+                    text-decoration:none;
+                    border-radius:8px;
+                    font-weight:700;">
+            📎 Télécharger le dossier de présentation
+          </a>
+        </p>
 
-    <p style="margin:0 0 10px;">
-      Si vous avez la moindre question, vous pouvez nous contacter au
-      <strong>04 22 47 07 68</strong>.
-    </p>
+        <p style="margin:0 0 10px;">
+          Si vous avez la moindre question, vous pouvez nous contacter au
+          <strong>04 22 47 07 68</strong>.
+        </p>
 
-    <p style="font-size:13px;color:#666;margin:0;">
-      Ce lien est personnel et sécurisé.
-    </p>
+        <p style="font-size:13px;color:#666;margin:0;">
+          Ce lien est personnel et sécurisé.
+        </p>
 
-    <p style="margin-top:16px;">
-      Bien cordialement,<br>
-      <strong>Intégrale Academy</strong>
-    </p>
-    """
-)
+        <p style="margin-top:16px;">
+          Bien cordialement,<br>
+          <strong>Intégrale Academy</strong>
+        </p>
+        """
+    )
 
-
+    # Envoi email
     send_email_html(
         to_emails=email,
         subject=subject,
@@ -2080,6 +2080,7 @@ html = _wrap_html(
     save_data(data)
 
     return redirect(url_for("admin_devis"))
+
 
 
 @app.route("/plan/<token>")
