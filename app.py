@@ -16,6 +16,157 @@ from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask import session, flash
 
+import calendar
+from datetime import date as _date
+
+def _add_one_month(d: _date) -> _date:
+    y = d.year + (1 if d.month == 12 else 0)
+    m = 1 if d.month == 12 else d.month + 1
+    last = calendar.monthrange(y, m)[1]
+    return _date(y, m, min(d.day, last))
+
+def _eur(v):
+    # v peut être int/float/str (ex: "OFFERTS", "INCLUS")
+    if isinstance(v, (int, float)):
+        # pas de décimales
+        return f"{int(v)} €"
+    return str(v)
+
+def _parse_dates_range(dates_txt: str):
+    """
+    Essaie d'extraire une date début/fin à partir d'un texte comme :
+    '9 mars au 21 avril 2026' ou '09 mars 2026 au 21 avril 2026' etc.
+    Si ça échoue, renvoie (None, None)
+    """
+    if not dates_txt:
+        return (None, None)
+
+    import re
+    mois_fr = {
+        "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4,
+        "mai": 5, "juin": 6, "juillet": 7, "août": 8, "aout": 8,
+        "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12, "decembre": 12
+    }
+
+    # on récupère l'année (première année trouvée)
+    m_annee = re.search(r"(20\d{2})", dates_txt)
+    annee = int(m_annee.group(1)) if m_annee else None
+
+    # split "au"
+    parts = dates_txt.split("au")
+    if len(parts) < 2:
+        return (None, None)
+
+    left = parts[0].strip()
+    right = parts[1].strip()
+
+    def parse_part(p: str):
+        # attend "9 mars" ou "9 mars 2026"
+        tokens = p.replace(",", " ").split()
+        if len(tokens) < 2:
+            return None
+        jour = None
+        mois = None
+        an = None
+        # jour
+        try:
+            jour = int(re.sub(r"\D", "", tokens[0]))
+        except:
+            return None
+        # mois
+        mois_name = tokens[1].lower()
+        if mois_name not in mois_fr:
+            return None
+        mois = mois_fr[mois_name]
+        # année (si présente)
+        for t in tokens[2:]:
+            if re.fullmatch(r"20\d{2}", t):
+                an = int(t)
+                break
+        if an is None:
+            an = annee
+        if an is None:
+            return None
+        return _date(an, mois, jour)
+
+    d1 = parse_part(left)
+    d2 = parse_part(right)
+    return (d1, d2)
+
+def build_devis_context(formation_code: str, formation_label: str, dates_txt: str, sequence: int = 1):
+    """
+    Retourne un dict prêt à injecter dans plan_financement.html :
+    devis_num, devis_date, devis_valid_until, date_debut, date_fin, devis_lignes, devis_total
+    """
+    today = _date.today()
+    devis_num = f"{today.year}-{today.month:02d}{today.day:02d}{sequence:04d}"  # AAAA-MMDD0001
+    devis_date = today.strftime("%d/%m/%Y")
+    devis_valid_until = _add_one_month(today).strftime("%d/%m/%Y")
+
+    d1, d2 = _parse_dates_range(dates_txt or "")
+    date_debut = d1.strftime("%d/%m/%Y") if d1 else "—"
+    date_fin = d2.strftime("%d/%m/%Y") if d2 else "—"
+
+    # Lignes selon formation
+    lignes = []
+    total = 0
+
+    if formation_code == "A3P":
+        lignes = [
+            {"intitule": "Agent de Protection Physique des Personnes (A3P)", "prix_unitaire": _eur(4200), "quantite": 1, "total": _eur(4200)},
+            {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
+        ]
+        total = 4200
+
+    elif formation_code == "APS":
+        lignes = [
+            {"intitule": "Agent de Prévention et de Sécurité (APS)", "prix_unitaire": _eur(1650), "quantite": 1, "total": _eur(1650)},
+            {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
+        ]
+        total = 1650
+
+    elif formation_code == "DESP_INIT":
+        lignes = [
+            {"intitule": "Formation initiale DSP Dirigeant d’entreprise de sécurité privée", "prix_unitaire": _eur(4300), "quantite": 1, "total": _eur(4300)},
+            {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
+            {"intitule": "Accès formation en ligne e-learning", "prix_unitaire": "INCLUS", "quantite": 1, "total": _eur(0)},
+        ]
+        total = 4300
+
+    elif formation_code == "DESP_VAE":
+        lignes = [
+            {"intitule": "Etude de recevabilité (Livret 1)", "prix_unitaire": "OFFERTE", "quantite": 1, "total": _eur(0)},
+            {"intitule": "Suivi de dossier, frais administratifs, présentation du dossier auprès du certificateur (acompte de 30%)", "prix_unitaire": _eur(1140), "quantite": 1, "total": _eur(1140)},
+            {"intitule": "Passage devant le jury de certification (solde)", "prix_unitaire": _eur(2660), "quantite": 1, "total": _eur(2660)},
+        ]
+        total = 3800
+
+    elif formation_code == "VTC":
+        lignes = [
+            {"intitule": "Formation Chauffeur VTC incluant :\nFormation théorique en ligne à distance\nFormation pratique sur véhicule à doubles commandes\nFrais d’examen Chambre des métiers\nPrêt du véhicule à doubles commandes le jour de l’examen pratique\nLe livre officiel Chauffeur VTC",
+             "prix_unitaire": _eur(1600), "quantite": 1, "total": _eur(1600)},
+            {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
+        ]
+        total = 1600
+
+    else:
+        # fallback si jamais
+        lignes = [
+            {"intitule": formation_label or formation_code or "Formation", "prix_unitaire": "—", "quantite": 1, "total": "—"},
+        ]
+        total = 0
+
+    return {
+        "devis_num": devis_num,
+        "devis_date": devis_date,
+        "devis_valid_until": devis_valid_until,
+        "date_debut": date_debut,
+        "date_fin": date_fin,
+        "devis_lignes": lignes,
+        "devis_total": _eur(total),
+    }
+
+
 # ---------- USERS (chargés depuis les variables d'environnement) ----------
 # Si tu as mis les variables dans Render / .env : on les lit ici.
 USERS = {
@@ -1662,6 +1813,23 @@ def plan_financement_devis(devis_id):
 
     formation = infos.get("formation")
 
+    formation_label = {
+        "A3P": "A3P – Agent de Protection Physique des Personnes",
+        "APS": "APS – Agent de Prévention et de Sécurité",
+        "VTC": "VTC – Chauffeur de transport avec chauffeur",
+        "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
+        "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
+    }.get(formation, formation)
+
+    devis_ctx = build_devis_context(
+        formation_code=formation,
+        formation_label=formation_label,
+        dates_txt=infos.get("dates", ""),
+        sequence=1
+    )
+
+
+
     TARIFS = {
         "A3P": 4200,
         "APS": 1650,
@@ -1714,21 +1882,17 @@ def plan_financement_devis(devis_id):
         devis=devis,
         prenom=devis.get("prenom"),
         nom=devis.get("nom"),
-        email=devis.get("mail"), 
-        formation_label={
-            "A3P": "A3P – Agent de Protection Physique des Personnes",
-            "APS": "APS – Agent de Prévention et de Sécurité",
-            "VTC": "VTC – Chauffeur de transport avec chauffeur",
-            "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
-            "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
-        }.get(formation, formation),
+        email=devis.get("mail"),
+        formation_label=formation_label,
         dates=infos.get("dates"),
         cpf=cpf,
         ft=ft,
         reste_avec_ft=reste_avec_ft,
         reste_sans_ft=reste_sans_ft,
-        echeances=echeances
+        echeances=echeances,
+        **devis_ctx
     )
+
 
 
 
@@ -1915,6 +2079,22 @@ def plan_public(token):
 
     formation = infos.get("formation")
 
+    formation_label = {
+        "A3P": "A3P – Agent de Protection Physique des Personnes",
+        "APS": "APS – Agent de Prévention et de Sécurité",
+        "VTC": "VTC – Chauffeur de transport avec chauffeur",
+        "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
+        "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
+    }.get(formation, formation)
+
+    devis_ctx = build_devis_context(
+        formation_code=formation,
+        formation_label=formation_label,
+        dates_txt=infos.get("dates", ""),
+        sequence=1
+    )
+
+
     TARIFS = {
         "A3P": 4200,
         "APS": 1650,
@@ -1960,20 +2140,16 @@ def plan_public(token):
         prenom=devis.get("prenom"),
         nom=devis.get("nom"),
         email=devis.get("mail"),
-        formation_label={
-            "A3P": "A3P – Agent de Protection Physique des Personnes",
-            "APS": "APS – Agent de Prévention et de Sécurité",
-            "VTC": "VTC – Chauffeur de transport avec chauffeur",
-            "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
-            "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
-        }.get(formation, formation),
+        formation_label=formation_label,
         dates=infos.get("dates"),
         cpf=cpf,
         ft=ft,
         reste_avec_ft=reste_avec_ft,
         reste_sans_ft=reste_sans_ft,
-        echeances=echeances
+        echeances=echeances,
+        **devis_ctx
     )
+
 
 
 
