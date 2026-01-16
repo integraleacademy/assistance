@@ -281,6 +281,10 @@
   break-before: page;
 }
 
+    /* Sécurité : si un ancien bloc "Plan de financement proposé" traine en section-title */
+.section-title.plan-fin { display:none !important; }
+
+
 
     
   </style>
@@ -379,17 +383,32 @@ Certification Nationale Qualité QUALIOPI n°03169 délivrée par SGS en date du
   </div>
 
 <!-- ===== PAGE 2 : PLAN DE FINANCEMENT ===== -->
-<div class="page-break"></div>
+<div style="page-break-before:always;break-before:page;"></div>
 
-<div class="header">
-  <div class="header-left">
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="Intégrale Academy">
-    <div class="header-title">
-      <h1>Plan de financement proposé</h1>
+<div class="header"
+     style="display:flex !important;
+            align-items:center !important;
+            justify-content:space-between !important;
+            padding:14px 18px !important;
+            margin:0 0 18px 0 !important;
+            border-radius:10px !important;
+            background:#0f1f33 !important;
+            color:#fff !important;
+            -webkit-print-color-adjust:exact !important;
+            print-color-adjust:exact !important;">
+  <div class="header-left" style="display:flex !important;align-items:center !important;gap:16px !important;">
+    <img src="{{ url_for('static', filename='logo.png') }}"
+         alt="Intégrale Academy"
+         style="height:110px !important;width:auto !important;display:block !important;">
+    <div class="header-title" style="line-height:1.3 !important;">
+      <h1 style="font-size:22px !important;margin:0 !important;font-weight:700 !important;color:#fff !important;">
+        Plan de financement proposé
+      </h1>
     </div>
   </div>
 </div>
 
+  
 
 
 
@@ -564,6 +583,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
