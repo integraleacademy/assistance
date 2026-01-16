@@ -1037,7 +1037,7 @@ def repondre(demande_id):
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
-    # ------------------------------------------------------------
+# ------------------------------------------------------------
 # ✅ Route publique pour la plateforme principale (suivi assistance)
 # ------------------------------------------------------------
 @app.route("/data.json")
