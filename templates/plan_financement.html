@@ -30,6 +30,23 @@
       color:#fff;
     }
 
+    /* Empêche le header d'être cassé entre 2 pages (PDF/print) */
+.header{
+  break-inside: avoid;
+  page-break-inside: avoid;
+  -weasy-print-color-adjust: exact;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* Quand le header démarre une nouvelle page */
+.header.page-break{
+  break-before: page;
+  page-break-before: always;
+  margin-top: 0;
+}
+
+
     .header-left{
       display:flex;
       align-items:center;
@@ -546,6 +563,7 @@ function addRow(){
 
 </body>
 </html>
+
 
 
 
