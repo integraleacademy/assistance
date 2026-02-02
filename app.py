@@ -2192,10 +2192,10 @@ def plan_public(token):
 
 @app.route("/lookup_hebergement.json")
 def lookup_hebergement():
-    email = (request.args.get("email") or "").strip().lower()
+    email = (request.args.get("email") or request.args.get("mail") or "").strip().lower()
     nom = (request.args.get("nom") or "").strip().lower()
     prenom = (request.args.get("prenom") or "").strip().lower()
-    session_txt = (request.args.get("session") or "").strip()
+    session_txt = " ".join((request.args.get("session") or "").split())
 
     if not email and not (nom and prenom):
         return {"ok": False, "error": "missing email or (nom+prenom)"}, 400, {
@@ -2216,9 +2216,10 @@ def lookup_hebergement():
             if (h.get("prenom") or "").strip().lower() != prenom:
                 return False
 
-        # si on passe une session (optionnel) on filtre aussi
+        # session optionnelle
         if session_txt:
-            return (h.get("session") or "").strip() == session_txt
+            hs = " ".join((h.get("session") or "").split())
+            return hs == session_txt
 
         return True
 
@@ -2229,6 +2230,7 @@ def lookup_hebergement():
         "reserved": reserved,
         "status": "réservé" if reserved else "inconnu"
     }, 200, {"Access-Control-Allow-Origin": "*"}
+
 
 
 
