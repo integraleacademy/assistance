@@ -2205,21 +2205,35 @@ def lookup_hebergement():
     data = load_data()
     hebergements = data.get("hebergements", [])
 
-    def match(h):
-        # match email prioritaire si fourni
-        if email:
-            if (h.get("mail") or "").strip().lower() != email:
-                return False
-        else:
-            if (h.get("nom") or "").strip().lower() != nom:
-                return False
-            if (h.get("prenom") or "").strip().lower() != prenom:
-                return False
+    def norm(s: str) -> str:
+        return " ".join((s or "").strip().lower().split())
 
-        # session optionnelle
+    def match(h):
+        h_mail = norm(h.get("mail"))  # ou: norm(h.get("mail") or h.get("email"))
+        h_nom = norm(h.get("nom"))
+        h_prenom = norm(h.get("prenom"))
+
+        in_mail = norm(email)
+        in_nom = norm(nom)
+        in_prenom = norm(prenom)
+
+        # 1) Email si possible
+        email_ok = False
+        if in_mail and h_mail:
+            email_ok = (h_mail == in_mail)
+
+        # 2) Fallback nom/prenom si possible
+        name_ok = False
+        if in_nom and in_prenom and h_nom and h_prenom:
+            name_ok = (h_nom == in_nom and h_prenom == in_prenom)
+
+        if not (email_ok or name_ok):
+            return False
+
+        # 3) session optionnelle
         if session_txt:
-            hs = " ".join((h.get("session") or "").split())
-            return hs == session_txt
+            hs = norm(h.get("session"))
+            return hs == norm(session_txt)
 
         return True
 
@@ -2230,6 +2244,8 @@ def lookup_hebergement():
         "reserved": reserved,
         "status": "réservé" if reserved else "inconnu"
     }, 200, {"Access-Control-Allow-Origin": "*"}
+
+
 
 
 
