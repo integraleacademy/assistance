@@ -223,6 +223,7 @@
         <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
         <form method="POST" style="display:inline;" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
           <input type="hidden" name="action" value="delete_all_traitees">
+          <input type="hidden" name="q" value="{{ query or '' }}">
           <button type="submit" class="btn red">🗑️ Archiver traitées</button>
         </form>
         <a href="{{ url_for('archives') }}" class="btn grey">📦 Archives</a>
@@ -246,6 +247,7 @@
     <h3>➕ Nouvelle demande manuelle</h3>
     <form method="POST">
       <input type="hidden" name="action" value="add">
+      <input type="hidden" name="q" value="{{ query or '' }}">
 
       <!-- Téléphone -->
       <input type="text" name="telephone" placeholder="Téléphone" style="width:100%; margin:6px 0;">
@@ -300,6 +302,10 @@
           style="padding:10px 20px; border:none; background:#0d6efd; color:white; border-radius:8px; cursor:pointer;">
     Rechercher
   </button>
+  <a href="{{ url_for('admin') }}"
+     style="padding:10px 20px; border:none; background:#6c757d; color:white; border-radius:8px; cursor:pointer; text-decoration:none; display:inline-block;">
+    Réinitialiser
+  </a>
 </form>
 
 
@@ -330,6 +336,7 @@
       {% for d in demandes %}
       <tr>
         <form method="POST" enctype="multipart/form-data">
+          <input type="hidden" name="q" value="{{ query or '' }}">
           <td>{{ d.nom }} {% if d.is_doublon %}<span class="dup-badge">⚠️ Doublon</span>{% endif %}</td>
           <td>{{ d.prenom }}</td>
           <td><input type="text" name="mail" value="{{ d.mail }}" style="width:95%;"></td>

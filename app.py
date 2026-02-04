@@ -689,6 +689,14 @@ def admin():
     # =====================================================
     # 🟢 TRAITEMENTS POST (AJOUT / UPDATE / DELETE / ARCHIVE)
     # =====================================================
+    raw_query = (request.args.get("q") or request.form.get("q") or "").strip()
+    query = raw_query.lower()
+
+    def redirect_with_query():
+        if raw_query:
+            return redirect(url_for("admin", q=raw_query))
+        return redirect(url_for("admin"))
+
     if request.method == "POST":
         action = request.form.get("action")
         demande_id = request.form.get("id")
@@ -729,7 +737,7 @@ def admin():
                 except:
                     pass
 
-            return redirect(url_for("admin"))
+            return redirect_with_query()
 
         # ✏️ Mise à jour d'une demande existante
         elif action == "update":
@@ -780,7 +788,7 @@ def admin():
                     d["statut"] = nouveau_statut
 
             save_data(data)
-            return redirect(url_for("admin"))
+            return redirect_with_query()
 
         # ❌ Suppression d'une pièce jointe
         elif action == "delete_pj":
@@ -792,7 +800,7 @@ def admin():
                         supprimer_fichier(pj_name)
                         break
             save_data(data)
-            return redirect(url_for("admin"))
+            return redirect_with_query()
 
         # 🗑️ Archivage d'une demande
         elif action == "delete":
@@ -804,7 +812,7 @@ def admin():
                     supprimer_fichier(pj)
                 data["demandes"].remove(to_remove)
                 save_data(data)
-            return redirect(url_for("admin"))
+            return redirect_with_query()
 
         # 🧹 Archivage de toutes les demandes traitées
         elif action == "delete_all_traitees":
@@ -816,12 +824,11 @@ def admin():
                     supprimer_fichier(pj)
                 data["demandes"].remove(d)
             save_data(data)
-            return redirect(url_for("admin"))
+            return redirect_with_query()
 
     # =========================
     # 🔍 Recherche (GET)
     # =========================
-    query = request.args.get("q", "").strip().lower()
     if query:
         demandes = [
             d for d in demandes if
@@ -851,7 +858,7 @@ def admin():
         "admin.html",
         demandes=demandes,
         compteur_traitees=data["compteur_traitees"],
-        query=query
+        query=raw_query
     )
 
 
