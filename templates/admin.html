@@ -798,11 +798,19 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
 
 const autosaveTimers = new WeakMap();
 
-function scheduleAutoSave(form) {
+function scheduleAutoSave(form, delay = 600) {
   if (!form) return;
   const existingTimer = autosaveTimers.get(form);
   if (existingTimer) clearTimeout(existingTimer);
-  const timer = setTimeout(() => autoSaveForm(form), 600);
+  if (delay === 0) {
+    autosaveTimers.delete(form);
+    autoSaveForm(form);
+    return;
+  }
+  const timer = setTimeout(() => {
+    autosaveTimers.delete(form);
+    autoSaveForm(form);
+  }, delay);
   autosaveTimers.set(form, timer);
 }
 
@@ -811,8 +819,23 @@ function autoSaveForm(form) {
   fd.set("action", "update");
   fetch(window.location.pathname + window.location.search, {
     method: "POST",
-    body: fd
+    body: fd,
+    credentials: "same-origin",
+    keepalive: true
   }).catch(() => {});
+}
+
+function flushPendingAutosave() {
+  document.querySelectorAll("table.admin-table form").forEach(form => {
+    const timer = autosaveTimers.get(form);
+    if (!timer) return;
+    clearTimeout(timer);
+    autosaveTimers.delete(form);
+    const fd = new FormData(form);
+    fd.set("action", "update");
+    const params = new URLSearchParams(fd);
+    navigator.sendBeacon(window.location.pathname + window.location.search, params);
+  });
 }
 
 function bindAutoSaveInputs() {
@@ -824,7 +847,7 @@ function bindAutoSaveInputs() {
       }
       if (field.type === "hidden") return;
       if (field.tagName === "SELECT" || field.type === "date") {
-        field.addEventListener("change", () => scheduleAutoSave(form));
+        field.addEventListener("change", () => scheduleAutoSave(form, 0));
         return;
       }
       field.addEventListener("input", () => scheduleAutoSave(form));
@@ -835,6 +858,10 @@ function bindAutoSaveInputs() {
 
 document.addEventListener("DOMContentLoaded", () => {
   bindAutoSaveInputs();
+});
+
+window.addEventListener("beforeunload", () => {
+  flushPendingAutosave();
 });
 
 
