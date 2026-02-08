@@ -166,6 +166,80 @@ def build_devis_context(formation_code: str, formation_label: str, dates_txt: st
         "devis_total": _eur(total),
     }
 
+PLAN_FORMATIONS = {
+    "A3P": "A3P – Agent de Protection Physique des Personnes",
+    "APS": "APS – Agent de Prévention et de Sécurité",
+    "VTC": "VTC – Chauffeur de transport avec chauffeur",
+    "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
+    "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
+}
+
+PLAN_TARIFS = {
+    "A3P": 4200,
+    "APS": 1650,
+    "VTC": 1600,
+    "DESP_INIT": 4300,
+    "DESP_VAE": 3800
+}
+
+def _parse_cpf_value(value):
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(float(value))
+    cleaned = str(value).replace(",", ".").replace(" ", "")
+    try:
+        return int(float(cleaned))
+    except:
+        return 0
+
+def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_travail, date_examen_str):
+    formation_code = formation or "APS"
+    formation_label = PLAN_FORMATIONS.get(formation_code, formation_code)
+    tarif = PLAN_TARIFS.get(formation_code, 0)
+    cpf = _parse_cpf_value(cpf_value)
+    ft = max(tarif - cpf, 0) if france_travail == "OUI" else 0
+    reste_avec_ft = max(tarif - cpf - ft, 0)
+    reste_sans_ft = max(tarif - cpf, 0)
+
+    date_examen = None
+    date_examen_str = (date_examen_str or "").strip()
+    if date_examen_str:
+        try:
+            date_examen = datetime.datetime.strptime(
+                date_examen_str, "%Y-%m-%d"
+            ).date()
+        except ValueError:
+            date_examen = None
+
+    echeances = build_echeances_mensuelles(
+        reste=reste_sans_ft,
+        date_devis=datetime.date.today(),
+        date_examen=date_examen
+    )
+
+    echeances_payload = [
+        {
+            "date": e["date"].strftime("%d/%m/%Y"),
+            "montant": f"{e['montant']:.2f}"
+        }
+        for e in echeances
+    ]
+
+    return {
+        "formation": formation_code,
+        "formation_label": formation_label,
+        "dates": dates_txt or "",
+        "date_examen": date_examen_str,
+        "cpf": cpf,
+        "tarif": tarif,
+        "ft": ft,
+        "france_travail": france_travail,
+        "reste_avec_ft": reste_avec_ft,
+        "reste_sans_ft": reste_sans_ft,
+        "echeances": echeances_payload
+    }
+
 
 # ---------- USERS (chargés depuis les variables d'environnement) ----------
 # Si tu as mis les variables dans Render / .env : on les lit ici.
@@ -904,6 +978,38 @@ def admin_devis():
             devis.append(d)
 
     return render_template("admin_devis.html", devis=devis)
+
+@app.route("/admin-devis/simulateur")
+@login_required
+def simulateur_plan_financement():
+    simulation = compute_plan_financement_simulation(
+        formation=request.args.get("formation", "APS"),
+        dates_txt=request.args.get("dates", ""),
+        cpf_value=request.args.get("cpf", 0),
+        france_travail=request.args.get("france_travail", "NON"),
+        date_examen_str=request.args.get("date_examen", "")
+    )
+
+    return render_template(
+        "simulateur_plan_financement.html",
+        formations=PLAN_FORMATIONS,
+        simulation=simulation
+    )
+
+@app.route("/admin-devis/simulateur/data", methods=["POST"])
+@login_required
+def simulateur_plan_financement_data():
+    payload = request.get_json(silent=True) or {}
+
+    simulation = compute_plan_financement_simulation(
+        formation=payload.get("formation", "APS"),
+        dates_txt=payload.get("dates", ""),
+        cpf_value=payload.get("cpf", 0),
+        france_travail=payload.get("france_travail", "NON"),
+        date_examen_str=payload.get("date_examen", "")
+    )
+
+    return simulation
 
 
 @app.route("/admin-devis/toggle/<devis_id>", methods=["POST"])
