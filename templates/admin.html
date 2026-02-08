@@ -830,7 +830,7 @@ function autoSaveForm(form) {
     return;
   }
   const params = new URLSearchParams(fd);
-  fetch(window.location.pathname + window.location.search, {
+  fetch("/admin/autosave", {
     method: "POST",
     body: params,
     headers: {"Content-Type": "application/x-www-form-urlencoded"},
@@ -851,7 +851,7 @@ function flushPendingAutosave() {
     const payload = new Blob([params.toString()], {
       type: "application/x-www-form-urlencoded"
     });
-    navigator.sendBeacon(window.location.pathname + window.location.search, payload);
+    navigator.sendBeacon("/admin/autosave", payload);
   });
 }
 
