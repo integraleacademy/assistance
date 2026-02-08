@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Simulateur plan de financement</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body{
+      font-family: Arial, Helvetica, sans-serif;
+      background:#f5f6f8;
+      margin:0;
+      padding:0;
+    }
+    .container{
+      max-width:1100px;
+      margin:30px auto;
+      background:white;
+      padding:25px;
+      border-radius:14px;
+      box-shadow:0 8px 25px rgba(0,0,0,0.08);
+    }
+    h1{
+      margin:0 0 15px 0;
+    }
+    .back-link{
+      display:inline-block;
+      margin-bottom:12px;
+      text-decoration:none;
+      color:#0d6efd;
+      font-size:14px;
+    }
+    .form-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+      gap:12px;
+      margin-bottom:18px;
+    }
+    label{
+      font-size:13px;
+      font-weight:600;
+      margin-bottom:6px;
+      display:block;
+    }
+    input, select{
+      width:100%;
+      padding:8px 10px;
+      border-radius:8px;
+      border:1px solid #ccc;
+      font-size:14px;
+    }
+    .cards{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
+      gap:12px;
+      margin:18px 0;
+    }
+    .card{
+      background:#f7f7f7;
+      border-radius:10px;
+      padding:12px 14px;
+      font-size:13px;
+    }
+    .card span{
+      display:block;
+      font-size:16px;
+      font-weight:700;
+      margin-top:6px;
+      color:#0f1f33;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      margin-top:10px;
+    }
+    th, td{
+      border-bottom:1px solid #eee;
+      padding:10px 8px;
+      font-size:14px;
+      text-align:left;
+    }
+    .center{
+      text-align:center;
+    }
+    #table-echeancier input{
+      width:100%;
+      padding:6px 8px;
+      border-radius:6px;
+      border:1px solid #ccc;
+      font-size:13px;
+      box-sizing:border-box;
+    }
+    #table-echeancier button{
+      border:none;
+      background:#dc3545;
+      color:white;
+      border-radius:6px;
+      padding:6px 10px;
+      cursor:pointer;
+    }
+    #add-echeance{
+      border:none;
+      background:#0d6efd;
+      color:white;
+      border-radius:6px;
+      padding:8px 12px;
+      cursor:pointer;
+    }
+    thead{
+      background:#f0f2f5;
+    }
+    .muted{
+      color:#666;
+      font-size:13px;
+    }
+    .hidden{
+      display:none;
+    }
+    .alert{
+      margin-top:10px;
+      padding:10px 12px;
+      background:#fff4e5;
+      border:1px solid #ffd59e;
+      border-radius:6px;
+      font-style:italic;
+      font-size:13px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link" href="{{ url_for('admin_devis') }}">⬅️ Retour aux devis</a>
+  <h1>⚡ Simulateur de plan de financement</h1>
+  <p class="muted">Ajustez les paramètres pour simuler un plan en temps réel, sans créer de fiche client.</p>
+
+  <form id="simulator-form" autocomplete="off">
+    <div class="form-grid">
+      <div>
+        <label for="formation">Formation</label>
+        <select id="formation" name="formation" class="js-sim-input">
+          {% for code, label in formations.items() %}
+          <option value="{{ code }}" {% if simulation.formation == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="datesBloc" class="{% if simulation.formation not in dates_options %}hidden{% endif %}">
+        <label for="datesSelect">Session souhaitée</label>
+        <select name="dates" id="datesSelect" class="js-sim-input">
+          <option value="">— Sélectionnez —</option>
+        </select>
+        <div class="muted">Les dates proviennent du formulaire de demande de devis.</div>
+      </div>
+      <input type="hidden" name="date_examen" id="dateExamen" value="{{ simulation.date_examen }}">
+      <div>
+        <label for="cpf">Montant CPF (€)</label>
+        <input id="cpf" name="cpf" type="number" min="0" step="1" value="{{ simulation.cpf }}" class="js-sim-input">
+      </div>
+      <div>
+        <label for="france_travail">France Travail</label>
+        <select id="france_travail" name="france_travail" class="js-sim-input">
+          <option value="NON" {% if simulation.france_travail != 'OUI' %}selected{% endif %}>Non</option>
+          <option value="OUI" {% if simulation.france_travail == 'OUI' %}selected{% endif %}>Oui</option>
+        </select>
+      </div>
+    </div>
+  </form>
+
+  <div class="cards">
+    <div class="card">
+      Tarif formation
+      <span id="tarif">{{ simulation.tarif }} €</span>
+    </div>
+    <div class="card">
+      CPF
+      <span id="cpf-value">{{ simulation.cpf }} €</span>
+    </div>
+    <div class="card">
+      France Travail
+      <span id="ft-value">{{ simulation.ft }} €</span>
+    </div>
+    <div class="card">
+      Reste à charge (avec FT)
+      <span id="reste-avec">{{ simulation.reste_avec_ft }} €</span>
+    </div>
+    <div class="card">
+      Reste à charge (sans FT)
+      <span id="reste-sans">{{ simulation.reste_sans_ft }} €</span>
+    </div>
+  </div>
+
+  <h2>Échéancier proposé</h2>
+  <table id="table-echeancier">
+    <thead>
+      <tr>
+        <th>Date de prélèvement</th>
+        <th>Montant (€)</th>
+        <th class="center">Action</th>
+      </tr>
+    </thead>
+    <tbody id="echeancier-body"></tbody>
+  </table>
+  <div style="margin-top:10px;">
+    <button type="button" id="add-echeance">➕ Ajouter une échéance</button>
+  </div>
+  <div id="echeancier-alert" class="alert" {% if simulation.echeances %}style="display:none;"{% endif %}>
+    ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
+  </div>
+</div>
+
+<script>
+const form = document.getElementById("simulator-form");
+const echeancierBody = document.getElementById("echeancier-body");
+const alertBox = document.getElementById("echeancier-alert");
+const formationSelect = document.getElementById("formation");
+const datesBloc = document.getElementById("datesBloc");
+const datesSelect = document.getElementById("datesSelect");
+const dateExamen = document.getElementById("dateExamen");
+const datesOptions = {{ dates_options | tojson }};
+const addEcheanceButton = document.getElementById("add-echeance");
+let currentResteSans = 0;
+
+const fields = {
+  tarif: document.getElementById("tarif"),
+  cpf: document.getElementById("cpf-value"),
+  ft: document.getElementById("ft-value"),
+  resteAvec: document.getElementById("reste-avec"),
+  resteSans: document.getElementById("reste-sans")
+};
+
+function toIsoDate(dateStr) {
+  if (!dateStr) return "";
+  const parts = dateStr.split("/");
+  if (parts.length !== 3) return "";
+  const [jour, mois, annee] = parts;
+  return `${annee}-${mois}-${jour}`;
+}
+
+function renderEcheances(echeances) {
+  echeancierBody.innerHTML = "";
+  if (!echeances || echeances.length === 0) {
+    alertBox.style.display = "block";
+    return;
+  }
+
+  alertBox.style.display = "none";
+  echeances.forEach((e) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><input type="date" name="date[]" value="${toIsoDate(e.date)}"></td>
+      <td><input type="number" name="montant[]" step="0.01" value="${e.montant}"></td>
+      <td class="center"><button type="button" class="delete-row">🗑️</button></td>
+    `;
+    echeancierBody.appendChild(row);
+  });
+}
+
+function recalcMontants() {
+  const inputs = echeancierBody.querySelectorAll('input[name="montant[]"]');
+  if (!inputs.length || !currentResteSans) return;
+
+  const montantParLigne = Math.round((currentResteSans / inputs.length) * 100) / 100;
+  let cumul = 0;
+  inputs.forEach((input, index) => {
+    if (index < inputs.length - 1) {
+      input.value = montantParLigne.toFixed(2);
+      cumul += montantParLigne;
+    } else {
+      input.value = (currentResteSans - cumul).toFixed(2);
+    }
+  });
+}
+
+function addRow() {
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><input type="date" name="date[]" value=""></td>
+    <td><input type="number" name="montant[]" step="0.01" value=""></td>
+    <td class="center"><button type="button" class="delete-row">🗑️</button></td>
+  `;
+  echeancierBody.appendChild(row);
+  recalcMontants();
+}
+
+function fillDatesSelect() {
+  const formation = formationSelect.value;
+  datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+  if (datesOptions[formation]) {
+    datesBloc.classList.remove("hidden");
+    datesOptions[formation].forEach((dateLabel) => {
+      const option = document.createElement("option");
+      option.value = dateLabel;
+      option.textContent = dateLabel;
+      datesSelect.appendChild(option);
+    });
+  } else {
+    datesBloc.classList.add("hidden");
+  }
+
+  if (datesSelect.dataset.selected) {
+    datesSelect.value = datesSelect.dataset.selected;
+    datesSelect.dataset.selected = "";
+  }
+}
+
+function serializeForm() {
+  const data = new FormData(form);
+  return {
+    formation: data.get("formation"),
+    dates: data.get("dates"),
+    date_examen: data.get("date_examen"),
+    cpf: data.get("cpf"),
+    france_travail: data.get("france_travail")
+  };
+}
+
+function debounce(fn, wait) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), wait);
+  };
+}
+
+async function refreshSimulation() {
+  const payload = serializeForm();
+  const response = await fetch("{{ url_for('simulateur_plan_financement_data') }}", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    return;
+  }
+
+  const data = await response.json();
+  fields.tarif.textContent = `${data.tarif} €`;
+  fields.cpf.textContent = `${data.cpf} €`;
+  fields.ft.textContent = `${data.ft} €`;
+  fields.resteAvec.textContent = `${data.reste_avec_ft} €`;
+  fields.resteSans.textContent = `${data.reste_sans_ft} €`;
+  currentResteSans = Number(data.reste_sans_ft || 0);
+  renderEcheances(data.echeances);
+}
+
+const debouncedRefresh = debounce(refreshSimulation, 300);
+form.querySelectorAll(".js-sim-input").forEach((input) => {
+  input.addEventListener("input", debouncedRefresh);
+  input.addEventListener("change", debouncedRefresh);
+});
+
+formationSelect.addEventListener("change", () => {
+  datesSelect.dataset.selected = "";
+  dateExamen.value = "";
+  fillDatesSelect();
+  debouncedRefresh();
+});
+
+datesSelect.addEventListener("change", () => {
+  const texte = datesSelect.value;
+  if (!texte) {
+    dateExamen.value = "";
+    debouncedRefresh();
+    return;
+  }
+
+  const match = texte.match(/examen le (\\d{1,2}) ([a-zà-ÿ]+) (\\d{4})/i);
+  if (!match) {
+    dateExamen.value = "";
+    debouncedRefresh();
+    return;
+  }
+
+  const jour = match[1].padStart(2, "0");
+  const moisTexte = match[2].toLowerCase();
+  const annee = match[3];
+  const moisMap = {
+    janvier: "01",
+    février: "02",
+    fevrier: "02",
+    mars: "03",
+    avril: "04",
+    mai: "05",
+    juin: "06",
+    juillet: "07",
+    août: "08",
+    aout: "08",
+    septembre: "09",
+    octobre: "10",
+    novembre: "11",
+    décembre: "12",
+    decembre: "12"
+  };
+
+  if (!moisMap[moisTexte]) {
+    dateExamen.value = "";
+    debouncedRefresh();
+    return;
+  }
+
+  dateExamen.value = `${annee}-${moisMap[moisTexte]}-${jour}`;
+  debouncedRefresh();
+});
+
+datesSelect.dataset.selected = "{{ simulation.dates }}";
+fillDatesSelect();
+if (!dateExamen.value && datesSelect.value) {
+  datesSelect.dispatchEvent(new Event("change"));
+}
+
+addEcheanceButton.addEventListener("click", addRow);
+
+echeancierBody.addEventListener("click", (event) => {
+  const target = event.target.closest(".delete-row");
+  if (!target) return;
+  const row = target.closest("tr");
+  if (row) {
+    row.remove();
+    recalcMontants();
+  }
+});
+
+const initialEcheances = {{ simulation.echeances | tojson }};
+currentResteSans = Number({{ simulation.reste_sans_ft }});
+renderEcheances(initialEcheances);
+</script>
+</body>
+</html>
