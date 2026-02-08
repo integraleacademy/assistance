@@ -717,7 +717,9 @@
     function saveComment() {
       if (currentCommentId) {
         let newComment = document.getElementById("modalComment").value;
-        document.getElementById("commentaire-" + currentCommentId).value = newComment;
+        const commentInput = document.getElementById("commentaire-" + currentCommentId);
+        commentInput.value = newComment;
+        scheduleAutoSave(commentInput.closest("form"));
       }
       closeCommentModal();
     }
@@ -734,9 +736,11 @@
     function closeDetailModal(id){document.getElementById('detailModal-'+id).style.display='none';}
     function saveDetail(id){
       const val=document.getElementById('detailArea-'+id).value||'';
-      document.getElementById('details-'+id).value=val;
+      const detailInput = document.getElementById('details-'+id);
+      detailInput.value=val;
       const prev=document.getElementById('preview-'+id);
       prev.textContent=val.length>60?val.slice(0,60)+'…':(val||'—');
+      scheduleAutoSave(detailInput.closest("form"));
       closeDetailModal(id);
     }
 
@@ -790,6 +794,91 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
     localStorage.setItem("activeFilter", filter);
     applyFilter(filter);
   });
+});
+
+const autosaveTimers = new WeakMap();
+
+function scheduleAutoSave(form, delay = 600) {
+  if (!form) return;
+  const existingTimer = autosaveTimers.get(form);
+  if (existingTimer) clearTimeout(existingTimer);
+  if (delay === 0) {
+    autosaveTimers.delete(form);
+    autoSaveForm(form);
+    return;
+  }
+  const timer = setTimeout(() => {
+    autosaveTimers.delete(form);
+    autoSaveForm(form);
+  }, delay);
+  autosaveTimers.set(form, timer);
+}
+
+function autoSaveForm(form) {
+  const fd = new FormData(form);
+  fd.set("action", "update");
+  const hasFile = Array.from(form.querySelectorAll("input[type='file']")).some(
+    input => input.files && input.files.length > 0
+  );
+  if (hasFile) {
+    fetch(window.location.pathname + window.location.search, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+      keepalive: true
+    }).catch(() => {});
+    return;
+  }
+  const params = new URLSearchParams(fd);
+  fetch("/admin/autosave", {
+    method: "POST",
+    body: params,
+    headers: {"Content-Type": "application/x-www-form-urlencoded"},
+    credentials: "same-origin",
+    keepalive: true
+  }).catch(() => {});
+}
+
+function flushPendingAutosave() {
+  document.querySelectorAll("table.admin-table form").forEach(form => {
+    const timer = autosaveTimers.get(form);
+    if (!timer) return;
+    clearTimeout(timer);
+    autosaveTimers.delete(form);
+    const fd = new FormData(form);
+    fd.set("action", "update");
+    const params = new URLSearchParams(fd);
+    const payload = new Blob([params.toString()], {
+      type: "application/x-www-form-urlencoded"
+    });
+    navigator.sendBeacon("/admin/autosave", payload);
+  });
+}
+
+function bindAutoSaveInputs() {
+  document.querySelectorAll("table.admin-table form").forEach(form => {
+    form.querySelectorAll("input, select, textarea").forEach(field => {
+      if (field.type === "file") {
+        field.addEventListener("change", () => scheduleAutoSave(form));
+        return;
+      }
+      if (field.type === "hidden") return;
+      if (field.tagName === "SELECT" || field.type === "date") {
+        field.addEventListener("change", () => scheduleAutoSave(form, 0));
+        return;
+      }
+      field.addEventListener("input", () => scheduleAutoSave(form));
+      field.addEventListener("blur", () => scheduleAutoSave(form));
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  bindAutoSaveInputs();
+});
+
+window.addEventListener("beforeunload", () => {
+  flushPendingAutosave();
 });
 
 
