@@ -85,6 +85,9 @@
       color:#666;
       font-size:13px;
     }
+    .hidden{
+      display:none;
+    }
     .alert{
       margin-top:10px;
       padding:10px 12px;
@@ -112,14 +115,14 @@
           {% endfor %}
         </select>
       </div>
-      <div>
-        <label for="dates">Dates (texte)</label>
-        <input id="dates" name="dates" type="text" placeholder="Ex : Mars 2026 → Novembre 2026" value="{{ simulation.dates }}">
+      <div id="datesBloc" class="{% if simulation.formation not in dates_options %}hidden{% endif %}">
+        <label for="datesSelect">Session souhaitée</label>
+        <select name="dates" id="datesSelect">
+          <option value="">— Sélectionnez —</option>
+        </select>
+        <div class="muted">Les dates proviennent du formulaire de demande de devis.</div>
       </div>
-      <div>
-        <label for="date_examen">Date d'examen</label>
-        <input id="date_examen" name="date_examen" type="date" value="{{ simulation.date_examen }}">
-      </div>
+      <input type="hidden" name="date_examen" id="dateExamen" value="{{ simulation.date_examen }}">
       <div>
         <label for="cpf">Montant CPF (€)</label>
         <input id="cpf" name="cpf" type="number" min="0" step="1" value="{{ simulation.cpf }}">
@@ -185,6 +188,11 @@
 const form = document.getElementById("simulator-form");
 const echeancierBody = document.getElementById("echeancier-body");
 const alertBox = document.getElementById("echeancier-alert");
+const formationSelect = document.getElementById("formation");
+const datesBloc = document.getElementById("datesBloc");
+const datesSelect = document.getElementById("datesSelect");
+const dateExamen = document.getElementById("dateExamen");
+const datesOptions = {{ dates_options | tojson }};
 
 const fields = {
   tarif: document.getElementById("tarif"),
@@ -193,6 +201,27 @@ const fields = {
   resteAvec: document.getElementById("reste-avec"),
   resteSans: document.getElementById("reste-sans")
 };
+
+function fillDatesSelect() {
+  const formation = formationSelect.value;
+  datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+  if (datesOptions[formation]) {
+    datesBloc.classList.remove("hidden");
+    datesOptions[formation].forEach((dateLabel) => {
+      const option = document.createElement("option");
+      option.value = dateLabel;
+      option.textContent = dateLabel;
+      datesSelect.appendChild(option);
+    });
+  } else {
+    datesBloc.classList.add("hidden");
+  }
+
+  if (datesSelect.dataset.selected) {
+    datesSelect.value = datesSelect.dataset.selected;
+    datesSelect.dataset.selected = "";
+  }
+}
 
 function serializeForm() {
   const data = new FormData(form);
@@ -250,6 +279,65 @@ form.querySelectorAll("input, select").forEach((input) => {
   input.addEventListener("input", debouncedRefresh);
   input.addEventListener("change", debouncedRefresh);
 });
+
+formationSelect.addEventListener("change", () => {
+  datesSelect.dataset.selected = "";
+  dateExamen.value = "";
+  fillDatesSelect();
+  debouncedRefresh();
+});
+
+datesSelect.addEventListener("change", () => {
+  const texte = datesSelect.value;
+  if (!texte) {
+    dateExamen.value = "";
+    debouncedRefresh();
+    return;
+  }
+
+  const match = texte.match(/examen le (\\d{1,2}) ([a-zéû]+) (\\d{4})/i);
+  if (!match) {
+    dateExamen.value = "";
+    debouncedRefresh();
+    return;
+  }
+
+  const jour = match[1].padStart(2, "0");
+  const moisTexte = match[2].toLowerCase();
+  const annee = match[3];
+  const moisMap = {
+    janvier: "01",
+    février: "02",
+    fevrier: "02",
+    mars: "03",
+    avril: "04",
+    mai: "05",
+    juin: "06",
+    juillet: "07",
+    août: "08",
+    aout: "08",
+    septembre: "09",
+    octobre: "10",
+    novembre: "11",
+    décembre: "12",
+    decembre: "12"
+  };
+
+  if (!moisMap[moisTexte]) {
+    dateExamen.value = "";
+    debouncedRefresh();
+    return;
+  }
+
+  dateExamen.value = `${annee}-${moisMap[moisTexte]}-${jour}`;
+  debouncedRefresh();
+});
+
+datesSelect.dataset.selected = "{{ simulation.dates }}";
+fillDatesSelect();
+if (!dateExamen.value && datesSelect.value) {
+  datesSelect.dispatchEvent(new Event("change"));
+}
 </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib
+import json, os, datetime, uuid, pytz, smtplib, re
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -182,6 +182,27 @@ PLAN_TARIFS = {
     "DESP_VAE": 3800
 }
 
+PLAN_DATES = {
+    "A3P": [
+        "30 mars au 2 juin 2026 – examen le 3 juin 2026",
+        "8 juin au 4 août 2026 – examen le 5 août 2026",
+        "1 septembre au 27 octobre 2026 – examen le 28 octobre 2026",
+        "9 novembre 2026 au 19 janvier 2027 – examen le 20 janvier 2027"
+    ],
+    "APS": [
+        "23 mars au 27 avril 2026 – examen le 28 avril 2026",
+        "26 mai au 29 juin 2026 – examen le 30 juin 2026",
+        "8 juillet au 12 août 2026 – examen le 13 août 2026",
+        "7 septembre au 9 octobre 2026 – examen le 12 octobre 2026",
+        "3 novembre au 8 décembre 2026 – examen le 9 décembre 2026"
+    ],
+    "DESP_INIT": [
+        "19 janvier au 2 mars 2026 – examen le 3 mars 2026",
+        "9 mars au 21 avril 2026 – examen le 22 avril 2026",
+        "27 avril au 15 juin 2026 – examen le 16 juin 2026"
+    ]
+}
+
 def _parse_cpf_value(value):
     if value is None:
         return 0
@@ -193,6 +214,39 @@ def _parse_cpf_value(value):
     except:
         return 0
 
+def _parse_exam_date_from_dates_txt(dates_txt):
+    if not dates_txt:
+        return ""
+
+    match = re.search(r"examen le (\\d{1,2}) ([a-zéû]+) (\\d{4})", dates_txt, re.IGNORECASE)
+    if not match:
+        return ""
+
+    jour = match.group(1).zfill(2)
+    mois_texte = match.group(2).lower()
+    annee = match.group(3)
+    mois_map = {
+        "janvier": "01",
+        "février": "02",
+        "fevrier": "02",
+        "mars": "03",
+        "avril": "04",
+        "mai": "05",
+        "juin": "06",
+        "juillet": "07",
+        "août": "08",
+        "aout": "08",
+        "septembre": "09",
+        "octobre": "10",
+        "novembre": "11",
+        "décembre": "12",
+        "decembre": "12"
+    }
+    mois = mois_map.get(mois_texte)
+    if not mois:
+        return ""
+    return f"{annee}-{mois}-{jour}"
+
 def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_travail, date_examen_str):
     formation_code = formation or "APS"
     formation_label = PLAN_FORMATIONS.get(formation_code, formation_code)
@@ -202,8 +256,11 @@ def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_
     reste_avec_ft = max(tarif - cpf - ft, 0)
     reste_sans_ft = max(tarif - cpf, 0)
 
-    date_examen = None
     date_examen_str = (date_examen_str or "").strip()
+    if not date_examen_str:
+        date_examen_str = _parse_exam_date_from_dates_txt(dates_txt or "")
+
+    date_examen = None
     if date_examen_str:
         try:
             date_examen = datetime.datetime.strptime(
@@ -993,6 +1050,7 @@ def simulateur_plan_financement():
     return render_template(
         "simulateur_plan_financement.html",
         formations=PLAN_FORMATIONS,
+        dates_options=PLAN_DATES,
         simulation=simulation
     )
 
@@ -1830,7 +1888,7 @@ def demande_devis():
         ))
 
 
-    return render_template("demande_devis.html")
+    return render_template("demande_devis.html", dates_options=PLAN_DATES)
 
 
 
