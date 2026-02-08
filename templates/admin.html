@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Assistance admin</title>
   <style>
 
@@ -109,7 +110,33 @@
 
     /* Modales */
     .modal {display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,.5);}
-    .modal-content {background:#fff; margin:8% auto; padding:20px; border-radius:10px; width:500px; max-width:90%; box-shadow:0 0 15px rgba(0,0,0,.3);}
+    .modal-content {background:#fff; margin:8% auto; padding:20px; border-radius:10px; width:500px; max-width:90%; box-shadow:0 0 15px rgba(0,0,0,.3); max-height:90vh; overflow:auto;}
+    .modal-actions {margin-top:10px; text-align:right;}
+    .modal-actions button {margin-left:6px;}
+
+    @media (max-width: 640px) {
+      body {padding: 10px;}
+      .container {padding: 12px;}
+      .modal-content {
+        width: 100%;
+        margin: 16px auto;
+        padding: 16px;
+      }
+      .modal-content h3 {font-size:18px;}
+      .modal-content input,
+      .modal-content select,
+      .modal-content textarea {
+        width: 100%;
+        font-size: 14px;
+      }
+      .modal-actions {
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 8px;
+        text-align: left;
+      }
+      .modal-actions button {width: 100%; margin: 0;}
+    }
 
     /* === Barre de filtres attribution === */
 .filter-bar {
@@ -280,7 +307,7 @@
       <input type="date" name="rappel_date" style="width:100%; margin:6px 0;">
 
       <!-- Boutons -->
-      <div style="margin-top:10px; text-align:right;">
+      <div class="modal-actions">
         <button type="button" onclick="closeAddModal()">❌ Annuler</button>
         <button type="submit"
                 style="background:#0d6efd; color:#fff; padding:8px 14px; border:none; border-radius:6px; cursor:pointer;">
@@ -505,7 +532,7 @@
             {% endif %}
           </div>
           {% endfor %}
-          <div style="text-align:right;"><button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button></div>
+          <div class="modal-actions"><button onclick="closeResponseModal('{{ d.id }}')">❌ Fermer</button></div>
         </div>
       </div>
 
@@ -513,7 +540,7 @@
         <div class="modal-content">
           <h3>📝 Détails de {{ d.prenom }} {{ d.nom }}</h3>
           <textarea id="detailArea-{{ d.id }}" rows="8" style="width:100%;">{{ d.details or '' }}</textarea>
-          <div style="margin-top:10px; text-align:right;">
+          <div class="modal-actions">
             <button onclick="closeDetailModal('{{ d.id }}')">❌ Annuler</button>
             <button onclick="saveDetail('{{ d.id }}')" style="background:#198754;color:#fff;padding:6px 10px;border:none;border-radius:6px;cursor:pointer;">💾 Enregistrer</button>
           </div>
@@ -528,7 +555,7 @@
     <div class="modal-content">
       <h3>📝 Commentaire</h3>
       <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
-      <div style="margin-top:10px; text-align:right;">
+      <div class="modal-actions">
         <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
         <button type="button" onclick="saveComment()">💾 Enregistrer</button>
       </div>
