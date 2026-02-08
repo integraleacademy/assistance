@@ -792,6 +792,51 @@ def logout():
     return redirect(url_for("login"))
     
 
+def update_demande_fields(demande, form_data, data, files=None):
+    demande["mail"] = form_data.get("mail") or demande.get("mail")
+    if form_data.get("details") is not None:
+        demande["details"] = form_data.get("details")
+    demande["commentaire"] = form_data.get("commentaire", demande.get("commentaire", ""))
+    demande["rappel_date"] = form_data.get("rappel_date", demande.get("rappel_date", ""))
+
+    ancienne_attribution = demande.get("attribution", "").strip()
+    nouvelle_attribution = (form_data.get("attribution") or "").strip()
+    demande["attribution"] = nouvelle_attribution or ancienne_attribution
+
+    # 🔔 Notification attribution Mohamed
+    if nouvelle_attribution == "Mohamed" and ancienne_attribution != "Mohamed":
+        try:
+            envoyer_mail_attribution_mohamed(demande)
+        except:
+            pass
+
+    ancien_statut = demande.get("statut", "Non traité")
+    nouveau_statut = form_data.get("statut") or ancien_statut
+
+    # 📎 Upload pièces jointes
+    if files and "pj" in files:
+        for f in files.getlist("pj"):
+            if f and f.filename:
+                filename = secure_filename(f.filename)
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                f.save(filepath)
+                demande.setdefault("pieces_jointes", [])
+                if filename not in demande["pieces_jointes"]:
+                    demande["pieces_jointes"].append(filename)
+
+    # 📨 Passage à Traité
+    if ancien_statut != "Traité" and nouveau_statut == "Traité":
+        if envoyer_mail_confirmation(demande):
+            data["compteur_traitees"] += 1
+            paris_tz = pytz.timezone("Europe/Paris")
+            demande["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+            demande["mail_erreur"] = ""
+        else:
+            demande["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
+
+    demande["statut"] = nouveau_statut
+
+
 @app.route("/admin", methods=["GET", "POST"])
 @login_required
 def admin():
@@ -874,49 +919,7 @@ def admin():
         elif action == "update":
             for d in demandes:
                 if d["id"] == demande_id:
-                    d["mail"] = request.form.get("mail") or d["mail"]
-                    if request.form.get("details") is not None:
-                        d["details"] = request.form.get("details")
-
-                    d["commentaire"] = request.form.get("commentaire")
-                    d["rappel_date"] = request.form.get("rappel_date", d.get("rappel_date", ""))
-
-                    ancienne_attribution = d.get("attribution", "").strip()
-                    nouvelle_attribution = request.form.get("attribution", "").strip()
-                    d["attribution"] = nouvelle_attribution or ancienne_attribution
-
-                    # 🔔 Notification attribution Mohamed
-                    if nouvelle_attribution == "Mohamed" and ancienne_attribution != "Mohamed":
-                        try:
-                            envoyer_mail_attribution_mohamed(d)
-                        except:
-                            pass
-
-                    ancien_statut = d.get("statut", "Non traité")
-                    nouveau_statut = request.form.get("statut") or ancien_statut
-
-                    # 📎 Upload pièces jointes
-                    if "pj" in request.files:
-                        for f in request.files.getlist("pj"):
-                            if f and f.filename:
-                                filename = secure_filename(f.filename)
-                                filepath = os.path.join(UPLOAD_FOLDER, filename)
-                                f.save(filepath)
-                                d.setdefault("pieces_jointes", [])
-                                if filename not in d["pieces_jointes"]:
-                                    d["pieces_jointes"].append(filename)
-
-                    # 📨 Passage à Traité
-                    if ancien_statut != "Traité" and nouveau_statut == "Traité":
-                        if envoyer_mail_confirmation(d):
-                            data["compteur_traitees"] += 1
-                            paris_tz = pytz.timezone("Europe/Paris")
-                            d["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
-                            d["mail_erreur"] = ""
-                        else:
-                            d["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
-
-                    d["statut"] = nouveau_statut
+                    update_demande_fields(d, request.form, data, request.files)
 
             save_data(data)
             return redirect_with_query()
@@ -991,6 +994,25 @@ def admin():
         compteur_traitees=data["compteur_traitees"],
         query=raw_query
     )
+
+
+@app.route("/admin/autosave", methods=["POST"])
+@login_required
+def admin_autosave():
+    data = load_data()
+    demandes = data["demandes"]
+    form_data = request.form or (request.get_json(silent=True) or {})
+    demande_id = form_data.get("id")
+    if not demande_id:
+        return ("", 204)
+
+    for d in demandes:
+        if d["id"] == demande_id:
+            update_demande_fields(d, form_data, data)
+            save_data(data)
+            break
+
+    return ("", 204)
 
 
 @app.route("/admin-devis")
