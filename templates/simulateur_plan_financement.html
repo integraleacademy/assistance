@@ -370,7 +370,7 @@ datesSelect.addEventListener("change", () => {
     return;
   }
 
-  const match = texte.match(/examen le (\\d{1,2}) ([a-zà-ÿ]+) (\\d{4})/i);
+  const match = texte.match(/examen le (\d{1,2}) ([a-zà-ÿ]+) (\d{4})/i);
   if (!match) {
     dateExamen.value = "";
     debouncedRefresh();
