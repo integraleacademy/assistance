@@ -38,7 +38,7 @@
     }
 
     /* Topbar */
-    .topbar {display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;}
+    .topbar {display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; gap:12px;}
     .logo-square {width:100px; height:auto;}
     .title-block {text-align:center; flex:1;}
     .title-block h2 {margin:0; font-size:22px;}
@@ -51,6 +51,20 @@
     .btn.blue{background:#0d6efd;color:#fff;}
     .btn.red{background:#dc3545;color:#fff;}
     .btn.grey{background:#6c757d;color:#fff; text-decoration:none; display:inline-block;}
+    .search-bar {text-align:center; margin-bottom:20px;}
+    .search-bar input[type="text"] {max-width: 700px;}
+    .user-banner {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      background:linear-gradient(90deg,#fff8dc,#f4c45a);
+      padding:8px 18px;
+      border-radius:10px;
+      margin-bottom:18px;
+      box-shadow:0 1px 3px rgba(0,0,0,0.05);
+      font-size:15px;
+      gap:12px;
+    }
 
     /* Tableau compact + zébrage */
     table {width:100%; border-collapse:collapse; table-layout:fixed; font-size:13px;}
@@ -115,6 +129,35 @@
     .modal-actions button {margin-left:6px;}
 
     @media (max-width: 768px) {
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+      }
+      .logo-square {margin: 0 auto;}
+      .actions-top {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .user-banner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .search-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+      }
+      .search-bar input[type="text"] {
+        width: 100%;
+        max-width: 100%;
+      }
+      .search-bar button,
+      .search-bar a {
+        width: 100%;
+        text-align: center;
+      }
       .admin-table thead,
       .admin-table tr:first-child {
         display: none;
@@ -167,6 +210,23 @@
     @media (max-width: 640px) {
       body {padding: 10px;}
       .container {padding: 12px;}
+      .actions-top .btn,
+      .actions-top form,
+      .actions-top a {
+        width: 100%;
+      }
+      .actions-top form {display: block;}
+      .actions-top .btn {
+        width: 100%;
+        text-align: center;
+      }
+      .filter-bar {
+        gap: 8px;
+      }
+      .filter-btn {
+        flex: 1 1 45%;
+        text-align: center;
+      }
       .modal-content {
         width: 100%;
         height: 100%;
@@ -265,10 +325,7 @@
 {% endif %}
 
 <!-- 🧭 Bandeau utilisateur connecté (version allégée) -->
-<div style="display:flex;align-items:center;justify-content:space-between;
-            background:linear-gradient(90deg,#fff8dc,#f4c45a);
-            padding:8px 18px;border-radius:10px;margin-bottom:18px;
-            box-shadow:0 1px 3px rgba(0,0,0,0.05);font-size:15px;">
+<div class="user-banner">
   
   <div style="font-weight:500;color:#333;">
     👋 Connecté en tant que 
