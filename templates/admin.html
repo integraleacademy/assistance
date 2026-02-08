@@ -817,6 +817,14 @@ function scheduleAutoSave(form, delay = 600) {
 function autoSaveForm(form) {
   const fd = new FormData(form);
   fd.set("action", "update");
+  const hasFile = Array.from(form.querySelectorAll("input[type='file']")).some(
+    input => input.files && input.files.length > 0
+  );
+  if (!hasFile && navigator.sendBeacon) {
+    const params = new URLSearchParams(fd);
+    navigator.sendBeacon(window.location.pathname + window.location.search, params);
+    return;
+  }
   fetch(window.location.pathname + window.location.search, {
     method: "POST",
     body: fd,
