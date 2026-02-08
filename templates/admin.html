@@ -78,6 +78,7 @@
       border:1px solid #ccc;
       width:90%;
       font-size:13px;
+      box-sizing:border-box;
     }
 
     /* Aperçu détails + bouton */
@@ -129,6 +130,9 @@
     .modal-actions button {margin-left:6px;}
 
     @media (max-width: 768px) {
+      .container {
+        overflow-x: hidden;
+      }
       .topbar {
         flex-direction: column;
         align-items: stretch;
@@ -179,7 +183,7 @@
       .admin-table td {
         border: none;
         text-align: left;
-        padding: 8px 8px 8px 45%;
+        padding: 8px 8px 8px 42%;
         position: relative;
       }
       .admin-table td::before {
@@ -187,10 +191,19 @@
         position: absolute;
         left: 10px;
         top: 8px;
-        width: 40%;
+        width: 38%;
         font-weight: 600;
         color: #555;
         white-space: normal;
+      }
+      .admin-table input[type="text"],
+      .admin-table input[type="email"],
+      .admin-table input[type="date"],
+      .admin-table input[type="file"],
+      .admin-table select,
+      .admin-table textarea {
+        width: 100%;
+        max-width: 100%;
       }
       .admin-table td.hide-mobile {
         display: none;
@@ -201,6 +214,10 @@
         gap: 6px;
         align-items: center;
         border: none;
+      }
+      .admin-table td.actions button,
+      .admin-table td.actions a {
+        flex: 0 1 auto;
       }
       .admin-table td.actions::before {
         content: attr(data-label);
