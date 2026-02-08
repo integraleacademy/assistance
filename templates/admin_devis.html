@@ -37,6 +37,18 @@ h1{
     background:#e9ecef;
     font-size:13px;
 }
+.tools .btn-simulate{
+    padding:8px 14px;
+    border-radius:8px;
+    background:#20c997;
+    color:white;
+    font-size:13px;
+    text-decoration:none;
+    font-weight:600;
+}
+.tools .btn-simulate:hover{
+    background:#17b58a;
+}
 .tools button.active{
     background:#0d6efd;
     color:white;
@@ -126,6 +138,7 @@ tbody tr:nth-child(even){
     <button id="filtre-envoyer">À envoyer</button>
     <button id="filtre-envoyes">Envoyés</button>
     <input type="text" id="search" placeholder="🔍 Rechercher un nom, prénom, formation…">
+    <a class="btn-simulate" href="{{ url_for('simulateur_plan_financement') }}" target="_blank">⚡ Simuler un plan</a>
 </div>
 
 <table>
