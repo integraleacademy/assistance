@@ -218,7 +218,7 @@ def _parse_exam_date_from_dates_txt(dates_txt):
     if not dates_txt:
         return ""
 
-    match = re.search(r"examen le (\\d{1,2}) ([a-zéû]+) (\\d{4})", dates_txt, re.IGNORECASE)
+    match = re.search(r"examen le (\\d{1,2}) ([a-zà-ÿ]+) (\\d{4})", dates_txt, re.IGNORECASE)
     if not match:
         return ""
 

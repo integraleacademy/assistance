@@ -78,6 +78,33 @@
       font-size:14px;
       text-align:left;
     }
+    .center{
+      text-align:center;
+    }
+    #table-echeancier input{
+      width:100%;
+      padding:6px 8px;
+      border-radius:6px;
+      border:1px solid #ccc;
+      font-size:13px;
+      box-sizing:border-box;
+    }
+    #table-echeancier button{
+      border:none;
+      background:#dc3545;
+      color:white;
+      border-radius:6px;
+      padding:6px 10px;
+      cursor:pointer;
+    }
+    #add-echeance{
+      border:none;
+      background:#0d6efd;
+      color:white;
+      border-radius:6px;
+      padding:8px 12px;
+      cursor:pointer;
+    }
     thead{
       background:#f0f2f5;
     }
@@ -109,7 +136,7 @@
     <div class="form-grid">
       <div>
         <label for="formation">Formation</label>
-        <select id="formation" name="formation">
+        <select id="formation" name="formation" class="js-sim-input">
           {% for code, label in formations.items() %}
           <option value="{{ code }}" {% if simulation.formation == code %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -117,7 +144,7 @@
       </div>
       <div id="datesBloc" class="{% if simulation.formation not in dates_options %}hidden{% endif %}">
         <label for="datesSelect">Session souhaitée</label>
-        <select name="dates" id="datesSelect">
+        <select name="dates" id="datesSelect" class="js-sim-input">
           <option value="">— Sélectionnez —</option>
         </select>
         <div class="muted">Les dates proviennent du formulaire de demande de devis.</div>
@@ -125,11 +152,11 @@
       <input type="hidden" name="date_examen" id="dateExamen" value="{{ simulation.date_examen }}">
       <div>
         <label for="cpf">Montant CPF (€)</label>
-        <input id="cpf" name="cpf" type="number" min="0" step="1" value="{{ simulation.cpf }}">
+        <input id="cpf" name="cpf" type="number" min="0" step="1" value="{{ simulation.cpf }}" class="js-sim-input">
       </div>
       <div>
         <label for="france_travail">France Travail</label>
-        <select id="france_travail" name="france_travail">
+        <select id="france_travail" name="france_travail" class="js-sim-input">
           <option value="NON" {% if simulation.france_travail != 'OUI' %}selected{% endif %}>Non</option>
           <option value="OUI" {% if simulation.france_travail == 'OUI' %}selected{% endif %}>Oui</option>
         </select>
@@ -161,24 +188,19 @@
   </div>
 
   <h2>Échéancier proposé</h2>
-  <table>
+  <table id="table-echeancier">
     <thead>
       <tr>
         <th>Date de prélèvement</th>
         <th>Montant (€)</th>
+        <th class="center">Action</th>
       </tr>
     </thead>
-    <tbody id="echeancier-body">
-      {% if simulation.echeances %}
-        {% for e in simulation.echeances %}
-        <tr>
-          <td>{{ e.date }}</td>
-          <td>{{ e.montant }}</td>
-        </tr>
-        {% endfor %}
-      {% endif %}
-    </tbody>
+    <tbody id="echeancier-body"></tbody>
   </table>
+  <div style="margin-top:10px;">
+    <button type="button" id="add-echeance">➕ Ajouter une échéance</button>
+  </div>
   <div id="echeancier-alert" class="alert" {% if simulation.echeances %}style="display:none;"{% endif %}>
     ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
   </div>
@@ -193,6 +215,8 @@ const datesBloc = document.getElementById("datesBloc");
 const datesSelect = document.getElementById("datesSelect");
 const dateExamen = document.getElementById("dateExamen");
 const datesOptions = {{ dates_options | tojson }};
+const addEcheanceButton = document.getElementById("add-echeance");
+let currentResteSans = 0;
 
 const fields = {
   tarif: document.getElementById("tarif"),
@@ -201,6 +225,60 @@ const fields = {
   resteAvec: document.getElementById("reste-avec"),
   resteSans: document.getElementById("reste-sans")
 };
+
+function toIsoDate(dateStr) {
+  if (!dateStr) return "";
+  const parts = dateStr.split("/");
+  if (parts.length !== 3) return "";
+  const [jour, mois, annee] = parts;
+  return `${annee}-${mois}-${jour}`;
+}
+
+function renderEcheances(echeances) {
+  echeancierBody.innerHTML = "";
+  if (!echeances || echeances.length === 0) {
+    alertBox.style.display = "block";
+    return;
+  }
+
+  alertBox.style.display = "none";
+  echeances.forEach((e) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><input type="date" name="date[]" value="${toIsoDate(e.date)}"></td>
+      <td><input type="number" name="montant[]" step="0.01" value="${e.montant}"></td>
+      <td class="center"><button type="button" class="delete-row">🗑️</button></td>
+    `;
+    echeancierBody.appendChild(row);
+  });
+}
+
+function recalcMontants() {
+  const inputs = echeancierBody.querySelectorAll('input[name="montant[]"]');
+  if (!inputs.length || !currentResteSans) return;
+
+  const montantParLigne = Math.round((currentResteSans / inputs.length) * 100) / 100;
+  let cumul = 0;
+  inputs.forEach((input, index) => {
+    if (index < inputs.length - 1) {
+      input.value = montantParLigne.toFixed(2);
+      cumul += montantParLigne;
+    } else {
+      input.value = (currentResteSans - cumul).toFixed(2);
+    }
+  });
+}
+
+function addRow() {
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><input type="date" name="date[]" value=""></td>
+    <td><input type="number" name="montant[]" step="0.01" value=""></td>
+    <td class="center"><button type="button" class="delete-row">🗑️</button></td>
+  `;
+  echeancierBody.appendChild(row);
+  recalcMontants();
+}
 
 function fillDatesSelect() {
   const formation = formationSelect.value;
@@ -260,22 +338,12 @@ async function refreshSimulation() {
   fields.ft.textContent = `${data.ft} €`;
   fields.resteAvec.textContent = `${data.reste_avec_ft} €`;
   fields.resteSans.textContent = `${data.reste_sans_ft} €`;
-
-  echeancierBody.innerHTML = "";
-  if (data.echeances && data.echeances.length > 0) {
-    data.echeances.forEach((e) => {
-      const row = document.createElement("tr");
-      row.innerHTML = `<td>${e.date}</td><td>${e.montant}</td>`;
-      echeancierBody.appendChild(row);
-    });
-    alertBox.style.display = "none";
-  } else {
-    alertBox.style.display = "block";
-  }
+  currentResteSans = Number(data.reste_sans_ft || 0);
+  renderEcheances(data.echeances);
 }
 
 const debouncedRefresh = debounce(refreshSimulation, 300);
-form.querySelectorAll("input, select").forEach((input) => {
+form.querySelectorAll(".js-sim-input").forEach((input) => {
   input.addEventListener("input", debouncedRefresh);
   input.addEventListener("change", debouncedRefresh);
 });
@@ -295,7 +363,7 @@ datesSelect.addEventListener("change", () => {
     return;
   }
 
-  const match = texte.match(/examen le (\\d{1,2}) ([a-zéû]+) (\\d{4})/i);
+  const match = texte.match(/examen le (\\d{1,2}) ([a-zà-ÿ]+) (\\d{4})/i);
   if (!match) {
     dateExamen.value = "";
     debouncedRefresh();
@@ -338,6 +406,22 @@ fillDatesSelect();
 if (!dateExamen.value && datesSelect.value) {
   datesSelect.dispatchEvent(new Event("change"));
 }
+
+addEcheanceButton.addEventListener("click", addRow);
+
+echeancierBody.addEventListener("click", (event) => {
+  const target = event.target.closest(".delete-row");
+  if (!target) return;
+  const row = target.closest("tr");
+  if (row) {
+    row.remove();
+    recalcMontants();
+  }
+});
+
+const initialEcheances = {{ simulation.echeances | tojson }};
+currentResteSans = Number({{ simulation.reste_sans_ft }});
+renderEcheances(initialEcheances);
 </script>
 </body>
 </html>
