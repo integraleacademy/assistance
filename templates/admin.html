@@ -820,14 +820,20 @@ function autoSaveForm(form) {
   const hasFile = Array.from(form.querySelectorAll("input[type='file']")).some(
     input => input.files && input.files.length > 0
   );
-  if (!hasFile && navigator.sendBeacon) {
-    const params = new URLSearchParams(fd);
-    navigator.sendBeacon(window.location.pathname + window.location.search, params);
+  if (hasFile) {
+    fetch(window.location.pathname + window.location.search, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+      keepalive: true
+    }).catch(() => {});
     return;
   }
+  const params = new URLSearchParams(fd);
   fetch(window.location.pathname + window.location.search, {
     method: "POST",
-    body: fd,
+    body: params,
+    headers: {"Content-Type": "application/x-www-form-urlencoded"},
     credentials: "same-origin",
     keepalive: true
   }).catch(() => {});
@@ -842,7 +848,10 @@ function flushPendingAutosave() {
     const fd = new FormData(form);
     fd.set("action", "update");
     const params = new URLSearchParams(fd);
-    navigator.sendBeacon(window.location.pathname + window.location.search, params);
+    const payload = new Blob([params.toString()], {
+      type: "application/x-www-form-urlencoded"
+    });
+    navigator.sendBeacon(window.location.pathname + window.location.search, payload);
   });
 }
 
