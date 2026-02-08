@@ -277,6 +277,7 @@ function addRow() {
     <td class="center"><button type="button" class="delete-row">🗑️</button></td>
   `;
   echeancierBody.appendChild(row);
+  alertBox.style.display = "none";
   recalcMontants();
 }
 
@@ -298,6 +299,12 @@ function fillDatesSelect() {
   if (datesSelect.dataset.selected) {
     datesSelect.value = datesSelect.dataset.selected;
     datesSelect.dataset.selected = "";
+    return;
+  }
+
+  if (datesOptions[formation] && datesOptions[formation].length > 0) {
+    datesSelect.value = datesOptions[formation][0];
+    datesSelect.dispatchEvent(new Event("change"));
   }
 }
 
