@@ -487,14 +487,14 @@ Certification Nationale Qualité QUALIOPI n°03169 délivrée par SGS en date du
       <td>
         <input type="date"
                name="date[]"
-               value="{{ e.date }}">
+               value="{{ e.date }}" {% if readonly %}disabled{% endif %}>
 
       </td>
       <td class="right">
         <input type="number"
                name="montant[]"
                step="0.01"
-               value="{{ e.montant }}">
+               value="{{ e.montant }}" {% if readonly %}disabled{% endif %}>
       </td>
 {% if devis is defined %}
 <td class="center">

@@ -1070,6 +1070,93 @@ def simulateur_plan_financement_data():
     return simulation
 
 
+@app.route("/admin-devis/simulateur/envoyer-plan", methods=["POST"])
+@login_required
+def simulateur_plan_financement_envoyer_plan():
+    payload = request.get_json(silent=True) or {}
+
+    simulation = compute_plan_financement_simulation(
+        formation=payload.get("formation", "APS"),
+        dates_txt=payload.get("dates", ""),
+        cpf_value=payload.get("cpf", 0),
+        france_travail=payload.get("france_travail", "NON"),
+        date_examen_str=payload.get("date_examen", "")
+    )
+
+    destinataire = (payload.get("mail") or "").strip()
+    if not destinataire:
+        return {"ok": False, "message": "Un email est nécessaire pour l'envoi."}, 400
+
+    prenom = (payload.get("prenom") or "").strip()
+    nom = (payload.get("nom") or "").strip()
+
+    echeances_recue = payload.get("echeances") or []
+    echeances = []
+    for e in echeances_recue:
+        date_txt = str(e.get("date") or "").strip()
+        montant_txt = str(e.get("montant") or "").strip()
+        if not date_txt or not montant_txt:
+            continue
+        try:
+            montant = float(montant_txt)
+        except:
+            continue
+        echeances.append({"date": date_txt, "montant": round(montant, 2)})
+
+    if not echeances:
+        for e in simulation.get("echeances", []):
+            try:
+                echeances.append({
+                    "date": datetime.datetime.strptime(e.get("date", ""), "%d/%m/%Y").strftime("%Y-%m-%d"),
+                    "montant": round(float(e.get("montant", 0)), 2)
+                })
+            except:
+                pass
+
+    token = uuid.uuid4().hex
+    data = load_data()
+    data.setdefault("plans_simulation", [])
+    data["plans_simulation"].append({
+        "id": str(uuid.uuid4()),
+        "token": token,
+        "created_at": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+        "nom": nom,
+        "prenom": prenom,
+        "mail": destinataire,
+        "simulation": simulation,
+        "echeances": echeances
+    })
+    save_data(data)
+
+    plan_url = url_for("plan_simulation_public", token=token, _external=True)
+    nom_affiche = (prenom + " " + nom).strip() or "Madame, Monsieur"
+    subject = "📄 Votre plan de financement détaillé — Intégrale Academy"
+    plain = (
+        f"Bonjour {nom_affiche},\n\n"
+        "Voici votre plan de financement détaillé en consultation :\n"
+        f"{plan_url}\n\n"
+        "Ce lien est consultatif (aucune modification n'est possible).\n\n"
+        "Bien cordialement,\n"
+        "Intégrale Academy"
+    )
+    html = _wrap_html(
+        "<h1>📄 Votre plan de financement détaillé</h1>",
+        f"""
+        <p>Bonjour <strong>{nom_affiche}</strong>,</p>
+        <p>Vous trouverez ci-dessous votre plan de financement détaillé en <strong>consultation uniquement</strong>.</p>
+        <p style=\"text-align:center;margin:24px 0;\">
+          <a href=\"{plan_url}\" style=\"display:inline-block;padding:14px 26px;background:#0d6efd;color:white;text-decoration:none;border-radius:8px;font-weight:700;\">
+            👉 Consulter le plan de financement
+          </a>
+        </p>
+        <p style=\"font-size:13px;color:#666;margin:0;\">Ce lien est personnel et ne permet aucune modification.</p>
+        """
+    )
+
+    send_email_html(destinataire, subject, plain, html)
+    return {"ok": True, "message": "Plan envoyé avec succès."}
+
+
 @app.route("/admin-devis/toggle/<devis_id>", methods=["POST"])
 @login_required
 def toggle_devis(devis_id):
@@ -2378,6 +2465,42 @@ def plan_public(token):
         reste_avec_ft=reste_avec_ft,
         reste_sans_ft=reste_sans_ft,
         echeances=echeances,
+        readonly=True,
+        **devis_ctx
+    )
+
+
+@app.route("/plan-simulation/<token>")
+def plan_simulation_public(token):
+    data = load_data()
+    plans = data.get("plans_simulation", [])
+    plan = next((p for p in plans if p.get("token") == token), None)
+    if not plan:
+        return "Lien invalide ou expiré", 404
+
+    simulation = plan.get("simulation") or {}
+    formation_code = simulation.get("formation")
+    formation_label = PLAN_FORMATIONS.get(formation_code, formation_code)
+    devis_ctx = build_devis_context(
+        formation_code=formation_code,
+        formation_label=formation_label,
+        dates_txt=simulation.get("dates", ""),
+        sequence=1
+    )
+
+    return render_template(
+        "plan_financement.html",
+        prenom=plan.get("prenom"),
+        nom=plan.get("nom"),
+        email=plan.get("mail"),
+        formation_label=formation_label,
+        dates=simulation.get("dates", ""),
+        cpf=simulation.get("cpf", 0),
+        ft=simulation.get("ft", 0),
+        reste_avec_ft=simulation.get("reste_avec_ft", 0),
+        reste_sans_ft=simulation.get("reste_sans_ft", 0),
+        echeances=plan.get("echeances") or [],
+        readonly=True,
         **devis_ctx
     )
 

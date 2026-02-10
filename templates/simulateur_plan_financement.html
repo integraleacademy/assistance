@@ -126,6 +126,27 @@
       font-style:italic;
       font-size:13px;
     }
+
+    .actions{
+      margin-top:16px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    #send-plan{
+      border:none;
+      background:#198754;
+      color:white;
+      border-radius:6px;
+      padding:10px 14px;
+      cursor:pointer;
+      font-weight:700;
+    }
+    #send-status{
+      font-size:13px;
+      color:#555;
+    }
   </style>
 </head>
 <body>
@@ -162,6 +183,18 @@
           <option value="NON" {% if simulation.france_travail != 'OUI' %}selected{% endif %}>Non</option>
           <option value="OUI" {% if simulation.france_travail == 'OUI' %}selected{% endif %}>Oui</option>
         </select>
+      </div>
+      <div>
+        <label for="nom">Nom (facultatif)</label>
+        <input id="nom" name="nom" type="text" value="">
+      </div>
+      <div>
+        <label for="prenom">Prénom (facultatif)</label>
+        <input id="prenom" name="prenom" type="text" value="">
+      </div>
+      <div>
+        <label for="mail">Mail (facultatif)</label>
+        <input id="mail" name="mail" type="email" value="">
       </div>
     </div>
   </form>
@@ -206,6 +239,11 @@
   <div id="echeancier-alert" class="alert" {% if simulation.echeances %}style="display:none;"{% endif %}>
     ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
   </div>
+
+  <div class="actions">
+    <button type="button" id="send-plan">📨 Envoyer le plan de financement détaillé</button>
+    <span id="send-status"></span>
+  </div>
 </div>
 
 <script>
@@ -218,6 +256,8 @@ const datesSelect = document.getElementById("datesSelect");
 const dateExamen = document.getElementById("dateExamen");
 const datesOptions = {{ dates_options | tojson }};
 const addEcheanceButton = document.getElementById("add-echeance");
+const sendPlanButton = document.getElementById("send-plan");
+const sendStatus = document.getElementById("send-status");
 let currentResteSans = 0;
 
 const fields = {
@@ -317,8 +357,23 @@ function serializeForm() {
     dates: data.get("dates"),
     date_examen: data.get("date_examen"),
     cpf: data.get("cpf"),
-    france_travail: data.get("france_travail")
+    france_travail: data.get("france_travail"),
+    nom: data.get("nom"),
+    prenom: data.get("prenom"),
+    mail: data.get("mail")
   };
+}
+
+function serializeEcheances() {
+  const rows = Array.from(echeancierBody.querySelectorAll("tr"));
+  return rows.map((row) => {
+    const dateInput = row.querySelector('input[name="date[]"]');
+    const montantInput = row.querySelector('input[name="montant[]"]');
+    return {
+      date: dateInput ? dateInput.value : "",
+      montant: montantInput ? montantInput.value : ""
+    };
+  });
 }
 
 function debounce(fn, wait) {
@@ -431,6 +486,36 @@ echeancierBody.addEventListener("click", (event) => {
 const initialEcheances = {{ simulation.echeances | tojson }};
 currentResteSans = Number({{ simulation.reste_sans_ft }});
 renderEcheances(initialEcheances);
+
+sendPlanButton.addEventListener("click", async () => {
+  const payload = serializeForm();
+  if (!payload.mail) {
+    sendStatus.textContent = "Veuillez renseigner un mail pour envoyer le plan.";
+    return;
+  }
+
+  payload.echeances = serializeEcheances();
+  sendStatus.textContent = "Envoi en cours...";
+  sendPlanButton.disabled = true;
+
+  try {
+    const response = await fetch("{{ url_for('simulateur_plan_financement_envoyer_plan') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      sendStatus.textContent = data.message || "Échec de l'envoi.";
+      return;
+    }
+    sendStatus.textContent = "Plan envoyé avec succès.";
+  } catch (error) {
+    sendStatus.textContent = "Erreur technique lors de l'envoi.";
+  } finally {
+    sendPlanButton.disabled = false;
+  }
+});
 </script>
 </body>
 </html>
