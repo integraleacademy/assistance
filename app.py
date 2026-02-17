@@ -1198,6 +1198,34 @@ def voir_dossier_devis(devis_id):
         devis=devis,
         infos=infos
     )
+
+
+@app.route("/admin-devis/dossier/<devis_id>/update-vtc-dates", methods=["POST"])
+@login_required
+def update_vtc_dates_devis(devis_id):
+    data = load_data()
+
+    devis = next(
+        (d for d in data.get("demandes", [])
+         if d.get("id") == devis_id
+         and d.get("motif") == "Demande de devis détaillé"),
+        None
+    )
+
+    if not devis:
+        abort(404)
+
+    try:
+        infos = json.loads(devis.get("details", "{}"))
+    except:
+        infos = {}
+
+    if infos.get("formation") == "VTC":
+        infos["dates_reelles_formation_vtc"] = request.form.get("dates_reelles_formation_vtc", "").strip()
+        devis["details"] = json.dumps(infos, ensure_ascii=False)
+        save_data(data)
+
+    return redirect(url_for("voir_dossier_devis", devis_id=devis_id))
     
 
 
@@ -1853,6 +1881,7 @@ def demande_devis():
         
             ("Formation", v("formation")),
             ("Session / Dates", v("dates")),
+            ("Dates réelles de formation VTC", v("dates_reelles_formation_vtc")),
         
             ("CPF consulté", yn("cpf_consulte")),
             ("Montant CPF", f"{v('cpf_montant')} €"),

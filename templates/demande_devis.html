@@ -119,6 +119,7 @@ input:focus, select:focus{
    BLOCS CONDITIONNELS
 ======================= */
 #datesBloc,
+#datesReellesVtcBloc,
 #blocFranceTravail,
 #blocPerso,
 #blocCnaps{
@@ -221,6 +222,16 @@ button:hover{
   <select name="dates" id="datesSelect">
       <option value="">— Sélectionnez —</option>
   </select>
+</div>
+
+<div id="datesReellesVtcBloc" class="hidden">
+  <label style="font-weight:700; color:#ff8c00;">Dates réelles de formation VTC</label>
+  <input
+    type="text"
+    name="dates_reelles_formation_vtc"
+    id="datesReellesVtc"
+    placeholder="Ex : 10/04/2026 au 25/04/2026"
+  >
 </div>
 
 
@@ -335,6 +346,8 @@ const mailConfirm = document.querySelector('input[name="mail_confirm"]');
 const formation = document.getElementById("formation");
 const datesBloc = document.getElementById("datesBloc");
 const datesSelect = document.getElementById("datesSelect");
+const datesReellesVtcBloc = document.getElementById("datesReellesVtcBloc");
+const datesReellesVtcInput = document.getElementById("datesReellesVtc");
 const cnapsBloc = document.getElementById("blocCnaps");
 const franceTravail = document.getElementById("franceTravail");
 const blocFT = document.getElementById("blocFranceTravail");
@@ -391,6 +404,13 @@ formation.addEventListener("change", () => {
     datesSelect.required = false;
     datesSelect.value = "";
 
+  }
+
+  if (v === "VTC") {
+    datesReellesVtcBloc.classList.remove("hidden");
+  } else {
+    datesReellesVtcBloc.classList.add("hidden");
+    datesReellesVtcInput.value = "";
   }
 
   cnapsBloc.classList.toggle("hidden", !(v === "A3P" || v === "APS"));
