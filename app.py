@@ -1034,7 +1034,9 @@ def admin_devis():
             d["infos"] = infos
             devis.append(d)
 
-    return render_template("admin_devis.html", devis=devis)
+    sessions_devis = sorted({date for sessions in PLAN_DATES.values() for date in sessions})
+
+    return render_template("admin_devis.html", devis=devis, sessions_devis=sessions_devis)
 
 @app.route("/admin-devis/simulateur")
 @login_required
@@ -1172,6 +1174,42 @@ def toggle_devis(devis_id):
 
     save_data(data)
     return redirect(url_for("admin_devis"))
+
+
+@app.route("/admin-devis/transfer/<devis_id>", methods=["POST"])
+@login_required
+def transfer_devis_session(devis_id):
+    data = load_data()
+    target_session = (request.form.get("target_session") or "").strip()
+
+    if not target_session:
+        return "Session cible manquante", 400
+
+    devis = next(
+        (
+            d for d in data.get("demandes", [])
+            if d.get("id") == devis_id and d.get("motif") == "Demande de devis détaillé"
+        ),
+        None
+    )
+
+    if not devis:
+        return "Devis introuvable", 404
+
+    try:
+        infos = json.loads(devis.get("details", "{}"))
+    except:
+        infos = {}
+
+    session_actuelle = (infos.get("dates") or "").strip()
+    if target_session == session_actuelle:
+        return "La session cible est identique à la session actuelle", 400
+
+    infos["dates"] = target_session
+    devis["details"] = json.dumps(infos, ensure_ascii=False)
+    save_data(data)
+    return "", 204
+
 
 @app.route("/admin-devis/dossier/<devis_id>")
 @login_required
