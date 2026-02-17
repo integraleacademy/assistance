@@ -64,6 +64,11 @@ p{
     font-weight:600;
 }
 
+.vtc-dates-label{
+    font-weight:700;
+    color:#ff8c00;
+}
+
 </style>
 </head>
 
@@ -107,6 +112,28 @@ p{
     La session souhaitée est prévue sur la période suivante :  
     <strong>{{ infos.dates }}</strong>.
 </p>
+{% endif %}
+
+{% if infos.formation == "VTC" %}
+<p>
+    <span class="vtc-dates-label">Dates réelles de formation VTC :</span>
+    <strong>{{ infos.dates_reelles_formation_vtc or 'Non renseignées' }}</strong>
+</p>
+
+<form method="POST" action="{{ url_for('update_vtc_dates_devis', devis_id=devis.id) }}" style="margin-top:12px;">
+    <label for="dates_reelles_formation_vtc" class="vtc-dates-label">Dates réelles de formation VTC</label>
+    <input
+        id="dates_reelles_formation_vtc"
+        name="dates_reelles_formation_vtc"
+        type="text"
+        value="{{ infos.dates_reelles_formation_vtc or '' }}"
+        placeholder="Ex : 10/04/2026 au 25/04/2026"
+        style="display:block;width:100%;max-width:420px;padding:10px 12px;margin-top:6px;border:1px solid #ddd;border-radius:8px;"
+    >
+    <button type="submit" style="margin-top:10px;padding:8px 12px;border:none;border-radius:8px;background:#ff8c00;color:#fff;font-weight:700;cursor:pointer;">
+        💾 Enregistrer
+    </button>
+</form>
 {% endif %}
 </div>
 

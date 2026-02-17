@@ -148,6 +148,7 @@ tbody tr:nth-child(even){
     <th>Nom</th>
     <th>Prénom</th>
     <th>Formation</th>
+    <th>Dates réelles VTC</th>
     <th>Statut</th>
     <th>Action</th>
 </tr>
@@ -158,7 +159,7 @@ tbody tr:nth-child(even){
 <tr class="row"
     data-statut="{% if d.statut_devis == 'Envoyé' %}envoye{% else %}a_envoyer{% endif %}"
 
-    data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation)|lower }}">
+    data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation ~ ' ' ~ (d.infos.dates_reelles_formation_vtc or ''))|lower }}">
     
     <td>{{ d.date }}</td>
 
@@ -171,6 +172,7 @@ tbody tr:nth-child(even){
 
     <td>{{ d.prenom }}</td>
     <td>{{ d.infos.formation }}</td>
+    <td>{{ d.infos.dates_reelles_formation_vtc or '—' }}</td>
 
     <td>
         {% if d.statut_devis == "Envoyé" %}
