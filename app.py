@@ -646,7 +646,7 @@ def envoyer_mail_confirmation(demande):
     return ok
 
 def envoyer_mail_attribution_mohamed(demande):
-    """Envoie un mail à znaw83@gmail.com + copie à Clément quand la demande est attribuée à Mohamed"""
+    """Envoie un mail à znaw83@gmail.com quand la demande est attribuée à Mohamed"""
     sujet = f"📩 Nouvelle demande attribuée à Mohamed — {demande.get('motif','')}"
     lien_admin = "https://assistance-alw9.onrender.com/admin"
 
@@ -680,7 +680,7 @@ def envoyer_mail_attribution_mohamed(demande):
         """
     )
 
-    send_email_html("znaw83@gmail.com, clement@integraleacademy.com", sujet, plain, html)
+    send_email_html("znaw83@gmail.com", sujet, plain, html)
 
 
 
