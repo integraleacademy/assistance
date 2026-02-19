@@ -580,9 +580,6 @@
 
   {% elif d.statut == 'A relancer' %}
     <span class="status-relancer">🔄 A relancer</span>
-
-  {% elif d.statut == 'Financement validé' %}
-    <span class="status-green">✅ Financement validé</span>
   {% else %}
     <span class="status-red">{{ d.statut }}</span>
   {% endif %}
@@ -604,22 +601,11 @@
       A relancer
     </option>
 
-    <option value="Financement validé" {% if d.statut=='Financement validé' %}selected{% endif %}>
-      Financement validé
-    </option>
-
   </select>
 
   {% if d.plage %}
     <div class="plage-info">🕒 Plage préférée : {{ d.plage }}</div>
   {% endif %}
-
-  {% if d.notification_vae_financement %}
-    <div style="font-size:11px; margin-top:4px; color:#198754;">
-      📣 Notification VAE — mail: {{ d.notification_vae_financement.mail }}, sms: {{ d.notification_vae_financement.sms }} ({{ d.notification_vae_financement.date }})
-    </div>
-  {% endif %}
-
 
   {% if d.mail_confirme %}
     <div style="font-size:11px; margin-top:4px;">
