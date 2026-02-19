@@ -348,8 +348,29 @@ def inject_now():
 
 
 # Fichiers persistants (Render)
-DATA_FILE = "/mnt/data/data.json"
-UPLOAD_FOLDER = "/mnt/data/uploads"
+def _resolve_data_dir():
+    """
+    Utilise /mnt/data si disponible (Render Disk), sinon fallback local.
+    Évite de faire échouer le boot si le disque n'est pas monté temporairement.
+    """
+    candidates = ["/mnt/data", os.path.join(os.path.dirname(__file__), "data")]
+    for candidate in candidates:
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            test_file = os.path.join(candidate, ".write_test")
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write("ok")
+            os.remove(test_file)
+            return candidate
+        except OSError:
+            continue
+    # dernier recours : dossier courant
+    return os.getcwd()
+
+
+DATA_DIR = _resolve_data_dir()
+DATA_FILE = os.path.join(DATA_DIR, "data.json")
+UPLOAD_FOLDER = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # -------------------------------------------------------------------
@@ -357,16 +378,23 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # -------------------------------------------------------------------
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                data.setdefault("demandes", [])
-                data.setdefault("archives", [])
-                data.setdefault("compteur_traitees", 0)
-                data.setdefault("hebergements", [])
-                return data
-            else:
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    data.setdefault("demandes", [])
+                    data.setdefault("archives", [])
+                    data.setdefault("compteur_traitees", 0)
+                    data.setdefault("hebergements", [])
+                    return data
                 return {"demandes": data, "archives": [], "compteur_traitees": 0}
+        except (json.JSONDecodeError, OSError):
+            # fichier corrompu/inaccessible : on garde une copie puis on repart proprement
+            try:
+                backup_path = f"{DATA_FILE}.corrupted"
+                os.replace(DATA_FILE, backup_path)
+            except OSError:
+                pass
     return {"demandes": [], "archives": [], "compteur_traitees": 0}
 
 def save_data(data):
