@@ -1,8 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib, re
-import urllib.request
-import urllib.error
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -685,99 +683,6 @@ def envoyer_mail_attribution_mohamed(demande):
     send_email_html("znaw83@gmail.com", sujet, plain, html)
 
 
-def _normalize_french_phone(phone_raw):
-    if not phone_raw:
-        return None
-    digits = re.sub(r"\D", "", str(phone_raw))
-    if digits.startswith("00"):
-        digits = digits[2:]
-    if digits.startswith("33"):
-        return f"+{digits}"
-    if digits.startswith("0") and len(digits) == 10:
-        return f"+33{digits[1:]}"
-    if str(phone_raw).strip().startswith("+"):
-        return str(phone_raw).strip()
-    return None
-
-
-def envoyer_sms_financement_vae_valide(demande):
-    api_key = os.getenv("BREVO_API_KEY")
-    sender = os.getenv("BREVO_SMS_SENDER", "Integrale")
-    recipient = _normalize_french_phone(demande.get("telephone"))
-
-    if not api_key or not recipient:
-        return False
-
-    candidate_space_url = os.getenv("CANDIDATE_SPACE_URL", "https://espace-candidat.integraleacademy.com")
-    message = (
-        "Nous vous confirmons que le financement de votre VAE Dirigeant d'entreprise "
-        "de sécurité privée (DESP) est validé. Vous pouvez à présent compléter le Livret 2 "
-        "en vous rendant dans votre Espace Candidat : "
-        f"{candidate_space_url}"
-    )
-
-    payload = {
-        "sender": sender,
-        "recipient": recipient,
-        "content": message
-    }
-
-    req = urllib.request.Request(
-        "https://api.brevo.com/v3/transactionalSMS/sms",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "accept": "application/json",
-            "api-key": api_key,
-            "content-type": "application/json"
-        },
-        method="POST"
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return 200 <= response.status < 300
-    except urllib.error.URLError as e:
-        print("❌ Erreur envoi SMS :", e)
-        return False
-
-
-def envoyer_notification_financement_vae_valide(demande):
-    candidate_space_url = os.getenv("CANDIDATE_SPACE_URL", "https://espace-candidat.integraleacademy.com")
-    sujet = "✅ Financement VAE validé — Complétez votre Livret 2"
-
-    plain = (
-        f"Bonjour {demande.get('prenom','')},\n\n"
-        "Nous vous confirmons que le financement de votre VAE Dirigeant d'entreprise de "
-        "sécurité privée (DESP) est validé.\n"
-        "Vous pouvez à présent compléter le Livret 2 en vous rendant dans votre Espace Candidat.\n\n"
-        f"Connectez-vous à votre Espace Candidat : {candidate_space_url}\n\n"
-        "L'équipe Intégrale Academy"
-    )
-
-    html = _wrap_html(
-        '<h1 style="margin:0 0 12px;font-size:20px;">✅ Financement VAE validé</h1>',
-        f"""
-        <p>Bonjour <strong>{demande.get('prenom','')}</strong>,</p>
-        <p>Nous vous confirmons que le financement de votre VAE Dirigeant d'entreprise de sécurité privée (DESP) est validé.</p>
-        <p>Vous pouvez à présent compléter le Livret 2 en vous rendant dans votre Espace Candidat.</p>
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:20px 0; text-align:center;">
-          <tr>
-            <td align="center">
-              <a href="{candidate_space_url}" style="display:inline-block;padding:14px 28px;background:#0d6efd;color:white;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">
-                Connectez vous à votre Espace Candidat
-              </a>
-            </td>
-          </tr>
-        </table>
-        <p>L'équipe Intégrale Academy</p>
-        """
-    )
-
-    mail_ok = send_email_html(demande["mail"], sujet, plain, html)
-    sms_ok = envoyer_sms_financement_vae_valide(demande)
-    return mail_ok, sms_ok
-
-
 
 
 # -------------------------------------------------------------------
@@ -919,9 +824,6 @@ def update_demande_fields(demande, form_data, data, files=None):
                 if filename not in demande["pieces_jointes"]:
                     demande["pieces_jointes"].append(filename)
 
-    vae_financement_valide = "financement validé"
-    is_vae = "vae" in (demande.get("motif", "").lower())
-
     # 📨 Passage à Traité
     if ancien_statut != "Traité" and nouveau_statut == "Traité":
         if envoyer_mail_confirmation(demande):
@@ -931,14 +833,6 @@ def update_demande_fields(demande, form_data, data, files=None):
             demande["mail_erreur"] = ""
         else:
             demande["mail_erreur"] = "❌ Erreur lors de l'envoi du mail"
-
-    if is_vae and ancien_statut.strip().lower() != vae_financement_valide and nouveau_statut.strip().lower() == vae_financement_valide:
-        mail_ok, sms_ok = envoyer_notification_financement_vae_valide(demande)
-        demande["notification_vae_financement"] = {
-            "mail": "ok" if mail_ok else "ko",
-            "sms": "ok" if sms_ok else "ko",
-            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
-        }
 
     demande["statut"] = nouveau_statut
 
