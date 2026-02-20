@@ -410,13 +410,6 @@
   <button class="filter-btn" data-filter="A rappeler">📞 A rappeler</button>
 </div>
 
-<div style="display:flex; justify-content:center; margin:-8px 0 20px;">
-  <label for="vae-status-filter" style="font-weight:600; margin-right:8px;">🎓 Filtre VAE :</label>
-  <select id="vae-status-filter" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc; min-width:240px;">
-    <option value="">Tous les statuts VAE</option>
-  </select>
-</div>
-
 
  <!-- Modal Ajout -->
 <div id="addModal" class="modal">
@@ -759,8 +752,6 @@
 
 // === 🔍 Filtres attribution + statut "A rappeler" avec mémorisation locale ===
 function applyFilter(filter) {
-  const vaeStatusFilter = document.getElementById("vae-status-filter")?.value || "";
-
   // 🔹 Gérer le visuel des boutons
   document.querySelectorAll(".filter-btn").forEach(b => {
     if (b.dataset.filter === filter) b.classList.add("active");
@@ -778,10 +769,6 @@ function applyFilter(filter) {
     const attribution = attributionSelect.value.trim() || "Non attribué";
     const statut = statutSelect.value.trim();
 
-    const motif = (row.dataset.motif || "").trim();
-    const rawStatus = (row.dataset.statutValue || "").trim();
-    const isVaeRow = motif.includes("vae");
-
     let show = false;
 
     // 🧩 Logique de filtrage
@@ -790,47 +777,12 @@ function applyFilter(filter) {
     else if (filter === "A rappeler" && statut === "A rappeler") show = true;
     else if (attribution === filter) show = true;
 
-    if (show && vaeStatusFilter) {
-      show = isVaeRow && rawStatus === vaeStatusFilter;
-    }
-
     row.style.display = show ? "" : "none";
   });
 }
 
 // 🔄 Appliquer le filtre sauvegardé au chargement
 document.addEventListener("DOMContentLoaded", () => {
-  const vaeStatusFilter = document.getElementById("vae-status-filter");
-  if (vaeStatusFilter) {
-    const statuses = new Set();
-    document.querySelectorAll("table.admin-table tr[data-motif][data-statut-value]").forEach(row => {
-      const motif = (row.dataset.motif || "").trim();
-      const status = (row.dataset.statutValue || "").trim();
-      if (!motif.includes("vae") || !status) return;
-      statuses.add(status);
-    });
-
-    [...statuses]
-      .sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
-      .forEach(status => {
-        const option = document.createElement("option");
-        option.value = status;
-        option.textContent = status;
-        vaeStatusFilter.appendChild(option);
-      });
-
-    const savedVaeStatusFilter = localStorage.getItem("activeVaeStatusFilter") || "";
-    if (savedVaeStatusFilter) {
-      vaeStatusFilter.value = savedVaeStatusFilter;
-    }
-
-    vaeStatusFilter.addEventListener("change", (event) => {
-      localStorage.setItem("activeVaeStatusFilter", event.target.value || "");
-      const activeFilter = localStorage.getItem("activeFilter") || "";
-      applyFilter(activeFilter);
-    });
-  }
-
   const savedFilter = localStorage.getItem("activeFilter") || "";
   applyFilter(savedFilter);
 });
