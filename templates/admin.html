@@ -391,6 +391,7 @@
       </div>
       <div class="actions-top">
         <button type="button" onclick="openAddModal()" class="btn blue">➕ Ajouter</button>
+        <a href="{{ url_for('choisir_centre_formation') }}" class="btn blue">📍 Choisir mon centre</a>
         <form method="POST" style="display:inline;" onsubmit="return confirm('Archiver toutes les demandes traitées ?')">
           <input type="hidden" name="action" value="delete_all_traitees">
           <input type="hidden" name="q" value="{{ query or '' }}">
