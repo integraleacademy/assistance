@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Choisir mon centre de formation</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f6f9; margin:0; color:#1f2937; }
+    .wrap { max-width: 860px; margin: 36px auto; background:#fff; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.08); padding:26px; }
+    h1 { margin-top:0; font-size:28px; }
+    .muted { color:#6b7280; }
+    .row { display:flex; gap:12px; margin:18px 0 8px; }
+    input { flex:1; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
+    button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; }
+    button:hover { background:#1d4ed8; }
+    .box { margin-top:18px; padding:14px; border-radius:10px; background:#f9fafb; border:1px solid #e5e7eb; }
+    .result { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
+    .ok { color:#065f46; font-weight:700; }
+    .error { color:#b91c1c; font-weight:600; }
+    .back { display:inline-block; margin-top:18px; text-decoration:none; color:#111827; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📍 Choisir mon centre de formation</h1>
+    <p class="muted">Renseignez le code postal de la personne. La ville est retrouvée automatiquement puis la distance est calculée vers les deux centres.</p>
+
+    <div class="row">
+      <input id="cp" type="text" maxlength="5" placeholder="Ex : 06000" inputmode="numeric" />
+      <button id="btn">Calculer</button>
+    </div>
+
+    <div id="location" class="box" style="display:none;"></div>
+    <div id="distances" class="box" style="display:none;"></div>
+    <div id="result" class="result" style="display:none;"></div>
+    <div id="error" class="box error" style="display:none;"></div>
+
+    <a class="back" href="{{ url_for('admin') }}">⬅️ Retour Assistance admin</a>
+  </div>
+
+  <script>
+    const CENTER_COTE_AZUR = {
+      name: "Intégrale Academy Côte d'Azur",
+      address: "54 chemin du Carreou, 83480 Puget-sur-Argens"
+    };
+
+    const CENTER_AUVERGNE = {
+      name: "Intégrale Academy Terres d'auvergne",
+      address: "650 route d'Aumont, 15130 Arpajon-sur-Cère"
+    };
+
+    const cpInput = document.getElementById('cp');
+    const btn = document.getElementById('btn');
+    const locationBox = document.getElementById('location');
+    const distancesBox = document.getElementById('distances');
+    const resultBox = document.getElementById('result');
+    const errorBox = document.getElementById('error');
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+    }
+
+    function hideError() {
+      errorBox.style.display = 'none';
+      errorBox.textContent = '';
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const toRad = (deg) => deg * Math.PI / 180;
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    async function geocodeAddress(address) {
+      const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}&limit=1`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Impossible de géocoder une adresse centre.');
+      const data = await resp.json();
+      if (!data.features || !data.features.length) throw new Error(`Adresse introuvable: ${address}`);
+      const [lon, lat] = data.features[0].geometry.coordinates;
+      return { lat, lon };
+    }
+
+    async function findCityByPostalCode(postcode) {
+      const url = `https://geo.api.gouv.fr/communes?codePostal=${encodeURIComponent(postcode)}&fields=nom,centre,code,codesPostaux&format=json`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Impossible de récupérer la ville depuis le code postal.');
+      const data = await resp.json();
+      if (!Array.isArray(data) || !data.length) throw new Error('Aucune ville trouvée pour ce code postal.');
+
+      const city = data[0];
+      if (!city.centre || !city.centre.coordinates) throw new Error('Coordonnées de la ville indisponibles.');
+      const [lon, lat] = city.centre.coordinates;
+
+      return { cityName: city.nom, postcode, lat, lon };
+    }
+
+    async function run() {
+      hideError();
+      locationBox.style.display = 'none';
+      distancesBox.style.display = 'none';
+      resultBox.style.display = 'none';
+
+      const postcode = cpInput.value.trim();
+      if (!/^\d{5}$/.test(postcode)) {
+        showError('Veuillez saisir un code postal français valide (5 chiffres).');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Calcul...';
+
+      try {
+        const personLocation = await findCityByPostalCode(postcode);
+
+        locationBox.innerHTML = `📌 Localisation détectée : <strong>${personLocation.cityName} (${personLocation.postcode})</strong>`;
+        locationBox.style.display = 'block';
+
+        const [coteAzurCoords, auvergneCoords] = await Promise.all([
+          geocodeAddress(CENTER_COTE_AZUR.address),
+          geocodeAddress(CENTER_AUVERGNE.address)
+        ]);
+
+        const dAzur = haversineKm(personLocation.lat, personLocation.lon, coteAzurCoords.lat, coteAzurCoords.lon);
+        const dAuvergne = haversineKm(personLocation.lat, personLocation.lon, auvergneCoords.lat, auvergneCoords.lon);
+
+        distancesBox.innerHTML = `
+          <div>📏 Distance vers <strong>${CENTER_COTE_AZUR.name}</strong> : <strong>${dAzur.toFixed(1)} km</strong></div>
+          <div>📏 Distance vers <strong>${CENTER_AUVERGNE.name}</strong> : <strong>${dAuvergne.toFixed(1)} km</strong></div>
+        `;
+        distancesBox.style.display = 'block';
+
+        const nearest = dAzur <= dAuvergne ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
+        const nearestDistance = dAzur <= dAuvergne ? dAzur : dAuvergne;
+
+        resultBox.innerHTML = `✅ Centre recommandé : <span class="ok">${nearest.name}</span><br><span class="muted">Distance estimée : ${nearestDistance.toFixed(1)} km</span>`;
+        resultBox.style.display = 'block';
+      } catch (e) {
+        showError(e.message || 'Une erreur est survenue.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Calculer';
+      }
+    }
+
+    btn.addEventListener('click', run);
+    cpInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        run();
+      }
+    });
+  </script>
+</body>
+</html>
