@@ -506,7 +506,7 @@
         <!-- ✅ Nouvelle colonne -->
         <th>Rappel</th>
 
-        <th class="hide-mobile">Commentaire</th>
+        <th class="hide-mobile">Commentaire admin</th>
         <th class="hide-mobile">Réponses</th>
         <th>Actions</th>
       </tr>
@@ -648,11 +648,11 @@
 
 
           <!-- Commentaire -->
-          <td class="hide-mobile" data-label="Commentaire">
+          <td class="hide-mobile" data-label="Commentaire admin">
             <button type="button" class="comment-btn"
         data-id="{{ d.id }}"
         data-comment='{{ (d.commentaire_admin or "") | tojson | safe }}'>
-  ✏️ Ajouter / Modifier
+  🛡️ Commentaire admin
 </button>
 
             <input type="hidden" name="commentaire_admin" id="commentaire-{{ d.id }}" value="{{ d.commentaire_admin }}">
@@ -710,7 +710,7 @@
   <!-- Modal Commentaire -->
   <div id="commentModal" class="modal">
     <div class="modal-content">
-      <h3>📝 Commentaire</h3>
+      <h3>📝 Commentaire admin (interne)</h3>
       <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
       <div class="modal-actions">
         <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
