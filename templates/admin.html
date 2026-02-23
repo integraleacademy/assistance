@@ -526,8 +526,8 @@
             <div class="detail-preview" id="preview-{{ d.id }}">
               {% if d.details %}{{ d.details }}{% else %}—{% endif %}
             </div>
-            {% if d.commentaire %}
-            <div class="detail-comment" id="detail-comment-{{ d.id }}">{{ d.commentaire }}</div>
+            {% if d.commentaire_admin %}
+            <div class="detail-comment" id="detail-comment-{{ d.id }}">{{ d.commentaire_admin }}</div>
             {% else %}
             <div class="detail-comment" id="detail-comment-{{ d.id }}" style="display:none;"></div>
             {% endif %}
@@ -651,11 +651,11 @@
           <td class="hide-mobile" data-label="Commentaire">
             <button type="button" class="comment-btn"
         data-id="{{ d.id }}"
-        data-comment='{{ (d.commentaire or "") | tojson | safe }}'>
+        data-comment='{{ (d.commentaire_admin or "") | tojson | safe }}'>
   ✏️ Ajouter / Modifier
 </button>
 
-            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+            <input type="hidden" name="commentaire_admin" id="commentaire-{{ d.id }}" value="{{ d.commentaire_admin }}">
           </td>
 
           <!-- Réponses -->
