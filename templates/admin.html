@@ -94,6 +94,14 @@
       word-break:break-word;
     }
     .detail-btn {background:#ffc107; border:none; padding:5px 8px; border-radius:5px; cursor:pointer; font-size:12px;}
+    .detail-comment {
+      color:#dc3545;
+      font-weight:700;
+      font-size:12px;
+      margin-bottom:6px;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
 
     /* Actions alignées */
     td.actions {border:none;}
@@ -498,7 +506,7 @@
         <!-- ✅ Nouvelle colonne -->
         <th>Rappel</th>
 
-        <th class="hide-mobile">Commentaire</th>
+        <th class="hide-mobile">Commentaire admin</th>
         <th class="hide-mobile">Réponses</th>
         <th>Actions</th>
       </tr>
@@ -518,6 +526,11 @@
             <div class="detail-preview" id="preview-{{ d.id }}">
               {% if d.details %}{{ d.details }}{% else %}—{% endif %}
             </div>
+            {% if d.commentaire_admin %}
+            <div class="detail-comment" id="detail-comment-{{ d.id }}">{{ d.commentaire_admin }}</div>
+            {% else %}
+            <div class="detail-comment" id="detail-comment-{{ d.id }}" style="display:none;"></div>
+            {% endif %}
             <button type="button" class="detail-btn" onclick="openDetailModal('{{ d.id }}')">👁 Voir / Modifier</button>
             <input type="hidden" name="details" id="details-{{ d.id }}" value="{{ d.details or '' }}">
           </td>
@@ -635,14 +648,14 @@
 
 
           <!-- Commentaire -->
-          <td class="hide-mobile" data-label="Commentaire">
+          <td class="hide-mobile" data-label="Commentaire admin">
             <button type="button" class="comment-btn"
         data-id="{{ d.id }}"
-        data-comment='{{ (d.commentaire or "") | tojson | safe }}'>
-  ✏️ Ajouter / Modifier
+        data-comment='{{ (d.commentaire_admin or "") | tojson | safe }}'>
+  🛡️ Commentaire admin
 </button>
 
-            <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+            <input type="hidden" name="commentaire_admin" id="commentaire-{{ d.id }}" value="{{ d.commentaire_admin }}">
           </td>
 
           <!-- Réponses -->
@@ -697,7 +710,7 @@
   <!-- Modal Commentaire -->
   <div id="commentModal" class="modal">
     <div class="modal-content">
-      <h3>📝 Commentaire</h3>
+      <h3>📝 Commentaire admin (interne)</h3>
       <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
       <div class="modal-actions">
         <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
@@ -718,8 +731,21 @@
     function saveComment() {
       if (currentCommentId) {
         let newComment = document.getElementById("modalComment").value;
+        if (newComment.trim() && !newComment.trim().toLowerCase().startsWith("clément")) {
+          newComment = `Clément : ${newComment.trim()}`;
+        }
         const commentInput = document.getElementById("commentaire-" + currentCommentId);
         commentInput.value = newComment;
+        const detailComment = document.getElementById("detail-comment-" + currentCommentId);
+        if (detailComment) {
+          if (newComment.trim()) {
+            detailComment.textContent = newComment;
+            detailComment.style.display = "block";
+          } else {
+            detailComment.textContent = "";
+            detailComment.style.display = "none";
+          }
+        }
         scheduleAutoSave(commentInput.closest("form"));
       }
       closeCommentModal();
