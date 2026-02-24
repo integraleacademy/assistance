@@ -637,16 +637,10 @@
 
           <!-- Commentaire -->
           <td class="hide-mobile" data-label="Commentaire">
-            <button type="button" class="comment-btn"
-        data-id="{{ d.id }}"
-        data-comment='{{ (d.commentaire or "") | tojson | safe }}'>
+            <button type="button" class="comment-btn" data-id="{{ d.id }}">
   ✏️ Ajouter / Modifier
 </button>
-            <button type="button" class="comment-btn"
-        data-id="{{ d.id }}"
-        data-target="admin"
-        data-comment='{{ (d.commentaire_admin or "") | tojson | safe }}'
-        style="margin-top:6px;">
+            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-target="admin" style="margin-top:6px;">
   🛡️ Commentaire admin
 </button>
 
@@ -742,11 +736,9 @@
     }
     document.querySelectorAll(".comment-btn").forEach(btn => {
       btn.addEventListener("click", function() {
-        let raw = this.dataset.comment;
-        let parsed = "";
-        try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
         const target = this.dataset.target === "admin" ? "commentaire_admin" : "commentaire";
-        openCommentModal(this.dataset.id, parsed, target);
+        const input = document.getElementById(target + "-" + this.dataset.id);
+        openCommentModal(this.dataset.id, input ? input.value : "", target);
       });
     });
 
