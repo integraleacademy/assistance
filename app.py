@@ -507,7 +507,7 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
                 msg.attach(part)
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as serveur:
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             serveur.send_message(msg)
         return True
