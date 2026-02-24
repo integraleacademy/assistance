@@ -759,7 +759,6 @@ def index():
             "attribution": "",
             "statut": "Non traité",
             "commentaire": "",
-            "commentaire_admin": "",
             "mail_confirme": "",
             "mail_erreur": "",
             "mail_contenu": "",
@@ -826,7 +825,6 @@ def update_demande_fields(demande, form_data, data, files=None):
     if form_data.get("details") is not None:
         demande["details"] = form_data.get("details")
     demande["commentaire"] = form_data.get("commentaire", demande.get("commentaire", ""))
-    demande["commentaire_admin"] = form_data.get("commentaire_admin", demande.get("commentaire_admin", ""))
     demande["rappel_date"] = form_data.get("rappel_date", demande.get("rappel_date", ""))
 
     ancienne_attribution = demande.get("attribution", "").strip()
@@ -923,7 +921,6 @@ def admin():
                 "attribution": request.form.get("attribution", "Clément"),
                 "statut": "Non traité",
                 "commentaire": "",
-                "commentaire_admin": "",
                 "mail_confirme": "",
                 "mail_erreur": "",
                 "mail_contenu": "",
@@ -1439,7 +1436,6 @@ def rappel():
             "attribution": "Mohamed",
             "statut": "A rappeler",
             "commentaire": "",
-            "commentaire_admin": "",
             "mail_confirme": "",
             "mail_erreur": "",
             "mail_contenu": "",
@@ -2011,7 +2007,6 @@ def demande_devis():
             "statut": "Non traité",
             "attribution": "",
             "commentaire": "",
-            "commentaire_admin": "",
             "mail_confirme": "",
             "mail_erreur": "",
             "mail_contenu": "",
