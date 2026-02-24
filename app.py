@@ -350,17 +350,22 @@ def inject_now():
 # Fichiers persistants (Render)
 def _resolve_data_dir():
     """
-    Utilise /mnt/data si disponible (Render Disk), sinon fallback local.
-    Évite de faire échouer le boot si le disque n'est pas monté temporairement.
+    Utilise DATA_DIR/RENDER_DISK_PATH puis /mnt/data si disponibles,
+    sinon fallback local. On évite toute écriture de test au boot
+    pour ne pas bloquer l'initialisation des workers.
     """
-    candidates = ["/mnt/data", os.path.join(os.path.dirname(__file__), "data")]
+    candidates = [
+        os.getenv("DATA_DIR"),
+        os.getenv("RENDER_DISK_PATH"),
+        "/mnt/data",
+        os.path.join(os.path.dirname(__file__), "data"),
+    ]
+
     for candidate in candidates:
+        if not candidate:
+            continue
         try:
             os.makedirs(candidate, exist_ok=True)
-            test_file = os.path.join(candidate, ".write_test")
-            with open(test_file, "w", encoding="utf-8") as f:
-                f.write("ok")
-            os.remove(test_file)
             return candidate
         except OSError:
             continue
