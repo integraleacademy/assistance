@@ -131,6 +131,7 @@
     .response-block{margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#f9f9f9; text-align:left;}
     .response-date{font-size:11px; color:#555; margin-bottom:4px;}
     .response-text{margin-bottom:6px; white-space:pre-wrap; font-size:12px;}
+    .admin-note{margin-top:8px; white-space:pre-wrap; font-size:12px; font-weight:bold; color:#dc3545;}
     .response-pj a{display:block;font-size:12px;color:#0d6efd;text-decoration:none;}
 
     /* Modales */
@@ -636,13 +637,15 @@
 
           <!-- Commentaire -->
           <td class="hide-mobile" data-label="Commentaire">
-            <button type="button" class="comment-btn"
-        data-id="{{ d.id }}"
-        data-comment='{{ (d.commentaire or "") | tojson | safe }}'>
+            <button type="button" class="comment-btn" data-id="{{ d.id }}">
   ✏️ Ajouter / Modifier
+</button>
+            <button type="button" class="comment-btn" data-id="{{ d.id }}" data-target="admin" style="margin-top:6px;">
+  🛡️ Commentaire admin
 </button>
 
             <input type="hidden" name="commentaire" id="commentaire-{{ d.id }}" value="{{ d.commentaire }}">
+            <input type="hidden" name="commentaire_admin" id="commentaire_admin-{{ d.id }}" value="{{ d.commentaire_admin or '' }}">
           </td>
 
           <!-- Réponses -->
@@ -650,6 +653,9 @@
             {% if d.reponses and d.reponses|length>0 %}
               <button type="button" class="response-btn" onclick="openResponseModal('{{ d.id }}')">👁 Voir ({{ d.reponses|length }})</button>
             {% else %}<span class="pj-empty">—</span>{% endif %}
+            {% if d.commentaire_admin %}
+              <div class="admin-note">Clément : {{ d.commentaire_admin }}</div>
+            {% endif %}
           </td>
 
           <!-- Actions -->
@@ -697,7 +703,7 @@
   <!-- Modal Commentaire -->
   <div id="commentModal" class="modal">
     <div class="modal-content">
-      <h3>📝 Commentaire</h3>
+      <h3 id="commentModalTitle">📝 Commentaire</h3>
       <textarea id="modalComment" rows="6" style="width:100%;"></textarea>
       <div class="modal-actions">
         <button type="button" onclick="closeCommentModal()">❌ Annuler</button>
@@ -708,17 +714,21 @@
 
   <script>
     let currentCommentId = null;
+    let currentCommentTarget = "commentaire";
 
-    function openCommentModal(demandeId, commentaire) {
+    function openCommentModal(demandeId, commentaire, target) {
       currentCommentId = demandeId;
+      currentCommentTarget = target || "commentaire";
       document.getElementById("modalComment").value = commentaire || "";
+      document.getElementById("commentModalTitle").textContent = currentCommentTarget === "commentaire_admin" ? "🛡️ Commentaire admin" : "📝 Commentaire";
       document.getElementById("commentModal").style.display = "block";
     }
     function closeCommentModal() {document.getElementById("commentModal").style.display = "none";}
     function saveComment() {
       if (currentCommentId) {
         let newComment = document.getElementById("modalComment").value;
-        const commentInput = document.getElementById("commentaire-" + currentCommentId);
+        const inputId = currentCommentTarget + "-" + currentCommentId;
+        const commentInput = document.getElementById(inputId);
         commentInput.value = newComment;
         scheduleAutoSave(commentInput.closest("form"));
       }
@@ -726,10 +736,9 @@
     }
     document.querySelectorAll(".comment-btn").forEach(btn => {
       btn.addEventListener("click", function() {
-        let raw = this.dataset.comment;
-        let parsed = "";
-        try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
-        openCommentModal(this.dataset.id, parsed);
+        const target = this.dataset.target === "admin" ? "commentaire_admin" : "commentaire";
+        const input = document.getElementById(target + "-" + this.dataset.id);
+        openCommentModal(this.dataset.id, input ? input.value : "", target);
       });
     });
 
