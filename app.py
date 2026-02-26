@@ -1206,10 +1206,73 @@ def toggle_devis(devis_id):
 
     for d in data.get("demandes", []):
         if d.get("id") == devis_id and d.get("motif") == "Demande de devis détaillé":
-            if d.get("statut_devis") == "Envoyé":
+            ancien_statut = d.get("statut_devis") or "A envoyer"
+
+            if ancien_statut == "Envoyé":
                 d["statut_devis"] = "A envoyer"
             else:
                 d["statut_devis"] = "Envoyé"
+
+                # 📞 Notification Mohamed uniquement au clic sur "Changer le statut"
+                # depuis un devis "À envoyer" => "Envoyé"
+                rappel_existant = next(
+                    (
+                        x for x in data.get("demandes", [])
+                        if x.get("source_devis_id") == devis_id
+                        and x.get("motif") == "Rappel suite devis envoyé"
+                    ),
+                    None
+                )
+
+                if not rappel_existant:
+                    try:
+                        infos = json.loads(d.get("details", "{}"))
+                    except:
+                        infos = {}
+
+                    formation = (infos.get("formation") or "").strip()
+                    formation_label = {
+                        "A3P": "A3P – Agent de Protection Physique des Personnes",
+                        "APS": "APS – Agent de Prévention et de Sécurité",
+                        "VTC": "VTC – Chauffeur de transport avec chauffeur",
+                        "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
+                        "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
+                    }.get(formation, formation)
+
+                    demande_rappel_devis = {
+                        "id": str(uuid.uuid4()),
+                        "source_devis_id": devis_id,
+                        "nom": d.get("nom"),
+                        "prenom": d.get("prenom"),
+                        "telephone": d.get("telephone"),
+                        "mail": d.get("mail"),
+                        "motif": "Rappel suite devis envoyé",
+                        "details": (
+                            "Créée automatiquement après clic sur ‘Changer le statut’ (À envoyer → Envoyé).\n"
+                            f"Formation : {formation_label or 'Non précisée'}\n"
+                            f"Session : {(infos.get('dates') or 'Non précisée')}"
+                        ),
+                        "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+                        "statut": "A rappeler",
+                        "attribution": "Mohamed",
+                        "commentaire": "",
+                        "commentaire_admin": "",
+                        "mail_confirme": "",
+                        "mail_erreur": "",
+                        "mail_contenu": "",
+                        "mail_html": "",
+                        "pieces_jointes": [],
+                        "reponses": [],
+                        "is_doublon": False,
+                        "rappel_date": "",
+                        "plage": ""
+                    }
+                    data["demandes"].append(demande_rappel_devis)
+
+                    try:
+                        envoyer_mail_attribution_mohamed(demande_rappel_devis)
+                    except:
+                        pass
             break
 
     save_data(data)
