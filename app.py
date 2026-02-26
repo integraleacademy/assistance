@@ -2478,6 +2478,52 @@ def envoyer_plan_financement(devis_id):
         pytz.timezone("Europe/Paris")
     ).strftime("%d/%m/%Y %H:%M")
 
+    # 📞 Créer la demande de rappel dans l'admin uniquement quand le devis est envoyé
+    rappel_existant = next(
+        (
+            d for d in data.get("demandes", [])
+            if d.get("source_devis_id") == devis_id
+            and d.get("motif") == "Rappel suite devis envoyé"
+        ),
+        None
+    )
+
+    if not rappel_existant:
+        demande_rappel_devis = {
+            "id": str(uuid.uuid4()),
+            "source_devis_id": devis_id,
+            "nom": devis.get("nom"),
+            "prenom": devis.get("prenom"),
+            "telephone": devis.get("telephone"),
+            "mail": devis.get("mail"),
+            "motif": "Rappel suite devis envoyé",
+            "details": (
+                "Créée automatiquement après clic sur ‘Devis envoyé’.\n"
+                f"Formation : {formation_label or 'Non précisée'}\n"
+                f"Session : {(infos.get('dates') or 'Non précisée')}"
+            ),
+            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+            "statut": "A rappeler",
+            "attribution": "Mohamed",
+            "commentaire": "",
+            "commentaire_admin": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+            "rappel_date": "",
+            "plage": ""
+        }
+        data["demandes"].append(demande_rappel_devis)
+
+        try:
+            envoyer_mail_attribution_mohamed(demande_rappel_devis)
+        except:
+            pass
+
     save_data(data)
 
     return redirect(url_for("admin_devis"))
