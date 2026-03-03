@@ -1827,6 +1827,7 @@ def demande_devis():
         from dateutil.relativedelta import relativedelta
 
         data = request.form.to_dict()
+        data["gclid"] = (data.get("gclid") or "").strip()
 
         # -------------------------
         # 🔥 NOTATION INTERNE AUTO
@@ -2146,7 +2147,12 @@ def demande_devis():
         ))
 
 
-    return render_template("demande_devis.html", dates_options=PLAN_DATES)
+    gclid = (request.args.get("gclid") or "").strip()
+    return render_template(
+        "demande_devis.html",
+        dates_options=PLAN_DATES,
+        gclid=gclid
+    )
 
 
 

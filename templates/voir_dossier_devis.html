@@ -97,6 +97,9 @@ p{
 <p><span class="label">Prénom :</span> {{ devis.prenom }}</p>
 <p><span class="label">Téléphone :</span> {{ devis.telephone }}</p>
 <p><span class="label">Email :</span> {{ devis.mail }}</p>
+{% if infos.gclid %}
+<p><span class="label">GCLID :</span> {{ infos.gclid }}</p>
+{% endif %}
 </div>
 
 <div class="section">

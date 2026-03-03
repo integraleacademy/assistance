@@ -185,6 +185,7 @@ button:hover{
 <p>Merci de compléter l’ensemble du formulaire. Tous les champs sont obligatoires.</p>
 
 <form method="POST" id="devisForm">
+<input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
 
 <h3>Informations générales</h3>
 
@@ -339,6 +340,23 @@ const cnapsBloc = document.getElementById("blocCnaps");
 const franceTravail = document.getElementById("franceTravail");
 const blocFT = document.getElementById("blocFranceTravail");
 const blocPerso = document.getElementById("blocPerso");
+const gclidField = document.getElementById("gclidField");
+
+(function syncGclid() {
+  const params = new URLSearchParams(window.location.search);
+  const gclidFromUrl = (params.get("gclid") || "").trim();
+
+  if (gclidFromUrl) {
+    localStorage.setItem("gclid", gclidFromUrl);
+    gclidField.value = gclidFromUrl;
+    return;
+  }
+
+  const storedGclid = (localStorage.getItem("gclid") || "").trim();
+  if (storedGclid && !gclidField.value) {
+    gclidField.value = storedGclid;
+  }
+})();
 
 function showMailError(message) {
   mailConfirm.setCustomValidity(message);
