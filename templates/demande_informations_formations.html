@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demande d’informations formations Intégrale Academy</title>
+  <style>
+    :root{
+      --blue-900:#0b2b8a;
+      --blue-700:#1d4ed8;
+      --blue-500:#3b82f6;
+      --slate-900:#0f172a;
+      --slate-700:#334155;
+      --slate-500:#64748b;
+      --slate-200:#e2e8f0;
+      --slate-100:#f1f5f9;
+      --white:#fff;
+      --green:#16a34a;
+      --green-dark:#15803d;
+      --orange:#f97316;
+      --danger:#dc2626;
+    }
+
+    *{box-sizing:border-box;}
+
+    body{
+      margin:0;
+      font-family:Inter,Arial,sans-serif;
+      color:var(--slate-900);
+      background:radial-gradient(circle at top left,#1e40af 0%,#1e3a8a 40%,#0b2b8a 100%);
+      padding:28px 14px;
+    }
+
+    .wrap{
+      max-width:1040px;
+      margin:0 auto;
+      background:var(--white);
+      border-radius:24px;
+      padding:26px;
+      box-shadow:0 25px 55px rgba(2,6,23,.35);
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:16px;
+      margin-bottom:10px;
+      flex-wrap:wrap;
+    }
+
+    .brand img{height:62px;width:auto;}
+
+    h1{
+      margin:0;
+      text-align:center;
+      font-size:46px;
+      line-height:1.15;
+      color:#0b1e4f;
+      letter-spacing:.2px;
+    }
+
+    .intro{
+      margin:10px 0 26px;
+      text-align:center;
+      font-size:28px;
+      color:var(--slate-700);
+      font-weight:500;
+    }
+
+    .section{
+      background:linear-gradient(180deg,#f8fbff 0%,#f1f5f9 100%);
+      border:1px solid var(--slate-200);
+      border-radius:18px;
+      padding:20px;
+      margin-bottom:16px;
+    }
+
+    .step-title{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin:0 0 14px;
+      font-size:24px;
+      color:#0b1e4f;
+    }
+
+    .step-num{
+      width:38px;height:38px;border-radius:50%;
+      display:inline-flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,var(--blue-700),var(--blue-500));
+      color:#fff;font-weight:800;font-size:18px;
+      box-shadow:0 8px 16px rgba(30,64,175,.3);
+      flex:0 0 auto;
+    }
+
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .full{grid-column:1/-1;}
+
+    label{display:block;font-weight:700;font-size:16px;margin:6px 0 6px;color:#0b1e4f;}
+
+    input:not([type="checkbox"]), select{
+      width:100%;
+      min-height:52px;
+      padding:12px 14px;
+      border:1px solid #b8c5dc;
+      border-radius:12px;
+      font-size:16px;
+      background:#fff;
+      transition:.2s ease;
+    }
+
+    input:not([type="checkbox"]):focus, select:focus{
+      outline:none;
+      border-color:var(--blue-700);
+      box-shadow:0 0 0 4px rgba(29,78,216,.16);
+    }
+
+    .location-choice{
+      border:1px solid #cbd5e1;
+      border-radius:14px;
+      padding:14px;
+      background:#fff;
+      margin-top:10px;
+      transition:.2s ease;
+    }
+    .location-choice:hover{border-color:#60a5fa;box-shadow:0 8px 18px rgba(37,99,235,.08);}
+    .location-choice label{display:flex;gap:10px;align-items:flex-start;margin:0;cursor:pointer;}
+    .location-choice input[type="radio"]{margin-top:4px;transform:scale(1.15);}
+    .location-title{font-size:18px;color:#102a67;margin-bottom:6px;display:block;}
+    .location-copy{font-size:15px;color:#334155;line-height:1.55;margin:0;}
+
+    .help-copy{
+      margin:14px 0 10px;
+      padding:12px 14px;
+      background:#eff6ff;
+      border:1px dashed #93c5fd;
+      border-radius:12px;
+      color:#1e3a8a;
+      font-weight:600;
+    }
+
+    .btn-secondary{
+      display:none;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      background:linear-gradient(135deg,#0ea5e9,#2563eb);
+      color:#fff;
+      text-decoration:none;
+      border:none;
+      min-height:50px;
+      border-radius:14px;
+      font-size:17px;
+      font-weight:700;
+      padding:0 22px;
+      cursor:pointer;
+      box-shadow:0 10px 22px rgba(37,99,235,.32);
+      transition:.2s ease;
+      animation:bounceGlow 2.2s infinite;
+    }
+    .btn-secondary:hover{transform:translateY(-1px);}
+
+    .checkbox-row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin-top:14px;
+      font-size:16px;
+      font-weight:700;
+      color:#102a67;
+    }
+
+    .checkbox-row input[type="checkbox"]{
+      width:18px;height:18px;accent-color:#1d4ed8;
+    }
+
+    .submit{
+      width:100%;
+      min-height:58px;
+      border:none;
+      border-radius:16px;
+      background:linear-gradient(135deg,var(--green),var(--green-dark));
+      color:#fff;
+      font-size:19px;
+      font-weight:800;
+      letter-spacing:.6px;
+      cursor:pointer;
+      margin-top:14px;
+      box-shadow:0 14px 26px rgba(21,128,61,.34);
+      animation:bounceGlowGreen 2.2s infinite;
+    }
+
+    .submit:hover{transform:translateY(-1px);}
+
+    .small-note{font-size:14px;color:var(--slate-500);margin-top:8px;}
+
+    .hidden{display:none !important;}
+
+    .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.74);z-index:40;padding:20px;}
+    .modal-box{max-width:930px;margin:2vh auto;background:#fff;padding:14px;border-radius:16px;}
+    .modal-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;}
+    .close-btn{border:none;background:#e2e8f0;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:700;}
+    iframe{width:100%;height:76vh;border:none;border-radius:10px;}
+
+    @keyframes bounceGlow{
+      0%,100%{box-shadow:0 10px 22px rgba(37,99,235,.32)}
+      50%{box-shadow:0 14px 28px rgba(14,165,233,.52)}
+    }
+    @keyframes bounceGlowGreen{
+      0%,100%{box-shadow:0 14px 26px rgba(21,128,61,.34)}
+      50%{box-shadow:0 18px 32px rgba(34,197,94,.5)}
+    }
+
+    @media (max-width:850px){
+      h1{font-size:34px;}
+      .intro{font-size:24px;}
+      .grid{grid-template-columns:1fr;}
+      .wrap{padding:16px;}
+      .step-title{font-size:22px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
+      <h1>✨ Demande d’informations formations Intégrale Academy</h1>
+    </div>
+    <p class="intro">Prenons 2 minutes pour faire connaissance 🤝</p>
+
+    <form method="POST" id="infosForm">
+      <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
+
+      <section class="section">
+        <h2 class="step-title"><span class="step-num">1</span> Informations générales</h2>
+        <div class="grid">
+          <div><label for="nom">Nom</label><input id="nom" name="nom" required></div>
+          <div><label for="prenom">Prénom</label><input id="prenom" name="prenom" required></div>
+          <div><label for="mail">Mail</label><input id="mail" type="email" name="mail" required></div>
+          <div><label for="mail_confirm">Confirmation mail</label><input id="mail_confirm" type="email" name="mail_confirm" required></div>
+          <div class="full"><label for="telephone">Numéro de téléphone</label><input id="telephone" name="telephone" required></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="step-title"><span class="step-num">2</span> Formation souhaitée</h2>
+        <label for="formation">Au choix</label>
+        <select name="formation" id="formation" required>
+          <option value="">— Sélectionnez —</option>
+          <option value="A3P">Agent de Protection Physique des Personnes (A3P)</option>
+          <option value="APS">Agent de Prévention et de Sécurité (APS)</option>
+          <option value="DESP_INIT">Dirigeant d’entreprise de sécurité privée (DESP) en initial</option>
+          <option value="DESP_VAE">Dirigeant d’entreprise de sécurité privée (DESP) en VAE</option>
+          <option value="VTC">Chauffeur VTC</option>
+        </select>
+      </section>
+
+      <section class="section" id="locationSection">
+        <h2 class="step-title"><span class="step-num">3</span> Lieu de formation souhaité 📍</h2>
+
+        <article id="optCote" class="location-choice hidden">
+          <label>
+            <input type="radio" name="centre" value="cote_azur">
+            <span>
+              <strong class="location-title">Intégrale Academy Côte d’Azur (Fréjus, Var)</strong>
+              <p class="location-copy">
+                Formation au cœur de la Côte d’Azur, entre mer Méditerranée, climat ensoleillé et cadre attractif entre Cannes et Saint-Tropez.<br>
+                Hébergement sur place (forfait 300€).<br>
+                Aéroport le plus proche : Nice – Gare la plus proche : Saint-Raphaël Valescure.
+              </p>
+            </span>
+          </label>
+        </article>
+
+        <article id="optAuv" class="location-choice hidden">
+          <label>
+            <input type="radio" name="centre" value="auvergne">
+            <span>
+              <strong class="location-title">NOUVEAU Intégrale Academy Terre d’Auvergne (Centre-France, Aurillac)</strong>
+              <p class="location-copy">
+                Formation au cœur des volcans et montagnes d’Auvergne, dans un environnement naturel exceptionnel.<br>
+                Hébergement sur place (forfait 300€).<br>
+                Aéroport le plus proche : Aurillac (Ligne Paris – Aurillac) – Gare la plus proche : Aurillac.
+              </p>
+            </span>
+          </label>
+        </article>
+
+        <p id="simuText" class="help-copy hidden">
+          Utilisez notre simulateur si dessous pour calculer combien de kilomètres nous séparent et choisir le centre de formation le plus près de chez vous.
+        </p>
+
+        <button type="button" class="btn-secondary" id="openSimu">🚀 Choisir mon centre de formation</button>
+      </section>
+
+      <section class="section">
+        <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
+        <label for="datesSelect">Session souhaitée</label>
+        <select name="dates" id="datesSelect" required>
+          <option value="">— Sélectionnez —</option>
+        </select>
+        <p class="small-note" id="datesHelp">Les dates proposées s’adaptent selon la formation et le centre choisi.</p>
+      </section>
+
+      <section class="section">
+        <h2 class="step-title"><span class="step-num">5</span> Financement de votre formation 💶</h2>
+
+        <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
+        <select name="cpf_consulte" required>
+          <option value="">— Sélectionnez —</option>
+          <option value="OUI">OUI</option>
+          <option value="NON">NON</option>
+        </select>
+
+        <label style="margin-top:12px;">Je souhaite déposer une demande de financement à France Travail</label>
+        <select name="france_travail" id="franceTravail" required>
+          <option value="">— Sélectionnez —</option>
+          <option value="OUI">OUI</option>
+          <option value="NON">NON</option>
+        </select>
+
+        <div id="blocPerso" class="hidden">
+          <label style="margin-top:12px;">Je souhaite financer moi-même la formation / je dispose des fonds nécessaires sur mon CPF</label>
+          <select name="financement_perso">
+            <option value="">— Sélectionnez —</option>
+            <option value="OUI">OUI</option>
+            <option value="NON">NON</option>
+          </select>
+        </div>
+
+        <label style="margin-top:12px;">J’ai déjà créé mon Identité Numérique La Poste</label>
+        <select name="identite_numerique" required>
+          <option value="">— Sélectionnez —</option>
+          <option value="OUI">OUI</option>
+          <option value="NON">NON</option>
+        </select>
+
+        <label class="checkbox-row">
+          <input type="checkbox" name="souhaite_devis" value="OUI">
+          Je souhaite recevoir un devis détaillé
+        </label>
+      </section>
+
+      <button class="submit" type="submit">ENVOYER ✉️</button>
+    </form>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <strong>Simulateur : choisir-centre-formation</strong>
+        <button type="button" class="close-btn" id="closeModal">Fermer ✖</button>
+      </div>
+      <iframe src="{{ url_for('choisir_centre_formation') }}"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('infosForm');
+    const mail = document.getElementById('mail');
+    const mail2 = document.getElementById('mail_confirm');
+    const formation = document.getElementById('formation');
+    const datesSelect = document.getElementById('datesSelect');
+    const sessions = {{ sessions|tojson }};
+    const gclidField = document.getElementById('gclidField');
+    const franceTravail = document.getElementById('franceTravail');
+    const blocPerso = document.getElementById('blocPerso');
+    const optCote = document.getElementById('optCote');
+    const optAuv = document.getElementById('optAuv');
+    const openSimu = document.getElementById('openSimu');
+    const simuText = document.getElementById('simuText');
+    const datesHelp = document.getElementById('datesHelp');
+
+    (function syncGclid(){
+      const params = new URLSearchParams(window.location.search);
+      const gclidFromUrl = (params.get('gclid') || '').trim();
+      if (gclidFromUrl) {
+        localStorage.setItem('gclid', gclidFromUrl);
+        gclidField.value = gclidFromUrl;
+      } else {
+        gclidField.value = (localStorage.getItem('gclid') || gclidField.value || '').trim();
+      }
+    })();
+
+    franceTravail.addEventListener('change', () => {
+      blocPerso.classList.toggle('hidden', franceTravail.value !== 'NON');
+      const select = blocPerso.querySelector('select');
+      select.required = franceTravail.value === 'NON';
+      if (franceTravail.value !== 'NON') select.value = '';
+    });
+
+    function selectedCentre() {
+      const checked = form.querySelector('input[name="centre"]:checked');
+      return checked ? checked.value : '';
+    }
+
+    function showLocationCards(v) {
+      const radios = form.querySelectorAll('input[name="centre"]');
+      radios.forEach(r => { r.required = false; r.checked = false; });
+
+      optCote.classList.add('hidden');
+      optAuv.classList.add('hidden');
+      openSimu.style.display = 'none';
+      simuText.classList.add('hidden');
+
+      if (!v) return;
+
+      if (['A3P', 'DESP_INIT', 'DESP_VAE'].includes(v)) {
+        optCote.classList.remove('hidden');
+        optAuv.classList.remove('hidden');
+        radios.forEach(r => r.required = true);
+      } else {
+        optCote.classList.remove('hidden');
+        const coteRadio = form.querySelector('input[name="centre"][value="cote_azur"]');
+        if (coteRadio) coteRadio.checked = true;
+      }
+
+      // Bouton visible uniquement après choix d'une formation
+      openSimu.style.display = 'inline-flex';
+      simuText.classList.remove('hidden');
+    }
+
+    function loadDates() {
+      const f = formation.value;
+      const centre = selectedCentre();
+      datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+
+      if (!f) {
+        datesSelect.required = true;
+        return;
+      }
+
+      let rows = [];
+      if (centre && sessions[centre] && Array.isArray(sessions[centre][f])) {
+        rows = sessions[centre][f];
+      } else if (sessions.cote_azur && Array.isArray(sessions.cote_azur[f])) {
+        rows = sessions.cote_azur[f];
+      }
+
+      if (!rows.length) {
+        const o = document.createElement('option');
+        o.value = '';
+        o.textContent = 'Aucune session disponible pour le moment';
+        datesSelect.appendChild(o);
+        datesSelect.required = false;
+        datesHelp.textContent = 'Aucune session disponible pour le moment : un conseiller vous proposera des alternatives.';
+        return;
+      }
+
+      datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
+      datesSelect.required = true;
+
+      rows.forEach((r) => {
+        const option = document.createElement('option');
+        option.value = r.label;
+        option.textContent = r.badge ? `${r.label} — ${r.badge}` : r.label;
+        datesSelect.appendChild(option);
+      });
+    }
+
+    formation.addEventListener('change', () => {
+      showLocationCards(formation.value);
+      loadDates();
+    });
+
+    document.addEventListener('change', (e) => {
+      if (e.target.name === 'centre') loadDates();
+    });
+
+    form.addEventListener('submit', (e) => {
+      if (mail.value.trim().toLowerCase() !== mail2.value.trim().toLowerCase()) {
+        e.preventDefault();
+        alert('Les adresses e-mail ne correspondent pas.');
+        return;
+      }
+
+      const formValue = formation.value;
+      const centreChosen = selectedCentre();
+      if (formValue && ['A3P', 'DESP_INIT', 'DESP_VAE'].includes(formValue) && !centreChosen) {
+        e.preventDefault();
+        alert('Merci de sélectionner un lieu de formation souhaité.');
+      }
+    });
+
+    const modal = document.getElementById('modal');
+    openSimu.addEventListener('click', () => { modal.style.display = 'block'; });
+    document.getElementById('closeModal').addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+  </script>
+</body>
+</html>
