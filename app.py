@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re
+import json, os, datetime, uuid, pytz, smtplib, re, copy
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -202,6 +202,47 @@ PLAN_DATES = {
         "27 avril au 15 juin 2026 – examen le 16 juin 2026"
     ]
 }
+
+DEFAULT_FORMATION_SESSIONS = {
+    "cote_azur": {
+        "APS": [
+            {"label": "Du 29 avril au 9 juin 2026 - examen le 10 juin 2026", "badge": ""},
+            {"label": "Du 26 mai au 29 juin 2026 - examen le 30 juin 2026", "badge": ""},
+            {"label": "Du 8 juillet au 12 août 2026 - examen le 13 août 2026", "badge": ""},
+            {"label": "Du 7 septembre au 9 octobre 2026 - examen le 12 octobre 2026", "badge": ""},
+            {"label": "Du 3 novembre au 8 décembre 2026 - examen le 9 décembre 2026", "badge": ""}
+        ],
+        "A3P": [
+            {"label": "Du 30 mars au 2 juin 2026 - examen le 3 juin 2026", "badge": ""},
+            {"label": "Du 8 juin au 4 août 2026 - examen le 5 août 2026", "badge": ""},
+            {"label": "Du 1er septembre au 27 octobre 2026 - examen le 28 octobre 2026", "badge": ""},
+            {"label": "Du 9 novembre 2026 au 19 janvier 2027 - examen le 20 janvier 2027", "badge": ""}
+        ],
+        "DESP_INIT": [
+            {"label": "Du 27 avril au 15 juin 2026 (présentiel du 2 au 15/06) - examen le 16 juin 2026", "badge": ""},
+            {"label": "Du 22 juin au 10 août 2026 (présentiel du 28/07 au 10/08) - examen le 11 août 2026", "badge": ""},
+            {"label": "Du 7 septembre au 23 octobre 2026 (présentiel du 12 au 23/10) - examen le 26 octobre 2026", "badge": ""},
+            {"label": "Du 2 novembre au 21 décembre 2026 (présentiel du 8 au 21/12) - examen le 22 décembre 2026", "badge": ""}
+        ],
+        "DESP_VAE": []
+    },
+    "auvergne": {
+        "A3P": [
+            {"label": "21 octobre au 17 décembre 2026", "badge": ""}
+        ],
+        "DESP_INIT": [
+            {"label": "5 octobre au 19 novembre 2026 (A distance du 05/10 au 06/11/2026 – Présentiel du 09/11 au 19/11/2026)", "badge": ""}
+        ],
+        "DESP_VAE": []
+    }
+}
+
+def get_formation_sessions(data_store=None):
+    source = data_store if isinstance(data_store, dict) else load_data()
+    sessions = source.get("formation_sessions")
+    if isinstance(sessions, dict):
+        return sessions
+    return copy.deepcopy(DEFAULT_FORMATION_SESSIONS)
 
 def _parse_cpf_value(value):
     if value is None:
@@ -1036,6 +1077,213 @@ def admin():
 @login_required
 def choisir_centre_formation():
     return render_template("choisir_centre_formation.html")
+
+
+@app.route("/admin/formation-sessions", methods=["GET", "POST"])
+@login_required
+def admin_formation_sessions():
+    data = load_data()
+    sessions = get_formation_sessions(data)
+
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        centre = (request.form.get("centre") or "").strip()
+        formation = (request.form.get("formation") or "").strip()
+        idx_raw = request.form.get("idx", "")
+
+        sessions.setdefault(centre, {})
+        sessions[centre].setdefault(formation, [])
+
+        if action == "add":
+            label = (request.form.get("label") or "").strip()
+            badge = (request.form.get("badge") or "").strip()
+            if label:
+                sessions[centre][formation].append({"label": label, "badge": badge})
+        elif action == "update":
+            try:
+                idx = int(idx_raw)
+            except:
+                idx = -1
+            if 0 <= idx < len(sessions[centre][formation]):
+                sessions[centre][formation][idx]["label"] = (request.form.get("label") or "").strip()
+                sessions[centre][formation][idx]["badge"] = (request.form.get("badge") or "").strip()
+        elif action == "delete":
+            try:
+                idx = int(idx_raw)
+            except:
+                idx = -1
+            if 0 <= idx < len(sessions[centre][formation]):
+                sessions[centre][formation].pop(idx)
+
+        data["formation_sessions"] = sessions
+        save_data(data)
+        return redirect(url_for("admin_formation_sessions"))
+
+    return render_template("admin_formation_sessions.html", sessions=sessions, formations=PLAN_FORMATIONS)
+
+
+@app.route("/demande-informations-formations", methods=["GET", "POST"])
+def demande_informations_formations():
+    data_store = load_data()
+    sessions = get_formation_sessions(data_store)
+
+    if request.method == "POST":
+        form_data = request.form.to_dict()
+        form_data["gclid"] = (form_data.get("gclid") or "").strip()
+
+        prospect_chaud = (
+            form_data.get("cpf_consulte") == "OUI"
+            and form_data.get("france_travail") == "NON"
+            and form_data.get("financement_perso") == "OUI"
+            and form_data.get("identite_numerique") == "OUI"
+        )
+
+        demande_id = str(uuid.uuid4())
+        demande_entry = {
+            "id": demande_id,
+            "nom": form_data.get("nom", "").strip(),
+            "prenom": form_data.get("prenom", "").strip(),
+            "telephone": form_data.get("telephone", "").strip(),
+            "mail": form_data.get("mail", "").strip(),
+            "motif": "Demande d’informations formations Intégrale Academy",
+            "details": json.dumps(form_data, ensure_ascii=False),
+            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+            "statut": "Non traité",
+            "attribution": "",
+            "commentaire": "",
+            "commentaire_admin": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+            "rappel_date": "",
+            "plage": "",
+            "notation_interne": "CHAUD" if prospect_chaud else "",
+            "source": "demande_infos_formations"
+        }
+        data_store.setdefault("demandes", []).append(demande_entry)
+
+        rappel = {
+            "id": str(uuid.uuid4()),
+            "source_devis_id": demande_id,
+            "nom": demande_entry["nom"],
+            "prenom": demande_entry["prenom"],
+            "telephone": demande_entry["telephone"],
+            "mail": demande_entry["mail"],
+            "motif": "personne à rappeler",
+            "details": (
+                "Demande d’informations formations soumise.\n"
+                f"Formation : {form_data.get('formation', 'Non précisée')}\n"
+                f"Lieu : {form_data.get('centre', 'Non précisé')}\n"
+                f"Date : {form_data.get('dates', 'Non précisée')}"
+            ),
+            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+            "statut": "A rappeler",
+            "attribution": "Mohamed",
+            "commentaire": "",
+            "commentaire_admin": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+            "rappel_date": "",
+            "plage": ""
+        }
+        data_store["demandes"].append(rappel)
+        save_data(data_store)
+
+        try:
+            envoyer_mail_attribution_mohamed(rappel)
+        except:
+            pass
+
+        formation_label = PLAN_FORMATIONS.get(form_data.get("formation"), form_data.get("formation", "Formation"))
+        prenom = form_data.get("prenom", "")
+
+        extra_devis = ""
+        if form_data.get("souhaite_devis") == "OUI":
+            extra_devis = """
+            <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
+            <p><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
+            """
+
+        extra_identite = ""
+        if form_data.get("identite_numerique") == "NON":
+            extra_identite = """
+            <p>Pour utiliser votre Compte Personnel de Formation, vous devez créer votre « Identité Numérique la Poste » (FranceConnect+). Vous pouvez créer votre Identité Numérique la Poste directement dans un bureau de Poste ou sur le site internet officiel <a href="https://lidentitenumerique.laposte.fr/">https://lidentitenumerique.laposte.fr/</a>.</p>
+            """
+
+        plain = (
+            f"Bonjour {prenom},\n\n"
+            f"Je fais suite à votre demande de renseignements concernant notre formation {formation_label}. Nous vous remercions de nous avoir contacté !\n\n"
+            "Un conseiller formation reviendra vers vous prochainement pour vous accompagner dans votre projet de formation.\n\n"
+            "Vous pouvez également nous contacter au 04 22 47 07 68 pour échanger avec notre équipe.\n\n"
+            + ("Vous pouvez télécharger votre devis détaillé ici : https://www.integraleacademy.com/dossiersfc\n\n" if form_data.get("souhaite_devis") == "OUI" else "")
+            + ("Pour utiliser votre Compte Personnel de Formation, vous devez créer votre Identité Numérique La Poste : https://lidentitenumerique.laposte.fr/\n\n" if form_data.get("identite_numerique") == "NON" else "")
+            + "Je vous souhaite une bonne journée,\n\n"
+            "Clément VAILLANT\nDirecteur Intégrale Academy"
+        )
+
+        html = _wrap_html(
+            "<h1>✨ Merci pour votre demande</h1>",
+            f"""
+            <p>Bonjour <strong>{prenom}</strong>,</p>
+            <p>Je fais suite à votre demande de renseignements concernant notre formation <strong>{formation_label}</strong>. Nous vous remercions de nous avoir contacté !</p>
+            <p>Un conseiller formation reviendra vers vous prochainement pour vous accompagner dans votre projet de formation.</p>
+            <p>Vous pouvez également nous contacter au <strong>04 22 47 07 68</strong> pour échanger avec notre équipe.</p>
+            {extra_devis}
+            {extra_identite}
+            <p>Je vous souhaite une bonne journée,</p>
+            <p><strong>Clément VAILLANT</strong><br>Directeur Intégrale Academy</p>
+            """
+        )
+
+        try:
+            send_email_html(form_data.get("mail"), "Votre demande de renseignements – Intégrale Academy", plain, html)
+        except:
+            pass
+
+        if prospect_chaud:
+            try:
+                send_email_html(
+                    "clement@integraleacademy.com",
+                    "🔥 Prospect CHAUD — Demande d’informations formations",
+                    f"Prospect chaud: {demande_entry['prenom']} {demande_entry['nom']} ({demande_entry['mail']})",
+                    _wrap_html("<h1>🔥 Prospect CHAUD</h1>", f"<p>{demande_entry['prenom']} {demande_entry['nom']} — {formation_label}</p><p>Email : {demande_entry['mail']}</p>")
+                )
+            except:
+                pass
+
+        return redirect(url_for("confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=form_data.get("formation", "")))
+
+    gclid = (request.args.get("gclid") or "").strip()
+    return render_template("demande_informations_formations.html", sessions=sessions, formations=PLAN_FORMATIONS, gclid=gclid)
+
+
+@app.route("/confirmation-demande-informations")
+def confirmation_demande_infos():
+    hot = request.args.get("hot") == "1"
+    formation = request.args.get("formation") or ""
+    calendly_map = {
+        "DESP_INIT": "https://calendly.com/integraleacademy/dirigeant",
+        "DESP_VAE": "https://calendly.com/integraleacademy/dirigeant",
+        "A3P": "https://calendly.com/integraleacademy/apr",
+        "APS": "https://calendly.com/integraleacademy/aps",
+        "VTC": "https://calendly.com/integraleacademy/chauffeurvtc"
+    }
+    return render_template("confirmation_demande_informations.html", hot=hot, calendly_url=calendly_map.get(formation))
+
+
+@app.route("/api/formation-sessions")
+def api_formation_sessions():
+    data_store = load_data()
+    return get_formation_sessions(data_store)
 
 
 @app.route("/admin/autosave", methods=["POST"])

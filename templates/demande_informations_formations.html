@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demande d’informations formations Intégrale Academy</title>
+  <style>
+    body{font-family:Inter,Arial,sans-serif;background:linear-gradient(160deg,#0f172a,#1d4ed8 60%,#22c55e);margin:0;color:#0f172a}
+    .wrap{max-width:980px;margin:28px auto;background:#fff;padding:30px;border-radius:22px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+    h1{margin:0 0 8px;text-align:center}
+    .intro{text-align:center;color:#475569;margin-bottom:20px}
+    .card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin:14px 0}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    label{font-weight:700;font-size:14px;display:block;margin:8px 0 4px}
+    input,select{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px}
+    .full{grid-column:1/-1}
+    .loc{display:none;padding:14px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;margin:8px 0}
+    .loc.active{display:block}
+    .small{font-size:13px;color:#64748b}
+    .btn{background:linear-gradient(135deg,#22c55e,#16a34a);border:none;color:#fff;padding:14px 20px;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;width:100%;margin-top:12px;animation:pulse 2s infinite}
+    .btn-secondary{display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:11px 14px;border-radius:10px;font-weight:700}
+    .center{text-align:center}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 12px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+    .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.7)}
+    .modal-box{background:#fff;max-width:820px;margin:5vh auto;padding:12px;border-radius:14px}
+    iframe{width:100%;height:74vh;border:none;border-radius:10px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>✨ Demande d’informations formations Intégrale Academy</h1>
+    <p class="intro">Prenons 2 minutes pour faire connaissance 🤝</p>
+
+    <form method="POST" id="infosForm">
+      <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
+
+      <div class="card">
+        <h3>1) Informations générales</h3>
+        <div class="grid">
+          <div><label>Nom</label><input name="nom" required></div>
+          <div><label>Prénom</label><input name="prenom" required></div>
+          <div><label>Mail</label><input type="email" name="mail" required></div>
+          <div><label>Confirmation mail</label><input type="email" name="mail_confirm" required></div>
+          <div class="full"><label>Numéro de téléphone</label><input name="telephone" required></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>2) Formation souhaitée</h3>
+        <label>Au choix</label>
+        <select name="formation" id="formation" required>
+          <option value="">— Sélectionnez —</option>
+          <option value="A3P">Agent de Protection Physique des Personnes (A3P)</option>
+          <option value="APS">Agent de Prévention et de Sécurité (APS)</option>
+          <option value="DESP_INIT">Dirigeant d’entreprise de sécurité privée (DESP) en initial</option>
+          <option value="DESP_VAE">Dirigeant d’entreprise de sécurité privée (DESP) en VAE</option>
+          <option value="VTC">Chauffeur VTC</option>
+        </select>
+      </div>
+
+      <div class="card" id="locationBlock">
+        <h3>3) Lieu de formation souhaité 📍</h3>
+        <div id="optCote" class="loc">
+          <label><input type="radio" name="centre" value="cote_azur"> Intégrale Academy Côte d’Azur (Fréjus, Var)</label>
+          <p class="small">Formation au cœur de la Côte d’Azur... Hébergement sur place (forfait 300€). Aéroport: Nice – Gare: Saint-Raphaël Valescure.</p>
+        </div>
+        <div id="optAuv" class="loc">
+          <label><input type="radio" name="centre" value="auvergne"> NOUVEAU Intégrale Academy Terre d’Auvergne (Aurillac)</label>
+          <p class="small">Formation au cœur des volcans et montagnes d’Auvergne... Hébergement sur place (forfait 300€). Aéroport/Gare: Aurillac.</p>
+        </div>
+        <div class="center">
+          <button type="button" class="btn-secondary" id="openSimu">🚀 Choisir mon centre de formation</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>4) Dates de formation souhaitées</h3>
+        <label>Session</label>
+        <select name="dates" id="datesSelect" required><option value="">— Sélectionnez —</option></select>
+      </div>
+
+      <div class="card">
+        <h3>5) Financement de votre formation 💶</h3>
+        <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
+        <select name="cpf_consulte" required><option value=""></option><option>OUI</option><option>NON</option></select>
+        <label>Je souhaite déposer une demande de financement à France Travail</label>
+        <select name="france_travail" id="franceTravail" required><option value=""></option><option>OUI</option><option>NON</option></select>
+        <div id="blocPerso" style="display:none">
+          <label>Je souhaite financer moi-même la formation / je dispose des fonds nécessaires sur mon CPF</label>
+          <select name="financement_perso"><option value=""></option><option>OUI</option><option>NON</option></select>
+        </div>
+        <label>J’ai déjà créé mon Identité Numérique La Poste</label>
+        <select name="identite_numerique" required><option value=""></option><option>OUI</option><option>NON</option></select>
+        <label><input type="checkbox" name="souhaite_devis" value="OUI"> Je souhaite recevoir un devis détaillé</label>
+      </div>
+
+      <button class="btn" type="submit">ENVOYER ✉️</button>
+    </form>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-box">
+      <div class="center" style="margin-bottom:8px"><button type="button" class="btn-secondary" id="closeModal">Fermer</button></div>
+      <iframe src="{{ url_for('choisir_centre_formation') }}"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('infosForm');
+    const mail = form.querySelector('input[name="mail"]');
+    const mail2 = form.querySelector('input[name="mail_confirm"]');
+    const formation = document.getElementById('formation');
+    const datesSelect = document.getElementById('datesSelect');
+    const sessions = {{ sessions|tojson }};
+    const gclidField = document.getElementById('gclidField');
+    const franceTravail = document.getElementById('franceTravail');
+    const blocPerso = document.getElementById('blocPerso');
+
+    (function(){
+      const p = new URLSearchParams(window.location.search);
+      const v = (p.get('gclid') || '').trim();
+      if(v){ localStorage.setItem('gclid', v); gclidField.value = v; }
+      else { gclidField.value = localStorage.getItem('gclid') || gclidField.value; }
+    })();
+
+    franceTravail.addEventListener('change',()=>{ blocPerso.style.display = franceTravail.value === 'NON' ? 'block' : 'none'; });
+
+    form.addEventListener('submit', (e)=>{
+      if(mail.value.trim().toLowerCase() !== mail2.value.trim().toLowerCase()){
+        e.preventDefault(); alert('Les emails ne correspondent pas.');
+      }
+    });
+
+    function centerChoices(v){
+      const c = document.getElementById('optCote');
+      const a = document.getElementById('optAuv');
+      c.classList.remove('active'); a.classList.remove('active');
+      if(['A3P','DESP_INIT','DESP_VAE'].includes(v)){ c.classList.add('active'); a.classList.add('active'); }
+      else { c.classList.add('active'); }
+    }
+
+    function loadDates(){
+      const f = formation.value;
+      const centre = (form.querySelector('input[name="centre"]:checked')||{}).value;
+      datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+      if(!f) return;
+      let rows = [];
+      if(centre && sessions[centre] && sessions[centre][f]) rows = sessions[centre][f];
+      else if(sessions.cote_azur && sessions.cote_azur[f]) rows = sessions.cote_azur[f];
+      rows.forEach((r)=>{
+        const o = document.createElement('option');
+        o.value = r.label; o.textContent = r.badge ? `${r.label} — ${r.badge}` : r.label;
+        datesSelect.appendChild(o);
+      });
+    }
+
+    formation.addEventListener('change', ()=>{ centerChoices(formation.value); loadDates(); });
+    document.addEventListener('change', (e)=>{ if(e.target.name==='centre'){ loadDates(); } });
+
+    const modal = document.getElementById('modal');
+    document.getElementById('openSimu').onclick = ()=> modal.style.display='block';
+    document.getElementById('closeModal').onclick = ()=> modal.style.display='none';
+  </script>
+</body>
+</html>
