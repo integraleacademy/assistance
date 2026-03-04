@@ -389,34 +389,60 @@ def inject_now():
 
 
 # Fichiers persistants (Render)
-def _resolve_data_dir():
+def _resolve_data_file():
     """
-    Utilise d'abord DATA_DIR puis RENDER_DISK_PATH quand elles sont définies.
-    Évite les chemins implicites (ex: /mnt/data) qui peuvent être lents/non montés
-    selon l'environnement et retarder le boot Gunicorn.
+    Résout le fichier data.json en privilégiant :
+    1) les chemins explicites via variables d'environnement,
+    2) les emplacements persistants Render connus,
+    3) le fichier historique du repo (./data.json) pour éviter toute perte apparente.
     """
-    candidates = [
+    base_dir = os.path.dirname(__file__)
+    legacy_file = os.path.join(base_dir, "data.json")
+
+    explicit_file = os.getenv("DATA_FILE")
+    if explicit_file:
+        explicit_dir = os.path.dirname(explicit_file) or "."
+        try:
+            os.makedirs(explicit_dir, exist_ok=True)
+            if os.access(explicit_dir, os.W_OK):
+                return explicit_file
+        except OSError:
+            pass
+
+    dir_candidates = [
         os.getenv("DATA_DIR"),
         os.getenv("RENDER_DISK_PATH"),
-        os.path.join(os.path.dirname(__file__), "data"),
+        os.getenv("RENDER_DISK_MOUNT_PATH"),
+        "/var/data",
+        "/mnt/data",
+        os.path.join(base_dir, "data"),
     ]
 
-    for candidate in candidates:
+    writable_files = []
+    for candidate in dir_candidates:
         if not candidate:
             continue
         try:
             os.makedirs(candidate, exist_ok=True)
             if os.access(candidate, os.W_OK):
-                return candidate
+                data_file = os.path.join(candidate, "data.json")
+                if os.path.exists(data_file):
+                    return data_file
+                writable_files.append(data_file)
         except OSError:
             continue
 
-    # dernier recours : dossier courant
-    return os.getcwd()
+    if os.path.exists(legacy_file):
+        return legacy_file
+
+    if writable_files:
+        return writable_files[0]
+
+    return legacy_file
 
 
-DATA_DIR = _resolve_data_dir()
-DATA_FILE = os.path.join(DATA_DIR, "data.json")
+DATA_FILE = _resolve_data_file()
+DATA_DIR = os.path.dirname(DATA_FILE)
 UPLOAD_FOLDER = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
