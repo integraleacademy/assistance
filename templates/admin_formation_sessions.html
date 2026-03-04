@@ -1,0 +1,35 @@
+<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin sessions</title>
+<style>body{font-family:Arial;background:#f8fafc;margin:0;padding:20px}.wrap{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:14px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #e2e8f0;padding:8px}input{width:100%;padding:7px}button{padding:8px 10px;border:none;border-radius:8px;cursor:pointer}.u{background:#0ea5e9;color:#fff}.d{background:#ef4444;color:#fff}.a{background:#22c55e;color:#fff}</style></head><body>
+<div class="wrap">
+  <h1>🗓️ Gestion des dates de formation</h1>
+  <p><a href="{{ url_for('admin_devis') }}">⬅️ Retour admin devis</a></p>
+
+  {% for centre,formations_data in sessions.items() %}
+    <h2>{{ 'Côte d’Azur' if centre=='cote_azur' else 'Terre d’Auvergne' }}</h2>
+    {% for code,label in formations.items() %}
+      <h3>{{ label }}</h3>
+      <table>
+        <tr><th>Session</th><th>Badge rouge</th><th>Actions</th></tr>
+        {% for item in formations_data.get(code, []) %}
+        <tr>
+          <form method="POST">
+            <input type="hidden" name="action" value="update"><input type="hidden" name="centre" value="{{ centre }}"><input type="hidden" name="formation" value="{{ code }}"><input type="hidden" name="idx" value="{{ loop.index0 }}">
+            <td><input name="label" value="{{ item.label }}"></td>
+            <td><input name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place disponible"></td>
+            <td><button class="u" type="submit">💾</button></form>
+              <form method="POST" style="display:inline"><input type="hidden" name="action" value="delete"><input type="hidden" name="centre" value="{{ centre }}"><input type="hidden" name="formation" value="{{ code }}"><input type="hidden" name="idx" value="{{ loop.index0 }}"><button class="d">🗑️</button></form>
+            </td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <form method="POST">
+            <input type="hidden" name="action" value="add"><input type="hidden" name="centre" value="{{ centre }}"><input type="hidden" name="formation" value="{{ code }}">
+            <td><input name="label" placeholder="Ajouter une nouvelle date"></td>
+            <td><input name="badge" placeholder="COMPLET / 1 place disponible"></td>
+            <td><button class="a" type="submit">➕ Ajouter</button></td>
+          </form>
+        </tr>
+      </table>
+    {% endfor %}
+  {% endfor %}
+</div></body></html>
