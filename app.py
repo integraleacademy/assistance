@@ -391,14 +391,13 @@ def inject_now():
 # Fichiers persistants (Render)
 def _resolve_data_dir():
     """
-    Utilise DATA_DIR/RENDER_DISK_PATH puis /mnt/data si disponibles,
-    sinon fallback local. On évite toute écriture de test au boot
-    pour ne pas bloquer l'initialisation des workers.
+    Utilise d'abord DATA_DIR puis RENDER_DISK_PATH quand elles sont définies.
+    Évite les chemins implicites (ex: /mnt/data) qui peuvent être lents/non montés
+    selon l'environnement et retarder le boot Gunicorn.
     """
     candidates = [
         os.getenv("DATA_DIR"),
         os.getenv("RENDER_DISK_PATH"),
-        "/mnt/data",
         os.path.join(os.path.dirname(__file__), "data"),
     ]
 
@@ -407,9 +406,11 @@ def _resolve_data_dir():
             continue
         try:
             os.makedirs(candidate, exist_ok=True)
-            return candidate
+            if os.access(candidate, os.W_OK):
+                return candidate
         except OSError:
             continue
+
     # dernier recours : dossier courant
     return os.getcwd()
 
