@@ -2392,42 +2392,10 @@ def demande_devis():
             "pdf_path": pdf_path
         })
 
-        # 📞 Créer automatiquement une demande de rappel dans l'admin (attribuée à Mohamed)
-        demande_rappel_devis = {
-            "id": str(uuid.uuid4()),
-            "nom": data.get("nom"),
-            "prenom": data.get("prenom"),
-            "telephone": data.get("telephone"),
-            "mail": data.get("mail"),
-            "motif": "Rappel suite dépôt devis",
-            "details": (
-                "Créée automatiquement après une demande de devis détaillé.\n"
-                f"Formation : {formation or 'Non précisée'}\n"
-                f"Session : {data.get('dates', 'Non précisée')}"
-            ),
-            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-            "statut": "A rappeler",
-            "attribution": "Mohamed",
-            "commentaire": "",
-            "commentaire_admin": "",
-            "mail_confirme": "",
-            "mail_erreur": "",
-            "mail_contenu": "",
-            "mail_html": "",
-            "pieces_jointes": [],
-            "reponses": [],
-            "is_doublon": False,
-            "rappel_date": "",
-            "plage": ""
-        }
-        data_store["demandes"].append(demande_rappel_devis)
-
+        # ✅ Ne pas créer de rappel Mohamed au dépôt du dossier devis.
+        # Le rappel doit être créé uniquement quand le statut passe à "Envoyé"
+        # via le bouton "Changer le statut" dans l'admin devis.
         save_data(data_store)
-
-        try:
-            envoyer_mail_attribution_mohamed(demande_rappel_devis)
-        except:
-            pass
 
         ultra = (
             data.get("cpf_consulte") == "OUI" and
