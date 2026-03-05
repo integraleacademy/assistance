@@ -1085,6 +1085,25 @@ def admin():
             if (d.get("attribution") or "").strip().lower() == user_name.lower()
         ]
 
+        if user_name.lower() == "mohamed":
+            demandes_by_id = {d.get("id"): d for d in data.get("demandes", []) if d.get("id")}
+
+            def _visible_for_mohamed(demande):
+                source_id = demande.get("source_devis_id")
+                if not source_id:
+                    return True
+
+                source = demandes_by_id.get(source_id)
+                if not source:
+                    return True
+
+                if source.get("motif") != "Demande de devis détaillé":
+                    return True
+
+                return (source.get("statut_devis") or "A envoyer") == "Envoyé"
+
+            demandes = [d for d in demandes if _visible_for_mohamed(d)]
+
     # 🔽 TRI GLOBAL (plus récentes en premier)
     demandes = sorted(
         demandes,
@@ -1193,42 +1212,44 @@ def demande_informations_formations():
         }
         data_store.setdefault("demandes", []).append(demande_entry)
 
-        rappel = {
-            "id": str(uuid.uuid4()),
-            "source_devis_id": demande_id,
-            "nom": demande_entry["nom"],
-            "prenom": demande_entry["prenom"],
-            "telephone": demande_entry["telephone"],
-            "mail": demande_entry["mail"],
-            "motif": "personne à rappeler",
-            "details": (
-                "Demande d’informations formations soumise.\n"
-                f"Formation : {form_data.get('formation', 'Non précisée')}\n"
-                f"Lieu : {form_data.get('centre', 'Non précisé')}\n"
-                f"Date : {form_data.get('dates', 'Non précisée')}"
-            ),
-            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-            "statut": "A rappeler",
-            "attribution": "Mohamed",
-            "commentaire": "",
-            "commentaire_admin": "",
-            "mail_confirme": "",
-            "mail_erreur": "",
-            "mail_contenu": "",
-            "mail_html": "",
-            "pieces_jointes": [],
-            "reponses": [],
-            "is_doublon": False,
-            "rappel_date": "",
-            "plage": ""
-        }
-        data_store["demandes"].append(rappel)
-        save_data(data_store)
+        if form_data.get("souhaite_devis") != "OUI":
+            rappel = {
+                "id": str(uuid.uuid4()),
+                "source_devis_id": demande_id,
+                "nom": demande_entry["nom"],
+                "prenom": demande_entry["prenom"],
+                "telephone": demande_entry["telephone"],
+                "mail": demande_entry["mail"],
+                "motif": "personne à rappeler",
+                "details": (
+                    "Demande d’informations formations soumise.\n"
+                    f"Formation : {form_data.get('formation', 'Non précisée')}\n"
+                    f"Lieu : {form_data.get('centre', 'Non précisé')}\n"
+                    f"Date : {form_data.get('dates', 'Non précisée')}"
+                ),
+                "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+                "statut": "A rappeler",
+                "attribution": "Mohamed",
+                "commentaire": "",
+                "commentaire_admin": "",
+                "mail_confirme": "",
+                "mail_erreur": "",
+                "mail_contenu": "",
+                "mail_html": "",
+                "pieces_jointes": [],
+                "reponses": [],
+                "is_doublon": False,
+                "rappel_date": "",
+                "plage": ""
+            }
+            data_store["demandes"].append(rappel)
 
-        try:
-            envoyer_mail_attribution_mohamed(rappel)
-        except:
-            pass
+            try:
+                envoyer_mail_attribution_mohamed(rappel)
+            except:
+                pass
+
+        save_data(data_store)
 
         formation_label = PLAN_FORMATIONS.get(form_data.get("formation"), form_data.get("formation", "Formation"))
         prenom = form_data.get("prenom", "")
@@ -2371,42 +2392,10 @@ def demande_devis():
             "pdf_path": pdf_path
         })
 
-        # 📞 Créer automatiquement une demande de rappel dans l'admin (attribuée à Mohamed)
-        demande_rappel_devis = {
-            "id": str(uuid.uuid4()),
-            "nom": data.get("nom"),
-            "prenom": data.get("prenom"),
-            "telephone": data.get("telephone"),
-            "mail": data.get("mail"),
-            "motif": "Rappel suite dépôt devis",
-            "details": (
-                "Créée automatiquement après une demande de devis détaillé.\n"
-                f"Formation : {formation or 'Non précisée'}\n"
-                f"Session : {data.get('dates', 'Non précisée')}"
-            ),
-            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-            "statut": "A rappeler",
-            "attribution": "Mohamed",
-            "commentaire": "",
-            "commentaire_admin": "",
-            "mail_confirme": "",
-            "mail_erreur": "",
-            "mail_contenu": "",
-            "mail_html": "",
-            "pieces_jointes": [],
-            "reponses": [],
-            "is_doublon": False,
-            "rappel_date": "",
-            "plage": ""
-        }
-        data_store["demandes"].append(demande_rappel_devis)
-
+        # ✅ Ne pas créer de rappel Mohamed au dépôt du dossier devis.
+        # Le rappel doit être créé uniquement quand le statut passe à "Envoyé"
+        # via le bouton "Changer le statut" dans l'admin devis.
         save_data(data_store)
-
-        try:
-            envoyer_mail_attribution_mohamed(demande_rappel_devis)
-        except:
-            pass
 
         ultra = (
             data.get("cpf_consulte") == "OUI" and
