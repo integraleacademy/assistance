@@ -389,12 +389,54 @@ def inject_now():
 
 
 # Fichiers persistants (Render)
+def _data_file_has_content(path):
+    """Retourne True si le JSON contient des données utiles (demandes/archives/hebergements)."""
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, list):
+            return len(payload) > 0
+        if isinstance(payload, dict):
+            return any([
+                bool(payload.get("demandes")),
+                bool(payload.get("archives")),
+                bool(payload.get("hebergements")),
+            ])
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return False
+
+
+def _migrate_legacy_data_if_needed(legacy_file, target_file):
+    """
+    Copie l'ancien data.json du repo vers un disque persistant uniquement si:
+    - la destination n'existe pas encore,
+    - et le fichier legacy contient des données.
+    """
+    if not legacy_file or not target_file:
+        return
+    if not os.path.exists(legacy_file) or os.path.exists(target_file):
+        return
+    if not _data_file_has_content(legacy_file):
+        return
+    try:
+        os.makedirs(os.path.dirname(target_file), exist_ok=True)
+        with open(legacy_file, "r", encoding="utf-8") as src:
+            payload = src.read()
+        with open(target_file, "w", encoding="utf-8") as dst:
+            dst.write(payload)
+    except OSError:
+        pass
+
+
 def _resolve_data_file():
     """
     Résout le fichier data.json en privilégiant :
     1) les chemins explicites via variables d'environnement,
     2) les emplacements persistants Render connus,
-    3) le fichier historique du repo (./data.json) pour éviter toute perte apparente.
+    3) le fichier historique du repo (fallback local uniquement).
     """
     base_dir = os.path.dirname(__file__)
     legacy_file = os.path.join(base_dir, "data.json")
@@ -432,11 +474,13 @@ def _resolve_data_file():
         except OSError:
             continue
 
+    if writable_files:
+        preferred_file = writable_files[0]
+        _migrate_legacy_data_if_needed(legacy_file, preferred_file)
+        return preferred_file
+
     if os.path.exists(legacy_file):
         return legacy_file
-
-    if writable_files:
-        return writable_files[0]
 
     return legacy_file
 
@@ -472,6 +516,18 @@ def load_data():
 
 def save_data(data):
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+
+    # Sauvegarde de sécurité (anti-perte en cas de mauvaise manip)
+    if os.path.exists(DATA_FILE):
+        backup_file = f"{DATA_FILE}.bak"
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as src:
+                previous = src.read()
+            with open(backup_file, "w", encoding="utf-8") as dst:
+                dst.write(previous)
+        except OSError:
+            pass
+
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
@@ -1643,6 +1699,18 @@ def archives():
             archive_id = request.form.get("id")
             data["archives"] = [a for a in data["archives"] if a["id"] != archive_id]
             save_data(data)
+        elif action == "restore_one":
+            archive_id = request.form.get("id")
+            to_restore = next((a for a in data["archives"] if a.get("id") == archive_id), None)
+            if to_restore:
+                data.setdefault("demandes", []).append(to_restore)
+                data["archives"] = [a for a in data["archives"] if a.get("id") != archive_id]
+                save_data(data)
+        elif action == "restore_all":
+            if data.get("archives"):
+                data.setdefault("demandes", []).extend(data["archives"])
+                data["archives"] = []
+                save_data(data)
         elif action == "clear":
             data["archives"] = []
             save_data(data)

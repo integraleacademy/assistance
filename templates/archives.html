@@ -33,7 +33,12 @@
     </div>
 
     <!-- Bouton vider toutes les archives -->
-    <form method="POST" style="margin-bottom:15px;">
+    <form method="POST" style="margin-bottom:15px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button type="submit" name="action" value="restore_all"
+              onclick="return confirm('Restaurer toutes les archives dans l\'admin ?')"
+              style="background:#198754; color:#fff; border:none; padding:6px 12px; border-radius:8px; cursor:pointer;">
+        ♻️ Restaurer toutes les archives
+      </button>
       <button type="submit" name="action" value="clear" 
               onclick="return confirm('Supprimer toutes les archives ?')" 
               style="background:#dc3545; color:#fff; border:none; padding:6px 12px; border-radius:8px; cursor:pointer;">
@@ -126,6 +131,9 @@
         <td>
           <form method="POST" style="margin:0;">
             <input type="hidden" name="id" value="{{ a.id }}">
+            <button type="submit" name="action" value="restore_one"
+                    onclick="return confirm('Restaurer cette demande dans l\'admin ?')"
+                    style="background:#198754; color:#fff; border:none; padding:4px 8px; border-radius:6px; cursor:pointer; margin-right:4px;">♻️</button>
             <button type="submit" name="action" value="delete_one" 
                     onclick="return confirm('Supprimer cette archive ?')" 
                     class="del-btn">🗑️</button>
