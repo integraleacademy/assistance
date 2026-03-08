@@ -1892,6 +1892,7 @@ def imprimer_formulaire_admin_devis(formulaire_id):
         infos = {}
 
     infos_rows = []
+    centre_value = ""
     for key, value in infos.items():
         if isinstance(value, list):
             display_value = ", ".join(str(v) for v in value)
@@ -1899,6 +1900,10 @@ def imprimer_formulaire_admin_devis(formulaire_id):
             display_value = json.dumps(value, ensure_ascii=False)
         else:
             display_value = str(value)
+
+        normalized_key = str(key).strip().lower()
+        if normalized_key in {"centre", "centre_formation", "centre formation"}:
+            centre_value = display_value
 
         infos_rows.append({
             "label": key.replace("_", " ").capitalize(),
@@ -1909,11 +1914,20 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     if demande.get("source") == "demande_infos_formations":
         source_label = "Infos formations"
 
+    badge_text = "AURILLAC"
+    badge_theme = "orange"
+    centre_normalized = (centre_value or "").strip().lower()
+    if centre_normalized in {"cote d'azur", "côte d'azur", "paca", "nice"}:
+        badge_text = "COTE D'AZUR"
+        badge_theme = "violet"
+
     return render_template(
         "admin_devis_formulaire_imprimable.html",
         demande=demande,
         source_label=source_label,
-        infos_rows=infos_rows
+        infos_rows=infos_rows,
+        badge_text=badge_text,
+        badge_theme=badge_theme
     )
 
 @app.route("/admin-devis/simulateur")
