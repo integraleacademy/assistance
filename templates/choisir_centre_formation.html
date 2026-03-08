@@ -272,12 +272,20 @@
     }
 
     function estimateTravelTimes(distanceKm) {
-      const carHours = distanceKm / 90;
-      const trainHours = distanceKm / 120;
-      const planeHours = (distanceKm / 700) + 0.75;
+      // Estimations "porte à porte" plus réalistes en France métropolitaine.
+      const carHours = Math.max(0.25, distanceKm / 78);
+
+      // Le train inclut souvent des correspondances / temps d'accès.
+      const trainHours = (distanceKm / 95) + 0.45;
+
+      // L'avion est rarement pertinent sur les trajets courts : accès aéroport + attente + transfert.
+      const isPlaneRelevant = distanceKm >= 280;
+      const planeHours = isPlaneRelevant ? ((distanceKm / 620) + 2.15) : null;
       return {
         car: { duration: formatDuration(carHours), source: 'Estimation' },
-        plane: { duration: formatDuration(planeHours), source: 'Estimation' },
+        plane: isPlaneRelevant
+          ? { duration: formatDuration(planeHours), source: 'Estimation' }
+          : { duration: 'Non pertinent', source: 'Trajet court' },
         train: { duration: formatDuration(trainHours), source: 'Estimation' }
       };
     }
@@ -312,47 +320,10 @@
       const cityKey = normalizeCityName(personLocation.cityName);
       const ref = REFERENCE_TRAVEL_TIMES[cityKey]?.[center.key] || null;
 
-      let carDuration = null;
-      try {
-        carDuration = await getCarTravelDuration(personLocation, centerCoords);
-      } catch (err) {
-        console.warn(err);
-      }
-
-      return {
-        car: carDuration ? { duration: carDuration, source: 'OSRM' } : estimated.car,
-        plane: ref?.plane || estimated.plane,
-        train: ref?.train || estimated.train
-      };
-    }
-
-    function normalizeCityName(name) {
-      return (name || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .trim()
-        .toLowerCase();
-    }
-
-    async function getCarTravelDuration(origin, destination) {
-      const url = `https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?overview=false`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('Impossible de calculer le temps voiture en temps réel.');
-      const data = await resp.json();
-      if (!data.routes || !data.routes.length || typeof data.routes[0].duration !== 'number') {
-        throw new Error('Réponse invalide pour le calcul voiture.');
-      }
-      return formatDuration(data.routes[0].duration / 3600);
-    }
-
-    async function buildTravelTimes(personLocation, center, centerCoords, distanceKm) {
-      const estimated = estimateTravelTimes(distanceKm);
-      const cityKey = normalizeCityName(personLocation.cityName);
-      const ref = REFERENCE_TRAVEL_TIMES[cityKey]?.[center.key] || null;
-
       let car = estimated.car;
       try {
-        car = await getCarTravelDuration(personLocation, centerCoords);
+        const duration = await getCarTravelDuration(personLocation, centerCoords);
+        car = { duration, source: 'Itinéraire routier (OSRM)' };
       } catch (err) {
         console.warn(err);
       }
