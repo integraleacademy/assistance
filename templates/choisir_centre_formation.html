@@ -276,6 +276,44 @@
       };
     }
 
+    function normalizeCityName(name) {
+      return (name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+    }
+
+    async function getCarTravelDuration(origin, destination) {
+      const url = `https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?overview=false`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Impossible de calculer le temps voiture en temps réel.');
+      const data = await resp.json();
+      if (!data.routes || !data.routes.length || typeof data.routes[0].duration !== 'number') {
+        throw new Error('Réponse invalide pour le calcul voiture.');
+      }
+      return formatDuration(data.routes[0].duration / 3600);
+    }
+
+    async function buildTravelTimes(personLocation, center, centerCoords, distanceKm) {
+      const estimated = estimateTravelTimes(distanceKm);
+      const cityKey = normalizeCityName(personLocation.cityName);
+      const ref = REFERENCE_TRAVEL_TIMES[cityKey]?.[center.key] || null;
+
+      let car = estimated.car;
+      try {
+        car = await getCarTravelDuration(personLocation, centerCoords);
+      } catch (err) {
+        console.warn(err);
+      }
+
+      return {
+        car,
+        plane: ref?.plane || estimated.plane,
+        train: ref?.train || estimated.train
+      };
+    }
+
     function activatePreference(pref) {
       prefButtons.forEach((button) => {
         button.classList.toggle('active', button.dataset.pref === pref);
