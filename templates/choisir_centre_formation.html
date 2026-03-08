@@ -216,6 +216,9 @@
     const validateButton = document.getElementById('validate-choice');
 
     const NON_DISPONIBLE = 'Non disponible';
+    // OSRM a tendance à surestimer légèrement certains trajets autoroutiers longue distance.
+    // On applique un calibrage conservateur pour se rapprocher des estimateurs grand public.
+    const ROAD_DURATION_CALIBRATION_FACTOR = 0.88;
 
     let latestDistances = null;
     let latestTravelTimes = null;
@@ -278,6 +281,11 @@
       return `${h} h ${String(min).padStart(2, '0')} min`;
     }
 
+    function calibrateRoadDuration(seconds) {
+      if (typeof seconds !== 'number' || Number.isNaN(seconds) || seconds <= 0) return null;
+      return Math.round(seconds * ROAD_DURATION_CALIBRATION_FACTOR);
+    }
+
     function renderTravelTime(mode, value) {
       if (!value) return `${mode} ${NON_DISPONIBLE}`;
       const source = value.source ? ` <span class="muted">(${value.source})</span>` : '';
@@ -316,10 +324,10 @@
 
       return {
         distanceMeters: routeMetrics?.distanceMeters ?? null,
-        durationSeconds: routeMetrics?.durationSeconds ?? null,
+        durationSeconds: calibrateRoadDuration(routeMetrics?.durationSeconds),
         car: {
-          duration: formatDurationFromSeconds(routeMetrics?.durationSeconds),
-          source: routeMetrics?.provider ? `Itinéraire routier avec autoroutes (${routeMetrics.provider})` : null
+          duration: formatDurationFromSeconds(calibrateRoadDuration(routeMetrics?.durationSeconds)),
+          source: routeMetrics?.provider ? `Itinéraire routier avec autoroutes (${routeMetrics.provider}, estimation calibrée)` : null
         },
         plane: {
           duration: transportInfo.nearestAirport ? `Aéroport le plus proche : ${transportInfo.nearestAirport}` : NON_DISPONIBLE,
