@@ -8,13 +8,35 @@
 :root{
   --brand:#f08a00;
   --brand-soft:#fff4e5;
+  --brand-soft-strong:#ffe4bd;
   --brand-strong:#2b1900;
+  --accent:#0ea5e9;
+  --border:#d9e1ea;
+  --surface:#ffffff;
+  --surface-muted:#f8fafc;
   --ink:#0f172a;
 }
 *{box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;margin:20px;color:var(--ink);background:#eff2f7}
-.sheet{background:#fff;border:1px solid #d9e1ea;border-radius:14px;padding:14px 16px;box-shadow:0 6px 22px rgba(15,23,42,.08);max-width:980px;margin:0 auto}
-.top-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;border:1px solid var(--brand);background:linear-gradient(90deg,var(--brand-soft),#fff 65%);border-radius:12px;padding:10px 12px}
+html,body{min-height:100%}
+body{
+  font-family:Inter,"Segoe UI",Arial,Helvetica,sans-serif;
+  margin:0;
+  color:var(--ink);
+  background:
+    radial-gradient(circle at top right, rgba(255,255,255,.75), transparent 45%),
+    linear-gradient(170deg, #f3f6fb 0%, #edf2f9 45%, #e8eef8 100%);
+}
+.sheet{
+  min-height:100vh;
+  width:min(100%, 1420px);
+  margin:0 auto;
+  padding:22px 26px 30px;
+  background:var(--surface);
+  border-left:1px solid var(--border);
+  border-right:1px solid var(--border);
+  box-shadow:0 14px 40px rgba(15,23,42,.1);
+}
+.top-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;border:1px solid var(--brand);background:linear-gradient(135deg,var(--brand-soft) 0%, #fff 52%, color-mix(in srgb, var(--brand-soft) 28%, #fff) 100%);border-radius:14px;padding:14px 16px;box-shadow:0 10px 24px rgba(15,23,42,.08)}
 .branding{display:flex;align-items:center;gap:10px;flex:1;min-width:320px}
 .logo-wrap{background:#fff;border:1px solid #d6deea;border-radius:10px;padding:6px;box-shadow:0 4px 10px rgba(15,23,42,.08)}
 .branding img{height:72px;width:auto;display:block}
@@ -22,25 +44,30 @@ body{font-family:Arial,Helvetica,sans-serif;margin:20px;color:var(--ink);backgro
 .header-title h1{margin:0;font-size:32px;line-height:1.05;color:#111827}
 .subline{margin:5px 0 0;color:#334155;font-size:14px;font-weight:700}
 .top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.btn{padding:9px 12px;border:none;border-radius:10px;cursor:pointer;font-weight:800;font-size:13px;transition:transform .12s ease, box-shadow .12s ease, background .2s ease}
+.btn{padding:9px 12px;border:1px solid transparent;border-radius:10px;cursor:pointer;font-weight:800;font-size:13px;transition:transform .12s ease, box-shadow .12s ease, background .2s ease}
 .btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.12)}
-.btn-print{background:#0d6efd;color:#fff}
+.btn-print{background:var(--accent);color:#fff}
 .btn-status{background:#f59e0b;color:#111}
 .btn-status.is-treated{background:#16a34a;color:#fff}
-.section{margin-top:12px}
-.section h2{margin:0 0 7px;font-size:21px;padding:6px 10px;border-radius:8px;background:var(--brand-soft);color:var(--brand-strong);border-left:5px solid var(--brand)}
+.content-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.section{margin-top:0;display:flex;flex-direction:column}
+.section h2{margin:0 0 9px;font-size:21px;padding:8px 11px;border-radius:10px;background:linear-gradient(90deg,var(--brand-soft),var(--surface-muted));color:var(--brand-strong);border-left:5px solid var(--brand)}
+.table-wrap{flex:1;overflow:hidden;border-radius:12px;border:1px solid var(--border);background:#fff;box-shadow:0 4px 16px rgba(15,23,42,.05)}
 table{width:100%;border-collapse:collapse;background:#fff;table-layout:fixed}
-th,td{border:1px solid #d8dee7;padding:6px 8px;font-size:12.5px;vertical-align:top;line-height:1.3;word-break:break-word}
-th{background:#f8fafc;text-align:left;width:31%;font-weight:800;color:#1e293b}
+th,td{border:1px solid #d8dee7;padding:8px 10px;font-size:13.5px;vertical-align:top;line-height:1.35;word-break:break-word}
+th{background:var(--surface-muted);text-align:left;width:32%;font-weight:800;color:#1e293b}
+tr:nth-child(even) td{background:#fbfdff}
 
-[data-theme="aurillac"]{--brand:#f08a00;--brand-soft:#fff1de;--brand-strong:#5b3200}
-[data-theme="cote-azur"]{--brand:#7b3ff2;--brand-soft:#efe7ff;--brand-strong:#2f0d66}
-[data-theme="auvergne"]{--brand:#15803d;--brand-soft:#e9f9ef;--brand-strong:#0c4622}
-[data-theme="idf"]{--brand:#005bbb;--brand-soft:#e5f0ff;--brand-strong:#002a57}
+[data-theme="aurillac"]{--brand:#f08a00;--brand-soft:#fff1de;--brand-soft-strong:#ffd9ab;--brand-strong:#5b3200;--accent:#0ea5e9}
+[data-theme="cote-azur"]{--brand:#7b3ff2;--brand-soft:#efe7ff;--brand-soft-strong:#daccff;--brand-strong:#2f0d66;--accent:#0f766e}
+[data-theme="auvergne"]{--brand:#15803d;--brand-soft:#e9f9ef;--brand-soft-strong:#c7f2d5;--brand-strong:#0c4622;--accent:#0369a1}
+[data-theme="idf"]{--brand:#005bbb;--brand-soft:#e5f0ff;--brand-soft-strong:#bfd8ff;--brand-strong:#002a57;--accent:#ca8a04}
 
+@media (max-width: 1100px){
+  .sheet{padding:16px}
+  .content-grid{grid-template-columns:1fr}
+}
 @media (max-width: 820px){
-  body{margin:12px}
-  .sheet{padding:12px}
   .branding{min-width:0;flex-wrap:wrap}
   .branding img{height:64px}
   .header-title h1{font-size:28px}
@@ -53,9 +80,10 @@ th{background:#f8fafc;text-align:left;width:31%;font-weight:800;color:#1e293b}
   }
   @page{size:A4;margin:8mm}
   body{margin:0;background:#fff}
-  .sheet{border:none;border-radius:0;box-shadow:none;padding:0;max-width:none}
+  .sheet{min-height:auto;border:none;border-radius:0;box-shadow:none;padding:0;max-width:none;width:100%}
   .top-bar{border:1.4px solid var(--brand);background:var(--brand-soft)}
   .top-actions{display:none}
+  .content-grid{display:block;margin-top:8px}
   .section{margin-top:8px}
   .section h2{font-size:17px;margin-bottom:5px;padding:4px 8px;background:var(--brand-soft);color:var(--brand-strong);border-left:4px solid var(--brand)}
   .header-title h1{font-size:24px}
@@ -63,6 +91,7 @@ th{background:#f8fafc;text-align:left;width:31%;font-weight:800;color:#1e293b}
   .campus-badge{font-size:16px;padding:8px 12px;background:var(--brand);color:#fff;border:1px solid var(--brand)}
   th{background:#eef2f7}
   th,td{font-size:10.5px;padding:4px 6px;line-height:1.2}
+  .table-wrap{border-radius:0;box-shadow:none}
 }
 </style>
 </head>
@@ -85,30 +114,36 @@ th{background:#f8fafc;text-align:left;width:31%;font-weight:800;color:#1e293b}
     </div>
 </div>
 
-<div class="section">
-    <h2>Informations contact</h2>
-    <table>
-        <tr><th>Date de soumission</th><td>{{ demande.date }}</td></tr>
-        <tr><th>Nom</th><td>{{ demande.nom }}</td></tr>
-        <tr><th>Prénom</th><td>{{ demande.prenom }}</td></tr>
-        <tr><th>Téléphone</th><td>{{ demande.telephone or '—' }}</td></tr>
-        <tr><th>Email</th><td>{{ demande.mail }}</td></tr>
-        <tr><th>Motif</th><td>{{ demande.motif }}</td></tr>
-    </table>
-</div>
+<div class="content-grid">
+  <div class="section">
+      <h2>Informations contact</h2>
+      <div class="table-wrap">
+        <table>
+            <tr><th>Date de soumission</th><td>{{ demande.date }}</td></tr>
+            <tr><th>Nom</th><td>{{ demande.nom }}</td></tr>
+            <tr><th>Prénom</th><td>{{ demande.prenom }}</td></tr>
+            <tr><th>Téléphone</th><td>{{ demande.telephone or '—' }}</td></tr>
+            <tr><th>Email</th><td>{{ demande.mail }}</td></tr>
+            <tr><th>Motif</th><td>{{ demande.motif }}</td></tr>
+        </table>
+      </div>
+  </div>
 
-<div class="section">
-    <h2>Toutes les réponses du formulaire</h2>
-    <table>
-        {% for row in infos_rows %}
-        <tr>
-            <th>{{ row.label }}</th>
-            <td>{{ row.value }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="2">Aucune donnée structurée disponible.</td></tr>
-        {% endfor %}
-    </table>
+  <div class="section">
+      <h2>Toutes les réponses du formulaire</h2>
+      <div class="table-wrap">
+        <table>
+            {% for row in infos_rows %}
+            <tr>
+                <th>{{ row.label }}</th>
+                <td>{{ row.value }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2">Aucune donnée structurée disponible.</td></tr>
+            {% endfor %}
+        </table>
+      </div>
+  </div>
 </div>
 </div>
 <script>
