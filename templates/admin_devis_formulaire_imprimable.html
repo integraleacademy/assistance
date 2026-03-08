@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Formulaire imprimable — {{ demande.prenom }} {{ demande.nom }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:28px;color:#111}
+.header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.btn-print{padding:8px 12px;border:none;border-radius:8px;background:#0d6efd;color:#fff;cursor:pointer;font-weight:700}
+.section{margin-top:20px}
+.section h2{margin:0 0 10px;font-size:18px;border-bottom:1px solid #ddd;padding-bottom:6px}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #ddd;padding:8px;font-size:14px;vertical-align:top}
+th{background:#f7f7f7;text-align:left;width:34%}
+@media print {.btn-print{display:none} body{margin:0}}
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>📄 Formulaire soumis ({{ source_label }})</h1>
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimer</button>
+</div>
+
+<div class="section">
+    <h2>Informations contact</h2>
+    <table>
+        <tr><th>Date de soumission</th><td>{{ demande.date }}</td></tr>
+        <tr><th>Nom</th><td>{{ demande.nom }}</td></tr>
+        <tr><th>Prénom</th><td>{{ demande.prenom }}</td></tr>
+        <tr><th>Téléphone</th><td>{{ demande.telephone or '—' }}</td></tr>
+        <tr><th>Email</th><td>{{ demande.mail }}</td></tr>
+        <tr><th>Motif</th><td>{{ demande.motif }}</td></tr>
+    </table>
+</div>
+
+<div class="section">
+    <h2>Toutes les réponses du formulaire</h2>
+    <table>
+        {% for row in infos_rows %}
+        <tr>
+            <th>{{ row.label }}</th>
+            <td>{{ row.value }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2">Aucune donnée structurée disponible.</td></tr>
+        {% endfor %}
+    </table>
+</div>
+</body>
+</html>
