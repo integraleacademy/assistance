@@ -1,20 +1,54 @@
 <!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Confirmation</title>
 <style>
-body{font-family:Arial;background:#f1f5f9;padding:24px}
-.box{max-width:900px;margin:0 auto;background:#fff;padding:24px;border-radius:16px}
-a.btn{display:inline-block;padding:12px 16px;border-radius:10px;background:#16a34a;color:#fff;text-decoration:none;font-weight:700}
-.calendly-inline-widget{min-width:320px;height:700px}
+:root{--bg-start:#0f172a;--bg-end:#1d4ed8;--surface:#ffffff;--text:#0f172a;--muted:#334155;--cta-start:#06b6d4;--cta-end:#2563eb}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;color:var(--text)}
+body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg-end));overflow:hidden}
+.page{position:relative;min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:28px}
+.page::before,.page::after{content:"";position:absolute;border-radius:50%;filter:blur(1px);opacity:.35;animation:float 9s ease-in-out infinite}
+.page::before{width:340px;height:340px;background:#22d3ee;top:-90px;left:-80px}
+.page::after{width:300px;height:300px;background:#60a5fa;right:-70px;bottom:-90px;animation-delay:1.2s}
+.box{position:relative;z-index:1;width:min(1100px,100%);min-height:calc(100vh - 56px);background:rgba(255,255,255,.96);backdrop-filter:blur(3px);border-radius:26px;padding:48px clamp(24px,4vw,76px);box-shadow:0 24px 80px rgba(15,23,42,.35);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;animation:enter .65s ease both}
+.logo{width:clamp(120px,14vw,180px);height:auto;display:block;margin:0 auto 14px;filter:drop-shadow(0 8px 20px rgba(15,23,42,.22));animation:fadeUp .8s ease .05s both}
+.icon{font-size:2.1rem;line-height:1;margin-bottom:12px;animation:pop .9s ease}
+.title{font-size:clamp(1.8rem,3.2vw,2.65rem);margin:0 0 14px;font-weight:900;max-width:980px;animation:fadeUp .8s ease .12s both}
+.subtitle{font-size:clamp(1rem,1.55vw,1.22rem);color:var(--muted);margin:0 0 30px;max-width:960px;line-height:1.65;animation:fadeUp .8s ease .22s both}
+.actions{margin:0;display:flex;justify-content:center;animation:fadeUp .8s ease .32s both}
+.presentation-link{position:relative;display:inline-flex;align-items:center;gap:10px;padding:16px 24px;border-radius:16px;background:linear-gradient(135deg,var(--cta-start),var(--cta-end));color:#fff;font-size:1.05rem;font-weight:800;text-decoration:none;box-shadow:0 14px 30px rgba(37,99,235,.35);transition:transform .25s ease,box-shadow .25s ease}
+.presentation-link:hover{transform:translateY(-3px) scale(1.01);box-shadow:0 20px 36px rgba(37,99,235,.42)}
+.presentation-link::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.32) 48%,transparent 70%);transform:translateX(-120%);animation:shine 3.2s ease-in-out infinite}
+.presentation-link .cta{font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.calendly-inline-widget{width:min(100%,980px);min-width:320px;height:680px;border-radius:16px;overflow:hidden;margin:0 auto;animation:fadeUp .8s ease .35s both}
+@keyframes enter{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pop{0%{transform:scale(.65);opacity:.2}70%{transform:scale(1.08)}100%{transform:scale(1)}}
+@keyframes shine{0%,55%,100%{transform:translateX(-120%)}75%{transform:translateX(120%)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-24px)}}
+@media (max-width: 768px){
+  .page{padding:14px}
+  .box{min-height:calc(100vh - 28px);padding:28px 18px}
+  .presentation-link{width:100%;justify-content:center;text-align:center;flex-wrap:wrap}
+  .calendly-inline-widget{height:620px}
+}
 </style></head>
-<body><div class="box">
-  <h1>✅ Merci, votre demande a bien été envoyée</h1>
-  {% if hot %}
-    <p>🔥 Votre profil semble prêt pour aller vite ! Réservez un RDV téléphonique avec un conseiller formation.</p>
-    {% if calendly_url %}
-      <div class="calendly-inline-widget" data-url="{{ calendly_url }}"></div>
-      <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async></script>
-    {% endif %}
-  {% else %}
-    <p>Merci pour votre demande. Vous pouvez maintenant poursuivre ici :</p>
-    <p><a class="btn" href="https://www.integraleacademy.com/dossiersfc" target="_blank">📄 Accéder à mon dossier</a></p>
-  {% endif %}
-</div></body></html>
+<body>
+  <div class="page">
+    <div class="box">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy" class="logo">
+      <div class="icon">✅</div>
+      <h1 class="title">Merci, nous avons bien reçu votre demande.</h1>
+      <p class="subtitle">Un conseiller formation reviendra vers vous prochainement pour échanger sur votre projet de formation.</p>
+      {% if hot and calendly_url %}
+        <div class="calendly-inline-widget" data-url="{{ calendly_url }}"></div>
+        <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async></script>
+      {% else %}
+        <p class="actions">
+          <a class="presentation-link" href="https://www.integraleacademy.com/dossiersfc" target="_blank" rel="noopener noreferrer">
+            📘 Consultez le dossier de présentation
+            <span class="cta">en cliquant ici</span>
+          </a>
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</body></html>
