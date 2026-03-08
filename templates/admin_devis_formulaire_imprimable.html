@@ -5,21 +5,55 @@
 <title>Formulaire imprimable — {{ demande.prenom }} {{ demande.nom }}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{font-family:Arial,Helvetica,sans-serif;margin:28px;color:#111}
-.header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.btn-print{padding:8px 12px;border:none;border-radius:8px;background:#0d6efd;color:#fff;cursor:pointer;font-weight:700}
-.section{margin-top:20px}
-.section h2{margin:0 0 10px;font-size:18px;border-bottom:1px solid #ddd;padding-bottom:6px}
-table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #ddd;padding:8px;font-size:14px;vertical-align:top}
+body{font-family:Arial,Helvetica,sans-serif;margin:28px;color:#111;background:#f4f5f7}
+.sheet{background:#fff;border:1px solid #e7e7e7;border-radius:14px;padding:22px;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+.top-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.branding{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.branding img{height:52px;width:auto;display:block}
+.campus-badge{padding:8px 14px;border-radius:999px;font-size:28px;font-weight:900;letter-spacing:.8px;line-height:1;color:#fff;text-transform:uppercase}
+.campus-badge.orange{background:#f08a00}
+.campus-badge.violet{background:#7b3ff2}
+.header-title h1{margin:0;font-size:40px;line-height:1.08}
+.subline{margin:4px 0 0;color:#475569;font-size:14px;font-weight:600}
+.top-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{padding:10px 14px;border:none;border-radius:10px;cursor:pointer;font-weight:800;font-size:14px;transition:transform .12s ease, box-shadow .12s ease, background .2s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.btn-print{background:#0d6efd;color:#fff}
+.btn-status{background:#f59e0b;color:#111}
+.btn-status.is-treated{background:#16a34a;color:#fff}
+.section{margin-top:22px}
+.section h2{margin:0 0 10px;font-size:22px;border-bottom:1px solid #ddd;padding-bottom:8px}
+table{width:100%;border-collapse:collapse;background:#fff}
+th,td{border:1px solid #ddd;padding:10px;font-size:14px;vertical-align:top}
 th{background:#f7f7f7;text-align:left;width:34%}
-@media print {.btn-print{display:none} body{margin:0}}
+@media (max-width: 820px){
+  body{margin:14px}
+  .sheet{padding:14px}
+  .header-title h1{font-size:30px}
+  .campus-badge{font-size:22px}
+}
+@media print {
+  body{margin:0;background:#fff}
+  .sheet{border:none;border-radius:0;box-shadow:none;padding:0}
+  .top-actions{display:none}
+}
 </style>
 </head>
 <body>
-<div class="header">
-    <h1>📄 Formulaire soumis ({{ source_label }})</h1>
-    <button class="btn-print" onclick="window.print()">🖨️ Imprimer</button>
+<div class="sheet">
+<div class="top-bar">
+    <div class="branding">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo">
+        <span class="campus-badge {{ badge_theme }}">{{ badge_text }}</span>
+        <div class="header-title">
+            <h1>Formulaire soumis</h1>
+            <p class="subline">Source : {{ source_label }}</p>
+        </div>
+    </div>
+    <div class="top-actions">
+        <button class="btn btn-status" id="status-toggle" type="button">À traiter</button>
+        <button class="btn btn-print" onclick="window.print()" type="button">🖨️ Imprimer</button>
+    </div>
 </div>
 
 <div class="section">
@@ -47,5 +81,16 @@ th{background:#f7f7f7;text-align:left;width:34%}
         {% endfor %}
     </table>
 </div>
+</div>
+<script>
+(function(){
+  const statusBtn = document.getElementById('status-toggle');
+  if(!statusBtn) return;
+  statusBtn.addEventListener('click', function(){
+    const treated = statusBtn.classList.toggle('is-treated');
+    statusBtn.textContent = treated ? 'Traité' : 'À traiter';
+  });
+})();
+</script>
 </body>
 </html>
