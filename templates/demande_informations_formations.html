@@ -353,6 +353,9 @@
         </article>
 
         <div class="simu-box">
+          <p id="vaeRemoteText" class="help-copy hidden">
+            Votre VAE Dirigeant d'entreprise de sécurité se déroule 100% en ligne à distance.
+          </p>
           <p id="simuText" class="help-copy hidden">
             Utilisez notre simulateur ci-dessous pour calculer combien de kilomètres nous séparent et choisir le centre de formation le plus près de chez vous.
           </p>
@@ -464,6 +467,7 @@
     const optAuv = document.getElementById('optAuv');
     const openSimu = document.getElementById('openSimu');
     const simuText = document.getElementById('simuText');
+    const vaeRemoteText = document.getElementById('vaeRemoteText');
     const datesHelp = document.getElementById('datesHelp');
     const centreSwitchNote = document.getElementById('centreSwitchNote');
 
@@ -522,21 +526,24 @@
       optAuv.classList.add('hidden');
       openSimu.style.display = 'none';
       simuText.classList.add('hidden');
+      vaeRemoteText.classList.add('hidden');
 
       if (!v) return;
 
-      if (['A3P', 'DESP_INIT', 'DESP_VAE'].includes(v)) {
+      if (['A3P', 'DESP_INIT'].includes(v)) {
         optCote.classList.remove('hidden');
         optAuv.classList.remove('hidden');
         radios.forEach(r => r.required = true);
+      } else if (v === 'DESP_VAE') {
+        vaeRemoteText.classList.remove('hidden');
       } else {
         optCote.classList.remove('hidden');
         const coteRadio = form.querySelector('input[name="centre"][value="cote_azur"]');
         if (coteRadio) coteRadio.checked = true;
       }
 
-      // Simulateur masqué pour VTC et APS
-      if (!['VTC', 'APS'].includes(v)) {
+      // Simulateur affiché uniquement pour les formations avec choix de centre
+      if (['A3P', 'DESP_INIT'].includes(v)) {
         openSimu.style.display = 'inline-flex';
         simuText.classList.remove('hidden');
       }
@@ -551,7 +558,12 @@
 
       if (!f) {
         datesSelect.required = true;
+        datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
         return;
+      }
+
+      if (f === 'VTC') {
+        datesHelp.textContent = 'La formation Chauffeur VTC est accessible en continue : commencez votre formation dès maintenant';
       }
 
       let rows = [];
@@ -584,7 +596,9 @@
         centreSwitchNote.classList.remove('hidden');
       }
 
-      datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
+      if (f !== 'VTC') {
+        datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
+      }
       datesSelect.required = true;
 
       rows.forEach((r) => {
