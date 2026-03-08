@@ -80,21 +80,22 @@
     .selection { margin-top:14px; padding:16px; border-radius:10px; border:1px solid #bfdbfe; background:#f0f9ff; }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
-    .back {
+    .validate-btn {
       display:inline-flex;
       align-items:center;
       gap:8px;
       margin-top:18px;
-      text-decoration:none;
-      color:#1d4ed8;
-      background:#eff6ff;
-      border:1px solid #bfdbfe;
+      color:#fff;
+      background:#16a34a;
+      border:1px solid #15803d;
       border-radius:999px;
-      padding:10px 16px;
-      font-weight:700;
+      padding:10px 20px;
+      font-weight:800;
+      font-size:16px;
+      cursor:pointer;
       transition: all .2s ease;
     }
-    .back:hover { background:#dbeafe; transform: translateY(-1px); }
+    .validate-btn:hover { background:#15803d; transform: translateY(-1px); }
   </style>
 </head>
 <body>
@@ -124,7 +125,6 @@
     <div class="direct-select" id="direct-select-wrap" style="display:none;">
       <label for="center-select">Ou sélectionnez directement votre centre :</label>
       <select id="center-select">
-        <option value="auto">🔎 Je garde le centre recommandé</option>
         <option value="cote-azur">🌊 Intégrale Academy Côte d'Azur</option>
         <option value="auvergne">🏔️ Intégrale Academy Terres d'Auvergne</option>
       </select>
@@ -133,7 +133,7 @@
     <div id="selection" class="selection" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
-    <a class="back" href="{{ url_for('demande_informations_formations') }}" target="_top">← Retour au formulaire</a>
+    <button id="validate-choice" class="validate-btn" type="button">✅ VALIDER</button>
   </div>
 
   <script>
@@ -161,9 +161,11 @@
     const preferenceNote = document.getElementById('preference-note');
     const preferenceRow = document.getElementById('preference-row');
     const directSelectWrap = document.getElementById('direct-select-wrap');
+    const validateButton = document.getElementById('validate-choice');
 
     let latestDistances = null;
     let recommendedCenter = null;
+    let selectedCenter = null;
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -187,9 +189,10 @@
       const distance = latestDistances[center.key];
       selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance estimée : ${distance.toFixed(1)} km</span>`;
       selectionBox.style.display = 'block';
+      selectedCenter = center;
     }
 
-    function activatePreference(pref, shouldNotify = true) {
+    function activatePreference(pref) {
       prefButtons.forEach((button) => {
         button.classList.toggle('active', button.dataset.pref === pref);
       });
@@ -197,11 +200,9 @@
       if (pref === 'mer') {
         centerSelect.value = CENTER_COTE_AZUR.key;
         updateSelectionSummary(CENTER_COTE_AZUR, 'Choix Team Mer 🌊');
-        if (shouldNotify) notifyParent(CENTER_COTE_AZUR);
       } else if (pref === 'montagne') {
         centerSelect.value = CENTER_AUVERGNE.key;
         updateSelectionSummary(CENTER_AUVERGNE, 'Choix Team Montagne 🏔️');
-        if (shouldNotify) notifyParent(CENTER_AUVERGNE);
       }
     }
 
@@ -210,17 +211,22 @@
     });
 
     centerSelect.addEventListener('change', () => {
-      if (centerSelect.value === 'auto') {
-        prefButtons.forEach((button) => button.classList.remove('active'));
-        if (recommendedCenter) {
-          updateSelectionSummary(recommendedCenter, 'Centre recommandé conservé');
-          notifyParent(recommendedCenter);
-        }
-      } else if (centerSelect.value === CENTER_COTE_AZUR.key) {
+      if (centerSelect.value === CENTER_COTE_AZUR.key) {
         activatePreference('mer');
       } else if (centerSelect.value === CENTER_AUVERGNE.key) {
         activatePreference('montagne');
       }
+    });
+
+    validateButton.addEventListener('click', () => {
+      if (!selectedCenter) {
+        showError('Merci de calculer et sélectionner un centre avant de valider.');
+        return;
+      }
+
+      hideError();
+      notifyParent(selectedCenter);
+      window.parent.postMessage({ type: 'close-centre-modal' }, '*');
     });
 
     function haversineKm(lat1, lon1, lat2, lon2) {
@@ -308,10 +314,9 @@
         preferenceNote.style.display = 'block';
         preferenceRow.style.display = 'grid';
         directSelectWrap.style.display = 'block';
-        centerSelect.value = 'auto';
+        centerSelect.value = recommendedCenter.key;
         prefButtons.forEach((button) => button.classList.remove('active'));
         updateSelectionSummary(recommendedCenter, 'Centre recommandé conservé');
-        notifyParent(recommendedCenter);
       } catch (e) {
         showError(e.message || 'Une erreur est survenue.');
       } finally {

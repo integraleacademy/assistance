@@ -376,7 +376,7 @@
           <option value="OUI">OUI</option>
           <option value="NON">NON</option>
         </select>
-        <p class="small-note">👉 <a href="https://moncompteformation.gouv.fr" target="_blank" rel="noopener noreferrer">Accéder à Mon Compte Formation</a></p>
+        <p id="cpfLinkNote" class="small-note">👉 <a href="https://moncompteformation.gouv.fr" target="_blank" rel="noopener noreferrer">Accéder à Mon Compte Formation</a></p>
 
         <div id="blocCpfMontant" class="hidden">
           <label style="margin-top:12px;">Montant disponible sur mon CPF (en €)</label>
@@ -417,12 +417,12 @@
         </div>
 
         <label style="margin-top:12px;">J’ai déjà créé mon Identité Numérique La Poste</label>
-        <select name="identite_numerique" required>
+        <select name="identite_numerique" id="identiteNumerique" required>
           <option value="">— Sélectionnez —</option>
           <option value="OUI">OUI</option>
           <option value="NON">NON</option>
         </select>
-        <p class="small-note">👉 <a href="https://lidentitenumerique.laposte.fr/" target="_blank" rel="noopener noreferrer">Créer mon identité numérique La Poste</a></p>
+        <p id="identiteLinkNote" class="small-note">👉 <a href="https://lidentitenumerique.laposte.fr/" target="_blank" rel="noopener noreferrer">Créer mon identité numérique La Poste</a></p>
 
         <label class="checkbox-row">
           <input type="checkbox" name="souhaite_devis" value="OUI">
@@ -453,8 +453,11 @@
     const gclidField = document.getElementById('gclidField');
     const franceTravail = document.getElementById('franceTravail');
     const cpfConsulte = document.getElementById('cpfConsulte');
+    const cpfLinkNote = document.getElementById('cpfLinkNote');
     const blocCpfMontant = document.getElementById('blocCpfMontant');
     const cpfMontant = document.getElementById('cpfMontant');
+    const identiteNumerique = document.getElementById('identiteNumerique');
+    const identiteLinkNote = document.getElementById('identiteLinkNote');
     const blocFranceTravail = document.getElementById('blocFranceTravail');
     const blocPerso = document.getElementById('blocPerso');
     const optCote = document.getElementById('optCote');
@@ -462,8 +465,10 @@
     const simuBox = document.getElementById('simuBox');
     const openSimu = document.getElementById('openSimu');
     const simuText = document.getElementById('simuText');
+    const vaeRemoteText = document.getElementById('vaeRemoteText');
     const datesHelp = document.getElementById('datesHelp');
     const centreSwitchNote = document.getElementById('centreSwitchNote');
+    const modal = document.getElementById('modal');
 
     (function syncGclid(){
       const params = new URLSearchParams(window.location.search);
@@ -479,7 +484,12 @@
     cpfConsulte.addEventListener('change', () => {
       blocCpfMontant.classList.toggle('hidden', cpfConsulte.value !== 'OUI');
       cpfMontant.required = cpfConsulte.value === 'OUI';
+      cpfLinkNote.classList.toggle('hidden', cpfConsulte.value === 'OUI');
       if (cpfConsulte.value !== 'OUI') cpfMontant.value = '';
+    });
+
+    identiteNumerique.addEventListener('change', () => {
+      identiteLinkNote.classList.toggle('hidden', identiteNumerique.value === 'OUI');
     });
 
     franceTravail.addEventListener('change', () => {
@@ -521,13 +531,16 @@
       simuBox.classList.add('hidden');
       openSimu.style.display = 'none';
       simuText.classList.add('hidden');
+      vaeRemoteText.classList.add('hidden');
 
       if (!v) return;
 
-      if (['A3P', 'DESP_INIT', 'DESP_VAE'].includes(v)) {
+      if (['A3P', 'DESP_INIT'].includes(v)) {
         optCote.classList.remove('hidden');
         optAuv.classList.remove('hidden');
         radios.forEach(r => r.required = true);
+      } else if (v === 'DESP_VAE') {
+        vaeRemoteText.classList.remove('hidden');
       } else {
         optCote.classList.remove('hidden');
         const coteRadio = form.querySelector('input[name="centre"][value="cote_azur"]');
@@ -551,7 +564,12 @@
 
       if (!f) {
         datesSelect.required = true;
+        datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
         return;
+      }
+
+      if (f === 'VTC') {
+        datesHelp.textContent = 'La formation Chauffeur VTC est accessible en continue : commencez votre formation dès maintenant';
       }
 
       let rows = [];
@@ -584,7 +602,9 @@
         centreSwitchNote.classList.remove('hidden');
       }
 
-      datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
+      if (f !== 'VTC') {
+        datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
+      }
       datesSelect.required = true;
 
       rows.forEach((r) => {
@@ -606,6 +626,12 @@
 
     window.addEventListener('message', (event) => {
       const data = event.data || {};
+
+      if (data.type === 'close-centre-modal') {
+        modal.style.display = 'none';
+        return;
+      }
+
       if (data.type !== 'centre-selected') return;
       if (!['cote_azur', 'auvergne'].includes(data.centre)) return;
 
@@ -648,9 +674,9 @@
     });
 
     cpfConsulte.dispatchEvent(new Event('change'));
+    identiteNumerique.dispatchEvent(new Event('change'));
     franceTravail.dispatchEvent(new Event('change'));
 
-    const modal = document.getElementById('modal');
     openSimu.addEventListener('click', () => { modal.style.display = 'block'; });
     document.getElementById('closeModal').addEventListener('click', () => { modal.style.display = 'none'; });
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
