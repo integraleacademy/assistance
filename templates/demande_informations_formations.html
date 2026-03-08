@@ -379,7 +379,7 @@
           <option value="OUI">OUI</option>
           <option value="NON">NON</option>
         </select>
-        <p class="small-note">👉 <a href="https://moncompteformation.gouv.fr" target="_blank" rel="noopener noreferrer">Accéder à Mon Compte Formation</a></p>
+        <p id="cpfLinkNote" class="small-note">👉 <a href="https://moncompteformation.gouv.fr" target="_blank" rel="noopener noreferrer">Accéder à Mon Compte Formation</a></p>
 
         <div id="blocCpfMontant" class="hidden">
           <label style="margin-top:12px;">Montant disponible sur mon CPF (en €)</label>
@@ -420,12 +420,12 @@
         </div>
 
         <label style="margin-top:12px;">J’ai déjà créé mon Identité Numérique La Poste</label>
-        <select name="identite_numerique" required>
+        <select name="identite_numerique" id="identiteNumerique" required>
           <option value="">— Sélectionnez —</option>
           <option value="OUI">OUI</option>
           <option value="NON">NON</option>
         </select>
-        <p class="small-note">👉 <a href="https://lidentitenumerique.laposte.fr/" target="_blank" rel="noopener noreferrer">Créer mon identité numérique La Poste</a></p>
+        <p id="identiteLinkNote" class="small-note">👉 <a href="https://lidentitenumerique.laposte.fr/" target="_blank" rel="noopener noreferrer">Créer mon identité numérique La Poste</a></p>
 
         <label class="checkbox-row">
           <input type="checkbox" name="souhaite_devis" value="OUI">
@@ -456,8 +456,11 @@
     const gclidField = document.getElementById('gclidField');
     const franceTravail = document.getElementById('franceTravail');
     const cpfConsulte = document.getElementById('cpfConsulte');
+    const cpfLinkNote = document.getElementById('cpfLinkNote');
     const blocCpfMontant = document.getElementById('blocCpfMontant');
     const cpfMontant = document.getElementById('cpfMontant');
+    const identiteNumerique = document.getElementById('identiteNumerique');
+    const identiteLinkNote = document.getElementById('identiteLinkNote');
     const blocFranceTravail = document.getElementById('blocFranceTravail');
     const blocPerso = document.getElementById('blocPerso');
     const optCote = document.getElementById('optCote');
@@ -481,7 +484,12 @@
     cpfConsulte.addEventListener('change', () => {
       blocCpfMontant.classList.toggle('hidden', cpfConsulte.value !== 'OUI');
       cpfMontant.required = cpfConsulte.value === 'OUI';
+      cpfLinkNote.classList.toggle('hidden', cpfConsulte.value === 'OUI');
       if (cpfConsulte.value !== 'OUI') cpfMontant.value = '';
+    });
+
+    identiteNumerique.addEventListener('change', () => {
+      identiteLinkNote.classList.toggle('hidden', identiteNumerique.value === 'OUI');
     });
 
     franceTravail.addEventListener('change', () => {
@@ -648,6 +656,7 @@
     });
 
     cpfConsulte.dispatchEvent(new Event('change'));
+    identiteNumerique.dispatchEvent(new Event('change'));
     franceTravail.dispatchEvent(new Event('change'));
 
     const modal = document.getElementById('modal');

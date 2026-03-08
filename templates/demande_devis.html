@@ -241,13 +241,13 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 </p>
 
 <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
-<select name="cpf_consulte" required>
+<select name="cpf_consulte" id="cpfConsulte" required>
     <option value="">— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
 
-<p class="info">
+<p id="cpfLinkNote" class="info">
 👉 <a href="https://moncompteformation.gouv.fr" target="_blank">Accéder à Mon Compte Formation</a>
 </p>
 
@@ -289,13 +289,13 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 </div>
 
 <label>J’ai déjà créé mon Identité Numérique La Poste</label>
-<select name="identite_numerique" required>
+<select name="identite_numerique" id="identiteNumerique" required>
     <option value="">— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
 </select>
 
-<p class="info">
+<p id="identiteLinkNote" class="info">
 👉 <a href="https://lidentitenumerique.laposte.fr/" target="_blank">Créer mon identité numérique La Poste</a>
 </p>
 
@@ -338,6 +338,10 @@ const datesBloc = document.getElementById("datesBloc");
 const datesSelect = document.getElementById("datesSelect");
 const cnapsBloc = document.getElementById("blocCnaps");
 const franceTravail = document.getElementById("franceTravail");
+const cpfConsulte = document.getElementById("cpfConsulte");
+const cpfLinkNote = document.getElementById("cpfLinkNote");
+const identiteNumerique = document.getElementById("identiteNumerique");
+const identiteLinkNote = document.getElementById("identiteLinkNote");
 const blocFT = document.getElementById("blocFranceTravail");
 const blocPerso = document.getElementById("blocPerso");
 const gclidField = document.getElementById("gclidField");
@@ -415,6 +419,14 @@ formation.addEventListener("change", () => {
 });
 
 
+cpfConsulte.addEventListener("change", () => {
+  cpfLinkNote.classList.toggle("hidden", cpfConsulte.value === "OUI");
+});
+
+identiteNumerique.addEventListener("change", () => {
+  identiteLinkNote.classList.toggle("hidden", identiteNumerique.value === "OUI");
+});
+
 franceTravail.addEventListener("change", () => {
 
   // Reset
@@ -491,6 +503,9 @@ datesSelect.addEventListener("change", () => {
 
 
 const cpfInput = document.querySelector('input[name="cpf_montant"]');
+
+cpfConsulte.dispatchEvent(new Event("change"));
+identiteNumerique.dispatchEvent(new Event("change"));
 
 cpfInput.addEventListener("input", () => {
   // Supprime tout ce qui n’est pas un chiffre
