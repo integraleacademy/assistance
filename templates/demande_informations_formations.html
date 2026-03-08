@@ -128,6 +128,20 @@
     .location-choice label{display:grid;grid-template-columns:24px 1fr;gap:14px;align-items:start;margin:0;cursor:pointer;}
     .location-choice input[type="radio"]{width:20px;height:20px;margin:3px 0 0;accent-color:#2563eb;}
     .location-title{font-size:30px;color:#102a67;margin-bottom:10px;display:block;font-weight:800;line-height:1.2;}
+    .new-badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      margin-right:10px;
+      padding:4px 10px;
+      border-radius:999px;
+      background:#f97316;
+      color:#fff;
+      font-size:13px;
+      font-weight:800;
+      letter-spacing:.4px;
+      vertical-align:middle;
+    }
     .location-copy{font-size:18px;color:#1e293b;line-height:1.5;margin:0 0 10px;}
     .location-points{margin:0;padding-left:20px;color:#1e293b;font-size:16px;line-height:1.45;}
     .location-points li{margin:0 0 6px;}
@@ -211,6 +225,13 @@
     .submit:active{transform:translateY(0) scale(.99);}
 
     .small-note{font-size:14px;color:var(--slate-500);margin-top:8px;}
+    .centre-switch-note{
+      margin:10px 0 0;
+      color:#0b1e4f;
+      font-size:16px;
+      line-height:1.45;
+      font-weight:800;
+    }
 
     .hidden{display:none !important;}
 
@@ -294,6 +315,9 @@
             <span>
               <strong class="location-title">Intégrale Academy Côte d’Azur (Fréjus, Var)</strong>
               <p class="location-copy">
+                🌊☀️
+              </p>
+              <p class="location-copy">
                 Formation au cœur de la Côte d’Azur, entre mer Méditerranée, climat ensoleillé et cadre attractif entre Cannes et Saint-Tropez.<br>
               </p>
               <ul class="location-points">
@@ -309,7 +333,10 @@
           <label>
             <input type="radio" name="centre" value="auvergne">
             <span>
-              <strong class="location-title">NOUVEAU Intégrale Academy Terre d’Auvergne (Centre-France, Aurillac)</strong>
+              <strong class="location-title"><span class="new-badge">NOUVEAU</span>Intégrale Academy Terres d’Auvergne (Centre-France, Aurillac)</strong>
+              <p class="location-copy">
+                🌿⛰️
+              </p>
               <p class="location-copy">
                 Formation au cœur des volcans et montagnes d’Auvergne, dans un environnement naturel exceptionnel.
               </p>
@@ -337,6 +364,7 @@
           <option value="">— Sélectionnez —</option>
         </select>
         <p class="small-note" id="datesHelp">Les dates proposées s’adaptent selon la formation et le centre choisi.</p>
+        <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
       </section>
 
       <section class="section">
@@ -406,6 +434,7 @@
     const openSimu = document.getElementById('openSimu');
     const simuText = document.getElementById('simuText');
     const datesHelp = document.getElementById('datesHelp');
+    const centreSwitchNote = document.getElementById('centreSwitchNote');
 
     (function syncGclid(){
       const params = new URLSearchParams(window.location.search);
@@ -460,6 +489,8 @@
       const f = formation.value;
       const centre = selectedCentre();
       datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+      centreSwitchNote.classList.add('hidden');
+      centreSwitchNote.textContent = '';
 
       if (!f) {
         datesSelect.required = true;
@@ -486,6 +517,14 @@
         datesSelect.appendChild(o);
         datesSelect.required = false;
         return;
+      }
+
+      if (['A3P', 'DESP_INIT', 'DESP_VAE'].includes(f) && centre === 'auvergne') {
+        centreSwitchNote.textContent = "ℹ️ Si les dates ne vous conviennent pas, vous pouvez choisir le centre de formation Intégrale Academy Côte d'Azur à l'étape 3.";
+        centreSwitchNote.classList.remove('hidden');
+      } else if (['A3P', 'DESP_INIT', 'DESP_VAE'].includes(f) && centre === 'cote_azur') {
+        centreSwitchNote.textContent = "ℹ️ Si les dates ne vous conviennent pas, vous pouvez choisir le centre de formation Intégrale Academy Terres d'Auvergne à l'étape 3.";
+        centreSwitchNote.classList.remove('hidden');
       }
 
       datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
