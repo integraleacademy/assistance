@@ -191,6 +191,17 @@
       address: "650 route d'Aumont, 15130 Arpajon-sur-Cère"
     };
 
+    const CENTER_TRANSPORT_INFO = {
+      [CENTER_COTE_AZUR.key]: {
+        nearestStation: 'Saint-Raphaël Valescure',
+        nearestAirport: 'Nice Côte d\'Azur'
+      },
+      [CENTER_AUVERGNE.key]: {
+        nearestStation: 'Aurillac',
+        nearestAirport: 'Aurillac (en passant par Paris Orly)'
+      }
+    };
+
     const cpInput = document.getElementById('cp');
     const btn = document.getElementById('btn');
     const locationBox = document.getElementById('location');
@@ -247,7 +258,7 @@
             'Ambiance conviviale et proximité humaine avec un accompagnement de terrain personnalisé.'
           ];
 
-      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)} · ${renderTravelTime('✈️ Avion :', travelTimes.plane)} · ${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence.</div>`;
+      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence. ✅ Hébergement proposé pour vous accompagner sereinement pendant la formation.</div>`;
       selectionBox.style.display = 'block';
       selectedCenter = center;
     }
@@ -295,6 +306,7 @@
     }
 
     async function buildTravelTimes(personLocation, centerCoords) {
+      const transportInfo = CENTER_TRANSPORT_INFO[centerCoords.key] || {};
       let routeMetrics = null;
       try {
         routeMetrics = await getRoadRouteMetrics(personLocation, centerCoords);
@@ -307,10 +319,16 @@
         durationSeconds: routeMetrics?.durationSeconds ?? null,
         car: {
           duration: formatDurationFromSeconds(routeMetrics?.durationSeconds),
-          source: routeMetrics?.provider ? `Itinéraire routier (${routeMetrics.provider})` : null
+          source: routeMetrics?.provider ? `Itinéraire routier avec autoroutes (${routeMetrics.provider})` : null
         },
-        plane: { duration: NON_DISPONIBLE, source: null },
-        train: { duration: NON_DISPONIBLE, source: null }
+        plane: {
+          duration: transportInfo.nearestAirport ? `Aéroport le plus proche : ${transportInfo.nearestAirport}` : NON_DISPONIBLE,
+          source: null
+        },
+        train: {
+          duration: transportInfo.nearestStation ? `Gare la plus proche : ${transportInfo.nearestStation}` : NON_DISPONIBLE,
+          source: null
+        }
       };
     }
 
@@ -395,8 +413,8 @@
         ]);
 
         const [tAzur, tAuvergne] = await Promise.all([
-          buildTravelTimes(personLocation, coteAzurCoords),
-          buildTravelTimes(personLocation, auvergneCoords)
+          buildTravelTimes(personLocation, { ...coteAzurCoords, key: CENTER_COTE_AZUR.key }),
+          buildTravelTimes(personLocation, { ...auvergneCoords, key: CENTER_AUVERGNE.key })
         ]);
 
         const dAzurMeters = tAzur.distanceMeters;
@@ -404,9 +422,13 @@
 
         distancesBox.innerHTML = `
           <div>📏 Distance vers <strong>${CENTER_COTE_AZUR.name}</strong> : <strong>${formatDistanceKm(dAzurMeters)}</strong></div>
-          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚗', tAzur.car)} · ${renderTravelTime('✈️', tAzur.plane)} · ${renderTravelTime('🚆', tAzur.train)}</div>
+          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚗', tAzur.car)}</div>
+          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('✈️', tAzur.plane)}</div>
+          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚆', tAzur.train)}</div>
           <div>📏 Distance vers <strong>${CENTER_AUVERGNE.name}</strong> : <strong>${formatDistanceKm(dAuvergneMeters)}</strong></div>
-          <div class="muted" style="margin:4px 0 0 18px;">${renderTravelTime('🚗', tAuvergne.car)} · ${renderTravelTime('✈️', tAuvergne.plane)} · ${renderTravelTime('🚆', tAuvergne.train)}</div>
+          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚗', tAuvergne.car)}</div>
+          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('✈️', tAuvergne.plane)}</div>
+          <div class="muted" style="margin:4px 0 0 18px;">${renderTravelTime('🚆', tAuvergne.train)}</div>
         `;
         distancesBox.style.display = 'block';
 
@@ -450,7 +472,7 @@
         recommendedCenter = nearest;
 
         const nearestTravelTimes = latestTravelTimes[nearest.key];
-        resultBox.innerHTML = `✅ <strong>Centre recommandé</strong><br><span class="ok">${nearest.name}</span><br><span class="muted">Distance routière : ${formatDistanceKm(nearestDistanceMeters)}</span><br><span class="muted">${renderTravelTime('🚗 Voiture :', nearestTravelTimes.car)} · ${renderTravelTime('✈️ Avion :', nearestTravelTimes.plane)} · ${renderTravelTime('🚆 Train :', nearestTravelTimes.train)}</span>`;
+        resultBox.innerHTML = `✅ <strong>Centre recommandé</strong><br><span class="ok">${nearest.name}</span><br><span class="muted">Distance routière : ${formatDistanceKm(nearestDistanceMeters)}</span><br><span class="muted">${renderTravelTime('🚗 Voiture :', nearestTravelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', nearestTravelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', nearestTravelTimes.train)}</span><br><span class="muted">🏠 Hébergement proposé pour vous simplifier l'organisation sur place.</span>`;
         resultBox.style.display = 'block';
 
         preferenceNote.style.display = 'block';
