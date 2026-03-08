@@ -374,12 +374,25 @@
         <h2 class="step-title"><span class="step-num">5</span> Financement de votre formation 💶</h2>
 
         <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
-        <select name="cpf_consulte" required>
+        <select name="cpf_consulte" id="cpfConsulte" required>
           <option value="">— Sélectionnez —</option>
           <option value="OUI">OUI</option>
           <option value="NON">NON</option>
         </select>
         <p class="small-note">👉 <a href="https://moncompteformation.gouv.fr" target="_blank" rel="noopener noreferrer">Accéder à Mon Compte Formation</a></p>
+
+        <div id="blocCpfMontant" class="hidden">
+          <label style="margin-top:12px;">Montant disponible sur mon CPF (en €)</label>
+          <input
+            type="text"
+            name="cpf_montant"
+            id="cpfMontant"
+            inputmode="numeric"
+            pattern="[0-9]{1,5}"
+            maxlength="5"
+            placeholder="Ex : 2500"
+          >
+        </div>
 
         <label style="margin-top:12px;">Je souhaite déposer une demande de financement à France Travail</label>
         <select name="france_travail" id="franceTravail" required>
@@ -387,6 +400,15 @@
           <option value="OUI">OUI</option>
           <option value="NON">NON</option>
         </select>
+
+        <div id="blocFranceTravail" class="hidden">
+          <label style="margin-top:12px;">Si France Travail refuse le financement, suis-je prêt à financer personnellement la formation ?</label>
+          <select name="ft_refus_ok">
+            <option value="">— Sélectionnez —</option>
+            <option value="OUI">OUI</option>
+            <option value="NON">NON</option>
+          </select>
+        </div>
 
         <div id="blocPerso" class="hidden">
           <label style="margin-top:12px;">Je souhaite financer moi-même la formation / je dispose des fonds nécessaires sur mon CPF</label>
@@ -433,6 +455,10 @@
     const sessions = {{ sessions|tojson }};
     const gclidField = document.getElementById('gclidField');
     const franceTravail = document.getElementById('franceTravail');
+    const cpfConsulte = document.getElementById('cpfConsulte');
+    const blocCpfMontant = document.getElementById('blocCpfMontant');
+    const cpfMontant = document.getElementById('cpfMontant');
+    const blocFranceTravail = document.getElementById('blocFranceTravail');
     const blocPerso = document.getElementById('blocPerso');
     const optCote = document.getElementById('optCote');
     const optAuv = document.getElementById('optAuv');
@@ -452,11 +478,35 @@
       }
     })();
 
+    cpfConsulte.addEventListener('change', () => {
+      blocCpfMontant.classList.toggle('hidden', cpfConsulte.value !== 'OUI');
+      cpfMontant.required = cpfConsulte.value === 'OUI';
+      if (cpfConsulte.value !== 'OUI') cpfMontant.value = '';
+    });
+
     franceTravail.addEventListener('change', () => {
-      blocPerso.classList.toggle('hidden', franceTravail.value !== 'NON');
-      const select = blocPerso.querySelector('select');
-      select.required = franceTravail.value === 'NON';
-      if (franceTravail.value !== 'NON') select.value = '';
+      const ftRefus = blocFranceTravail.querySelector('select');
+      const perso = blocPerso.querySelector('select');
+
+      ftRefus.required = false;
+      perso.required = false;
+
+      if (franceTravail.value === 'OUI') {
+        blocFranceTravail.classList.remove('hidden');
+        blocPerso.classList.add('hidden');
+        ftRefus.required = true;
+        perso.value = '';
+      } else if (franceTravail.value === 'NON') {
+        blocFranceTravail.classList.add('hidden');
+        blocPerso.classList.remove('hidden');
+        perso.required = true;
+        ftRefus.value = '';
+      } else {
+        blocFranceTravail.classList.add('hidden');
+        blocPerso.classList.add('hidden');
+        ftRefus.value = '';
+        perso.value = '';
+      }
     });
 
     function selectedCentre() {
@@ -579,7 +629,26 @@
         e.preventDefault();
         alert('Merci de sélectionner un lieu de formation souhaité.');
       }
+
+      if (blocFranceTravail.classList.contains('hidden')) {
+        blocFranceTravail.querySelector('select').required = false;
+      }
+
+      if (blocPerso.classList.contains('hidden')) {
+        blocPerso.querySelector('select').required = false;
+      }
+
+      if (blocCpfMontant.classList.contains('hidden')) {
+        cpfMontant.required = false;
+      }
     });
+
+    cpfMontant.addEventListener('input', () => {
+      cpfMontant.value = cpfMontant.value.replace(/\D/g, '').slice(0, 5);
+    });
+
+    cpfConsulte.dispatchEvent(new Event('change'));
+    franceTravail.dispatchEvent(new Event('change'));
 
     const modal = document.getElementById('modal');
     openSimu.addEventListener('click', () => { modal.style.display = 'block'; });
