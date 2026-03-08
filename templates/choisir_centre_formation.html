@@ -217,8 +217,8 @@
 
     const NON_DISPONIBLE = 'Non disponible';
     // OSRM a tendance à surestimer légèrement certains trajets autoroutiers longue distance.
-    // On applique un calibrage conservateur pour se rapprocher des estimateurs grand public.
-    const ROAD_DURATION_CALIBRATION_FACTOR = 0.88;
+    // On applique un calibrage plus fort pour mieux coller aux estimateurs grand public (Google/Apple/Waze).
+    const ROAD_DURATION_CALIBRATION_FACTOR = 0.77;
 
     let latestDistances = null;
     let latestTravelTimes = null;
