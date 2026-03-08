@@ -1305,7 +1305,6 @@ def admin():
 
 
 @app.route("/admin/choisir-centre-formation")
-@login_required
 def choisir_centre_formation():
     return render_template("choisir_centre_formation.html")
 
