@@ -441,10 +441,15 @@
       if (!rows.length) {
         const o = document.createElement('option');
         o.value = '';
-        o.textContent = 'Aucune session disponible pour le moment';
+        if (f === 'DESP_VAE') {
+          o.textContent = 'Commencez votre VAE dès maintenant';
+          datesHelp.textContent = 'La VAE est accessible en continu : commencez votre VAE dès maintenant.';
+        } else {
+          o.textContent = 'Aucune session disponible pour le moment';
+          datesHelp.textContent = 'Aucune session disponible pour le moment : un conseiller vous proposera des alternatives.';
+        }
         datesSelect.appendChild(o);
         datesSelect.required = false;
-        datesHelp.textContent = 'Aucune session disponible pour le moment : un conseiller vous proposera des alternatives.';
         return;
       }
 
