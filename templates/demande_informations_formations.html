@@ -313,10 +313,7 @@
           <label>
             <input type="radio" name="centre" value="cote_azur">
             <span>
-              <strong class="location-title"><span class="new-badge">NOUVEAU</span>Intégrale Academy Côte d’Azur (Fréjus, Var)</strong>
-              <p class="location-copy">
-                🌊☀️
-              </p>
+              <strong class="location-title">Intégrale Academy Côte d’Azur (Fréjus, Var)</strong>
               <p class="location-copy">
                 🌊☀️
               </p>
@@ -352,10 +349,7 @@
           </label>
         </article>
 
-        <div class="simu-box">
-          <p id="vaeRemoteText" class="help-copy hidden">
-            Votre VAE Dirigeant d'entreprise de sécurité se déroule 100% en ligne à distance.
-          </p>
+        <div id="simuBox" class="simu-box hidden">
           <p id="simuText" class="help-copy hidden">
             Utilisez notre simulateur ci-dessous pour calculer combien de kilomètres nous séparent et choisir le centre de formation le plus près de chez vous.
           </p>
@@ -468,6 +462,7 @@
     const blocPerso = document.getElementById('blocPerso');
     const optCote = document.getElementById('optCote');
     const optAuv = document.getElementById('optAuv');
+    const simuBox = document.getElementById('simuBox');
     const openSimu = document.getElementById('openSimu');
     const simuText = document.getElementById('simuText');
     const vaeRemoteText = document.getElementById('vaeRemoteText');
@@ -533,6 +528,7 @@
 
       optCote.classList.add('hidden');
       optAuv.classList.add('hidden');
+      simuBox.classList.add('hidden');
       openSimu.style.display = 'none';
       simuText.classList.add('hidden');
       vaeRemoteText.classList.add('hidden');
@@ -551,8 +547,9 @@
         if (coteRadio) coteRadio.checked = true;
       }
 
-      // Simulateur affiché uniquement pour les formations avec choix de centre
-      if (['A3P', 'DESP_INIT'].includes(v)) {
+      // Simulateur masqué pour VTC et APS
+      if (!['VTC', 'APS'].includes(v)) {
+        simuBox.classList.remove('hidden');
         openSimu.style.display = 'inline-flex';
         simuText.classList.remove('hidden');
       }
