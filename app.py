@@ -644,6 +644,135 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         print("❌ Erreur envoi email :", e)
         return False
 
+
+def build_vae_desp_email_html():
+    return """<html style="overflow-y: hidden;">
+<head>
+    <title></title>
+</head>
+<body style="height: auto; min-height: auto;">
+<div style="font-family: Arial, sans-serif; max-width:650px; margin:auto; background:#f9f9f9; padding:20px;">
+<div style="background:#ffffff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
+<div style="text-align:center; padding:25px 20px 10px 20px;"><img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:110px; height:auto; display:block; margin:auto;" />
+<h2 style="color:#000; font-size:20px; margin:12px 0 0 0;">Intégrale Academy</h2>
+</div>
+
+<div style="background:#F4C45A; padding:14px; text-align:center;">
+<h3 style="margin:0; font-size:18px; color:#000;">📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)</h3>
+</div>
+
+<div style="padding:25px; font-size:15px; color:#333; line-height:1.7;">
+<p>Bonjour,</p>
+
+<p>Je fais suite à notre échange concernant la <strong>Validation des Acquis de l’Expérience (VAE)</strong> du titre <strong>RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée</strong>, délivré par notre centre de formation Intégrale Academy.</p>
+
+<p>La VAE vous permet d’obtenir un <strong>titre reconnu par l’État (niveau 5 – Bac+2)</strong> sur la base de votre expérience professionnelle dans la sécurité privée ainsi que de vos fonctions de direction, de management et de gestion d’entreprise.</p>
+
+<p><strong>📄 Dossier de présentation :</strong></p>
+
+<div style="text-align:center; margin:20px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#ffffff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le dossier de présentation </a></div>
+
+<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
+<div style="margin:30px 0; text-align:center;"><a href="https://gestionstagiaires-r5no.onrender.com/vae-desp" style="display:inline-block; padding:16px 28px; background:#F4C45A; color:#000; text-decoration:none; border-radius:10px; font-weight:bold; font-size:16px;">🚀 Démarrer ma VAE maintenant </a></div>
+
+<p style="text-align:center; font-size:14px; color:#666;">👉 Vous pouvez commencer immédiatement votre Livret 1 en ligne en cliquant ici.</p>
+
+<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
+<h3 style="color:#000;">🧭 Les étapes de votre parcours VAE</h3>
+
+<h4 style="margin-top:20px;">1️⃣ Rédaction du Livret 1 (dossier de faisabilité)</h4>
+
+<p>Vous complétez votre dossier de faisabilité en ligne. Ce document permet de présenter votre parcours professionnel, vos fonctions exercées et vos responsabilités. Il s’agit de la « photographie » de votre expérience afin de vérifier l’adéquation avec le référentiel du titre.</p>
+
+<p><strong>⏳ Durée estimée : environ 30 minutes.</strong></p>
+
+<h4 style="margin-top:20px;">2️⃣ Étude du Livret 1 et attestation de recevabilité</h4>
+
+<p>La commission pédagogique étudie votre dossier. Si les éléments sont conformes et suffisants, une <strong>attestation de recevabilité</strong> vous est délivrée.</p>
+
+<p>À cette étape, nous mettons en place la convention de VAE et procédons au règlement de l’<strong>acompte de 30 % (1 140 €)</strong>.</p>
+
+<h4 style="margin-top:20px;">3️⃣ Constitution du Livret 2</h4>
+
+<p>Le Livret 2 constitue le cœur de votre démarche. Vous y détaillez précisément :</p>
+
+<ul style="margin-left:20px;">
+    <li>Vos activités professionnelles</li>
+    <li>Vos missions de direction</li>
+    <li>Vos responsabilités managériales</li>
+    <li>Vos compétences réglementaires et opérationnelles</li>
+    <li>Les situations professionnelles rencontrées</li>
+</ul>
+
+<p>Ce dossier servira de base à l’évaluation par le jury de certification.</p>
+
+<h4 style="margin-top:20px;">4️⃣ Étude du Livret 2</h4>
+
+<p>La commission analyse votre dossier. Si l’ensemble est conforme et complet, une date de passage devant le jury est programmée.</p>
+
+<h4 style="margin-top:20px;">5️⃣ Passage devant le jury de certification</h4>
+
+<p>Avant le jury, le solde de la formation est à régler (<strong>2 520 €</strong>).</p>
+
+<p>L’entretien dure environ <strong>45 minutes à 1 heure</strong> et peut se dérouler :</p>
+
+<ul style="margin-left:20px;">
+    <li>En présentiel à Nice (06)</li>
+    <li>En visioconférence</li>
+</ul>
+
+<p>Le jury échange avec vous sur votre parcours et vérifie la maîtrise des compétences attendues à travers des questions concrètes liées à votre expérience.</p>
+
+<h4 style="margin-top:20px;">6️⃣ Obtention de votre certification</h4>
+
+<p>Après validation par le jury, vous obtenez officiellement le titre RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée.</p>
+
+<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
+<h3 style="color:#000;">💶 Tarif et financement</h3>
+
+<p><strong>Tarif global : 3 800 € TTC</strong></p>
+
+<p>Ce tarif comprend :</p>
+
+<ul style="margin-left:20px;">
+    <li>L’étude de recevabilité</li>
+    <li>L’accompagnement méthodologique Livret 2</li>
+    <li>La préparation au jury</li>
+    <li>Les frais de certification</li>
+</ul>
+
+<p>👉 Financement possible via votre <strong>Compte Personnel de Formation (CPF)</strong>.</p>
+
+<div style="margin:25px 0; padding:18px; background:#f5f5f5; border-radius:10px; text-align:center; border:1px solid #e4e4e4;">
+<p style="margin:0 0 12px 0; font-size:15px; color:#333;">Besoin d’un <strong>devis personnalisé</strong> avec plan de financement ?</p>
+<a href="https://assistance-alw9.onrender.com/demande-devis" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">🧾 Demander un devis personnalisé </a></div>
+
+<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
+<h3 style="color:#000;">📞 Échanger avec nous</h3>
+
+<p>Vous pouvez planifier un rendez-vous téléphonique pour faire le point sur votre situation :</p>
+
+<div style="text-align:center; margin:20px 0;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">📞 Planifier un rendez-vous </a></div>
+
+<p>Je reste bien entendu à votre disposition pour tout renseignement complémentaire.</p>
+
+<p>Bien cordialement,<br />
+<br />
+<strong>Clément VAILLANT</strong><br />
+Directeur – Intégrale Academy<br />
+ecole@integraleacademy.com<br />
+📍 54 chemin du Carreou – 83480 Puget-sur-Argens</p>
+</div>
+
+<div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />
+SIREN 840 899 884 – NDA 93830600283 – Certification QUALIOPI n°03169<br />
+integraleacademy.com</div>
+</div>
+</div>
+</body>
+</html>
+"""
+
 # --------------- Auth helpers ---------------
 def login_required(f):
     @wraps(f)
@@ -1323,33 +1452,45 @@ def demande_informations_formations():
             <p>Pour utiliser votre Compte Personnel de Formation, vous devez créer votre « Identité Numérique la Poste » (FranceConnect+). Vous pouvez créer votre Identité Numérique la Poste directement dans un bureau de Poste ou sur le site internet officiel <a href="https://lidentitenumerique.laposte.fr/">https://lidentitenumerique.laposte.fr/</a>.</p>
             """
 
-        plain = (
-            f"Bonjour {prenom},\n\n"
-            f"Je fais suite à votre demande de renseignements concernant notre formation {formation_label}. Nous vous remercions de nous avoir contacté !\n\n"
-            "Un conseiller formation reviendra vers vous prochainement pour vous accompagner dans votre projet de formation.\n\n"
-            "Vous pouvez également nous contacter au 04 22 47 07 68 pour échanger avec notre équipe.\n\n"
-            + ("Vous pouvez télécharger votre devis détaillé ici : https://www.integraleacademy.com/dossiersfc\n\n" if form_data.get("souhaite_devis") == "OUI" else "")
-            + ("Pour utiliser votre Compte Personnel de Formation, vous devez créer votre Identité Numérique La Poste : https://lidentitenumerique.laposte.fr/\n\n" if form_data.get("identite_numerique") == "NON" else "")
-            + "Je vous souhaite une bonne journée,\n\n"
-            "Clément VAILLANT\nDirecteur Intégrale Academy"
-        )
+        if form_data.get("formation") == "DESP_VAE":
+            plain = (
+                "Bonjour,\n\n"
+                "Merci pour votre intérêt concernant la VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
+                "Vous pouvez démarrer votre parcours ici : https://gestionstagiaires-r5no.onrender.com/vae-desp\n\n"
+                "Bien cordialement,\n"
+                "Intégrale Academy"
+            )
+            html = build_vae_desp_email_html()
+            email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
+        else:
+            plain = (
+                f"Bonjour {prenom},\n\n"
+                f"Je fais suite à votre demande de renseignements concernant notre formation {formation_label}. Nous vous remercions de nous avoir contacté !\n\n"
+                "Un conseiller formation reviendra vers vous prochainement pour vous accompagner dans votre projet de formation.\n\n"
+                "Vous pouvez également nous contacter au 04 22 47 07 68 pour échanger avec notre équipe.\n\n"
+                + ("Vous pouvez télécharger votre devis détaillé ici : https://www.integraleacademy.com/dossiersfc\n\n" if form_data.get("souhaite_devis") == "OUI" else "")
+                + ("Pour utiliser votre Compte Personnel de Formation, vous devez créer votre Identité Numérique La Poste : https://lidentitenumerique.laposte.fr/\n\n" if form_data.get("identite_numerique") == "NON" else "")
+                + "Je vous souhaite une bonne journée,\n\n"
+                "Clément VAILLANT\nDirecteur Intégrale Academy"
+            )
 
-        html = _wrap_html(
-            "<h1>✨ Merci pour votre demande</h1>",
-            f"""
-            <p>Bonjour <strong>{prenom}</strong>,</p>
-            <p>Je fais suite à votre demande de renseignements concernant notre formation <strong>{formation_label}</strong>. Nous vous remercions de nous avoir contacté !</p>
-            <p>Un conseiller formation reviendra vers vous prochainement pour vous accompagner dans votre projet de formation.</p>
-            <p>Vous pouvez également nous contacter au <strong>04 22 47 07 68</strong> pour échanger avec notre équipe.</p>
-            {extra_devis}
-            {extra_identite}
-            <p>Je vous souhaite une bonne journée,</p>
-            <p><strong>Clément VAILLANT</strong><br>Directeur Intégrale Academy</p>
-            """
-        )
+            html = _wrap_html(
+                "<h1>✨ Merci pour votre demande</h1>",
+                f"""
+                <p>Bonjour <strong>{prenom}</strong>,</p>
+                <p>Je fais suite à votre demande de renseignements concernant notre formation <strong>{formation_label}</strong>. Nous vous remercions de nous avoir contacté !</p>
+                <p>Un conseiller formation reviendra vers vous prochainement pour vous accompagner dans votre projet de formation.</p>
+                <p>Vous pouvez également nous contacter au <strong>04 22 47 07 68</strong> pour échanger avec notre équipe.</p>
+                {extra_devis}
+                {extra_identite}
+                <p>Je vous souhaite une bonne journée,</p>
+                <p><strong>Clément VAILLANT</strong><br>Directeur Intégrale Academy</p>
+                """
+            )
+            email_subject = "Votre demande de renseignements – Intégrale Academy"
 
         try:
-            send_email_html(form_data.get("mail"), "Votre demande de renseignements – Intégrale Academy", plain, html)
+            send_email_html(form_data.get("mail"), email_subject, plain, html)
         except:
             pass
 
@@ -1363,6 +1504,9 @@ def demande_informations_formations():
                 )
             except:
                 pass
+
+        if form_data.get("formation") == "DESP_VAE":
+            return redirect("https://gestionstagiaires-r5no.onrender.com/vae-desp")
 
         return redirect(url_for("confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=form_data.get("formation", "")))
 
