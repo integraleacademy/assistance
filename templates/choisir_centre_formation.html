@@ -13,7 +13,7 @@
     .brand img { height:96px; width:auto; border-radius:16px; box-shadow:0 8px 20px rgba(37,99,235,.2); }
     .intro { text-align:center; margin-bottom:20px; }
 
-    .design-note {
+    .section-note {
       margin-top: 12px;
       padding: 12px 14px;
       border-radius: 12px;
@@ -77,6 +77,7 @@
 
     .box { margin-top:18px; padding:14px; border-radius:10px; background:#f9fafb; border:1px solid #e5e7eb; }
     .result { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
+    .selection { margin-top:14px; padding:16px; border-radius:10px; border:1px solid #bfdbfe; background:#f0f9ff; }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
     .back {
@@ -103,21 +104,6 @@
     </div>
     <h1>📍 Choisir mon centre de formation</h1>
     <p class="muted intro">Renseignez votre code postal afin que nous puissions vous aider à trouver le centre de formation le plus proche de chez vous.</p>
-    <div class="design-note">🌊 Vous êtes plutôt mer ou plutôt montagne ? 🏔️ Faites votre choix !</div>
-
-    <div class="choice-row">
-      <button class="choice-btn" type="button" data-pref="mer">🌊 Team Mer</button>
-      <button class="choice-btn" type="button" data-pref="montagne">🏔️ Team Montagne</button>
-    </div>
-
-    <div class="direct-select">
-      <label for="center-select">Ou sélectionnez directement votre centre :</label>
-      <select id="center-select">
-        <option value="auto">🔎 Recommandation automatique (par distance)</option>
-        <option value="cote-azur">🌊 Intégrale Academy Côte d'Azur</option>
-        <option value="auvergne">🏔️ Intégrale Academy Terres d'Auvergne</option>
-      </select>
-    </div>
 
     <div class="row">
       <input id="cp" type="text" maxlength="5" placeholder="Ex : 06000" inputmode="numeric" />
@@ -127,6 +113,24 @@
     <div id="location" class="box" style="display:none;"></div>
     <div id="distances" class="box" style="display:none;"></div>
     <div id="result" class="result" style="display:none;"></div>
+
+    <div class="section-note" id="preference-note" style="display:none;">🌊 Vous êtes plutôt mer ou plutôt montagne ? 🏔️ Faites votre choix !</div>
+
+    <div class="choice-row" id="preference-row" style="display:none;">
+      <button class="choice-btn" type="button" data-pref="mer">🌊 Team Mer</button>
+      <button class="choice-btn" type="button" data-pref="montagne">🏔️ Team Montagne</button>
+    </div>
+
+    <div class="direct-select" id="direct-select-wrap" style="display:none;">
+      <label for="center-select">Ou sélectionnez directement votre centre :</label>
+      <select id="center-select">
+        <option value="auto">🔎 Je garde le centre recommandé</option>
+        <option value="cote-azur">🌊 Intégrale Academy Côte d'Azur</option>
+        <option value="auvergne">🏔️ Intégrale Academy Terres d'Auvergne</option>
+      </select>
+    </div>
+
+    <div id="selection" class="selection" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
     <a class="back" href="{{ url_for('demande_informations_formations') }}" target="_top">← Retour au formulaire</a>
@@ -150,9 +154,16 @@
     const locationBox = document.getElementById('location');
     const distancesBox = document.getElementById('distances');
     const resultBox = document.getElementById('result');
+    const selectionBox = document.getElementById('selection');
     const errorBox = document.getElementById('error');
     const centerSelect = document.getElementById('center-select');
     const prefButtons = document.querySelectorAll('.choice-btn');
+    const preferenceNote = document.getElementById('preference-note');
+    const preferenceRow = document.getElementById('preference-row');
+    const directSelectWrap = document.getElementById('direct-select-wrap');
+
+    let latestDistances = null;
+    let recommendedCenter = null;
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -164,15 +175,33 @@
       errorBox.textContent = '';
     }
 
-    function activatePreference(pref) {
+    function notifyParent(center) {
+      window.parent.postMessage({
+        type: 'centre-selected',
+        centre: center.key === 'cote-azur' ? 'cote_azur' : 'auvergne'
+      }, '*');
+    }
+
+    function updateSelectionSummary(center, reason) {
+      if (!latestDistances || !center) return;
+      const distance = latestDistances[center.key];
+      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance estimée : ${distance.toFixed(1)} km</span>`;
+      selectionBox.style.display = 'block';
+    }
+
+    function activatePreference(pref, shouldNotify = true) {
       prefButtons.forEach((button) => {
         button.classList.toggle('active', button.dataset.pref === pref);
       });
 
       if (pref === 'mer') {
         centerSelect.value = CENTER_COTE_AZUR.key;
+        updateSelectionSummary(CENTER_COTE_AZUR, 'Choix Team Mer 🌊');
+        if (shouldNotify) notifyParent(CENTER_COTE_AZUR);
       } else if (pref === 'montagne') {
         centerSelect.value = CENTER_AUVERGNE.key;
+        updateSelectionSummary(CENTER_AUVERGNE, 'Choix Team Montagne 🏔️');
+        if (shouldNotify) notifyParent(CENTER_AUVERGNE);
       }
     }
 
@@ -183,6 +212,10 @@
     centerSelect.addEventListener('change', () => {
       if (centerSelect.value === 'auto') {
         prefButtons.forEach((button) => button.classList.remove('active'));
+        if (recommendedCenter) {
+          updateSelectionSummary(recommendedCenter, 'Centre recommandé conservé');
+          notifyParent(recommendedCenter);
+        }
       } else if (centerSelect.value === CENTER_COTE_AZUR.key) {
         activatePreference('mer');
       } else if (centerSelect.value === CENTER_AUVERGNE.key) {
@@ -229,6 +262,7 @@
       locationBox.style.display = 'none';
       distancesBox.style.display = 'none';
       resultBox.style.display = 'none';
+      selectionBox.style.display = 'none';
 
       const postcode = cpInput.value.trim();
       if (!/^\d{5}$/.test(postcode)) {
@@ -259,27 +293,25 @@
         `;
         distancesBox.style.display = 'block';
 
-        const selectedCenter = centerSelect.value;
-        let nearest;
-        let nearestDistance;
-        let reason;
+        latestDistances = {
+          [CENTER_COTE_AZUR.key]: dAzur,
+          [CENTER_AUVERGNE.key]: dAuvergne
+        };
 
-        if (selectedCenter === CENTER_COTE_AZUR.key) {
-          nearest = CENTER_COTE_AZUR;
-          nearestDistance = dAzur;
-          reason = 'Choix direct 🌊';
-        } else if (selectedCenter === CENTER_AUVERGNE.key) {
-          nearest = CENTER_AUVERGNE;
-          nearestDistance = dAuvergne;
-          reason = 'Choix direct 🏔️';
-        } else {
-          nearest = dAzur <= dAuvergne ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
-          nearestDistance = dAzur <= dAuvergne ? dAzur : dAuvergne;
-          reason = 'Centre recommandé automatiquement';
-        }
+        const nearest = dAzur <= dAuvergne ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
+        const nearestDistance = dAzur <= dAuvergne ? dAzur : dAuvergne;
+        recommendedCenter = nearest;
 
-        resultBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre : <span class="ok">${nearest.name}</span><br><span class="muted">Distance estimée : ${nearestDistance.toFixed(1)} km</span>`;
+        resultBox.innerHTML = `✅ <strong>Centre recommandé</strong><br><span class="ok">${nearest.name}</span><br><span class="muted">Distance estimée : ${nearestDistance.toFixed(1)} km</span>`;
         resultBox.style.display = 'block';
+
+        preferenceNote.style.display = 'block';
+        preferenceRow.style.display = 'grid';
+        directSelectWrap.style.display = 'block';
+        centerSelect.value = 'auto';
+        prefButtons.forEach((button) => button.classList.remove('active'));
+        updateSelectionSummary(recommendedCenter, 'Centre recommandé conservé');
+        notifyParent(recommendedCenter);
       } catch (e) {
         showError(e.message || 'Une erreur est survenue.');
       } finally {

@@ -547,6 +547,18 @@
       if (e.target.name === 'centre') loadDates();
     });
 
+    window.addEventListener('message', (event) => {
+      const data = event.data || {};
+      if (data.type !== 'centre-selected') return;
+      if (!['cote_azur', 'auvergne'].includes(data.centre)) return;
+
+      const targetRadio = form.querySelector(`input[name="centre"][value="${data.centre}"]`);
+      if (!targetRadio || targetRadio.closest('.hidden')) return;
+
+      targetRadio.checked = true;
+      loadDates();
+    });
+
     form.addEventListener('submit', (e) => {
       if (mail.value.trim().toLowerCase() !== mail2.value.trim().toLowerCase()) {
         e.preventDefault();
