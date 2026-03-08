@@ -14,7 +14,7 @@
 *{box-sizing:border-box}
 body{font-family:Arial,Helvetica,sans-serif;margin:20px;color:var(--ink);background:#eff2f7}
 .sheet{background:#fff;border:1px solid #d9e1ea;border-radius:14px;padding:14px 16px;box-shadow:0 6px 22px rgba(15,23,42,.08);max-width:980px;margin:0 auto}
-.top-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;border:1px solid color-mix(in srgb, var(--brand) 35%, #fff);background:linear-gradient(90deg,var(--brand-soft),#fff 65%);border-radius:12px;padding:10px 12px}
+.top-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;border:1px solid var(--brand);background:linear-gradient(90deg,var(--brand-soft),#fff 65%);border-radius:12px;padding:10px 12px}
 .branding{display:flex;align-items:center;gap:10px;flex:1;min-width:320px}
 .logo-wrap{background:#fff;border:1px solid #d6deea;border-radius:10px;padding:6px;box-shadow:0 4px 10px rgba(15,23,42,.08)}
 .branding img{height:72px;width:auto;display:block}
@@ -47,15 +47,21 @@ th{background:#f8fafc;text-align:left;width:31%;font-weight:800;color:#1e293b}
   .campus-badge{font-size:18px}
 }
 @media print {
+  html, body, .sheet, .top-bar, .section h2, .campus-badge, th{
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
   @page{size:A4;margin:8mm}
   body{margin:0;background:#fff}
   .sheet{border:none;border-radius:0;box-shadow:none;padding:0;max-width:none}
+  .top-bar{border:1.4px solid var(--brand);background:var(--brand-soft)}
   .top-actions{display:none}
   .section{margin-top:8px}
-  .section h2{font-size:17px;margin-bottom:5px;padding:4px 8px}
+  .section h2{font-size:17px;margin-bottom:5px;padding:4px 8px;background:var(--brand-soft);color:var(--brand-strong);border-left:4px solid var(--brand)}
   .header-title h1{font-size:24px}
   .branding img{height:58px}
-  .campus-badge{font-size:16px;padding:8px 12px}
+  .campus-badge{font-size:16px;padding:8px 12px;background:var(--brand);color:#fff;border:1px solid var(--brand)}
+  th{background:#eef2f7}
   th,td{font-size:10.5px;padding:4px 6px;line-height:1.2}
 }
 </style>
