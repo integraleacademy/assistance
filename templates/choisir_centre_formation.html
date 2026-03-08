@@ -7,16 +7,12 @@
   <style>
     body { font-family: Arial, sans-serif; background:#f4f6f9; margin:0; color:#1f2937; }
     .wrap { max-width: 860px; margin: 36px auto; background:#fff; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.08); padding:26px; }
-    h1 { margin-top:0; font-size:28px; }
+    h1 { margin: 0 0 10px; font-size:36px; text-align:center; }
     .muted { color:#6b7280; }
-    .brand { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-    .brand img { height:48px; width:auto; }
-    .row { display:flex; gap:12px; margin:18px 0 8px; }
-    input { flex:1; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
-    button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; }
-    button:hover { background:#1d4ed8; }
-    .box { margin-top:18px; padding:14px; border-radius:10px; background:#f9fafb; border:1px solid #e5e7eb; }
-    .result { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
+    .brand { display:flex; justify-content:center; align-items:center; margin-bottom:16px; }
+    .brand img { height:96px; width:auto; border-radius:16px; box-shadow:0 8px 20px rgba(37,99,235,.2); }
+    .intro { text-align:center; margin-bottom:20px; }
+
     .design-note {
       margin-top: 12px;
       padding: 12px 14px;
@@ -25,10 +21,79 @@
       background: linear-gradient(90deg, #eff6ff 0%, #ecfeff 100%);
       font-weight: 600;
       color: #1e3a8a;
+      text-align: center;
     }
+
+    .choice-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .choice-btn {
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+      color: #1e3a8a;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 16px;
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+
+    .choice-btn:hover { transform: translateY(-2px); box-shadow:0 8px 20px rgba(59,130,246,.15); }
+    .choice-btn.active { border-color:#2563eb; background:#dbeafe; }
+
+    .direct-select { margin-top: 14px; }
+    .direct-select label { display:block; margin-bottom:8px; font-weight:600; color:#1e3a8a; }
+    select {
+      width:100%;
+      padding:12px;
+      border:1px solid #d1d5db;
+      border-radius:10px;
+      font-size:16px;
+      background:#fff;
+    }
+
+    .row { display:flex; gap:12px; margin:18px 0 8px; }
+    input { flex:1; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
+    button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; }
+    #btn {
+      min-width: 120px;
+      animation: pulse 1.8s infinite;
+      box-shadow: 0 10px 20px rgba(37,99,235,.25);
+      transition: transform .2s ease, background .2s ease;
+    }
+    #btn:hover { background:#1d4ed8; transform: translateY(-1px); }
+    #btn:disabled { animation:none; opacity:.8; cursor:wait; }
+
+    @keyframes pulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37,99,235,.45); }
+      70% { transform: scale(1.03); box-shadow: 0 0 0 12px rgba(37,99,235,0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+    }
+
+    .box { margin-top:18px; padding:14px; border-radius:10px; background:#f9fafb; border:1px solid #e5e7eb; }
+    .result { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
-    .back { display:inline-block; margin-top:18px; text-decoration:none; color:#111827; }
+    .back {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      margin-top:18px;
+      text-decoration:none;
+      color:#1d4ed8;
+      background:#eff6ff;
+      border:1px solid #bfdbfe;
+      border-radius:999px;
+      padding:10px 16px;
+      font-weight:700;
+      transition: all .2s ease;
+    }
+    .back:hover { background:#dbeafe; transform: translateY(-1px); }
   </style>
 </head>
 <body>
@@ -37,8 +102,22 @@
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
     </div>
     <h1>📍 Choisir mon centre de formation</h1>
-    <p class="muted">Renseignez votre code postal afin que nous puissions vous aider à trouver le centre de formation le plus proche de chez vous.</p>
-    <div class="design-note">Vous êtes plutôt mer ou montagne ? A vous de choisir 😉</div>
+    <p class="muted intro">Renseignez votre code postal afin que nous puissions vous aider à trouver le centre de formation le plus proche de chez vous.</p>
+    <div class="design-note">🌊 Vous êtes plutôt mer ou plutôt montagne ? 🏔️ Faites votre choix !</div>
+
+    <div class="choice-row">
+      <button class="choice-btn" type="button" data-pref="mer">🌊 Team Mer</button>
+      <button class="choice-btn" type="button" data-pref="montagne">🏔️ Team Montagne</button>
+    </div>
+
+    <div class="direct-select">
+      <label for="center-select">Ou sélectionnez directement votre centre :</label>
+      <select id="center-select">
+        <option value="auto">🔎 Recommandation automatique (par distance)</option>
+        <option value="cote-azur">🌊 Intégrale Academy Côte d'Azur</option>
+        <option value="auvergne">🏔️ Intégrale Academy Terres d'Auvergne</option>
+      </select>
+    </div>
 
     <div class="row">
       <input id="cp" type="text" maxlength="5" placeholder="Ex : 06000" inputmode="numeric" />
@@ -50,17 +129,19 @@
     <div id="result" class="result" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
-    <a class="back" href="{{ url_for('demande_informations_formations') }}" target="_top">retour au formulaire.</a>
+    <a class="back" href="{{ url_for('demande_informations_formations') }}" target="_top">← Retour au formulaire</a>
   </div>
 
   <script>
     const CENTER_COTE_AZUR = {
+      key: 'cote-azur',
       name: "Intégrale Academy Côte d'Azur",
       address: "54 chemin du Carreou, 83480 Puget-sur-Argens"
     };
 
     const CENTER_AUVERGNE = {
-      name: "Intégrale Academy Terres d'auvergne",
+      key: 'auvergne',
+      name: "Intégrale Academy Terres d'Auvergne",
       address: "650 route d'Aumont, 15130 Arpajon-sur-Cère"
     };
 
@@ -70,6 +151,8 @@
     const distancesBox = document.getElementById('distances');
     const resultBox = document.getElementById('result');
     const errorBox = document.getElementById('error');
+    const centerSelect = document.getElementById('center-select');
+    const prefButtons = document.querySelectorAll('.choice-btn');
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -80,6 +163,32 @@
       errorBox.style.display = 'none';
       errorBox.textContent = '';
     }
+
+    function activatePreference(pref) {
+      prefButtons.forEach((button) => {
+        button.classList.toggle('active', button.dataset.pref === pref);
+      });
+
+      if (pref === 'mer') {
+        centerSelect.value = CENTER_COTE_AZUR.key;
+      } else if (pref === 'montagne') {
+        centerSelect.value = CENTER_AUVERGNE.key;
+      }
+    }
+
+    prefButtons.forEach((button) => {
+      button.addEventListener('click', () => activatePreference(button.dataset.pref));
+    });
+
+    centerSelect.addEventListener('change', () => {
+      if (centerSelect.value === 'auto') {
+        prefButtons.forEach((button) => button.classList.remove('active'));
+      } else if (centerSelect.value === CENTER_COTE_AZUR.key) {
+        activatePreference('mer');
+      } else if (centerSelect.value === CENTER_AUVERGNE.key) {
+        activatePreference('montagne');
+      }
+    });
 
     function haversineKm(lat1, lon1, lat2, lon2) {
       const toRad = (deg) => deg * Math.PI / 180;
@@ -150,10 +259,26 @@
         `;
         distancesBox.style.display = 'block';
 
-        const nearest = dAzur <= dAuvergne ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
-        const nearestDistance = dAzur <= dAuvergne ? dAzur : dAuvergne;
+        const selectedCenter = centerSelect.value;
+        let nearest;
+        let nearestDistance;
+        let reason;
 
-        resultBox.innerHTML = `✅ Centre recommandé : <span class="ok">${nearest.name}</span><br><span class="muted">Distance estimée : ${nearestDistance.toFixed(1)} km</span>`;
+        if (selectedCenter === CENTER_COTE_AZUR.key) {
+          nearest = CENTER_COTE_AZUR;
+          nearestDistance = dAzur;
+          reason = 'Choix direct 🌊';
+        } else if (selectedCenter === CENTER_AUVERGNE.key) {
+          nearest = CENTER_AUVERGNE;
+          nearestDistance = dAuvergne;
+          reason = 'Choix direct 🏔️';
+        } else {
+          nearest = dAzur <= dAuvergne ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
+          nearestDistance = dAzur <= dAuvergne ? dAzur : dAuvergne;
+          reason = 'Centre recommandé automatiquement';
+        }
+
+        resultBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre : <span class="ok">${nearest.name}</span><br><span class="muted">Distance estimée : ${nearestDistance.toFixed(1)} km</span>`;
         resultBox.style.display = 'block';
       } catch (e) {
         showError(e.message || 'Une erreur est survenue.');
