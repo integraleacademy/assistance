@@ -67,11 +67,15 @@
     .box { margin-top:18px; padding:14px; border-radius:10px; background:#f9fafb; border:1px solid #e5e7eb; }
     .result { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
     .selection { margin-top:14px; padding:16px; border-radius:10px; border:1px solid #bfdbfe; background:#f0f9ff; }
+    .selection ul { margin:10px 0 10px 20px; padding:0; }
+    .selection li { margin-bottom:6px; }
+    .selection .common-note { margin-top:10px; font-weight:700; color:#1e3a8a; }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
     .validate-btn {
-      display:inline-flex;
+      display:flex;
       align-items:center;
+      justify-content:center;
       gap:8px;
       margin:18px auto 0;
       color:#fff;
@@ -174,7 +178,21 @@
     function updateSelectionSummary(center, reason) {
       if (!latestDistances || !center) return;
       const distance = latestDistances[center.key];
-      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance estimée : ${distance.toFixed(1)} km</span>`;
+      const benefits = center.key === 'cote-azur'
+        ? [
+            'Cadre mer et soleil, idéal pour une ambiance dynamique au quotidien.',
+            'Proximité du littoral et bassin d\'emploi touristique très actif.',
+            'Accès facile aux grandes villes de la Côte d\'Azur et à leurs opportunités professionnelles.',
+            'Réseau local riche pour les stages, alternances et débouchés.'
+          ]
+        : [
+            'Cadre naturel montagne et campagne, propice à la concentration.',
+            'Environnement plus calme pour apprendre dans de bonnes conditions.',
+            'Coût de vie souvent plus accessible au quotidien.',
+            'Forte proximité humaine avec un accompagnement de terrain personnalisé.'
+          ];
+
+      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance estimée : ${distance.toFixed(1)} km</span><ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence.</div>`;
       selectionBox.style.display = 'block';
       selectedCenter = center;
     }
