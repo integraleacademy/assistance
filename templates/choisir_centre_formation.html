@@ -46,17 +46,6 @@
     .choice-btn:hover { transform: translateY(-2px); box-shadow:0 8px 20px rgba(59,130,246,.15); }
     .choice-btn.active { border-color:#2563eb; background:#dbeafe; }
 
-    .direct-select { margin-top: 14px; }
-    .direct-select label { display:block; margin-bottom:8px; font-weight:600; color:#1e3a8a; }
-    select {
-      width:100%;
-      padding:12px;
-      border:1px solid #d1d5db;
-      border-radius:10px;
-      font-size:16px;
-      background:#fff;
-    }
-
     .row { display:flex; gap:12px; margin:18px 0 8px; }
     input { flex:1; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
     button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; }
@@ -84,7 +73,7 @@
       display:inline-flex;
       align-items:center;
       gap:8px;
-      margin-top:18px;
+      margin:18px auto 0;
       color:#fff;
       background:#16a34a;
       border:1px solid #15803d;
@@ -94,8 +83,16 @@
       font-size:16px;
       cursor:pointer;
       transition: all .2s ease;
+      animation: validatePulse 1.8s infinite;
     }
     .validate-btn:hover { background:#15803d; transform: translateY(-1px); }
+    .validate-btn:disabled { animation:none; }
+
+    @keyframes validatePulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(22,163,74,.40); }
+      70% { transform: scale(1.03); box-shadow: 0 0 0 10px rgba(22,163,74,0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+    }
   </style>
 </head>
 <body>
@@ -120,14 +117,6 @@
     <div class="choice-row" id="preference-row" style="display:none;">
       <button class="choice-btn" type="button" data-pref="mer">🌊 Team Mer</button>
       <button class="choice-btn" type="button" data-pref="montagne">🏔️ Team Montagne</button>
-    </div>
-
-    <div class="direct-select" id="direct-select-wrap" style="display:none;">
-      <label for="center-select">Ou sélectionnez directement votre centre :</label>
-      <select id="center-select">
-        <option value="cote-azur">🌊 Intégrale Academy Côte d'Azur</option>
-        <option value="auvergne">🏔️ Intégrale Academy Terres d'Auvergne</option>
-      </select>
     </div>
 
     <div id="selection" class="selection" style="display:none;"></div>
@@ -156,11 +145,9 @@
     const resultBox = document.getElementById('result');
     const selectionBox = document.getElementById('selection');
     const errorBox = document.getElementById('error');
-    const centerSelect = document.getElementById('center-select');
     const prefButtons = document.querySelectorAll('.choice-btn');
     const preferenceNote = document.getElementById('preference-note');
     const preferenceRow = document.getElementById('preference-row');
-    const directSelectWrap = document.getElementById('direct-select-wrap');
     const validateButton = document.getElementById('validate-choice');
 
     let latestDistances = null;
@@ -198,24 +185,14 @@
       });
 
       if (pref === 'mer') {
-        centerSelect.value = CENTER_COTE_AZUR.key;
         updateSelectionSummary(CENTER_COTE_AZUR, 'Choix Team Mer 🌊');
       } else if (pref === 'montagne') {
-        centerSelect.value = CENTER_AUVERGNE.key;
         updateSelectionSummary(CENTER_AUVERGNE, 'Choix Team Montagne 🏔️');
       }
     }
 
     prefButtons.forEach((button) => {
       button.addEventListener('click', () => activatePreference(button.dataset.pref));
-    });
-
-    centerSelect.addEventListener('change', () => {
-      if (centerSelect.value === CENTER_COTE_AZUR.key) {
-        activatePreference('mer');
-      } else if (centerSelect.value === CENTER_AUVERGNE.key) {
-        activatePreference('montagne');
-      }
     });
 
     validateButton.addEventListener('click', () => {
@@ -313,10 +290,8 @@
 
         preferenceNote.style.display = 'block';
         preferenceRow.style.display = 'grid';
-        directSelectWrap.style.display = 'block';
-        centerSelect.value = recommendedCenter.key;
         prefButtons.forEach((button) => button.classList.remove('active'));
-        updateSelectionSummary(recommendedCenter, 'Centre recommandé conservé');
+        selectedCenter = null;
       } catch (e) {
         showError(e.message || 'Une erreur est survenue.');
       } finally {
