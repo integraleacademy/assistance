@@ -162,12 +162,12 @@
     const REFERENCE_TRAVEL_TIMES = {
       paris: {
         [CENTER_COTE_AZUR.key]: {
-          plane: '1h',
-          train: '5h40'
+          plane: { duration: '1h', source: 'Google Flights' },
+          train: { duration: '5h40', source: 'SNCF Connect' }
         },
         [CENTER_AUVERGNE.key]: {
-          plane: '1h',
-          train: '6h37'
+          plane: { duration: '1h', source: 'Google Flights' },
+          train: { duration: '6h37', source: 'SNCF Connect' }
         }
       }
     };
@@ -207,7 +207,7 @@
             'Ambiance conviviale et proximité humaine avec un accompagnement de terrain personnalisé.'
           ];
 
-      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance estimée : ${distance.toFixed(1)} km</span>${travelTimes ? `<br><span class="muted">🚗 Voiture : ${travelTimes.car} · ✈️ Avion : ${travelTimes.plane} · 🚆 Train : ${travelTimes.train}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence.</div>`;
+      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance estimée : ${distance.toFixed(1)} km</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)} · ${renderTravelTime('✈️ Avion :', travelTimes.plane)} · ${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence.</div>`;
       selectionBox.style.display = 'block';
       selectedCenter = center;
     }
@@ -226,9 +226,53 @@
       const trainHours = distanceKm / 120;
       const planeHours = (distanceKm / 700) + 0.75;
       return {
-        car: formatDuration(carHours),
-        plane: formatDuration(planeHours),
-        train: formatDuration(trainHours)
+        car: { duration: formatDuration(carHours), source: 'Estimation' },
+        plane: { duration: formatDuration(planeHours), source: 'Estimation' },
+        train: { duration: formatDuration(trainHours), source: 'Estimation' }
+      };
+    }
+
+    function renderTravelTime(mode, value) {
+      if (!value) return '';
+      const source = value.source ? ` <span class="muted">(${value.source})</span>` : '';
+      return `${mode} ${value.duration}${source}`;
+    }
+
+    function normalizeCityName(name) {
+      return (name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+    }
+
+    async function getCarTravelDuration(origin, destination) {
+      const url = `https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?overview=false`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Impossible de calculer le temps voiture en temps réel.');
+      const data = await resp.json();
+      if (!data.routes || !data.routes.length || typeof data.routes[0].duration !== 'number') {
+        throw new Error('Réponse invalide pour le calcul voiture.');
+      }
+      return formatDuration(data.routes[0].duration / 3600);
+    }
+
+    async function buildTravelTimes(personLocation, center, centerCoords, distanceKm) {
+      const estimated = estimateTravelTimes(distanceKm);
+      const cityKey = normalizeCityName(personLocation.cityName);
+      const ref = REFERENCE_TRAVEL_TIMES[cityKey]?.[center.key] || null;
+
+      let carDuration = null;
+      try {
+        carDuration = await getCarTravelDuration(personLocation, centerCoords);
+      } catch (err) {
+        console.warn(err);
+      }
+
+      return {
+        car: carDuration ? { duration: carDuration, source: 'OSRM' } : estimated.car,
+        plane: ref?.plane || estimated.plane,
+        train: ref?.train || estimated.train
       };
     }
 
@@ -367,9 +411,9 @@
 
         distancesBox.innerHTML = `
           <div>📏 Distance vers <strong>${CENTER_COTE_AZUR.name}</strong> : <strong>${dAzur.toFixed(1)} km</strong></div>
-          <div class="muted" style="margin:4px 0 10px 18px;">🚗 ${tAzur.car} · ✈️ ${tAzur.plane} · 🚆 ${tAzur.train}</div>
+          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚗', tAzur.car)} · ${renderTravelTime('✈️', tAzur.plane)} · ${renderTravelTime('🚆', tAzur.train)}</div>
           <div>📏 Distance vers <strong>${CENTER_AUVERGNE.name}</strong> : <strong>${dAuvergne.toFixed(1)} km</strong></div>
-          <div class="muted" style="margin:4px 0 0 18px;">🚗 ${tAuvergne.car} · ✈️ ${tAuvergne.plane} · 🚆 ${tAuvergne.train}</div>
+          <div class="muted" style="margin:4px 0 0 18px;">${renderTravelTime('🚗', tAuvergne.car)} · ${renderTravelTime('✈️', tAuvergne.plane)} · ${renderTravelTime('🚆', tAuvergne.train)}</div>
         `;
         distancesBox.style.display = 'block';
 
@@ -387,7 +431,7 @@
         recommendedCenter = nearest;
 
         const nearestTravelTimes = latestTravelTimes[nearest.key];
-        resultBox.innerHTML = `✅ <strong>Centre recommandé</strong><br><span class="ok">${nearest.name}</span><br><span class="muted">Distance estimée : ${nearestDistance.toFixed(1)} km</span><br><span class="muted">🚗 Voiture : ${nearestTravelTimes.car} · ✈️ Avion : ${nearestTravelTimes.plane} · 🚆 Train : ${nearestTravelTimes.train}</span>`;
+        resultBox.innerHTML = `✅ <strong>Centre recommandé</strong><br><span class="ok">${nearest.name}</span><br><span class="muted">Distance estimée : ${nearestDistance.toFixed(1)} km</span><br><span class="muted">${renderTravelTime('🚗 Voiture :', nearestTravelTimes.car)} · ${renderTravelTime('✈️ Avion :', nearestTravelTimes.plane)} · ${renderTravelTime('🚆 Train :', nearestTravelTimes.train)}</span>`;
         resultBox.style.display = 'block';
 
         preferenceNote.style.display = 'block';
