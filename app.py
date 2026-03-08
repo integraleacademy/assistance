@@ -1573,6 +1573,95 @@ def admin_devis():
 
     return render_template("admin_devis.html", devis=devis)
 
+
+@app.route("/admin-devis/formulaires")
+@login_required
+def admin_devis_formulaires():
+    data = load_data()
+    formulaires = []
+
+    for d in data.get("demandes", []):
+        is_target = (
+            d.get("motif") == "Demande de devis détaillé"
+            or d.get("source") == "demande_infos_formations"
+        )
+        if not is_target:
+            continue
+
+        infos = {}
+        try:
+            parsed = json.loads(d.get("details", "{}"))
+            if isinstance(parsed, dict):
+                infos = parsed
+        except:
+            infos = {}
+
+        source_label = "Devis détaillé"
+        if d.get("source") == "demande_infos_formations":
+            source_label = "Infos formations"
+
+        formulaires.append({
+            "id": d.get("id"),
+            "date": d.get("date", ""),
+            "nom": d.get("nom", ""),
+            "prenom": d.get("prenom", ""),
+            "mail": d.get("mail", ""),
+            "telephone": d.get("telephone", ""),
+            "source_label": source_label,
+            "infos": infos
+        })
+
+    return render_template("admin_devis_formulaires.html", formulaires=formulaires)
+
+
+@app.route("/admin-devis/formulaires/<formulaire_id>/imprimer")
+@login_required
+def imprimer_formulaire_admin_devis(formulaire_id):
+    data = load_data()
+    demande = next((d for d in data.get("demandes", []) if d.get("id") == formulaire_id), None)
+    if not demande:
+        abort(404)
+
+    is_target = (
+        demande.get("motif") == "Demande de devis détaillé"
+        or demande.get("source") == "demande_infos_formations"
+    )
+    if not is_target:
+        abort(404)
+
+    infos = {}
+    try:
+        parsed = json.loads(demande.get("details", "{}"))
+        if isinstance(parsed, dict):
+            infos = parsed
+    except:
+        infos = {}
+
+    infos_rows = []
+    for key, value in infos.items():
+        if isinstance(value, list):
+            display_value = ", ".join(str(v) for v in value)
+        elif isinstance(value, dict):
+            display_value = json.dumps(value, ensure_ascii=False)
+        else:
+            display_value = str(value)
+
+        infos_rows.append({
+            "label": key.replace("_", " ").capitalize(),
+            "value": display_value
+        })
+
+    source_label = "Devis détaillé"
+    if demande.get("source") == "demande_infos_formations":
+        source_label = "Infos formations"
+
+    return render_template(
+        "admin_devis_formulaire_imprimable.html",
+        demande=demande,
+        source_label=source_label,
+        infos_rows=infos_rows
+    )
+
 @app.route("/admin-devis/simulateur")
 @login_required
 def simulateur_plan_financement():

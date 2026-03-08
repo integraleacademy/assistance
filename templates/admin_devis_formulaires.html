@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Traitement formulaires — Intégrale Academy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{font-family:Arial,Helvetica,sans-serif;background:#f5f6f8;margin:0;}
+.container{max-width:1100px;margin:30px auto;background:#fff;padding:24px;border-radius:14px;box-shadow:0 8px 25px rgba(0,0,0,.08)}
+h1{margin-top:0}
+.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.back{padding:8px 12px;border-radius:8px;background:#e9ecef;color:#111;text-decoration:none;font-size:13px}
+.search{flex:1;min-width:220px;padding:9px 12px;border:1px solid #d6d6d6;border-radius:8px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 8px;border-bottom:1px solid #eee;font-size:14px;text-align:left}
+thead{background:#f0f2f5}
+.badge{display:inline-block;padding:4px 10px;border-radius:99px;background:#eef2ff;color:#3730a3;font-size:12px;font-weight:700}
+.btn{display:inline-block;padding:6px 10px;border-radius:7px;background:#111827;color:#fff;text-decoration:none;font-size:12px}
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🧾 Traitement formulaires</h1>
+    <div class="topbar">
+        <a class="back" href="{{ url_for('admin_devis') }}">← Retour admin devis</a>
+        <input id="search" class="search" type="text" placeholder="🔍 Rechercher nom, prénom, email, formation…">
+    </div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Date</th>
+            <th>Personne</th>
+            <th>Contact</th>
+            <th>Formation</th>
+            <th>Type</th>
+            <th>Action</th>
+        </tr>
+        </thead>
+        <tbody id="table-body">
+        {% for f in formulaires %}
+        <tr class="row" data-search="{{ (f.nom ~ ' ' ~ f.prenom ~ ' ' ~ f.mail ~ ' ' ~ f.telephone ~ ' ' ~ (f.infos.formation or ''))|lower }}">
+            <td>{{ f.date }}</td>
+            <td><strong>{{ f.prenom }} {{ f.nom }}</strong></td>
+            <td>{{ f.mail }}<br>{{ f.telephone or '—' }}</td>
+            <td>{{ f.infos.formation or '—' }}</td>
+            <td><span class="badge">{{ f.source_label }}</span></td>
+            <td>
+                <a class="btn" target="_blank" href="{{ url_for('imprimer_formulaire_admin_devis', formulaire_id=f.id) }}">🖨️ Ouvrir imprimable</a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+<script>
+const search = document.getElementById('search');
+const rows = document.querySelectorAll('.row');
+search.addEventListener('input', () => {
+  const q = search.value.toLowerCase();
+  rows.forEach(r => r.style.display = r.dataset.search.includes(q) ? '' : 'none');
+});
+</script>
+</body>
+</html>
