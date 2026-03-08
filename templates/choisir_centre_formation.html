@@ -9,12 +9,23 @@
     .wrap { max-width: 860px; margin: 36px auto; background:#fff; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.08); padding:26px; }
     h1 { margin-top:0; font-size:28px; }
     .muted { color:#6b7280; }
+    .brand { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+    .brand img { height:48px; width:auto; }
     .row { display:flex; gap:12px; margin:18px 0 8px; }
     input { flex:1; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
     button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; }
     button:hover { background:#1d4ed8; }
     .box { margin-top:18px; padding:14px; border-radius:10px; background:#f9fafb; border:1px solid #e5e7eb; }
     .result { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
+    .design-note {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #e0e7ff;
+      background: linear-gradient(90deg, #eff6ff 0%, #ecfeff 100%);
+      font-weight: 600;
+      color: #1e3a8a;
+    }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
     .back { display:inline-block; margin-top:18px; text-decoration:none; color:#111827; }
@@ -22,8 +33,12 @@
 </head>
 <body>
   <div class="wrap">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
+    </div>
     <h1>📍 Choisir mon centre de formation</h1>
-    <p class="muted">Renseignez le code postal de la personne. La ville est retrouvée automatiquement puis la distance est calculée vers les deux centres.</p>
+    <p class="muted">Renseignez votre code postal afin que nous puissions vous aider à trouver le centre de formation le plus proche de chez vous.</p>
+    <div class="design-note">Vous êtes plutôt mer ou montagne ? A vous de choisir 😉</div>
 
     <div class="row">
       <input id="cp" type="text" maxlength="5" placeholder="Ex : 06000" inputmode="numeric" />
@@ -35,7 +50,7 @@
     <div id="result" class="result" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
-    <a class="back" href="{{ url_for('admin') }}">⬅️ Retour Assistance admin</a>
+    <a class="back" href="{{ url_for('demande_informations_formations') }}" target="_top">retour au formulaire.</a>
   </div>
 
   <script>
