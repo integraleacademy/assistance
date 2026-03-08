@@ -261,7 +261,7 @@
             'Ambiance conviviale et proximité humaine avec un accompagnement de terrain personnalisé.'
           ];
 
-      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence. ✅ Hébergement proposé pour vous accompagner sereinement pendant la formation.</div>`;
+      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div>`;
       selectionBox.style.display = 'block';
       selectedCenter = center;
     }
@@ -327,7 +327,7 @@
         durationSeconds: calibrateRoadDuration(routeMetrics?.durationSeconds),
         car: {
           duration: formatDurationFromSeconds(calibrateRoadDuration(routeMetrics?.durationSeconds)),
-          source: routeMetrics?.provider ? `Itinéraire routier avec autoroutes (${routeMetrics.provider}, estimation calibrée)` : null
+          source: null
         },
         plane: {
           duration: transportInfo.nearestAirport ? `Aéroport le plus proche : ${transportInfo.nearestAirport}` : NON_DISPONIBLE,
