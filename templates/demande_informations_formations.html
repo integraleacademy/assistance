@@ -198,10 +198,17 @@
       cursor:pointer;
       margin-top:14px;
       box-shadow:0 14px 26px rgba(21,128,61,.34);
-      animation:bounceGlowGreen 2.2s infinite;
+      transform:translateY(0) scale(1);
+      transition:transform .2s ease, filter .2s ease;
+      animation:bounceGlowGreen 2.2s infinite, sendPulse 1.5s ease-in-out infinite;
     }
 
-    .submit:hover{transform:translateY(-1px);}
+    .submit:hover{
+      transform:translateY(-2px) scale(1.02);
+      filter:brightness(1.05);
+    }
+
+    .submit:active{transform:translateY(0) scale(.99);}
 
     .small-note{font-size:14px;color:var(--slate-500);margin-top:8px;}
 
@@ -220,6 +227,15 @@
     @keyframes bounceGlowGreen{
       0%,100%{box-shadow:0 14px 26px rgba(21,128,61,.34)}
       50%{box-shadow:0 18px 32px rgba(34,197,94,.5)}
+    }
+
+    @keyframes sendPulse{
+      0%,100%{transform:translateY(0) scale(1)}
+      50%{transform:translateY(-2px) scale(1.015)}
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      .submit{animation:none;}
     }
 
     @media (max-width:850px){
