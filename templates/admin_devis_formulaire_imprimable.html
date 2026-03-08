@@ -49,7 +49,8 @@ body{
 .btn-print{background:var(--accent);color:#fff}
 .btn-status{background:#f59e0b;color:#111}
 .btn-status.is-treated{background:#16a34a;color:#fff}
-.content-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.content-grid{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1fr);gap:16px;margin-top:16px}
+.section-stack{display:grid;gap:10px}
 .section{margin-top:0;display:flex;flex-direction:column}
 .section h2{margin:0 0 9px;font-size:21px;padding:8px 11px;border-radius:10px;background:linear-gradient(90deg,var(--brand-soft),var(--surface-muted));color:var(--brand-strong);border-left:5px solid var(--brand)}
 .table-wrap{flex:1;overflow:hidden;border-radius:12px;border:1px solid var(--border);background:#fff;box-shadow:0 4px 16px rgba(15,23,42,.05)}
@@ -78,19 +79,19 @@ tr:nth-child(even) td{background:#fbfdff}
     -webkit-print-color-adjust:exact;
     print-color-adjust:exact;
   }
-  @page{size:A4;margin:8mm}
+  @page{size:A4;margin:4mm}
   body{margin:0;background:#fff}
   .sheet{min-height:auto;border:none;border-radius:0;box-shadow:none;padding:0;max-width:none;width:100%}
   .top-bar{border:1.4px solid var(--brand);background:var(--brand-soft)}
   .top-actions{display:none}
-  .content-grid{display:block;margin-top:8px}
-  .section{margin-top:8px}
-  .section h2{font-size:17px;margin-bottom:5px;padding:4px 8px;background:var(--brand-soft);color:var(--brand-strong);border-left:4px solid var(--brand)}
+  .content-grid{display:grid;grid-template-columns:1fr;margin-top:6px;gap:8px}
+  .section{margin-top:0;break-inside:avoid-page}
+  .section h2{font-size:16px;margin-bottom:4px;padding:4px 8px;background:var(--brand-soft);color:var(--brand-strong);border-left:4px solid var(--brand)}
   .header-title h1{font-size:24px}
   .branding img{height:58px}
   .campus-badge{font-size:16px;padding:8px 12px;background:var(--brand);color:#fff;border:1px solid var(--brand)}
   th{background:#eef2f7}
-  th,td{font-size:10.5px;padding:4px 6px;line-height:1.2}
+  th,td{font-size:11px;padding:4px 6px;line-height:1.2}
   .table-wrap{border-radius:0;box-shadow:none}
 }
 </style>
@@ -131,17 +132,28 @@ tr:nth-child(even) td{background:#fbfdff}
 
   <div class="section">
       <h2>Toutes les réponses du formulaire</h2>
-      <div class="table-wrap">
-        <table>
-            {% for row in infos_rows %}
-            <tr>
-                <th>{{ row.label }}</th>
-                <td>{{ row.value }}</td>
-            </tr>
-            {% else %}
+      <div class="section-stack">
+        {% for category in categorized_infos %}
+        <section class="section">
+          <h2>{{ category.title }}</h2>
+          <div class="table-wrap">
+            <table>
+              {% for row in category.rows %}
+              <tr>
+                  <th>{{ row.label }}</th>
+                  <td>{{ row.value }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </section>
+        {% else %}
+        <div class="table-wrap">
+          <table>
             <tr><td colspan="2">Aucune donnée structurée disponible.</td></tr>
-            {% endfor %}
-        </table>
+          </table>
+        </div>
+        {% endfor %}
       </div>
   </div>
 </div>

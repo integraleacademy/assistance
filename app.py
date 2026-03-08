@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -1891,6 +1891,60 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     except:
         infos = {}
 
+    def normalize_key(raw_key):
+        text = str(raw_key or "").strip().lower()
+        text = unicodedata.normalize("NFD", text)
+        text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+        text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+        return text
+
+    label_overrides = {
+        "gclid": "Gclid",
+        "nom": "Nom",
+        "prenom": "Prénom",
+        "mail": "Mail",
+        "mail_confirm": "Mail confirm",
+        "telephone": "Téléphone",
+        "formation": "Formation souhaitée",
+        "centre": "Lieu de formation souhaité",
+        "centre_formation": "Lieu de formation souhaité",
+        "dates": "Dates de formation souhaitées",
+        "cpf_consulte": "CPF consulté",
+        "cpf_montant": "Montant CPF",
+        "france_travail": "Inscrit France Travail",
+        "ft_refus_ok": "Refus France Travail",
+        "financement_perso": "Financement personnel",
+        "identite_numerique": "Identité numérique",
+        "cnaps_ok": "CNAPS validé",
+        "garde_vue": "Garde à vue",
+        "titre_sejour": "Titre de séjour",
+    }
+
+    categories = {
+        "infos_generales": {"title": "Informations générales", "rows": []},
+        "formation_souhaitee": {"title": "Formation souhaitée", "rows": []},
+        "lieu_formation": {"title": "Lieu de formation souhaité", "rows": []},
+        "dates_formation": {"title": "Dates de formation souhaitées", "rows": []},
+        "financement": {"title": "Financement de votre formation", "rows": []},
+        "situation": {"title": "Votre situation", "rows": []},
+        "autres": {"title": "Autres informations", "rows": []},
+    }
+
+    def category_for_key(normalized_key):
+        if normalized_key in {"nom", "prenom", "mail", "mail_confirm", "telephone", "gclid"}:
+            return "infos_generales"
+        if normalized_key in {"formation"}:
+            return "formation_souhaitee"
+        if normalized_key in {"centre", "centre_formation", "centre_formation_souhaite", "lieu_formation"}:
+            return "lieu_formation"
+        if normalized_key in {"dates", "date", "dates_formation", "dates_formation_souhaitees"}:
+            return "dates_formation"
+        if normalized_key in {"cpf_consulte", "cpf_montant", "france_travail", "ft_refus_ok", "financement_perso"}:
+            return "financement"
+        if normalized_key in {"identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour"}:
+            return "situation"
+        return "autres"
+
     infos_rows = []
     centre_value = ""
     for key, value in infos.items():
@@ -1901,14 +1955,18 @@ def imprimer_formulaire_admin_devis(formulaire_id):
         else:
             display_value = str(value)
 
-        normalized_key = str(key).strip().lower()
+        normalized_key = normalize_key(key)
         if normalized_key in {"centre", "centre_formation", "centre formation"}:
             centre_value = display_value
 
-        infos_rows.append({
-            "label": key.replace("_", " ").capitalize(),
+        row = {
+            "label": label_overrides.get(normalized_key, key.replace("_", " ").capitalize()),
             "value": display_value
-        })
+        }
+        infos_rows.append(row)
+        categories[category_for_key(normalized_key)]["rows"].append(row)
+
+    categorized_infos = [block for block in categories.values() if block["rows"]]
 
     source_label = "Devis détaillé"
     if demande.get("source") == "demande_infos_formations":
@@ -1933,6 +1991,7 @@ def imprimer_formulaire_admin_devis(formulaire_id):
         demande=demande,
         source_label=source_label,
         infos_rows=infos_rows,
+        categorized_infos=categorized_infos,
         badge_text=badge_text,
         campus_theme=campus_theme
     )
