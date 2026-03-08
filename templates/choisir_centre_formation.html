@@ -422,13 +422,7 @@
 
         distancesBox.innerHTML = `
           <div>📏 Distance vers <strong>${CENTER_COTE_AZUR.name}</strong> : <strong>${formatDistanceKm(dAzurMeters)}</strong></div>
-          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚗', tAzur.car)}</div>
-          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('✈️', tAzur.plane)}</div>
-          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚆', tAzur.train)}</div>
           <div>📏 Distance vers <strong>${CENTER_AUVERGNE.name}</strong> : <strong>${formatDistanceKm(dAuvergneMeters)}</strong></div>
-          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('🚗', tAuvergne.car)}</div>
-          <div class="muted" style="margin:4px 0 10px 18px;">${renderTravelTime('✈️', tAuvergne.plane)}</div>
-          <div class="muted" style="margin:4px 0 0 18px;">${renderTravelTime('🚆', tAuvergne.train)}</div>
         `;
         distancesBox.style.display = 'block';
 
