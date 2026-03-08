@@ -159,6 +159,19 @@
     let recommendedCenter = null;
     let selectedCenter = null;
 
+    const REFERENCE_TRAVEL_TIMES = {
+      paris: {
+        [CENTER_COTE_AZUR.key]: {
+          plane: '1h',
+          train: '5h40'
+        },
+        [CENTER_AUVERGNE.key]: {
+          plane: '1h',
+          train: '6h37'
+        }
+      }
+    };
+
     function showError(msg) {
       errorBox.textContent = msg;
       errorBox.style.display = 'block';
@@ -210,12 +223,50 @@
 
     function estimateTravelTimes(distanceKm) {
       const carHours = distanceKm / 90;
-      const trainHours = distanceKm / 130;
-      const planeHours = (distanceKm / 700) + 2;
+      const trainHours = distanceKm / 120;
+      const planeHours = (distanceKm / 700) + 0.75;
       return {
         car: formatDuration(carHours),
         plane: formatDuration(planeHours),
         train: formatDuration(trainHours)
+      };
+    }
+
+    function normalizeCityName(name) {
+      return (name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+    }
+
+    async function getCarTravelDuration(origin, destination) {
+      const url = `https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?overview=false`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Impossible de calculer le temps voiture en temps réel.');
+      const data = await resp.json();
+      if (!data.routes || !data.routes.length || typeof data.routes[0].duration !== 'number') {
+        throw new Error('Réponse invalide pour le calcul voiture.');
+      }
+      return formatDuration(data.routes[0].duration / 3600);
+    }
+
+    async function buildTravelTimes(personLocation, center, centerCoords, distanceKm) {
+      const estimated = estimateTravelTimes(distanceKm);
+      const cityKey = normalizeCityName(personLocation.cityName);
+      const ref = REFERENCE_TRAVEL_TIMES[cityKey]?.[center.key] || null;
+
+      let car = estimated.car;
+      try {
+        car = await getCarTravelDuration(personLocation, centerCoords);
+      } catch (err) {
+        console.warn(err);
+      }
+
+      return {
+        car,
+        plane: ref?.plane || estimated.plane,
+        train: ref?.train || estimated.train
       };
     }
 
@@ -309,8 +360,10 @@
 
         const dAzur = haversineKm(personLocation.lat, personLocation.lon, coteAzurCoords.lat, coteAzurCoords.lon);
         const dAuvergne = haversineKm(personLocation.lat, personLocation.lon, auvergneCoords.lat, auvergneCoords.lon);
-        const tAzur = estimateTravelTimes(dAzur);
-        const tAuvergne = estimateTravelTimes(dAuvergne);
+        const [tAzur, tAuvergne] = await Promise.all([
+          buildTravelTimes(personLocation, CENTER_COTE_AZUR, coteAzurCoords, dAzur),
+          buildTravelTimes(personLocation, CENTER_AUVERGNE, auvergneCoords, dAuvergne)
+        ]);
 
         distancesBox.innerHTML = `
           <div>📏 Distance vers <strong>${CENTER_COTE_AZUR.name}</strong> : <strong>${dAzur.toFixed(1)} km</strong></div>
