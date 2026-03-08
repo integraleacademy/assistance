@@ -610,7 +610,7 @@
       }
 
       if (f === 'VTC') {
-        datesHelp.textContent = 'La formation Chauffeur VTC est accessible en continue : commencez votre formation dès maintenant';
+        datesHelp.textContent = 'La formation Chauffeur VTC est accessible en continue : commencez votre formation dès maintenant.';
       }
 
       let rows = [];
@@ -623,7 +623,10 @@
       if (!rows.length) {
         const o = document.createElement('option');
         o.value = '';
-        if (f === 'DESP_VAE') {
+        if (f === 'VTC') {
+          o.textContent = 'La formation Chauffeur VTC est accessible en continue : commencez votre formation dès maintenant.';
+          datesHelp.textContent = 'La formation Chauffeur VTC est accessible en continue : commencez votre formation dès maintenant.';
+        } else if (f === 'DESP_VAE') {
           o.textContent = 'Commencez votre VAE dès maintenant';
           datesHelp.textContent = 'La VAE est accessible en continu : commencez votre VAE dès maintenant.';
         } else {
