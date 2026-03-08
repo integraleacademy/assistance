@@ -773,6 +773,127 @@ integraleacademy.com</div>
 </html>
 """
 
+
+def _format_selected_session_date(dates_txt: str) -> str:
+    if not dates_txt:
+        return ""
+    return dates_txt.strip().replace(" - examen le ", " — examen le ")
+
+
+def _centre_label_and_address(centre_code: str):
+    centres = {
+        "cote_azur": (
+            "Intégrale Sécurité Formations",
+            "54 chemin du Carreou — 83480 PUGET SUR ARGENS (Var)",
+        ),
+        "auvergne": (
+            "Intégrale Academy Terres d’Auvergne",
+            "650 route d'Aumont — 15130 Arpajon-sur-Cère",
+        ),
+    }
+    return centres.get(
+        centre_code,
+        (
+            "Intégrale Sécurité Formations",
+            "54 chemin du Carreou — 83480 PUGET SUR ARGENS (Var)",
+        ),
+    )
+
+
+def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str):
+    session_date = _format_selected_session_date(dates_txt)
+    centre_label, centre_address = _centre_label_and_address(centre_code)
+    session_html = (
+        f"<p>📅 <strong>{session_date}</strong></p>"
+        if session_date
+        else "<p>📅 <strong>Dates communiquées lors de notre échange.</strong></p>"
+    )
+
+    return f"""<html style="overflow-y: hidden;">
+<head>
+    <title></title>
+</head>
+<body style="height: auto; min-height: auto;">
+<div style="font-family: Arial, sans-serif; max-width:600px; margin:auto; background:#f9f9f9; padding:20px;">
+<div style="background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); overflow:hidden;">
+<div style="text-align:center; padding:20px 20px 10px 20px;"><img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
+<h2 style="color:#000; font-size:18px; margin:10px 0 0 0;">Intégrale Academy</h2>
+</div>
+
+<div style="background:#F4C45A; padding:12px; text-align:center;">
+<h3 style="margin:0; font-size:18px; color:#000;">🛡️ Formation Agent de Protection Physique des Personnes (A3P)</h3>
+</div>
+
+<div style="padding:20px; font-size:15px; color:#333; line-height:1.6;">
+<p>Bonjour {prenom},</p>
+
+<p>Je fais suite à notre conversation téléphonique concernant notre formation <strong>Agent de Protection Physique des Personnes (A3P – Bodyguard)</strong>, titre reconnu par l’État (<strong>RNCP38002 – niveau 4</strong>).</p>
+
+<p>Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que <strong>garde du corps</strong>, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la <strong>carte professionnelle Agent de protection physique des personnes</strong> délivrée par le CNAPS (Ministère de l’Intérieur).</p>
+
+<p><strong>📄 Dossier de présentation :</strong></p>
+
+<p style="text-align:center; margin:20px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff;
+                  text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le Dossier de présentation </a></p>
+
+<h3 style="margin-top:25px; font-size:17px; color:#000;">🎓 Durée et organisation</h3>
+
+<p><strong>328 heures de formation </strong>, conformément à la réglementation.</p>
+
+<h3 style="margin-top:25px; font-size:17px; color:#000;">🏫 Votre session</h3>
+
+{session_html}
+
+<p>Lieu : <strong>{centre_label}</strong><br />
+{centre_address}</p>
+
+<h3 style="margin-top:25px; font-size:17px; color:#000;">💶 Tarif & financement</h3>
+
+<p>Tarif : <strong>4200 € TTC</strong><br />
+Formation finançable via votre <strong>Compte Personnel de Formation (CPF)</strong>.</p>
+
+<p>👉 Vous devrez activer votre <strong>Identité Numérique La Poste</strong> pour valider le dossier CPF.</p>
+
+<h3 style="margin-top:25px; font-size:17px; color:#000;">🛏️ Hébergement</h3>
+
+<p>Nous proposons une solution d'hébergement au sein du centre de formation au tarif de :<br />
+<strong>300 € TTC pour la durée totale de la formation</strong></p>
+
+<p>Dortoir collectif, salle de bain, douche, cuisine équipée, machine à laver et sèche-linge. 👉 Paiement sur place (chèque ou espèces), réservation à effectuer lors de votre inscription.</p>
+
+<div style="margin:25px 0; padding:18px; background:#f5f5f5; border-radius:10px; text-align:center; border:1px solid #e4e4e4;">
+<p style="margin:0 0 12px 0; font-size:15px; color:#333;">Si vous souhaitez un <strong>devis personnalisé</strong> avec un plan de financement détaillé :</p>
+<a href="https://assistance-alw9.onrender.com/demande-devis" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000;
+                  text-decoration:none; border-radius:8px; font-weight:bold;">🧾 Demander un devis personnalisé </a></div>
+
+<h3 style="margin-top:25px; font-size:17px; color:#000;">📞 Prochaine étape</h3>
+
+<p>Pour réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique ici :</p>
+
+<p style="text-align:center; margin:20px 0;"><a href="https://calendly.com/integraleacademy/apr" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff;
+                  text-decoration:none; border-radius:8px; font-weight:bold;">📞 Planifier un rendez-vous </a></p>
+
+<p>Je reste à votre disposition pour toute information complémentaire.</p>
+
+<p>Je vous souhaite une excellente journée,<br />
+<br />
+<strong>Clément VAILLANT</strong><br />
+Directeur – Intégrale Academy<br />
+ecole@integraleacademy.com – integraleacademy.com<br />
+📍 54 chemin du Carreou – 83480 Puget-sur-Argens</p>
+</div>
+
+<div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />
+54 chemin du Carreou 83480 PUGET SUR ARGENS / 142 rue de Rivoli 75001 PARIS<br />
+SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />
+UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />
+<a href="https://www.integraleacademy.com" style="color:#0f1f33; text-decoration:none;">integraleacademy.com</a></div>
+</div>
+</div>
+</body>
+</html>
+"""
+
 # --------------- Auth helpers ---------------
 def login_required(f):
     @wraps(f)
@@ -1461,6 +1582,25 @@ def demande_informations_formations():
             )
             html = build_vae_desp_email_html()
             email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
+        elif form_data.get("formation") == "A3P":
+            session_date = _format_selected_session_date(form_data.get("dates", ""))
+            centre_label, centre_address = _centre_label_and_address(form_data.get("centre", ""))
+            plain = (
+                f"Bonjour {prenom},\n\n"
+                "Je fais suite à notre conversation téléphonique concernant notre formation Agent de Protection Physique des Personnes (A3P – Bodyguard), titre reconnu par l’État (RNCP38002 – niveau 4).\n\n"
+                "Durée : 328 heures de formation.\n"
+                + (f"Session : {session_date}\n" if session_date else "")
+                + f"Lieu : {centre_label} — {centre_address}\n\n"
+                "Tarif : 4200 € TTC (financement possible via CPF).\n"
+                "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
+                "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+                "Demander un devis personnalisé : https://assistance-alw9.onrender.com/demande-devis\n"
+                "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
+                "Je reste à votre disposition pour toute information complémentaire.\n\n"
+                "Clément VAILLANT\nDirecteur – Intégrale Academy"
+            )
+            html = build_a3p_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""))
+            email_subject = "🛡️ Formation Agent de Protection Physique des Personnes (A3P)"
         else:
             plain = (
                 f"Bonjour {prenom},\n\n"
