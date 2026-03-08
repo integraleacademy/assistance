@@ -483,9 +483,11 @@
         if (coteRadio) coteRadio.checked = true;
       }
 
-      // Bouton visible uniquement après choix d'une formation
-      openSimu.style.display = 'inline-flex';
-      simuText.classList.remove('hidden');
+      // Simulateur masqué pour VTC et APS
+      if (!['VTC', 'APS'].includes(v)) {
+        openSimu.style.display = 'inline-flex';
+        simuText.classList.remove('hidden');
+      }
     }
 
     function loadDates() {
