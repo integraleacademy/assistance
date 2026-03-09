@@ -490,29 +490,66 @@ DATA_DIR = os.path.dirname(DATA_FILE)
 UPLOAD_FOLDER = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+DEFAULT_DATA = {
+    "demandes": [],
+    "archives": [],
+    "compteur_traitees": 0,
+    "hebergements": [],
+    "formation_sessions": {},
+    "plans_simulation": {},
+}
+
 # -------------------------------------------------------------------
 # Utils
 # -------------------------------------------------------------------
 def load_data():
+    def _normalize_payload(payload):
+        if isinstance(payload, dict):
+            normalized = dict(payload)
+            for key, default in DEFAULT_DATA.items():
+                if key not in normalized:
+                    normalized[key] = default.copy() if isinstance(default, (list, dict)) else default
+            return normalized
+        if isinstance(payload, list):
+            normalized = dict(DEFAULT_DATA)
+            normalized["demandes"] = payload
+            normalized["archives"] = []
+            normalized["compteur_traitees"] = 0
+            return normalized
+        return None
+
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    data.setdefault("demandes", [])
-                    data.setdefault("archives", [])
-                    data.setdefault("compteur_traitees", 0)
-                    data.setdefault("hebergements", [])
+                data = _normalize_payload(json.load(f))
+                if data is not None:
                     return data
-                return {"demandes": data, "archives": [], "compteur_traitees": 0}
         except (json.JSONDecodeError, OSError):
-            # fichier corrompu/inaccessible : on garde une copie puis on repart proprement
+            # fichier corrompu/inaccessible : on tente d'abord une restauration auto via backup
+            backup_path = f"{DATA_FILE}.bak"
+            if os.path.exists(backup_path):
+                try:
+                    with open(backup_path, "r", encoding="utf-8") as backup:
+                        backup_data = _normalize_payload(json.load(backup))
+                    if backup_data is not None:
+                        return backup_data
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            # sinon on garde une copie puis on repart proprement
             try:
                 backup_path = f"{DATA_FILE}.corrupted"
                 os.replace(DATA_FILE, backup_path)
             except OSError:
                 pass
-    return {"demandes": [], "archives": [], "compteur_traitees": 0}
+    return {
+        "demandes": [],
+        "archives": [],
+        "compteur_traitees": 0,
+        "hebergements": [],
+        "formation_sessions": {},
+        "plans_simulation": {},
+    }
 
 def save_data(data):
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
@@ -528,8 +565,13 @@ def save_data(data):
         except OSError:
             pass
 
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    temp_file = f"{DATA_FILE}.tmp"
+    with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+
+    os.replace(temp_file, DATA_FILE)
 
 def supprimer_fichier(filename):
     if not filename:
