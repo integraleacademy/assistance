@@ -13,39 +13,6 @@
     .brand img { height:96px; width:auto; border-radius:16px; box-shadow:0 8px 20px rgba(37,99,235,.2); }
     .intro { text-align:center; margin-bottom:20px; }
 
-    .section-note {
-      margin-top: 12px;
-      padding: 12px 14px;
-      border-radius: 12px;
-      border: 1px solid #e0e7ff;
-      background: linear-gradient(90deg, #eff6ff 0%, #ecfeff 100%);
-      font-weight: 600;
-      color: #1e3a8a;
-      text-align: center;
-    }
-
-    .choice-row {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(180px, 1fr));
-      gap: 10px;
-      margin-top: 12px;
-    }
-
-    .choice-btn {
-      border: 1px solid #bfdbfe;
-      border-radius: 12px;
-      padding: 12px;
-      background: #fff;
-      color: #1e3a8a;
-      cursor: pointer;
-      font-weight: 700;
-      font-size: 16px;
-      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
-    }
-
-    .choice-btn:hover { transform: translateY(-2px); box-shadow:0 8px 20px rgba(59,130,246,.15); }
-    .choice-btn.active { border-color:#2563eb; background:#dbeafe; }
-
     .row { display:flex; gap:12px; margin:18px 0 8px; }
     input { flex:1; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
     button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; }
@@ -107,14 +74,15 @@
       50% { opacity: 1; }
     }
 
-    .result { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
+    .recommendation { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
+    .recommendation strong { color:#1e3a8a; }
     .selection { margin-top:14px; padding:16px; border-radius:10px; border:1px solid #bfdbfe; background:#f0f9ff; }
     .selection ul { margin:10px 0 10px 20px; padding:0; }
     .selection li { margin-bottom:6px; }
     .selection .common-note { margin-top:10px; font-weight:700; color:#1e3a8a; }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
-    .validate-btn {
+    .choose-center-btn {
       display:flex;
       align-items:center;
       justify-content:center;
@@ -131,8 +99,8 @@
       transition: all .2s ease;
       animation: validatePulse 1.8s infinite;
     }
-    .validate-btn:hover { background:#15803d; transform: translateY(-1px); }
-    .validate-btn:disabled { animation:none; }
+    .choose-center-btn:hover { background:#15803d; transform: translateY(-1px); }
+    .choose-center-btn:disabled { animation:none; }
 
     @keyframes validatePulse {
       0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(22,163,74,.40); }
@@ -163,19 +131,10 @@
       </div>
     </div>
     <div id="distances" class="box" style="display:none;"></div>
-    <div id="result" class="result" style="display:none;"></div>
-
-    <div class="section-note" id="preference-note" style="display:none;">🌊 Vous êtes plutôt mer ou plutôt montagne ? 🏔️ Faites votre choix !</div>
-
-    <div class="choice-row" id="preference-row" style="display:none;">
-      <button class="choice-btn" type="button" data-pref="mer">🌊 Team Mer</button>
-      <button class="choice-btn" type="button" data-pref="montagne">🏔️ Team Montagne</button>
-    </div>
-
+    <div id="result" class="recommendation" style="display:none;"></div>
     <div id="selection" class="selection" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
-    <button id="validate-choice" class="validate-btn" type="button">✅ VALIDER</button>
   </div>
 
   <script>
@@ -206,14 +165,10 @@
     const btn = document.getElementById('btn');
     const locationBox = document.getElementById('location');
     const distancesBox = document.getElementById('distances');
-    const resultBox = document.getElementById('result');
     const loadingBox = document.getElementById('loading');
+    const resultBox = document.getElementById('result');
     const selectionBox = document.getElementById('selection');
     const errorBox = document.getElementById('error');
-    const prefButtons = document.querySelectorAll('.choice-btn');
-    const preferenceNote = document.getElementById('preference-note');
-    const preferenceRow = document.getElementById('preference-row');
-    const validateButton = document.getElementById('validate-choice');
 
     const NON_DISPONIBLE = 'Non disponible';
     // OSRM a tendance à surestimer légèrement certains trajets autoroutiers longue distance.
@@ -222,7 +177,6 @@
 
     let latestDistances = null;
     let latestTravelTimes = null;
-    let recommendedCenter = null;
     let selectedCenter = null;
 
     function showError(msg) {
@@ -242,12 +196,12 @@
       }, '*');
     }
 
-    function updateSelectionSummary(center, reason) {
-      if (!latestDistances || !center) return;
-      const distanceMeters = latestDistances[center.key];
-      const distanceLabel = formatDistanceKm(distanceMeters);
-      const travelTimes = latestTravelTimes ? latestTravelTimes[center.key] : null;
-      const benefits = center.key === 'cote-azur'
+    function getCenterByKey(centerKey) {
+      return centerKey === CENTER_COTE_AZUR.key ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
+    }
+
+    function getCenterBenefits(center) {
+      return center.key === 'cote-azur'
         ? [
             'Cadre mer et soleil, idéal pour une ambiance dynamique au quotidien.',
             'Proximité du littoral et bassin d\'emploi touristique très actif.',
@@ -260,10 +214,43 @@
             'Qualité de vie au grand air avec un quotidien souvent plus accessible.',
             'Ambiance conviviale et proximité humaine avec un accompagnement de terrain personnalisé.'
           ];
+    }
 
-      selectionBox.innerHTML = `✅ <strong>${reason}</strong><br>Centre sélectionné : <span class="ok">${center.name}</span><br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quelque soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div>`;
+    function getAlternativeHeadline(center) {
+      if (center.key === 'cote-azur') {
+        return `🌊 Vous êtes plutôt <strong>Team Mer</strong>, choisissez <span class="ok">${center.name}</span>.`;
+      }
+      return `🏔️ Vous êtes plutôt <strong>Team Montagne</strong>, choisissez <span class="ok">${center.name}</span>.`;
+    }
+
+    function getOtherCenter(center) {
+      return center.key === CENTER_COTE_AZUR.key ? CENTER_AUVERGNE : CENTER_COTE_AZUR;
+    }
+
+    function renderCenterDetails(center, headingHtml) {
+      const distanceMeters = latestDistances[center.key];
+      const distanceLabel = formatDistanceKm(distanceMeters);
+      const travelTimes = latestTravelTimes ? latestTravelTimes[center.key] : null;
+      const benefits = getCenterBenefits(center);
+
+      return `${headingHtml}<br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
+    }
+
+    function updateSelectionSummary(recommendedCenter) {
+      if (!latestDistances || !recommendedCenter) return;
+      const alternativeCenter = getOtherCenter(recommendedCenter);
+      resultBox.innerHTML = renderCenterDetails(
+        recommendedCenter,
+        `✅ <strong>Centre de formation recommandé selon la distance :</strong> <span class="ok">${recommendedCenter.name}</span>`
+      );
+      resultBox.style.display = 'block';
+
+      selectionBox.innerHTML = renderCenterDetails(
+        alternativeCenter,
+        getAlternativeHeadline(alternativeCenter)
+      );
       selectionBox.style.display = 'block';
-      selectedCenter = center;
+      selectedCenter = null;
     }
 
     function formatDistanceKm(meters) {
@@ -339,32 +326,19 @@
         }
       };
     }
-
-    function activatePreference(pref) {
-      prefButtons.forEach((button) => {
-        button.classList.toggle('active', button.dataset.pref === pref);
-      });
-
-      if (pref === 'mer') {
-        updateSelectionSummary(CENTER_COTE_AZUR, 'Choix Team Mer 🌊');
-      } else if (pref === 'montagne') {
-        updateSelectionSummary(CENTER_AUVERGNE, 'Choix Team Montagne 🏔️');
-      }
-    }
-
-    prefButtons.forEach((button) => {
-      button.addEventListener('click', () => activatePreference(button.dataset.pref));
-    });
-
-    validateButton.addEventListener('click', () => {
-      if (!selectedCenter) {
-        showError('Merci de calculer et sélectionner un centre avant de valider.');
-        return;
-      }
-
+    function handleCenterChoice(centerKey) {
+      selectedCenter = getCenterByKey(centerKey);
       hideError();
       notifyParent(selectedCenter);
       window.parent.postMessage({ type: 'close-centre-modal' }, '*');
+    }
+
+    [resultBox, selectionBox].forEach((box) => {
+      box.addEventListener('click', (event) => {
+        const button = event.target.closest('.choose-center-btn');
+        if (!button) return;
+        handleCenterChoice(button.dataset.centerKey);
+      });
     });
 
     async function geocodeAddress(address) {
@@ -396,7 +370,9 @@
       locationBox.style.display = 'none';
       distancesBox.style.display = 'none';
       resultBox.style.display = 'none';
+      resultBox.innerHTML = '';
       selectionBox.style.display = 'none';
+      selectionBox.innerHTML = '';
       loadingBox.style.display = 'none';
 
       const postcode = cpInput.value.trim();
@@ -449,11 +425,9 @@
         ].filter((item) => typeof item.duration === 'number');
 
         let nearest = null;
-        let nearestDistanceMeters = null;
         if (compareByDuration.length) {
           compareByDuration.sort((a, b) => a.duration - b.duration);
           nearest = compareByDuration[0].center;
-          nearestDistanceMeters = compareByDuration[0].distance;
         } else {
           const compareByDistance = [
             { center: CENTER_COTE_AZUR, distance: dAzurMeters },
@@ -463,7 +437,6 @@
           if (compareByDistance.length) {
             compareByDistance.sort((a, b) => a.distance - b.distance);
             nearest = compareByDistance[0].center;
-            nearestDistanceMeters = compareByDistance[0].distance;
           }
         }
 
@@ -471,16 +444,7 @@
           throw new Error('Impossible de déterminer un centre recommandé pour le moment.');
         }
 
-        recommendedCenter = nearest;
-
-        const nearestTravelTimes = latestTravelTimes[nearest.key];
-        resultBox.innerHTML = `✅ <strong>Centre recommandé</strong><br><span class="ok">${nearest.name}</span><br><span class="muted">Distance routière : ${formatDistanceKm(nearestDistanceMeters)}</span><br><span class="muted">${renderTravelTime('🚗 Voiture :', nearestTravelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', nearestTravelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', nearestTravelTimes.train)}</span><br><span class="muted">🏠 Hébergement proposé pour vous simplifier l'organisation sur place.</span>`;
-        resultBox.style.display = 'block';
-
-        preferenceNote.style.display = 'block';
-        preferenceRow.style.display = 'grid';
-        prefButtons.forEach((button) => button.classList.remove('active'));
-        selectedCenter = null;
+        updateSelectionSummary(nearest);
       } catch (e) {
         showError(e.message || 'Une erreur est survenue.');
       } finally {
