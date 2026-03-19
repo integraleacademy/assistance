@@ -77,6 +77,33 @@
     .recommendation { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
     .recommendation strong { color:#1e3a8a; }
     .selection { margin-top:14px; padding:16px; border-radius:10px; border:1px solid #bfdbfe; background:#f0f9ff; }
+    .selection-highlight {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #dbeafe 0%, #ecfeff 100%);
+      border: 1px solid #93c5fd;
+      box-shadow: 0 10px 24px rgba(14, 116, 144, .12);
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1.2;
+      color: #0f172a;
+    }
+    .selection-highlight .emoji { font-size: 34px; }
+    .selection-highlight .ok { font-size: 1em; }
+
+    @media (max-width: 640px) {
+      .selection-highlight {
+        display: flex;
+        font-size: 24px;
+        padding: 12px 14px;
+      }
+
+      .selection-highlight .emoji { font-size: 28px; }
+    }
     .selection ul { margin:10px 0 10px 20px; padding:0; }
     .selection li { margin-bottom:6px; }
     .selection .common-note { margin-top:10px; font-weight:700; color:#1e3a8a; }
@@ -218,7 +245,7 @@
 
     function getAlternativeHeadline(center) {
       if (center.key === 'cote-azur') {
-        return `🌊 Vous êtes plutôt <strong>Team Mer</strong>, choisissez <span class="ok">${center.name}</span>.`;
+        return `<div class="selection-highlight"><span class="emoji">🌊</span><span>Vous êtes plutôt Team Mer ? Choisissez <span class="ok">${center.name}</span></span></div>`;
       }
       return `🏔️ Vous êtes plutôt <strong>Team Montagne</strong>, choisissez <span class="ok">${center.name}</span>.`;
     }
