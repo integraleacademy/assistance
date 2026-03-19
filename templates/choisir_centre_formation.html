@@ -74,6 +74,8 @@
       50% { opacity: 1; }
     }
 
+    .recommendation { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
+    .recommendation strong { color:#1e3a8a; }
     .selection { margin-top:14px; padding:16px; border-radius:10px; border:1px solid #bfdbfe; background:#f0f9ff; }
     .selection ul { margin:10px 0 10px 20px; padding:0; }
     .selection li { margin-bottom:6px; }
@@ -129,6 +131,7 @@
       </div>
     </div>
     <div id="distances" class="box" style="display:none;"></div>
+    <div id="result" class="recommendation" style="display:none;"></div>
     <div id="selection" class="selection" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
@@ -164,6 +167,7 @@
     const locationBox = document.getElementById('location');
     const distancesBox = document.getElementById('distances');
     const loadingBox = document.getElementById('loading');
+    const resultBox = document.getElementById('result');
     const selectionBox = document.getElementById('selection');
     const errorBox = document.getElementById('error');
     const validateButton = document.getElementById('validate-choice');
@@ -210,24 +214,34 @@
           ];
     }
 
-    function getRecommendationHeadline(center) {
+    function getAlternativeHeadline(center) {
       if (center.key === 'cote-azur') {
-        return `🌊 Vous êtes plutôt <strong>Team Mer</strong> ? Choisissez <span class="ok">${center.name}</span>`;
+        return `🌊 Vous êtes plutôt <strong>Team Mer</strong>, choisissez <span class="ok">${center.name}</span>.`;
       }
-      return `🏔️ Vous êtes plutôt <strong>Team Montagne</strong> ? Choisissez <span class="ok">${center.name}</span>`;
+      return `🏔️ Vous êtes plutôt <strong>Team Montagne</strong>, choisissez <span class="ok">${center.name}</span>.`;
     }
 
-    function updateSelectionSummary(center) {
-      if (!latestDistances || !center) return;
-      const distanceMeters = latestDistances[center.key];
-      const distanceLabel = formatDistanceKm(distanceMeters);
-      const travelTimes = latestTravelTimes ? latestTravelTimes[center.key] : null;
-      const benefits = getCenterBenefits(center);
+    function getOtherCenter(center) {
+      return center.key === CENTER_COTE_AZUR.key ? CENTER_AUVERGNE : CENTER_COTE_AZUR;
+    }
 
-      selectionBox.innerHTML = `${getRecommendationHeadline(center)}<br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div>`;
-      selectionBox.style.display = 'block';
+    function updateSelectionSummary(recommendedCenter) {
+      if (!latestDistances || !recommendedCenter) return;
+      const alternativeCenter = getOtherCenter(recommendedCenter);
+      const distanceMeters = latestDistances[alternativeCenter.key];
+      const distanceLabel = formatDistanceKm(distanceMeters);
+      const travelTimes = latestTravelTimes ? latestTravelTimes[alternativeCenter.key] : null;
+      const benefits = getCenterBenefits(alternativeCenter);
+
+      resultBox.innerHTML = `✅ <strong>Centre de formation recommandé selon la distance :</strong> <span class="ok">${recommendedCenter.name}</span>`;
+      resultBox.style.display = 'block';
+
+      selectionBox.innerHTML = `${getAlternativeHeadline(alternativeCenter)}<br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div>`;
+      selectionBox.appendChild(validateButton);
       validateButton.style.display = 'flex';
-      selectedCenter = center;
+      validateButton.textContent = 'Choisir ce centre';
+      selectionBox.style.display = 'block';
+      selectedCenter = alternativeCenter;
     }
 
     function formatDistanceKm(meters) {
@@ -342,7 +356,10 @@
       hideError();
       locationBox.style.display = 'none';
       distancesBox.style.display = 'none';
+      resultBox.style.display = 'none';
+      resultBox.innerHTML = '';
       selectionBox.style.display = 'none';
+      selectionBox.innerHTML = '';
       validateButton.style.display = 'none';
       loadingBox.style.display = 'none';
 
