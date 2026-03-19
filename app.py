@@ -1896,16 +1896,25 @@ def admin_devis_formulaires():
         if d.get("source") == "demande_infos_formations":
             source_label = "Infos formations"
 
+        formulaire_date = d.get("date", "")
+        try:
+            sort_date = datetime.datetime.strptime(formulaire_date, "%d/%m/%Y %H:%M")
+        except ValueError:
+            sort_date = datetime.datetime.min
+
         formulaires.append({
             "id": d.get("id"),
-            "date": d.get("date", ""),
+            "date": formulaire_date,
             "nom": d.get("nom", ""),
             "prenom": d.get("prenom", ""),
             "mail": d.get("mail", ""),
             "telephone": d.get("telephone", ""),
             "source_label": source_label,
-            "infos": infos
+            "infos": infos,
+            "sort_date": sort_date,
         })
+
+    formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
 
     return render_template("admin_devis_formulaires.html", formulaires=formulaires)
 
@@ -2014,6 +2023,48 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     if demande.get("source") == "demande_infos_formations":
         source_label = "Infos formations"
 
+    formation_value = str(
+        infos.get("formation")
+        or infos.get("Formation")
+        or infos.get("formation_souhaitee")
+        or infos.get("formation souhaitée")
+        or ""
+    ).strip()
+    formation_normalized = formation_value.lower()
+    formation_badge_text = ""
+    formation_badge_theme = ""
+
+    if formation_normalized in {"a3p", "agent de protection physique des personnes (a3p)", "agent de protection physique des personnes"}:
+        formation_badge_text = "A3P"
+        formation_badge_theme = "a3p"
+    elif formation_normalized in {
+        "desp_init",
+        "dirigeant",
+        "desp",
+        "dirigeant d'entreprise de sécurité",
+        "dirigeant d’entreprise de sécurité",
+        "dirigeant d'entreprise de sécurité privée (desp)",
+        "dirigeant d’entreprise de sécurité privée (desp)"
+    }:
+        formation_badge_text = "DIRIGEANT"
+        formation_badge_theme = "dirigeant"
+    elif formation_normalized in {
+        "desp_vae",
+        "vae",
+        "dirigeant d'entreprise de sécurité (desp) – vae",
+        "dirigeant d’entreprise de sécurité (desp) – vae",
+        "dirigeant d’entreprise de sécurité privée (desp) en vae",
+        "dirigeant d'entreprise de sécurité privée (desp) en vae"
+    }:
+        formation_badge_text = "VAE"
+        formation_badge_theme = "vae"
+    elif formation_normalized in {"vtc", "chauffeur vtc"}:
+        formation_badge_text = "VTC"
+        formation_badge_theme = "vtc"
+    elif formation_normalized in {"aps", "agent de prévention et de sécurité (aps)", "agent de prévention et de sécurité"}:
+        formation_badge_text = "APS"
+        formation_badge_theme = "aps"
+
     badge_text = "AURILLAC"
     campus_theme = "aurillac"
     centre_normalized = (centre_value or "").strip().lower()
@@ -2035,7 +2086,9 @@ def imprimer_formulaire_admin_devis(formulaire_id):
         infos_rows=infos_rows,
         categorized_infos=categorized_infos,
         badge_text=badge_text,
-        campus_theme=campus_theme
+        campus_theme=campus_theme,
+        formation_badge_text=formation_badge_text,
+        formation_badge_theme=formation_badge_theme
     )
 
 @app.route("/admin-devis/simulateur")
