@@ -261,6 +261,7 @@ def get_simulator_dates_options(data_store=None):
                 {
                     "label": (row.get("label") or "").strip(),
                     "badge": (row.get("badge") or "").strip(),
+                    "date_examen": (row.get("date_examen") or "").strip(),
                 }
                 for row in rows
                 if (row.get("label") or "").strip()
@@ -283,7 +284,7 @@ def _parse_exam_date_from_dates_txt(dates_txt):
     if not dates_txt:
         return ""
 
-    match = re.search(r"examen le (\\d{1,2}) ([a-zà-ÿ]+) (\\d{4})", dates_txt, re.IGNORECASE)
+    match = re.search(r"examen le (\d{1,2}) ([a-zà-ÿ]+) (\d{4})", dates_txt, re.IGNORECASE)
     if not match:
         return ""
 
@@ -326,6 +327,7 @@ def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_
         date_examen_str = _parse_exam_date_from_dates_txt(dates_txt or "")
 
     date_examen = None
+    echeancier_message = ""
     if date_examen_str:
         try:
             date_examen = datetime.datetime.strptime(
@@ -333,12 +335,18 @@ def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_
             ).date()
         except ValueError:
             date_examen = None
+            echeancier_message = "⚠️ Impossible de proposer un échéancier : la date d’examen est invalide."
+    else:
+        echeancier_message = "⚠️ Impossible de proposer un échéancier : la date d’examen est absente dans la session sélectionnée."
 
     echeances = build_echeances_mensuelles(
         reste=reste_sans_ft,
         date_devis=datetime.date.today(),
         date_examen=date_examen
     )
+
+    if date_examen and not echeances and not echeancier_message:
+        echeancier_message = "⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen."
 
     echeances_payload = [
         {
@@ -360,6 +368,7 @@ def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_
         "france_travail": france_travail,
         "reste_avec_ft": reste_avec_ft,
         "reste_sans_ft": reste_sans_ft,
+        "echeancier_message": echeancier_message,
         "echeances": echeances_payload
     }
 
@@ -1597,8 +1606,13 @@ def admin_formation_sessions():
         if action == "add":
             label = (request.form.get("label") or "").strip()
             badge = (request.form.get("badge") or "").strip()
+            date_examen = (request.form.get("date_examen") or "").strip()
             if label:
-                sessions[centre][formation].append({"label": label, "badge": badge})
+                sessions[centre][formation].append({
+                    "label": label,
+                    "badge": badge,
+                    "date_examen": date_examen,
+                })
         elif action == "update":
             try:
                 idx = int(idx_raw)
@@ -1607,6 +1621,7 @@ def admin_formation_sessions():
             if 0 <= idx < len(sessions[centre][formation]):
                 sessions[centre][formation][idx]["label"] = (request.form.get("label") or "").strip()
                 sessions[centre][formation][idx]["badge"] = (request.form.get("badge") or "").strip()
+                sessions[centre][formation][idx]["date_examen"] = (request.form.get("date_examen") or "").strip()
         elif action == "delete":
             try:
                 idx = int(idx_raw)
