@@ -1896,16 +1896,25 @@ def admin_devis_formulaires():
         if d.get("source") == "demande_infos_formations":
             source_label = "Infos formations"
 
+        formulaire_date = d.get("date", "")
+        try:
+            sort_date = datetime.datetime.strptime(formulaire_date, "%d/%m/%Y %H:%M")
+        except ValueError:
+            sort_date = datetime.datetime.min
+
         formulaires.append({
             "id": d.get("id"),
-            "date": d.get("date", ""),
+            "date": formulaire_date,
             "nom": d.get("nom", ""),
             "prenom": d.get("prenom", ""),
             "mail": d.get("mail", ""),
             "telephone": d.get("telephone", ""),
             "source_label": source_label,
-            "infos": infos
+            "infos": infos,
+            "sort_date": sort_date,
         })
+
+    formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
 
     return render_template("admin_devis_formulaires.html", formulaires=formulaires)
 
