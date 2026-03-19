@@ -82,7 +82,7 @@
     .selection .common-note { margin-top:10px; font-weight:700; color:#1e3a8a; }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
-    .validate-btn {
+    .choose-center-btn {
       display:flex;
       align-items:center;
       justify-content:center;
@@ -99,8 +99,8 @@
       transition: all .2s ease;
       animation: validatePulse 1.8s infinite;
     }
-    .validate-btn:hover { background:#15803d; transform: translateY(-1px); }
-    .validate-btn:disabled { animation:none; }
+    .choose-center-btn:hover { background:#15803d; transform: translateY(-1px); }
+    .choose-center-btn:disabled { animation:none; }
 
     @keyframes validatePulse {
       0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(22,163,74,.40); }
@@ -135,7 +135,6 @@
     <div id="selection" class="selection" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
-    <button id="validate-choice" class="validate-btn" type="button" style="display:none;">Je choisis ce centre</button>
   </div>
 
   <script>
@@ -170,7 +169,6 @@
     const resultBox = document.getElementById('result');
     const selectionBox = document.getElementById('selection');
     const errorBox = document.getElementById('error');
-    const validateButton = document.getElementById('validate-choice');
 
     const NON_DISPONIBLE = 'Non disponible';
     // OSRM a tendance à surestimer légèrement certains trajets autoroutiers longue distance.
@@ -196,6 +194,10 @@
         type: 'centre-selected',
         centre: center.key === 'cote-azur' ? 'cote_azur' : 'auvergne'
       }, '*');
+    }
+
+    function getCenterByKey(centerKey) {
+      return centerKey === CENTER_COTE_AZUR.key ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
     }
 
     function getCenterBenefits(center) {
@@ -225,23 +227,30 @@
       return center.key === CENTER_COTE_AZUR.key ? CENTER_AUVERGNE : CENTER_COTE_AZUR;
     }
 
+    function renderCenterDetails(center, headingHtml) {
+      const distanceMeters = latestDistances[center.key];
+      const distanceLabel = formatDistanceKm(distanceMeters);
+      const travelTimes = latestTravelTimes ? latestTravelTimes[center.key] : null;
+      const benefits = getCenterBenefits(center);
+
+      return `${headingHtml}<br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
+    }
+
     function updateSelectionSummary(recommendedCenter) {
       if (!latestDistances || !recommendedCenter) return;
       const alternativeCenter = getOtherCenter(recommendedCenter);
-      const distanceMeters = latestDistances[alternativeCenter.key];
-      const distanceLabel = formatDistanceKm(distanceMeters);
-      const travelTimes = latestTravelTimes ? latestTravelTimes[alternativeCenter.key] : null;
-      const benefits = getCenterBenefits(alternativeCenter);
-
-      resultBox.innerHTML = `✅ <strong>Centre de formation recommandé selon la distance :</strong> <span class="ok">${recommendedCenter.name}</span>`;
+      resultBox.innerHTML = renderCenterDetails(
+        recommendedCenter,
+        `✅ <strong>Centre de formation recommandé selon la distance :</strong> <span class="ok">${recommendedCenter.name}</span>`
+      );
       resultBox.style.display = 'block';
 
-      selectionBox.innerHTML = `${getAlternativeHeadline(alternativeCenter)}<br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div>`;
-      selectionBox.appendChild(validateButton);
-      validateButton.style.display = 'flex';
-      validateButton.textContent = 'Choisir ce centre';
+      selectionBox.innerHTML = renderCenterDetails(
+        alternativeCenter,
+        getAlternativeHeadline(alternativeCenter)
+      );
       selectionBox.style.display = 'block';
-      selectedCenter = alternativeCenter;
+      selectedCenter = null;
     }
 
     function formatDistanceKm(meters) {
@@ -317,15 +326,19 @@
         }
       };
     }
-    validateButton.addEventListener('click', () => {
-      if (!selectedCenter) {
-        showError('Merci de calculer et sélectionner un centre avant de valider.');
-        return;
-      }
-
+    function handleCenterChoice(centerKey) {
+      selectedCenter = getCenterByKey(centerKey);
       hideError();
       notifyParent(selectedCenter);
       window.parent.postMessage({ type: 'close-centre-modal' }, '*');
+    }
+
+    [resultBox, selectionBox].forEach((box) => {
+      box.addEventListener('click', (event) => {
+        const button = event.target.closest('.choose-center-btn');
+        if (!button) return;
+        handleCenterChoice(button.dataset.centerKey);
+      });
     });
 
     async function geocodeAddress(address) {
@@ -360,7 +373,6 @@
       resultBox.innerHTML = '';
       selectionBox.style.display = 'none';
       selectionBox.innerHTML = '';
-      validateButton.style.display = 'none';
       loadingBox.style.display = 'none';
 
       const postcode = cpInput.value.trim();
