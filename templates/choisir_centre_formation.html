@@ -497,6 +497,8 @@
         run();
       }
     });
+
+    window.parent.postMessage({ type: 'centre-frame-ready' }, '*');
   </script>
 </body>
 </html>
