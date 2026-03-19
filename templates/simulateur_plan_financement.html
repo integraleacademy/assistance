@@ -245,7 +245,7 @@
     <button type="button" id="add-echeance">➕ Ajouter une échéance</button>
   </div>
   <div id="echeancier-alert" class="alert" {% if simulation.echeances %}style="display:none;"{% endif %}>
-    ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
+    {{ simulation.echeancier_message or "⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen." }}
   </div>
 
   <div class="actions">
@@ -268,6 +268,7 @@ const addEcheanceButton = document.getElementById("add-echeance");
 const sendPlanButton = document.getElementById("send-plan");
 const sendStatus = document.getElementById("send-status");
 let currentResteSans = 0;
+const defaultEcheancierAlert = "⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.";
 
 const fields = {
   tarif: document.getElementById("tarif"),
@@ -374,6 +375,16 @@ function fillDatesSelect() {
   }
 }
 
+function findSelectedSessionRow() {
+  const formation = formationSelect.value;
+  const centre = centreSelect.value || "cote_azur";
+  const rows = (datesOptions[centre] && Array.isArray(datesOptions[centre][formation]))
+    ? datesOptions[centre][formation]
+    : ((datesOptions.cote_azur && Array.isArray(datesOptions.cote_azur[formation])) ? datesOptions.cote_azur[formation] : []);
+
+  return rows.find((row) => row.label === datesSelect.value) || null;
+}
+
 function serializeForm() {
   const data = new FormData(form);
   return {
@@ -428,6 +439,7 @@ async function refreshSimulation() {
   fields.resteAvec.textContent = `${data.reste_avec_ft} €`;
   fields.resteSans.textContent = `${data.reste_sans_ft} €`;
   currentResteSans = Number(data.reste_sans_ft || 0);
+  alertBox.textContent = data.echeancier_message || defaultEcheancierAlert;
   renderEcheances(data.echeances);
 }
 
@@ -455,6 +467,13 @@ datesSelect.addEventListener("change", () => {
   const texte = datesSelect.value;
   if (!texte) {
     dateExamen.value = "";
+    debouncedRefresh();
+    return;
+  }
+
+  const selectedRow = findSelectedSessionRow();
+  if (selectedRow && selectedRow.date_examen) {
+    dateExamen.value = selectedRow.date_examen;
     debouncedRefresh();
     return;
   }
