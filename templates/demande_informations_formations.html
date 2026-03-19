@@ -291,7 +291,13 @@
     .modal-box{max-width:930px;margin:2vh auto;background:#fff;padding:14px;border-radius:16px;}
     .modal-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;}
     .close-btn{border:none;background:#e2e8f0;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:700;}
+    .modal-frame-wrap{position:relative;min-height:76vh;}
     iframe{width:100%;height:76vh;border:none;border-radius:10px;}
+    .modal-frame-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;border-radius:10px;background:linear-gradient(180deg,#f8fbff 0%,#eff6ff 100%);text-align:center;}
+    .modal-frame-overlay[hidden]{display:none;}
+    .modal-frame-message{margin:0;color:#1e3a8a;font-size:18px;font-weight:700;line-height:1.45;}
+    .retry-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;border:none;border-radius:999px;padding:12px 22px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;font-size:16px;font-weight:800;cursor:pointer;box-shadow:0 12px 24px rgba(37,99,235,.24);transition:transform .2s ease, box-shadow .2s ease;}
+    .retry-btn:hover{transform:translateY(-1px);box-shadow:0 16px 28px rgba(37,99,235,.28);}
 
     @keyframes bounceGlow{
       0%,100%{box-shadow:0 10px 22px rgba(37,99,235,.32)}
@@ -521,7 +527,13 @@
       <div class="modal-head">
         <button type="button" class="close-btn" id="closeModal">Fermer ✖</button>
       </div>
-      <iframe src="{{ url_for('choisir_centre_formation') }}"></iframe>
+      <div class="modal-frame-wrap">
+        <div class="modal-frame-overlay" id="centreFrameOverlay" aria-live="polite">
+          <p class="modal-frame-message" id="centreFrameMessage">Chargement du simulateur…</p>
+          <button type="button" class="retry-btn" id="retryCentreFrame" hidden>Réessayer</button>
+        </div>
+        <iframe id="centreFrame" src="{{ url_for('choisir_centre_formation') }}" title="Choisir mon centre de formation"></iframe>
+      </div>
     </div>
   </div>
 
@@ -552,6 +564,14 @@
     const datesHelp = document.getElementById('datesHelp');
     const centreSwitchNote = document.getElementById('centreSwitchNote');
     const modal = document.getElementById('modal');
+    const centreFrame = document.getElementById('centreFrame');
+    const centreFrameOverlay = document.getElementById('centreFrameOverlay');
+    const centreFrameMessage = document.getElementById('centreFrameMessage');
+    const retryCentreFrame = document.getElementById('retryCentreFrame');
+
+    const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
+    const CENTRE_FRAME_TIMEOUT_MS = 4500;
+    let centreFrameTimeout = null;
 
     (function syncGclid(){
       const params = new URLSearchParams(window.location.search);
@@ -603,6 +623,49 @@
     function selectedCentre() {
       const checked = form.querySelector('input[name="centre"]:checked');
       return checked ? checked.value : '';
+    }
+
+    function clearCentreFrameTimeout() {
+      if (centreFrameTimeout) {
+        window.clearTimeout(centreFrameTimeout);
+        centreFrameTimeout = null;
+      }
+    }
+
+    function showCentreFrameOverlay(message, canRetry = false) {
+      centreFrameMessage.textContent = message;
+      retryCentreFrame.hidden = !canRetry;
+      centreFrameOverlay.hidden = false;
+      centreFrame.hidden = true;
+    }
+
+    function markCentreFrameReady() {
+      clearCentreFrameTimeout();
+      centreFrameOverlay.hidden = true;
+      retryCentreFrame.hidden = true;
+      centreFrame.hidden = false;
+    }
+
+    function reloadCentreFrame() {
+      clearCentreFrameTimeout();
+      showCentreFrameOverlay('Chargement du simulateur…');
+      centreFrame.removeAttribute('src');
+      window.requestAnimationFrame(() => {
+        centreFrame.setAttribute('src', `${CENTRE_FRAME_SRC}?reload=${Date.now()}`);
+      });
+      centreFrameTimeout = window.setTimeout(() => {
+        showCentreFrameOverlay('Le simulateur ne s’affiche pas pour le moment.', true);
+      }, CENTRE_FRAME_TIMEOUT_MS);
+    }
+
+    function openCentreModal() {
+      modal.style.display = 'block';
+      reloadCentreFrame();
+    }
+
+    function closeCentreModal() {
+      modal.style.display = 'none';
+      clearCentreFrameTimeout();
     }
 
     function showLocationCards(v) {
@@ -717,8 +780,13 @@
     window.addEventListener('message', (event) => {
       const data = event.data || {};
 
+      if (data.type === 'centre-frame-ready') {
+        markCentreFrameReady();
+        return;
+      }
+
       if (data.type === 'close-centre-modal') {
-        modal.style.display = 'none';
+        closeCentreModal();
         return;
       }
 
@@ -768,9 +836,10 @@
     franceTravail.dispatchEvent(new Event('change'));
     formation.dispatchEvent(new Event('change'));
 
-    openSimu.addEventListener('click', () => { modal.style.display = 'block'; });
-    document.getElementById('closeModal').addEventListener('click', () => { modal.style.display = 'none'; });
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+    retryCentreFrame.addEventListener('click', reloadCentreFrame);
+    openSimu.addEventListener('click', openCentreModal);
+    document.getElementById('closeModal').addEventListener('click', closeCentreModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeCentreModal(); });
   </script>
 </body>
 </html>
