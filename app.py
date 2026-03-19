@@ -182,6 +182,11 @@ PLAN_TARIFS = {
     "DESP_VAE": 3800
 }
 
+FORMATION_CENTRES = {
+    "cote_azur": "Intégrale Academy Côte d’Azur",
+    "auvergne": "Intégrale Academy Terres d’Auvergne",
+}
+
 PLAN_DATES = {
     "A3P": [
         "30 mars au 2 juin 2026 – examen le 3 juin 2026",
@@ -244,6 +249,25 @@ def get_formation_sessions(data_store=None):
         return sessions
     return copy.deepcopy(DEFAULT_FORMATION_SESSIONS)
 
+
+def get_simulator_dates_options(data_store=None):
+    sessions = get_formation_sessions(data_store)
+    options = {}
+    for centre_code in FORMATION_CENTRES:
+        centre_sessions = sessions.get(centre_code, {})
+        options[centre_code] = {}
+        for formation_code, rows in centre_sessions.items():
+            options[centre_code][formation_code] = [
+                {
+                    "label": (row.get("label") or "").strip(),
+                    "badge": (row.get("badge") or "").strip(),
+                }
+                for row in rows
+                if (row.get("label") or "").strip()
+            ]
+    return options
+
+
 def _parse_cpf_value(value):
     if value is None:
         return 0
@@ -288,7 +312,7 @@ def _parse_exam_date_from_dates_txt(dates_txt):
         return ""
     return f"{annee}-{mois}-{jour}"
 
-def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_travail, date_examen_str):
+def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_travail, date_examen_str, centre_code="cote_azur"):
     formation_code = formation or "APS"
     formation_label = PLAN_FORMATIONS.get(formation_code, formation_code)
     tarif = PLAN_TARIFS.get(formation_code, 0)
@@ -327,6 +351,7 @@ def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_
     return {
         "formation": formation_code,
         "formation_label": formation_label,
+        "centre": centre_code or "cote_azur",
         "dates": dates_txt or "",
         "date_examen": date_examen_str,
         "cpf": cpf,
@@ -825,7 +850,7 @@ def _format_selected_session_date(dates_txt: str) -> str:
 def _centre_label_and_address(centre_code: str):
     centres = {
         "cote_azur": (
-            "Intégrale Sécurité Formations",
+            "Intégrale Academy Côte d’Azur",
             "54 chemin du Carreou — 83480 PUGET SUR ARGENS (Var)",
         ),
         "auvergne": (
@@ -836,7 +861,7 @@ def _centre_label_and_address(centre_code: str):
     return centres.get(
         centre_code,
         (
-            "Intégrale Sécurité Formations",
+            "Intégrale Academy Côte d’Azur",
             "54 chemin du Carreou — 83480 PUGET SUR ARGENS (Var)",
         ),
     )
@@ -2094,18 +2119,22 @@ def imprimer_formulaire_admin_devis(formulaire_id):
 @app.route("/admin-devis/simulateur")
 @login_required
 def simulateur_plan_financement():
+    data_store = load_data()
+    centre_code = request.args.get("centre", "cote_azur")
     simulation = compute_plan_financement_simulation(
         formation=request.args.get("formation", "APS"),
         dates_txt=request.args.get("dates", ""),
         cpf_value=request.args.get("cpf", 0),
         france_travail=request.args.get("france_travail", "NON"),
-        date_examen_str=request.args.get("date_examen", "")
+        date_examen_str=request.args.get("date_examen", ""),
+        centre_code=centre_code,
     )
 
     return render_template(
         "simulateur_plan_financement.html",
         formations=PLAN_FORMATIONS,
-        dates_options=PLAN_DATES,
+        centres=FORMATION_CENTRES,
+        dates_options=get_simulator_dates_options(data_store),
         simulation=simulation
     )
 
@@ -2119,7 +2148,8 @@ def simulateur_plan_financement_data():
         dates_txt=payload.get("dates", ""),
         cpf_value=payload.get("cpf", 0),
         france_travail=payload.get("france_travail", "NON"),
-        date_examen_str=payload.get("date_examen", "")
+        date_examen_str=payload.get("date_examen", ""),
+        centre_code=payload.get("centre", "cote_azur"),
     )
 
     return simulation
@@ -2135,7 +2165,8 @@ def simulateur_plan_financement_envoyer_plan():
         dates_txt=payload.get("dates", ""),
         cpf_value=payload.get("cpf", 0),
         france_travail=payload.get("france_travail", "NON"),
-        date_examen_str=payload.get("date_examen", "")
+        date_examen_str=payload.get("date_examen", ""),
+        centre_code=payload.get("centre", "cote_azur"),
     )
 
     destinataire = (payload.get("mail") or "").strip()
