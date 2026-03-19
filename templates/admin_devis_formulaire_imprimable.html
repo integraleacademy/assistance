@@ -43,7 +43,27 @@ body{
 .campus-badge{padding:10px 16px;border-radius:999px;font-size:21px;font-weight:900;letter-spacing:.5px;line-height:1;color:#fff;text-transform:uppercase;background:var(--brand)}
 .header-title h1{margin:0;font-size:32px;line-height:1.05;color:#111827}
 .subline{margin:5px 0 0;color:#334155;font-size:14px;font-weight:700}
-.top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.top-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;justify-content:flex-end}
+.top-actions-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.formation-badge{
+  min-width:220px;
+  padding:18px 32px;
+  border:4px solid currentColor;
+  border-radius:28px;
+  text-align:center;
+  font-size:38px;
+  font-weight:900;
+  line-height:1;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  background:#fff;
+  box-shadow:0 8px 20px rgba(15,23,42,.08);
+}
+.formation-badge[data-formation-theme="a3p"]{background:#ddf8e5;border-color:#96e8aa;color:#2f6b39}
+.formation-badge[data-formation-theme="dirigeant"]{background:#fff4dd;border-color:#f1b362;color:#be5727}
+.formation-badge[data-formation-theme="vae"]{background:#fff4dd;border-color:#f1b362;color:#be5727}
+.formation-badge[data-formation-theme="vtc"]{background:#efecff;border-color:#b8a9ff;color:#5b2edc}
+.formation-badge[data-formation-theme="aps"]{background:#e6efff;border-color:#8db8ff;color:#3559d5}
 .btn{padding:9px 12px;border:1px solid transparent;border-radius:10px;cursor:pointer;font-weight:800;font-size:13px;transition:transform .12s ease, box-shadow .12s ease, background .2s ease}
 .btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .btn-print{background:var(--accent);color:#fff}
@@ -73,9 +93,10 @@ tr:nth-child(even) td{background:#fbfdff}
   .branding img{height:64px}
   .header-title h1{font-size:28px}
   .campus-badge{font-size:18px}
+  .formation-badge{min-width:180px;padding:14px 24px;font-size:30px}
 }
 @media print {
-  html, body, .sheet, .top-bar, .section h2, .campus-badge, th{
+  html, body, .sheet, .top-bar, .section h2, .campus-badge, .formation-badge, th{
     -webkit-print-color-adjust:exact;
     print-color-adjust:exact;
   }
@@ -83,13 +104,15 @@ tr:nth-child(even) td{background:#fbfdff}
   body{margin:0;background:#fff}
   .sheet{min-height:auto;border:none;border-radius:0;box-shadow:none;padding:0;max-width:none;width:100%}
   .top-bar{border:1.4px solid var(--brand);background:var(--brand-soft)}
-  .top-actions{display:none}
+  .top-actions{display:flex;align-items:flex-start}
+  .top-actions-controls{display:none}
   .content-grid{display:grid;grid-template-columns:1fr;margin-top:6px;gap:8px}
   .section{margin-top:0;break-inside:avoid-page}
   .section h2{font-size:16px;margin-bottom:4px;padding:4px 8px;background:var(--brand-soft);color:var(--brand-strong);border-left:4px solid var(--brand)}
   .header-title h1{font-size:24px}
   .branding img{height:58px}
   .campus-badge{font-size:16px;padding:8px 12px;background:var(--brand);color:#fff;border:1px solid var(--brand)}
+  .formation-badge{min-width:160px;padding:10px 18px;font-size:24px;border-width:3px;border-radius:22px;box-shadow:none}
   th{background:#eef2f7}
   th,td{font-size:11px;padding:4px 6px;line-height:1.2}
   .table-wrap{border-radius:0;box-shadow:none}
@@ -110,8 +133,13 @@ tr:nth-child(even) td{background:#fbfdff}
         </div>
     </div>
     <div class="top-actions">
-        <button class="btn btn-status" id="status-toggle" type="button">À traiter</button>
-        <button class="btn btn-print" onclick="window.print()" type="button">🖨️ Imprimer</button>
+        {% if formation_badge_text %}
+        <div class="formation-badge" data-formation-theme="{{ formation_badge_theme }}">{{ formation_badge_text }}</div>
+        {% endif %}
+        <div class="top-actions-controls">
+            <button class="btn btn-status" id="status-toggle" type="button">À traiter</button>
+            <button class="btn btn-print" onclick="window.print()" type="button">🖨️ Imprimer</button>
+        </div>
     </div>
 </div>
 
