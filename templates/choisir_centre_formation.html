@@ -74,39 +74,148 @@
       50% { opacity: 1; }
     }
 
-    .recommendation { margin-top:20px; padding:16px; border-radius:10px; border:2px solid #bfdbfe; background:#eff6ff; }
-    .recommendation strong { color:#1e3a8a; }
-    .selection { margin-top:14px; padding:16px; border-radius:10px; border:1px solid #bfdbfe; background:#f0f9ff; }
-    .selection-highlight {
+    .recommendation, .selection {
+      margin-top: 18px;
+      padding: 22px;
+      border-radius: 22px;
+      background: #fff;
+      border: 1px solid #dbe4f0;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, .06);
+    }
+    .recommendation {
+      border: 2px solid #86efac;
+      background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 28%);
+      box-shadow: 0 18px 42px rgba(22, 163, 74, .14);
+    }
+    .selection {
+      border: 1px solid #bfdbfe;
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 28%);
+    }
+    .center-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .center-card-intro {
+      flex: 1;
+      min-width: 0;
+    }
+    .center-card-badge {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 12px;
-      padding: 14px 18px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, #dbeafe 0%, #ecfeff 100%);
-      border: 1px solid #93c5fd;
-      box-shadow: 0 10px 24px rgba(14, 116, 144, .12);
-      font-size: 32px;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
       font-weight: 800;
-      line-height: 1.2;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+    }
+    .recommendation .center-card-badge {
+      color: #166534;
+      background: #dcfce7;
+      border: 1px solid #86efac;
+    }
+    .selection .center-card-badge {
+      color: #1d4ed8;
+      background: #dbeafe;
+      border: 1px solid #93c5fd;
+    }
+    .center-card-title {
+      margin: 12px 0 6px;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.35;
       color: #0f172a;
     }
-    .selection-highlight .emoji { font-size: 34px; }
-    .selection-highlight .ok { font-size: 1em; }
+    .recommendation .center-card-title {
+      font-size: 30px;
+      color: #14532d;
+    }
+    .selection .center-card-title {
+      font-size: 22px;
+    }
+    .center-card-title .ok { color: inherit; }
+    .center-card-subtitle {
+      margin: 0;
+      color: #475569;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .recommendation .center-card-subtitle { color: #166534; }
+    .selection .center-card-subtitle { color: #1e40af; }
+    .distance-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 132px;
+      padding: 12px 14px;
+      border-radius: 18px;
+      font-weight: 800;
+      font-size: 20px;
+      white-space: nowrap;
+    }
+    .recommendation .distance-pill {
+      color: #166534;
+      background: #dcfce7;
+      border: 1px solid #86efac;
+    }
+    .selection .distance-pill {
+      color: #1d4ed8;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      font-size: 18px;
+    }
+    .travel-details {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .travel-line {
+      color: #475569;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    .benefits-list { margin:12px 0 10px 20px; padding:0; }
+    .benefits-list li { margin-bottom:8px; }
+    .common-note {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .recommendation .common-note {
+      color: #166534;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+    }
+    .selection .common-note {
+      color: #1e3a8a;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+    }
 
     @media (max-width: 640px) {
-      .selection-highlight {
-        display: flex;
-        font-size: 24px;
-        padding: 12px 14px;
+      .recommendation, .selection {
+        padding: 18px;
+        border-radius: 18px;
       }
 
-      .selection-highlight .emoji { font-size: 28px; }
+      .center-card-header {
+        flex-direction: column;
+      }
+
+      .distance-pill {
+        min-width: auto;
+        width: 100%;
+      }
+
+      .recommendation .center-card-title { font-size: 24px; }
+      .selection .center-card-title { font-size: 20px; }
     }
-    .selection ul { margin:10px 0 10px 20px; padding:0; }
-    .selection li { margin-bottom:6px; }
-    .selection .common-note { margin-top:10px; font-weight:700; color:#1e3a8a; }
     .ok { color:#065f46; font-weight:700; }
     .error { color:#b91c1c; font-weight:600; }
     .choose-center-btn {
@@ -245,37 +354,41 @@
 
     function getAlternativeHeadline(center) {
       if (center.key === 'cote-azur') {
-        return `<div class="selection-highlight"><span class="emoji">🌊</span><span>Vous êtes plutôt Team Mer ? Choisissez <span class="ok">${center.name}</span></span></div>`;
+        return `🌊 Vous êtes plutôt Team Mer ? Choisissez <span class="ok">${center.name}</span>`;
       }
-      return `🏔️ Vous êtes plutôt <strong>Team Montagne</strong>, choisissez <span class="ok">${center.name}</span>.`;
+      return `🏔️ Vous êtes plutôt Team Montagne ? Choisissez <span class="ok">${center.name}</span>`;
     }
 
     function getOtherCenter(center) {
       return center.key === CENTER_COTE_AZUR.key ? CENTER_AUVERGNE : CENTER_COTE_AZUR;
     }
 
-    function renderCenterDetails(center, headingHtml) {
+    function renderCenterDetails(center, cardOptions) {
       const distanceMeters = latestDistances[center.key];
       const distanceLabel = formatDistanceKm(distanceMeters);
       const travelTimes = latestTravelTimes ? latestTravelTimes[center.key] : null;
       const benefits = getCenterBenefits(center);
+      const badgeHtml = `<div class="center-card-badge">${cardOptions.badge}</div>`;
+      const subtitleHtml = cardOptions.subtitle ? `<p class="center-card-subtitle">${cardOptions.subtitle}</p>` : '';
 
-      return `${headingHtml}<br><span class="muted">Distance routière : ${distanceLabel}</span>${travelTimes ? `<br><span class="muted">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</span><br><span class="muted">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</span><br><span class="muted">${renderTravelTime('🚆 Train :', travelTimes.train)}</span>` : ''}<ul>${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
+      return `<div class="center-card-header"><div class="center-card-intro">${badgeHtml}<div class="center-card-title">${cardOptions.title}</div>${subtitleHtml}</div><div class="distance-pill">${distanceLabel}</div></div>${travelTimes ? `<div class="travel-details"><div class="travel-line">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</div><div class="travel-line">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</div><div class="travel-line">${renderTravelTime('🚆 Train :', travelTimes.train)}</div></div>` : ''}<ul class="benefits-list">${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
     }
 
     function updateSelectionSummary(recommendedCenter) {
       if (!latestDistances || !recommendedCenter) return;
       const alternativeCenter = getOtherCenter(recommendedCenter);
-      resultBox.innerHTML = renderCenterDetails(
-        recommendedCenter,
-        `✅ <strong>Centre de formation recommandé selon la distance :</strong> <span class="ok">${recommendedCenter.name}</span>`
-      );
+      resultBox.innerHTML = renderCenterDetails(recommendedCenter, {
+        badge: '✅ Recommandé selon la distance',
+        title: `<span class="ok">${recommendedCenter.name}</span>`,
+        subtitle: 'C’est le centre le plus proche de chez vous : c’est donc notre recommandation principale.'
+      });
       resultBox.style.display = 'block';
 
-      selectionBox.innerHTML = renderCenterDetails(
-        alternativeCenter,
-        getAlternativeHeadline(alternativeCenter)
-      );
+      selectionBox.innerHTML = renderCenterDetails(alternativeCenter, {
+        badge: '✨ Alternative selon vos préférences',
+        title: getAlternativeHeadline(alternativeCenter),
+        subtitle: 'Une autre possibilité si vous préférez ce cadre de vie, même si ce centre est plus éloigné.'
+      });
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
