@@ -165,12 +165,20 @@
           {% endfor %}
         </select>
       </div>
-      <div id="datesBloc" class="{% if simulation.formation not in dates_options %}hidden{% endif %}">
+      <div>
+        <label for="centre">Centre de formation</label>
+        <select id="centre" name="centre" class="js-sim-input">
+          {% for code, label in centres.items() %}
+          <option value="{{ code }}" {% if simulation.centre == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="datesBloc">
         <label for="datesSelect">Session souhaitée</label>
         <select name="dates" id="datesSelect" class="js-sim-input">
           <option value="">— Sélectionnez —</option>
         </select>
-        <div class="muted">Les dates proviennent du formulaire de demande de devis.</div>
+        <div class="muted">Les dates proviennent de l’écran admin « Gestion des dates de formation ».</div>
       </div>
       <input type="hidden" name="date_examen" id="dateExamen" value="{{ simulation.date_examen }}">
       <div>
@@ -251,6 +259,7 @@ const form = document.getElementById("simulator-form");
 const echeancierBody = document.getElementById("echeancier-body");
 const alertBox = document.getElementById("echeancier-alert");
 const formationSelect = document.getElementById("formation");
+const centreSelect = document.getElementById("centre");
 const datesBloc = document.getElementById("datesBloc");
 const datesSelect = document.getElementById("datesSelect");
 const dateExamen = document.getElementById("dateExamen");
@@ -325,28 +334,43 @@ function addRow() {
 
 function fillDatesSelect() {
   const formation = formationSelect.value;
+  const centre = centreSelect.value || "cote_azur";
+  const rows = (datesOptions[centre] && Array.isArray(datesOptions[centre][formation]))
+    ? datesOptions[centre][formation]
+    : ((datesOptions.cote_azur && Array.isArray(datesOptions.cote_azur[formation])) ? datesOptions.cote_azur[formation] : []);
+
   datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
-  if (datesOptions[formation]) {
+
+  if (rows.length) {
     datesBloc.classList.remove("hidden");
-    datesOptions[formation].forEach((dateLabel) => {
+    rows.forEach((row) => {
       const option = document.createElement("option");
-      option.value = dateLabel;
-      option.textContent = dateLabel;
+      option.value = row.label;
+      option.textContent = row.badge ? `${row.label} — ${row.badge}` : row.label;
       datesSelect.appendChild(option);
     });
   } else {
-    datesBloc.classList.add("hidden");
+    datesBloc.classList.remove("hidden");
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Aucune session disponible pour ce centre";
+    datesSelect.appendChild(option);
   }
 
   if (datesSelect.dataset.selected) {
     datesSelect.value = datesSelect.dataset.selected;
     datesSelect.dataset.selected = "";
+    if (datesSelect.value) {
+      datesSelect.dispatchEvent(new Event("change"));
+    }
     return;
   }
 
-  if (datesOptions[formation] && datesOptions[formation].length > 0) {
-    datesSelect.value = datesOptions[formation][0];
+  if (rows.length > 0) {
+    datesSelect.value = rows[0].label;
     datesSelect.dispatchEvent(new Event("change"));
+  } else {
+    dateExamen.value = "";
   }
 }
 
@@ -358,6 +382,7 @@ function serializeForm() {
     date_examen: data.get("date_examen"),
     cpf: data.get("cpf"),
     france_travail: data.get("france_travail"),
+    centre: data.get("centre"),
     nom: data.get("nom"),
     prenom: data.get("prenom"),
     mail: data.get("mail")
@@ -419,6 +444,13 @@ formationSelect.addEventListener("change", () => {
   debouncedRefresh();
 });
 
+centreSelect.addEventListener("change", () => {
+  datesSelect.dataset.selected = "";
+  dateExamen.value = "";
+  fillDatesSelect();
+  debouncedRefresh();
+});
+
 datesSelect.addEventListener("change", () => {
   const texte = datesSelect.value;
   if (!texte) {
@@ -465,7 +497,7 @@ datesSelect.addEventListener("change", () => {
   debouncedRefresh();
 });
 
-datesSelect.dataset.selected = "{{ simulation.dates }}";
+datesSelect.dataset.selected = {{ simulation.dates | tojson }};
 fillDatesSelect();
 if (!dateExamen.value && datesSelect.value) {
   datesSelect.dispatchEvent(new Event("change"));
