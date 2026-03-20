@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -599,13 +599,28 @@ def save_data(data):
         except OSError:
             pass
 
-    temp_file = f"{DATA_FILE}.tmp"
-    with open(temp_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-        f.flush()
-        os.fsync(f.fileno())
+    temp_file = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=os.path.dirname(DATA_FILE),
+            prefix=f"{os.path.basename(DATA_FILE)}.",
+            suffix=".tmp",
+            delete=False,
+        ) as f:
+            temp_file = f.name
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
 
-    os.replace(temp_file, DATA_FILE)
+        os.replace(temp_file, DATA_FILE)
+    finally:
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except OSError:
+                pass
 
 def supprimer_fichier(filename):
     if not filename:
