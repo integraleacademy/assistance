@@ -2728,7 +2728,14 @@ def hebergement_confirmation():
 @login_required
 def admin_hebergement():
     data = load_data()
-    hebergements = data.get("hebergements", [])
+    all_hebergements = data.get("hebergements", [])
+    hebergements = list(all_hebergements)
+
+    sessions_disponibles = sorted({
+        (h.get("session") or "").strip()
+        for h in all_hebergements
+        if (h.get("session") or "").strip()
+    })
 
     # 🔍 Recherche
     q = request.args.get("q", "").strip().lower()
@@ -2739,6 +2746,14 @@ def admin_hebergement():
             or q in h.get("prenom", "").lower()
             or q in h.get("mail", "").lower()
             or q in h.get("session", "").lower()
+        ]
+
+    session_filter = " ".join((request.args.get("session_filter") or "").split())
+    if session_filter:
+        session_filter_lower = session_filter.lower()
+        hebergements = [
+            h for h in hebergements
+            if " ".join((h.get("session") or "").split()).lower() == session_filter_lower
         ]
 
     # 🔽 Tri
@@ -2814,7 +2829,14 @@ def admin_hebergement():
 
     # ------------------------------------------------------------------
 
-    return render_template("admin_hebergement.html", hebergements=hebergements)
+    return render_template(
+        "admin_hebergement.html",
+        hebergements=hebergements,
+        sessions_disponibles=sessions_disponibles,
+        selected_session=session_filter,
+        search_query=request.args.get("q", ""),
+        tri=tri,
+    )
 
 
 # ------------------------------------------------------------

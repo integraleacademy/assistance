@@ -119,12 +119,40 @@ body {
 }
 
 /* Impression */
+.filters-form {
+    display:flex;
+    flex:1;
+    gap:12px;
+    align-items:flex-end;
+    flex-wrap:wrap;
+}
+
+.search-block {
+    flex:1 1 320px;
+    min-width:280px;
+}
+
+.session-filter-block {
+    min-width:280px;
+}
+
+.print-session-note {
+    margin:0 0 14px;
+    color:#495057;
+    font-size:14px;
+}
+
 @media print {
-    button, .btn, form, .logo-admin, .top-bar, a {
+    button, .btn, form, .logo-admin, .top-bar, a, .filters-form {
         display:none !important;
     }
     body { background:white !important; }
     table { width:100% !important; font-size:14px; }
+    .print-session-note {
+        display:block !important;
+        text-align:left;
+        font-weight:600;
+    }
 }
 </style>
 </head>
@@ -141,20 +169,39 @@ body {
     <!-- ZONE DU HAUT -->
     <div class="top-bar">
 
-        <!-- Recherche -->
-        <form method="GET" action="/admin_hebergement" class="search-block d-flex" style="flex:1;min-width:280px;">
-            <input type="text" name="q" class="form-control me-2"
-                   placeholder="Rechercher nom, email, session…">
-            <button class="btn btn-primary">Rechercher</button>
+        <form method="GET" action="/admin_hebergement" class="filters-form">
+            <div class="search-block d-flex">
+                <input type="text" name="q" class="form-control me-2"
+                       value="{{ search_query }}"
+                       placeholder="Rechercher nom, email, session…">
+                <button class="btn btn-primary">Rechercher</button>
+            </div>
+
+            <div class="session-filter-block">
+                <label for="session_filter" class="form-label mb-1">Afficher une seule session</label>
+                <select id="session_filter" name="session_filter" class="form-select" onchange="this.form.submit()">
+                    <option value="">Toutes les sessions</option>
+                    {% for session_name in sessions_disponibles %}
+                    <option value="{{ session_name }}" {% if session_name == selected_session %}selected{% endif %}>{{ session_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {% if tri %}
+            <input type="hidden" name="tri" value="{{ tri }}">
+            {% endif %}
         </form>
 
         <!-- Actions -->
         <div class="d-flex gap-2">
-            <a href="/admin_hebergement?tri=session" class="btn btn-secondary">
+            <a href="/admin_hebergement?tri=session{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if selected_session %}&session_filter={{ selected_session|urlencode }}{% endif %}" class="btn btn-secondary">
                 Trier par session
             </a>
+            <a href="/admin_hebergement{% if selected_session or search_query or tri %}?{% endif %}{% if selected_session %}session_filter={{ selected_session|urlencode }}{% endif %}{% if search_query %}{% if selected_session %}&{% endif %}q={{ search_query|urlencode }}{% endif %}{% if tri %}{% if selected_session or search_query %}&{% endif %}tri={{ tri|urlencode }}{% endif %}" class="btn btn-outline-secondary">
+                Réinitialiser
+            </a>
             <button onclick="window.print()" class="btn btn-dark">
-                🖨️ Imprimer
+                🖨️ Imprimer{% if selected_session %} la session{% endif %}
             </button>
         </div>
 
@@ -162,6 +209,13 @@ body {
 
     <!-- TABLEAU -->
     <div class="table-container">
+        <p class="print-session-note">
+            {% if selected_session %}
+                Impression de la session : {{ selected_session }}
+            {% else %}
+                Impression de toutes les sessions affichées
+            {% endif %}
+        </p>
 
         <table class="table table-hover align-middle">
             <thead class="table-light">
