@@ -230,7 +230,7 @@ body {
                     <th>Clé</th>
                     <th>État clé</th>
                     <th>Date paiement</th>
-                    <th>Supp.</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
 
@@ -337,13 +337,44 @@ body {
                     <!-- Date paiement -->
                     <td>{{h.date_paiement or ''}}</td>
 
-                    <!-- Supprimer -->
+                    <!-- Actions -->
                     <td>
-                        <form method="POST" action="/admin_hebergement">
-                            <input type="hidden" name="id" value="{{h.id}}">
-                            <input type="hidden" name="action" value="delete">
-                            <button class="btn btn-danger btn-sm">🗑️</button>
-                        </form>
+                        <div class="d-flex gap-1 align-items-center">
+                            {% if h.cle_etat != 'Restituee' and h.mail %}
+                            {% set cle_numero = h.cle_numero or 'XXXX' %}
+                            {% set mail_subject %}Rappel restitution clé n°{{ cle_numero }}{% endset %}
+                            {% set mail_body %}Bonjour,
+
+Je fais suite à votre formation agent de protection physique des personnes.
+Après avoir fait le point sur les clés, il s'avère que vous n'avez pas rendu votre clé n°{{ cle_numero }}.
+
+Il est très important de nous rendre la clé au plus vite.
+
+Merci de nous la déposer ou de nous l'envoyer à l'adresse suivante :
+
+Intégrale Academy
+54 chemin du Carreou
+83480 PUGET SUR ARGENS
+
+Je reste à votre disposition pour tous renseignements complémentaires et je vous souhaite une bonne journée,
+
+Bien cordialement,
+
+Clément VAILLANT{% endset %}
+                            <a
+                                class="btn btn-outline-primary btn-sm"
+                                href="mailto:{{ h.mail }}?subject={{ mail_subject|trim|urlencode }}&body={{ mail_body|trim|urlencode }}"
+                                title="Envoyer un rappel de restitution de clé">
+                                ✉️
+                            </a>
+                            {% endif %}
+
+                            <form method="POST" action="/admin_hebergement" class="mb-0">
+                                <input type="hidden" name="id" value="{{h.id}}">
+                                <input type="hidden" name="action" value="delete">
+                                <button class="btn btn-danger btn-sm" title="Supprimer">🗑️</button>
+                            </form>
+                        </div>
                     </td>
 
                 </tr>
