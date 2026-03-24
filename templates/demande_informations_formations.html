@@ -418,6 +418,26 @@
             </span>
           </label>
         </article>
+
+        <article id="optParis" class="location-choice hidden">
+          <label>
+            <input type="radio" name="centre" value="paris">
+            <span>
+              <strong class="location-title"><span class="new-badge">NOUVEAU</span>Intégrale Academy Paris (Île-de-France)</strong>
+              <p class="location-copy">
+                🏙️🚆
+              </p>
+              <p class="location-copy">
+                Formation en grande ville, au cœur du bassin parisien et de ses opportunités professionnelles.
+              </p>
+              <ul class="location-points">
+                <li><strong>Hébergement :</strong> solutions partenaires à proximité.</li>
+                <li><strong>Aéroport le plus proche :</strong> Paris-Orly / Paris-Charles-de-Gaulle.</li>
+                <li><strong>Gares les plus proches :</strong> Paris Gare de Lyon / Paris Montparnasse (selon session).</li>
+              </ul>
+            </span>
+          </label>
+        </article>
       </section>
 
       <section class="section">
@@ -557,6 +577,7 @@
     const blocCnaps = document.getElementById('blocCnaps');
     const optCote = document.getElementById('optCote');
     const optAuv = document.getElementById('optAuv');
+    const optParis = document.getElementById('optParis');
     const simuBox = document.getElementById('simuBox');
     const openSimu = document.getElementById('openSimu');
     const simuText = document.getElementById('simuText');
@@ -674,6 +695,7 @@
 
       optCote.classList.add('hidden');
       optAuv.classList.add('hidden');
+      optParis.classList.add('hidden');
       simuBox.classList.add('hidden');
       openSimu.style.display = 'none';
       simuText.classList.add('hidden');
@@ -684,6 +706,7 @@
       if (['A3P', 'DESP_INIT'].includes(v)) {
         optCote.classList.remove('hidden');
         optAuv.classList.remove('hidden');
+        if (v === 'DESP_INIT') optParis.classList.remove('hidden');
         radios.forEach(r => r.required = true);
       } else if (v === 'DESP_VAE') {
         simuBox.classList.remove('hidden');
@@ -750,6 +773,9 @@
       } else if (['A3P', 'DESP_INIT'].includes(f) && centre === 'cote_azur') {
         centreSwitchNote.textContent = "ℹ️ Si les dates ne vous conviennent pas, vous pouvez choisir le centre de formation Intégrale Academy Terres d'Auvergne à l'étape 3.";
         centreSwitchNote.classList.remove('hidden');
+      } else if (f === 'DESP_INIT' && centre === 'paris') {
+        centreSwitchNote.textContent = "ℹ️ Si les dates ne vous conviennent pas, vous pouvez aussi choisir Intégrale Academy Côte d'Azur ou Intégrale Academy Terres d'Auvergne à l'étape 3.";
+        centreSwitchNote.classList.remove('hidden');
       }
 
       if (f === 'DESP_VAE') {
@@ -791,7 +817,7 @@
       }
 
       if (data.type !== 'centre-selected') return;
-      if (!['cote_azur', 'auvergne'].includes(data.centre)) return;
+      if (!['cote_azur', 'auvergne', 'paris'].includes(data.centre)) return;
 
       const targetRadio = form.querySelector(`input[name="centre"][value="${data.centre}"]`);
       if (!targetRadio || targetRadio.closest('.hidden')) return;
