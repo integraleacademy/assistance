@@ -1087,6 +1087,63 @@ def build_vtc_email_html(prenom: str, centre_code: str):
 <p>Je reste à votre disposition pour toute information complémentaire.<br /><br /><strong>Clément VAILLANT</strong><br />Directeur – Intégrale Academy<br />ecole@integraleacademy.com – integraleacademy.com</p>
 </div></div></div></body></html>"""
 
+
+def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str):
+    session_date = _format_selected_session_date(dates_txt)
+    centre_label, _ = _centre_label_and_address(centre_code)
+    centre_display = centre_label.replace("Intégrale Academy ", "")
+    session_html = (
+        f"""
+        <p style="margin:0 0 6px 0;">📅 <strong>{session_date}</strong></p>
+        <p style="margin:0 0 6px 0;">Présentiel : <strong>{session_date}</strong></p>
+        """
+        if session_date
+        else """
+        <p style="margin:0 0 6px 0;">📅 <strong>XXXX</strong></p>
+        <p style="margin:0 0 6px 0;">Présentiel : <strong>XXXXX</strong></p>
+        """
+    )
+
+    return f"""<html style="overflow-y:hidden;">
+<head><title></title></head>
+<body style="height:auto; min-height:auto;">
+<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f9f9f9; padding:20px;">
+  <div style="background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.1); overflow:hidden;">
+    <div style="text-align:center; padding:20px 20px 10px 20px;">
+      <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
+      <h2 style="color:#000; font-size:18px; margin:10px 0 0 0;">Intégrale Academy</h2>
+    </div>
+    <div style="padding:20px; font-size:15px; color:#333; line-height:1.6;">
+      <p>Bonjour {prenom},</p>
+      <p>Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
+      <p>Cette formation permet d’obtenir les compétences indispensables pour créer, diriger et gérer une entreprise de sécurité privée et vous permet de demander votre agrément dirigeant auprès du CNAPS conformément à la réglementation.</p>
+      <p style="margin:18px 0 8px 0;"><strong>📄 Dossier de présentation</strong></p>
+      <p style="margin:0 0 16px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a></p>
+      <p style="margin:18px 0 8px 0;"><strong>🎓 Durée et organisation</strong></p>
+      <p>La formation complète se déroule sur <strong>245 heures</strong>, réparties ainsi :</p>
+      <ul style="margin:0 0 16px 18px; padding:0;"><li>175 heures de e-learning à distance</li><li>70 heures de présentiel (2 semaines)</li></ul>
+      <p>Le e-learning est accessible 24h/24, depuis un ordinateur, une tablette ou un smartphone. Chaque module comprend des vidéos, des supports interactifs, des quiz et des exercices pratiques.</p>
+      <p>💡 Pas d’inquiétude : vous êtes accompagné tout au long du parcours, et une assistance pédagogique reste disponible en cas de besoin.</p>
+      <p style="margin:18px 0 8px 0;"><strong>🏫 Prochaines formations</strong></p>
+      {session_html}
+      <p style="margin:0 0 6px 0;">Examen : <strong>27 avril 2026</strong></p>
+      <p style="margin:0 0 16px 0;">Dans notre centre de formation : <strong>{centre_display}</strong></p>
+      <p style="margin:18px 0 8px 0;"><strong>💶 Tarif et financement</strong></p>
+      <p>Le tarif de la formation est de <strong>4 300 € TTC</strong>. Elle est finançable via votre Compte Personnel de Formation (CPF).</p>
+      <p>👉 Pour cela, vous devrez créer ou activer votre <strong>Identité Numérique La Poste</strong>, nécessaire à la validation du dossier CPF.</p>
+      <p style="margin:0 0 16px 0;"><a href="https://assistance-alw9.onrender.com/demande-devis" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis personnalisé</a></p>
+      <p style="margin:18px 0 8px 0;"><strong>📞 Prochaine étape</strong></p>
+      <p>Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique directement :</p>
+      <p style="margin:0 0 16px 0;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a></p>
+      <p>Je reste à votre disposition pour tous renseignements complémentaires,<br />Je vous souhaite une excellente journée,</p>
+      <p><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📍 Paris - Aurillac - Côte d'Azur</p>
+    </div>
+    <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
+  </div>
+</div>
+</body>
+</html>"""
+
 # --------------- Auth helpers ---------------
 def login_required(f):
     @wraps(f)
@@ -1832,6 +1889,31 @@ def demande_informations_formations():
             )
             html = build_vtc_email_html(prenom, form_data.get("centre", ""))
             email_subject = "🚗 Formation Chauffeur VTC"
+        elif form_data.get("formation") == "DESP_INIT":
+            session_date = _format_selected_session_date(form_data.get("dates", ""))
+            centre_label, _ = _centre_label_and_address(form_data.get("centre", ""))
+            plain = (
+                f"Bonjour {prenom},\n\n"
+                "Je fais suite à votre demande de renseignements concernant notre formation Dirigeant d’Entreprise de Sécurité Privée (DESP), titre reconnu par l’État (RNCP40385 – niveau 5, équivalent Bac+2).\n"
+                "Cette formation permet d’obtenir les compétences indispensables pour créer, diriger et gérer une entreprise de sécurité privée et vous permet de demander votre agrément dirigeant auprès du CNAPS conformément à la réglementation.\n\n"
+                "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n\n"
+                "Durée et organisation : 245 heures (175 heures de e-learning à distance + 70 heures de présentiel sur 2 semaines).\n"
+                "Le e-learning est accessible 24h/24 sur ordinateur, tablette ou smartphone.\n\n"
+                "Prochaines formations :\n"
+                + (f"- {session_date}\n" if session_date else "- XXXX\n")
+                + (f"Présentiel : {session_date}\n" if session_date else "Présentiel : XXXXX\n")
+                + "Examen : 27 avril 2026\n"
+                + f"Centre : {centre_label}\n\n"
+                "Tarif : 4 300 € TTC (finançable via CPF).\n"
+                "Identité Numérique La Poste (obligatoire CPF) : https://lidentitenumerique.laposte.fr/\n"
+                "Devis personnalisé : https://assistance-alw9.onrender.com/demande-devis\n\n"
+                "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
+                "Je reste à votre disposition pour tous renseignements complémentaires.\n"
+                "Je vous souhaite une excellente journée.\n\n"
+                "Clément VAILLANT\nDirecteur Intégrale Group"
+            )
+            html = build_desp_init_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""))
+            email_subject = "Votre demande de renseignements – Formation DESP initial"
         else:
             plain = (
                 f"Bonjour {prenom},\n\n"
