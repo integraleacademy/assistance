@@ -380,14 +380,12 @@
       resultBox.innerHTML = renderCenterDetails(recommendedCenter, {
         badge: '✅ Recommandé selon la distance',
         title: `<span class="ok">${recommendedCenter.name}</span>`,
-        subtitle: 'C’est le centre le plus proche de chez vous : c’est donc notre recommandation principale.'
       });
       resultBox.style.display = 'block';
 
       selectionBox.innerHTML = renderCenterDetails(alternativeCenter, {
         badge: '✨ Alternative selon vos préférences',
         title: getAlternativeHeadline(alternativeCenter),
-        subtitle: 'Une autre possibilité si vous préférez ce cadre de vie, même si ce centre est plus éloigné.'
       });
       selectionBox.style.display = 'block';
       selectedCenter = null;
