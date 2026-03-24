@@ -653,7 +653,7 @@ def _brand_header_table():
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
       <tr>
         <td align="center" style="padding:16px 16px 8px 16px;margin:0;">
-          <img src="cid:logo_cid" alt="Intégrale Academy" height="56" style="display:block;height:56px;width:auto;max-width:220px;">
+          <img src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" alt="Intégrale Academy" height="56" style="display:block;height:56px;width:auto;max-width:220px;">
         </td>
       </tr>
       <tr>
@@ -728,8 +728,6 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
     related.attach(alt)
     alt.attach(MIMEText(plain_text, "plain", "utf-8"))
     alt.attach(MIMEText(html_body, "html", "utf-8"))
-
-    _attach_logo(related)
 
     if attachments_paths:
         for chemin in attachments_paths:
@@ -1088,7 +1086,7 @@ def build_vtc_email_html(prenom: str, centre_code: str):
 </div></div></div></body></html>"""
 
 
-def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str):
+def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
     session_date = _format_selected_session_date(dates_txt)
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
@@ -1118,7 +1116,7 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str):
       <p>Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
       <p>Cette formation permet d’obtenir les compétences indispensables pour créer, diriger et gérer une entreprise de sécurité privée et vous permet de demander votre agrément dirigeant auprès du CNAPS conformément à la réglementation.</p>
       <p style="margin:18px 0 8px 0;"><strong>📄 Dossier de présentation</strong></p>
-      <p style="margin:0 0 16px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a></p>
+      <p style="margin:0 0 16px 0; text-align:center;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .2s ease;box-shadow:0 2px 0 rgba(0,0,0,.15);">Télécharger le dossier de présentation</a></p>
       <p style="margin:18px 0 8px 0;"><strong>🎓 Durée et organisation</strong></p>
       <p>La formation complète se déroule sur <strong>245 heures</strong>, réparties ainsi :</p>
       <ul style="margin:0 0 16px 18px; padding:0;"><li>175 heures de e-learning à distance</li><li>70 heures de présentiel (2 semaines)</li></ul>
@@ -1131,12 +1129,12 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str):
       <p style="margin:18px 0 8px 0;"><strong>💶 Tarif et financement</strong></p>
       <p>Le tarif de la formation est de <strong>4 300 € TTC</strong>. Elle est finançable via votre Compte Personnel de Formation (CPF).</p>
       <p>👉 Pour cela, vous devrez créer ou activer votre <strong>Identité Numérique La Poste</strong>, nécessaire à la validation du dossier CPF.</p>
-      <p style="margin:0 0 16px 0;"><a href="https://assistance-alw9.onrender.com/demande-devis" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis personnalisé</a></p>
+      <p style="margin:0 0 16px 0; text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .2s ease;box-shadow:0 2px 0 rgba(0,0,0,.15);">Télécharger votre devis détaillé</a></p>
       <p style="margin:18px 0 8px 0;"><strong>📞 Prochaine étape</strong></p>
       <p>Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique directement :</p>
-      <p style="margin:0 0 16px 0;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a></p>
+      <p style="margin:0 0 16px 0; text-align:center;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .2s ease;box-shadow:0 2px 0 rgba(0,0,0,.15);">Planifier un rendez-vous</a></p>
       <p>Je reste à votre disposition pour tous renseignements complémentaires,<br />Je vous souhaite une excellente journée,</p>
-      <p><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📍 Paris - Aurillac - Côte d'Azur</p>
+      <p><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
     </div>
     <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
   </div>
@@ -1810,16 +1808,58 @@ def demande_informations_formations():
             except:
                 pass
 
-        save_data(data_store)
-
         formation_label = PLAN_FORMATIONS.get(form_data.get("formation"), form_data.get("formation", "Formation"))
         prenom = form_data.get("prenom", "")
 
+        devis_url = "https://assistance-alw9.onrender.com/demande-devis"
         extra_devis = ""
         if form_data.get("souhaite_devis") == "OUI":
-            extra_devis = """
+            devis_id = str(uuid.uuid4())
+            token_plan = uuid.uuid4().hex
+            devis_payload = {
+                "nom": form_data.get("nom", "").strip(),
+                "prenom": form_data.get("prenom", "").strip(),
+                "telephone": form_data.get("telephone", "").strip(),
+                "mail": form_data.get("mail", "").strip(),
+                "formation": form_data.get("formation", ""),
+                "dates": form_data.get("dates", ""),
+                "centre": form_data.get("centre", ""),
+                "cpf_montant": form_data.get("cpf_montant", "0"),
+                "france_travail": form_data.get("france_travail", "NON"),
+                "identite_numerique": form_data.get("identite_numerique", "NON"),
+            }
+            data_store.setdefault("demandes", []).append({
+                "id": devis_id,
+                "token_plan": token_plan,
+                "nom": devis_payload["nom"],
+                "prenom": devis_payload["prenom"],
+                "telephone": devis_payload["telephone"],
+                "mail": devis_payload["mail"],
+                "motif": "Demande de devis détaillé",
+                "details": json.dumps(devis_payload, ensure_ascii=False),
+                "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+                "statut": "Non traité",
+                "attribution": "",
+                "commentaire": "",
+                "commentaire_admin": "",
+                "mail_confirme": "",
+                "mail_erreur": "",
+                "mail_contenu": "",
+                "mail_html": "",
+                "pieces_jointes": [],
+                "reponses": [],
+                "is_doublon": False,
+                "rappel_date": "",
+                "plage": "",
+                "statut_devis": "A envoyer",
+                "notation_interne": "CHAUD" if prospect_chaud else "",
+                "echeancier_manuel": [],
+                "pdf_path": ""
+            })
+            devis_url = url_for("plan_public", token=token_plan, _external=True)
+            extra_devis = f"""
             <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
-            <p><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
+            <p style="text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
             """
 
         extra_identite = ""
@@ -1827,6 +1867,8 @@ def demande_informations_formations():
             extra_identite = """
             <p>Pour utiliser votre Compte Personnel de Formation, vous devez créer votre « Identité Numérique la Poste » (FranceConnect+). Vous pouvez créer votre Identité Numérique la Poste directement dans un bureau de Poste ou sur le site internet officiel <a href="https://lidentitenumerique.laposte.fr/">https://lidentitenumerique.laposte.fr/</a>.</p>
             """
+
+        save_data(data_store)
 
         if form_data.get("formation") == "DESP_VAE":
             plain = (
@@ -1906,13 +1948,13 @@ def demande_informations_formations():
                 + f"Centre : {centre_label}\n\n"
                 "Tarif : 4 300 € TTC (finançable via CPF).\n"
                 "Identité Numérique La Poste (obligatoire CPF) : https://lidentitenumerique.laposte.fr/\n"
-                "Devis personnalisé : https://assistance-alw9.onrender.com/demande-devis\n\n"
+                f"Devis détaillé : {devis_url}\n\n"
                 "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
                 "Je reste à votre disposition pour tous renseignements complémentaires.\n"
                 "Je vous souhaite une excellente journée.\n\n"
                 "Clément VAILLANT\nDirecteur Intégrale Group"
             )
-            html = build_desp_init_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""))
+            html = build_desp_init_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
             email_subject = "Votre demande de renseignements – Formation DESP initial"
         else:
             plain = (
