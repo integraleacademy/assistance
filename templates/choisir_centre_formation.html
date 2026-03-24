@@ -82,6 +82,11 @@
       border: 1px solid #dbe4f0;
       box-shadow: 0 16px 36px rgba(15, 23, 42, .06);
     }
+    .alternatives-list {
+      margin-top: 18px;
+      display: grid;
+      gap: 16px;
+    }
     .recommendation {
       border: 2px solid #86efac;
       background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 28%);
@@ -268,7 +273,7 @@
     </div>
     <div id="distances" class="box" style="display:none;"></div>
     <div id="result" class="recommendation" style="display:none;"></div>
-    <div id="selection" class="selection" style="display:none;"></div>
+    <div id="selection" class="alternatives-list" style="display:none;"></div>
     <div id="error" class="box error" style="display:none;"></div>
 
   </div>
@@ -402,11 +407,10 @@
       resultBox.style.display = 'block';
 
       const alternatives = CENTER_LIST.filter((center) => center.key !== recommendedCenter.key);
-      selectionBox.innerHTML = alternatives.map((alternativeCenter) => renderCenterDetails(alternativeCenter, {
+      selectionBox.innerHTML = alternatives.map((alternativeCenter) => `<div class="selection">${renderCenterDetails(alternativeCenter, {
         badge: '✨ Autre alternative proposée',
-        title: getAlternativeHeadline(alternativeCenter),
-        subtitle: 'Une autre possibilité si vous préférez ce cadre de vie, même si ce centre est plus éloigné.'
-      })).join('');
+        title: getAlternativeHeadline(alternativeCenter)
+      })}</div>`).join('');
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
