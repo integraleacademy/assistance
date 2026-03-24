@@ -423,10 +423,10 @@
       const alternatives = sortCentersByDistance(
         CENTER_LIST.filter((center) => center.key !== recommendedCenter.key)
       );
-      selectionBox.innerHTML = alternatives.map((alternativeCenter) => renderCenterDetails(alternativeCenter, {
+      selectionBox.innerHTML = alternatives.map((alternativeCenter) => `<div class="selection">${renderCenterDetails(alternativeCenter, {
         badge: '✨ Autre alternative proposée',
         title: getAlternativeHeadline(alternativeCenter)
-      })).join('');
+      })}</div>`).join('');
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
