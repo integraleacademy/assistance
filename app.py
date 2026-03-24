@@ -1104,38 +1104,65 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
 
     return f"""<html style="overflow-y:hidden;">
 <head><title></title></head>
-<body style="height:auto; min-height:auto;">
-<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f9f9f9; padding:20px;">
-  <div style="background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.1); overflow:hidden;">
-    <div style="text-align:center; padding:20px 20px 10px 20px;">
+<body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
+<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
+  <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
+    <div style="text-align:center; padding:24px 20px 8px 20px;">
       <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
-      <h2 style="color:#000; font-size:18px; margin:10px 0 0 0;">Intégrale Academy</h2>
+      <h2 style="color:#000; font-size:22px; margin:12px 0 0 0;">Intégrale Academy</h2>
     </div>
-    <div style="padding:20px; font-size:15px; color:#333; line-height:1.6;">
-      <p>Bonjour {prenom},</p>
-      <p>Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
-      <p>Cette formation permet d’obtenir les compétences indispensables pour créer, diriger et gérer une entreprise de sécurité privée et vous permet de demander votre agrément dirigeant auprès du CNAPS conformément à la réglementation.</p>
-      <p style="margin:18px 0 8px 0;"><strong>📄 Dossier de présentation</strong></p>
-      <p style="margin:0 0 16px 0; text-align:center;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .2s ease;box-shadow:0 2px 0 rgba(0,0,0,.15);">Télécharger le dossier de présentation</a></p>
-      <p style="margin:18px 0 8px 0;"><strong>🎓 Durée et organisation</strong></p>
-      <p>La formation complète se déroule sur <strong>245 heures</strong>, réparties ainsi :</p>
-      <ul style="margin:0 0 16px 18px; padding:0;"><li>175 heures de e-learning à distance</li><li>70 heures de présentiel (2 semaines)</li></ul>
-      <p>Le e-learning est accessible 24h/24, depuis un ordinateur, une tablette ou un smartphone. Chaque module comprend des vidéos, des supports interactifs, des quiz et des exercices pratiques.</p>
-      <p>💡 Pas d’inquiétude : vous êtes accompagné tout au long du parcours, et une assistance pédagogique reste disponible en cas de besoin.</p>
-      <p style="margin:18px 0 8px 0;"><strong>🏫 Prochaines formations</strong></p>
-      {session_html}
-      <p style="margin:0 0 6px 0;">Examen : <strong>27 avril 2026</strong></p>
-      <p style="margin:0 0 16px 0;">Dans notre centre de formation : <strong>{centre_display}</strong></p>
-      <p style="margin:18px 0 8px 0;"><strong>💶 Tarif et financement</strong></p>
-      <p>Le tarif de la formation est de <strong>4 300 € TTC</strong>. Elle est finançable via votre Compte Personnel de Formation (CPF).</p>
-      <p>👉 Pour cela, vous devrez créer ou activer votre <strong>Identité Numérique La Poste</strong>, nécessaire à la validation du dossier CPF.</p>
-      <p style="margin:0 0 16px 0; text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .2s ease;box-shadow:0 2px 0 rgba(0,0,0,.15);">Télécharger votre devis détaillé</a></p>
-      <p style="margin:18px 0 8px 0;"><strong>📞 Prochaine étape</strong></p>
-      <p>Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique directement :</p>
-      <p style="margin:0 0 16px 0; text-align:center;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .2s ease;box-shadow:0 2px 0 rgba(0,0,0,.15);">Planifier un rendez-vous</a></p>
-      <p>Je reste à votre disposition pour tous renseignements complémentaires,<br />Je vous souhaite une excellente journée,</p>
-      <p><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
+
+    <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
+      <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
+      <p style="margin:0 0 14px 0;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
+      <p style="margin:0;">Vous trouverez ci-dessous les informations essentielles, présentées de façon claire par rubrique.</p>
     </div>
+
+    <div style="padding:8px 20px 22px 20px;">
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
+        </p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🎓 Durée et organisation</strong></p>
+        <p style="margin:0 0 10px 0;">La formation complète se déroule sur <strong>245 heures</strong>, réparties ainsi :</p>
+        <ul style="margin:0 0 10px 18px; padding:0;"><li>175 heures de e-learning à distance</li><li>70 heures de présentiel (2 semaines)</li></ul>
+        <p style="margin:0;">Le e-learning est accessible 24h/24 depuis un ordinateur, une tablette ou un smartphone, avec accompagnement pédagogique tout au long du parcours.</p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🏫 Prochaines formations</strong></p>
+        {session_html}
+        <p style="margin:0 0 6px 0;">Examen : <strong>27 avril 2026</strong></p>
+        <p style="margin:0;">Centre de formation : <strong>{centre_display}</strong></p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif et financement</strong></p>
+        <p style="margin:0 0 10px 0;">Le tarif de la formation est de <strong>4 300 € TTC</strong>. Elle est finançable via votre Compte Personnel de Formation (CPF).</p>
+        <p style="margin:0 0 12px 0;">Pour finaliser un dossier CPF, il faut créer ou activer votre <strong>Identité Numérique La Poste</strong>.</p>
+        <p style="margin:0; text-align:center;">
+          <a href="{devis_url}" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
+        </p>
+      </div>
+
+      <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📞 Prochaine étape</strong></p>
+        <p style="margin:0 0 12px 0;">Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique :</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
+        </p>
+      </div>
+    </div>
+
+    <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
+      <p style="margin:0 0 12px 0;">Je reste à votre disposition pour tous renseignements complémentaires.<br />Je vous souhaite une excellente journée,</p>
+      <p style="margin:0;"><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
+    </div>
+
     <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
   </div>
 </div>
