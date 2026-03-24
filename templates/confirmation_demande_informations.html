@@ -5,9 +5,6 @@
 html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;color:var(--text)}
 body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg-end));overflow:hidden}
 .page{position:relative;min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:28px}
-.page::before,.page::after{content:"";position:absolute;border-radius:50%;filter:blur(1px);opacity:.35;animation:float 9s ease-in-out infinite}
-.page::before{width:340px;height:340px;background:#22d3ee;top:-90px;left:-80px}
-.page::after{width:300px;height:300px;background:#60a5fa;right:-70px;bottom:-90px;animation-delay:1.2s}
 .box{position:relative;z-index:1;width:min(1100px,100%);min-height:calc(100vh - 56px);background:rgba(255,255,255,.96);backdrop-filter:blur(3px);border-radius:26px;padding:48px clamp(24px,4vw,76px);box-shadow:0 24px 80px rgba(15,23,42,.35);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;animation:enter .65s ease both}
 .logo{width:clamp(120px,14vw,180px);height:auto;display:block;margin:0 auto 14px;filter:drop-shadow(0 8px 20px rgba(15,23,42,.22));animation:fadeUp .8s ease .05s both}
 .icon{font-size:2.1rem;line-height:1;margin-bottom:12px;animation:pop .9s ease}
@@ -23,7 +20,6 @@ body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg
 @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pop{0%{transform:scale(.65);opacity:.2}70%{transform:scale(1.08)}100%{transform:scale(1)}}
 @keyframes shine{0%,55%,100%{transform:translateX(-120%)}75%{transform:translateX(120%)}}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-24px)}}
 @media (max-width: 768px){
   .page{padding:14px}
   .box{min-height:calc(100vh - 28px);padding:28px 18px}
