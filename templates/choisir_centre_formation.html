@@ -496,14 +496,38 @@
       });
     });
 
+    async function wait(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
     async function geocodeAddress(address) {
+      const maxAttempts = 3;
       const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}&limit=1`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('Impossible de géocoder une adresse centre.');
-      const data = await resp.json();
-      if (!data.features || !data.features.length) throw new Error(`Adresse introuvable: ${address}`);
-      const [lon, lat] = data.features[0].geometry.coordinates;
-      return { lat, lon };
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            throw new Error('Impossible de géocoder une adresse centre.');
+          }
+
+          const data = await resp.json();
+          if (!data.features || !data.features.length) {
+            throw new Error(`Adresse introuvable: ${address}`);
+          }
+
+          const [lon, lat] = data.features[0].geometry.coordinates;
+          return { lat, lon };
+        } catch (error) {
+          lastError = error;
+          if (attempt < maxAttempts) {
+            await wait(350 * attempt);
+          }
+        }
+      }
+
+      throw lastError || new Error('Impossible de géocoder une adresse centre.');
     }
 
     async function findCityByPostalCode(postcode) {
@@ -546,7 +570,7 @@
         locationBox.innerHTML = `📌 Localisation détectée : <strong>${personLocation.cityName} (${personLocation.postcode})</strong>`;
         locationBox.style.display = 'block';
 
-        const centerCoordsEntries = await Promise.all(
+        const centerCoordsResults = await Promise.allSettled(
           CENTER_LIST.map(async (center) => {
             const coords = await geocodeAddress(center.address);
             const travel = await buildTravelTimes(personLocation, { ...coords, key: center.key });
@@ -554,17 +578,27 @@
           })
         );
 
+        const centerCoordsEntries = centerCoordsResults
+          .filter((result) => result.status === 'fulfilled')
+          .map((result) => result.value);
+
+        if (!centerCoordsEntries.length) {
+          throw new Error('Impossible de géocoder les centres pour le moment. Veuillez réessayer.');
+        }
+
         latestTravelTimes = Object.fromEntries(centerCoordsEntries);
         latestDistances = Object.fromEntries(
           centerCoordsEntries.map(([key, travel]) => [key, travel.distanceMeters])
         );
 
-        distancesBox.innerHTML = CENTER_LIST.map((center) => `
+        const availableCenters = CENTER_LIST.filter((center) => latestTravelTimes[center.key]);
+
+        distancesBox.innerHTML = availableCenters.map((center) => `
           <div>📏 Distance vers <strong>${center.name}</strong> : <strong>${formatDistanceKm(latestDistances[center.key])}</strong></div>
         `).join('');
         distancesBox.style.display = 'block';
 
-        const compareByDuration = CENTER_LIST.map((center) => ({
+        const compareByDuration = availableCenters.map((center) => ({
           center,
           duration: latestTravelTimes[center.key]?.durationSeconds,
           distance: latestDistances[center.key]
@@ -575,7 +609,7 @@
           compareByDuration.sort((a, b) => a.duration - b.duration);
           nearest = compareByDuration[0].center;
         } else {
-          const compareByDistance = CENTER_LIST.map((center) => ({
+          const compareByDistance = availableCenters.map((center) => ({
             center,
             distance: latestDistances[center.key]
           })).filter((item) => typeof item.distance === 'number');
