@@ -15,7 +15,12 @@ table{width:100%;border-collapse:collapse}
 th,td{padding:10px 8px;border-bottom:1px solid #eee;font-size:14px;text-align:left}
 thead{background:#f0f2f5}
 .badge{display:inline-block;padding:4px 10px;border-radius:99px;background:#eef2ff;color:#3730a3;font-size:12px;font-weight:700}
+.badge-status{background:#fee2e2;color:#991b1b}
+.badge-status-treated{background:#dcfce7;color:#166534}
+.badge-centre{background:#ecfeff;color:#0f766e}
 .btn{display:inline-block;padding:6px 10px;border-radius:7px;background:#111827;color:#fff;text-decoration:none;font-size:12px}
+.btn-danger{background:#b91c1c;border:none;cursor:pointer}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -33,20 +38,43 @@ thead{background:#f0f2f5}
             <th>Personne</th>
             <th>Contact</th>
             <th>Formation</th>
-            <th>Type</th>
+            <th>Statut</th>
+            <th>Centre</th>
             <th>Action</th>
         </tr>
         </thead>
         <tbody id="table-body">
         {% for f in formulaires %}
-        <tr class="row" data-search="{{ (f.nom ~ ' ' ~ f.prenom ~ ' ' ~ f.mail ~ ' ' ~ f.telephone ~ ' ' ~ (f.infos.formation or ''))|lower }}">
+        {% set centre_raw = (f.infos.centre or '')|lower %}
+        {% if centre_raw == 'paris' %}
+          {% set centre_label = 'Paris' %}
+        {% elif centre_raw in ['auvergne', 'aurillac'] %}
+          {% set centre_label = 'Aurillac' %}
+        {% elif centre_raw in ['cote_azur', 'côte_d_azur', 'cote-d-azur'] %}
+          {% set centre_label = "Côte d’Azur" %}
+        {% else %}
+          {% set centre_label = '—' %}
+        {% endif %}
+        <tr class="row" data-search="{{ (f.nom ~ ' ' ~ f.prenom ~ ' ' ~ f.mail ~ ' ' ~ f.telephone ~ ' ' ~ (f.infos.formation or '') ~ ' ' ~ centre_label ~ ' ' ~ (f.statut or ''))|lower }}">
             <td>{{ f.date }}</td>
             <td><strong>{{ f.prenom }} {{ f.nom }}</strong></td>
             <td>{{ f.mail }}<br>{{ f.telephone or '—' }}</td>
             <td>{{ f.infos.formation or '—' }}</td>
-            <td><span class="badge">{{ f.source_label }}</span></td>
             <td>
-                <a class="btn" target="_blank" href="{{ url_for('imprimer_formulaire_admin_devis', formulaire_id=f.id) }}">🖨️ Ouvrir imprimable</a>
+                <span class="badge {% if f.statut == 'Traité' %}badge-status-treated{% else %}badge-status{% endif %}">
+                    {{ f.statut or 'Non traité' }}
+                </span>
+            </td>
+            <td>
+                <span class="badge badge-centre">{{ centre_label }}</span>
+            </td>
+            <td>
+                <div class="actions">
+                    <a class="btn" target="_blank" href="{{ url_for('imprimer_formulaire_admin_devis', formulaire_id=f.id) }}">🖨️ Ouvrir imprimable</a>
+                    <form method="POST" action="{{ url_for('supprimer_formulaire_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Supprimer ce formulaire ?')">
+                        <button class="btn btn-danger" type="submit">🗑️ Supprimer</button>
+                    </form>
+                </div>
             </td>
         </tr>
         {% endfor %}
