@@ -2123,6 +2123,7 @@ def admin_devis_formulaires():
             "mail": d.get("mail", ""),
             "telephone": d.get("telephone", ""),
             "source_label": source_label,
+            "statut": d.get("statut", "Non traité"),
             "infos": infos,
             "sort_date": sort_date,
         })
@@ -2130,6 +2131,32 @@ def admin_devis_formulaires():
     formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
 
     return render_template("admin_devis_formulaires.html", formulaires=formulaires)
+
+
+@app.route("/admin-devis/formulaires/<formulaire_id>/supprimer", methods=["POST"])
+@login_required
+def supprimer_formulaire_admin_devis(formulaire_id):
+    data = load_data()
+    demandes = data.get("demandes", [])
+    to_remove = next((d for d in demandes if d.get("id") == formulaire_id), None)
+    if not to_remove:
+        abort(404)
+
+    is_target = (
+        to_remove.get("motif") == "Demande de devis détaillé"
+        or to_remove.get("source") == "demande_infos_formations"
+    )
+    if not is_target:
+        abort(404)
+
+    data.setdefault("archives", []).append(to_remove)
+    supprimer_fichier(to_remove.get("justificatif"))
+    for pj in to_remove.get("pieces_jointes", []):
+        supprimer_fichier(pj)
+
+    demandes.remove(to_remove)
+    save_data(data)
+    return redirect(url_for("admin_devis_formulaires"))
 
 
 @app.route("/admin-devis/formulaires/<formulaire_id>/imprimer")
