@@ -185,6 +185,7 @@ PLAN_TARIFS = {
 FORMATION_CENTRES = {
     "cote_azur": "Intégrale Academy Côte d’Azur",
     "auvergne": "Intégrale Academy Terres d’Auvergne",
+    "paris": "Intégrale Academy Paris",
 }
 
 PLAN_DATES = {
@@ -239,6 +240,13 @@ DEFAULT_FORMATION_SESSIONS = {
             {"label": "5 octobre au 19 novembre 2026 (A distance du 05/10 au 06/11/2026 – Présentiel du 09/11 au 19/11/2026)", "badge": ""}
         ],
         "DESP_VAE": []
+    },
+    "paris": {
+        "DESP_INIT": [
+            {"label": "Du 7 septembre au 23 octobre 2026 (présentiel à Paris) - examen le 26 octobre 2026", "badge": ""},
+            {"label": "Du 2 novembre au 21 décembre 2026 (présentiel à Paris) - examen le 22 décembre 2026", "badge": ""}
+        ],
+        "DESP_VAE": []
     }
 }
 
@@ -246,7 +254,15 @@ def get_formation_sessions(data_store=None):
     source = data_store if isinstance(data_store, dict) else load_data()
     sessions = source.get("formation_sessions")
     if isinstance(sessions, dict):
-        return sessions
+        merged = copy.deepcopy(DEFAULT_FORMATION_SESSIONS)
+        for centre_code, formation_rows in sessions.items():
+            if not isinstance(formation_rows, dict):
+                continue
+            merged.setdefault(centre_code, {})
+            for formation_code, rows in formation_rows.items():
+                if isinstance(rows, list):
+                    merged[centre_code][formation_code] = rows
+        return merged
     return copy.deepcopy(DEFAULT_FORMATION_SESSIONS)
 
 
@@ -880,6 +896,10 @@ def _centre_label_and_address(centre_code: str):
         "auvergne": (
             "Intégrale Academy Terres d’Auvergne",
             "650 route d'Aumont — 15130 Arpajon-sur-Cère",
+        ),
+        "paris": (
+            "Intégrale Academy Paris",
+            "Paris et Île-de-France (adresse communiquée lors de l’inscription)",
         ),
     }
     return centres.get(
@@ -1649,7 +1669,7 @@ def admin_formation_sessions():
         save_data(data)
         return redirect(url_for("admin_formation_sessions"))
 
-    return render_template("admin_formation_sessions.html", sessions=sessions, formations=PLAN_FORMATIONS)
+    return render_template("admin_formation_sessions.html", sessions=sessions, formations=PLAN_FORMATIONS, centres=FORMATION_CENTRES)
 
 
 @app.route("/demande-informations-formations", methods=["GET", "POST"])

@@ -286,6 +286,14 @@
       address: "650 route d'Aumont, 15130 Arpajon-sur-Cère"
     };
 
+    const CENTER_PARIS = {
+      key: 'paris',
+      name: 'Intégrale Academy Paris',
+      address: 'Paris, France'
+    };
+
+    const CENTER_LIST = [CENTER_COTE_AZUR, CENTER_AUVERGNE, CENTER_PARIS];
+
     const CENTER_TRANSPORT_INFO = {
       [CENTER_COTE_AZUR.key]: {
         nearestStation: 'Saint-Raphaël Valescure',
@@ -294,6 +302,10 @@
       [CENTER_AUVERGNE.key]: {
         nearestStation: 'Aurillac',
         nearestAirport: 'Aurillac (en passant par Paris Orly)'
+      },
+      [CENTER_PARIS.key]: {
+        nearestStation: 'Paris Gare de Lyon / Paris Montparnasse',
+        nearestAirport: 'Paris-Orly / Paris-Charles-de-Gaulle'
       }
     };
 
@@ -328,12 +340,12 @@
     function notifyParent(center) {
       window.parent.postMessage({
         type: 'centre-selected',
-        centre: center.key === 'cote-azur' ? 'cote_azur' : 'auvergne'
+        centre: center.key === 'cote-azur' ? 'cote_azur' : center.key
       }, '*');
     }
 
     function getCenterByKey(centerKey) {
-      return centerKey === CENTER_COTE_AZUR.key ? CENTER_COTE_AZUR : CENTER_AUVERGNE;
+      return CENTER_LIST.find((center) => center.key === centerKey) || null;
     }
 
     function getCenterBenefits(center) {
@@ -344,23 +356,27 @@
             'Accès facile aux grandes villes de la Côte d\'Azur et à leurs opportunités professionnelles.',
             'Réseau local riche pour les stages, alternances et débouchés.'
           ]
-        : [
+        : center.key === CENTER_AUVERGNE.key ? [
             'Cadre naturel exceptionnel entre volcans d’Auvergne, lacs et grands espaces préservés.',
             'Environnement ressourçant, idéal pour se concentrer et apprendre dans de bonnes conditions.',
             'Qualité de vie au grand air avec un quotidien souvent plus accessible.',
             'Ambiance conviviale et proximité humaine avec un accompagnement de terrain personnalisé.'
+          ] : [
+            'Cadre grande ville, au cœur d’un bassin d’emploi très dynamique.',
+            'Accès facilité en train, métro et avion depuis toute la France.',
+            'Réseau professionnel dense et nombreuses opportunités de carrière.',
+            'Écosystème urbain idéal pour développer rapidement son employabilité.'
           ];
     }
 
     function getAlternativeHeadline(center) {
-      if (center.key === 'cote-azur') {
+      if (center.key === CENTER_COTE_AZUR.key) {
         return `🌊 Vous êtes plutôt Team Mer ? Choisissez <span class="ok">${center.name}</span>`;
       }
-      return `🏔️ Vous êtes plutôt Team Montagne ? Choisissez <span class="ok">${center.name}</span>`;
-    }
-
-    function getOtherCenter(center) {
-      return center.key === CENTER_COTE_AZUR.key ? CENTER_AUVERGNE : CENTER_COTE_AZUR;
+      if (center.key === CENTER_AUVERGNE.key) {
+        return `🏔️ Vous êtes plutôt Team Montagne ? Choisissez <span class="ok">${center.name}</span>`;
+      }
+      return `🏙️ Vous êtes plutôt Team Ville ? Choisissez <span class="ok">${center.name}</span>`;
     }
 
     function renderCenterDetails(center, cardOptions) {
@@ -376,7 +392,6 @@
 
     function updateSelectionSummary(recommendedCenter) {
       if (!latestDistances || !recommendedCenter) return;
-      const alternativeCenter = getOtherCenter(recommendedCenter);
       resultBox.innerHTML = renderCenterDetails(recommendedCenter, {
         badge: '✅ Recommandé selon la distance',
         title: `<span class="ok">${recommendedCenter.name}</span>`,
@@ -384,11 +399,12 @@
       });
       resultBox.style.display = 'block';
 
-      selectionBox.innerHTML = renderCenterDetails(alternativeCenter, {
+      const alternatives = CENTER_LIST.filter((center) => center.key !== recommendedCenter.key);
+      selectionBox.innerHTML = alternatives.map((alternativeCenter) => renderCenterDetails(alternativeCenter, {
         badge: '✨ Alternative selon vos préférences',
         title: getAlternativeHeadline(alternativeCenter),
         subtitle: 'Une autre possibilité si vous préférez ce cadre de vie, même si ce centre est plus éloigné.'
-      });
+      })).join('');
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
@@ -531,48 +547,39 @@
         locationBox.innerHTML = `📌 Localisation détectée : <strong>${personLocation.cityName} (${personLocation.postcode})</strong>`;
         locationBox.style.display = 'block';
 
-        const [coteAzurCoords, auvergneCoords] = await Promise.all([
-          geocodeAddress(CENTER_COTE_AZUR.address),
-          geocodeAddress(CENTER_AUVERGNE.address)
-        ]);
+        const centerCoordsEntries = await Promise.all(
+          CENTER_LIST.map(async (center) => {
+            const coords = await geocodeAddress(center.address);
+            const travel = await buildTravelTimes(personLocation, { ...coords, key: center.key });
+            return [center.key, travel];
+          })
+        );
 
-        const [tAzur, tAuvergne] = await Promise.all([
-          buildTravelTimes(personLocation, { ...coteAzurCoords, key: CENTER_COTE_AZUR.key }),
-          buildTravelTimes(personLocation, { ...auvergneCoords, key: CENTER_AUVERGNE.key })
-        ]);
+        latestTravelTimes = Object.fromEntries(centerCoordsEntries);
+        latestDistances = Object.fromEntries(
+          centerCoordsEntries.map(([key, travel]) => [key, travel.distanceMeters])
+        );
 
-        const dAzurMeters = tAzur.distanceMeters;
-        const dAuvergneMeters = tAuvergne.distanceMeters;
-
-        distancesBox.innerHTML = `
-          <div>📏 Distance vers <strong>${CENTER_COTE_AZUR.name}</strong> : <strong>${formatDistanceKm(dAzurMeters)}</strong></div>
-          <div>📏 Distance vers <strong>${CENTER_AUVERGNE.name}</strong> : <strong>${formatDistanceKm(dAuvergneMeters)}</strong></div>
-        `;
+        distancesBox.innerHTML = CENTER_LIST.map((center) => `
+          <div>📏 Distance vers <strong>${center.name}</strong> : <strong>${formatDistanceKm(latestDistances[center.key])}</strong></div>
+        `).join('');
         distancesBox.style.display = 'block';
 
-        latestDistances = {
-          [CENTER_COTE_AZUR.key]: dAzurMeters,
-          [CENTER_AUVERGNE.key]: dAuvergneMeters
-        };
-        latestTravelTimes = {
-          [CENTER_COTE_AZUR.key]: tAzur,
-          [CENTER_AUVERGNE.key]: tAuvergne
-        };
-
-        const compareByDuration = [
-          { center: CENTER_COTE_AZUR, duration: tAzur.durationSeconds, distance: dAzurMeters },
-          { center: CENTER_AUVERGNE, duration: tAuvergne.durationSeconds, distance: dAuvergneMeters }
-        ].filter((item) => typeof item.duration === 'number');
+        const compareByDuration = CENTER_LIST.map((center) => ({
+          center,
+          duration: latestTravelTimes[center.key]?.durationSeconds,
+          distance: latestDistances[center.key]
+        })).filter((item) => typeof item.duration === 'number');
 
         let nearest = null;
         if (compareByDuration.length) {
           compareByDuration.sort((a, b) => a.duration - b.duration);
           nearest = compareByDuration[0].center;
         } else {
-          const compareByDistance = [
-            { center: CENTER_COTE_AZUR, distance: dAzurMeters },
-            { center: CENTER_AUVERGNE, distance: dAuvergneMeters }
-          ].filter((item) => typeof item.distance === 'number');
+          const compareByDistance = CENTER_LIST.map((center) => ({
+            center,
+            distance: latestDistances[center.key]
+          })).filter((item) => typeof item.distance === 'number');
 
           if (compareByDistance.length) {
             compareByDistance.sort((a, b) => a.distance - b.distance);

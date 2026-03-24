@@ -6,7 +6,7 @@
   <p class="hint">Renseignez la date d’examen séparément pour fiabiliser le calcul de l’échéancier dans le simulateur.</p>
 
   {% for centre,formations_data in sessions.items() %}
-    <h2>{{ 'Côte d’Azur' if centre=='cote_azur' else 'Terre d’Auvergne' }}</h2>
+    <h2>{{ centres.get(centre, centre) }}</h2>
     {% for code,label in formations.items() %}
       <h3>{{ label }}</h3>
       <table>
