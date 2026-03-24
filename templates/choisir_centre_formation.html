@@ -386,8 +386,11 @@
       const benefits = getCenterBenefits(center);
       const badgeHtml = `<div class="center-card-badge">${cardOptions.badge}</div>`;
       const subtitleHtml = cardOptions.subtitle ? `<p class="center-card-subtitle">${cardOptions.subtitle}</p>` : '';
+      const commonNote = center.key === CENTER_PARIS.key
+        ? 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence.'
+        : 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l\'organisation sur place.';
 
-      return `<div class="center-card-header"><div class="center-card-intro">${badgeHtml}<div class="center-card-title">${cardOptions.title}</div>${subtitleHtml}</div><div class="distance-pill">${distanceLabel}</div></div>${travelTimes ? `<div class="travel-details"><div class="travel-line">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</div><div class="travel-line">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</div><div class="travel-line">${renderTravelTime('🚆 Train :', travelTimes.train)}</div></div>` : ''}<ul class="benefits-list">${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l'organisation sur place.</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
+      return `<div class="center-card-header"><div class="center-card-intro">${badgeHtml}<div class="center-card-title">${cardOptions.title}</div>${subtitleHtml}</div><div class="distance-pill">${distanceLabel}</div></div>${travelTimes ? `<div class="travel-details"><div class="travel-line">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</div><div class="travel-line">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</div><div class="travel-line">${renderTravelTime('🚆 Train :', travelTimes.train)}</div></div>` : ''}<ul class="benefits-list">${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">${commonNote}</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
     }
 
     function updateSelectionSummary(recommendedCenter) {
@@ -400,7 +403,7 @@
 
       const alternatives = CENTER_LIST.filter((center) => center.key !== recommendedCenter.key);
       selectionBox.innerHTML = alternatives.map((alternativeCenter) => renderCenterDetails(alternativeCenter, {
-        badge: '✨ Alternative selon vos préférences',
+        badge: '✨ Autre alternative proposée',
         title: getAlternativeHeadline(alternativeCenter),
         subtitle: 'Une autre possibilité si vous préférez ce cadre de vie, même si ce centre est plus éloigné.'
       })).join('');
