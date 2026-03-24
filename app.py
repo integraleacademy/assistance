@@ -1811,56 +1811,53 @@ def demande_informations_formations():
         formation_label = PLAN_FORMATIONS.get(form_data.get("formation"), form_data.get("formation", "Formation"))
         prenom = form_data.get("prenom", "")
 
-        devis_url = "https://assistance-alw9.onrender.com/demande-devis"
-        extra_devis = ""
-        if form_data.get("souhaite_devis") == "OUI":
-            devis_id = str(uuid.uuid4())
-            token_plan = uuid.uuid4().hex
-            devis_payload = {
-                "nom": form_data.get("nom", "").strip(),
-                "prenom": form_data.get("prenom", "").strip(),
-                "telephone": form_data.get("telephone", "").strip(),
-                "mail": form_data.get("mail", "").strip(),
-                "formation": form_data.get("formation", ""),
-                "dates": form_data.get("dates", ""),
-                "centre": form_data.get("centre", ""),
-                "cpf_montant": form_data.get("cpf_montant", "0"),
-                "france_travail": form_data.get("france_travail", "NON"),
-                "identite_numerique": form_data.get("identite_numerique", "NON"),
-            }
-            data_store.setdefault("demandes", []).append({
-                "id": devis_id,
-                "token_plan": token_plan,
-                "nom": devis_payload["nom"],
-                "prenom": devis_payload["prenom"],
-                "telephone": devis_payload["telephone"],
-                "mail": devis_payload["mail"],
-                "motif": "Demande de devis détaillé",
-                "details": json.dumps(devis_payload, ensure_ascii=False),
-                "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-                "statut": "Non traité",
-                "attribution": "",
-                "commentaire": "",
-                "commentaire_admin": "",
-                "mail_confirme": "",
-                "mail_erreur": "",
-                "mail_contenu": "",
-                "mail_html": "",
-                "pieces_jointes": [],
-                "reponses": [],
-                "is_doublon": False,
-                "rappel_date": "",
-                "plage": "",
-                "statut_devis": "A envoyer",
-                "notation_interne": "CHAUD" if prospect_chaud else "",
-                "echeancier_manuel": [],
-                "pdf_path": ""
-            })
-            devis_url = url_for("plan_public", token=token_plan, _external=True)
-            extra_devis = f"""
-            <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
-            <p style="text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
-            """
+        devis_id = str(uuid.uuid4())
+        token_plan = uuid.uuid4().hex
+        devis_payload = {
+            "nom": form_data.get("nom", "").strip(),
+            "prenom": form_data.get("prenom", "").strip(),
+            "telephone": form_data.get("telephone", "").strip(),
+            "mail": form_data.get("mail", "").strip(),
+            "formation": form_data.get("formation", ""),
+            "dates": form_data.get("dates", ""),
+            "centre": form_data.get("centre", ""),
+            "cpf_montant": form_data.get("cpf_montant", "0"),
+            "france_travail": form_data.get("france_travail", "NON"),
+            "identite_numerique": form_data.get("identite_numerique", "NON"),
+        }
+        data_store.setdefault("demandes", []).append({
+            "id": devis_id,
+            "token_plan": token_plan,
+            "nom": devis_payload["nom"],
+            "prenom": devis_payload["prenom"],
+            "telephone": devis_payload["telephone"],
+            "mail": devis_payload["mail"],
+            "motif": "Demande de devis détaillé",
+            "details": json.dumps(devis_payload, ensure_ascii=False),
+            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+            "statut": "Non traité",
+            "attribution": "",
+            "commentaire": "",
+            "commentaire_admin": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+            "rappel_date": "",
+            "plage": "",
+            "statut_devis": "A envoyer",
+            "notation_interne": "CHAUD" if prospect_chaud else "",
+            "echeancier_manuel": [],
+            "pdf_path": ""
+        })
+        devis_url = url_for("plan_public", token=token_plan, _external=True)
+        extra_devis = f"""
+        <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
+        <p style="text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
+        """
 
         extra_identite = ""
         if form_data.get("identite_numerique") == "NON":
@@ -1892,7 +1889,7 @@ def demande_informations_formations():
                 "Tarif : 4200 € TTC (financement possible via CPF).\n"
                 "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
                 "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
-                "Demander un devis personnalisé : https://assistance-alw9.onrender.com/demande-devis\n"
+                f"Devis détaillé : {devis_url}\n"
                 "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
                 "Je reste à votre disposition pour toute information complémentaire.\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
@@ -1910,6 +1907,7 @@ def demande_informations_formations():
                 "Tarif : 1 650 € TTC.\n"
                 "Durée : 175 heures sur 5 semaines.\n\n"
                 "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+                f"Devis détaillé : {devis_url}\n"
                 "Identité numérique La Poste : https://lidentitenumerique.laposte.fr\n"
                 "Contact : 04 22 47 07 68\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
@@ -1925,6 +1923,7 @@ def demande_informations_formations():
                 "Tarif : 1 650 € TTC (tout inclus).\n"
                 "Théorie : 100 % en ligne. Pratique : 1/2 journée en centre.\n\n"
                 "Dossier : https://www.integraleacademy.com/dossiersfc\n"
+                f"Devis détaillé : {devis_url}\n"
                 "Dates examens : https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf\n"
                 "Contact : 04 22 47 07 68\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
@@ -1962,7 +1961,7 @@ def demande_informations_formations():
                 f"Je fais suite à votre demande de renseignements concernant notre formation {formation_label}. Nous vous remercions de nous avoir contacté !\n\n"
                 "Un conseiller formation reviendra vers vous prochainement pour vous accompagner dans votre projet de formation.\n\n"
                 "Vous pouvez également nous contacter au 04 22 47 07 68 pour échanger avec notre équipe.\n\n"
-                + ("Vous pouvez télécharger votre devis détaillé ici : https://www.integraleacademy.com/dossiersfc\n\n" if form_data.get("souhaite_devis") == "OUI" else "")
+                + f"Vous pouvez télécharger votre devis détaillé ici : {devis_url}\n\n"
                 + ("Pour utiliser votre Compte Personnel de Formation, vous devez créer votre Identité Numérique La Poste : https://lidentitenumerique.laposte.fr/\n\n" if form_data.get("identite_numerique") == "NON" else "")
                 + "Je vous souhaite une bonne journée,\n\n"
                 "Clément VAILLANT\nDirecteur Intégrale Academy"
