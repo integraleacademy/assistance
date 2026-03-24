@@ -426,7 +426,7 @@
       selectionBox.innerHTML = alternatives.map((alternativeCenter) => renderCenterDetails(alternativeCenter, {
         badge: '✨ Autre alternative proposée',
         title: getAlternativeHeadline(alternativeCenter)
-      })}</div>`).join('');
+      })).join('');
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
