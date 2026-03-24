@@ -48,6 +48,16 @@ def _parse_dates_range(dates_txt: str):
         "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12, "decembre": 12
     }
 
+    # 1) Essai direct sur des dates numériques (ex: 22/06/2026 ... 10/08/2026)
+    matches_numeric = re.findall(r"(\d{1,2})[/-](\d{1,2})[/-](20\d{2})", dates_txt)
+    if len(matches_numeric) >= 2:
+        try:
+            d1 = _date(int(matches_numeric[0][2]), int(matches_numeric[0][1]), int(matches_numeric[0][0]))
+            d2 = _date(int(matches_numeric[1][2]), int(matches_numeric[1][1]), int(matches_numeric[1][0]))
+            return (d1, d2)
+        except Exception:
+            pass
+
     # on récupère l'année (première année trouvée)
     m_annee = re.search(r"(20\d{2})", dates_txt)
     annee = int(m_annee.group(1)) if m_annee else None
@@ -62,7 +72,8 @@ def _parse_dates_range(dates_txt: str):
 
     def parse_part(p: str):
         # attend "9 mars" ou "9 mars 2026"
-        tokens = p.replace(",", " ").split()
+        cleaned = re.sub(r"^[^0-9]*", "", p.strip(), flags=re.IGNORECASE)
+        tokens = cleaned.replace(",", " ").split()
         if len(tokens) < 2:
             return None
         jour = None
@@ -299,6 +310,10 @@ def _parse_cpf_value(value):
 def _parse_exam_date_from_dates_txt(dates_txt):
     if not dates_txt:
         return ""
+
+    match_numeric = re.search(r"examen le (\d{1,2})[/-](\d{1,2})[/-](20\d{2})", dates_txt, re.IGNORECASE)
+    if match_numeric:
+        return f"{match_numeric.group(3)}-{match_numeric.group(2).zfill(2)}-{match_numeric.group(1).zfill(2)}"
 
     match = re.search(r"examen le (\d{1,2}) ([a-zà-ÿ]+) (\d{4})", dates_txt, re.IGNORECASE)
     if not match:
@@ -3530,14 +3545,21 @@ def plan_financement_devis(devis_id):
     reste_avec_ft = max(tarif - cpf - ft, 0)
     reste_sans_ft = max(tarif - cpf, 0)
 
+    centre_code = (infos.get("centre") or "cote_azur").strip() or "cote_azur"
+    centre_label, centre_address = _centre_label_and_address(centre_code)
+
     # -------------------------------
     # Échéancier (si date examen)
     # -------------------------------
+    date_examen_txt = (infos.get("date_examen") or "").strip()
+    if not date_examen_txt:
+        date_examen_txt = _parse_exam_date_from_dates_txt(infos.get("dates", ""))
+
     date_examen = None
     try:
-        if infos.get("date_examen"):
+        if date_examen_txt:
             date_examen = datetime.datetime.strptime(
-                infos["date_examen"], "%Y-%m-%d"
+                date_examen_txt, "%Y-%m-%d"
             ).date()
     except:
         date_examen = None
@@ -3561,6 +3583,8 @@ def plan_financement_devis(devis_id):
         email=devis.get("mail"),
         formation_label=formation_label,
         dates=infos.get("dates"),
+        centre_label=centre_label,
+        centre_address=centre_address,
         cpf=cpf,
         ft=ft,
         reste_avec_ft=reste_avec_ft,
