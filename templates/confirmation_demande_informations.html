@@ -10,6 +10,7 @@ body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg
 .icon{font-size:2.1rem;line-height:1;margin-bottom:12px;animation:pop .9s ease}
 .title{font-size:clamp(1.8rem,3.2vw,2.65rem);margin:0 0 14px;font-weight:900;max-width:980px;animation:fadeUp .8s ease .12s both}
 .subtitle{font-size:clamp(1rem,1.55vw,1.22rem);color:var(--muted);margin:0 0 30px;max-width:960px;line-height:1.65;animation:fadeUp .8s ease .22s both}
+.subtitle-highlight{font-size:clamp(1.1rem,1.85vw,1.4rem);font-weight:800;color:#0b2a6f;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25);padding:14px 20px;border-radius:14px;box-shadow:0 8px 22px rgba(37,99,235,.12)}
 .actions{margin:0;display:flex;justify-content:center;animation:fadeUp .8s ease .32s both}
 .presentation-link{position:relative;display:inline-flex;align-items:center;gap:10px;padding:16px 24px;border-radius:16px;background:linear-gradient(135deg,var(--cta-start),var(--cta-end));color:#fff;font-size:1.05rem;font-weight:800;text-decoration:none;box-shadow:0 14px 30px rgba(37,99,235,.35);transition:transform .25s ease,box-shadow .25s ease}
 .presentation-link:hover{transform:translateY(-3px) scale(1.01);box-shadow:0 20px 36px rgba(37,99,235,.42)}
@@ -35,7 +36,7 @@ body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg
       <h1 class="title">Merci, nous avons bien reçu votre demande.</h1>
       <p class="subtitle">Un conseiller formation reviendra vers vous prochainement pour échanger sur votre projet de formation.</p>
       {% if hot and calendly_url %}
-        <p class="subtitle">Vous pouvez réserver un RDV téléphonique pour échanger sur votre projet de formation :</p>
+        <p class="subtitle subtitle-highlight">Vous pouvez réserver un RDV téléphonique pour échanger sur votre projet de formation :</p>
         <div class="calendly-inline-widget" data-url="{{ calendly_url }}"></div>
         <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async></script>
       {% else %}
