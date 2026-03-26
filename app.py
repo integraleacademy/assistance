@@ -899,6 +899,14 @@ def _format_selected_session_date(dates_txt: str) -> str:
         return ""
     return dates_txt.strip().replace(" - examen le ", " — examen le ")
 
+def _extract_exam_label_from_dates_txt(dates_txt: str) -> str:
+    if not dates_txt:
+        return ""
+    match = re.search(r"examen le\s+(.+)$", dates_txt.strip(), re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1).strip(" .)")
+
 
 def _centre_label_and_address(centre_code: str):
     centres = {
@@ -1130,17 +1138,16 @@ def build_vtc_email_html(prenom: str, centre_code: str):
 
 def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
     session_date = _format_selected_session_date(dates_txt)
+    exam_label = _extract_exam_label_from_dates_txt(dates_txt)
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
     session_html = (
         f"""
         <p style="margin:0 0 6px 0;">📅 <strong>{session_date}</strong></p>
-        <p style="margin:0 0 6px 0;">Présentiel : <strong>{session_date}</strong></p>
         """
         if session_date
         else """
         <p style="margin:0 0 6px 0;">📅 <strong>XXXX</strong></p>
-        <p style="margin:0 0 6px 0;">Présentiel : <strong>XXXXX</strong></p>
         """
     )
 
@@ -1212,7 +1219,7 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
         <p style="margin:0 0 10px 0; font-size:16px;"><strong>🏫 Prochaines formations</strong></p>
         {session_html}
-        <p style="margin:0 0 6px 0;">Examen : <strong>27 avril 2026</strong></p>
+        <p style="margin:0 0 6px 0;">Examen : <strong>{exam_label or "XXXXX"}</strong></p>
         <p style="margin:0;">Centre de formation : <strong>{centre_display}</strong></p>
       </div>
 
@@ -2035,6 +2042,7 @@ def demande_informations_formations():
             email_subject = "🚗 Formation Chauffeur VTC"
         elif form_data.get("formation") == "DESP_INIT":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
+            exam_label = _extract_exam_label_from_dates_txt(form_data.get("dates", ""))
             centre_label, _ = _centre_label_and_address(form_data.get("centre", ""))
             plain = (
                 f"Bonjour {prenom},\n\n"
@@ -2045,8 +2053,7 @@ def demande_informations_formations():
                 "Le e-learning est accessible 24h/24 sur ordinateur, tablette ou smartphone.\n\n"
                 "Prochaines formations :\n"
                 + (f"- {session_date}\n" if session_date else "- XXXX\n")
-                + (f"Présentiel : {session_date}\n" if session_date else "Présentiel : XXXXX\n")
-                + "Examen : 27 avril 2026\n"
+                + f"Examen : {exam_label or 'XXXXX'}\n"
                 + f"Centre : {centre_label}\n\n"
                 "Tarif : 4 300 € TTC (finançable via CPF).\n"
                 "Identité Numérique La Poste (obligatoire CPF) : https://lidentitenumerique.laposte.fr/\n"
