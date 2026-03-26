@@ -908,6 +908,25 @@ def _extract_exam_label_from_dates_txt(dates_txt: str) -> str:
     return match.group(1).strip(" .)")
 
 
+def _normalize_centre_code(centre_code: str) -> str:
+    normalized = str(centre_code or "").strip().lower()
+    aliases = {
+        "cote_azur": "cote_azur",
+        "cote d'azur": "cote_azur",
+        "côte d'azur": "cote_azur",
+        "paca": "cote_azur",
+        "nice": "cote_azur",
+        "auvergne": "auvergne",
+        "clermont": "auvergne",
+        "clermont-ferrand": "auvergne",
+        "paris": "paris",
+        "idf": "paris",
+        "ile-de-france": "paris",
+        "île-de-france": "paris",
+    }
+    return aliases.get(normalized, "cote_azur")
+
+
 def _centre_label_and_address(centre_code: str):
     centre_code = _normalize_centre_code(centre_code)
     centres = {
