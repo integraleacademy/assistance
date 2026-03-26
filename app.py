@@ -4057,19 +4057,33 @@ def plan_public(token):
     if devis.get("echeancier_manuel") and len(devis["echeancier_manuel"]) > 0:
         echeances = devis["echeancier_manuel"]
     else:
-        # date examen
+        # date examen (champ dédié prioritaire, fallback via texte de session)
         date_examen = None
+        date_examen_txt = (infos.get("date_examen") or "").strip()
+        if not date_examen_txt:
+            date_examen_txt = _parse_exam_date_from_dates_txt(infos.get("dates", ""))
         try:
-            if infos.get("date_examen"):
+            if date_examen_txt:
                 date_examen = datetime.datetime.strptime(
-                    infos["date_examen"], "%Y-%m-%d"
+                    date_examen_txt, "%Y-%m-%d"
                 ).date()
         except:
             date_examen = None
+
+        # date devis (évite de recalculer un échéancier différent selon la date de consultation)
+        date_devis = datetime.date.today()
+        date_devis_txt = (devis.get("date") or "").strip()
+        for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y"):
+            try:
+                if date_devis_txt:
+                    date_devis = datetime.datetime.strptime(date_devis_txt, fmt).date()
+                    break
+            except ValueError:
+                continue
     
         echeances = build_echeances_mensuelles(
             reste=reste_sans_ft,
-            date_devis=datetime.date.today(),
+            date_devis=date_devis,
             date_examen=date_examen
         )
 
