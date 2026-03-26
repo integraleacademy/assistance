@@ -11,6 +11,7 @@ h1{margin-top:0}
 .topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .back{padding:8px 12px;border-radius:8px;background:#e9ecef;color:#111;text-decoration:none;font-size:13px}
 .search{flex:1;min-width:220px;padding:9px 12px;border:1px solid #d6d6d6;border-radius:8px}
+.bulk-delete-form{margin-left:auto}
 table{width:100%;border-collapse:collapse}
 th,td{padding:10px 8px;border-bottom:1px solid #eee;font-size:14px;text-align:left}
 thead{background:#f0f2f5}
@@ -29,6 +30,9 @@ thead{background:#f0f2f5}
     <div class="topbar">
         <a class="back" href="{{ url_for('admin_devis') }}">← Retour admin devis</a>
         <input id="search" class="search" type="text" placeholder="🔍 Rechercher nom, prénom, email, formation…">
+        <form class="bulk-delete-form" method="POST" action="{{ url_for('supprimer_tous_formulaires_admin_devis') }}" onsubmit="return confirm('Supprimer tous les formulaires de cette liste ? Cette action est irréversible.')">
+            <button class="btn btn-danger" type="submit">🗑️ Tout supprimer</button>
+        </form>
     </div>
 
     <table>

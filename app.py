@@ -2275,6 +2275,32 @@ def supprimer_formulaire_admin_devis(formulaire_id):
     return redirect(url_for("admin_devis_formulaires"))
 
 
+@app.route("/admin-devis/formulaires/supprimer-tout", methods=["POST"])
+@login_required
+def supprimer_tous_formulaires_admin_devis():
+    data = load_data()
+    demandes = data.get("demandes", [])
+
+    formulaires_cibles = [
+        d for d in demandes
+        if d.get("motif") == "Demande de devis détaillé"
+        or d.get("source") == "demande_infos_formations"
+    ]
+
+    if not formulaires_cibles:
+        return redirect(url_for("admin_devis_formulaires"))
+
+    data.setdefault("archives", []).extend(formulaires_cibles)
+    for demande in formulaires_cibles:
+        supprimer_fichier(demande.get("justificatif"))
+        for pj in demande.get("pieces_jointes", []):
+            supprimer_fichier(pj)
+        demandes.remove(demande)
+
+    save_data(data)
+    return redirect(url_for("admin_devis_formulaires"))
+
+
 @app.route("/admin-devis/formulaires/<formulaire_id>/imprimer")
 @login_required
 def imprimer_formulaire_admin_devis(formulaire_id):
