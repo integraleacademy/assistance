@@ -3,7 +3,7 @@
 :root{--bg-start:#0f172a;--bg-end:#1d4ed8;--surface:#ffffff;--text:#0f172a;--muted:#334155;--cta-start:#06b6d4;--cta-end:#2563eb}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;color:var(--text)}
-body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg-end));overflow:hidden}
+body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg-end));overflow-y:auto}
 .page{position:relative;min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:28px}
 .box{position:relative;z-index:1;width:min(1100px,100%);min-height:calc(100vh - 56px);background:rgba(255,255,255,.96);backdrop-filter:blur(3px);border-radius:26px;padding:48px clamp(24px,4vw,76px);box-shadow:0 24px 80px rgba(15,23,42,.35);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;animation:enter .65s ease both}
 .logo{width:clamp(120px,14vw,180px);height:auto;display:block;margin:0 auto 14px;filter:drop-shadow(0 8px 20px rgba(15,23,42,.22));animation:fadeUp .8s ease .05s both}
@@ -35,6 +35,7 @@ body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg
       <h1 class="title">Merci, nous avons bien reçu votre demande.</h1>
       <p class="subtitle">Un conseiller formation reviendra vers vous prochainement pour échanger sur votre projet de formation.</p>
       {% if hot and calendly_url %}
+        <p class="subtitle">Vous pouvez réserver un RDV téléphonique pour échanger sur votre projet de formation :</p>
         <div class="calendly-inline-widget" data-url="{{ calendly_url }}"></div>
         <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async></script>
       {% else %}
