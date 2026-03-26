@@ -4052,6 +4052,9 @@ def plan_public(token):
     ft = max(tarif - cpf, 0) if infos.get("france_travail") == "OUI" else 0
     reste_avec_ft = max(tarif - cpf - ft, 0)
     reste_sans_ft = max(tarif - cpf, 0)
+    centre_code = _normalize_centre_code(infos.get("centre"))
+    centre_label, centre_address = _centre_label_and_address(centre_code)
+    centre_legal = _centre_legal_block(centre_code)
 
     # 🔁 Échéancier : manuel PRIORITAIRE, sinon automatique
     if devis.get("echeancier_manuel") and len(devis["echeancier_manuel"]) > 0:
@@ -4095,6 +4098,9 @@ def plan_public(token):
         email=devis.get("mail"),
         formation_label=formation_label,
         dates=infos.get("dates"),
+        centre_label=centre_label,
+        centre_address=centre_address,
+        centre_legal=centre_legal,
         cpf=cpf,
         ft=ft,
         reste_avec_ft=reste_avec_ft,
@@ -4122,6 +4128,9 @@ def plan_simulation_public(token):
         dates_txt=simulation.get("dates", ""),
         sequence=1
     )
+    centre_code = _normalize_centre_code(simulation.get("centre"))
+    centre_label, centre_address = _centre_label_and_address(centre_code)
+    centre_legal = _centre_legal_block(centre_code)
 
     return render_template(
         "plan_financement.html",
@@ -4130,6 +4139,9 @@ def plan_simulation_public(token):
         email=plan.get("mail"),
         formation_label=formation_label,
         dates=simulation.get("dates", ""),
+        centre_label=centre_label,
+        centre_address=centre_address,
+        centre_legal=centre_legal,
         cpf=simulation.get("cpf", 0),
         ft=simulation.get("ft", 0),
         reste_avec_ft=simulation.get("reste_avec_ft", 0),
