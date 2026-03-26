@@ -1118,7 +1118,41 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
     )
 
     return f"""<html style="overflow-y:hidden;">
-<head><title></title></head>
+<head>
+<title></title>
+<style>
+  .cta-btn {{
+    display:inline-block;
+    padding:12px 20px;
+    text-decoration:none;
+    border-radius:8px;
+    font-weight:bold;
+    transition:transform .18s ease-in-out, box-shadow .18s ease-in-out, filter .18s ease-in-out;
+    animation:ctaPulse 2s ease-in-out infinite;
+  }}
+  .cta-btn--dark {{
+    background:#0f1f33;
+    color:#fff !important;
+    box-shadow:0 6px 18px rgba(15,31,51,.25);
+  }}
+  .cta-btn--gold {{
+    background:#F4C45A;
+    color:#000 !important;
+    box-shadow:0 6px 18px rgba(244,196,90,.35);
+  }}
+  .cta-btn:hover {{
+    transform:translateY(-1px) scale(1.01);
+    filter:brightness(1.04);
+  }}
+  @keyframes ctaPulse {{
+    0%, 100% {{ transform:scale(1); box-shadow:0 6px 18px rgba(15,31,51,.25); }}
+    50% {{ transform:scale(1.03); box-shadow:0 10px 24px rgba(15,31,51,.34); }}
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .cta-btn {{ animation:none !important; transition:none !important; }}
+  }}
+</style>
+</head>
 <body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
 <div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
   <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
@@ -1137,7 +1171,7 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
         <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
         <p style="margin:0; text-align:center;">
-          <a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
+          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
         </p>
       </div>
 
@@ -1160,7 +1194,7 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
         <p style="margin:0 0 10px 0;">Le tarif de la formation est de <strong>4 300 € TTC</strong>. Elle est finançable via votre Compte Personnel de Formation (CPF).</p>
         <p style="margin:0 0 12px 0;">Pour finaliser un dossier CPF, il faut créer ou activer votre <strong>Identité Numérique La Poste</strong>.</p>
         <p style="margin:0; text-align:center;">
-          <a href="{devis_url}" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
+          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
         </p>
       </div>
 
@@ -1168,7 +1202,7 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
         <p style="margin:0 0 10px 0; font-size:16px;"><strong>📞 Prochaine étape</strong></p>
         <p style="margin:0 0 12px 0;">Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique :</p>
         <p style="margin:0; text-align:center;">
-          <a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
+          <a href="https://calendly.com/integraleacademy/dirigeant" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
         </p>
       </div>
     </div>
