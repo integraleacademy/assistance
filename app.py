@@ -912,7 +912,7 @@ def _centre_label_and_address(centre_code: str):
         ),
         "paris": (
             "Intégrale Academy Paris",
-            "Paris et Île-de-France (adresse communiquée lors de l’inscription)",
+            "142 rue de Rivoli — 75001 PARIS",
         ),
     }
     return centres.get(
@@ -921,6 +921,33 @@ def _centre_label_and_address(centre_code: str):
             "Intégrale Academy Côte d’Azur",
             "54 chemin du Carreou — 83480 PUGET SUR ARGENS (Var)",
         ),
+    )
+
+
+def _centre_legal_block(centre_code: str) -> str:
+    if centre_code == "paris":
+        return (
+            "SASU Intégrale Sécurité Formations\n"
+            "142 rue de Rivoli\n"
+            "75001 PARIS\n"
+            "Immatriculée au Registre des commerces et des sociétés RCS 840899884\n"
+            "NDA n°93830600283\n"
+            "Autorisation CNAPS FOR-083-2027-02-08-20200755135\n"
+            "Certification Nationale Qualité QUALIOPI n°03169 délivrée par SGS en date du 21/10/2024 - "
+            "La certification qualité a été délivrée au titre de la ou des catégories d’actions suivantes : "
+            "actions de formation, actions de formation en apprentissage."
+        )
+
+    return (
+        "SASU Intégrale Sécurité Formations\n"
+        "Siège social : 54 chemin du Carreou\n"
+        "83480 PUGET SUR ARGENS\n"
+        "Immatriculée au Registre du commerce et des sociétés de Fréjus RCS 840899884\n"
+        "NDA n°93830600283\n"
+        "Autorisation CNAPS FOR-083-2027-02-08-20200755135\n"
+        "Certification Nationale Qualité QUALIOPI n°03169 délivrée par SGS en date du 21/10/2024 - "
+        "La certification qualité a été délivrée au titre de la ou des catégories d’actions suivantes : "
+        "actions de formation, actions de formation en apprentissage."
     )
 
 
@@ -3601,6 +3628,17 @@ def plan_financement_devis(devis_id):
 
     centre_code = (infos.get("centre") or "cote_azur").strip() or "cote_azur"
     centre_label, centre_address = _centre_label_and_address(centre_code)
+    centre_legal = _centre_legal_block(centre_code)
+
+    date_devis = datetime.date.today()
+    date_devis_txt = (devis.get("date") or "").strip()
+    for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y"):
+        try:
+            if date_devis_txt:
+                date_devis = datetime.datetime.strptime(date_devis_txt, fmt).date()
+                break
+        except ValueError:
+            continue
 
     # -------------------------------
     # Échéancier (si date examen)
@@ -3624,7 +3662,7 @@ def plan_financement_devis(devis_id):
     else:
         echeances = build_echeances_mensuelles(
             reste=reste_sans_ft,
-            date_devis=datetime.date.today(),
+            date_devis=date_devis,
             date_examen=date_examen
         )
 
@@ -3639,6 +3677,7 @@ def plan_financement_devis(devis_id):
         dates=infos.get("dates"),
         centre_label=centre_label,
         centre_address=centre_address,
+        centre_legal=centre_legal,
         cpf=cpf,
         ft=ft,
         reste_avec_ft=reste_avec_ft,
