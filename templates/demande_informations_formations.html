@@ -443,6 +443,7 @@
         <select name="dates" id="datesSelect" required>
           <option value="">— Sélectionnez —</option>
         </select>
+        <input type="hidden" name="date_examen" id="dateExamen">
         <p class="small-note" id="datesHelp">Les dates proposées s’adaptent selon la formation et le centre choisi.</p>
         <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
       </section>
@@ -560,6 +561,7 @@
     const mail2 = document.getElementById('mail_confirm');
     const formation = document.getElementById('formation');
     const datesSelect = document.getElementById('datesSelect');
+    const dateExamen = document.getElementById('dateExamen');
     const sessions = {{ sessions|tojson }};
     const gclidField = document.getElementById('gclidField');
     const franceTravail = document.getElementById('franceTravail');
@@ -726,6 +728,7 @@
       const f = formation.value;
       const centre = selectedCentre();
       datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+      dateExamen.value = '';
       centreSwitchNote.classList.add('hidden');
       centreSwitchNote.textContent = '';
 
@@ -786,9 +789,15 @@
         const option = document.createElement('option');
         option.value = r.label;
         option.textContent = r.badge ? `${r.label} — ${r.badge}` : r.label;
+        option.dataset.dateExamen = (r.date_examen || '').trim();
         datesSelect.appendChild(option);
       });
     }
+
+    datesSelect.addEventListener('change', () => {
+      const selected = datesSelect.options[datesSelect.selectedIndex];
+      dateExamen.value = selected ? (selected.dataset.dateExamen || '') : '';
+    });
 
     formation.addEventListener('change', () => {
       showLocationCards(formation.value);

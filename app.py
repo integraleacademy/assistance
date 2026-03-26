@@ -899,8 +899,32 @@ def _format_selected_session_date(dates_txt: str) -> str:
         return ""
     return dates_txt.strip().replace(" - examen le ", " — examen le ")
 
+def _normalize_centre_code(raw_value: str) -> str:
+    val = (raw_value or "").strip().lower()
+    aliases = {
+        "cote_azur": "cote_azur",
+        "côte_d_azur": "cote_azur",
+        "cote-d-azur": "cote_azur",
+        "côte d’azur": "cote_azur",
+        "côte d'azur": "cote_azur",
+        "cote d'azur": "cote_azur",
+        "paca": "cote_azur",
+        "auvergne": "auvergne",
+        "aurillac": "auvergne",
+        "terres d’auvergne": "auvergne",
+        "terres d'auvergne": "auvergne",
+        "paris": "paris",
+        "idf": "paris",
+        "ile-de-france": "paris",
+        "île-de-france": "paris",
+        "intégrale academy paris": "paris",
+        "integrale academy paris": "paris",
+    }
+    return aliases.get(val, "cote_azur")
+
 
 def _centre_label_and_address(centre_code: str):
+    centre_code = _normalize_centre_code(centre_code)
     centres = {
         "cote_azur": (
             "Intégrale Academy Côte d’Azur",
@@ -925,6 +949,7 @@ def _centre_label_and_address(centre_code: str):
 
 
 def _centre_legal_block(centre_code: str) -> str:
+    centre_code = _normalize_centre_code(centre_code)
     if centre_code == "paris":
         return (
             "SASU Intégrale Sécurité Formations\n"
@@ -3660,7 +3685,7 @@ def plan_financement_devis(devis_id):
     reste_avec_ft = max(tarif - cpf - ft, 0)
     reste_sans_ft = max(tarif - cpf, 0)
 
-    centre_code = (infos.get("centre") or "cote_azur").strip() or "cote_azur"
+    centre_code = _normalize_centre_code(infos.get("centre"))
     centre_label, centre_address = _centre_label_and_address(centre_code)
     centre_legal = _centre_legal_block(centre_code)
 
