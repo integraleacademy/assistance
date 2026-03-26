@@ -1984,7 +1984,7 @@ def demande_informations_formations():
             "echeancier_manuel": [],
             "pdf_path": ""
         })
-        devis_url = url_for("plan_public_pdf", token=token_plan, _external=True)
+        devis_url = url_for("plan_public", token=token_plan, _external=True)
         extra_devis = f"""
         <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
         <p style="text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
@@ -3994,100 +3994,6 @@ def envoyer_plan_financement(devis_id):
     save_data(data)
 
     return redirect(url_for("admin_devis"))
-
-
-
-@app.route("/plan/<token>/pdf")
-def plan_public_pdf(token):
-    data = load_data()
-
-    devis = next(
-        (d for d in data.get("demandes", [])
-         if d.get("motif") == "Demande de devis détaillé"
-         and d.get("token_plan") == token),
-        None
-    )
-
-    if not devis:
-        return "Lien invalide ou expiré", 404
-
-    pdf_path = devis.get("pdf_client_path") or devis.get("pdf_path")
-    if pdf_path and os.path.exists(pdf_path):
-        return send_from_directory(
-            os.path.dirname(pdf_path),
-            os.path.basename(pdf_path),
-            as_attachment=False
-        )
-
-    try:
-        infos = json.loads(devis.get("details", "{}"))
-    except:
-        infos = {}
-
-    formation = infos.get("formation", "")
-    tarifs = {
-        "A3P": 4200,
-        "APS": 1650,
-        "VTC": 1600,
-        "DESP_INIT": 4300,
-        "DESP_VAE": 3800
-    }
-    formation_label = PLAN_FORMATIONS.get(formation, formation or "Formation")
-
-    try:
-        cpf = int(float(str(infos.get("cpf_montant", 0)).replace(",", ".").replace(" ", "")))
-    except:
-        cpf = 0
-
-    tarif = tarifs.get(formation, 0)
-    reste = max(tarif - cpf, 0)
-
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-
-    generated_pdf_path = f"/mnt/data/devis_public_{token}.pdf"
-    c = canvas.Canvas(generated_pdf_path, pagesize=A4)
-    width, height = A4
-    y = height - 55
-
-    c.setFont("Helvetica-Bold", 18)
-    c.drawCentredString(width / 2, y, "DEVIS DÉTAILLÉ")
-    y -= 30
-
-    c.setFont("Helvetica", 11)
-    c.drawString(45, y, f"Date : {datetime.date.today().strftime('%d/%m/%Y')}")
-    y -= 22
-    c.drawString(45, y, f"Nom : {(devis.get('prenom', '') + ' ' + devis.get('nom', '')).strip()}")
-    y -= 18
-    c.drawString(45, y, f"Email : {devis.get('mail', '')}")
-    y -= 18
-    c.drawString(45, y, f"Formation : {formation_label}")
-    y -= 18
-    c.drawString(45, y, f"Session : {infos.get('dates', 'Non précisée')}")
-    y -= 30
-
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(45, y, "Récapitulatif financier")
-    y -= 22
-    c.setFont("Helvetica", 11)
-    c.drawString(45, y, f"Tarif de la formation : {tarif} €")
-    y -= 18
-    c.drawString(45, y, f"Montant CPF : {cpf} €")
-    y -= 18
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(45, y, f"Reste à charge : {reste} €")
-
-    c.save()
-
-    devis["pdf_public_path"] = generated_pdf_path
-    save_data(data)
-
-    return send_from_directory(
-        os.path.dirname(generated_pdf_path),
-        os.path.basename(generated_pdf_path),
-        as_attachment=False
-    )
-
 
 
 
