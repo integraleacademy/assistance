@@ -997,7 +997,7 @@ def _centre_legal_block(centre_code: str) -> str:
     )
 
 
-def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str):
+def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
     session_html = _format_upcoming_sessions_for_email(centre_code, "A3P")
@@ -1055,6 +1055,13 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str):
 
     <div style="padding:8px 20px 22px 20px;">
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
+        </p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
         <p style="margin:0 0 10px 0; font-size:16px;"><strong>🎓 Durée et organisation</strong></p>
         <p style="margin:0;"><strong>328 heures de formation</strong>, conformément à la réglementation.</p>
       </div>
@@ -1069,6 +1076,9 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str):
         <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif & financement</strong></p>
         <p style="margin:0 0 10px 0;">Tarif : <strong>4200 € TTC</strong><br />Formation finançable via votre Compte Personnel de Formation (CPF).</p>
         <p style="margin:0;">👉 Vous devrez activer votre <strong>Identité Numérique La Poste</strong> pour valider le dossier CPF.</p>
+        <p style="margin:12px 0 0 0; text-align:center;">
+          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
+        </p>
       </div>
 
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
@@ -1153,7 +1163,7 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
 """
 
 
-def build_vtc_email_html(prenom: str, centre_code: str):
+def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
     return f"""<html style="overflow-y:hidden;">
 <head>
 <title></title>
@@ -1255,6 +1265,9 @@ def build_vtc_email_html(prenom: str, centre_code: str):
         <p style="margin:0 0 10px 0; font-size:16px;"><strong>💳 Financement de votre formation</strong></p>
         <p style="margin:0 0 8px 0;">Compte Personnel de Formation (CPF)<br />Demande de financement auprès de France Travail (Pôle Emploi)<br />Financement personnel</p>
         <p style="margin:0;">⚠️ Pour toute demande de financement via le CPF ou France Travail, la création de votre <strong>Identité Numérique La Poste</strong> est obligatoire.</p>
+        <p style="margin:12px 0 0 0; text-align:center;">
+          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
+        </p>
       </div>
 
       <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
@@ -2143,7 +2156,7 @@ def demande_informations_formations():
                 "Je reste à votre disposition pour toute information complémentaire.\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = build_a3p_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""))
+            html = build_a3p_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
             email_subject = "🛡️ Formation Agent de Protection Physique des Personnes (A3P)"
         elif form_data.get("formation") == "APS":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
@@ -2181,7 +2194,7 @@ def demande_informations_formations():
                 "Prendre rendez-vous : https://calendly.com/integraleacademy/chauffeurvtc\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = build_vtc_email_html(prenom, form_data.get("centre", ""))
+            html = build_vtc_email_html(prenom, form_data.get("centre", ""), devis_url)
             email_subject = "🚗 Formation Chauffeur VTC"
         elif form_data.get("formation") == "DESP_INIT":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
