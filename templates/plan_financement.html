@@ -631,6 +631,19 @@ function addRow(){
 
 </script>
 
+{% else %}
+
+      <div class="alert">
+        ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
+      </div>
+    {% endif %}
+
+    <div class="note">
+      Le premier prélèvement démarre le 5 du mois suivant votre inscription, puis tous les 5 du mois jusqu'à l'examen de fin de formation. 
+    </div>
+  </div>
+  </div>
+
 <script>
 function imprimerDevis() {
   window.print();
@@ -660,23 +673,8 @@ async function enregistrerPDF() {
 }
 </script>
 
-
-{% else %}
-
-      <div class="alert">
-        ⚠️ Aucun échéancier possible : la formation doit être soldée avant l’examen.
-      </div>
-    {% endif %}
-
-    <div class="note">
-      Le premier prélèvement démarre le 5 du mois suivant votre inscription, puis tous les 5 du mois jusqu'à l'examen de fin de formation. 
-    </div>
-  </div>
-  </div>
-
 </body>
 </html>
-
 
 
 
