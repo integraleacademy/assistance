@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>PF {{ nom|upper }} {{ prenom|upper }}</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer></script>
 
   <style>
     @page {
@@ -282,9 +283,13 @@
 }
 
     .actions-bar{
-      margin: 14px 0 8px;
+      position: fixed;
+      top: 14px;
+      right: 18px;
+      z-index: 9999;
       display:flex;
       flex-wrap:wrap;
+      justify-content:flex-end;
       gap:10px;
     }
 
@@ -297,10 +302,39 @@
       cursor:pointer;
       background:#0f1f33;
       color:#fff;
+      box-shadow:0 6px 18px rgba(7, 18, 33, 0.25);
+      transition:transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      animation:btnFloat 2.3s ease-in-out infinite;
     }
 
     .action-btn:hover{
       background:#1a3557;
+      transform: translateY(-2px);
+      box-shadow:0 10px 24px rgba(7, 18, 33, 0.35);
+    }
+
+    .action-btn:nth-child(2){
+      animation-delay:0.3s;
+    }
+
+    @keyframes btnFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-1px); }
+    }
+
+    #pdf-export-target{
+      margin-top:72px;
+    }
+
+    @media (max-width:768px){
+      .actions-bar{
+        position: static;
+        margin: 10px 0 8px;
+      }
+
+      #pdf-export-target{
+        margin-top:0;
+      }
     }
 
     /* Sécurité : si un ancien bloc "Plan de financement proposé" traine en section-title */
@@ -323,6 +357,7 @@
     </button>
   </div>
 
+  <div id="pdf-export-target">
   <!-- ===== HEADER ===== -->
   <div class="header">
     <div class="header-left">
@@ -601,8 +636,27 @@ function imprimerDevis() {
   window.print();
 }
 
-function enregistrerPDF() {
-  window.print();
+async function enregistrerPDF() {
+  const target = document.getElementById("pdf-export-target");
+  if (!target) return;
+
+  if (typeof window.html2pdf === "undefined") {
+    alert("Le générateur PDF est indisponible. Veuillez réessayer dans quelques secondes.");
+    return;
+  }
+
+  const filename = `devis_${"{{ nom|lower|replace(' ', '_') }}"}_${"{{ prenom|lower|replace(' ', '_') }}"}.pdf`;
+
+  const options = {
+    margin: [10, 10, 10, 10],
+    filename,
+    image: { type: "jpeg", quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak: { mode: ["css", "legacy"] }
+  };
+
+  await window.html2pdf().set(options).from(target).save();
 }
 </script>
 
@@ -618,12 +672,10 @@ function enregistrerPDF() {
       Le premier prélèvement démarre le 5 du mois suivant votre inscription, puis tous les 5 du mois jusqu'à l'examen de fin de formation. 
     </div>
   </div>
+  </div>
 
 </body>
 </html>
-
-
-
 
 
 
