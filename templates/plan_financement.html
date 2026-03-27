@@ -281,6 +281,28 @@
   break-before: page;
 }
 
+    .actions-bar{
+      margin: 14px 0 8px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+    }
+
+    .action-btn{
+      border:0;
+      border-radius:8px;
+      padding:10px 14px;
+      font-size:13px;
+      font-weight:700;
+      cursor:pointer;
+      background:#0f1f33;
+      color:#fff;
+    }
+
+    .action-btn:hover{
+      background:#1a3557;
+    }
+
     /* Sécurité : si un ancien bloc "Plan de financement proposé" traine en section-title */
 .section-title.plan-fin { display:none !important; }
 
@@ -291,6 +313,15 @@
 </head>
 
 <body>
+
+  <div class="actions-bar">
+    <button type="button" class="action-btn" onclick="imprimerDevis()">
+      🖨️ Imprimer mon devis (A4)
+    </button>
+    <button type="button" class="action-btn" onclick="enregistrerPDF()">
+      📄 Enregistrer en PDF
+    </button>
+  </div>
 
   <!-- ===== HEADER ===== -->
   <div class="header">
@@ -565,6 +596,16 @@ function addRow(){
 
 </script>
 
+<script>
+function imprimerDevis() {
+  window.print();
+}
+
+function enregistrerPDF() {
+  window.print();
+}
+</script>
+
 
 {% else %}
 
@@ -580,7 +621,6 @@ function addRow(){
 
 </body>
 </html>
-
 
 
 
