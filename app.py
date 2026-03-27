@@ -1219,6 +1219,7 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
     <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
       <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
       <p style="margin:0 0 14px 0;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
+      <p style="margin:0 0 14px 0;">Cette formation permet d’obtenir les compétences indispensables pour créer, diriger et gérer une entreprise de sécurité privée et vous permet de demander votre agrément dirigeant auprès du CNAPS conformément à la réglementation.</p>
       <p style="margin:0;">Vous trouverez ci-dessous les informations essentielles, présentées de façon claire par rubrique.</p>
     </div>
 
