@@ -908,6 +908,23 @@ def _extract_exam_label_from_dates_txt(dates_txt: str) -> str:
     return match.group(1).strip(" .)")
 
 
+def _format_upcoming_sessions_for_email(centre_code: str, formation_code: str) -> str:
+    sessions = get_formation_sessions()
+    rows = sessions.get(_normalize_centre_code(centre_code), {}).get(formation_code, [])
+    labels = [
+        (row.get("label") or "").strip()
+        for row in rows
+        if isinstance(row, dict) and (row.get("label") or "").strip()
+    ]
+    if not labels:
+        return '<p style="margin:0 0 6px 0;">📅 <strong>Dates à venir prochainement</strong></p>'
+    items = "".join(
+        f'<li style="margin:0 0 6px 0;"><strong>{label.replace(" - examen le ", " — examen le ")}</strong></li>'
+        for label in labels
+    )
+    return f'<ul style="margin:0 0 8px 18px; padding:0;">{items}</ul>'
+
+
 def _normalize_centre_code(centre_code: str) -> str:
     normalized = str(centre_code or "").strip().lower()
     aliases = {
@@ -1158,19 +1175,9 @@ def build_vtc_email_html(prenom: str, centre_code: str):
 
 
 def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
-    session_date = _format_selected_session_date(dates_txt)
-    exam_label = _extract_exam_label_from_dates_txt(dates_txt)
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
-    session_html = (
-        f"""
-        <p style="margin:0 0 6px 0;">📅 <strong>{session_date}</strong></p>
-        """
-        if session_date
-        else """
-        <p style="margin:0 0 6px 0;">📅 <strong>XXXX</strong></p>
-        """
-    )
+    session_html = _format_upcoming_sessions_for_email(centre_code, "DESP_INIT")
 
     return f"""<html style="overflow-y:hidden;">
 <head>
@@ -1240,7 +1247,7 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
         <p style="margin:0 0 10px 0; font-size:16px;"><strong>🏫 Prochaines formations</strong></p>
         {session_html}
-        <p style="margin:0 0 6px 0;">Examen : <strong>{exam_label or "XXXXX"}</strong></p>
+        <p style="margin:0 0 8px 0;">Retrouvez les dates de toutes nos formations en cliquant <a href="https://www.integraleacademy.com/planning" style="color:#0f1f33;font-weight:bold;">ici</a>.</p>
         <p style="margin:0;">Centre de formation : <strong>{centre_display}</strong></p>
       </div>
 
