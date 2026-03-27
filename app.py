@@ -997,99 +997,115 @@ def _centre_legal_block(centre_code: str) -> str:
     )
 
 
-def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str):
-    session_date = _format_selected_session_date(dates_txt)
-    centre_label, centre_address = _centre_label_and_address(centre_code)
-    session_html = (
-        f"<p>📅 <strong>{session_date}</strong></p>"
-        if session_date
-        else "<p>📅 <strong>Dates communiquées lors de notre échange.</strong></p>"
-    )
+def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
+    centre_label, _ = _centre_label_and_address(centre_code)
+    centre_display = centre_label.replace("Intégrale Academy ", "")
+    session_html = _format_upcoming_sessions_for_email(centre_code, "A3P")
 
-    return f"""<html style="overflow-y: hidden;">
+    return f"""<html style="overflow-y:hidden;">
 <head>
-    <title></title>
+<title></title>
+<style>
+  .cta-btn {{
+    display:inline-block;
+    padding:12px 20px;
+    text-decoration:none;
+    border-radius:8px;
+    font-weight:bold;
+    transition:transform .18s ease-in-out, box-shadow .18s ease-in-out, filter .18s ease-in-out;
+    animation:ctaPulse 2s ease-in-out infinite;
+  }}
+  .cta-btn--dark {{
+    background:#0f1f33;
+    color:#fff !important;
+    box-shadow:0 6px 18px rgba(15,31,51,.25);
+  }}
+  .cta-btn--gold {{
+    background:#F4C45A;
+    color:#000 !important;
+    box-shadow:0 6px 18px rgba(244,196,90,.35);
+  }}
+  .cta-btn:hover {{
+    transform:translateY(-1px) scale(1.01);
+    filter:brightness(1.04);
+  }}
+  @keyframes ctaPulse {{
+    0%, 100% {{ transform:scale(1); box-shadow:0 6px 18px rgba(15,31,51,.25); }}
+    50% {{ transform:scale(1.03); box-shadow:0 10px 24px rgba(15,31,51,.34); }}
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .cta-btn {{ animation:none !important; transition:none !important; }}
+  }}
+</style>
 </head>
-<body style="height: auto; min-height: auto;">
-<div style="font-family: Arial, sans-serif; max-width:600px; margin:auto; background:#f9f9f9; padding:20px;">
-<div style="background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); overflow:hidden;">
-<div style="text-align:center; padding:20px 20px 10px 20px;"><img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
-<h2 style="color:#000; font-size:18px; margin:10px 0 0 0;">Intégrale Academy</h2>
-</div>
+<body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
+<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
+  <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
+    <div style="text-align:center; padding:24px 20px 8px 20px;">
+      <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
+      <h2 style="color:#000; font-size:22px; margin:12px 0 0 0;">Intégrale Academy</h2>
+    </div>
 
-<div style="background:#F4C45A; padding:12px; text-align:center;">
-<h3 style="margin:0; font-size:18px; color:#000;">🛡️ Formation Agent de Protection Physique des Personnes (A3P)</h3>
-</div>
+    <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
+      <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
+      <p style="margin:0 0 14px 0;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Agent de Protection Physique des Personnes (A3P – Bodyguard)</strong>, titre reconnu par l’État (<strong>RNCP38002 – niveau 4</strong>).</p>
+      <p style="margin:0 0 14px 0;">Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que garde du corps, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle Agent de protection physique des personnes délivrée par le CNAPS (Ministère de l'intérieur).</p>
+      <p style="margin:0;">Vous trouverez ci-dessous les informations essentielles, présentées de façon claire par rubrique.</p>
+    </div>
 
-<div style="padding:20px; font-size:15px; color:#333; line-height:1.6;">
-<p>Bonjour {prenom},</p>
+    <div style="padding:8px 20px 22px 20px;">
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
+        </p>
+      </div>
 
-<p>Je fais suite à notre conversation téléphonique concernant notre formation <strong>Agent de Protection Physique des Personnes (A3P – Bodyguard)</strong>, titre reconnu par l’État (<strong>RNCP38002 – niveau 4</strong>).</p>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🎓 Durée et organisation</strong></p>
+        <p style="margin:0;"><strong>328 heures de formation</strong>, conformément à la réglementation.</p>
+      </div>
 
-<p>Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que <strong>garde du corps</strong>, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la <strong>carte professionnelle Agent de protection physique des personnes</strong> délivrée par le CNAPS (Ministère de l’Intérieur).</p>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🏫 Prochaines formations</strong></p>
+        {session_html}
+        <p style="margin:8px 0 0 0;">Centre de formation : <strong>{centre_display}</strong></p>
+      </div>
 
-<p><strong>📄 Dossier de présentation :</strong></p>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif & financement</strong></p>
+        <p style="margin:0 0 10px 0;">Tarif : <strong>4200 € TTC</strong><br />Formation finançable via votre Compte Personnel de Formation (CPF).</p>
+        <p style="margin:0;">👉 Vous devrez activer votre <strong>Identité Numérique La Poste</strong> pour valider le dossier CPF.</p>
+        <p style="margin:12px 0 0 0; text-align:center;">
+          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
+        </p>
+      </div>
 
-<p style="text-align:center; margin:20px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff;
-                  text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le Dossier de présentation </a></p>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🛏️ Hébergement</strong></p>
+        <p style="margin:0 0 8px 0;">Nous proposons une solution d'hébergement au sein du centre de formation au tarif de :<br /><strong>300 € TTC pour la durée totale de la formation</strong></p>
+        <p style="margin:0;">Dortoir collectif, salle de bain, douche, cuisine équipée, machine à laver et sèche-linge. 👉 Paiement sur place (chèque ou espèces), réservation à effectuer lors de votre inscription.</p>
+      </div>
 
-<h3 style="margin-top:25px; font-size:17px; color:#000;">🎓 Durée et organisation</h3>
+      <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📞 Prochaine étape</strong></p>
+        <p style="margin:0 0 12px 0;">Pour réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique :</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://calendly.com/integraleacademy/apr" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
+        </p>
+      </div>
+    </div>
 
-<p><strong>328 heures de formation </strong>, conformément à la réglementation.</p>
+    <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
+      <p style="margin:0 0 12px 0;">Je reste à votre disposition pour tous renseignements complémentaires.<br />Je vous souhaite une excellente journée,</p>
+      <p style="margin:0;"><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
+    </div>
 
-<h3 style="margin-top:25px; font-size:17px; color:#000;">🏫 Votre session</h3>
-
-{session_html}
-
-<p>Lieu : <strong>{centre_label}</strong><br />
-{centre_address}</p>
-
-<h3 style="margin-top:25px; font-size:17px; color:#000;">💶 Tarif & financement</h3>
-
-<p>Tarif : <strong>4200 € TTC</strong><br />
-Formation finançable via votre <strong>Compte Personnel de Formation (CPF)</strong>.</p>
-
-<p>👉 Vous devrez activer votre <strong>Identité Numérique La Poste</strong> pour valider le dossier CPF.</p>
-
-<h3 style="margin-top:25px; font-size:17px; color:#000;">🛏️ Hébergement</h3>
-
-<p>Nous proposons une solution d'hébergement au sein du centre de formation au tarif de :<br />
-<strong>300 € TTC pour la durée totale de la formation</strong></p>
-
-<p>Dortoir collectif, salle de bain, douche, cuisine équipée, machine à laver et sèche-linge. 👉 Paiement sur place (chèque ou espèces), réservation à effectuer lors de votre inscription.</p>
-
-<div style="margin:25px 0; padding:18px; background:#f5f5f5; border-radius:10px; text-align:center; border:1px solid #e4e4e4;">
-<p style="margin:0 0 12px 0; font-size:15px; color:#333;">Si vous souhaitez un <strong>devis personnalisé</strong> avec un plan de financement détaillé :</p>
-<a href="https://assistance-alw9.onrender.com/demande-devis" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000;
-                  text-decoration:none; border-radius:8px; font-weight:bold;">🧾 Demander un devis personnalisé </a></div>
-
-<h3 style="margin-top:25px; font-size:17px; color:#000;">📞 Prochaine étape</h3>
-
-<p>Pour réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique ici :</p>
-
-<p style="text-align:center; margin:20px 0;"><a href="https://calendly.com/integraleacademy/apr" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff;
-                  text-decoration:none; border-radius:8px; font-weight:bold;">📞 Planifier un rendez-vous </a></p>
-
-<p>Je reste à votre disposition pour toute information complémentaire.</p>
-
-<p>Je vous souhaite une excellente journée,<br />
-<br />
-<strong>Clément VAILLANT</strong><br />
-Directeur – Intégrale Academy<br />
-ecole@integraleacademy.com – integraleacademy.com<br />
-📍 54 chemin du Carreou – 83480 Puget-sur-Argens</p>
-</div>
-
-<div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />
-54 chemin du Carreou 83480 PUGET SUR ARGENS / 142 rue de Rivoli 75001 PARIS<br />
-SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />
-UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />
-<a href="https://www.integraleacademy.com" style="color:#0f1f33; text-decoration:none;">integraleacademy.com</a></div>
-</div>
+    <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
+  </div>
 </div>
 </body>
-</html>
-"""
+</html>"""
 
 
 def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
@@ -1147,31 +1163,137 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
 """
 
 
-def build_vtc_email_html(prenom: str, centre_code: str):
-    centre_label, centre_address = _centre_label_and_address(centre_code)
-    return f"""<html style="overflow-y: hidden;">
-<head><title></title></head>
-<body style="height: auto; min-height: auto;">
-<div style="font-family: Arial, sans-serif; max-width:600px; margin:auto; background:#f9f9f9; padding:20px;">
-<div style="background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); overflow:hidden;">
-<div style="text-align:center; padding:20px 20px 10px 20px;"><img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
-<h2 style="color:#000; font-size:18px; margin:10px 0 0 0;">Intégrale Academy</h2></div>
-<div style="background:#F4C45A; padding:12px; text-align:center;"><h3 style="margin:0; font-size:18px; color:#000;">🚗 Formation Chauffeur VTC</h3></div>
-<div style="padding:20px; font-size:15px; color:#333; line-height:1.65;">
-<p>Bonjour {prenom},</p>
-<p>Pour faire suite à votre demande de renseignements, voici les informations détaillées concernant notre <strong>formation Chauffeur VTC</strong>.</p>
-<p style="text-align:center; margin:18px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le dossier de présentation </a></p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">📅 Organisation de la formation</h3>
-<p><strong>Théorie :</strong> 100 % en ligne à distance, accessible 7j/7, démarrage immédiat après inscription.<br />
-<strong>Pratique :</strong> 1/2 journée de mise en situation dans nos locaux <strong>{centre_label}</strong> ({centre_address}).</p>
-<p style="text-align:center; margin:16px 0;"><a href="https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">📅 Consulter les dates des examens </a></p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">💶 Tarif</h3>
-<p><strong>1 650 € TTC – FORMULE TOUT INCLUS</strong></p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">💳 Financement</h3>
-<ul style="padding-left:20px;"><li>CPF</li><li>France Travail</li><li>Financement personnel</li></ul>
-<p style="text-align:center;"><a href="tel:0422470768" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📞 04 22 47 07 68 </a></p>
-<p>Je reste à votre disposition pour toute information complémentaire.<br /><br /><strong>Clément VAILLANT</strong><br />Directeur – Intégrale Academy<br />ecole@integraleacademy.com – integraleacademy.com</p>
-</div></div></div></body></html>"""
+def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
+    return f"""<html style="overflow-y:hidden;">
+<head>
+<title></title>
+<style>
+  .cta-btn {{
+    display:inline-block;
+    padding:12px 20px;
+    text-decoration:none;
+    border-radius:8px;
+    font-weight:bold;
+    transition:transform .18s ease-in-out, box-shadow .18s ease-in-out, filter .18s ease-in-out;
+    animation:ctaPulse 2s ease-in-out infinite;
+  }}
+  .cta-btn--dark {{
+    background:#0f1f33;
+    color:#fff !important;
+    box-shadow:0 6px 18px rgba(15,31,51,.25);
+  }}
+  .cta-btn--gold {{
+    background:#F4C45A;
+    color:#000 !important;
+    box-shadow:0 6px 18px rgba(244,196,90,.35);
+  }}
+  .cta-btn:hover {{
+    transform:translateY(-1px) scale(1.01);
+    filter:brightness(1.04);
+  }}
+  @keyframes ctaPulse {{
+    0%, 100% {{ transform:scale(1); box-shadow:0 6px 18px rgba(15,31,51,.25); }}
+    50% {{ transform:scale(1.03); box-shadow:0 10px 24px rgba(15,31,51,.34); }}
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .cta-btn {{ animation:none !important; transition:none !important; }}
+  }}
+</style>
+</head>
+<body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
+<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
+  <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
+    <div style="text-align:center; padding:24px 20px 8px 20px;">
+      <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
+      <h2 style="color:#000; font-size:22px; margin:12px 0 0 0;">Intégrale Academy</h2>
+    </div>
+
+    <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
+      <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
+      <p style="margin:0 0 14px 0;">Pour faire suite à votre demande de renseignements, nous vous prions de bien vouloir trouver ci-dessous l’ensemble des informations détaillées concernant notre formation <strong>Chauffeur VTC</strong>.</p>
+    </div>
+
+    <div style="padding:8px 20px 22px 20px;">
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
+        <p style="margin:0 0 10px 0;">Vous pouvez consulter l’intégralité du contenu de la formation (programme, organisation, financement, modalités d’examen) en téléchargeant notre dossier de présentation.</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
+        </p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📅 Organisation de la formation</strong></p>
+        <p style="margin:0 0 10px 0;"><strong>Formation théorique :</strong><br />• 100 % en ligne à distance<br />• Accessible 7j/7<br />• Vous démarrez votre formation quand vous le souhaitez, dès validation de votre inscription</p>
+        <p style="margin:0;"><strong>Formation pratique :</strong><br />• 1/2 journée de mise en situation professionnelle<br />• Réalisée dans nos locaux à Puget-sur-Argens (83)<br />• Préparation spécifique à l’examen pratique VTC</p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🗓️ Dates des examens</strong></p>
+        <p style="margin:0 0 12px 0;">Les examens théoriques sont organisés par la Chambre des Métiers pour l’ensemble des candidats de la région PACA.</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Consulter les dates d'examen</a>
+        </p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🧭 Déroulement détaillé de la formation</strong></p>
+        <p style="margin:0 0 8px 0;">Dès validation de votre inscription, nous vous communiquons vos identifiants pour accéder à votre espace de suivi de la formation théorique en ligne.</p>
+        <p style="margin:0 0 8px 0;">Environ 1 mois plus tard, vous passez votre examen théorique organisé par la Chambre des Métiers dans les Bouches-du-Rhône pour tous les candidats de la région PACA.</p>
+        <p style="margin:0 0 8px 0;">Après réussite de l’examen théorique, et quelques jours avant l’examen pratique, nous organisons votre formation pratique dans nos locaux à Puget-sur-Argens (sur une 1/2 journée).</p>
+        <p style="margin:0 0 8px 0;">Vous passez ensuite votre examen pratique à La Valette-du-Var (83) si vous résidez dans le Var, ou à Nice si vous résidez dans les Alpes-Maritimes (06).</p>
+        <p style="margin:0;">En cas de réussite, la Chambre des Métiers vous indique la démarche pour votre demande de carte VTC auprès de la Préfecture.</p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📋 Prérequis</strong></p>
+        <p style="margin:0;">Permis B depuis plus de 3 ans<br />Casier judiciaire vierge</p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif de la formation</strong></p>
+        <p style="margin:0 0 8px 0;"><strong>1 650 € TTC – FORMULE TOUT INCLUS</strong></p>
+        <p style="margin:0;">✔ Formation théorique complète<br />✔ Formation pratique (1/2 journée)<br />✔ Frais d’examen inclus<br />✔ Prêt du véhicule le jour de l’examen</p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>⏱️ Durée</strong></p>
+        <p style="margin:0;">Théorie : environ 100 heures<br />Pratique : 1/2 journée de mise en situation avec le véhicule</p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💳 Financement de votre formation</strong></p>
+        <p style="margin:0 0 8px 0;">Compte Personnel de Formation (CPF)<br />Demande de financement auprès de France Travail (Pôle Emploi)<br />Financement personnel</p>
+        <p style="margin:0;">⚠️ Pour toute demande de financement via le CPF ou France Travail, la création de votre <strong>Identité Numérique La Poste</strong> est obligatoire.</p>
+        <p style="margin:12px 0 0 0; text-align:center;">
+          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
+        </p>
+      </div>
+
+      <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>✅ Documents & prochaine étape</strong></p>
+        <p style="margin:0 0 10px 0; text-align:center;">
+          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Consulter le programme de formation</a>
+        </p>
+        <p style="margin:0 0 10px 0; text-align:center;">
+          <a href="https://www.integraleacademy.com/_files/ugd/008e7b_0e29b04a71dd4dcc9c0f266d28f0514b.pdf" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger notre agrément VTC</a>
+        </p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://calendly.com/integraleacademy/chauffeurvtc" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
+        </p>
+      </div>
+    </div>
+
+    <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
+      <p style="margin:0 0 12px 0;">Je reste à votre disposition pour tous renseignements complémentaires.<br />Je vous souhaite une excellente journée,</p>
+      <p style="margin:0;"><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
+    </div>
+
+    <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
+  </div>
+</div>
+</body>
+</html>"""
 
 
 def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
@@ -2021,11 +2143,13 @@ def demande_informations_formations():
             centre_label, centre_address = _centre_label_and_address(form_data.get("centre", ""))
             plain = (
                 f"Bonjour {prenom},\n\n"
-                "Je fais suite à notre conversation téléphonique concernant notre formation Agent de Protection Physique des Personnes (A3P – Bodyguard), titre reconnu par l’État (RNCP38002 – niveau 4).\n\n"
-                "Durée : 328 heures de formation.\n"
+                "Je fais suite à votre demande de renseignements concernant notre formation Agent de Protection Physique des Personnes (A3P – Bodyguard), titre reconnu par l’État (RNCP38002 – niveau 4).\n"
+                "Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que garde du corps, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle Agent de protection physique des personnes délivrée par le CNAPS (Ministère de l'intérieur).\n\n"
+                "Durée et organisation : 328 heures de formation.\n"
                 + (f"Session : {session_date}\n" if session_date else "")
                 + f"Lieu : {centre_label} — {centre_address}\n\n"
                 "Tarif : 4200 € TTC (financement possible via CPF).\n"
+                "Identité Numérique La Poste requise pour le CPF.\n"
                 "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
                 "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
                 f"Devis détaillé : {devis_url}\n"
@@ -2033,7 +2157,7 @@ def demande_informations_formations():
                 "Je reste à votre disposition pour toute information complémentaire.\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = build_a3p_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""))
+            html = build_a3p_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
             email_subject = "🛡️ Formation Agent de Protection Physique des Personnes (A3P)"
         elif form_data.get("formation") == "APS":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
@@ -2054,20 +2178,25 @@ def demande_informations_formations():
             html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""))
             email_subject = "🛡️ Formation Agent de Sécurité Privée (APS)"
         elif form_data.get("formation") == "VTC":
-            centre_label, centre_address = _centre_label_and_address(form_data.get("centre", ""))
             plain = (
                 f"Bonjour {prenom},\n\n"
-                "Voici les informations détaillées concernant notre formation Chauffeur VTC.\n"
-                f"Centre : {centre_label} — {centre_address}\n"
+                "Pour faire suite à votre demande de renseignements, nous vous prions de bien vouloir trouver ci-dessous l’ensemble des informations détaillées concernant notre formation Chauffeur VTC.\n\n"
+                "Organisation de la formation :\n"
+                "- Théorie 100 % en ligne, accessible 7j/7.\n"
+                "- Pratique : 1/2 journée à Puget-sur-Argens (83).\n\n"
+                "Déroulement : accès e-learning à l'inscription, examen théorique Chambre des Métiers, puis pratique et examen pratique (La Valette-du-Var ou Nice selon résidence).\n\n"
+                "Prérequis : permis B depuis plus de 3 ans et casier judiciaire vierge.\n"
                 "Tarif : 1 650 € TTC (tout inclus).\n"
-                "Théorie : 100 % en ligne. Pratique : 1/2 journée en centre.\n\n"
+                "Durée : théorie ~100h + pratique 1/2 journée.\n\n"
                 "Dossier : https://www.integraleacademy.com/dossiersfc\n"
                 f"Devis détaillé : {devis_url}\n"
                 "Dates examens : https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf\n"
-                "Contact : 04 22 47 07 68\n\n"
+                "Programme : https://www.integraleacademy.com/dossiersfc\n"
+                "Agrément VTC : https://www.integraleacademy.com/_files/ugd/008e7b_0e29b04a71dd4dcc9c0f266d28f0514b.pdf\n"
+                "Prendre rendez-vous : https://calendly.com/integraleacademy/chauffeurvtc\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = build_vtc_email_html(prenom, form_data.get("centre", ""))
+            html = build_vtc_email_html(prenom, form_data.get("centre", ""), devis_url)
             email_subject = "🚗 Formation Chauffeur VTC"
         elif form_data.get("formation") == "DESP_INIT":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
