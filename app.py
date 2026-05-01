@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -2406,45 +2406,47 @@ def api_formation_sessions():
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    body = request.get_json(silent=True) or {}
-    user_message = (body.get("message") or "").strip()
-    if not user_message:
-        return jsonify({"reply": "Pouvez-vous préciser votre question ?"}), 400
-
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 503
-
-    system_prompt = (
-        "Tu es l'assistant officiel d’Intégrale Academy.\n"
-        "Tu aides les visiteurs à choisir une formation.\n"
-        "Tu réponds sur les formations APS, A3P, VTC, Dirigeant, VAE, BTS, financement, devis, inscription, CNAPS et modalités.\n"
-        "Tu es clair, professionnel, rassurant et commercial.\n"
-        "Tu incites naturellement le visiteur à remplir le formulaire de demande d’informations présent sur la page.\n"
-        "Si la personne veut s’inscrire ou avoir un devis, tu lui expliques qu’elle peut compléter le formulaire affiché sur cette page.\n"
-        "Tu ne promets jamais une validation CNAPS certaine.\n"
-        "Tu ne donnes pas de conseil juridique définitif.\n"
-        "Tu réponds en français."
-    )
-
     try:
+        print("=== /api/chat appelé ===", flush=True)
+
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            print("ERREUR: OPENAI_API_KEY absente", flush=True)
+            return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 200
+
+        data = request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        print("Message reçu:", message, flush=True)
+
+        if not message:
+            return jsonify({"reply": "Veuillez écrire une question."}), 200
+
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
+
         response = client.responses.create(
             model="gpt-4.1-mini",
             input=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
+                {
+                    "role": "system",
+                    "content": "Tu es l'assistant officiel d’Intégrale Academy. Tu aides les visiteurs à choisir une formation : APS, A3P, VTC, Dirigeant, VAE, BTS. Tu es clair, professionnel, rassurant et commercial. Tu incites naturellement le visiteur à compléter le formulaire de demande d’informations présent sur la page. Tu réponds en français."
+                },
+                {
+                    "role": "user",
+                    "content": message
+                }
             ],
-            temperature=0.5,
-            max_output_tokens=350,
         )
-        reply = (response.output_text or "").strip()
-        if not reply:
-            reply = "Désolé, l’IA est momentanément indisponible."
-        return jsonify({"reply": reply})
-    except Exception:
-        return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 500
+
+        reply = getattr(response, "output_text", None) or "Désolé, je n’ai pas pu générer de réponse."
+        print("Réponse IA OK", flush=True)
+
+        return jsonify({"reply": reply}), 200
+
+    except Exception as e:
+        print("ERREUR /api/chat:", str(e), flush=True)
+        print(traceback.format_exc(), flush=True)
+        return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 200
 
 
 @app.route("/admin/autosave", methods=["POST"])
