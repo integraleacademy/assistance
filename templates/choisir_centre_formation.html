@@ -458,24 +458,26 @@
     }
 
     async function getRoadRouteMetrics(origin, destination) {
-      const url = `https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?overview=false`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('Impossible de calculer l’itinéraire routier.');
-      const data = await resp.json();
+      const waypoint = `${origin.lon},${origin.lat};${destination.lon},${destination.lat}`;
+      const urls = [
+        `https://router.project-osrm.org/route/v1/driving/${waypoint}?overview=false`,
+        `https://routing.openstreetmap.de/routed-car/route/v1/driving/${waypoint}?overview=false`
+      ];
 
-      // OSRM: routes[0].duration (s), routes[0].distance (m)
-      const osrmRoute = data?.routes?.[0];
-      if (osrmRoute && typeof osrmRoute.duration === 'number' && typeof osrmRoute.distance === 'number') {
-        return { durationSeconds: osrmRoute.duration, distanceMeters: osrmRoute.distance, provider: 'OSRM' };
+      for (const url of urls) {
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) continue;
+          const data = await resp.json();
+          const route = data?.routes?.[0];
+          if (route && typeof route.duration === 'number' && typeof route.distance === 'number') {
+            return { durationSeconds: route.duration, distanceMeters: route.distance, provider: 'OSRM' };
+          }
+        } catch (error) {
+          console.warn(error);
+        }
       }
-
-      // OpenRouteService: features[0].properties.summary.duration (s), distance (m)
-      const orsSummary = data?.features?.[0]?.properties?.summary;
-      if (orsSummary && typeof orsSummary.duration === 'number' && typeof orsSummary.distance === 'number') {
-        return { durationSeconds: orsSummary.duration, distanceMeters: orsSummary.distance, provider: 'OpenRouteService' };
-      }
-
-      throw new Error('Réponse invalide du calcul d’itinéraire routier.');
+      throw new Error('Impossible de calculer l’itinéraire routier.');
     }
 
     async function buildTravelTimes(personLocation, centerCoords) {
@@ -487,12 +489,14 @@
         console.warn(err);
       }
 
+      const calibratedDuration = calibrateRoadDuration(routeMetrics?.durationSeconds);
+
       return {
         distanceMeters: routeMetrics?.distanceMeters ?? null,
-        durationSeconds: calibrateRoadDuration(routeMetrics?.durationSeconds),
+        durationSeconds: calibratedDuration,
         car: {
-          duration: formatDurationFromSeconds(calibrateRoadDuration(routeMetrics?.durationSeconds)),
-          source: null
+          duration: formatDurationFromSeconds(calibratedDuration),
+          source: routeMetrics?.provider ?? null
         },
         plane: {
           duration: transportInfo.nearestAirport ? `Aéroport le plus proche : ${transportInfo.nearestAirport}` : NON_DISPONIBLE,
