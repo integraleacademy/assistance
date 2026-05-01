@@ -145,9 +145,7 @@
       min-width:100%;
       max-width:100%;
       padding:8px;
-      display:flex;
-      flex-direction:column;
-      justify-content:flex-start;
+      display:block;
       overflow:hidden;
       min-height:auto;
       height:auto;
@@ -439,6 +437,12 @@
         </div>
       </section>
 
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
+
       </div><div class="form-step">
       <section class="section" id="step2" data-step="2">
         <h2 class="step-title"><span class="step-num">2</span> Formation souhaitée</h2>
@@ -452,6 +456,12 @@
           <option value="VTC">Chauffeur VTC</option>
         </select>
       </section>
+
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
 
       </div><div class="form-step">
       <section class="section" id="locationSection" data-step="3">
@@ -525,6 +535,12 @@
         </article>
       </section>
 
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
+
       </div><div class="form-step">
       <section class="section" id="step4" data-step="4">
         <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
@@ -536,6 +552,12 @@
         <p class="small-note" id="datesHelp">Les dates proposées s’adaptent selon la formation et le centre choisi.</p>
         <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
       </section>
+
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
 
       </div><div class="form-step">
       <section class="section" id="step5" data-step="5">
@@ -638,12 +660,13 @@
         </div>
       </section>
 
-      </div>
-      </div>
       <div class="nav-actions form-actions">
-        <button type="button" class="close-btn" id="prevBtn">Retour</button>
-        <button type="button" class="retry-btn" id="nextBtn">Suivant</button>
-        <button class="submit hidden" id="submitBtn" type="submit">ENVOYER ✉️</button>
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
+
+      </div>
       </div>
     </form>
     </div>
@@ -698,14 +721,14 @@
     const centreFrameOverlay = document.getElementById('centreFrameOverlay');
     const centreFrameMessage = document.getElementById('centreFrameMessage');
     const retryCentreFrame = document.getElementById('retryCentreFrame');
-    const submitBtn = document.getElementById('submitBtn');
     const stepElements = [1, 2, 3, 4, 5].map((n) => document.querySelector(`[data-step="${n}"]`));
     const progressPills = Array.from(document.querySelectorAll('[data-pill]'));
     const slides = Array.from(document.querySelectorAll('.form-step'));
     const slidesWrap = document.getElementById('slides');
     const progressBar = document.getElementById('progressBar');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
+    const prevBtns = Array.from(document.querySelectorAll('[data-nav="prev"]'));
+    const nextBtns = Array.from(document.querySelectorAll('[data-nav="next"]'));
+    const submitBtns = Array.from(document.querySelectorAll('[data-nav="submit"]'));
     let currentStep = 0;
     let step5ManualIndex = null;
     const step5Cards = Array.from(document.querySelectorAll('#step5 .step5-card'));
@@ -997,11 +1020,14 @@
     function updateStep() {
       slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
-      prevBtn.disabled = currentStep === 0;
+      const activeSlide = slides[currentStep];
+      const activeNextBtn = activeSlide.querySelector('[data-nav="next"]');
+      const activeSubmitBtn = activeSlide.querySelector('[data-nav="submit"]');
       const isLast = currentStep === slides.length - 1;
       const showSubmit = isLast && shouldShowSubmitOnStep5();
-      nextBtn.classList.toggle('hidden', showSubmit);
-      submitBtn.classList.toggle('hidden', !showSubmit);
+      prevBtns.forEach((btn) => { btn.disabled = currentStep === 0; });
+      nextBtns.forEach((btn) => btn.classList.toggle('hidden', btn !== activeNextBtn || showSubmit));
+      submitBtns.forEach((btn) => btn.classList.toggle('hidden', btn !== activeSubmitBtn || !showSubmit));
       stepElements.forEach((step, i) => {
         if (step) step.classList.toggle('active', i === currentStep);
       });
@@ -1142,15 +1168,15 @@
     franceTravail.dispatchEvent(new Event('change'));
     formation.dispatchEvent(new Event('change'));
     updateStep5Flow();
-    prevBtn.addEventListener('click', () => {
+    prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
         step5ManualIndex -= 1;
         updateStep5Flow();
         return;
       }
       goToSlide(currentStep - 1);
-    });
-    nextBtn.addEventListener('click', () => {
+    }));
+    nextBtns.forEach((nextBtn) => nextBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex === 2) {
         if (!identiteNumerique.value) {
           alert('Merci de répondre à cette question avant de continuer.');
@@ -1167,7 +1193,7 @@
         return;
       }
       goToSlide(currentStep + 1);
-    });
+    }));
     currentStep = 0;
     step5ManualIndex = null;
     updateStep();
