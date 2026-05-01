@@ -952,6 +952,12 @@ def build_vae_desp_email_html(prenom, devis_url):
 
 <div style="text-align:center; margin:20px 0;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">📞 Planifier un rendez-vous </a></div>
 
+<div style="margin:22px 0; padding:16px; background:#0f1f33; border-radius:10px; border:1px solid #0f1f33;">
+<h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+<p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />
+pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+<a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy </a></div>
+
 <p>Je reste bien entendu à votre disposition pour tout renseignement complémentaire.</p>
 
 <p>Bien cordialement,<br />
@@ -1172,6 +1178,15 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
           <a href="https://calendly.com/integraleacademy/apr" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
         </p>
       </div>
+
+      <div style="background:#0f1f33; border:1px solid #0f1f33; border-radius:12px; padding:16px; margin-top:12px;">
+        <h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+        <p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy</a>
+        </p>
+      </div>
+
     </div>
 
     <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
@@ -1232,6 +1247,10 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
 </ul>
 <p style="text-align:center; margin:20px 0;"><a href="https://lidentitenumerique.laposte.fr" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">🔐 Identité numérique La Poste </a></p>
 <p style="text-align:center; margin:20px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le Dossier APS </a></p>
+<div style="margin:22px 0 8px 0; padding:16px; background:#0f1f33; border-radius:10px; border:1px solid #0f1f33;">
+<h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+<p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+<a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy </a></div>
 <p>Je reste à votre disposition pour toute information complémentaire.<br /><br /><strong>Clément VAILLANT</strong><br />Directeur – Intégrale Academy<br />ecole@integraleacademy.com – integraleacademy.com</p>
 </div>
 </div>
@@ -1360,6 +1379,7 @@ def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
           <a href="https://calendly.com/integraleacademy/chauffeurvtc" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
         </p>
       </div>
+
     </div>
 
     <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
@@ -1466,6 +1486,14 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
         <p style="margin:0 0 12px 0;">Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique :</p>
         <p style="margin:0; text-align:center;">
           <a href="https://calendly.com/integraleacademy/dirigeant" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
+        </p>
+      </div>
+
+      <div style="background:#0f1f33; border:1px solid #0f1f33; border-radius:12px; padding:16px; margin-top:12px;">
+        <h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+        <p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy</a>
         </p>
       </div>
     </div>
