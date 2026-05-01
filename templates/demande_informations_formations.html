@@ -32,7 +32,8 @@
     }
 
     .wrap{
-      max-width:1040px;
+      max-width:1200px;
+      min-height:92vh;
       margin:0 auto;
       background:var(--white);
       border-radius:24px;
@@ -108,6 +109,11 @@
       flex:0 0 auto;
     }
 
+    .slides{display:flex;transition:transform .45s cubic-bezier(.22,.61,.36,1);}
+    .slide{min-width:100%;padding:8px;display:flex;flex-direction:column;justify-content:center;}
+    .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:6px 0 16px;}
+    .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
+    .nav-actions{display:flex;justify-content:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
     .full{grid-column:1/-1;}
 
@@ -356,6 +362,9 @@
 
     <form method="POST" id="infosForm">
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
+      <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="slides" id="slides">
+      <div class="slide">
 
       <section class="section active" id="step1" data-step="1">
         <h2 class="step-title"><span class="step-num">1</span> Informations générales</h2>
@@ -368,7 +377,8 @@
         </div>
       </section>
 
-      <section class="section hidden" id="step2" data-step="2">
+      </div><div class="slide">
+      <section class="section" id="step2" data-step="2">
         <h2 class="step-title"><span class="step-num">2</span> Formation souhaitée</h2>
         <label for="formation">Au choix</label>
         <select name="formation" id="formation" required>
@@ -381,7 +391,8 @@
         </select>
       </section>
 
-      <section class="section hidden" id="locationSection" data-step="3">
+      </div><div class="slide">
+      <section class="section" id="locationSection" data-step="3">
         <h2 class="step-title"><span class="step-num">3</span> Lieu de formation souhaité 📍</h2>
 
         <div id="simuBox" class="simu-box hidden">
@@ -452,7 +463,8 @@
         </article>
       </section>
 
-      <section class="section hidden" id="step4" data-step="4">
+      </div><div class="slide">
+      <section class="section" id="step4" data-step="4">
         <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
         <label for="datesSelect">Session souhaitée</label>
         <select name="dates" id="datesSelect" required>
@@ -463,7 +475,8 @@
         <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
       </section>
 
-      <section class="section hidden" id="step5" data-step="5">
+      </div><div class="slide">
+      <section class="section" id="step5" data-step="5">
         <h2 class="step-title"><span class="step-num">5</span> Financement de votre formation 💶</h2>
         <div class="step5-track" id="step5Track">
           <div class="step5-card" data-q="1">
@@ -553,7 +566,13 @@
         </div>
       </section>
 
-      <button class="submit hidden" id="submitBtn" type="submit">ENVOYER ✉️</button>
+      </div>
+      </div>
+      <div class="nav-actions">
+        <button type="button" class="close-btn" id="prevBtn">Retour</button>
+        <button type="button" class="retry-btn" id="nextBtn">Suivant</button>
+        <button class="submit hidden" id="submitBtn" type="submit">ENVOYER ✉️</button>
+      </div>
     </form>
   </div>
 
@@ -608,6 +627,12 @@
     const submitBtn = document.getElementById('submitBtn');
     const stepElements = [1, 2, 3, 4, 5].map((n) => document.querySelector(`[data-step="${n}"]`));
     const progressPills = Array.from(document.querySelectorAll('[data-pill]'));
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const slidesWrap = document.getElementById('slides');
+    const progressBar = document.getElementById('progressBar');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    let currentSlide = 0;
     const step5Cards = Array.from(document.querySelectorAll('#step5 .step5-card'));
     const ftRefusSelect = document.getElementById('ftRefusOk');
     const financementPerso = document.getElementById('financementPerso');
@@ -857,25 +882,31 @@
       if (lastVisible) lastVisible.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
     }
 
+    function validateSlide(index) {
+      const fields = slides[index].querySelectorAll('input, select');
+      for (const field of fields) {
+        if (field.required && !field.value) return false;
+      }
+      if (slides[index].contains(mail2) && mail.value.trim().toLowerCase() !== mail2.value.trim().toLowerCase()) return false;
+      return true;
+    }
+
+    function goToSlide(index) {
+      currentSlide = Math.max(0, Math.min(index, slides.length - 1));
+      slidesWrap.style.transform = `translateX(-${currentSlide * 100}%)`;
+      progressBar.style.width = `${((currentSlide + 1) / slides.length) * 100}%`;
+      prevBtn.disabled = currentSlide === 0;
+      const isLast = currentSlide === slides.length - 1;
+      nextBtn.classList.toggle('hidden', isLast);
+      submitBtn.classList.toggle('hidden', !isLast);
+      progressPills.forEach((pill, i) => {
+        pill.classList.toggle('done', i < currentSlide);
+        pill.classList.toggle('active', i === currentSlide);
+      });
+    }
+
     function updateStepReveal() {
-      const stepChecks = [isStep1Complete(), isStep2Complete(), isStep3Complete(), isStep4Complete()];
-      const firstIncomplete = stepChecks.findIndex((ok) => !ok);
-      const activeStep = firstIncomplete === -1 ? 5 : firstIncomplete + 1;
-      const maxVisibleStep = activeStep;
-
-      stepElements.forEach((el, idx) => {
-        const stepNumber = idx + 1;
-        const isVisible = stepNumber <= maxVisibleStep;
-        el.classList.toggle('hidden', !isVisible);
-        el.classList.toggle('active', stepNumber === activeStep);
-      });
-
-      submitBtn.classList.toggle('hidden', maxVisibleStep < 5);
-      progressPills.forEach((pill, idx) => {
-        const stepNumber = idx + 1;
-        pill.classList.toggle('done', stepNumber < activeStep);
-        pill.classList.toggle('active', stepNumber === activeStep);
-      });
+      // conservé pour compatibilité avec les listeners existants
     }
 
     datesSelect.addEventListener('change', () => {
@@ -974,7 +1005,15 @@
     franceTravail.dispatchEvent(new Event('change'));
     formation.dispatchEvent(new Event('change'));
     updateStep5Flow();
-    updateStepReveal();
+    prevBtn.addEventListener('click', () => goToSlide(currentSlide - 1));
+    nextBtn.addEventListener('click', () => {
+      if (!validateSlide(currentSlide)) {
+        alert('Merci de compléter cette étape avant de continuer.');
+        return;
+      }
+      goToSlide(currentSlide + 1);
+    });
+    goToSlide(0);
 
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
     openSimu.addEventListener('click', openCentreModal);
