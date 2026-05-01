@@ -400,6 +400,12 @@
       .location-copy{font-size:16px;}
       .help-copy{font-size:18px;}
     }
+
+    .chat-fab{
+      position:fixed;right:16px;bottom:16px;z-index:70;border:none;cursor:pointer;
+      border-radius:999px;padding:12px 16px;background:linear-gradient(135deg,#0ea5e9,#2563eb);
+      color:#fff;font-weight:800;font-size:14px;box-shadow:0 10px 24px rgba(37,99,235,.35);
+    }
   </style>
 </head>
 <body>
@@ -687,6 +693,13 @@
       </div>
     </div>
   </div>
+
+  <a
+    class="chat-fab"
+    href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy"
+    target="_blank"
+    rel="noopener noreferrer"
+  >💬 Besoin d’aide ?</a>
 
   <script>
     const form = document.getElementById('infosForm');
@@ -1271,6 +1284,7 @@
     openSimu.addEventListener('click', openCentreModal);
     document.getElementById('closeModal').addEventListener('click', closeCentreModal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeCentreModal(); });
+
   </script>
 </body>
 </html>

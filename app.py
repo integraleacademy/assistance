@@ -1,6 +1,6 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -2401,6 +2401,59 @@ def confirmation_demande_infos():
 def api_formation_sessions():
     data_store = load_data()
     return get_formation_sessions(data_store)
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    try:
+        print("=== /api/chat appelé ===", flush=True)
+
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            print("ERREUR: OPENAI_API_KEY absente", flush=True)
+            return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 200
+
+        data = request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        print("Message reçu:", message, flush=True)
+
+        if not message:
+            return jsonify({"reply": "Veuillez écrire une question."}), 200
+
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, timeout=20)
+
+        print("Appel OpenAI en cours...", flush=True)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Tu es l'assistant officiel d’Intégrale Academy. Tu réponds aux prospects sur les formations APS, A3P, A3P garde du corps, VTC, Dirigeant, VAE, BTS, financement, devis, inscription, CNAPS et modalités. Tu réponds en français, de façon claire, rassurante et commerciale. Tu incites naturellement à compléter le formulaire de demande d’informations présent sur la page. Si on te demande une date précise que tu ne connais pas, tu invites à compléter le formulaire pour recevoir les prochaines dates."
+                },
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ],
+            max_tokens=400,
+            temperature=0.4
+        )
+        print("Appel OpenAI terminé", flush=True)
+
+        reply = ""
+        if getattr(response, "choices", None) and response.choices[0].message:
+            reply = response.choices[0].message.content or ""
+        if not reply:
+            reply = "Désolé, je n’ai pas pu générer de réponse."
+        print("Réponse IA OK", flush=True)
+
+        return jsonify({"reply": reply}), 200
+
+    except Exception as e:
+        print("ERREUR /api/chat:", str(e), flush=True)
+        print(traceback.format_exc(), flush=True)
+        return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 200
 
 
 @app.route("/admin/autosave", methods=["POST"])
