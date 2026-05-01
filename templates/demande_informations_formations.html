@@ -1024,6 +1024,40 @@
       return currentStep === 4 && step5ManualIndex === 4;
     }
 
+    function canAdvanceStep5() {
+      if (step5ManualIndex === 0) {
+        return !!cpfConsulte.value && (cpfConsulte.value !== 'OUI' || !!cpfMontant.value.trim());
+      }
+
+      if (step5ManualIndex === 1) {
+        return isStep5Question2Complete();
+      }
+
+      if (step5ManualIndex === 2) {
+        return !!identiteNumerique.value;
+      }
+
+      if (step5ManualIndex === 3) {
+        return blocCnaps.classList.contains('hidden') || !!(titreSejourSelect && titreSejourSelect.value);
+      }
+
+      return true;
+    }
+
+    function goNextStep5() {
+      if (!canAdvanceStep5()) {
+        alert('Merci de répondre à cette question avant de continuer.');
+        return;
+      }
+
+      if (step5ManualIndex < 4) {
+        step5ManualIndex += 1;
+        updateStep5Flow();
+        updateStep();
+        scrollToFormTop();
+      }
+    }
+
     function updateStep() {
       slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
@@ -1200,18 +1234,11 @@
       goToSlide(currentStep - 1);
     }));
     nextBtns.forEach((nextBtn) => nextBtn.addEventListener('click', () => {
-      if (currentStep === 4 && step5ManualIndex === 2) {
-        if (!identiteNumerique.value) {
-          alert('Merci de répondre à cette question avant de continuer.');
-          return;
-        }
-        step5ManualIndex += 1;
-        updateStep5Flow();
-        updateStep();
-        scrollToFormTop();
+      if (currentStep === 4) {
+        goNextStep5();
         return;
       }
-      if (currentStep === 4) return;
+
       if (!validateSlide(currentStep)) {
         alert('Merci de compléter cette étape avant de continuer.');
         return;
