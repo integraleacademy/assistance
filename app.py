@@ -18,6 +18,60 @@ from flask import session, flash
 
 import calendar
 from datetime import date as _date
+import requests
+
+SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8"
+SALESFORCE_OID = "00DJ9000000PT9F"
+
+def creer_piste_salesforce(form):
+    print("FORMULAIRE RECU:", dict(form))
+    description = "\n".join([
+        f"{key} : {value}"
+        for key, value in form.items()
+    ])
+
+    centre = form.get("centre", "")
+    if centre == "cote_azur":
+        lieu = "Côte d'Azur"
+    elif centre == "paris":
+        lieu = "Paris"
+    elif centre == "aurillac":
+        lieu = "Aurillac"
+    else:
+        lieu = centre
+
+    payload = {
+        "oid": SALESFORCE_OID,
+        "retURL": "https://assistance-alw9.onrender.com/confirmation-demande-informations",
+        "first_name": form.get("prenom", ""),
+        "last_name": form.get("nom", "Sans nom"),
+        "email": form.get("mail", ""),
+        "phone": form.get("telephone", ""),
+        "mobile": form.get("telephone", ""),
+        "company": "Particulier",
+        "lead_source": "Website",
+        "industry": "Education",
+        "00NSa00000G2PxB": form.get("formation", ""),
+        "00NSa00000KDPOT": lieu,
+        "00NSa00000GcJMz": form.get("cpf_consulte", ""),
+        "00NSa00000GcJd7": form.get("cpf_montant", ""),
+        "00NSa00000GcJlB": form.get("cnaps_ok", ""),
+        "00NSa00000GcJtF": form.get("garde_vue", ""),
+        "00NSa00000GcJzh": form.get("identite_numerique", ""),
+        "00NSa00000GcK2v": form.get("identite_numerique", ""),
+        "00NSa00000GcK9N": form.get("ft_refus_ok", ""),
+        "00NSa00000GcKxN": form.get("dates", ""),
+        "00NSa00000GcK4X": form.get("france_travail", ""),
+        "00NSa00000GcQl3": form.get("financement_perso", ""),
+        "description": description
+    }
+
+    try:
+        response = requests.post(SALESFORCE_URL, data=payload, timeout=10)
+        print("SALESFORCE STATUS:", response.status_code)
+        print("SALESFORCE RESPONSE:", response.text[:500])
+    except Exception as e:
+        print("Erreur envoi Salesforce:", e)
 
 def _add_one_month(d: _date) -> _date:
     y = d.year + (1 if d.month == 12 else 0)
@@ -1995,6 +2049,7 @@ def demande_informations_formations():
 
     if request.method == "POST":
         form_data = request.form.to_dict()
+        creer_piste_salesforce(request.form)
         form_data["gclid"] = (form_data.get("gclid") or "").strip()
 
         prospect_chaud = (
