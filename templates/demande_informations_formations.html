@@ -740,6 +740,12 @@
     const titreSejourSelect = form.querySelector('select[name="titre_sejour"]');
 
     const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
+
+    function getAllowedCentresForFormation(formationCode) {
+      if (formationCode === 'DESP_INIT') return ['cote_azur', 'auvergne', 'paris'];
+      if (formationCode === 'A3P') return ['cote_azur', 'auvergne'];
+      return ['cote_azur'];
+    }
     const CENTRE_FRAME_TIMEOUT_MS = 4500;
     let centreFrameTimeout = null;
 
@@ -823,11 +829,13 @@
     }
 
     function reloadCentreFrame() {
+      const formationCode = formation.value;
+      const allowedCentres = getAllowedCentresForFormation(formationCode).join(',');
       clearCentreFrameTimeout();
       showCentreFrameOverlay('Chargement du simulateur…');
       centreFrame.removeAttribute('src');
       window.requestAnimationFrame(() => {
-        centreFrame.setAttribute('src', `${CENTRE_FRAME_SRC}?reload=${Date.now()}`);
+        centreFrame.setAttribute('src', `${CENTRE_FRAME_SRC}?reload=${Date.now()}&formation=${encodeURIComponent(formationCode || '')}&allowed_centres=${encodeURIComponent(allowedCentres)}`);
       });
       centreFrameTimeout = window.setTimeout(() => {
         showCentreFrameOverlay('Le simulateur ne s’affiche pas pour le moment.', true);
@@ -1177,7 +1185,8 @@
       }
 
       if (data.type !== 'centre-selected') return;
-      if (!['cote_azur', 'auvergne', 'paris'].includes(data.centre)) return;
+      const allowedCentres = getAllowedCentresForFormation(formation.value);
+      if (!allowedCentres.includes(data.centre)) return;
 
       const targetRadio = form.querySelector(`input[name="centre"][value="${data.centre}"]`);
       if (!targetRadio || targetRadio.closest('.hidden')) return;
