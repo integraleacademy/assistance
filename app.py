@@ -843,8 +843,8 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         return False
 
 
-def build_vae_desp_email_html():
-    return """<html style="overflow-y: hidden;">
+def build_vae_desp_email_html(prenom, devis_url):
+    return f"""<html style="overflow-y: hidden;">
 <head>
     <title></title>
 </head>
@@ -860,9 +860,9 @@ def build_vae_desp_email_html():
 </div>
 
 <div style="padding:25px; font-size:15px; color:#333; line-height:1.7;">
-<p>Bonjour,</p>
+<p>Bonjour <strong>{prenom}</strong>,</p>
 
-<p>Je fais suite à notre échange concernant la <strong>Validation des Acquis de l’Expérience (VAE)</strong> du titre <strong>RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée</strong>, délivré par notre centre de formation Intégrale Academy.</p>
+<p>Je fais suite à votre demande de renseignements concernant la <strong>Validation des Acquis de l’Expérience (VAE)</strong> du titre <strong>RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée</strong>, délivré par notre centre de formation Intégrale Academy.</p>
 
 <p>La VAE vous permet d’obtenir un <strong>titre reconnu par l’État (niveau 5 – Bac+2)</strong> sur la base de votre expérience professionnelle dans la sécurité privée ainsi que de vos fonctions de direction, de management et de gestion d’entreprise.</p>
 
@@ -943,7 +943,7 @@ def build_vae_desp_email_html():
 
 <div style="margin:25px 0; padding:18px; background:#f5f5f5; border-radius:10px; text-align:center; border:1px solid #e4e4e4;">
 <p style="margin:0 0 12px 0; font-size:15px; color:#333;">Besoin d’un <strong>devis personnalisé</strong> avec plan de financement ?</p>
-<a href="https://assistance-alw9.onrender.com/demande-devis" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">🧾 Demander un devis personnalisé </a></div>
+<a href="{devis_url}" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger votre devis détaillé </a></div>
 
 <hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
 <h3 style="color:#000;">📞 Échanger avec nous</h3>
@@ -951,6 +951,12 @@ def build_vae_desp_email_html():
 <p>Vous pouvez planifier un rendez-vous téléphonique pour faire le point sur votre situation :</p>
 
 <div style="text-align:center; margin:20px 0;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">📞 Planifier un rendez-vous </a></div>
+
+<div style="margin:22px 0; padding:16px; background:#0f1f33; border-radius:10px; border:1px solid #0f1f33;">
+<h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+<p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />
+pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+<a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy </a></div>
 
 <p>Je reste bien entendu à votre disposition pour tout renseignement complémentaire.</p>
 
@@ -1172,6 +1178,15 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
           <a href="https://calendly.com/integraleacademy/apr" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
         </p>
       </div>
+
+      <div style="background:#0f1f33; border:1px solid #0f1f33; border-radius:12px; padding:16px; margin-top:12px;">
+        <h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+        <p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy</a>
+        </p>
+      </div>
+
     </div>
 
     <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
@@ -1232,6 +1247,10 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
 </ul>
 <p style="text-align:center; margin:20px 0;"><a href="https://lidentitenumerique.laposte.fr" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">🔐 Identité numérique La Poste </a></p>
 <p style="text-align:center; margin:20px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le Dossier APS </a></p>
+<div style="margin:22px 0 8px 0; padding:16px; background:#0f1f33; border-radius:10px; border:1px solid #0f1f33;">
+<h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+<p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+<a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy </a></div>
 <p>Je reste à votre disposition pour toute information complémentaire.<br /><br /><strong>Clément VAILLANT</strong><br />Directeur – Intégrale Academy<br />ecole@integraleacademy.com – integraleacademy.com</p>
 </div>
 </div>
@@ -1360,6 +1379,7 @@ def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
           <a href="https://calendly.com/integraleacademy/chauffeurvtc" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
         </p>
       </div>
+
     </div>
 
     <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
@@ -1466,6 +1486,14 @@ def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, de
         <p style="margin:0 0 12px 0;">Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique :</p>
         <p style="margin:0; text-align:center;">
           <a href="https://calendly.com/integraleacademy/dirigeant" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
+        </p>
+      </div>
+
+      <div style="background:#0f1f33; border:1px solid #0f1f33; border-radius:12px; padding:16px; margin-top:12px;">
+        <h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
+        <p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
+        <p style="margin:0; text-align:center;">
+          <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy</a>
         </p>
       </div>
     </div>
@@ -2209,13 +2237,16 @@ def demande_informations_formations():
 
         if form_data.get("formation") == "DESP_VAE":
             plain = (
-                "Bonjour,\n\n"
-                "Merci pour votre intérêt concernant la VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
-                "Vous pouvez démarrer votre parcours ici : https://gestionstagiaires-r5no.onrender.com/vae-desp\n\n"
-                "Bien cordialement,\n"
-                "Intégrale Academy"
+                f"Bonjour {prenom},\n\n"
+                "Je fais suite à votre demande de renseignements concernant notre VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
+                "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+                f"Télécharger votre devis détaillé : {devis_url}\n"
+                "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
+                "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
+                "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
+                "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = build_vae_desp_email_html()
+            html = build_vae_desp_email_html(prenom, devis_url)
             email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
         elif form_data.get("formation") == "A3P":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
