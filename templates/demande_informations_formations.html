@@ -31,13 +31,7 @@
       padding:0;
     }
 
-    .form-shell{
-      min-height:100vh;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:24px;
-    }
+    .form-shell{padding:24px;}
 
     .wrap{
       max-width:1200px;
@@ -51,6 +45,11 @@
       width:100%;
       max-width:1200px;
       padding:32px;
+      min-height:auto;
+      background:#fff;
+      opacity:1;
+      filter:none;
+      backdrop-filter:none;
     }
 
     .brand{
@@ -136,6 +135,7 @@
       width:100%;
       transition:transform .45s ease;
       will-change:transform;
+      align-items:flex-start;
     }
     .form-step{
       flex:0 0 100%;
@@ -147,10 +147,20 @@
       flex-direction:column;
       justify-content:flex-start;
       overflow:hidden;
+      min-height:auto;
+      align-self:flex-start;
     }
     .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:0 0 12px;}
     .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
-    .nav-actions{display:flex;justify-content:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
+    .nav-actions,.form-actions{
+      margin-top:28px;
+      display:flex;
+      justify-content:center;
+      gap:12px;
+      flex-wrap:wrap;
+      position:static;
+      bottom:auto;
+    }
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
     .full{grid-column:1/-1;}
 
@@ -333,8 +343,16 @@
     .progress-pill{flex:1 1 140px;min-width:120px;padding:10px 12px;border-radius:999px;background:#e2e8f0;color:#475569;font-weight:700;font-size:14px;text-align:center;transition:.25s ease;}
     .progress-pill.active{background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;box-shadow:0 8px 18px rgba(37,99,235,.26)}
     .progress-pill.done{background:#dcfce7;color:#166534}
-    .section{opacity:.62;transform:translateY(10px);transition:opacity .25s ease,transform .25s ease;}
-    .section.active{opacity:1;transform:translateY(0);}
+    .section{
+      opacity:1;
+      transform:none;
+      transition:none;
+      background:#fff;
+      filter:none;
+      backdrop-filter:none;
+      padding:28px;
+      border-radius:18px;
+    }
     .step5-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:14px;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
     .step5-card{scroll-snap-align:start;min-width:100%;background:#fff;border:1px solid #dbeafe;border-radius:14px;padding:16px;}
 
@@ -607,7 +625,7 @@
 
       </div>
       </div>
-      <div class="nav-actions">
+      <div class="nav-actions form-actions">
         <button type="button" class="close-btn" id="prevBtn">Retour</button>
         <button type="button" class="retry-btn" id="nextBtn">Suivant</button>
         <button class="submit hidden" id="submitBtn" type="submit">ENVOYER ✉️</button>
@@ -932,11 +950,18 @@
 
     function updateStep() {
       slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
+      const activeSlide = slides[currentStep];
+      if (activeSlide) {
+        slidesWrap.style.height = `${activeSlide.offsetHeight}px`;
+      }
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
       prevBtn.disabled = currentStep === 0;
       const isLast = currentStep === slides.length - 1;
       nextBtn.classList.toggle('hidden', isLast);
       submitBtn.classList.toggle('hidden', !isLast);
+      stepElements.forEach((step, i) => {
+        if (step) step.classList.toggle('active', i === currentStep);
+      });
       progressPills.forEach((pill, i) => {
         pill.classList.toggle('done', i < currentStep);
         pill.classList.toggle('active', i === currentStep);
@@ -1057,6 +1082,7 @@
     });
     currentStep = 0;
     updateStep();
+    window.addEventListener('resize', updateStep);
 
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
     openSimu.addEventListener('click', openCentreModal);
