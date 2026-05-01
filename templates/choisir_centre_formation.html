@@ -299,6 +299,17 @@
 
     const CENTER_LIST = [CENTER_COTE_AZUR, CENTER_AUVERGNE, CENTER_PARIS];
 
+    function getAllowedCentersFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const raw = (params.get('allowed_centres') || '').trim();
+      if (!raw) return CENTER_LIST;
+      const allowed = new Set(raw.split(',').map((value) => value.trim()).filter(Boolean));
+      const filtered = CENTER_LIST.filter((center) => allowed.has(center.key === 'cote-azur' ? 'cote_azur' : center.key));
+      return filtered.length ? filtered : CENTER_LIST;
+    }
+
+    const ACTIVE_CENTER_LIST = getAllowedCentersFromQuery();
+
     const CENTER_TRANSPORT_INFO = {
       [CENTER_COTE_AZUR.key]: {
         nearestStation: 'Saint-Raphaël Valescure',
@@ -350,7 +361,7 @@
     }
 
     function getCenterByKey(centerKey) {
-      return CENTER_LIST.find((center) => center.key === centerKey) || null;
+      return ACTIVE_CENTER_LIST.find((center) => center.key === centerKey) || null;
     }
 
     function getCenterBenefits(center) {
@@ -421,7 +432,7 @@
       resultBox.style.display = 'block';
 
       const alternatives = sortCentersByDistance(
-        CENTER_LIST.filter((center) => center.key !== recommendedCenter.key)
+        ACTIVE_CENTER_LIST.filter((center) => center.key !== recommendedCenter.key)
       );
       selectionBox.innerHTML = alternatives.map((alternativeCenter) => `<div class="selection">${renderCenterDetails(alternativeCenter, {
         badge: '✨ Autre alternative proposée',
@@ -598,7 +609,7 @@
         locationBox.style.display = 'block';
 
         const centerCoordsResults = await Promise.allSettled(
-          CENTER_LIST.map(async (center) => {
+          ACTIVE_CENTER_LIST.map(async (center) => {
             const coords = await geocodeAddress(center.address);
             const travel = await buildTravelTimes(personLocation, { ...coords, key: center.key });
             return [center.key, travel];
@@ -619,7 +630,7 @@
         );
 
         const availableCenters = sortCentersByDistance(
-          CENTER_LIST.filter((center) => latestTravelTimes[center.key])
+          ACTIVE_CENTER_LIST.filter((center) => latestTravelTimes[center.key])
         );
 
         distancesBox.innerHTML = availableCenters.map((center) => `
