@@ -843,8 +843,8 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         return False
 
 
-def build_vae_desp_email_html():
-    return """<html style="overflow-y: hidden;">
+def build_vae_desp_email_html(prenom, devis_url):
+    return f"""<html style="overflow-y: hidden;">
 <head>
     <title></title>
 </head>
@@ -860,9 +860,9 @@ def build_vae_desp_email_html():
 </div>
 
 <div style="padding:25px; font-size:15px; color:#333; line-height:1.7;">
-<p>Bonjour,</p>
+<p>Bonjour <strong>{prenom}</strong>,</p>
 
-<p>Je fais suite à notre échange concernant la <strong>Validation des Acquis de l’Expérience (VAE)</strong> du titre <strong>RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée</strong>, délivré par notre centre de formation Intégrale Academy.</p>
+<p>Je fais suite à votre demande de renseignements concernant la <strong>Validation des Acquis de l’Expérience (VAE)</strong> du titre <strong>RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée</strong>, délivré par notre centre de formation Intégrale Academy.</p>
 
 <p>La VAE vous permet d’obtenir un <strong>titre reconnu par l’État (niveau 5 – Bac+2)</strong> sur la base de votre expérience professionnelle dans la sécurité privée ainsi que de vos fonctions de direction, de management et de gestion d’entreprise.</p>
 
@@ -943,7 +943,7 @@ def build_vae_desp_email_html():
 
 <div style="margin:25px 0; padding:18px; background:#f5f5f5; border-radius:10px; text-align:center; border:1px solid #e4e4e4;">
 <p style="margin:0 0 12px 0; font-size:15px; color:#333;">Besoin d’un <strong>devis personnalisé</strong> avec plan de financement ?</p>
-<a href="https://assistance-alw9.onrender.com/demande-devis" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">🧾 Demander un devis personnalisé </a></div>
+<a href="{devis_url}" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger votre devis détaillé </a></div>
 
 <hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
 <h3 style="color:#000;">📞 Échanger avec nous</h3>
@@ -2209,13 +2209,16 @@ def demande_informations_formations():
 
         if form_data.get("formation") == "DESP_VAE":
             plain = (
-                "Bonjour,\n\n"
-                "Merci pour votre intérêt concernant la VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
-                "Vous pouvez démarrer votre parcours ici : https://gestionstagiaires-r5no.onrender.com/vae-desp\n\n"
-                "Bien cordialement,\n"
-                "Intégrale Academy"
+                f"Bonjour {prenom},\n\n"
+                "Je fais suite à votre demande de renseignements concernant notre VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
+                "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+                f"Télécharger votre devis détaillé : {devis_url}\n"
+                "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
+                "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
+                "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
+                "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = build_vae_desp_email_html()
+            html = build_vae_desp_email_html(prenom, devis_url)
             email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
         elif form_data.get("formation") == "A3P":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
