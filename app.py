@@ -58,8 +58,6 @@ def creer_piste_salesforce(form):
     payload = {
         "oid": SALESFORCE_OID,
         "retURL": "https://assistance-alw9.onrender.com/confirmation-demande-informations",
-        "debug": "1",
-        "debugEmail": "ecole@integraleacademy.com",
         "first_name": form.get("prenom", ""),
         "last_name": form.get("nom", "Sans nom"),
         "email": form.get("mail", ""),
@@ -84,6 +82,7 @@ def creer_piste_salesforce(form):
     }
 
     try:
+        print("ENVOI SALESFORCE PRODUCTION SANS DEBUG")
         print("SALESFORCE PAYLOAD:", payload)
         response = requests.post(SALESFORCE_URL, data=payload, timeout=10)
         print("SALESFORCE STATUS:", response.status_code)
