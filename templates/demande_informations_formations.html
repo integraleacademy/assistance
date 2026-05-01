@@ -974,6 +974,7 @@
       return false;
     }
     function updateStep5Flow() {
+      const previousIndex = step5ManualIndex;
       const q1Done = !!cpfConsulte.value && (cpfConsulte.value !== 'OUI' || !!cpfMontant.value.trim());
       const q2Done = q1Done && isStep5Question2Complete();
       const q3Done = q2Done && !!identiteNumerique.value;
@@ -991,7 +992,12 @@
       const vis = [0, 1, 2, 3, 4].map((i) => i === step5ManualIndex);
       step5Cards.forEach((card, i) => card.classList.toggle('hidden', !vis[i]));
       updateCnapsFlow();
-      if (currentStep === 4) updateStep();
+      if (currentStep === 4) {
+        updateStep();
+        if (previousIndex !== null && previousIndex !== step5ManualIndex) {
+          scrollToFormTop();
+        }
+      }
     }
 
     function updateCnapsFlow() {
@@ -1039,6 +1045,22 @@
     function goToSlide(index) {
       currentStep = Math.max(0, Math.min(index, slides.length - 1));
       updateStep();
+      scrollToFormTop();
+    }
+
+    function scrollToFormTop() {
+      const formShell = document.querySelector('.form-shell');
+      if (formShell && typeof formShell.scrollIntoView === 'function') {
+        formShell.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+        return;
+      }
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
     }
 
     function updateStepReveal() {
@@ -1172,6 +1194,7 @@
       if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
         step5ManualIndex -= 1;
         updateStep5Flow();
+        scrollToFormTop();
         return;
       }
       goToSlide(currentStep - 1);
@@ -1185,6 +1208,7 @@
         step5ManualIndex += 1;
         updateStep5Flow();
         updateStep();
+        scrollToFormTop();
         return;
       }
       if (currentStep === 4) return;
