@@ -153,16 +153,11 @@
     .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:0 0 12px;}
     .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
     .nav-actions,.form-actions{
-      margin-top:28px;
+      margin-top:24px;
       display:flex;
       justify-content:center;
       gap:12px;
       flex-wrap:wrap;
-      position:sticky;
-      bottom:0;
-      z-index:5;
-      background:#fff;
-      padding-top:10px;
     }
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
     .full{grid-column:1/-1;}
@@ -989,13 +984,20 @@
       return true;
     }
 
+    function shouldShowSubmitOnStep5() {
+      if (currentStep !== 4) return false;
+      const devisVisible = devisQuestion && !devisQuestion.classList.contains('hidden');
+      return !!devisVisible;
+    }
+
     function updateStep() {
       slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
       prevBtn.disabled = currentStep === 0;
       const isLast = currentStep === slides.length - 1;
-      nextBtn.classList.remove('hidden');
-      submitBtn.classList.toggle('hidden', !isLast);
+      const showSubmit = isLast && shouldShowSubmitOnStep5();
+      nextBtn.classList.toggle('hidden', showSubmit);
+      submitBtn.classList.toggle('hidden', !showSubmit);
       stepElements.forEach((step, i) => {
         if (step) step.classList.toggle('active', i === currentStep);
       });
@@ -1010,7 +1012,7 @@
     }
 
     function updateStepReveal() {
-      // conservé pour compatibilité avec les listeners existants
+      updateStep();
     }
 
     datesSelect.addEventListener('change', () => {
@@ -1024,9 +1026,6 @@
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
       loadDates();
       updateStepReveal();
-      if (currentStep === 1 && formation.value) {
-        goToSlide(2);
-      }
     });
 
     document.addEventListener('change', (e) => {
@@ -1046,6 +1045,27 @@
       if (['ftRefusOk', 'financementPerso'].includes(e.target.id)) {
         updateStep5Flow();
         updateStepReveal();
+      }
+
+      if (currentStep === 4) {
+        const activeCard = step5Cards[step5ManualIndex ?? 0];
+        const autoAdvanceTargets = ['cpfConsulte', 'cpfMontant', 'franceTravail', 'ftRefusOk', 'financementPerso', 'cnaps_ok', 'garde_vue', 'titre_sejour'];
+        if (autoAdvanceTargets.includes(e.target.id || e.target.name)) {
+          if (step5ManualIndex === 0) {
+            const q1Done = !!cpfConsulte.value && (cpfConsulte.value !== 'OUI' || !!cpfMontant.value.trim());
+            if (q1Done) {
+              step5ManualIndex = 1;
+              updateStep5Flow();
+            }
+          } else if (step5ManualIndex === 1) {
+            if (isStep5Question2Complete()) {
+              step5ManualIndex = 2;
+              updateStep5Flow();
+            }
+          } else if (step5ManualIndex === 3 && activeCard && devisQuestion && !devisQuestion.classList.contains('hidden')) {
+            updateStep();
+          }
+        }
       }
     });
     document.addEventListener('input', (e) => {
@@ -1124,11 +1144,17 @@
       goToSlide(currentStep - 1);
     });
     nextBtn.addEventListener('click', () => {
-      if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex < 3) {
+      if (currentStep === 4 && step5ManualIndex === 2) {
+        if (!identiteNumerique.value) {
+          alert('Merci de répondre à cette question avant de continuer.');
+          return;
+        }
         step5ManualIndex += 1;
         updateStep5Flow();
+        updateStep();
         return;
       }
+      if (currentStep === 4) return;
       if (!validateSlide(currentStep)) {
         alert('Merci de compléter cette étape avant de continuer.');
         return;
