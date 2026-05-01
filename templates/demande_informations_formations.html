@@ -128,7 +128,9 @@
       width:100%;
       max-width:900px;
       overflow:hidden;
-      margin:32px auto 0;
+      margin:24px auto 0;
+      height:auto;
+      min-height:auto;
     }
     .steps-track{
       display:flex;
@@ -148,12 +150,13 @@
       justify-content:flex-start;
       overflow:hidden;
       min-height:auto;
+      height:auto;
       align-self:flex-start;
     }
     .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:0 0 12px;}
     .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
     .nav-actions,.form-actions{
-      margin-top:24px;
+      margin-top:20px;
       display:flex;
       justify-content:center;
       gap:14px;
@@ -352,6 +355,7 @@
       backdrop-filter:none;
       padding:28px;
       border-radius:18px;
+      margin-bottom:0;
     }
     .step5-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:14px;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
     .step5-card{scroll-snap-align:start;min-width:100%;background:#fff;border:1px solid #dbeafe;border-radius:14px;padding:16px;}
@@ -624,10 +628,12 @@
 
           </div>
           <div class="step5-card hidden" data-q="5">
-            <label class="checkbox-row" id="devisQuestion">
-              <input type="checkbox" name="souhaite_devis" value="OUI">
-              Souhaitez-vous recevoir un devis détaillé ?
-            </label>
+            <label for="souhaiteDevis">Souhaitez-vous recevoir un devis détaillé ?</label>
+            <select name="souhaite_devis" id="souhaiteDevis" required>
+              <option value="">— Sélectionnez —</option>
+              <option value="OUI">OUI</option>
+              <option value="NON">NON</option>
+            </select>
           </div>
         </div>
       </section>
@@ -709,7 +715,6 @@
     const cnapsOkSelect = form.querySelector('select[name="cnaps_ok"]');
     const gardeVueSelect = form.querySelector('select[name="garde_vue"]');
     const titreSejourSelect = form.querySelector('select[name="titre_sejour"]');
-    const devisQuestion = document.getElementById('devisQuestion');
 
     const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
     const CENTRE_FRAME_TIMEOUT_MS = 4500;
@@ -986,9 +991,7 @@
     }
 
     function shouldShowSubmitOnStep5() {
-      if (currentStep !== 4) return false;
-      const devisVisible = devisQuestion && !devisQuestion.classList.contains('hidden');
-      return !!devisVisible;
+      return currentStep === 4 && step5ManualIndex === 4;
     }
 
     function updateStep() {
@@ -1049,7 +1052,6 @@
       }
 
       if (currentStep === 4) {
-        const activeCard = step5Cards[step5ManualIndex ?? 0];
         const autoAdvanceTargets = ['cpfConsulte', 'cpfMontant', 'franceTravail', 'ftRefusOk', 'financementPerso', 'cnaps_ok', 'garde_vue', 'titre_sejour'];
         if (autoAdvanceTargets.includes(e.target.id || e.target.name)) {
           if (step5ManualIndex === 0) {
@@ -1069,8 +1071,6 @@
               step5ManualIndex = 4;
               updateStep5Flow();
             }
-          } else if (step5ManualIndex === 4 && activeCard && devisQuestion && !devisQuestion.classList.contains('hidden')) {
-            updateStep();
           }
         }
       }
