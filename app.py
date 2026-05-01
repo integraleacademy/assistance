@@ -2460,7 +2460,41 @@ def admin_devis_formulaires():
 
     formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
 
-    return render_template("admin_devis_formulaires.html", formulaires=formulaires)
+    now = datetime.datetime.now()
+    today = now.date()
+    yesterday = today - datetime.timedelta(days=1)
+    current_iso_week = today.isocalendar()[:2]
+
+    stats = {
+        "today": 0,
+        "yesterday": 0,
+        "week": 0,
+        "month": 0,
+        "treated": 0,
+        "to_process": 0,
+        "total": len(formulaires),
+    }
+
+    for formulaire in formulaires:
+        form_date = formulaire.get("sort_date")
+        if form_date and form_date != datetime.datetime.min:
+            form_day = form_date.date()
+            if form_day == today:
+                stats["today"] += 1
+            if form_day == yesterday:
+                stats["yesterday"] += 1
+            if form_day.isocalendar()[:2] == current_iso_week:
+                stats["week"] += 1
+            if form_day.year == today.year and form_day.month == today.month:
+                stats["month"] += 1
+
+        statut = (formulaire.get("statut") or "").strip().lower()
+        if statut == "traité":
+            stats["treated"] += 1
+        if statut in {"a traiter", "à traiter", "non traité", "non traite"}:
+            stats["to_process"] += 1
+
+    return render_template("admin_devis_formulaires.html", formulaires=formulaires, stats=stats)
 
 
 @app.route("/admin-devis/formulaires/<formulaire_id>/supprimer", methods=["POST"])
