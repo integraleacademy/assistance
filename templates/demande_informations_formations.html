@@ -1025,6 +1025,9 @@
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
       loadDates();
       updateStepReveal();
+      if (currentStep === 1 && formation.value) {
+        goToSlide(2);
+      }
     });
 
     document.addEventListener('change', (e) => {
