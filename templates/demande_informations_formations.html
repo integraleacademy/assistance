@@ -29,6 +29,7 @@
       color:var(--slate-900);
       background:radial-gradient(circle at top left,#1e40af 0%,#1e3a8a 40%,#0b2b8a 100%);
       padding:28px 14px;
+      min-height:100vh;
     }
 
     .wrap{
@@ -109,8 +110,24 @@
       flex:0 0 auto;
     }
 
-    .slides{display:flex;transition:transform .45s cubic-bezier(.22,.61,.36,1);}
-    .slide{min-width:100%;padding:8px;display:flex;flex-direction:column;justify-content:center;}
+    .slide-form{width:100%;max-width:980px;margin:0 auto;}
+    .slides{
+      display:flex;
+      width:100%;
+      overflow:hidden;
+      transition:transform .45s cubic-bezier(.22,.61,.36,1);
+      border-radius:20px;
+    }
+    .slide{
+      flex:0 0 100%;
+      width:100%;
+      min-width:100%;
+      max-width:100%;
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+    }
     .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:6px 0 16px;}
     .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
     .nav-actions{display:flex;justify-content:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
@@ -298,8 +315,8 @@
     .progress-pill.done{background:#dcfce7;color:#166534}
     .section{opacity:.62;transform:translateY(10px);transition:opacity .25s ease,transform .25s ease;}
     .section.active{opacity:1;transform:translateY(0);}
-    .step5-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:14px;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
-    .step5-card{scroll-snap-align:start;min-width:100%;background:#fff;border:1px solid #dbeafe;border-radius:14px;padding:16px;}
+    .step5-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:14px;padding-bottom:6px;-webkit-overflow-scrolling:touch;max-width:100%;}
+    .step5-card{scroll-snap-align:start;min-width:100%;max-width:100%;background:#fff;border:1px solid #dbeafe;border-radius:14px;padding:16px;}
 
     .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.74);z-index:40;padding:20px;}
     .modal-box{width:min(1200px,96vw);margin:1vh auto;background:#fff;padding:14px;border-radius:16px;max-height:96vh;display:flex;flex-direction:column;}
