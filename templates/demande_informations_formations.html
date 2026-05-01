@@ -960,7 +960,7 @@
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
       prevBtn.disabled = currentStep === 0;
       const isLast = currentStep === slides.length - 1;
-      nextBtn.classList.toggle('hidden', isLast);
+      nextBtn.classList.remove('hidden');
       submitBtn.classList.toggle('hidden', !isLast);
       stepElements.forEach((step, i) => {
         if (step) step.classList.toggle('active', i === currentStep);
@@ -990,6 +990,9 @@
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
       loadDates();
       updateStepReveal();
+      if (currentStep === 1 && formation.value) {
+        goToSlide(2);
+      }
     });
 
     document.addEventListener('change', (e) => {
