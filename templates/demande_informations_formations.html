@@ -1060,6 +1060,9 @@
 
       if (step5ManualIndex < 4) {
         step5ManualIndex += 1;
+        if (step5ManualIndex === 3 && blocCnaps.classList.contains('hidden')) {
+          step5ManualIndex = 4;
+        }
         updateStep5Flow();
         updateStep();
         scrollToFormTop();
@@ -1154,6 +1157,11 @@
           } else if (step5ManualIndex === 1) {
             if (isStep5Question2Complete()) {
               step5ManualIndex = 2;
+              updateStep5Flow();
+            }
+          } else if (step5ManualIndex === 2) {
+            if (!!identiteNumerique.value && blocCnaps.classList.contains('hidden')) {
+              step5ManualIndex = 4;
               updateStep5Flow();
             }
           } else if (step5ManualIndex === 3) {
