@@ -1116,6 +1116,7 @@
     });
 
     formation.addEventListener('change', () => {
+      step5ManualIndex = null;
       showLocationCards(formation.value);
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
       loadDates();
