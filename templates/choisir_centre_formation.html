@@ -32,6 +32,26 @@
     }
 
     .box { margin-top:18px; padding:14px; border-radius:10px; background:#f9fafb; border:1px solid #e5e7eb; }
+    .sort-controls {
+      margin-top: 18px;
+      display: none;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .sort-btn {
+      background: #fff;
+      color: #1e3a8a;
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .sort-btn.active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
     .loading-box {
       margin-top: 14px;
       padding: 18px;
@@ -178,6 +198,25 @@
       gap: 6px;
       margin-bottom: 16px;
     }
+    .next-session-highlight {
+      margin: 12px 0 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-weight: 800;
+      font-size: 17px;
+      line-height: 1.45;
+      border: 1px solid;
+    }
+    .recommendation .next-session-highlight {
+      color: #14532d;
+      background: #dcfce7;
+      border-color: #86efac;
+    }
+    .selection .next-session-highlight {
+      color: #1e3a8a;
+      background: #e0ebff;
+      border-color: #93c5fd;
+    }
     .travel-line {
       color: #475569;
       font-size: 16px;
@@ -271,6 +310,10 @@
         <p class="loading-subtitle">🔎 Analyse des distances, estimation des trajets et recommandation en cours...</p>
       </div>
     </div>
+    <div id="sortControls" class="sort-controls">
+      <button id="sortByDistance" class="sort-btn active" type="button">Afficher selon la distance la plus proche</button>
+      <button id="sortByDate" class="sort-btn" type="button">Afficher selon les dates de formation les plus proches</button>
+    </div>
     <div id="distances" class="box" style="display:none;"></div>
     <div id="result" class="recommendation" style="display:none;"></div>
     <div id="selection" class="alternatives-list" style="display:none;"></div>
@@ -333,6 +376,9 @@
     const resultBox = document.getElementById('result');
     const selectionBox = document.getElementById('selection');
     const errorBox = document.getElementById('error');
+    const sortControls = document.getElementById('sortControls');
+    const sortByDistanceBtn = document.getElementById('sortByDistance');
+    const sortByDateBtn = document.getElementById('sortByDate');
 
     const NON_DISPONIBLE = 'Non disponible';
     // OSRM a tendance à surestimer légèrement certains trajets autoroutiers longue distance.
@@ -341,7 +387,9 @@
 
     let latestDistances = null;
     let latestTravelTimes = null;
+    let latestNextSessionDates = null;
     let selectedCenter = null;
+    let currentSortMode = 'distance';
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -399,14 +447,18 @@
       const distanceMeters = latestDistances[center.key];
       const distanceLabel = formatDistanceKm(distanceMeters);
       const travelTimes = latestTravelTimes ? latestTravelTimes[center.key] : null;
+      const nextSessionDate = latestNextSessionDates ? latestNextSessionDates[center.key] : null;
       const benefits = getCenterBenefits(center);
       const badgeHtml = `<div class="center-card-badge">${cardOptions.badge}</div>`;
       const subtitleHtml = cardOptions.subtitle ? `<p class="center-card-subtitle">${cardOptions.subtitle}</p>` : '';
+      const nextSessionHtml = nextSessionDate
+        ? `<div class="next-session-highlight">📅 Prochaine date de formation : <strong>${formatDateFr(nextSessionDate)}</strong></div>`
+        : '<div class="next-session-highlight">📅 Prochaine date de formation : <strong>Non disponible</strong></div>';
       const commonNote = center.key === CENTER_PARIS.key
         ? 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence.'
         : 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l\'organisation sur place.';
 
-      return `<div class="center-card-header"><div class="center-card-intro">${badgeHtml}<div class="center-card-title">${cardOptions.title}</div>${subtitleHtml}</div><div class="distance-pill">${distanceLabel}</div></div>${travelTimes ? `<div class="travel-details"><div class="travel-line">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</div><div class="travel-line">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</div><div class="travel-line">${renderTravelTime('🚆 Train :', travelTimes.train)}</div></div>` : ''}<ul class="benefits-list">${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">${commonNote}</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
+      return `<div class="center-card-header"><div class="center-card-intro">${badgeHtml}<div class="center-card-title">${cardOptions.title}</div>${subtitleHtml}</div><div class="distance-pill">${distanceLabel}</div></div>${nextSessionHtml}${travelTimes ? `<div class="travel-details"><div class="travel-line">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</div><div class="travel-line">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</div><div class="travel-line">${renderTravelTime('🚆 Train :', travelTimes.train)}</div></div>` : ''}<ul class="benefits-list">${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">${commonNote}</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
     }
 
     function sortCentersByDistance(centers) {
@@ -422,11 +474,24 @@
         return a.name.localeCompare(b.name, 'fr');
       });
     }
+    function sortCentersByDate(centers) {
+      return [...centers].sort((a, b) => {
+        const dateA = latestNextSessionDates?.[a.key] ? new Date(latestNextSessionDates[a.key]).getTime() : Number.POSITIVE_INFINITY;
+        const dateB = latestNextSessionDates?.[b.key] ? new Date(latestNextSessionDates[b.key]).getTime() : Number.POSITIVE_INFINITY;
+        if (dateA !== dateB) return dateA - dateB;
+        return sortCentersByDistance([a, b])[0].key === a.key ? -1 : 1;
+      });
+    }
+
+    function updateSortButtons() {
+      sortByDistanceBtn.classList.toggle('active', currentSortMode === 'distance');
+      sortByDateBtn.classList.toggle('active', currentSortMode === 'date');
+    }
 
     function updateSelectionSummary(recommendedCenter) {
       if (!latestDistances || !recommendedCenter) return;
       resultBox.innerHTML = renderCenterDetails(recommendedCenter, {
-        badge: '✅ Recommandé selon la distance',
+        badge: currentSortMode === 'date' ? '✅ Recommandé selon la date de formation' : '✅ Recommandé selon la distance',
         title: `<span class="ok">${recommendedCenter.name}</span>`,
       });
       resultBox.style.display = 'block';
@@ -440,6 +505,46 @@
       })}</div>`).join('');
       selectionBox.style.display = 'block';
       selectedCenter = null;
+    }
+    function parseDateFromSessionText(txt) {
+      if (!txt) return null;
+      const numeric = txt.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
+      if (numeric) {
+        const d = Number(numeric[1]);
+        const m = Number(numeric[2]);
+        const y = Number(numeric[3]);
+        const date = new Date(Date.UTC(y, m - 1, d));
+        return Number.isNaN(date.getTime()) ? null : date;
+      }
+      return null;
+    }
+    function formatDateFr(date) {
+      return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(date));
+    }
+    async function fetchNextSessionsByCenter() {
+      const resp = await fetch('/api/formation-sessions');
+      if (!resp.ok) throw new Error('Impossible de récupérer les dates de formation.');
+      const sessions = await resp.json();
+      const result = {};
+      ACTIVE_CENTER_LIST.forEach((center) => {
+        const centerCode = center.key === 'cote-azur' ? 'cote_azur' : center.key;
+        const formations = sessions?.[centerCode] || {};
+        const allDates = [];
+        Object.values(formations).forEach((rows) => {
+          if (!Array.isArray(rows)) return;
+          rows.forEach((row) => {
+            const parsed = parseDateFromSessionText(row?.dates || '');
+            if (parsed) allDates.push(parsed);
+          });
+        });
+        if (allDates.length) {
+          allDates.sort((a, b) => a - b);
+          result[center.key] = allDates[0].toISOString();
+        } else {
+          result[center.key] = null;
+        }
+      });
+      return result;
     }
 
     function formatDistanceKm(meters) {
@@ -591,6 +696,7 @@
       selectionBox.style.display = 'none';
       selectionBox.innerHTML = '';
       loadingBox.style.display = 'none';
+      sortControls.style.display = 'none';
 
       const postcode = cpInput.value.trim();
       if (!/^\d{5}$/.test(postcode)) {
@@ -628,6 +734,7 @@
         latestDistances = Object.fromEntries(
           centerCoordsEntries.map(([key, travel]) => [key, travel.distanceMeters])
         );
+        latestNextSessionDates = await fetchNextSessionsByCenter();
 
         const availableCenters = sortCentersByDistance(
           ACTIVE_CENTER_LIST.filter((center) => latestTravelTimes[center.key])
@@ -638,16 +745,18 @@
         `).join('');
         distancesBox.style.display = 'block';
 
-        let nearest = null;
-        if (availableCenters.length) {
-          nearest = availableCenters[0];
-        }
+        const orderedCenters = currentSortMode === 'date'
+          ? sortCentersByDate(availableCenters)
+          : sortCentersByDistance(availableCenters);
+        const nearest = orderedCenters[0] || null;
 
         if (!nearest) {
           throw new Error('Impossible de déterminer un centre recommandé pour le moment.');
         }
 
         updateSelectionSummary(nearest);
+        sortControls.style.display = 'flex';
+        updateSortButtons();
       } catch (e) {
         showError(e.message || 'Une erreur est survenue.');
       } finally {
@@ -658,6 +767,21 @@
     }
 
     btn.addEventListener('click', run);
+    sortByDistanceBtn.addEventListener('click', () => {
+      currentSortMode = 'distance';
+      updateSortButtons();
+      if (!latestDistances) return;
+      const availableCenters = sortCentersByDistance(ACTIVE_CENTER_LIST.filter((center) => latestTravelTimes?.[center.key]));
+      updateSelectionSummary(availableCenters[0]);
+    });
+    sortByDateBtn.addEventListener('click', () => {
+      currentSortMode = 'date';
+      updateSortButtons();
+      if (!latestDistances) return;
+      const availableCenters = ACTIVE_CENTER_LIST.filter((center) => latestTravelTimes?.[center.key]);
+      const ordered = sortCentersByDate(availableCenters);
+      updateSelectionSummary(ordered[0]);
+    });
     cpInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
