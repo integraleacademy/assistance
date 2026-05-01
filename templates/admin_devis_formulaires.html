@@ -22,6 +22,13 @@ thead{background:#f0f2f5}
 .btn{display:inline-block;padding:6px 10px;border-radius:7px;background:#111827;color:#fff;text-decoration:none;font-size:12px}
 .btn-danger{background:#b91c1c;border:none;cursor:pointer}
 .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.stats-card{margin:18px 0 20px;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;border-radius:14px;padding:18px;box-shadow:0 10px 30px rgba(15,23,42,.25)}
+.stats-title{margin:0 0 14px;font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat-item{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:12px}
+.stat-label{font-size:12px;opacity:.85;margin-bottom:4px}
+.stat-value{font-size:26px;font-weight:800;line-height:1}
+
 </style>
 </head>
 <body>
@@ -34,6 +41,19 @@ thead{background:#f0f2f5}
             <button class="btn btn-danger" type="submit">🗑️ Tout supprimer</button>
         </form>
     </div>
+
+    <section class="stats-card">
+        <h2 class="stats-title">📊 Statistiques</h2>
+        <div class="stats-grid">
+            <div class="stat-item"><div class="stat-label">Demandes du jour</div><div class="stat-value">{{ stats.today }}</div></div>
+            <div class="stat-item"><div class="stat-label">Demandes d’hier</div><div class="stat-value">{{ stats.yesterday }}</div></div>
+            <div class="stat-item"><div class="stat-label">Demandes de la semaine</div><div class="stat-value">{{ stats.week }}</div></div>
+            <div class="stat-item"><div class="stat-label">Demandes du mois</div><div class="stat-value">{{ stats.month }}</div></div>
+            <div class="stat-item"><div class="stat-label">Nombre traité</div><div class="stat-value">{{ stats.treated }}</div></div>
+            <div class="stat-item"><div class="stat-label">Nombre à traiter</div><div class="stat-value">{{ stats.to_process }}</div></div>
+            <div class="stat-item"><div class="stat-label">Total formulaires</div><div class="stat-value">{{ stats.total }}</div></div>
+        </div>
+    </section>
 
     <table>
         <thead>
