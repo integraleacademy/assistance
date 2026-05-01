@@ -23,6 +23,7 @@ import requests
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8"
 
 def creer_piste_salesforce(form):
+    print("FORMULAIRE RECU:", dict(form))
     description = "\n".join([
         f"{key} : {value}"
         for key, value in form.items()
@@ -33,30 +34,30 @@ def creer_piste_salesforce(form):
         "retURL": "https://assistance-alw9.onrender.com/merci",
         "first_name": form.get("prenom", ""),
         "last_name": form.get("nom", "Sans nom"),
-        "email": form.get("email", ""),
+        "email": form.get("mail", ""),
         "phone": form.get("telephone", ""),
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
-        "city": form.get("ville", ""),
-        "zip": form.get("code_postal", ""),
+        "city": "",
+        "zip": "",
         "country": "France",
         "lead_source": "Website",
-        "00NSa00000G2PxB": form.get("type_formation", ""),
-        "00NSa00000KDPJd": form.get("choix_dirigeant", ""),
-        "00NSa00000KDPOT": form.get("lieu", ""),
-        "00NSa00000GcJMz": form.get("compte_cpf", ""),
-        "00NSa00000GcJd7": form.get("montant_cpf", ""),
-        "00NSa00000GcJlB": form.get("carte_pro", ""),
-        "00NSa00000GcJtF": form.get("antecedents", ""),
-        "00NSa00000GcJzh": form.get("creation_identite", ""),
-        "00NSa00000GcK2v": form.get("identite_ok", ""),
-        "00NSa00000KPDmX": form.get("origine", ""),
-        "00NSa00000GcK9N": form.get("refus_ft", ""),
-        "00NSa00000GcKVx": form.get("infos_complementaires", ""),
-        "00NSa00000GcKxN": form.get("dates_souhaitees", ""),
-        "00NSa00000GcK4X": form.get("demande_financement_ft", ""),
-        "00NSa00000GcQl3": form.get("financement_personnel", ""),
-        "00NSa00000KP2pX": form.get("inscrit_france_travail", ""),
+        "00NSa00000G2PxB": form.get("formation", ""),
+        "00NSa00000KDPJd": form.get("formation", ""),
+        "00NSa00000KDPOT": form.get("centre", ""),
+        "00NSa00000GcJMz": form.get("cpf_consulte", ""),
+        "00NSa00000GcJd7": form.get("cpf_montant", ""),
+        "00NSa00000GcJlB": form.get("cnaps_ok", ""),
+        "00NSa00000GcJtF": form.get("garde_vue", ""),
+        "00NSa00000GcJzh": form.get("identite_numerique", ""),
+        "00NSa00000GcK2v": form.get("identite_numerique", ""),
+        "00NSa00000KPDmX": form.get("gclid", ""),
+        "00NSa00000GcK9N": form.get("ft_refus_ok", ""),
+        "00NSa00000GcKVx": form.get("titre_sejour", ""),
+        "00NSa00000GcKxN": form.get("dates", ""),
+        "00NSa00000GcK4X": form.get("france_travail", ""),
+        "00NSa00000GcQl3": form.get("financement_perso", ""),
+        "00NSa00000KP2pX": form.get("france_travail", ""),
         "description": description
     }
 
