@@ -18,6 +18,52 @@ from flask import session, flash
 
 import calendar
 from datetime import date as _date
+import requests
+
+SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8"
+
+def creer_piste_salesforce(form):
+    description = "\n".join([
+        f"{key} : {value}"
+        for key, value in form.items()
+    ])
+
+    payload = {
+        "oid": "00DJ9000000PT9F",
+        "retURL": "https://assistance-alw9.onrender.com/merci",
+        "first_name": form.get("prenom", ""),
+        "last_name": form.get("nom", "Sans nom"),
+        "email": form.get("email", ""),
+        "phone": form.get("telephone", ""),
+        "mobile": form.get("telephone", ""),
+        "company": "Particulier",
+        "city": form.get("ville", ""),
+        "zip": form.get("code_postal", ""),
+        "country": "France",
+        "lead_source": "Website",
+        "00NSa00000G2PxB": form.get("type_formation", ""),
+        "00NSa00000KDPJd": form.get("choix_dirigeant", ""),
+        "00NSa00000KDPOT": form.get("lieu", ""),
+        "00NSa00000GcJMz": form.get("compte_cpf", ""),
+        "00NSa00000GcJd7": form.get("montant_cpf", ""),
+        "00NSa00000GcJlB": form.get("carte_pro", ""),
+        "00NSa00000GcJtF": form.get("antecedents", ""),
+        "00NSa00000GcJzh": form.get("creation_identite", ""),
+        "00NSa00000GcK2v": form.get("identite_ok", ""),
+        "00NSa00000KPDmX": form.get("origine", ""),
+        "00NSa00000GcK9N": form.get("refus_ft", ""),
+        "00NSa00000GcKVx": form.get("infos_complementaires", ""),
+        "00NSa00000GcKxN": form.get("dates_souhaitees", ""),
+        "00NSa00000GcK4X": form.get("demande_financement_ft", ""),
+        "00NSa00000GcQl3": form.get("financement_personnel", ""),
+        "00NSa00000KP2pX": form.get("inscrit_france_travail", ""),
+        "description": description
+    }
+
+    try:
+        requests.post(SALESFORCE_URL, data=payload, timeout=10)
+    except Exception as e:
+        print("Erreur envoi Salesforce:", e)
 
 def _add_one_month(d: _date) -> _date:
     y = d.year + (1 if d.month == 12 else 0)
@@ -1995,6 +2041,7 @@ def demande_informations_formations():
 
     if request.method == "POST":
         form_data = request.form.to_dict()
+        creer_piste_salesforce(request.form)
         form_data["gclid"] = (form_data.get("gclid") or "").strip()
 
         prospect_chaud = (
