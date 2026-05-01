@@ -20,8 +20,15 @@ import calendar
 from datetime import date as _date
 import requests
 
-SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8"
+SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
+
+def valeur_refus_ft(value):
+    if value == "OUI":
+        return "Si FT refuse le financement = financement personnel OK"
+    if value == "NON":
+        return "Si FT refuse le financement = pas de possibilité de financer personnellement"
+    return ""
 
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
@@ -58,8 +65,6 @@ def creer_piste_salesforce(form):
     payload = {
         "oid": SALESFORCE_OID,
         "retURL": "https://assistance-alw9.onrender.com/confirmation-demande-informations",
-        "debug": "1",
-        "debugEmail": "ecole@integraleacademy.com",
         "first_name": form.get("prenom", ""),
         "last_name": form.get("nom", "Sans nom"),
         "email": form.get("mail", ""),
@@ -76,7 +81,7 @@ def creer_piste_salesforce(form):
         "00NSa00000GcJtF": form.get("garde_vue", ""),
         "00NSa00000GcJzh": form.get("identite_numerique", ""),
         "00NSa00000GcK2v": form.get("identite_numerique", ""),
-        "00NSa00000GcK9N": form.get("ft_refus_ok", ""),
+        "00NSa00000GcK9N": valeur_refus_ft(form.get("ft_refus_ok", "")),
         "00NSa00000GcKxN": form.get("dates", ""),
         "00NSa00000GcK4X": france_travail_sf,
         "00NSa00000GcQl3": form.get("financement_perso", ""),
@@ -84,10 +89,11 @@ def creer_piste_salesforce(form):
     }
 
     try:
+        print("ENVOI SALESFORCE PRODUCTION SANS DEBUG")
         print("SALESFORCE PAYLOAD:", payload)
         response = requests.post(SALESFORCE_URL, data=payload, timeout=10)
         print("SALESFORCE STATUS:", response.status_code)
-        print("SALESFORCE RESPONSE:", response.text[:2000])
+        print("SALESFORCE RESPONSE:", response.text[:1000])
     except Exception as e:
         print("Erreur envoi Salesforce:", e)
 
