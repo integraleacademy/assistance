@@ -286,6 +286,12 @@
     }
 
     .hidden{display:none !important;}
+    .form-progress{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 18px;}
+    .progress-pill{flex:1 1 140px;min-width:120px;padding:10px 12px;border-radius:999px;background:#e2e8f0;color:#475569;font-weight:700;font-size:14px;text-align:center;transition:.25s ease;}
+    .progress-pill.active{background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;box-shadow:0 8px 18px rgba(37,99,235,.26)}
+    .progress-pill.done{background:#dcfce7;color:#166534}
+    .section{opacity:.62;transform:translateY(10px);transition:opacity .25s ease,transform .25s ease;}
+    .section.active{opacity:1;transform:translateY(0);}
 
     .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.74);z-index:40;padding:20px;}
     .modal-box{width:min(1200px,96vw);margin:1vh auto;background:#fff;padding:14px;border-radius:16px;max-height:96vh;display:flex;flex-direction:column;}
@@ -338,11 +344,18 @@
     </div>
     <p class="intro">Prenons 2 minutes pour faire connaissance 🤝</p>
     <p class="purpose-note">Toutes ces informations vont nous permettre d'assurer un meilleur traitement et un meilleur suivi de votre demande.</p>
+    <div class="form-progress" id="formProgress">
+      <div class="progress-pill active" data-pill="1">1. Contact</div>
+      <div class="progress-pill" data-pill="2">2. Formation</div>
+      <div class="progress-pill" data-pill="3">3. Centre</div>
+      <div class="progress-pill" data-pill="4">4. Dates</div>
+      <div class="progress-pill" data-pill="5">5. Financement</div>
+    </div>
 
     <form method="POST" id="infosForm">
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
 
-      <section class="section">
+      <section class="section active" id="step1" data-step="1">
         <h2 class="step-title"><span class="step-num">1</span> Informations générales</h2>
         <div class="grid">
           <div><label for="nom">Nom</label><input id="nom" name="nom" required></div>
@@ -353,7 +366,7 @@
         </div>
       </section>
 
-      <section class="section">
+      <section class="section hidden" id="step2" data-step="2">
         <h2 class="step-title"><span class="step-num">2</span> Formation souhaitée</h2>
         <label for="formation">Au choix</label>
         <select name="formation" id="formation" required>
@@ -366,7 +379,7 @@
         </select>
       </section>
 
-      <section class="section" id="locationSection">
+      <section class="section hidden" id="locationSection" data-step="3">
         <h2 class="step-title"><span class="step-num">3</span> Lieu de formation souhaité 📍</h2>
 
         <div id="simuBox" class="simu-box hidden">
@@ -437,7 +450,7 @@
         </article>
       </section>
 
-      <section class="section">
+      <section class="section hidden" id="step4" data-step="4">
         <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
         <label for="datesSelect">Session souhaitée</label>
         <select name="dates" id="datesSelect" required>
@@ -448,7 +461,7 @@
         <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
       </section>
 
-      <section class="section">
+      <section class="section hidden" id="step5" data-step="5">
         <h2 class="step-title"><span class="step-num">5</span> Financement de votre formation 💶</h2>
 
         <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
@@ -536,7 +549,7 @@
         </label>
       </section>
 
-      <button class="submit" type="submit">ENVOYER ✉️</button>
+      <button class="submit hidden" id="submitBtn" type="submit">ENVOYER ✉️</button>
     </form>
   </div>
 
@@ -588,6 +601,9 @@
     const centreFrameOverlay = document.getElementById('centreFrameOverlay');
     const centreFrameMessage = document.getElementById('centreFrameMessage');
     const retryCentreFrame = document.getElementById('retryCentreFrame');
+    const submitBtn = document.getElementById('submitBtn');
+    const stepElements = [1, 2, 3, 4, 5].map((n) => document.querySelector(`[data-step="${n}"]`));
+    const progressPills = Array.from(document.querySelectorAll('[data-pill]'));
 
     const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
     const CENTRE_FRAME_TIMEOUT_MS = 4500;
@@ -794,19 +810,74 @@
       });
     }
 
+    function isStep1Complete() {
+      return ['nom', 'prenom', 'mail', 'mail_confirm', 'telephone']
+        .every((id) => document.getElementById(id).value.trim());
+    }
+
+    function isStep2Complete() {
+      return Boolean(formation.value);
+    }
+
+    function isStep3Complete() {
+      if (['A3P', 'DESP_INIT'].includes(formation.value)) return Boolean(selectedCentre());
+      return true;
+    }
+
+    function isStep4Complete() {
+      return datesSelect.required ? Boolean(datesSelect.value) : true;
+    }
+
+    function updateStepReveal() {
+      const stepChecks = [isStep1Complete(), isStep2Complete(), isStep3Complete(), isStep4Complete()];
+      const firstIncomplete = stepChecks.findIndex((ok) => !ok);
+      const activeStep = firstIncomplete === -1 ? 5 : firstIncomplete + 1;
+      const maxVisibleStep = Math.min(activeStep + 1, 5);
+
+      stepElements.forEach((el, idx) => {
+        const stepNumber = idx + 1;
+        const isVisible = stepNumber <= maxVisibleStep;
+        el.classList.toggle('hidden', !isVisible);
+        el.classList.toggle('active', stepNumber === activeStep);
+      });
+
+      submitBtn.classList.toggle('hidden', maxVisibleStep < 5);
+      progressPills.forEach((pill, idx) => {
+        const stepNumber = idx + 1;
+        pill.classList.toggle('done', stepNumber < activeStep);
+        pill.classList.toggle('active', stepNumber === activeStep);
+      });
+    }
+
     datesSelect.addEventListener('change', () => {
       const selected = datesSelect.options[datesSelect.selectedIndex];
       dateExamen.value = selected ? (selected.dataset.dateExamen || '') : '';
+      updateStepReveal();
     });
 
     formation.addEventListener('change', () => {
       showLocationCards(formation.value);
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
       loadDates();
+      updateStepReveal();
     });
 
     document.addEventListener('change', (e) => {
-      if (e.target.name === 'centre') loadDates();
+      if (e.target.name === 'centre') {
+        loadDates();
+        updateStepReveal();
+      }
+      if (['nom', 'prenom', 'mail', 'mail_confirm', 'telephone'].includes(e.target.id)) {
+        updateStepReveal();
+      }
+      if (['cpfConsulte', 'franceTravail', 'identiteNumerique'].includes(e.target.id)) {
+        updateStepReveal();
+      }
+    });
+    document.addEventListener('input', (e) => {
+      if (['nom', 'prenom', 'mail', 'mail_confirm', 'telephone'].includes(e.target.id)) {
+        updateStepReveal();
+      }
     });
 
     window.addEventListener('message', (event) => {
@@ -867,6 +938,7 @@
     identiteNumerique.dispatchEvent(new Event('change'));
     franceTravail.dispatchEvent(new Event('change'));
     formation.dispatchEvent(new Event('change'));
+    updateStepReveal();
 
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
     openSimu.addEventListener('click', openCentreModal);
