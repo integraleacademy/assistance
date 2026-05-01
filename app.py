@@ -2425,23 +2425,28 @@ def api_chat():
         client = OpenAI(api_key=api_key, timeout=20)
 
         print("Appel OpenAI en cours...", flush=True)
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
-            input=[
+            messages=[
                 {
                     "role": "system",
-                    "content": "Tu es l'assistant officiel d’Intégrale Academy. Tu aides les visiteurs à choisir une formation : APS, A3P, VTC, Dirigeant, VAE, BTS. Tu es clair, professionnel, rassurant et commercial. Tu incites naturellement le visiteur à compléter le formulaire de demande d’informations présent sur la page. Tu réponds en français."
+                    "content": "Tu es l'assistant officiel d’Intégrale Academy. Tu réponds aux prospects sur les formations APS, A3P, A3P garde du corps, VTC, Dirigeant, VAE, BTS, financement, devis, inscription, CNAPS et modalités. Tu réponds en français, de façon claire, rassurante et commerciale. Tu incites naturellement à compléter le formulaire de demande d’informations présent sur la page. Si on te demande une date précise que tu ne connais pas, tu invites à compléter le formulaire pour recevoir les prochaines dates."
                 },
                 {
                     "role": "user",
                     "content": message
                 }
             ],
-            max_output_tokens=400,
+            max_tokens=400,
+            temperature=0.4
         )
         print("Appel OpenAI terminé", flush=True)
 
-        reply = getattr(response, "output_text", None) or "Désolé, je n’ai pas pu générer de réponse."
+        reply = ""
+        if getattr(response, "choices", None) and response.choices[0].message:
+            reply = response.choices[0].message.content or ""
+        if not reply:
+            reply = "Désolé, je n’ai pas pu générer de réponse."
         print("Réponse IA OK", flush=True)
 
         return jsonify({"reply": reply}), 200
