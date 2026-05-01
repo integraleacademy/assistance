@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort
+from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile
 from email.mime.text import MIMEText
@@ -2401,6 +2401,49 @@ def confirmation_demande_infos():
 def api_formation_sessions():
     data_store = load_data()
     return get_formation_sessions(data_store)
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    body = request.get_json(silent=True) or {}
+    user_message = (body.get("message") or "").strip()
+    if not user_message:
+        return jsonify({"reply": "Pouvez-vous préciser votre question ?"}), 400
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 503
+
+    system_prompt = (
+        "Tu es l'assistant officiel d’Intégrale Academy.\n"
+        "Tu aides les visiteurs à choisir une formation.\n"
+        "Tu réponds sur les formations APS, A3P, VTC, Dirigeant, VAE, BTS, financement, devis, inscription, CNAPS et modalités.\n"
+        "Tu es clair, professionnel, rassurant et commercial.\n"
+        "Tu incites naturellement le visiteur à remplir le formulaire de demande d’informations présent sur la page.\n"
+        "Si la personne veut s’inscrire ou avoir un devis, tu lui expliques qu’elle peut compléter le formulaire affiché sur cette page.\n"
+        "Tu ne promets jamais une validation CNAPS certaine.\n"
+        "Tu ne donnes pas de conseil juridique définitif.\n"
+        "Tu réponds en français."
+    )
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.5,
+            max_output_tokens=350,
+        )
+        reply = (response.output_text or "").strip()
+        if not reply:
+            reply = "Désolé, l’IA est momentanément indisponible."
+        return jsonify({"reply": reply})
+    except Exception:
+        return jsonify({"reply": "Désolé, l’IA est momentanément indisponible."}), 500
 
 
 @app.route("/admin/autosave", methods=["POST"])
