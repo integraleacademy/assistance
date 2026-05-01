@@ -128,7 +128,9 @@
       width:100%;
       max-width:900px;
       overflow:hidden;
-      margin:32px auto 0;
+      margin:24px auto 0;
+      height:auto;
+      min-height:auto;
     }
     .steps-track{
       display:flex;
@@ -143,17 +145,16 @@
       min-width:100%;
       max-width:100%;
       padding:8px;
-      display:flex;
-      flex-direction:column;
-      justify-content:flex-start;
+      display:block;
       overflow:hidden;
       min-height:auto;
+      height:auto;
       align-self:flex-start;
     }
     .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:0 0 12px;}
     .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
     .nav-actions,.form-actions{
-      margin-top:24px;
+      margin-top:20px;
       display:flex;
       justify-content:center;
       gap:14px;
@@ -352,6 +353,7 @@
       backdrop-filter:none;
       padding:28px;
       border-radius:18px;
+      margin-bottom:0;
     }
     .step5-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:14px;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
     .step5-card{scroll-snap-align:start;min-width:100%;background:#fff;border:1px solid #dbeafe;border-radius:14px;padding:16px;}
@@ -435,6 +437,12 @@
         </div>
       </section>
 
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
+
       </div><div class="form-step">
       <section class="section" id="step2" data-step="2">
         <h2 class="step-title"><span class="step-num">2</span> Formation souhaitée</h2>
@@ -448,6 +456,12 @@
           <option value="VTC">Chauffeur VTC</option>
         </select>
       </section>
+
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
 
       </div><div class="form-step">
       <section class="section" id="locationSection" data-step="3">
@@ -521,6 +535,12 @@
         </article>
       </section>
 
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
+
       </div><div class="form-step">
       <section class="section" id="step4" data-step="4">
         <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
@@ -532,6 +552,12 @@
         <p class="small-note" id="datesHelp">Les dates proposées s’adaptent selon la formation et le centre choisi.</p>
         <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
       </section>
+
+      <div class="nav-actions form-actions">
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
 
       </div><div class="form-step">
       <section class="section" id="step5" data-step="5">
@@ -624,20 +650,23 @@
 
           </div>
           <div class="step5-card hidden" data-q="5">
-            <label class="checkbox-row" id="devisQuestion">
-              <input type="checkbox" name="souhaite_devis" value="OUI">
-              Souhaitez-vous recevoir un devis détaillé ?
-            </label>
+            <label for="souhaiteDevis">Souhaitez-vous recevoir un devis détaillé ?</label>
+            <select name="souhaite_devis" id="souhaiteDevis" required>
+              <option value="">— Sélectionnez —</option>
+              <option value="OUI">OUI</option>
+              <option value="NON">NON</option>
+            </select>
           </div>
         </div>
       </section>
 
-      </div>
-      </div>
       <div class="nav-actions form-actions">
-        <button type="button" class="close-btn" id="prevBtn">Retour</button>
-        <button type="button" class="retry-btn" id="nextBtn">Suivant</button>
-        <button class="submit hidden" id="submitBtn" type="submit">ENVOYER ✉️</button>
+        <button type="button" class="close-btn" data-nav="prev">Retour</button>
+        <button type="button" class="retry-btn" data-nav="next">Suivant</button>
+        <button class="submit hidden" data-nav="submit" type="submit">ENVOYER ✉️</button>
+      </div>
+
+      </div>
       </div>
     </form>
     </div>
@@ -692,14 +721,14 @@
     const centreFrameOverlay = document.getElementById('centreFrameOverlay');
     const centreFrameMessage = document.getElementById('centreFrameMessage');
     const retryCentreFrame = document.getElementById('retryCentreFrame');
-    const submitBtn = document.getElementById('submitBtn');
     const stepElements = [1, 2, 3, 4, 5].map((n) => document.querySelector(`[data-step="${n}"]`));
     const progressPills = Array.from(document.querySelectorAll('[data-pill]'));
     const slides = Array.from(document.querySelectorAll('.form-step'));
     const slidesWrap = document.getElementById('slides');
     const progressBar = document.getElementById('progressBar');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
+    const prevBtns = Array.from(document.querySelectorAll('[data-nav="prev"]'));
+    const nextBtns = Array.from(document.querySelectorAll('[data-nav="next"]'));
+    const submitBtns = Array.from(document.querySelectorAll('[data-nav="submit"]'));
     let currentStep = 0;
     let step5ManualIndex = null;
     const step5Cards = Array.from(document.querySelectorAll('#step5 .step5-card'));
@@ -709,7 +738,6 @@
     const cnapsOkSelect = form.querySelector('select[name="cnaps_ok"]');
     const gardeVueSelect = form.querySelector('select[name="garde_vue"]');
     const titreSejourSelect = form.querySelector('select[name="titre_sejour"]');
-    const devisQuestion = document.getElementById('devisQuestion');
 
     const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
     const CENTRE_FRAME_TIMEOUT_MS = 4500;
@@ -963,6 +991,7 @@
       const vis = [0, 1, 2, 3, 4].map((i) => i === step5ManualIndex);
       step5Cards.forEach((card, i) => card.classList.toggle('hidden', !vis[i]));
       updateCnapsFlow();
+      if (currentStep === 4) updateStep();
     }
 
     function updateCnapsFlow() {
@@ -986,19 +1015,19 @@
     }
 
     function shouldShowSubmitOnStep5() {
-      if (currentStep !== 4) return false;
-      const devisVisible = devisQuestion && !devisQuestion.classList.contains('hidden');
-      return !!devisVisible;
+      return currentStep === 4 && step5ManualIndex === 4;
     }
 
     function updateStep() {
       slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
-      prevBtn.disabled = currentStep === 0;
-      const isLast = currentStep === slides.length - 1;
-      const showSubmit = isLast && shouldShowSubmitOnStep5();
-      nextBtn.classList.toggle('hidden', showSubmit);
-      submitBtn.classList.toggle('hidden', !showSubmit);
+      const activeSlide = slides[currentStep];
+      const activeNextBtn = activeSlide.querySelector('[data-nav="next"]');
+      const activeSubmitBtn = activeSlide.querySelector('[data-nav="submit"]');
+      const showSubmit = shouldShowSubmitOnStep5();
+      prevBtns.forEach((btn) => { btn.disabled = currentStep === 0; });
+      nextBtns.forEach((btn) => btn.classList.toggle('hidden', btn !== activeNextBtn || showSubmit));
+      submitBtns.forEach((btn) => btn.classList.toggle('hidden', btn !== activeSubmitBtn || !showSubmit));
       stepElements.forEach((step, i) => {
         if (step) step.classList.toggle('active', i === currentStep);
       });
@@ -1049,7 +1078,6 @@
       }
 
       if (currentStep === 4) {
-        const activeCard = step5Cards[step5ManualIndex ?? 0];
         const autoAdvanceTargets = ['cpfConsulte', 'cpfMontant', 'franceTravail', 'ftRefusOk', 'financementPerso', 'cnaps_ok', 'garde_vue', 'titre_sejour'];
         if (autoAdvanceTargets.includes(e.target.id || e.target.name)) {
           if (step5ManualIndex === 0) {
@@ -1069,8 +1097,6 @@
               step5ManualIndex = 4;
               updateStep5Flow();
             }
-          } else if (step5ManualIndex === 4 && activeCard && devisQuestion && !devisQuestion.classList.contains('hidden')) {
-            updateStep();
           }
         }
       }
@@ -1142,15 +1168,15 @@
     franceTravail.dispatchEvent(new Event('change'));
     formation.dispatchEvent(new Event('change'));
     updateStep5Flow();
-    prevBtn.addEventListener('click', () => {
+    prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
         step5ManualIndex -= 1;
         updateStep5Flow();
         return;
       }
       goToSlide(currentStep - 1);
-    });
-    nextBtn.addEventListener('click', () => {
+    }));
+    nextBtns.forEach((nextBtn) => nextBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex === 2) {
         if (!identiteNumerique.value) {
           alert('Merci de répondre à cette question avant de continuer.');
@@ -1167,7 +1193,7 @@
         return;
       }
       goToSlide(currentStep + 1);
-    });
+    }));
     currentStep = 0;
     step5ManualIndex = null;
     updateStep();
