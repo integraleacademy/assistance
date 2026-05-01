@@ -19,6 +19,7 @@ from flask import session, flash
 import calendar
 from datetime import date as _date
 import requests
+from openai import OpenAI
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
