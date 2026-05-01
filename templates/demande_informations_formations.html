@@ -158,8 +158,11 @@
       justify-content:center;
       gap:12px;
       flex-wrap:wrap;
-      position:static;
-      bottom:auto;
+      position:sticky;
+      bottom:0;
+      z-index:5;
+      background:#fff;
+      padding-top:10px;
     }
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
     .full{grid-column:1/-1;}
@@ -988,10 +991,6 @@
 
     function updateStep() {
       slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
-      const activeSlide = slides[currentStep];
-      if (activeSlide) {
-        slidesWrap.style.height = `${activeSlide.offsetHeight}px`;
-      }
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
       prevBtn.disabled = currentStep === 0;
       const isLast = currentStep === slides.length - 1;
@@ -1139,7 +1138,6 @@
     currentStep = 0;
     step5ManualIndex = null;
     updateStep();
-    window.addEventListener('resize', updateStep);
 
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
     openSimu.addEventListener('click', openCentreModal);
