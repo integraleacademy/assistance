@@ -21,6 +21,7 @@ from datetime import date as _date
 import requests
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8"
+SALESFORCE_OID = "00DJ9000000PT9F"
 
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
@@ -29,40 +30,46 @@ def creer_piste_salesforce(form):
         for key, value in form.items()
     ])
 
+    centre = form.get("centre", "")
+    if centre == "cote_azur":
+        lieu = "Côte d'Azur"
+    elif centre == "paris":
+        lieu = "Paris"
+    elif centre == "aurillac":
+        lieu = "Aurillac"
+    else:
+        lieu = centre
+
     payload = {
-        "oid": "00DJ9000000PT9F",
-        "retURL": "https://assistance-alw9.onrender.com/merci",
+        "oid": SALESFORCE_OID,
+        "retURL": "https://assistance-alw9.onrender.com/confirmation-demande-informations",
         "first_name": form.get("prenom", ""),
         "last_name": form.get("nom", "Sans nom"),
         "email": form.get("mail", ""),
         "phone": form.get("telephone", ""),
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
-        "city": "",
-        "zip": "",
-        "country": "France",
         "lead_source": "Website",
+        "industry": "Education",
         "00NSa00000G2PxB": form.get("formation", ""),
-        "00NSa00000KDPJd": form.get("formation", ""),
-        "00NSa00000KDPOT": form.get("centre", ""),
+        "00NSa00000KDPOT": lieu,
         "00NSa00000GcJMz": form.get("cpf_consulte", ""),
         "00NSa00000GcJd7": form.get("cpf_montant", ""),
         "00NSa00000GcJlB": form.get("cnaps_ok", ""),
         "00NSa00000GcJtF": form.get("garde_vue", ""),
         "00NSa00000GcJzh": form.get("identite_numerique", ""),
         "00NSa00000GcK2v": form.get("identite_numerique", ""),
-        "00NSa00000KPDmX": form.get("gclid", ""),
         "00NSa00000GcK9N": form.get("ft_refus_ok", ""),
-        "00NSa00000GcKVx": form.get("titre_sejour", ""),
         "00NSa00000GcKxN": form.get("dates", ""),
         "00NSa00000GcK4X": form.get("france_travail", ""),
         "00NSa00000GcQl3": form.get("financement_perso", ""),
-        "00NSa00000KP2pX": form.get("france_travail", ""),
         "description": description
     }
 
     try:
-        requests.post(SALESFORCE_URL, data=payload, timeout=10)
+        response = requests.post(SALESFORCE_URL, data=payload, timeout=10)
+        print("SALESFORCE STATUS:", response.status_code)
+        print("SALESFORCE RESPONSE:", response.text[:500])
     except Exception as e:
         print("Erreur envoi Salesforce:", e)
 
