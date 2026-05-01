@@ -109,8 +109,37 @@
       flex:0 0 auto;
     }
 
-    .slides{display:flex;transition:transform .45s cubic-bezier(.22,.61,.36,1);}
-    .slide{min-width:100%;padding:8px;display:flex;flex-direction:column;justify-content:center;}
+    .form-wrapper{
+      width:100%;
+      min-height:100vh;
+      overflow:hidden;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .steps-viewport{
+      width:100%;
+      max-width:900px;
+      overflow:hidden;
+      margin:0 auto;
+    }
+    .steps-track{
+      display:flex;
+      width:100%;
+      transition:transform .45s ease;
+      will-change:transform;
+    }
+    .form-step{
+      flex:0 0 100%;
+      width:100%;
+      min-width:100%;
+      max-width:100%;
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      overflow:hidden;
+    }
     .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:6px 0 16px;}
     .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
     .nav-actions{display:flex;justify-content:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
@@ -360,11 +389,12 @@
       <div class="progress-pill" data-pill="5">5. Financement</div>
     </div>
 
-    <form method="POST" id="infosForm">
+    <div class="form-wrapper">
+    <form method="POST" id="infosForm" class="steps-viewport">
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
       <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
-      <div class="slides" id="slides">
-      <div class="slide">
+      <div class="steps-track" id="slides">
+      <div class="form-step">
 
       <section class="section active" id="step1" data-step="1">
         <h2 class="step-title"><span class="step-num">1</span> Informations générales</h2>
@@ -377,7 +407,7 @@
         </div>
       </section>
 
-      </div><div class="slide">
+      </div><div class="form-step">
       <section class="section" id="step2" data-step="2">
         <h2 class="step-title"><span class="step-num">2</span> Formation souhaitée</h2>
         <label for="formation">Au choix</label>
@@ -391,7 +421,7 @@
         </select>
       </section>
 
-      </div><div class="slide">
+      </div><div class="form-step">
       <section class="section" id="locationSection" data-step="3">
         <h2 class="step-title"><span class="step-num">3</span> Lieu de formation souhaité 📍</h2>
 
@@ -463,7 +493,7 @@
         </article>
       </section>
 
-      </div><div class="slide">
+      </div><div class="form-step">
       <section class="section" id="step4" data-step="4">
         <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
         <label for="datesSelect">Session souhaitée</label>
@@ -475,7 +505,7 @@
         <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
       </section>
 
-      </div><div class="slide">
+      </div><div class="form-step">
       <section class="section" id="step5" data-step="5">
         <h2 class="step-title"><span class="step-num">5</span> Financement de votre formation 💶</h2>
         <div class="step5-track" id="step5Track">
@@ -574,6 +604,7 @@
         <button class="submit hidden" id="submitBtn" type="submit">ENVOYER ✉️</button>
       </div>
     </form>
+    </div>
   </div>
 
   <div class="modal" id="modal">
@@ -627,7 +658,7 @@
     const submitBtn = document.getElementById('submitBtn');
     const stepElements = [1, 2, 3, 4, 5].map((n) => document.querySelector(`[data-step="${n}"]`));
     const progressPills = Array.from(document.querySelectorAll('[data-pill]'));
-    const slides = Array.from(document.querySelectorAll('.slide'));
+    const slides = Array.from(document.querySelectorAll('.form-step'));
     const slidesWrap = document.getElementById('slides');
     const progressBar = document.getElementById('progressBar');
     const prevBtn = document.getElementById('prevBtn');
