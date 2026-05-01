@@ -2422,10 +2422,11 @@ def api_chat():
             return jsonify({"reply": "Veuillez écrire une question."}), 200
 
         from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, timeout=20)
 
+        print("Appel OpenAI en cours...", flush=True)
         response = client.responses.create(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",
             input=[
                 {
                     "role": "system",
@@ -2436,7 +2437,9 @@ def api_chat():
                     "content": message
                 }
             ],
+            max_output_tokens=400,
         )
+        print("Appel OpenAI terminé", flush=True)
 
         reply = getattr(response, "output_text", None) or "Désolé, je n’ai pas pu générer de réponse."
         print("Réponse IA OK", flush=True)
