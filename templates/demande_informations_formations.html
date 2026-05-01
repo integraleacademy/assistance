@@ -28,17 +28,29 @@
       font-family:Inter,Arial,sans-serif;
       color:var(--slate-900);
       background:radial-gradient(circle at top left,#1e40af 0%,#1e3a8a 40%,#0b2b8a 100%);
-      padding:28px 14px;
+      padding:0;
+    }
+
+    .form-shell{
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
     }
 
     .wrap{
       max-width:1200px;
-      min-height:92vh;
       margin:0 auto;
       background:var(--white);
       border-radius:24px;
       padding:26px;
       box-shadow:0 25px 55px rgba(2,6,23,.35);
+    }
+    .form-card{
+      width:100%;
+      max-width:1200px;
+      padding:32px;
     }
 
     .brand{
@@ -111,17 +123,13 @@
 
     .form-wrapper{
       width:100%;
-      min-height:100vh;
       overflow:hidden;
-      display:flex;
-      align-items:center;
-      justify-content:center;
     }
     .steps-viewport{
       width:100%;
       max-width:900px;
       overflow:hidden;
-      margin:0 auto;
+      margin:32px auto 0;
     }
     .steps-track{
       display:flex;
@@ -137,10 +145,10 @@
       padding:8px;
       display:flex;
       flex-direction:column;
-      justify-content:center;
+      justify-content:flex-start;
       overflow:hidden;
     }
-    .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:6px 0 16px;}
+    .progress-wrap{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;margin:0 0 12px;}
     .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .35s ease;}
     .nav-actions{display:flex;justify-content:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
@@ -374,7 +382,8 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div class="form-shell">
+  <div class="wrap form-card">
     <div class="brand">
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
       <h1>✨ Demande d’informations formations Intégrale Academy</h1>
@@ -606,6 +615,7 @@
     </form>
     </div>
   </div>
+  </div>
 
   <div class="modal" id="modal">
     <div class="modal-box">
@@ -663,7 +673,7 @@
     const progressBar = document.getElementById('progressBar');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
-    let currentSlide = 0;
+    let currentStep = 0;
     const step5Cards = Array.from(document.querySelectorAll('#step5 .step5-card'));
     const ftRefusSelect = document.getElementById('ftRefusOk');
     const financementPerso = document.getElementById('financementPerso');
@@ -909,8 +919,6 @@
       const q4 = q3 && !!identiteNumerique.value;
       const vis = [true, q1, q2, q4];
       step5Cards.forEach((card, i) => card.classList.toggle('hidden', !vis[i]));
-      const lastVisible = [...step5Cards].reverse().find((c) => !c.classList.contains('hidden'));
-      if (lastVisible) lastVisible.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
     }
 
     function validateSlide(index) {
@@ -922,18 +930,21 @@
       return true;
     }
 
-    function goToSlide(index) {
-      currentSlide = Math.max(0, Math.min(index, slides.length - 1));
-      slidesWrap.style.transform = `translateX(-${currentSlide * 100}%)`;
-      progressBar.style.width = `${((currentSlide + 1) / slides.length) * 100}%`;
-      prevBtn.disabled = currentSlide === 0;
-      const isLast = currentSlide === slides.length - 1;
+    function updateStep() {
+      slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
+      progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
+      prevBtn.disabled = currentStep === 0;
+      const isLast = currentStep === slides.length - 1;
       nextBtn.classList.toggle('hidden', isLast);
       submitBtn.classList.toggle('hidden', !isLast);
       progressPills.forEach((pill, i) => {
-        pill.classList.toggle('done', i < currentSlide);
-        pill.classList.toggle('active', i === currentSlide);
+        pill.classList.toggle('done', i < currentStep);
+        pill.classList.toggle('active', i === currentStep);
       });
+    }
+    function goToSlide(index) {
+      currentStep = Math.max(0, Math.min(index, slides.length - 1));
+      updateStep();
     }
 
     function updateStepReveal() {
@@ -1036,15 +1047,16 @@
     franceTravail.dispatchEvent(new Event('change'));
     formation.dispatchEvent(new Event('change'));
     updateStep5Flow();
-    prevBtn.addEventListener('click', () => goToSlide(currentSlide - 1));
+    prevBtn.addEventListener('click', () => goToSlide(currentStep - 1));
     nextBtn.addEventListener('click', () => {
-      if (!validateSlide(currentSlide)) {
+      if (!validateSlide(currentStep)) {
         alert('Merci de compléter cette étape avant de continuer.');
         return;
       }
-      goToSlide(currentSlide + 1);
+      goToSlide(currentStep + 1);
     });
-    goToSlide(0);
+    currentStep = 0;
+    updateStep();
 
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
     openSimu.addEventListener('click', openCentreModal);
