@@ -1683,53 +1683,56 @@ def demande_informations_formations():
         formation_label = PLAN_FORMATIONS.get(form_data.get("formation"), form_data.get("formation", "Formation"))
         prenom = form_data.get("prenom", "")
 
-        devis_id = str(uuid.uuid4())
-        token_plan = uuid.uuid4().hex
-        devis_payload = {
-            "nom": form_data.get("nom", "").strip(),
-            "prenom": form_data.get("prenom", "").strip(),
-            "telephone": form_data.get("telephone", "").strip(),
-            "mail": form_data.get("mail", "").strip(),
-            "formation": form_data.get("formation", ""),
-            "dates": form_data.get("dates", ""),
-            "centre": form_data.get("centre", ""),
-            "cpf_montant": form_data.get("cpf_montant", "0"),
-            "france_travail": form_data.get("france_travail", "NON"),
-            "identite_numerique": form_data.get("identite_numerique", "NON"),
-        }
-        data_store.setdefault("demandes", []).append({
-            "id": devis_id,
-            "token_plan": token_plan,
-            "nom": devis_payload["nom"],
-            "prenom": devis_payload["prenom"],
-            "telephone": devis_payload["telephone"],
-            "mail": devis_payload["mail"],
-            "motif": "Demande de devis détaillé",
-            "details": json.dumps(devis_payload, ensure_ascii=False),
-            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-            "statut": "Non traité",
-            "attribution": "",
-            "commentaire": "",
-            "commentaire_admin": "",
-            "mail_confirme": "",
-            "mail_erreur": "",
-            "mail_contenu": "",
-            "mail_html": "",
-            "pieces_jointes": [],
-            "reponses": [],
-            "is_doublon": False,
-            "rappel_date": "",
-            "plage": "",
-            "statut_devis": "A envoyer",
-            "notation_interne": "CHAUD" if prospect_chaud else "",
-            "echeancier_manuel": [],
-            "pdf_path": ""
-        })
-        devis_url = url_for("plan_public", token=token_plan, _external=True)
-        extra_devis = f"""
-        <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
-        <p style="text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
-        """
+        devis_url = ""
+        extra_devis = ""
+        if form_data.get("souhaite_devis") == "OUI":
+            devis_id = str(uuid.uuid4())
+            token_plan = uuid.uuid4().hex
+            devis_payload = {
+                "nom": form_data.get("nom", "").strip(),
+                "prenom": form_data.get("prenom", "").strip(),
+                "telephone": form_data.get("telephone", "").strip(),
+                "mail": form_data.get("mail", "").strip(),
+                "formation": form_data.get("formation", ""),
+                "dates": form_data.get("dates", ""),
+                "centre": form_data.get("centre", ""),
+                "cpf_montant": form_data.get("cpf_montant", "0"),
+                "france_travail": form_data.get("france_travail", "NON"),
+                "identite_numerique": form_data.get("identite_numerique", "NON"),
+            }
+            data_store.setdefault("demandes", []).append({
+                "id": devis_id,
+                "token_plan": token_plan,
+                "nom": devis_payload["nom"],
+                "prenom": devis_payload["prenom"],
+                "telephone": devis_payload["telephone"],
+                "mail": devis_payload["mail"],
+                "motif": "Demande de devis détaillé",
+                "details": json.dumps(devis_payload, ensure_ascii=False),
+                "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+                "statut": "Non traité",
+                "attribution": "",
+                "commentaire": "",
+                "commentaire_admin": "",
+                "mail_confirme": "",
+                "mail_erreur": "",
+                "mail_contenu": "",
+                "mail_html": "",
+                "pieces_jointes": [],
+                "reponses": [],
+                "is_doublon": False,
+                "rappel_date": "",
+                "plage": "",
+                "statut_devis": "A envoyer",
+                "notation_interne": "CHAUD" if prospect_chaud else "",
+                "echeancier_manuel": [],
+                "pdf_path": ""
+            })
+            devis_url = url_for("plan_public", token=token_plan, _external=True)
+            extra_devis = f"""
+            <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
+            <p style="text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
+            """
 
         extra_identite = ""
         if form_data.get("identite_numerique") == "NON":
