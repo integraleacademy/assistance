@@ -503,9 +503,10 @@
       });
       resultBox.style.display = 'block';
 
-      const alternatives = sortCentersByDistance(
-        ACTIVE_CENTER_LIST.filter((center) => center.key !== recommendedCenter.key)
-      );
+      const alternativesBase = ACTIVE_CENTER_LIST.filter((center) => center.key !== recommendedCenter.key);
+      const alternatives = currentSortMode === 'date'
+        ? sortCentersByDate(alternativesBase)
+        : sortCentersByDistance(alternativesBase);
       selectionBox.innerHTML = alternatives.map((alternativeCenter) => `<div class="selection">${renderCenterDetails(alternativeCenter, {
         badge: '✨ Autre alternative proposée',
         title: getAlternativeHeadline(alternativeCenter)
