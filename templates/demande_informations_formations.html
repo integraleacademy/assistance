@@ -536,7 +536,7 @@
                 Formation au cœur de la Côte d’Azur, entre mer Méditerranée, climat ensoleillé et cadre attractif entre Cannes et Saint-Tropez.<br>
               </p>
               <ul class="location-points">
-                <li><strong>Hébergement :</strong> sur place (forfait 300€).</li>
+                <li id="coteHebergementLine"><strong>Hébergement :</strong> sur place (forfait 300€).</li>
                 <li><strong>Aéroport le plus proche :</strong> Nice.</li>
                 <li><strong>Gare la plus proche :</strong> Saint-Raphaël Valescure.</li>
               </ul>
@@ -777,6 +777,18 @@
 
     const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
 
+
+    const coteHebergementLine = document.getElementById('coteHebergementLine');
+    const COTE_HEBERGEMENT_DEFAULT = '<strong>Hébergement :</strong> sur place (forfait 300€).';
+    const COTE_HEBERGEMENT_VTC = "<strong>Hébergement :</strong> pas d'hébergement sur place (solutions partenaires à proximité).";
+
+    function updateCoteHebergementLine(formationCode) {
+      if (!coteHebergementLine) return;
+      coteHebergementLine.innerHTML = formationCode === 'VTC'
+        ? COTE_HEBERGEMENT_VTC
+        : COTE_HEBERGEMENT_DEFAULT;
+    }
+
     function getAllowedCentresForFormation(formationCode) {
       if (formationCode === 'DESP_INIT') return ['cote_azur', 'auvergne', 'paris'];
       if (formationCode === 'A3P') return ['cote_azur', 'auvergne'];
@@ -901,6 +913,8 @@
       if (vaeRemoteText) vaeRemoteText.classList.add('hidden');
 
       if (!v) return;
+
+      updateCoteHebergementLine(v);
 
       if (['A3P', 'DESP_INIT'].includes(v)) {
         optCote.classList.remove('hidden');
@@ -1153,6 +1167,8 @@
       dateExamen.value = selected ? (selected.dataset.dateExamen || '') : '';
       updateStepReveal();
     });
+
+    updateCoteHebergementLine(formation.value);
 
     formation.addEventListener('change', () => {
       step5ManualIndex = null;
