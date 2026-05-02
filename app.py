@@ -849,7 +849,12 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
 def _render_email_template(template_name: str, **kwargs) -> str:
     template_path = os.path.join(app.root_path, "templates", "emails", template_name)
     with open(template_path, "r", encoding="utf-8") as f:
-        return f.read().format(**kwargs)
+        html = f.read()
+
+    for key, value in kwargs.items():
+        html = html.replace("{" + key + "}", str(value))
+
+    return html
 
 def build_vae_desp_email_html(prenom, devis_url):
     return _render_email_template("vae_desp.html", prenom=prenom, devis_url=devis_url)
