@@ -607,6 +607,8 @@
       if (!resp.ok) throw new Error('Impossible de récupérer les dates de formation.');
       const sessions = await resp.json();
       const result = {};
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
       ACTIVE_CENTER_LIST.forEach((center) => {
         const centerCode = center.key === 'cote-azur' ? 'cote_azur' : center.key;
         const formations = sessions?.[centerCode] || {};
@@ -625,7 +627,8 @@
         });
         if (allDates.length) {
           allDates.sort((a, b) => a.start - b.start);
-          result[center.key] = allDates[0];
+          const upcoming = allDates.find((session) => session.start >= todayUtc);
+          result[center.key] = upcoming || null;
         } else {
           result[center.key] = null;
         }
