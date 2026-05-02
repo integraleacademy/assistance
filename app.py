@@ -844,139 +844,18 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         return False
 
 
+
+
+def _render_email_template(template_name: str, **kwargs) -> str:
+    template_path = os.path.join(app.root_path, "templates", "emails", template_name)
+    with open(template_path, "r", encoding="utf-8") as f:
+        return f.read().format(**kwargs)
+
 def build_vae_desp_email_html(prenom, devis_url):
-    return f"""<html style="overflow-y: hidden;">
-<head>
-    <title></title>
-</head>
-<body style="height: auto; min-height: auto;">
-<div style="font-family: Arial, sans-serif; max-width:650px; margin:auto; background:#f9f9f9; padding:20px;">
-<div style="background:#ffffff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
-<div style="text-align:center; padding:25px 20px 10px 20px;"><img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:110px; height:auto; display:block; margin:auto;" />
-<h2 style="color:#000; font-size:20px; margin:12px 0 0 0;">Intégrale Academy</h2>
-</div>
+    return _render_email_template("vae_desp.html", prenom=prenom, devis_url=devis_url)
 
-<div style="background:#F4C45A; padding:14px; text-align:center;">
-<h3 style="margin:0; font-size:18px; color:#000;">📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)</h3>
-</div>
 
-<div style="padding:25px; font-size:15px; color:#333; line-height:1.7;">
-<p>Bonjour <strong>{prenom}</strong>,</p>
 
-<p>Je fais suite à votre demande de renseignements concernant la <strong>Validation des Acquis de l’Expérience (VAE)</strong> du titre <strong>RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée</strong>, délivré par notre centre de formation Intégrale Academy.</p>
-
-<p>La VAE vous permet d’obtenir un <strong>titre reconnu par l’État (niveau 5 – Bac+2)</strong> sur la base de votre expérience professionnelle dans la sécurité privée ainsi que de vos fonctions de direction, de management et de gestion d’entreprise.</p>
-
-<p><strong>📄 Dossier de présentation :</strong></p>
-
-<div style="text-align:center; margin:20px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#ffffff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le dossier de présentation </a></div>
-
-<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
-<div style="margin:30px 0; text-align:center;"><a href="https://gestionstagiaires-r5no.onrender.com/vae-desp" style="display:inline-block; padding:16px 28px; background:#F4C45A; color:#000; text-decoration:none; border-radius:10px; font-weight:bold; font-size:16px;">🚀 Démarrer ma VAE maintenant </a></div>
-
-<p style="text-align:center; font-size:14px; color:#666;">👉 Vous pouvez commencer immédiatement votre Livret 1 en ligne en cliquant ici.</p>
-
-<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
-<h3 style="color:#000;">🧭 Les étapes de votre parcours VAE</h3>
-
-<h4 style="margin-top:20px;">1️⃣ Rédaction du Livret 1 (dossier de faisabilité)</h4>
-
-<p>Vous complétez votre dossier de faisabilité en ligne. Ce document permet de présenter votre parcours professionnel, vos fonctions exercées et vos responsabilités. Il s’agit de la « photographie » de votre expérience afin de vérifier l’adéquation avec le référentiel du titre.</p>
-
-<p><strong>⏳ Durée estimée : environ 30 minutes.</strong></p>
-
-<h4 style="margin-top:20px;">2️⃣ Étude du Livret 1 et attestation de recevabilité</h4>
-
-<p>La commission pédagogique étudie votre dossier. Si les éléments sont conformes et suffisants, une <strong>attestation de recevabilité</strong> vous est délivrée.</p>
-
-<p>À cette étape, nous mettons en place la convention de VAE et procédons au règlement de l’<strong>acompte de 30 % (1 140 €)</strong>.</p>
-
-<h4 style="margin-top:20px;">3️⃣ Constitution du Livret 2</h4>
-
-<p>Le Livret 2 constitue le cœur de votre démarche. Vous y détaillez précisément :</p>
-
-<ul style="margin-left:20px;">
-    <li>Vos activités professionnelles</li>
-    <li>Vos missions de direction</li>
-    <li>Vos responsabilités managériales</li>
-    <li>Vos compétences réglementaires et opérationnelles</li>
-    <li>Les situations professionnelles rencontrées</li>
-</ul>
-
-<p>Ce dossier servira de base à l’évaluation par le jury de certification.</p>
-
-<h4 style="margin-top:20px;">4️⃣ Étude du Livret 2</h4>
-
-<p>La commission analyse votre dossier. Si l’ensemble est conforme et complet, une date de passage devant le jury est programmée.</p>
-
-<h4 style="margin-top:20px;">5️⃣ Passage devant le jury de certification</h4>
-
-<p>Avant le jury, le solde de la formation est à régler (<strong>2 520 €</strong>).</p>
-
-<p>L’entretien dure environ <strong>45 minutes à 1 heure</strong> et peut se dérouler :</p>
-
-<ul style="margin-left:20px;">
-    <li>En présentiel à Nice (06)</li>
-    <li>En visioconférence</li>
-</ul>
-
-<p>Le jury échange avec vous sur votre parcours et vérifie la maîtrise des compétences attendues à travers des questions concrètes liées à votre expérience.</p>
-
-<h4 style="margin-top:20px;">6️⃣ Obtention de votre certification</h4>
-
-<p>Après validation par le jury, vous obtenez officiellement le titre RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée.</p>
-
-<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
-<h3 style="color:#000;">💶 Tarif et financement</h3>
-
-<p><strong>Tarif global : 3 800 € TTC</strong></p>
-
-<p>Ce tarif comprend :</p>
-
-<ul style="margin-left:20px;">
-    <li>L’étude de recevabilité</li>
-    <li>L’accompagnement méthodologique Livret 2</li>
-    <li>La préparation au jury</li>
-    <li>Les frais de certification</li>
-</ul>
-
-<p>👉 Financement possible via votre <strong>Compte Personnel de Formation (CPF)</strong>.</p>
-
-<div style="margin:25px 0; padding:18px; background:#f5f5f5; border-radius:10px; text-align:center; border:1px solid #e4e4e4;">
-<p style="margin:0 0 12px 0; font-size:15px; color:#333;">Besoin d’un <strong>devis personnalisé</strong> avec plan de financement ?</p>
-<a href="{devis_url}" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger votre devis détaillé </a></div>
-
-<hr style="border:none; border-top:1px solid #eee; margin:30px 0;" />
-<h3 style="color:#000;">📞 Échanger avec nous</h3>
-
-<p>Vous pouvez planifier un rendez-vous téléphonique pour faire le point sur votre situation :</p>
-
-<div style="text-align:center; margin:20px 0;"><a href="https://calendly.com/integraleacademy/dirigeant" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">📞 Planifier un rendez-vous </a></div>
-
-<div style="margin:22px 0; padding:16px; background:#0f1f33; border-radius:10px; border:1px solid #0f1f33;">
-<h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
-<p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />
-pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
-<a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy </a></div>
-
-<p>Je reste bien entendu à votre disposition pour tout renseignement complémentaire.</p>
-
-<p>Bien cordialement,<br />
-<br />
-<strong>Clément VAILLANT</strong><br />
-Directeur – Intégrale Academy<br />
-ecole@integraleacademy.com<br />
-📍 54 chemin du Carreou – 83480 Puget-sur-Argens</p>
-</div>
-
-<div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />
-SIREN 840 899 884 – NDA 93830600283 – Certification QUALIOPI n°03169<br />
-integraleacademy.com</div>
-</div>
-</div>
-</body>
-</html>
-"""
 
 
 def _format_selected_session_date(dates_txt: str) -> str:
@@ -1086,120 +965,10 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
     session_html = _format_upcoming_sessions_for_email(centre_code, "A3P")
+    return _render_email_template("a3p.html", prenom=prenom, centre_display=centre_display, session_html=session_html, devis_url=devis_url)
 
-    return f"""<html style="overflow-y:hidden;">
-<head>
-<title></title>
-<style>
-  .cta-btn {{
-    display:inline-block;
-    padding:12px 20px;
-    text-decoration:none;
-    border-radius:8px;
-    font-weight:bold;
-    transition:transform .18s ease-in-out, box-shadow .18s ease-in-out, filter .18s ease-in-out;
-    animation:ctaPulse 2s ease-in-out infinite;
-  }}
-  .cta-btn--dark {{
-    background:#0f1f33;
-    color:#fff !important;
-    box-shadow:0 6px 18px rgba(15,31,51,.25);
-  }}
-  .cta-btn--gold {{
-    background:#F4C45A;
-    color:#000 !important;
-    box-shadow:0 6px 18px rgba(244,196,90,.35);
-  }}
-  .cta-btn:hover {{
-    transform:translateY(-1px) scale(1.01);
-    filter:brightness(1.04);
-  }}
-  @keyframes ctaPulse {{
-    0%, 100% {{ transform:scale(1); box-shadow:0 6px 18px rgba(15,31,51,.25); }}
-    50% {{ transform:scale(1.03); box-shadow:0 10px 24px rgba(15,31,51,.34); }}
-  }}
-  @media (prefers-reduced-motion: reduce) {{
-    .cta-btn {{ animation:none !important; transition:none !important; }}
-  }}
-</style>
-</head>
-<body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
-<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
-  <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
-    <div style="text-align:center; padding:24px 20px 8px 20px;">
-      <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
-      <h2 style="color:#000; font-size:22px; margin:12px 0 0 0;">Intégrale Academy</h2>
-    </div>
 
-    <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
-      <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
-      <p style="margin:0 0 14px 0;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Agent de Protection Physique des Personnes (A3P – Bodyguard)</strong>, titre reconnu par l’État (<strong>RNCP38002 – niveau 4</strong>).</p>
-      <p style="margin:0 0 14px 0;">Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que garde du corps, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle Agent de protection physique des personnes délivrée par le CNAPS (Ministère de l'intérieur).</p>
-      <p style="margin:0;">Vous trouverez ci-dessous les informations essentielles, présentées de façon claire par rubrique.</p>
-    </div>
 
-    <div style="padding:8px 20px 22px 20px;">
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
-        </p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🎓 Durée et organisation</strong></p>
-        <p style="margin:0;"><strong>328 heures de formation</strong>, conformément à la réglementation.</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🏫 Prochaines formations</strong></p>
-        {session_html}
-        <p style="margin:8px 0 0 0;">Centre de formation : <strong>{centre_display}</strong></p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif & financement</strong></p>
-        <p style="margin:0 0 10px 0;">Tarif : <strong>4200 € TTC</strong><br />Formation finançable via votre Compte Personnel de Formation (CPF).</p>
-        <p style="margin:0;">👉 Vous devrez activer votre <strong>Identité Numérique La Poste</strong> pour valider le dossier CPF.</p>
-        <p style="margin:12px 0 0 0; text-align:center;">
-          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
-        </p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🛏️ Hébergement</strong></p>
-        <p style="margin:0 0 8px 0;">Nous proposons une solution d'hébergement au sein du centre de formation au tarif de :<br /><strong>300 € TTC pour la durée totale de la formation</strong></p>
-        <p style="margin:0;">Dortoir collectif, salle de bain, douche, cuisine équipée, machine à laver et sèche-linge. 👉 Paiement sur place (chèque ou espèces), réservation à effectuer lors de votre inscription.</p>
-      </div>
-
-      <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📞 Prochaine étape</strong></p>
-        <p style="margin:0 0 12px 0;">Pour réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique :</p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://calendly.com/integraleacademy/apr" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
-        </p>
-      </div>
-
-      <div style="background:#0f1f33; border:1px solid #0f1f33; border-radius:12px; padding:16px; margin-top:12px;">
-        <h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
-        <p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy</a>
-        </p>
-      </div>
-
-    </div>
-
-    <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
-      <p style="margin:0 0 12px 0;">Je reste à votre disposition pour tous renseignements complémentaires.<br />Je vous souhaite une excellente journée,</p>
-      <p style="margin:0;"><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
-    </div>
-
-    <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
-  </div>
-</div>
-</body>
-</html>"""
 
 
 def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
@@ -1210,305 +979,27 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
         if session_date
         else "<p style=\"margin:0; line-height:1.65;\">📅 <strong>Date transmise lors de notre échange téléphonique.</strong></p>"
     )
+    return _render_email_template("aps.html", prenom=prenom, session_html=session_html, centre_label=centre_label, centre_address=centre_address)
 
-    return f"""<html style="overflow-y: hidden;">
-<head>
-    <title></title>
-</head>
-<body style="height: auto; min-height: auto;">
-<div style="font-family: Arial, sans-serif; max-width:600px; margin:auto; background:#f9f9f9; padding:20px;">
-<div style="background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); overflow:hidden;">
-<div style="text-align:center; padding:20px 20px 10px 20px;"><img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
-<h2 style="color:#000; font-size:18px; margin:10px 0 0 0;">Intégrale Academy</h2>
-</div>
 
-<div style="background:#F4C45A; padding:12px; text-align:center;">
-<h3 style="margin:0; font-size:18px; color:#000;">🛡️ Formation Agent de Sécurité Privée (APS)</h3>
-</div>
 
-<div style="padding:20px; font-size:15px; color:#333; line-height:1.65;">
-<p>Bonjour {prenom},</p>
-<p>Pour faire suite à votre demande de renseignements, nous vous prions de bien vouloir trouver ci-dessous <strong>l’ensemble des informations détaillées</strong> concernant notre formation <strong>Agent de Sécurité Privée (APS)</strong>.</p>
-<h3 style="margin-top:22px; font-size:17px; color:#000;">📄 Dossier de présentation 2026</h3>
-<p style="text-align:center; margin:18px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le Dossier de présentation </a></p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">📅 Votre session</h3>
-<div style="margin:12px 0; padding:14px; background:#f5f5f5; border-radius:10px; border:1px solid #e8e8e8;">{session_html}</div>
-<p style="margin-top:10px;"><strong>⚠️ Places limitées :</strong> formation limitée à <strong>12 personnes</strong> par session.</p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">💶 Tarifs</h3>
-<p><strong>Formation : 1 650 € TTC</strong></p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">⏱️ Durée & rythme</h3>
-<p><strong>175 heures de formation</strong><br />Du <strong>lundi au vendredi</strong><br />Durée : <strong>5 semaines</strong></p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">📍 Lieu</h3>
-<p><strong>{centre_label}</strong><br /><strong>{centre_address}</strong></p>
-<h3 style="margin-top:25px; font-size:17px; color:#000;">💳 Financement</h3>
-<ul style="padding-left:20px;">
-<li><strong>Compte Personnel de Formation (CPF)</strong></li>
-<li><strong>Demande de financement</strong> auprès de <strong>France Travail</strong></li>
-<li><strong>Financement personnel</strong> : acompte de 30 % + paiement en plusieurs fois</li>
-</ul>
-<p style="text-align:center; margin:20px 0;"><a href="https://lidentitenumerique.laposte.fr" style="display:inline-block; padding:12px 22px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold;">🔐 Identité numérique La Poste </a></p>
-<p style="text-align:center; margin:20px 0;"><a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; padding:12px 22px; background:#0f1f33; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">📄 Télécharger le Dossier APS </a></p>
-<div style="margin:22px 0 8px 0; padding:16px; background:#0f1f33; border-radius:10px; border:1px solid #0f1f33;">
-<h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
-<p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
-<a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy </a></div>
-<p>Je reste à votre disposition pour toute information complémentaire.<br /><br /><strong>Clément VAILLANT</strong><br />Directeur – Intégrale Academy<br />ecole@integraleacademy.com – integraleacademy.com</p>
-</div>
-</div>
-</div>
-</body>
-</html>
-"""
 
 
 def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
-    return f"""<html style="overflow-y:hidden;">
-<head>
-<title></title>
-<style>
-  .cta-btn {{
-    display:inline-block;
-    padding:12px 20px;
-    text-decoration:none;
-    border-radius:8px;
-    font-weight:bold;
-    transition:transform .18s ease-in-out, box-shadow .18s ease-in-out, filter .18s ease-in-out;
-    animation:ctaPulse 2s ease-in-out infinite;
-  }}
-  .cta-btn--dark {{
-    background:#0f1f33;
-    color:#fff !important;
-    box-shadow:0 6px 18px rgba(15,31,51,.25);
-  }}
-  .cta-btn--gold {{
-    background:#F4C45A;
-    color:#000 !important;
-    box-shadow:0 6px 18px rgba(244,196,90,.35);
-  }}
-  .cta-btn:hover {{
-    transform:translateY(-1px) scale(1.01);
-    filter:brightness(1.04);
-  }}
-  @keyframes ctaPulse {{
-    0%, 100% {{ transform:scale(1); box-shadow:0 6px 18px rgba(15,31,51,.25); }}
-    50% {{ transform:scale(1.03); box-shadow:0 10px 24px rgba(15,31,51,.34); }}
-  }}
-  @media (prefers-reduced-motion: reduce) {{
-    .cta-btn {{ animation:none !important; transition:none !important; }}
-  }}
-</style>
-</head>
-<body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
-<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
-  <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
-    <div style="text-align:center; padding:24px 20px 8px 20px;">
-      <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
-      <h2 style="color:#000; font-size:22px; margin:12px 0 0 0;">Intégrale Academy</h2>
-    </div>
+    return _render_email_template("vtc.html", prenom=prenom, devis_url=devis_url)
 
-    <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
-      <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
-      <p style="margin:0 0 14px 0;">Pour faire suite à votre demande de renseignements, nous vous prions de bien vouloir trouver ci-dessous l’ensemble des informations détaillées concernant notre formation <strong>Chauffeur VTC</strong>.</p>
-    </div>
 
-    <div style="padding:8px 20px 22px 20px;">
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
-        <p style="margin:0 0 10px 0;">Vous pouvez consulter l’intégralité du contenu de la formation (programme, organisation, financement, modalités d’examen) en téléchargeant notre dossier de présentation.</p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
-        </p>
-      </div>
 
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📅 Organisation de la formation</strong></p>
-        <p style="margin:0 0 10px 0;"><strong>Formation théorique :</strong><br />• 100 % en ligne à distance<br />• Accessible 7j/7<br />• Vous démarrez votre formation quand vous le souhaitez, dès validation de votre inscription</p>
-        <p style="margin:0;"><strong>Formation pratique :</strong><br />• 1/2 journée de mise en situation professionnelle<br />• Réalisée dans nos locaux à Puget-sur-Argens (83)<br />• Préparation spécifique à l’examen pratique VTC</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🗓️ Dates des examens</strong></p>
-        <p style="margin:0 0 12px 0;">Les examens théoriques sont organisés par la Chambre des Métiers pour l’ensemble des candidats de la région PACA.</p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Consulter les dates d'examen</a>
-        </p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🧭 Déroulement détaillé de la formation</strong></p>
-        <p style="margin:0 0 8px 0;">Dès validation de votre inscription, nous vous communiquons vos identifiants pour accéder à votre espace de suivi de la formation théorique en ligne.</p>
-        <p style="margin:0 0 8px 0;">Environ 1 mois plus tard, vous passez votre examen théorique organisé par la Chambre des Métiers dans les Bouches-du-Rhône pour tous les candidats de la région PACA.</p>
-        <p style="margin:0 0 8px 0;">Après réussite de l’examen théorique, et quelques jours avant l’examen pratique, nous organisons votre formation pratique dans nos locaux à Puget-sur-Argens (sur une 1/2 journée).</p>
-        <p style="margin:0 0 8px 0;">Vous passez ensuite votre examen pratique à La Valette-du-Var (83) si vous résidez dans le Var, ou à Nice si vous résidez dans les Alpes-Maritimes (06).</p>
-        <p style="margin:0;">En cas de réussite, la Chambre des Métiers vous indique la démarche pour votre demande de carte VTC auprès de la Préfecture.</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📋 Prérequis</strong></p>
-        <p style="margin:0;">Permis B depuis plus de 3 ans<br />Casier judiciaire vierge</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif de la formation</strong></p>
-        <p style="margin:0 0 8px 0;"><strong>1 650 € TTC – FORMULE TOUT INCLUS</strong></p>
-        <p style="margin:0;">✔ Formation théorique complète<br />✔ Formation pratique (1/2 journée)<br />✔ Frais d’examen inclus<br />✔ Prêt du véhicule le jour de l’examen</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>⏱️ Durée</strong></p>
-        <p style="margin:0;">Théorie : environ 100 heures<br />Pratique : 1/2 journée de mise en situation avec le véhicule</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💳 Financement de votre formation</strong></p>
-        <p style="margin:0 0 8px 0;">Compte Personnel de Formation (CPF)<br />Demande de financement auprès de France Travail (Pôle Emploi)<br />Financement personnel</p>
-        <p style="margin:0;">⚠️ Pour toute demande de financement via le CPF ou France Travail, la création de votre <strong>Identité Numérique La Poste</strong> est obligatoire.</p>
-        <p style="margin:12px 0 0 0; text-align:center;">
-          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
-        </p>
-      </div>
-
-      <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>✅ Documents & prochaine étape</strong></p>
-        <p style="margin:0 0 10px 0; text-align:center;">
-          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Consulter le programme de formation</a>
-        </p>
-        <p style="margin:0 0 10px 0; text-align:center;">
-          <a href="https://www.integraleacademy.com/_files/ugd/008e7b_0e29b04a71dd4dcc9c0f266d28f0514b.pdf" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger notre agrément VTC</a>
-        </p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://calendly.com/integraleacademy/chauffeurvtc" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
-        </p>
-      </div>
-
-    </div>
-
-    <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
-      <p style="margin:0 0 12px 0;">Je reste à votre disposition pour tous renseignements complémentaires.<br />Je vous souhaite une excellente journée,</p>
-      <p style="margin:0;"><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
-    </div>
-
-    <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
-  </div>
-</div>
-</body>
-</html>"""
 
 
 def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
     session_html = _format_upcoming_sessions_for_email(centre_code, "DESP_INIT")
+    return _render_email_template("desp_init.html", prenom=prenom, centre_display=centre_display, session_html=session_html, devis_url=devis_url)
 
-    return f"""<html style="overflow-y:hidden;">
-<head>
-<title></title>
-<style>
-  .cta-btn {{
-    display:inline-block;
-    padding:12px 20px;
-    text-decoration:none;
-    border-radius:8px;
-    font-weight:bold;
-    transition:transform .18s ease-in-out, box-shadow .18s ease-in-out, filter .18s ease-in-out;
-    animation:ctaPulse 2s ease-in-out infinite;
-  }}
-  .cta-btn--dark {{
-    background:#0f1f33;
-    color:#fff !important;
-    box-shadow:0 6px 18px rgba(15,31,51,.25);
-  }}
-  .cta-btn--gold {{
-    background:#F4C45A;
-    color:#000 !important;
-    box-shadow:0 6px 18px rgba(244,196,90,.35);
-  }}
-  .cta-btn:hover {{
-    transform:translateY(-1px) scale(1.01);
-    filter:brightness(1.04);
-  }}
-  @keyframes ctaPulse {{
-    0%, 100% {{ transform:scale(1); box-shadow:0 6px 18px rgba(15,31,51,.25); }}
-    50% {{ transform:scale(1.03); box-shadow:0 10px 24px rgba(15,31,51,.34); }}
-  }}
-  @media (prefers-reduced-motion: reduce) {{
-    .cta-btn {{ animation:none !important; transition:none !important; }}
-  }}
-</style>
-</head>
-<body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
-<div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
-  <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
-    <div style="text-align:center; padding:24px 20px 8px 20px;">
-      <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
-      <h2 style="color:#000; font-size:22px; margin:12px 0 0 0;">Intégrale Academy</h2>
-    </div>
 
-    <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
-      <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
-      <p style="margin:0 0 14px 0;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
-      <p style="margin:0 0 14px 0;">Cette formation permet d’obtenir les compétences indispensables pour créer, diriger et gérer une entreprise de sécurité privée et vous permet de demander votre agrément dirigeant auprès du CNAPS conformément à la réglementation.</p>
-      <p style="margin:0;">Vous trouverez ci-dessous les informations essentielles, présentées de façon claire par rubrique.</p>
-    </div>
 
-    <div style="padding:8px 20px 22px 20px;">
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
-        </p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🎓 Durée et organisation</strong></p>
-        <p style="margin:0 0 10px 0;">La formation complète se déroule sur <strong>245 heures</strong>, réparties ainsi :</p>
-        <ul style="margin:0 0 10px 18px; padding:0;"><li>175 heures de e-learning à distance</li><li>70 heures de présentiel (2 semaines)</li></ul>
-        <p style="margin:0;">Le e-learning est accessible 24h/24 depuis un ordinateur, une tablette ou un smartphone, avec accompagnement pédagogique tout au long du parcours.</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🏫 Prochaines formations</strong></p>
-        {session_html}
-        <p style="margin:0 0 8px 0;">Retrouvez les dates de toutes nos formations en cliquant <a href="https://www.integraleacademy.com/planning" style="color:#0f1f33;font-weight:bold;">ici</a>.</p>
-        <p style="margin:0;">Centre de formation : <strong>{centre_display}</strong></p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif et financement</strong></p>
-        <p style="margin:0 0 10px 0;">Le tarif de la formation est de <strong>4 300 € TTC</strong>. Elle est finançable via votre Compte Personnel de Formation (CPF).</p>
-        <p style="margin:0 0 12px 0;">Pour finaliser un dossier CPF, il faut créer ou activer votre <strong>Identité Numérique La Poste</strong>.</p>
-        <p style="margin:0; text-align:center;">
-          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
-        </p>
-      </div>
-
-      <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📞 Prochaine étape</strong></p>
-        <p style="margin:0 0 12px 0;">Si vous souhaitez réserver votre place ou poser vos questions, vous pouvez planifier un rendez-vous téléphonique :</p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://calendly.com/integraleacademy/dirigeant" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
-        </p>
-      </div>
-
-      <div style="background:#0f1f33; border:1px solid #0f1f33; border-radius:12px; padding:16px; margin-top:12px;">
-        <h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question ?</h3>
-        <p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />pour obtenir des réponses immédiates sur la formation, les financements ou votre projet.</p>
-        <p style="margin:0; text-align:center;">
-          <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">🚀 Accéder à l’IA Intégrale Academy</a>
-        </p>
-      </div>
-    </div>
-
-    <div style="padding:0 20px 18px 20px; font-size:15px; color:#333; line-height:1.6;">
-      <p style="margin:0 0 12px 0;">Je reste à votre disposition pour tous renseignements complémentaires.<br />Je vous souhaite une excellente journée,</p>
-      <p style="margin:0;"><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
-    </div>
-
-    <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
-  </div>
-</div>
-</body>
-</html>"""
 
 # --------------- Auth helpers ---------------
 def login_required(f):
