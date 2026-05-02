@@ -508,7 +508,12 @@
     }
     function parseDateFromSessionText(txt) {
       if (!txt) return null;
-      const numeric = txt.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
+      const text = String(txt)
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase();
+
+      const numeric = text.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
       if (numeric) {
         const d = Number(numeric[1]);
         const m = Number(numeric[2]);
@@ -516,6 +521,22 @@
         const date = new Date(Date.UTC(y, m - 1, d));
         return Number.isNaN(date.getTime()) ? null : date;
       }
+
+      const monthMap = {
+        janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6,
+        juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12
+      };
+      const textual = text.match(/(\d{1,2})\s+([a-z]+)\s+(20\d{2})/);
+      if (textual) {
+        const d = Number(textual[1]);
+        const m = monthMap[textual[2]];
+        const y = Number(textual[3]);
+        if (m) {
+          const date = new Date(Date.UTC(y, m - 1, d));
+          return Number.isNaN(date.getTime()) ? null : date;
+        }
+      }
+
       return null;
     }
     function formatDateFr(date) {
