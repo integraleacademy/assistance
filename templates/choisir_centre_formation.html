@@ -525,23 +525,61 @@
         juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12
       };
 
+      const buildUtcDate = (day, month, year) => {
+        const value = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+        return Number.isNaN(value.getTime()) ? null : value;
+      };
+
       const rangeTextual = text.match(/du\s+(\d{1,2})\s+([a-z]+)\s+(20\d{2})\s+au\s+(\d{1,2})\s+([a-z]+)\s+(20\d{2})/);
       if (rangeTextual) {
         const start = new Date(Date.UTC(Number(rangeTextual[3]), (monthMap[rangeTextual[2]] || 1) - 1, Number(rangeTextual[1])));
         const end = new Date(Date.UTC(Number(rangeTextual[6]), (monthMap[rangeTextual[5]] || 1) - 1, Number(rangeTextual[4])));
-        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) return { start, end };
+        if (start && end) return { start, end };
       }
 
       const rangeNumeric = text.match(/du\s+(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\s+au\s+(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
       if (rangeNumeric) {
-        const start = new Date(Date.UTC(Number(rangeNumeric[3]), Number(rangeNumeric[2]) - 1, Number(rangeNumeric[1])));
-        const end = new Date(Date.UTC(Number(rangeNumeric[6]), Number(rangeNumeric[5]) - 1, Number(rangeNumeric[4])));
+        const start = buildUtcDate(rangeNumeric[1], rangeNumeric[2], rangeNumeric[3]);
+        const end = buildUtcDate(rangeNumeric[4], rangeNumeric[5], rangeNumeric[6]);
         if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) return { start, end };
+      }
+
+      const dayMonthYear = [];
+      const numericRegex = /(\d{1,2})[/-](\d{1,2})(?:[/-](20\d{2}))?/g;
+      let numericMatch;
+      while ((numericMatch = numericRegex.exec(text)) !== null) {
+        dayMonthYear.push({
+          day: Number(numericMatch[1]),
+          month: Number(numericMatch[2]),
+          year: numericMatch[3] ? Number(numericMatch[3]) : null
+        });
+      }
+      const textualRegex = /(\d{1,2})\s+([a-z]+)(?:\s+(20\d{2}))?/g;
+      let textualMatch;
+      while ((textualMatch = textualRegex.exec(text)) !== null) {
+        const month = monthMap[textualMatch[2]];
+        if (!month) continue;
+        dayMonthYear.push({
+          day: Number(textualMatch[1]),
+          month,
+          year: textualMatch[3] ? Number(textualMatch[3]) : null
+        });
+      }
+      if (dayMonthYear.length >= 2) {
+        const fallbackYear = dayMonthYear.find((item) => item.year)?.year || new Date().getUTCFullYear();
+        const normalized = dayMonthYear.map((item) => ({
+          day: item.day,
+          month: item.month,
+          year: item.year || fallbackYear
+        }));
+        const start = buildUtcDate(normalized[0].day, normalized[0].month, normalized[0].year);
+        const end = buildUtcDate(normalized[1].day, normalized[1].month, normalized[1].year);
+        if (start && end) return { start, end };
       }
 
       const numeric = text.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
       if (numeric) {
-        const start = new Date(Date.UTC(Number(numeric[3]), Number(numeric[2]) - 1, Number(numeric[1])));
+        const start = buildUtcDate(numeric[1], numeric[2], numeric[3]);
         return Number.isNaN(start.getTime()) ? null : { start, end: null };
       }
 
@@ -549,7 +587,7 @@
       if (textual) {
         const m = monthMap[textual[2]];
         if (m) {
-          const start = new Date(Date.UTC(Number(textual[3]), m - 1, Number(textual[1])));
+          const start = buildUtcDate(textual[1], m, textual[3]);
           return Number.isNaN(start.getTime()) ? null : { start, end: null };
         }
       }
