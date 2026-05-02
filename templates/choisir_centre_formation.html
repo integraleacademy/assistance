@@ -454,12 +454,12 @@
       const distanceMeters = latestDistances[center.key];
       const distanceLabel = formatDistanceKm(distanceMeters);
       const travelTimes = latestTravelTimes ? latestTravelTimes[center.key] : null;
-      const nextSessionDate = latestNextSessionDates ? latestNextSessionDates[center.key] : null;
+      const nextSession = latestNextSessionDates ? latestNextSessionDates[center.key] : null;
       const benefits = getCenterBenefits(center);
       const badgeHtml = `<div class="center-card-badge">${cardOptions.badge}</div>`;
       const subtitleHtml = cardOptions.subtitle ? `<p class="center-card-subtitle">${cardOptions.subtitle}</p>` : '';
-      const nextSessionHtml = nextSessionDate
-        ? `<div class="next-session-highlight">📅 Prochaine date de formation : <strong>${formatDateFr(nextSessionDate)}</strong></div>`
+      const nextSessionHtml = nextSession
+        ? `<div class="next-session-highlight">📅 Prochaine date de formation : <strong>${formatSessionRangeFr(nextSession)}</strong></div>`
         : '<div class="next-session-highlight">📅 Prochaine date de formation : <strong>Non disponible</strong></div>';
       const commonNote = center.key === CENTER_PARIS.key
         ? 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence.'
@@ -483,8 +483,8 @@
     }
     function sortCentersByDate(centers) {
       return [...centers].sort((a, b) => {
-        const dateA = latestNextSessionDates?.[a.key] ? new Date(latestNextSessionDates[a.key]).getTime() : Number.POSITIVE_INFINITY;
-        const dateB = latestNextSessionDates?.[b.key] ? new Date(latestNextSessionDates[b.key]).getTime() : Number.POSITIVE_INFINITY;
+        const dateA = latestNextSessionDates?.[a.key]?.start ? new Date(latestNextSessionDates[a.key].start).getTime() : Number.POSITIVE_INFINITY;
+        const dateB = latestNextSessionDates?.[b.key]?.start ? new Date(latestNextSessionDates[b.key].start).getTime() : Number.POSITIVE_INFINITY;
         if (dateA !== dateB) return dateA - dateB;
         return sortCentersByDistance([a, b])[0].key === a.key ? -1 : 1;
       });
@@ -513,40 +513,44 @@
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
-    function parseDateFromSessionText(txt, dateExamen) {
-      const exam = String(dateExamen || '').trim();
-      if (exam) {
-        const examDate = new Date(`${exam}T00:00:00Z`);
-        if (!Number.isNaN(examDate.getTime())) return examDate;
-      }
-
+    function parseSessionRange(txt) {
       if (!txt) return null;
       const text = String(txt)
         .normalize('NFD')
         .replace(/[̀-ͯ]/g, '')
         .toLowerCase();
 
-      const numeric = text.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
-      if (numeric) {
-        const d = Number(numeric[1]);
-        const m = Number(numeric[2]);
-        const y = Number(numeric[3]);
-        const date = new Date(Date.UTC(y, m - 1, d));
-        return Number.isNaN(date.getTime()) ? null : date;
-      }
-
       const monthMap = {
         janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6,
         juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12
       };
+
+      const rangeTextual = text.match(/du\s+(\d{1,2})\s+([a-z]+)\s+(20\d{2})\s+au\s+(\d{1,2})\s+([a-z]+)\s+(20\d{2})/);
+      if (rangeTextual) {
+        const start = new Date(Date.UTC(Number(rangeTextual[3]), (monthMap[rangeTextual[2]] || 1) - 1, Number(rangeTextual[1])));
+        const end = new Date(Date.UTC(Number(rangeTextual[6]), (monthMap[rangeTextual[5]] || 1) - 1, Number(rangeTextual[4])));
+        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) return { start, end };
+      }
+
+      const rangeNumeric = text.match(/du\s+(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\s+au\s+(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
+      if (rangeNumeric) {
+        const start = new Date(Date.UTC(Number(rangeNumeric[3]), Number(rangeNumeric[2]) - 1, Number(rangeNumeric[1])));
+        const end = new Date(Date.UTC(Number(rangeNumeric[6]), Number(rangeNumeric[5]) - 1, Number(rangeNumeric[4])));
+        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) return { start, end };
+      }
+
+      const numeric = text.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
+      if (numeric) {
+        const start = new Date(Date.UTC(Number(numeric[3]), Number(numeric[2]) - 1, Number(numeric[1])));
+        return Number.isNaN(start.getTime()) ? null : { start, end: null };
+      }
+
       const textual = text.match(/(\d{1,2})\s+([a-z]+)\s+(20\d{2})/);
       if (textual) {
-        const d = Number(textual[1]);
         const m = monthMap[textual[2]];
-        const y = Number(textual[3]);
         if (m) {
-          const date = new Date(Date.UTC(y, m - 1, d));
-          return Number.isNaN(date.getTime()) ? null : date;
+          const start = new Date(Date.UTC(Number(textual[3]), m - 1, Number(textual[1])));
+          return Number.isNaN(start.getTime()) ? null : { start, end: null };
         }
       }
 
@@ -554,6 +558,11 @@
     }
     function formatDateFr(date) {
       return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(date));
+    }
+    function formatSessionRangeFr(session) {
+      const startLabel = formatDateFr(session.start);
+      if (!session.end) return startLabel;
+      return `du ${startLabel} au ${formatDateFr(session.end)}`;
     }
     async function fetchNextSessionsByCenter() {
       const resp = await fetch('/api/formation-sessions');
@@ -572,13 +581,13 @@
           const rows = formations?.[formationCode];
           if (!Array.isArray(rows)) return;
           rows.forEach((row) => {
-            const parsed = parseDateFromSessionText(row?.label || row?.dates || '', row?.date_examen || '');
+            const parsed = parseSessionRange(row?.label || row?.dates || '');
             if (parsed) allDates.push(parsed);
           });
         });
         if (allDates.length) {
-          allDates.sort((a, b) => a - b);
-          result[center.key] = allDates[0].toISOString();
+          allDates.sort((a, b) => a.start - b.start);
+          result[center.key] = allDates[0];
         } else {
           result[center.key] = null;
         }
