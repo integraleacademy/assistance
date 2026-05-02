@@ -2287,15 +2287,19 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     campus_theme = "aurillac"
     centre_normalized = (centre_value or "").strip().lower()
 
-    if centre_normalized in {"cote d'azur", "côte d'azur", "paca", "nice"}:
-        badge_text = "CÔTE D'AZUR"
-        campus_theme = "cote-azur"
-    elif centre_normalized in {"auvergne", "clermont", "clermont-ferrand"}:
-        badge_text = "AUVERGNE"
-        campus_theme = "auvergne"
-    elif centre_normalized in {"ile-de-france", "île-de-france", "idf", "paris"}:
-        badge_text = "ÎLE-DE-FRANCE"
-        campus_theme = "idf"
+    if formation_badge_theme == "vae":
+        badge_text = "À DISTANCE"
+        campus_theme = "distance"
+    else:
+        if centre_normalized in {"cote d'azur", "côte d'azur", "paca", "nice"}:
+            badge_text = "CÔTE D'AZUR"
+            campus_theme = "cote-azur"
+        elif centre_normalized in {"auvergne", "clermont", "clermont-ferrand"}:
+            badge_text = "AUVERGNE"
+            campus_theme = "auvergne"
+        elif centre_normalized in {"ile-de-france", "île-de-france", "idf", "paris"}:
+            badge_text = "ÎLE-DE-FRANCE"
+            campus_theme = "idf"
 
     return render_template(
         "admin_devis_formulaire_imprimable.html",
