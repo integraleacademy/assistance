@@ -2,41 +2,30 @@
 <head>
 <title></title>
 <style>
-  .cta-btn {{
+  .cta-btn {
     display:inline-block;
     padding:12px 20px;
     text-decoration:none;
     border-radius:8px;
     font-weight:bold;
-    transition:transform .18s ease-in-out, box-shadow .18s ease-in-out, filter .18s ease-in-out;
-    animation:ctaPulse 2s ease-in-out infinite;
-  }}
-  .cta-btn--dark {{
+  }
+  .cta-btn--dark {
     background:#0f1f33;
     color:#fff !important;
     box-shadow:0 6px 18px rgba(15,31,51,.25);
-  }}
-  .cta-btn--gold {{
+  }
+  .cta-btn--gold {
     background:#F4C45A;
     color:#000 !important;
     box-shadow:0 6px 18px rgba(244,196,90,.35);
-  }}
-  .cta-btn:hover {{
-    transform:translateY(-1px) scale(1.01);
-    filter:brightness(1.04);
-  }}
-  @keyframes ctaPulse {{
-    0%, 100% {{ transform:scale(1); box-shadow:0 6px 18px rgba(15,31,51,.25); }}
-    50% {{ transform:scale(1.03); box-shadow:0 10px 24px rgba(15,31,51,.34); }}
-  }}
-  @media (prefers-reduced-motion: reduce) {{
-    .cta-btn {{ animation:none !important; transition:none !important; }}
-  }}
+  }
 </style>
 </head>
+
 <body style="height:auto; min-height:auto; margin:0; padding:0; background:#f3f4f6;">
 <div style="font-family:Arial,sans-serif; max-width:640px; margin:auto; background:#f3f4f6; padding:20px 14px;">
   <div style="background:#ffffff; border-radius:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); overflow:hidden;">
+
     <div style="text-align:center; padding:24px 20px 8px 20px;">
       <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:100px; height:auto; display:block; margin:auto;" />
       <h2 style="color:#000; font-size:22px; margin:12px 0 0 0;">Intégrale Academy</h2>
@@ -44,76 +33,136 @@
 
     <div style="padding:18px 20px 4px 20px; font-size:15px; color:#333; line-height:1.6;">
       <p style="margin:0 0 12px 0;">Bonjour {prenom},</p>
-      <p style="margin:0 0 14px 0;">Pour faire suite à votre demande de renseignements, nous vous prions de bien vouloir trouver ci-dessous l’ensemble des informations détaillées concernant notre formation <strong>Chauffeur VTC</strong>.</p>
+
+      <p style="margin:0 0 14px 0;">
+        Je fais suite à votre demande de renseignements concernant notre formation
+        <strong>Chauffeur VTC</strong>.
+      </p>
+
+      <p style="margin:0 0 14px 0;">
+        Cette formation vous permet de vous préparer efficacement à l’examen VTC,
+        avec une partie théorique en ligne et une préparation pratique avec véhicule avant l’examen.
+      </p>
+
+      <p style="margin:0 0 14px 0;">
+        Notre formule est <strong>tout inclus</strong> : formation théorique, formation pratique,
+        frais d’examen et mise à disposition du véhicule le jour de l’examen pratique.
+      </p>
+
+      <p style="margin:0 0 14px 0;">
+        Vous pouvez démarrer la partie théorique dès validation de votre inscription.
+      </p>
+
+      <p style="margin:0; font-weight:bold; color:#b45309;">
+        ⚠️ Les inscriptions doivent être anticipées afin de respecter les délais d’examen de la Chambre des Métiers.
+      </p>
     </div>
 
     <div style="padding:8px 20px 22px 20px;">
+
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
         <p style="margin:0 0 12px 0; font-size:16px;"><strong>📄 Dossier de présentation</strong></p>
-        <p style="margin:0 0 10px 0;">Vous pouvez consulter l’intégralité du contenu de la formation (programme, organisation, financement, modalités d’examen) en téléchargeant notre dossier de présentation.</p>
+        <p style="margin:0 0 12px 0;">
+          Vous pouvez consulter le dossier complet de présentation de la formation VTC.
+        </p>
         <p style="margin:0; text-align:center;">
-          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger le dossier de présentation</a>
+          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">
+            Télécharger le dossier de présentation
+          </a>
         </p>
       </div>
 
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
         <p style="margin:0 0 10px 0; font-size:16px;"><strong>📅 Organisation de la formation</strong></p>
-        <p style="margin:0 0 10px 0;"><strong>Formation théorique :</strong><br />• 100 % en ligne à distance<br />• Accessible 7j/7<br />• Vous démarrez votre formation quand vous le souhaitez, dès validation de votre inscription</p>
-        <p style="margin:0;"><strong>Formation pratique :</strong><br />• 1/2 journée de mise en situation professionnelle<br />• Réalisée dans nos locaux à Puget-sur-Argens (83)<br />• Préparation spécifique à l’examen pratique VTC</p>
+
+        <p style="margin:0 0 10px 0;">
+          <strong>Formation théorique :</strong><br />
+          • 100 % en ligne à distance<br />
+          • Accessible 7j/7<br />
+          • Démarrage possible après validation de votre inscription
+        </p>
+
+        <p style="margin:0;">
+          <strong>Formation pratique :</strong><br />
+          • 1/2 journée de mise en situation professionnelle<br />
+          • Réalisée dans nos locaux à Puget-sur-Argens (83)<br />
+          • Préparation spécifique à l’examen pratique VTC
+        </p>
       </div>
 
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🗓️ Dates des examens</strong></p>
-        <p style="margin:0 0 12px 0;">Les examens théoriques sont organisés par la Chambre des Métiers pour l’ensemble des candidats de la région PACA.</p>
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🧭 Déroulement du parcours</strong></p>
+
+        <p style="margin:0 0 8px 0;"><strong>1️⃣ Inscription validée</strong><br />
+        Accès immédiat à la plateforme de formation théorique.</p>
+
+        <p style="margin:0 0 8px 0;"><strong>2️⃣ Formation théorique</strong><br />
+        Préparation à distance à votre rythme.</p>
+
+        <p style="margin:0 0 8px 0;"><strong>3️⃣ Examen théorique</strong><br />
+        Organisé par la Chambre des Métiers.</p>
+
+        <p style="margin:0 0 8px 0;"><strong>4️⃣ Formation pratique</strong><br />
+        Préparation dans nos locaux.</p>
+
+        <p style="margin:0;"><strong>5️⃣ Examen pratique</strong><br />
+        Véhicule fourni le jour de l’examen.</p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif et financement</strong></p>
+
+        <p style="margin:0 0 10px 0;">
+          <strong>1 650 € TTC – formule tout inclus</strong>
+        </p>
+
+        <ul style="margin:0 0 12px 18px; padding:0;">
+          <li>Formation théorique</li>
+          <li>Formation pratique</li>
+          <li>Frais d’examen inclus</li>
+          <li>Véhicule fourni le jour de l’examen</li>
+        </ul>
+
+        <p style="margin:0 0 12px 0;">
+          Financements possibles : CPF, France Travail ou personnel.
+        </p>
+
         <p style="margin:0; text-align:center;">
-          <a href="https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Consulter les dates d'examen</a>
+          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">
+            Télécharger mon devis détaillé
+          </a>
         </p>
       </div>
 
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>🧭 Déroulement détaillé de la formation</strong></p>
-        <p style="margin:0 0 8px 0;">Dès validation de votre inscription, nous vous communiquons vos identifiants pour accéder à votre espace de suivi de la formation théorique en ligne.</p>
-        <p style="margin:0 0 8px 0;">Environ 1 mois plus tard, vous passez votre examen théorique organisé par la Chambre des Métiers dans les Bouches-du-Rhône pour tous les candidats de la région PACA.</p>
-        <p style="margin:0 0 8px 0;">Après réussite de l’examen théorique, et quelques jours avant l’examen pratique, nous organisons votre formation pratique dans nos locaux à Puget-sur-Argens (sur une 1/2 journée).</p>
-        <p style="margin:0 0 8px 0;">Vous passez ensuite votre examen pratique à La Valette-du-Var (83) si vous résidez dans le Var, ou à Nice si vous résidez dans les Alpes-Maritimes (06).</p>
-        <p style="margin:0;">En cas de réussite, la Chambre des Métiers vous indique la démarche pour votre demande de carte VTC auprès de la Préfecture.</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📋 Prérequis</strong></p>
-        <p style="margin:0;">Permis B depuis plus de 3 ans<br />Casier judiciaire vierge</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💶 Tarif de la formation</strong></p>
-        <p style="margin:0 0 8px 0;"><strong>1 650 € TTC – FORMULE TOUT INCLUS</strong></p>
-        <p style="margin:0;">✔ Formation théorique complète<br />✔ Formation pratique (1/2 journée)<br />✔ Frais d’examen inclus<br />✔ Prêt du véhicule le jour de l’examen</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>⏱️ Durée</strong></p>
-        <p style="margin:0;">Théorie : environ 100 heures<br />Pratique : 1/2 journée de mise en situation avec le véhicule</p>
-      </div>
-
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>💳 Financement de votre formation</strong></p>
-        <p style="margin:0 0 8px 0;">Compte Personnel de Formation (CPF)<br />Demande de financement auprès de France Travail (Pôle Emploi)<br />Financement personnel</p>
-        <p style="margin:0;">⚠️ Pour toute demande de financement via le CPF ou France Travail, la création de votre <strong>Identité Numérique La Poste</strong> est obligatoire.</p>
-        <p style="margin:12px 0 0 0; text-align:center;">
-          <a href="{devis_url}" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger votre devis détaillé</a>
-        </p>
-      </div>
-
+      <!-- PROCHAINE ETAPE -->
       <div style="background:#fff8e1; border:1px solid #f6d676; border-radius:12px; padding:16px;">
-        <p style="margin:0 0 10px 0; font-size:16px;"><strong>✅ Documents & prochaine étape</strong></p>
-        <p style="margin:0 0 10px 0; text-align:center;">
-          <a href="https://www.integraleacademy.com/dossiersfc" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Consulter le programme de formation</a>
+        <p style="margin:0 0 10px 0; font-size:16px;"><strong>📞 Prochaine étape</strong></p>
+
+        <p style="margin:0 0 12px 0;">
+          Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place,
+          vous pouvez planifier un rendez-vous téléphonique avec notre équipe.
         </p>
-        <p style="margin:0 0 10px 0; text-align:center;">
-          <a href="https://www.integraleacademy.com/_files/ugd/008e7b_0e29b04a71dd4dcc9c0f266d28f0514b.pdf" class="cta-btn cta-btn--dark" style="display:inline-block;padding:12px 20px;background:#0f1f33;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Télécharger notre agrément VTC</a>
-        </p>
+
         <p style="margin:0; text-align:center;">
-          <a href="https://calendly.com/integraleacademy/chauffeurvtc" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Planifier un rendez-vous</a>
+          <a href="https://calendly.com/integraleacademy/chauffeurvtc" class="cta-btn cta-btn--gold" style="display:inline-block;padding:12px 20px;background:#F4C45A;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">
+            Réserver un rendez-vous
+          </a>
+        </p>
+      </div>
+
+      <!-- IA -->
+      <div style="background:#0f1f33; border:1px solid #0f1f33; border-radius:12px; padding:16px; margin-top:12px;">
+        <h3 style="margin:0 0 10px 0; font-size:18px; color:#F4C45A;">🤖 Une question immédiate ?</h3>
+
+        <p style="margin:0 0 15px 0; font-size:15px; line-height:1.6; color:#fff;">
+          Discutez directement avec notre <strong>IA Intégrale Academy</strong><br />
+          pour obtenir des réponses immédiates sur la formation, le CPF ou votre projet.
+        </p>
+
+        <p style="margin:0; text-align:center;">
+          <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; padding:14px 26px; background:#F4C45A; color:#000; text-decoration:none; border-radius:8px; font-weight:bold; font-size:15px;">
+            🚀 Poser une question à l’IA
+          </a>
         </p>
       </div>
 
@@ -124,7 +173,6 @@
       <p style="margin:0;"><strong>Clément VAILLANT</strong><br />Directeur Intégrale Group<br />ecole@integraleacademy.com – integraleacademy.com<br />📞 04 22 47 07 68<br />📍 Paris - Aurillac - Côte d'Azur</p>
     </div>
 
-    <div style="padding:20px; font-size:12px; color:#555; text-align:center; border-top:1px solid #eee; line-height:1.5;">© Intégrale Academy — Merci de votre confiance 💛<br />SIREN 840 899 884 - NDA 93830600283 - Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br />UAI Côte d'Azur 0831774C - UAI Paris 0756548K<br />integraleacademy.com</div>
   </div>
 </div>
 </body>
