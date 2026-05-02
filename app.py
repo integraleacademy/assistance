@@ -971,7 +971,7 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
 
 
 
-def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
+def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
     session_date = _format_selected_session_date(dates_txt)
     centre_label, centre_address = _centre_label_and_address(centre_code)
     session_html = (
@@ -979,7 +979,14 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str):
         if session_date
         else "<p style=\"margin:0; line-height:1.65;\">📅 <strong>Date transmise lors de notre échange téléphonique.</strong></p>"
     )
-    return _render_email_template("aps.html", prenom=prenom, session_html=session_html, centre_label=centre_label, centre_address=centre_address)
+    return _render_email_template(
+        "aps.html",
+        prenom=prenom,
+        session_html=session_html,
+        centre_label=centre_label,
+        centre_address=centre_address,
+        devis_url=devis_url,
+    )
 
 
 
@@ -1776,7 +1783,7 @@ def demande_informations_formations():
                 "Contact : 04 22 47 07 68\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""))
+            html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
             email_subject = "🛡️ Formation Agent de Sécurité Privée (APS)"
         elif form_data.get("formation") == "VTC":
             plain = (
