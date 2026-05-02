@@ -401,12 +401,6 @@
       .help-copy{font-size:18px;}
     }
 
-    @keyframes chatFabFloat{
-      0%,100%{transform:translateY(0)}
-      50%{transform:translateY(-3px)}
-    }
-
-
     @media (max-width:600px){
       .form-shell{padding:10px;}
       .wrap{padding:12px;border-radius:16px;}
@@ -424,9 +418,6 @@
       .location-copy,.location-points{font-size:15px;}
       .help-copy{font-size:16px;}
       .close-btn,.retry-btn,.submit{width:100%;}
-      .chat-fab{right:10px;bottom:10px;padding:10px 14px;font-size:13px;max-width:calc(100vw - 20px);}
-      .chat-fab-main{font-size:13px;}
-      .chat-fab-sub{font-size:11px;}
       .modal{padding:10px;}
       .modal-box{width:100%;max-height:98vh;padding:10px;border-radius:12px;}
       .modal-frame-wrap{min-height:72vh;}
@@ -439,30 +430,6 @@
       .progress-pill{min-width:100px;font-size:12px;padding:8px 10px;}
     }
 
-    .chat-fab{
-      position:fixed;right:16px;bottom:16px;z-index:70;cursor:pointer;
-      display:inline-flex;align-items:center;gap:10px;
-      border-radius:999px;padding:12px 18px;
-      background:linear-gradient(135deg,#0ea5e9,#2563eb);
-      color:#fff;font-weight:800;font-size:14px;line-height:1.2;
-      box-shadow:0 10px 24px rgba(37,99,235,.35);
-      text-decoration:none;
-      transition:transform .2s ease, box-shadow .2s ease, filter .2s ease;
-      animation:chatFabFloat 1.8s ease-in-out infinite;
-    }
-    .chat-fab:hover{
-      transform:translateY(-2px) scale(1.02);
-      box-shadow:0 14px 30px rgba(37,99,235,.45);
-      filter:saturate(1.06);
-    }
-    .chat-fab:focus-visible{outline:3px solid #bfdbfe;outline-offset:3px;}
-    .chat-fab-main{font-size:15px;}
-    .chat-fab-sub{font-size:12px;font-weight:700;opacity:.95;}
-    .chat-fab-text{display:flex;flex-direction:column;gap:1px;}
-
-    @media (prefers-reduced-motion: reduce){
-      .chat-fab{animation:none;}
-    }
   </style>
 </head>
 <body>
@@ -750,13 +717,6 @@
       </div>
     </div>
   </div>
-
-  <a
-    class="chat-fab"
-    href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy"
-    target="_blank"
-    rel="noopener noreferrer"
-  ><span aria-hidden="true">💬</span><span class="chat-fab-text"><span class="chat-fab-main">Besoin d’aide ?</span><span class="chat-fab-sub">Parlez à notre agent IA</span></span></a>
 
   <script>
     const form = document.getElementById('infosForm');
