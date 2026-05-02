@@ -353,6 +353,13 @@
 
     const ACTIVE_CENTER_LIST = getAllowedCentersFromQuery();
 
+    function getSelectedFormationFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      return (params.get('formation') || '').trim().toUpperCase();
+    }
+
+    const SELECTED_FORMATION = getSelectedFormationFromQuery();
+
     const CENTER_TRANSPORT_INFO = {
       [CENTER_COTE_AZUR.key]: {
         nearestStation: 'Saint-Raphaël Valescure',
@@ -506,7 +513,13 @@
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
-    function parseDateFromSessionText(txt) {
+    function parseDateFromSessionText(txt, dateExamen) {
+      const exam = String(dateExamen || '').trim();
+      if (exam) {
+        const examDate = new Date(`${exam}T00:00:00Z`);
+        if (!Number.isNaN(examDate.getTime())) return examDate;
+      }
+
       if (!txt) return null;
       const text = String(txt)
         .normalize('NFD')
@@ -551,10 +564,15 @@
         const centerCode = center.key === 'cote-azur' ? 'cote_azur' : center.key;
         const formations = sessions?.[centerCode] || {};
         const allDates = [];
-        Object.values(formations).forEach((rows) => {
+        const formationCodes = SELECTED_FORMATION && Array.isArray(formations?.[SELECTED_FORMATION])
+          ? [SELECTED_FORMATION]
+          : Object.keys(formations);
+
+        formationCodes.forEach((formationCode) => {
+          const rows = formations?.[formationCode];
           if (!Array.isArray(rows)) return;
           rows.forEach((row) => {
-            const parsed = parseDateFromSessionText(row?.dates || '');
+            const parsed = parseDateFromSessionText(row?.label || row?.dates || '', row?.date_examen || '');
             if (parsed) allDates.push(parsed);
           });
         });
