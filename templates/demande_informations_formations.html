@@ -1250,10 +1250,33 @@
         }
       }
     });
+    const nomInput = document.getElementById('nom');
+    const prenomInput = document.getElementById('prenom');
+
+    function formatPrenom(value) {
+      return value
+        .toLocaleLowerCase('fr-FR')
+        .replace(/(^|[\s'-])\p{L}/gu, (match) => match.toLocaleUpperCase('fr-FR'));
+    }
+
     document.addEventListener('input', (e) => {
+      if (e.target.id === 'nom') {
+        e.target.value = e.target.value.toLocaleUpperCase('fr-FR');
+      }
+      if (e.target.id === 'prenom') {
+        e.target.value = formatPrenom(e.target.value);
+      }
       if (['nom', 'prenom', 'mail', 'mail_confirm', 'telephone'].includes(e.target.id)) {
         updateStepReveal();
       }
+    });
+
+    [nomInput, prenomInput].forEach((field) => {
+      if (!field) return;
+      field.addEventListener('blur', () => {
+        if (field.id === 'nom') field.value = field.value.toLocaleUpperCase('fr-FR');
+        if (field.id === 'prenom') field.value = formatPrenom(field.value);
+      });
     });
 
     window.addEventListener('message', (event) => {
