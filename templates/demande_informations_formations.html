@@ -406,6 +406,39 @@
       50%{transform:translateY(-3px)}
     }
 
+
+    @media (max-width:600px){
+      .form-shell{padding:10px;}
+      .wrap{padding:12px;border-radius:16px;}
+      .form-card{padding:8px;}
+      .brand img{height:64px;}
+      h1{font-size:26px;line-height:1.2;}
+      .intro{font-size:18px;margin:8px 0 14px;}
+      .purpose-note{font-size:14px;margin:0 auto 14px;}
+      .step-title{font-size:19px;gap:8px;}
+      .step-num{width:30px;height:30px;font-size:15px;}
+      .section{padding:14px;border-radius:14px;}
+      .location-choice{padding:12px;}
+      .location-choice label{grid-template-columns:20px 1fr;gap:10px;}
+      .location-title{font-size:20px;}
+      .location-copy,.location-points{font-size:15px;}
+      .help-copy{font-size:16px;}
+      .close-btn,.retry-btn,.submit{width:100%;}
+      .chat-fab{right:10px;bottom:10px;padding:10px 14px;font-size:13px;max-width:calc(100vw - 20px);}
+      .chat-fab-main{font-size:13px;}
+      .chat-fab-sub{font-size:11px;}
+      .modal{padding:10px;}
+      .modal-box{width:100%;max-height:98vh;padding:10px;border-radius:12px;}
+      .modal-frame-wrap{min-height:72vh;}
+      iframe{height:72vh;}
+    }
+
+    @media (max-width:360px){
+      h1{font-size:22px;}
+      .intro{font-size:16px;}
+      .progress-pill{min-width:100px;font-size:12px;padding:8px 10px;}
+    }
+
     .chat-fab{
       position:fixed;right:16px;bottom:16px;z-index:70;cursor:pointer;
       display:inline-flex;align-items:center;gap:10px;
