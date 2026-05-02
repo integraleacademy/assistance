@@ -1700,6 +1700,7 @@ def demande_informations_formations():
         data_store.setdefault("demandes", []).append({
             "id": devis_id,
             "token_plan": token_plan,
+            "source_demande_infos_id": demande_id,
             "nom": devis_payload["nom"],
             "prenom": devis_payload["prenom"],
             "telephone": devis_payload["telephone"],
@@ -2007,12 +2008,22 @@ def admin_devis_formulaires():
     data = load_data()
     formulaires = []
 
-    for d in data.get("demandes", []):
+    demandes = data.get("demandes", [])
+    demande_infos_liees = {
+        d.get("source_demande_infos_id")
+        for d in demandes
+        if d.get("motif") == "Demande de devis détaillé" and d.get("source_demande_infos_id")
+    }
+
+    for d in demandes:
         is_target = (
             d.get("motif") == "Demande de devis détaillé"
             or d.get("source") == "demande_infos_formations"
         )
         if not is_target:
+            continue
+
+        if d.get("source") == "demande_infos_formations" and d.get("id") in demande_infos_liees:
             continue
 
         infos = {}
