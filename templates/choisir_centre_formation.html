@@ -353,6 +353,13 @@
 
     const ACTIVE_CENTER_LIST = getAllowedCentersFromQuery();
 
+    function getSelectedFormationFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      return (params.get('formation') || '').trim().toUpperCase();
+    }
+
+    const SELECTED_FORMATION = getSelectedFormationFromQuery();
+
     const CENTER_TRANSPORT_INFO = {
       [CENTER_COTE_AZUR.key]: {
         nearestStation: 'Saint-Raphaël Valescure',
@@ -506,9 +513,20 @@
       selectionBox.style.display = 'block';
       selectedCenter = null;
     }
-    function parseDateFromSessionText(txt) {
+    function parseDateFromSessionText(txt, dateExamen) {
+      const exam = String(dateExamen || '').trim();
+      if (exam) {
+        const examDate = new Date(`${exam}T00:00:00Z`);
+        if (!Number.isNaN(examDate.getTime())) return examDate;
+      }
+
       if (!txt) return null;
-      const numeric = txt.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
+      const text = String(txt)
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase();
+
+      const numeric = text.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
       if (numeric) {
         const d = Number(numeric[1]);
         const m = Number(numeric[2]);
@@ -516,6 +534,22 @@
         const date = new Date(Date.UTC(y, m - 1, d));
         return Number.isNaN(date.getTime()) ? null : date;
       }
+
+      const monthMap = {
+        janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6,
+        juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12
+      };
+      const textual = text.match(/(\d{1,2})\s+([a-z]+)\s+(20\d{2})/);
+      if (textual) {
+        const d = Number(textual[1]);
+        const m = monthMap[textual[2]];
+        const y = Number(textual[3]);
+        if (m) {
+          const date = new Date(Date.UTC(y, m - 1, d));
+          return Number.isNaN(date.getTime()) ? null : date;
+        }
+      }
+
       return null;
     }
     function formatDateFr(date) {
@@ -530,10 +564,15 @@
         const centerCode = center.key === 'cote-azur' ? 'cote_azur' : center.key;
         const formations = sessions?.[centerCode] || {};
         const allDates = [];
-        Object.values(formations).forEach((rows) => {
+        const formationCodes = SELECTED_FORMATION && Array.isArray(formations?.[SELECTED_FORMATION])
+          ? [SELECTED_FORMATION]
+          : Object.keys(formations);
+
+        formationCodes.forEach((formationCode) => {
+          const rows = formations?.[formationCode];
           if (!Array.isArray(rows)) return;
           rows.forEach((row) => {
-            const parsed = parseDateFromSessionText(row?.dates || '');
+            const parsed = parseDateFromSessionText(row?.label || row?.dates || '', row?.date_examen || '');
             if (parsed) allDates.push(parsed);
           });
         });
