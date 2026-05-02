@@ -326,6 +326,52 @@
       margin-top:72px;
     }
 
+    body.pdf-export-mode #pdf-export-target{
+      margin-top:0 !important;
+    }
+
+    body.pdf-export-mode{
+      font-size:11px;
+    }
+
+    body.pdf-export-mode .header{
+      margin-bottom:10px;
+      padding:10px 12px;
+    }
+
+    body.pdf-export-mode .header img{
+      height:78px;
+    }
+
+    body.pdf-export-mode .bloc{
+      margin-top:10px;
+    }
+
+    body.pdf-export-mode table{
+      margin-top:6px;
+      font-size:11px;
+    }
+
+    body.pdf-export-mode th,
+    body.pdf-export-mode td{
+      padding:6px 7px;
+      line-height:1.2;
+    }
+
+    body.pdf-export-mode .who,
+    body.pdf-export-mode .note,
+    body.pdf-export-mode .alert{
+      margin-top:8px;
+      padding:8px 9px;
+      font-size:10px;
+    }
+
+    body.pdf-export-mode .section-title{
+      margin-bottom:6px;
+      padding:8px 10px;
+      font-size:14px;
+    }
+
     @media (max-width:768px){
       .actions-bar{
         position: static;
@@ -673,8 +719,10 @@ async function enregistrerPDF() {
     }
   });
 
+  document.body.classList.add("pdf-export-mode");
+
   const options = {
-    margin: [8, 8, 8, 8],
+    margin: [4, 4, 4, 4],
     filename,
     image: { type: "jpeg", quality: 1 },
     html2canvas: {
@@ -691,6 +739,7 @@ async function enregistrerPDF() {
   try {
     await window.html2pdf().set(options).from(target).save();
   } finally {
+    document.body.classList.remove("pdf-export-mode");
     hiddenNodes.forEach(({ node, display }) => {
       node.style.display = display;
     });
