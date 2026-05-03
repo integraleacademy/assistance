@@ -883,6 +883,38 @@
     const chatInput = document.getElementById('chatInput');
 
     const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
+    const draftFormId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `draft-${Date.now()}`;
+    let hasSubmitted = false;
+
+    function collectDraftFields() {
+      const data = Object.fromEntries(new FormData(form).entries());
+      delete data.mail_confirm;
+      return data;
+    }
+
+    function sendDraft(status = 'draft') {
+      const payload = { form_id: draftFormId, status, fields: collectDraftFields() };
+      const body = JSON.stringify(payload);
+      if (navigator.sendBeacon) {
+        const blob = new Blob([body], { type: 'application/json' });
+        navigator.sendBeacon('/api/demande-informations-formations/autosave', blob);
+        return;
+      }
+      fetch('/api/demande-informations-formations/autosave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true
+      }).catch(() => {});
+    }
+
+    const debouncedDraftSave = (() => {
+      let timer = null;
+      return () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => sendDraft('draft'), 800);
+      };
+    })();
 
 
     const coteHebergementLine = document.getElementById('coteHebergementLine');
@@ -1452,6 +1484,7 @@
     }
 
     document.addEventListener('input', (e) => {
+      debouncedDraftSave();
       if (e.target.id === 'nom') {
         e.target.value = e.target.value.toLocaleUpperCase('fr-FR');
       }
@@ -1520,6 +1553,13 @@
       if (blocCpfMontant.classList.contains('hidden')) {
         cpfMontant.required = false;
       }
+
+      hasSubmitted = true;
+      sendDraft('submitted');
+    });
+
+    window.addEventListener('beforeunload', () => {
+      if (!hasSubmitted) sendDraft('draft');
     });
 
 

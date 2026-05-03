@@ -1888,6 +1888,52 @@ def demande_informations_formations():
     return render_template("demande_informations_formations.html", sessions=sessions, formations=PLAN_FORMATIONS, gclid=gclid)
 
 
+
+
+@app.route("/api/demande-informations-formations/autosave", methods=["POST"])
+def autosave_demande_informations_formations():
+    payload = request.get_json(silent=True) or {}
+    form_id = (payload.get("form_id") or "").strip()
+    if not form_id:
+        return ("", 204)
+
+    data = load_data()
+    entries = data.setdefault("formulaires_abandonnes", [])
+
+    status = (payload.get("status") or "draft").strip().lower()
+    if status == "submitted":
+        data["formulaires_abandonnes"] = [e for e in entries if e.get("form_id") != form_id]
+        save_data(data)
+        return ("", 204)
+
+    fields = payload.get("fields")
+    if not isinstance(fields, dict):
+        fields = {}
+
+    cleaned_fields = {}
+    for k, v in fields.items():
+        if isinstance(v, str):
+            v = v.strip()
+        if v not in ("", None):
+            cleaned_fields[k] = v
+
+    existing = next((e for e in entries if e.get("form_id") == form_id), None)
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+
+    if existing:
+        existing["fields"] = cleaned_fields
+        existing["updated_at"] = now_str
+    else:
+        entries.append({
+            "form_id": form_id,
+            "fields": cleaned_fields,
+            "created_at": now_str,
+            "updated_at": now_str,
+        })
+
+    save_data(data)
+    return ("", 204)
+
 @app.route("/confirmation-demande-informations")
 def confirmation_demande_infos():
     hot = request.args.get("hot") == "1"
@@ -2094,6 +2140,46 @@ def admin_devis_formulaires():
             stats["to_process"] += 1
 
     return render_template("admin_devis_formulaires.html", formulaires=formulaires, stats=stats)
+
+
+@app.route("/admin-devis/formulaires-abandonnes")
+@login_required
+def admin_devis_formulaires_abandonnes():
+    data = load_data()
+    formulaires = []
+
+    for draft in data.get("formulaires_abandonnes", []):
+        fields = draft.get("fields") or {}
+        updated = draft.get("updated_at") or draft.get("created_at") or ""
+        try:
+            sort_date = datetime.datetime.strptime(updated, "%d/%m/%Y %H:%M")
+        except ValueError:
+            sort_date = datetime.datetime.min
+
+        formulaires.append({
+            "id": draft.get("form_id", ""),
+            "date": updated,
+            "nom": fields.get("nom", ""),
+            "prenom": fields.get("prenom", ""),
+            "mail": fields.get("mail", ""),
+            "telephone": fields.get("telephone", ""),
+            "source_label": "Formulaire abandonné",
+            "statut": "Abandonné",
+            "infos": fields,
+            "sort_date": sort_date,
+        })
+
+    formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
+    stats = {
+        "today": 0,
+        "yesterday": 0,
+        "week": 0,
+        "month": 0,
+        "treated": 0,
+        "to_process": len(formulaires),
+        "total": len(formulaires),
+    }
+    return render_template("admin_devis_formulaires_abandonnes.html", formulaires=formulaires, stats=stats)
 
 
 @app.route("/admin-devis/formulaires/<formulaire_id>/supprimer", methods=["POST"])
