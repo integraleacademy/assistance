@@ -1389,6 +1389,19 @@
       }
     }
 
+    function getPreviousStep5Index() {
+      if (step5ManualIndex === null) return 0;
+      let previousIndex = step5ManualIndex - 1;
+      while (previousIndex >= 0) {
+        if (previousIndex === 3 && blocCnaps.classList.contains('hidden')) {
+          previousIndex -= 1;
+          continue;
+        }
+        return previousIndex;
+      }
+      return 0;
+    }
+
     function updateStep() {
       slidesWrap.style.transform = `translateX(-${currentStep * 100}%)`;
       progressBar.style.width = `${((currentStep + 1) / slides.length) * 100}%`;
@@ -1470,34 +1483,6 @@
         updateStepReveal();
       }
 
-      if (currentStep === 4) {
-        const autoAdvanceTargets = ['cpfConsulte', 'cpfMontant', 'franceTravail', 'ftRefusOk', 'financementPerso', 'cnaps_ok', 'garde_vue', 'titre_sejour'];
-        if (autoAdvanceTargets.includes(e.target.id || e.target.name)) {
-          if (step5ManualIndex === 0) {
-            const q1Done = !!cpfConsulte.value && (cpfConsulte.value !== 'OUI' || !!cpfMontant.value.trim());
-            if (q1Done) {
-              step5ManualIndex = 1;
-              updateStep5Flow();
-            }
-          } else if (step5ManualIndex === 1) {
-            if (isStep5Question2Complete()) {
-              step5ManualIndex = 2;
-              updateStep5Flow();
-            }
-          } else if (step5ManualIndex === 2) {
-            if (!!identiteNumerique.value && blocCnaps.classList.contains('hidden')) {
-              step5ManualIndex = 4;
-              updateStep5Flow();
-            }
-          } else if (step5ManualIndex === 3) {
-            const q4Done = blocCnaps.classList.contains('hidden') || !!(titreSejourSelect && titreSejourSelect.value);
-            if (q4Done) {
-              step5ManualIndex = 4;
-              updateStep5Flow();
-            }
-          }
-        }
-      }
     });
     const nomInput = document.getElementById('nom');
     const prenomInput = document.getElementById('prenom');
@@ -1622,7 +1607,7 @@
     updateStep5Flow();
     prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
-        step5ManualIndex -= 1;
+        step5ManualIndex = getPreviousStep5Index();
         updateStep5Flow();
         scrollToFormTop();
         return;
