@@ -13,9 +13,9 @@
     .brand img { height:96px; width:auto; border-radius:16px; box-shadow:0 8px 20px rgba(37,99,235,.2); }
     .intro { text-align:center; margin-bottom:20px; }
 
-    .row { display:flex; gap:12px; margin:18px 0 8px; }
-    input { flex:1; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
-    button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; }
+    .row { display:flex; gap:12px; margin:18px 0 8px; width:100%; align-items:stretch; }
+    input { flex:1 1 auto; min-width:0; width:100%; padding:12px; border:1px solid #d1d5db; border-radius:10px; font-size:16px; }
+    button { background:#2563eb; color:#fff; border:0; border-radius:10px; padding:12px 18px; font-size:16px; cursor:pointer; flex-shrink:0; }
     #btn {
       min-width: 120px;
       animation: pulse 1.8s infinite;
@@ -243,6 +243,28 @@
     }
 
     @media (max-width: 640px) {
+      .wrap {
+        margin: 14px auto;
+        padding: 16px;
+        border-radius: 12px;
+      }
+
+      h1 { font-size: clamp(30px, 8vw, 32px); }
+
+      .intro {
+        margin-bottom: 12px;
+      }
+
+      .row {
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      #btn {
+        width: 100%;
+        min-width: 0;
+      }
+
       .recommendation, .selection {
         padding: 18px;
         border-radius: 18px;
