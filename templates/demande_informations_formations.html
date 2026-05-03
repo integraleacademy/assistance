@@ -331,6 +331,42 @@
     .submit:active{transform:translateY(0) scale(.99);}
 
     .small-note{font-size:14px;color:var(--slate-500);margin-top:8px;}
+    .session-pills{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+      gap:12px;
+      margin-top:12px;
+    }
+    .session-pill{
+      border:2px solid #d8e6ff;
+      border-radius:16px;
+      background:linear-gradient(180deg,#fff 0%,#f7fbff 100%);
+      padding:14px;
+      cursor:pointer;
+      transition:.2s ease;
+      box-shadow:0 4px 14px rgba(32,74,175,.08);
+    }
+    .session-pill:hover{transform:translateY(-2px);border-color:#7ea9ff}
+    .session-pill.active{
+      border-color:#2463eb;
+      background:linear-gradient(135deg,#eff5ff 0%,#e7fffa 100%);
+      box-shadow:0 10px 26px rgba(36,99,235,.18);
+    }
+    .session-pill-title{display:block;font-weight:800;color:var(--slate-800);margin-bottom:8px;}
+    .session-pill-meta{display:block;font-size:14px;color:var(--slate-600);}
+    .session-pill-badge{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      margin-top:8px;
+      font-weight:700;
+      color:#0f7a45;
+      background:#e9fdef;
+      border:1px solid #b5f0cb;
+      border-radius:999px;
+      padding:4px 10px;
+      font-size:13px;
+    }
     .centre-switch-note{
       margin:10px 0 0;
       color:#0b1e4f;
@@ -575,6 +611,7 @@
       <section class="section" id="step4" data-step="4">
         <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
         <label for="datesSelect">Session souhaitée</label>
+        <div id="sessionPills" class="session-pills" aria-live="polite"></div>
         <select name="dates" id="datesSelect" required>
           <option value="">— Sélectionnez —</option>
         </select>
@@ -746,6 +783,7 @@
     const vaeRemoteText = document.getElementById('vaeRemoteText');
     const datesHelp = document.getElementById('datesHelp');
     const centreSwitchNote = document.getElementById('centreSwitchNote');
+    const sessionPills = document.getElementById('sessionPills');
     const modal = document.getElementById('modal');
     const centreFrame = document.getElementById('centreFrame');
     const centreFrameOverlay = document.getElementById('centreFrameOverlay');
@@ -781,6 +819,47 @@
     const coteHebergementLine = document.getElementById('coteHebergementLine');
     const COTE_HEBERGEMENT_DEFAULT = '<strong>Hébergement :</strong> sur place (forfait 300€).';
     const COTE_HEBERGEMENT_VTC = "<strong>Hébergement :</strong> pas d'hébergement sur place (solutions partenaires à proximité).";
+    datesSelect.classList.add('hidden');
+
+    function renderSessionPills(rows) {
+      sessionPills.innerHTML = '';
+      if (!rows.length) return;
+      rows.forEach((r, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'session-pill';
+        btn.dataset.value = r.label;
+        const examLine = (r.date_examen || '').trim()
+          ? `<span class="session-pill-meta">📝 Examen : ${(r.date_examen || '').trim()}</span>`
+          : '';
+        const rawBadge = (r.badge || '').trim();
+        const emphasisBadge = rawBadge && /3\s*places?\s*disponibles?/i.test(rawBadge)
+          ? `🔥 ${rawBadge}`
+          : rawBadge;
+        const badgeLine = rawBadge
+          ? `<span class="session-pill-badge">${emphasisBadge}</span>`
+          : '';
+        btn.innerHTML = `
+          <span class="session-pill-title">📅 ${r.label}</span>
+          ${examLine}
+          ${badgeLine}
+        `;
+        btn.addEventListener('click', () => {
+          datesSelect.value = r.label;
+          dateExamen.value = (r.date_examen || '').trim();
+          sessionPills.querySelectorAll('.session-pill').forEach((el) => el.classList.remove('active'));
+          btn.classList.add('active');
+          updateStepReveal();
+        });
+        if (datesSelect.value && datesSelect.value === r.label) btn.classList.add('active');
+        if (!datesSelect.value && index === 0 && datesSelect.required) {
+          btn.classList.add('active');
+          datesSelect.value = r.label;
+          dateExamen.value = (r.date_examen || '').trim();
+        }
+        sessionPills.appendChild(btn);
+      });
+    }
 
     function updateCoteHebergementLine(formationCode) {
       if (!coteHebergementLine) return;
@@ -942,6 +1021,7 @@
       const f = formation.value;
       const centre = selectedCentre();
       datesSelect.innerHTML = "<option value=''>— Sélectionnez —</option>";
+      sessionPills.innerHTML = '';
       dateExamen.value = '';
       centreSwitchNote.classList.add('hidden');
       centreSwitchNote.textContent = '';
@@ -999,6 +1079,7 @@
           datesHelp.textContent = 'Aucune session disponible pour le moment : un conseiller vous proposera des alternatives.';
         }
         datesSelect.appendChild(o);
+        sessionPills.innerHTML = `<div class="session-pill active" role="status">${o.textContent}</div>`;
         datesSelect.required = false;
         return;
       }
@@ -1028,6 +1109,7 @@
         option.dataset.dateExamen = (r.date_examen || '').trim();
         datesSelect.appendChild(option);
       });
+      renderSessionPills(rows);
     }
 
     function isStep1Complete() {
@@ -1187,6 +1269,9 @@
     datesSelect.addEventListener('change', () => {
       const selected = datesSelect.options[datesSelect.selectedIndex];
       dateExamen.value = selected ? (selected.dataset.dateExamen || '') : '';
+      sessionPills.querySelectorAll('.session-pill').forEach((pill) => {
+        pill.classList.toggle('active', pill.dataset.value === datesSelect.value);
+      });
       updateStepReveal();
     });
 
