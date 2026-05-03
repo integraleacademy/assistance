@@ -177,6 +177,26 @@
       background:#fff;
       transition:.2s ease;
     }
+    .yn-choice{
+      display:flex;
+      gap:10px;
+      margin:8px 0 6px;
+    }
+    .yn-btn{
+      min-width:92px;
+      min-height:44px;
+      border:1px solid #b8c5dc;
+      border-radius:12px;
+      background:#fff;
+      color:#0b1e4f;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .yn-btn.active{
+      border-color:#2563eb;
+      background:linear-gradient(135deg,#2563eb,#3b82f6);
+      color:#fff;
+    }
 
     input:not([type="checkbox"]):focus, select:focus{
       outline:none;
@@ -596,6 +616,10 @@
           <div class="step5-card" data-q="1">
 
             <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
+            <div class="yn-choice" data-for="cpfConsulte">
+              <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+              <button type="button" class="yn-btn" data-value="NON">NON</button>
+            </div>
             <select name="cpf_consulte" id="cpfConsulte" required>
               <option value="">— Sélectionnez —</option>
               <option value="OUI">OUI</option>
@@ -718,7 +742,7 @@
     </div>
   </div>
 
-  <script>
+<script>
     const form = document.getElementById('infosForm');
     const mail = document.getElementById('mail');
     const mail2 = document.getElementById('mail_confirm');
@@ -1338,6 +1362,7 @@
     identiteNumerique.dispatchEvent(new Event('change'));
     franceTravail.dispatchEvent(new Event('change'));
     formation.dispatchEvent(new Event('change'));
+    setupYesNoButtons();
     updateStep5Flow();
     prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
@@ -1372,3 +1397,22 @@
   </script>
 </body>
 </html>
+    function setupYesNoButtons() {
+      document.querySelectorAll('.yn-choice').forEach((group) => {
+        const target = document.getElementById(group.dataset.for);
+        if (!target) return;
+        const buttons = group.querySelectorAll('.yn-btn');
+        const sync = () => {
+          buttons.forEach((btn) => btn.classList.toggle('active', btn.dataset.value === target.value));
+        };
+        buttons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            target.value = btn.dataset.value;
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            sync();
+          });
+        });
+        target.addEventListener('change', sync);
+        sync();
+      });
+    }

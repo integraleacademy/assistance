@@ -158,6 +158,33 @@ button:hover{
 .hidden{
     display:none;
 }
+.yn-choice{
+    display:flex;
+    gap:10px;
+    margin:8px 0 6px;
+}
+.yn-btn{
+    margin-top:0;
+    width:auto;
+    min-width:92px;
+    min-height:44px;
+    padding:10px 16px;
+    border:1px solid #b8c5dc;
+    border-radius:12px;
+    background:#fff;
+    color:#0b1e4f;
+    font-weight:700;
+    font-size:15px;
+}
+.yn-btn:hover{
+    transform:none;
+    box-shadow:none;
+}
+.yn-btn.active{
+    border-color:#2563eb;
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    color:#fff;
+}
 
 /* =======================
    MOBILE
@@ -241,6 +268,10 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
 </p>
 
 <label>J’ai consulté Mon Compte Personnel de Formation (CPF)</label>
+<div class="yn-choice" data-for="cpfConsulte">
+    <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+    <button type="button" class="yn-btn" data-value="NON">NON</button>
+</div>
 <select name="cpf_consulte" id="cpfConsulte" required>
     <option value="">— Sélectionnez —</option>
     <option value="OUI">OUI</option>
@@ -345,6 +376,25 @@ const identiteLinkNote = document.getElementById("identiteLinkNote");
 const blocFT = document.getElementById("blocFranceTravail");
 const blocPerso = document.getElementById("blocPerso");
 const gclidField = document.getElementById("gclidField");
+function setupYesNoButtons() {
+  document.querySelectorAll(".yn-choice").forEach((group) => {
+    const target = document.getElementById(group.dataset.for);
+    if (!target) return;
+    const buttons = group.querySelectorAll(".yn-btn");
+    const sync = () => {
+      buttons.forEach((btn) => btn.classList.toggle("active", btn.dataset.value === target.value));
+    };
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        target.value = btn.dataset.value;
+        target.dispatchEvent(new Event("change", { bubbles: true }));
+        sync();
+      });
+    });
+    target.addEventListener("change", sync);
+    sync();
+  });
+}
 
 (function syncGclid() {
   const params = new URLSearchParams(window.location.search);
@@ -506,6 +556,7 @@ const cpfInput = document.querySelector('input[name="cpf_montant"]');
 
 cpfConsulte.dispatchEvent(new Event("change"));
 identiteNumerique.dispatchEvent(new Event("change"));
+setupYesNoButtons();
 
 cpfInput.addEventListener("input", () => {
   // Supprime tout ce qui n’est pas un chiffre
