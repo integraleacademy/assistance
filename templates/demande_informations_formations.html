@@ -853,18 +853,28 @@
         btn.type = 'button';
         btn.className = 'session-pill';
         btn.dataset.value = r.label;
+        const fullLabel = (r.label || '').trim();
         const examLine = (r.date_examen || '').trim()
           ? `<span class="session-pill-meta">📝 Examen : ${(r.date_examen || '').trim()}</span>`
           : '';
+        const presentielMatch = fullLabel.match(/\((présentiel[^)]*)\)/i);
+        const presentielLine = presentielMatch && presentielMatch[1]
+          ? `<span class="session-pill-meta"><strong>🏫 ${presentielMatch[1].replace(/^présentiel\s*/i, 'Présentiel ')}</strong></span>`
+          : '';
+        const displayTitle = fullLabel
+          .replace(/\s*-\s*examen\s+le\s+[^,;]+$/i, '')
+          .trim();
         const rawBadge = (r.badge || '').trim();
-        const emphasisBadge = rawBadge && /3\s*places?\s*disponibles?/i.test(rawBadge)
-          ? `🔥 ${rawBadge}`
+        const lowAvailability = rawBadge && /(\b[1-3]\b)\s*places?\s*disponibles?/i.test(rawBadge);
+        const emphasisBadge = lowAvailability
+          ? `⚠️ ${rawBadge}`
           : rawBadge;
         const badgeLine = rawBadge
           ? `<span class="session-pill-badge">${emphasisBadge}</span>`
           : '';
         btn.innerHTML = `
-          <span class="session-pill-title">📅 ${r.label}</span>
+          <span class="session-pill-title">📅 ${displayTitle}</span>
+          ${presentielLine}
           ${examLine}
           ${badgeLine}
         `;
