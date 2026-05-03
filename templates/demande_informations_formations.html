@@ -963,6 +963,28 @@
         rows = sessions.cote_azur[f];
       }
 
+      const monthMap = {
+        janvier: 0, fevrier: 1, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+        juillet: 6, aout: 7, août: 7, septembre: 8, octobre: 9, novembre: 10, decembre: 11, décembre: 11
+      };
+      const parseStartDate = (label) => {
+        if (!label) return null;
+        const normalized = String(label).toLowerCase();
+        const match = normalized.match(/\bdu\s+(\d{1,2})\s+([a-zéûôîàùç]+)\s+(\d{4})\b/);
+        if (!match) return null;
+        const day = parseInt(match[1], 10);
+        const month = monthMap[match[2]];
+        const year = parseInt(match[3], 10);
+        if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
+        return new Date(Date.UTC(year, month, day));
+      };
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      rows = rows.filter((row) => {
+        const startDate = parseStartDate((row && row.label) || '');
+        return !startDate || startDate >= todayUtc;
+      });
+
       if (!rows.length) {
         const o = document.createElement('option');
         o.value = '';
