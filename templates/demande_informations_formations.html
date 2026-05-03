@@ -487,10 +487,19 @@
       .location-copy,.location-points{font-size:15px;}
       .help-copy{font-size:16px;}
       .close-btn,.retry-btn,.submit{width:100%;}
+      .modal-head{margin-bottom:10px;}
       .modal{padding:10px;}
       .modal-box{width:100%;max-height:98vh;padding:10px;border-radius:12px;}
       .modal-frame-wrap{min-height:72vh;}
       iframe{height:72vh;}
+    }
+
+    @media (max-width:430px){
+      .modal{padding:6px;}
+      .modal-box{padding:8px;max-height:99vh;}
+      .close-btn{min-height:44px;font-size:18px;}
+      .modal-frame-wrap{min-height:78vh;}
+      iframe{height:78vh;}
     }
 
     @media (max-width:360px){
@@ -1036,7 +1045,7 @@
       if (formationCode === 'A3P') return ['cote_azur', 'auvergne'];
       return ['cote_azur'];
     }
-    const CENTRE_FRAME_TIMEOUT_MS = 4500;
+    const CENTRE_FRAME_TIMEOUT_MS = 12000;
     let centreFrameTimeout = null;
 
     (function syncGclid(){
@@ -1631,6 +1640,9 @@
     updateStep();
 
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
+    centreFrame.addEventListener('load', () => {
+      markCentreFrameReady();
+    });
     openSimu.addEventListener('click', openCentreModal);
     document.getElementById('closeModal').addEventListener('click', closeCentreModal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeCentreModal(); });
