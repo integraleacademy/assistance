@@ -381,12 +381,24 @@
       gap:6px;
       margin-top:8px;
       font-weight:700;
-      color:#0f7a45;
-      background:#e9fdef;
-      border:1px solid #b5f0cb;
       border-radius:999px;
       padding:4px 10px;
       font-size:13px;
+    }
+    .session-pill-badge.badge-danger{
+      color:#b42318;
+      background:#fee4e2;
+      border:1px solid #fda29b;
+    }
+    .session-pill-badge.badge-warning{
+      color:#b54708;
+      background:#fffaeb;
+      border:1px solid #fecd89;
+    }
+    .session-pill-badge.badge-success{
+      color:#0f7a45;
+      background:#e9fdef;
+      border:1px solid #b5f0cb;
     }
     .centre-switch-note{
       margin:10px 0 0;
@@ -881,14 +893,47 @@
     function renderSessionPills(rows) {
       sessionPills.innerHTML = '';
       if (!rows.length) return;
+      const formatExamDateFr = (rawDate) => {
+        const trimmed = (rawDate || '').trim();
+        if (!trimmed) return '';
+        const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return trimmed;
+        const [, year, month, day] = match;
+        const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+        if (Number.isNaN(parsed.getTime())) return trimmed;
+        return new Intl.DateTimeFormat('fr-FR', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }).format(parsed);
+      };
+      const getBadgeInfo = (rawBadge) => {
+        const cleanBadge = (rawBadge || '').trim();
+        const countMatch = cleanBadge.match(/(\d+)\s*places?\s*disponibles?/i);
+        const count = countMatch ? Number(countMatch[1]) : null;
+        if (count === null || Number.isNaN(count)) {
+          return { text: cleanBadge, className: 'badge-success' };
+        }
+        if (count >= 0 && count <= 4) {
+          return { text: `⚠️ ${cleanBadge}`, className: 'badge-danger' };
+        }
+        if (count >= 5 && count <= 6) {
+          return { text: cleanBadge, className: 'badge-warning' };
+        }
+        if (count >= 7 && count <= 12) {
+          return { text: `✅ ${cleanBadge}`, className: 'badge-success' };
+        }
+        return { text: cleanBadge, className: 'badge-success' };
+      };
       rows.forEach((r, index) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'session-pill';
         btn.dataset.value = r.label;
         const fullLabel = (r.label || '').trim();
-        const examLine = (r.date_examen || '').trim()
-          ? `<span class="session-pill-meta">📝 Examen : ${(r.date_examen || '').trim()}</span>`
+        const formattedExamDate = formatExamDateFr(r.date_examen);
+        const examLine = formattedExamDate
+          ? `<span class="session-pill-meta">📝 Examen : ${formattedExamDate}</span>`
           : '';
         const presentielMatch = fullLabel.match(/\((présentiel[^)]*)\)/i);
         const presentielLine = presentielMatch && presentielMatch[1]
@@ -898,12 +943,9 @@
           .replace(/\s*-\s*examen\s+le\s+[^,;]+$/i, '')
           .trim();
         const rawBadge = (r.badge || '').trim();
-        const lowAvailability = rawBadge && /(\b[1-3]\b)\s*places?\s*disponibles?/i.test(rawBadge);
-        const emphasisBadge = lowAvailability
-          ? `⚠️ ${rawBadge}`
-          : rawBadge;
+        const badgeInfo = getBadgeInfo(rawBadge);
         const badgeLine = rawBadge
-          ? `<span class="session-pill-badge">${emphasisBadge}</span>`
+          ? `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`
           : '';
         btn.innerHTML = `
           <span class="session-pill-title">📅 ${displayTitle}</span>
