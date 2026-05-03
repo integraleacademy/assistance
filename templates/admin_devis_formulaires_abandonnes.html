@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Formulaires abandonnés — Intégrale Academy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{font-family:Arial,Helvetica,sans-serif;background:#f5f6f8;margin:0;}
+.container{max-width:1100px;margin:30px auto;background:#fff;padding:24px;border-radius:14px;box-shadow:0 8px 25px rgba(0,0,0,.08)}
+h1{margin-top:0}
+.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.back{padding:8px 12px;border-radius:8px;background:#e9ecef;color:#111;text-decoration:none;font-size:13px}
+.search{flex:1;min-width:220px;padding:9px 12px;border:1px solid #d6d6d6;border-radius:8px}
+.bulk-delete-form{margin-left:auto}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 8px;border-bottom:1px solid #eee;font-size:14px;text-align:left}
+thead{background:#f0f2f5}
+.badge{display:inline-block;padding:4px 10px;border-radius:99px;background:#eef2ff;color:#3730a3;font-size:12px;font-weight:700}
+.badge-status{background:#fee2e2;color:#991b1b}
+.badge-status-treated{background:#dcfce7;color:#166534}
+.badge-centre{background:#ecfeff;color:#0f766e}
+.btn{display:inline-block;padding:6px 10px;border-radius:7px;background:#111827;color:#fff;text-decoration:none;font-size:12px}
+.btn-danger{background:#b91c1c;border:none;cursor:pointer}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.stats-card{position:relative;overflow:hidden;margin:22px 0 24px;background:linear-gradient(125deg,#0b1736 0%,#132a57 45%,#18325f 100%);color:#fff;border-radius:20px;padding:24px;border:1px solid rgba(255,255,255,.12);box-shadow:0 16px 40px rgba(8,22,56,.30)}
+.stats-card::before,.stats-card::after{content:'';position:absolute;border-radius:50%;pointer-events:none;filter:blur(2px)}
+.stats-card::before{width:280px;height:280px;top:-120px;right:-120px;background:radial-gradient(circle,rgba(56,189,248,.30) 0%,rgba(56,189,248,0) 72%)}
+.stats-card::after{width:220px;height:220px;bottom:-110px;left:-90px;background:radial-gradient(circle,rgba(129,140,248,.35) 0%,rgba(129,140,248,0) 70%)}
+.stats-title{position:relative;z-index:1;margin:0 0 16px;font-size:22px;font-weight:800;display:flex;align-items:center;gap:10px;letter-spacing:.2px}
+.stats-grid{position:relative;z-index:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px}
+.stat-item{position:relative;overflow:hidden;background:linear-gradient(140deg,rgba(255,255,255,.22),rgba(255,255,255,.08));backdrop-filter:blur(2px);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:14px 14px 12px;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
+.stat-item::before{content:'';position:absolute;inset:0;background:linear-gradient(125deg,rgba(255,255,255,.15),rgba(255,255,255,0) 55%);opacity:.45;pointer-events:none}
+.stat-item:hover{transform:translateY(-2px);box-shadow:0 10px 18px rgba(2,8,23,.25);border-color:rgba(255,255,255,.34)}
+.stat-label{position:relative;font-size:13px;font-weight:600;opacity:.9;margin-bottom:6px}
+.stat-value{position:relative;font-size:40px;font-weight:900;line-height:1;letter-spacing:.5px;text-shadow:0 2px 10px rgba(6,11,30,.35)}
+.stat-item:nth-child(1){background:linear-gradient(140deg,rgba(59,130,246,.35),rgba(29,78,216,.15))}
+.stat-item:nth-child(2){background:linear-gradient(140deg,rgba(148,163,184,.33),rgba(71,85,105,.16))}
+.stat-item:nth-child(3){background:linear-gradient(140deg,rgba(20,184,166,.33),rgba(15,118,110,.16))}
+.stat-item:nth-child(4){background:linear-gradient(140deg,rgba(167,139,250,.33),rgba(109,40,217,.15))}
+.stat-item:nth-child(5){background:linear-gradient(140deg,rgba(34,197,94,.34),rgba(22,101,52,.16))}
+.stat-item:nth-child(6){background:linear-gradient(140deg,rgba(251,146,60,.34),rgba(194,65,12,.16))}
+.stat-item:nth-child(7){background:linear-gradient(140deg,rgba(244,114,182,.34),rgba(190,24,93,.16))}
+@media (max-width:640px){.stats-card{padding:18px}.stats-title{font-size:19px}.stat-value{font-size:32px}}
+
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🕘 Formulaires abandonnés</h1>
+    <div class="topbar">
+        <a class="back" href="{{ url_for('admin_devis') }}">← Retour admin devis</a>
+        <input id="search" class="search" type="text" placeholder="🔍 Rechercher nom, prénom, email, formation…">
+    </div>
+
+    <section class="stats-card">
+        <h2 class="stats-title">📊 Statistiques</h2>
+        <div class="stats-grid">
+            <div class="stat-item"><div class="stat-label">Demandes du jour</div><div class="stat-value">{{ stats.today }}</div></div>
+            <div class="stat-item"><div class="stat-label">Demandes d’hier</div><div class="stat-value">{{ stats.yesterday }}</div></div>
+            <div class="stat-item"><div class="stat-label">Demandes de la semaine</div><div class="stat-value">{{ stats.week }}</div></div>
+            <div class="stat-item"><div class="stat-label">Demandes du mois</div><div class="stat-value">{{ stats.month }}</div></div>
+            <div class="stat-item"><div class="stat-label">Nombre traité</div><div class="stat-value">{{ stats.treated }}</div></div>
+            <div class="stat-item"><div class="stat-label">Nombre à traiter</div><div class="stat-value">{{ stats.to_process }}</div></div>
+            <div class="stat-item"><div class="stat-label">Total formulaires</div><div class="stat-value">{{ stats.total }}</div></div>
+        </div>
+    </section>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Date</th>
+            <th>Personne</th>
+            <th>Contact</th>
+            <th>Formation</th>
+            <th>Statut</th>
+            <th>Centre</th>
+            
+        </tr>
+        </thead>
+        <tbody id="table-body">
+        {% for f in formulaires %}
+        {% set centre_raw = (f.infos.centre or '')|lower %}
+        {% if centre_raw == 'paris' %}
+          {% set centre_label = 'Paris' %}
+        {% elif centre_raw in ['auvergne', 'aurillac'] %}
+          {% set centre_label = 'Aurillac' %}
+        {% elif centre_raw in ['cote_azur', 'côte_d_azur', 'cote-d-azur'] %}
+          {% set centre_label = "Côte d’Azur" %}
+        {% else %}
+          {% set centre_label = '—' %}
+        {% endif %}
+        <tr class="row" data-search="{{ (f.nom ~ ' ' ~ f.prenom ~ ' ' ~ f.mail ~ ' ' ~ f.telephone ~ ' ' ~ (f.infos.formation or '') ~ ' ' ~ centre_label ~ ' ' ~ (f.statut or ''))|lower }}">
+            <td>{{ f.date }}</td>
+            <td><strong>{{ f.prenom }} {{ f.nom }}</strong></td>
+            <td>{{ f.mail }}<br>{{ f.telephone or '—' }}</td>
+            <td>{{ f.infos.formation or '—' }}</td>
+            <td>
+                <span class="badge {% if f.statut == 'Traité' %}badge-status-treated{% else %}badge-status{% endif %}">
+                    {{ f.statut or 'Non traité' }}
+                </span>
+            </td>
+            <td>
+                <span class="badge badge-centre">{{ centre_label }}</span>
+            </td>
+            <td>
+                <div class="actions">
+                    <a class="btn" target="_blank" href="{{ url_for('imprimer_formulaire_admin_devis', formulaire_id=f.id) }}">🖨️ Ouvrir imprimable</a>
+                    <form method="POST" action="{{ url_for('supprimer_formulaire_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Supprimer ce formulaire ?')">
+                        <button class="btn btn-danger" type="submit">🗑️ Supprimer</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+<script>
+const search = document.getElementById('search');
+const rows = document.querySelectorAll('.row');
+search.addEventListener('input', () => {
+  const q = search.value.toLowerCase();
+  rows.forEach(r => r.style.display = r.dataset.search.includes(q) ? '' : 'none');
+});
+</script>
+</body>
+</html>
