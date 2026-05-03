@@ -141,39 +141,40 @@
                   <tr><th>Session</th><th>Date examen</th><th>Badge rouge</th><th>Actions</th></tr>
                   {% for item in rows %}
                     <tr>
-                      <td colspan="4">
-                        <form method="POST" class="autosave-form" style="display:grid;grid-template-columns:2fr 1fr 1.3fr auto auto;gap:8px;align-items:center;">
-                          <input type="hidden" name="action" value="update">
-                          <input type="hidden" name="centre" value="{{ centre }}">
-                          <input type="hidden" name="formation" value="{{ code }}">
-                          <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                          <input name="label" value="{{ item.label }}" placeholder="Session">
-                          <input name="date_examen" type="date" value="{{ item.date_examen or '' }}">
-                          <input name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place dispo">
-                          <button class="u" type="submit">💾</button>
+                      <form method="POST" class="autosave-form">
+                        <input type="hidden" name="action" value="update">
+                        <input type="hidden" name="centre" value="{{ centre }}">
+                        <input type="hidden" name="formation" value="{{ code }}">
+                        <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                        <td><input name="label" value="{{ item.label }}" placeholder="Session"></td>
+                        <td><input name="date_examen" type="date" value="{{ item.date_examen or '' }}"></td>
+                        <td><input name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place dispo"></td>
+                        <td>
                           <div class="actions">
+                            <button class="u" type="submit">💾</button>
                             <div class="autosave-status"></div>
-                            <button class="d" formaction="{{ url_for('admin_formation_sessions') }}" formmethod="post" name="action" value="delete">🗑️</button>
-                            <input type="hidden" name="centre" value="{{ centre }}">
-                            <input type="hidden" name="formation" value="{{ code }}">
-                            <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                      </form>
+                            <form method="POST" style="display:inline">
+                              <input type="hidden" name="action" value="delete">
+                              <input type="hidden" name="centre" value="{{ centre }}">
+                              <input type="hidden" name="formation" value="{{ code }}">
+                              <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                              <button class="d" type="submit">🗑️</button>
+                            </form>
                           </div>
-                        </form>
-                      </td>
+                        </td>
                     </tr>
                   {% endfor %}
                   <tr>
-                    <td colspan="4">
-                      <form method="POST" style="display:grid;grid-template-columns:2fr 1fr 1.3fr auto;gap:8px;align-items:center;">
-                        <input type="hidden" name="action" value="add">
-                        <input type="hidden" name="centre" value="{{ centre }}">
-                        <input type="hidden" name="formation" value="{{ code }}">
-                        <input name="label" placeholder="Ajouter une nouvelle date">
-                        <input name="date_examen" type="date">
-                        <input name="badge" placeholder="COMPLET / 1 place dispo">
-                        <button class="a" type="submit">➕ Ajouter</button>
-                      </form>
-                    </td>
+                    <form method="POST">
+                      <input type="hidden" name="action" value="add">
+                      <input type="hidden" name="centre" value="{{ centre }}">
+                      <input type="hidden" name="formation" value="{{ code }}">
+                      <td><input name="label" placeholder="Ajouter une nouvelle date"></td>
+                      <td><input name="date_examen" type="date"></td>
+                      <td><input name="badge" placeholder="COMPLET / 1 place dispo"></td>
+                      <td><button class="a" type="submit">➕ Ajouter</button></td>
+                    </form>
                   </tr>
                 </table>
               </div>
