@@ -97,6 +97,12 @@ input:focus, select:focus{
     box-shadow:0 0 0 3px rgba(39,174,96,0.15);
 }
 
+
+.yn-select-hidden{
+    display:none;
+}
+
+
 /* Infos / aides */
 .info{
     font-size:13px;
@@ -272,7 +278,7 @@ Les réponses à toutes ces questions nous permettront de vous transmettre un de
     <button type="button" class="yn-btn" data-value="OUI">OUI</button>
     <button type="button" class="yn-btn" data-value="NON">NON</button>
 </div>
-<select name="cpf_consulte" id="cpfConsulte" required>
+<select name="cpf_consulte" id="cpfConsulte" class="yn-select-hidden" required>
     <option value="">— Sélectionnez —</option>
     <option value="OUI">OUI</option>
     <option value="NON">NON</option>
