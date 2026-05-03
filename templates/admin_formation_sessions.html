@@ -1,9 +1,10 @@
 <!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin sessions</title>
-<style>body{font-family:Arial;background:#f8fafc;margin:0;padding:20px}.wrap{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:14px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #e2e8f0;padding:8px}input{width:100%;padding:7px}button{padding:8px 10px;border:none;border-radius:8px;cursor:pointer}.u{background:#0ea5e9;color:#fff}.d{background:#ef4444;color:#fff}.a{background:#22c55e;color:#fff}.hint{margin:0 0 16px;color:#475569;font-size:14px}</style></head><body>
+<style>body{font-family:Arial;background:#f8fafc;margin:0;padding:20px}.wrap{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:14px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #e2e8f0;padding:8px}input{width:100%;padding:7px}button{padding:8px 10px;border:none;border-radius:8px;cursor:pointer}.u{background:#0ea5e9;color:#fff}.d{background:#ef4444;color:#fff}.a{background:#22c55e;color:#fff}.hint{margin:0 0 16px;color:#475569;font-size:14px}.autosave{margin:0 0 14px;color:#0f766e;font-size:13px}.saving{color:#d97706}.saved{color:#15803d}.error{color:#b91c1c}</style></head><body>
 <div class="wrap">
   <h1>🗓️ Gestion des dates de formation</h1>
   <p><a href="{{ url_for('admin_devis') }}">⬅️ Retour admin devis</a></p>
   <p class="hint">Renseignez la date d’examen séparément pour fiabiliser le calcul de l’échéancier dans le simulateur.</p>
+  <p class="autosave">Sauvegarde automatique active pour les lignes existantes : vos modifications sont enregistrées sans cliquer sur 💾.</p>
 
   {% for centre,formations_data in sessions.items() %}
     <h2>{{ centres.get(centre, centre) }}</h2>
@@ -13,12 +14,12 @@
         <tr><th>Session</th><th>Date examen</th><th>Badge rouge</th><th>Actions</th></tr>
         {% for item in formations_data.get(code, []) %}
         <tr>
-          <form method="POST">
+          <form method="POST" class="autosave-form">
             <input type="hidden" name="action" value="update"><input type="hidden" name="centre" value="{{ centre }}"><input type="hidden" name="formation" value="{{ code }}"><input type="hidden" name="idx" value="{{ loop.index0 }}">
             <td><input name="label" value="{{ item.label }}"></td>
             <td><input name="date_examen" type="date" value="{{ item.date_examen or '' }}"></td>
             <td><input name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place disponible"></td>
-            <td><button class="u" type="submit">💾</button></form>
+            <td><button class="u" type="submit">💾</button><div class="autosave-status"></div></form>
               <form method="POST" style="display:inline"><input type="hidden" name="action" value="delete"><input type="hidden" name="centre" value="{{ centre }}"><input type="hidden" name="formation" value="{{ code }}"><input type="hidden" name="idx" value="{{ loop.index0 }}"><button class="d">🗑️</button></form>
             </td>
         </tr>
@@ -35,4 +36,52 @@
       </table>
     {% endfor %}
   {% endfor %}
-</div></body></html>
+</div>
+<script>
+(() => {
+  const timers = new Map();
+  const delayMs = 700;
+
+  function setStatus(form, message, className = "") {
+    const node = form.querySelector(".autosave-status");
+    if (!node) return;
+    node.textContent = message;
+    node.className = `autosave-status ${className}`.trim();
+  }
+
+  async function submitForm(form) {
+    setStatus(form, "Sauvegarde…", "saving");
+    try {
+      const response = await fetch(window.location.pathname, {
+        method: "POST",
+        body: new FormData(form),
+        credentials: "same-origin"
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setStatus(form, "Enregistré", "saved");
+    } catch (error) {
+      setStatus(form, "Erreur de sauvegarde", "error");
+      console.error(error);
+    }
+  }
+
+  function queueSave(form) {
+    const existing = timers.get(form);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => submitForm(form), delayMs);
+    timers.set(form, timer);
+  }
+
+  document.querySelectorAll("form.autosave-form").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      queueSave(form);
+    });
+    form.querySelectorAll("input").forEach((input) => {
+      input.addEventListener("input", () => queueSave(form));
+      input.addEventListener("change", () => queueSave(form));
+    });
+  });
+})();
+</script>
+</body></html>
