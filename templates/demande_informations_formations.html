@@ -961,21 +961,13 @@
         if (diffDays <= 60) return 6;
         return 8;
       };
-      const getBadgeInfo = (rawBadge, sessionLabel) => {
-        const cleanBadge = (rawBadge || '').trim();
+      const getBadgeInfo = (_rawBadge, sessionLabel) => {
         const dynamicPlaces = computeDynamicPlaces(parseSessionDate(sessionLabel));
-        const countMatch = cleanBadge.match(/(\d+)\s*places?\s*disponibles?/i);
-        const countFromBadge = countMatch ? Number(countMatch[1]) : null;
-        const finalCount = Number.isFinite(dynamicPlaces) ? dynamicPlaces : countFromBadge;
-        if (Number.isFinite(finalCount)) {
-          const safeCount = Math.max(0, finalCount);
-          const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
-          if (safeCount <= 4) return { text: `⚠️ ${text}`, className: 'badge-danger' };
-          if (safeCount <= 6) return { text, className: 'badge-warning' };
-          return { text: `✅ ${text}`, className: 'badge-success' };
-        }
-        if (cleanBadge) return { text: cleanBadge, className: 'badge-success' };
-        return { text: '✅ Places disponibles', className: 'badge-success' };
+        const safeCount = Math.max(1, Number.isFinite(dynamicPlaces) ? dynamicPlaces : 6);
+        const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
+        if (safeCount <= 3) return { text: `⚠️ ${text}`, className: 'badge-danger' };
+        if (safeCount <= 6) return { text, className: 'badge-warning' };
+        return { text: `✅ ${text}`, className: 'badge-success' };
       };
       rows.forEach((r, index) => {
         const btn = document.createElement('button');
@@ -996,9 +988,7 @@
           .trim();
         const rawBadge = (r.badge || '').trim();
         const badgeInfo = getBadgeInfo(rawBadge, fullLabel);
-        const badgeLine = rawBadge
-          ? `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`
-          : '';
+        const badgeLine = `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`;
         btn.innerHTML = `
           <span class="session-pill-title">📅 ${displayTitle}</span>
           ${presentielLine}
