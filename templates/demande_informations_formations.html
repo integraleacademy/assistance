@@ -961,9 +961,17 @@
         if (diffDays <= 60) return 6;
         return 8;
       };
-      const getBadgeInfo = (_rawBadge, sessionLabel) => {
+      const getBadgeInfo = (rawBadge, sessionLabel) => {
+        const cleanBadge = (rawBadge || '').trim();
+        const countMatch = cleanBadge.match(/(\d+)\s*places?\s*disponibles?/i);
+        const countFromBadge = countMatch ? Number(countMatch[1]) : null;
         const dynamicPlaces = computeDynamicPlaces(parseSessionDate(sessionLabel));
-        const safeCount = Math.max(1, Number.isFinite(dynamicPlaces) ? dynamicPlaces : 6);
+        const safeCount = Math.max(1, Number.isFinite(countFromBadge) ? countFromBadge : (Number.isFinite(dynamicPlaces) ? dynamicPlaces : 6));
+
+        if (!countMatch && cleanBadge) {
+          return { text: cleanBadge, className: 'badge-success' };
+        }
+
         const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
         if (safeCount <= 3) return { text: `⚠️ ${text}`, className: 'badge-danger' };
         if (safeCount <= 6) return { text, className: 'badge-warning' };
