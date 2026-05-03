@@ -672,6 +672,10 @@
           <div class="step5-card hidden" data-q="2">
 
             <label style="margin-top:12px;">Je souhaite déposer une demande de financement à France Travail</label>
+            <div class="yn-choice" data-for="franceTravail">
+              <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+              <button type="button" class="yn-btn" data-value="NON">NON</button>
+            </div>
             <select name="france_travail" id="franceTravail" required>
               <option value="">— Sélectionnez —</option>
               <option value="OUI">OUI</option>
@@ -680,6 +684,10 @@
 
             <div id="blocFranceTravail" class="hidden">
               <label style="margin-top:12px;">Si France Travail refuse le financement, suis-je prêt à financer personnellement la formation ?</label>
+              <div class="yn-choice" data-for="ftRefusOk">
+                <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+                <button type="button" class="yn-btn" data-value="NON">NON</button>
+              </div>
               <select name="ft_refus_ok" id="ftRefusOk">
                 <option value="">— Sélectionnez —</option>
                 <option value="OUI">OUI</option>
@@ -689,6 +697,10 @@
 
             <div id="blocPerso" class="hidden">
               <label style="margin-top:12px;">Je souhaite financer moi-même la formation / je dispose des fonds nécessaires sur mon CPF</label>
+              <div class="yn-choice" data-for="financementPerso">
+                <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+                <button type="button" class="yn-btn" data-value="NON">NON</button>
+              </div>
               <select name="financement_perso" id="financementPerso">
                 <option value="">— Sélectionnez —</option>
                 <option value="OUI">OUI</option>
@@ -699,6 +711,10 @@
           <div class="step5-card hidden" data-q="3">
 
             <label style="margin-top:12px;">J’ai déjà créé mon Identité Numérique La Poste</label>
+            <div class="yn-choice" data-for="identiteNumerique">
+              <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+              <button type="button" class="yn-btn" data-value="NON">NON</button>
+            </div>
             <select name="identite_numerique" id="identiteNumerique" required>
               <option value="">— Sélectionnez —</option>
               <option value="OUI">OUI</option>
@@ -713,7 +729,11 @@
 
           <div class="cnaps-q" data-cnaps-q="1">
             <label style="margin-top:12px;">J’ai déjà une carte professionnelle CNAPS en cours de validité</label>
-            <select name="cnaps_ok">
+            <div class="yn-choice" data-for="cnapsOk">
+              <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+              <button type="button" class="yn-btn" data-value="NON">NON</button>
+            </div>
+            <select name="cnaps_ok" id="cnapsOk">
               <option value="">— Sélectionnez —</option>
               <option value="OUI">OUI</option>
               <option value="NON">NON</option>
@@ -722,7 +742,11 @@
 
           <div class="cnaps-q hidden" data-cnaps-q="2">
             <label style="margin-top:12px;">J'ai déjà fait l'objet d’une garde à vue ou d’une prise d’empreintes ? Le CNAPS (Ministère de l'intérieur) vérifie vos antécédents judiciaires sur les 30 dernières années, même si votre casier judiciaire est vierge).</label>
-            <select name="garde_vue">
+            <div class="yn-choice" data-for="gardeVue">
+              <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+              <button type="button" class="yn-btn" data-value="NON">NON</button>
+            </div>
+            <select name="garde_vue" id="gardeVue">
               <option value="">— Sélectionnez —</option>
               <option value="OUI">OUI</option>
               <option value="NON">NON</option>
@@ -731,7 +755,11 @@
 
           <div class="cnaps-q hidden" data-cnaps-q="3">
             <label style="margin-top:12px;">Je suis titulaire d'un titre de séjour</label>
-            <select name="titre_sejour">
+            <div class="yn-choice" data-for="titreSejour">
+              <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+              <button type="button" class="yn-btn" data-value="NON">NON</button>
+            </div>
+            <select name="titre_sejour" id="titreSejour">
               <option value="">— Sélectionnez —</option>
               <option value="OUI">OUI</option>
               <option value="NON">NON</option>
@@ -742,6 +770,10 @@
           </div>
           <div class="step5-card hidden" data-q="5">
             <label for="souhaiteDevis">Souhaitez-vous recevoir un devis détaillé ?</label>
+            <div class="yn-choice" data-for="souhaiteDevis">
+              <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+              <button type="button" class="yn-btn" data-value="NON">NON</button>
+            </div>
             <select name="souhaite_devis" id="souhaiteDevis" required>
               <option value="">— Sélectionnez —</option>
               <option value="OUI">OUI</option>
