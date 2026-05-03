@@ -992,6 +992,7 @@
           ? `<span class="session-pill-meta"><strong>🏫 ${presentielMatch[1].replace(/^présentiel\s*/i, 'Présentiel ')}</strong></span>`
           : '';
         const displayTitle = fullLabel
+          .replace(/\s*\((présentiel[^)]*)\)/i, '')
           .replace(/\s*-\s*examen\s+le\s+[^,;]+$/i, '')
           .trim();
         const rawBadge = (r.badge || '').trim();
