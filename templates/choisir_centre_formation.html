@@ -459,8 +459,8 @@
       const badgeHtml = `<div class="center-card-badge">${cardOptions.badge}</div>`;
       const subtitleHtml = cardOptions.subtitle ? `<p class="center-card-subtitle">${cardOptions.subtitle}</p>` : '';
       const nextSessionHtml = nextSession
-        ? `<div class="next-session-highlight">📅 Prochaine date de formation : <strong>${formatSessionRangeFr(nextSession)}</strong></div>`
-        : '<div class="next-session-highlight">📅 Prochaine date de formation : <strong>Non disponible</strong></div>';
+        ? `<div class="next-session-highlight">📅 Prochaine formation : <strong>${formatSessionRangeFr(nextSession)}</strong></div>`
+        : '<div class="next-session-highlight">📅 Prochaine formation : <strong>Non disponible</strong></div>';
       const commonNote = center.key === CENTER_PARIS.key
         ? 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence.'
         : 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l\'organisation sur place.';
