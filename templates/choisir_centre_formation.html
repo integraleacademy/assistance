@@ -46,12 +46,24 @@
       padding: 10px 16px;
       font-size: 14px;
       font-weight: 700;
+      white-space: normal;
+      line-height: 1.35;
+      text-align: center;
+      overflow-wrap: anywhere;
+      max-width: 100%;
     }
     .sort-btn.active {
       background: #2563eb;
       color: #fff;
       border-color: #2563eb;
     }
+    #distances > div {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.45;
+      margin-bottom: 6px;
+    }
+
     .loading-box {
       margin-top: 14px;
       padding: 18px;
@@ -263,6 +275,14 @@
       #btn {
         width: 100%;
         min-width: 0;
+      }
+
+      .sort-controls {
+        flex-direction: column;
+      }
+
+      .sort-btn {
+        width: 100%;
       }
 
       .recommendation, .selection {
