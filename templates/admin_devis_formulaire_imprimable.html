@@ -64,6 +64,18 @@ body{
 .formation-badge[data-formation-theme="vae"]{background:#fff4dd;border-color:#f1b362;color:#be5727}
 .formation-badge[data-formation-theme="vtc"]{background:#efecff;border-color:#b8a9ff;color:#5b2edc}
 .formation-badge[data-formation-theme="aps"]{background:#e6efff;border-color:#8db8ff;color:#3559d5}
+.abandoned-label{
+  padding:8px 14px;
+  border-radius:12px;
+  font-size:24px;
+  font-weight:900;
+  letter-spacing:.6px;
+  text-transform:uppercase;
+  background:#dc2626;
+  color:#fff;
+  border:2px solid #991b1b;
+  box-shadow:0 8px 18px rgba(153,27,27,.3);
+}
 .btn{padding:9px 12px;border:1px solid transparent;border-radius:10px;cursor:pointer;font-weight:800;font-size:13px;transition:transform .12s ease, box-shadow .12s ease, background .2s ease}
 .btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .btn-print{background:var(--accent);color:#fff}
@@ -114,6 +126,7 @@ tr:nth-child(even) td{background:#fbfdff}
   .branding img{height:58px}
   .campus-badge{font-size:16px;padding:8px 12px;background:var(--brand);color:#fff;border:1px solid var(--brand)}
   .formation-badge{min-width:160px;padding:10px 18px;font-size:24px;border-width:3px;border-radius:22px;box-shadow:none}
+  .abandoned-label{font-size:18px;padding:6px 10px;box-shadow:none}
   th{background:#eef2f7}
   th,td{font-size:11px;padding:4px 6px;line-height:1.2}
   .table-wrap{border-radius:0;box-shadow:none}
@@ -129,11 +142,14 @@ tr:nth-child(even) td{background:#fbfdff}
         </div>
         <span class="campus-badge">{{ badge_text }}</span>
         <div class="header-title">
-            <h1>Formulaire soumis</h1>
+            <h1>{% if is_abandoned %}Formulaire abandonné{% else %}Formulaire soumis{% endif %}</h1>
             <p class="subline">Source : {{ source_label }}</p>
         </div>
     </div>
     <div class="top-actions">
+        {% if is_abandoned %}
+        <div class="abandoned-label">Formulaire abandonné</div>
+        {% endif %}
         {% if formation_badge_text %}
         <div class="formation-badge" data-formation-theme="{{ formation_badge_theme }}">{{ formation_badge_text }}</div>
         {% endif %}

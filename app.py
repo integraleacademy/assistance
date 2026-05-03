@@ -2239,6 +2239,7 @@ def supprimer_tous_formulaires_admin_devis():
 def imprimer_formulaire_admin_devis(formulaire_id):
     data = load_data()
     demande = next((d for d in data.get("demandes", []) if d.get("id") == formulaire_id), None)
+    is_abandoned = False
 
     if demande:
         is_target = (
@@ -2251,6 +2252,7 @@ def imprimer_formulaire_admin_devis(formulaire_id):
         draft = next((d for d in data.get("formulaires_abandonnes", []) if d.get("form_id") == formulaire_id), None)
         if not draft:
             abort(404)
+        is_abandoned = True
 
         draft_fields = draft.get("fields") or {}
         demande = {
@@ -2392,7 +2394,7 @@ def imprimer_formulaire_admin_devis(formulaire_id):
         formation_badge_text = "APS"
         formation_badge_theme = "aps"
 
-    badge_text = "AURILLAC"
+    badge_text = "INCONNU"
     campus_theme = "aurillac"
     centre_normalized = (centre_value or "").strip().lower()
 
@@ -2413,6 +2415,7 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     return render_template(
         "admin_devis_formulaire_imprimable.html",
         demande=demande,
+        is_abandoned=is_abandoned,
         source_label=source_label,
         infos_rows=infos_rows,
         categorized_infos=categorized_infos,
