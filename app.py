@@ -2244,6 +2244,20 @@ def supprimer_tous_formulaires_admin_devis():
     return redirect(url_for("admin_devis_formulaires"))
 
 
+@app.route("/admin-devis/formulaires-abandonnes/supprimer-tout", methods=["POST"])
+@login_required
+def supprimer_tous_formulaires_abandonnes_admin_devis():
+    data = load_data()
+    abandons = data.get("formulaires_abandonnes", [])
+
+    if not abandons:
+        return redirect(url_for("admin_devis_formulaires_abandonnes"))
+
+    data["formulaires_abandonnes"] = []
+    save_data(data)
+    return redirect(url_for("admin_devis_formulaires_abandonnes"))
+
+
 @app.route("/admin-devis/formulaires/<formulaire_id>/imprimer")
 @login_required
 def imprimer_formulaire_admin_devis(formulaire_id):
