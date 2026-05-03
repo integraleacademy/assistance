@@ -2186,26 +2186,36 @@ def admin_devis_formulaires_abandonnes():
 @login_required
 def supprimer_formulaire_admin_devis(formulaire_id):
     data = load_data()
+
+    # 1) Formulaires "classiques" dans demandes
     demandes = data.get("demandes", [])
     to_remove = next((d for d in demandes if d.get("id") == formulaire_id), None)
-    if not to_remove:
-        abort(404)
+    if to_remove:
+        is_target = (
+            to_remove.get("motif") == "Demande de devis détaillé"
+            or to_remove.get("source") == "demande_infos_formations"
+        )
+        if not is_target:
+            abort(404)
 
-    is_target = (
-        to_remove.get("motif") == "Demande de devis détaillé"
-        or to_remove.get("source") == "demande_infos_formations"
-    )
-    if not is_target:
-        abort(404)
+        data.setdefault("archives", []).append(to_remove)
+        supprimer_fichier(to_remove.get("justificatif"))
+        for pj in to_remove.get("pieces_jointes", []):
+            supprimer_fichier(pj)
 
-    data.setdefault("archives", []).append(to_remove)
-    supprimer_fichier(to_remove.get("justificatif"))
-    for pj in to_remove.get("pieces_jointes", []):
-        supprimer_fichier(pj)
+        demandes.remove(to_remove)
+        save_data(data)
+        return redirect(url_for("admin_devis_formulaires"))
 
-    demandes.remove(to_remove)
-    save_data(data)
-    return redirect(url_for("admin_devis_formulaires"))
+    # 2) Formulaires abandonnés dans formulaires_abandonnes
+    abandons = data.get("formulaires_abandonnes", [])
+    abandon_to_remove = next((d for d in abandons if d.get("form_id") == formulaire_id), None)
+    if abandon_to_remove:
+        abandons.remove(abandon_to_remove)
+        save_data(data)
+        return redirect(url_for("admin_devis_formulaires_abandonnes"))
+
+    abort(404)
 
 
 @app.route("/admin-devis/formulaires/supprimer-tout", methods=["POST"])

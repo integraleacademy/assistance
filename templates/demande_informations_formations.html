@@ -974,8 +974,11 @@
           if (safeCount <= 6) return { text, className: 'badge-warning' };
           return { text: `✅ ${text}`, className: 'badge-success' };
         }
-        if (cleanBadge) return { text: cleanBadge, className: 'badge-success' };
-        return { text: '✅ Places disponibles', className: 'badge-success' };
+
+        const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
+        if (safeCount <= 3) return { text: `⚠️ ${text}`, className: 'badge-danger' };
+        if (safeCount <= 6) return { text, className: 'badge-warning' };
+        return { text: `✅ ${text}`, className: 'badge-success' };
       };
       rows.forEach((r, index) => {
         const btn = document.createElement('button');
@@ -992,6 +995,7 @@
           ? `<span class="session-pill-meta"><strong>🏫 ${presentielMatch[1].replace(/^présentiel\s*/i, 'Présentiel ')}</strong></span>`
           : '';
         const displayTitle = fullLabel
+          .replace(/\s*\((présentiel[^)]*)\)/i, '')
           .replace(/\s*-\s*examen\s+le\s+[^,;]+$/i, '')
           .trim();
         const rawBadge = (r.badge || '').trim();
