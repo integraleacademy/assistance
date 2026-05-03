@@ -1045,7 +1045,7 @@
       if (formationCode === 'A3P') return ['cote_azur', 'auvergne'];
       return ['cote_azur'];
     }
-    const CENTRE_FRAME_TIMEOUT_MS = 4500;
+    const CENTRE_FRAME_TIMEOUT_MS = 12000;
     let centreFrameTimeout = null;
 
     (function syncGclid(){
@@ -1640,6 +1640,9 @@
     updateStep();
 
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
+    centreFrame.addEventListener('load', () => {
+      markCentreFrameReady();
+    });
     openSimu.addEventListener('click', openCentreModal);
     document.getElementById('closeModal').addEventListener('click', closeCentreModal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeCentreModal(); });
