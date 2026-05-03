@@ -907,23 +907,35 @@
           year: 'numeric',
         }).format(parsed);
       };
-      const getBadgeInfo = (rawBadge) => {
-        const cleanBadge = (rawBadge || '').trim();
-        const countMatch = cleanBadge.match(/(\d+)\s*places?\s*disponibles?/i);
-        const count = countMatch ? Number(countMatch[1]) : null;
-        if (count === null || Number.isNaN(count)) {
-          return { text: cleanBadge, className: 'badge-success' };
-        }
-        if (count >= 0 && count <= 4) {
-          return { text: `⚠️ ${cleanBadge}`, className: 'badge-danger' };
-        }
-        if (count >= 5 && count <= 6) {
-          return { text: cleanBadge, className: 'badge-warning' };
-        }
-        if (count >= 7 && count <= 12) {
-          return { text: `✅ ${cleanBadge}`, className: 'badge-success' };
-        }
-        return { text: cleanBadge, className: 'badge-success' };
+      const parseSessionDate = (rawLabel) => {
+        const label = (rawLabel || '').trim();
+        if (!label) return null;
+        const match = label.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        if (!match) return null;
+        const [, day, month, year] = match;
+        const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      };
+      const computeDynamicPlaces = (sessionDate) => {
+        if (!sessionDate) return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const target = new Date(sessionDate);
+        target.setHours(0, 0, 0, 0);
+        const diffDays = Math.ceil((target.getTime() - today.getTime()) / 86400000);
+        if (diffDays <= 7) return 1;
+        if (diffDays <= 14) return 2;
+        if (diffDays <= 30) return 4;
+        if (diffDays <= 60) return 6;
+        return 8;
+      };
+      const getBadgeInfo = (_rawBadge, sessionLabel) => {
+        const dynamicPlaces = computeDynamicPlaces(parseSessionDate(sessionLabel));
+        const safeCount = Math.max(1, Number.isFinite(dynamicPlaces) ? dynamicPlaces : 6);
+        const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
+        if (safeCount <= 3) return { text: `⚠️ ${text}`, className: 'badge-danger' };
+        if (safeCount <= 6) return { text, className: 'badge-warning' };
+        return { text: `✅ ${text}`, className: 'badge-success' };
       };
       rows.forEach((r, index) => {
         const btn = document.createElement('button');
@@ -943,10 +955,8 @@
           .replace(/\s*-\s*examen\s+le\s+[^,;]+$/i, '')
           .trim();
         const rawBadge = (r.badge || '').trim();
-        const badgeInfo = getBadgeInfo(rawBadge);
-        const badgeLine = rawBadge
-          ? `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`
-          : '';
+        const badgeInfo = getBadgeInfo(rawBadge, fullLabel);
+        const badgeLine = `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`;
         btn.innerHTML = `
           <span class="session-pill-title">📅 ${displayTitle}</span>
           ${presentielLine}
