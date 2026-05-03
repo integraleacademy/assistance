@@ -2239,15 +2239,27 @@ def supprimer_tous_formulaires_admin_devis():
 def imprimer_formulaire_admin_devis(formulaire_id):
     data = load_data()
     demande = next((d for d in data.get("demandes", []) if d.get("id") == formulaire_id), None)
-    if not demande:
-        abort(404)
 
-    is_target = (
-        demande.get("motif") == "Demande de devis détaillé"
-        or demande.get("source") == "demande_infos_formations"
-    )
-    if not is_target:
-        abort(404)
+    if demande:
+        is_target = (
+            demande.get("motif") == "Demande de devis détaillé"
+            or demande.get("source") == "demande_infos_formations"
+        )
+        if not is_target:
+            abort(404)
+    else:
+        draft = next((d for d in data.get("formulaires_abandonnes", []) if d.get("form_id") == formulaire_id), None)
+        if not draft:
+            abort(404)
+
+        draft_fields = draft.get("fields") or {}
+        demande = {
+            "id": draft.get("form_id", ""),
+            "date": draft.get("updated_at") or draft.get("created_at") or "",
+            "motif": "Demande de devis détaillé",
+            "source": "demande_infos_formations",
+            "details": json.dumps(draft_fields, ensure_ascii=False),
+        }
 
     infos = {}
     try:
