@@ -1437,6 +1437,27 @@
       }
     });
 
+
+    function setupYesNoButtons() {
+      document.querySelectorAll('.yn-choice').forEach((group) => {
+        const target = document.getElementById(group.dataset.for);
+        if (!target) return;
+        const buttons = group.querySelectorAll('.yn-btn');
+        const sync = () => {
+          buttons.forEach((btn) => btn.classList.toggle('active', btn.dataset.value === target.value));
+        };
+        buttons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            target.value = btn.dataset.value;
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            sync();
+          });
+        });
+        target.addEventListener('change', sync);
+        sync();
+      });
+    }
+
     cpfMontant.addEventListener('input', () => {
       cpfMontant.value = cpfMontant.value.replace(/\D/g, '').slice(0, 5);
       updateStep5Flow();
@@ -1482,22 +1503,3 @@
   </script>
 </body>
 </html>
-    function setupYesNoButtons() {
-      document.querySelectorAll('.yn-choice').forEach((group) => {
-        const target = document.getElementById(group.dataset.for);
-        if (!target) return;
-        const buttons = group.querySelectorAll('.yn-btn');
-        const sync = () => {
-          buttons.forEach((btn) => btn.classList.toggle('active', btn.dataset.value === target.value));
-        };
-        buttons.forEach((btn) => {
-          btn.addEventListener('click', () => {
-            target.value = btn.dataset.value;
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-            sync();
-          });
-        });
-        target.addEventListener('change', sync);
-        sync();
-      });
-    }
