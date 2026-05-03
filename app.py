@@ -280,7 +280,7 @@ FORMATION_CENTRES = {
 
 PLAN_DATES = {
     "A3P": [
-        "30 mars au 2 juin 2026 – examen le 3 juin 2026",
+        "30 juin au 2 septembre 2026 – examen le 3 septembre 2026",
         "8 juin au 4 août 2026 – examen le 5 août 2026",
         "1 septembre au 27 octobre 2026 – examen le 28 octobre 2026",
         "9 novembre 2026 au 19 janvier 2027 – examen le 20 janvier 2027"
@@ -309,7 +309,7 @@ DEFAULT_FORMATION_SESSIONS = {
             {"label": "Du 3 novembre au 8 décembre 2026 - examen le 9 décembre 2026", "badge": ""}
         ],
         "A3P": [
-            {"label": "Du 30 mars au 2 juin 2026 - examen le 3 juin 2026", "badge": ""},
+            {"label": "Du 30 juin au 2 septembre 2026 - examen le 3 septembre 2026", "badge": ""},
             {"label": "Du 8 juin au 4 août 2026 - examen le 5 août 2026", "badge": ""},
             {"label": "Du 1er septembre au 27 octobre 2026 - examen le 28 octobre 2026", "badge": ""},
             {"label": "Du 9 novembre 2026 au 19 janvier 2027 - examen le 20 janvier 2027", "badge": ""}
@@ -1888,6 +1888,52 @@ def demande_informations_formations():
     return render_template("demande_informations_formations.html", sessions=sessions, formations=PLAN_FORMATIONS, gclid=gclid)
 
 
+
+
+@app.route("/api/demande-informations-formations/autosave", methods=["POST"])
+def autosave_demande_informations_formations():
+    payload = request.get_json(silent=True) or {}
+    form_id = (payload.get("form_id") or "").strip()
+    if not form_id:
+        return ("", 204)
+
+    data = load_data()
+    entries = data.setdefault("formulaires_abandonnes", [])
+
+    status = (payload.get("status") or "draft").strip().lower()
+    if status == "submitted":
+        data["formulaires_abandonnes"] = [e for e in entries if e.get("form_id") != form_id]
+        save_data(data)
+        return ("", 204)
+
+    fields = payload.get("fields")
+    if not isinstance(fields, dict):
+        fields = {}
+
+    cleaned_fields = {}
+    for k, v in fields.items():
+        if isinstance(v, str):
+            v = v.strip()
+        if v not in ("", None):
+            cleaned_fields[k] = v
+
+    existing = next((e for e in entries if e.get("form_id") == form_id), None)
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+
+    if existing:
+        existing["fields"] = cleaned_fields
+        existing["updated_at"] = now_str
+    else:
+        entries.append({
+            "form_id": form_id,
+            "fields": cleaned_fields,
+            "created_at": now_str,
+            "updated_at": now_str,
+        })
+
+    save_data(data)
+    return ("", 204)
+
 @app.route("/confirmation-demande-informations")
 def confirmation_demande_infos():
     hot = request.args.get("hot") == "1"
@@ -2096,30 +2142,80 @@ def admin_devis_formulaires():
     return render_template("admin_devis_formulaires.html", formulaires=formulaires, stats=stats)
 
 
+@app.route("/admin-devis/formulaires-abandonnes")
+@login_required
+def admin_devis_formulaires_abandonnes():
+    data = load_data()
+    formulaires = []
+
+    for draft in data.get("formulaires_abandonnes", []):
+        fields = draft.get("fields") or {}
+        updated = draft.get("updated_at") or draft.get("created_at") or ""
+        try:
+            sort_date = datetime.datetime.strptime(updated, "%d/%m/%Y %H:%M")
+        except ValueError:
+            sort_date = datetime.datetime.min
+
+        formulaires.append({
+            "id": draft.get("form_id", ""),
+            "date": updated,
+            "nom": fields.get("nom", ""),
+            "prenom": fields.get("prenom", ""),
+            "mail": fields.get("mail", ""),
+            "telephone": fields.get("telephone", ""),
+            "source_label": "Formulaire abandonné",
+            "statut": "Abandonné",
+            "infos": fields,
+            "sort_date": sort_date,
+        })
+
+    formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
+    stats = {
+        "today": 0,
+        "yesterday": 0,
+        "week": 0,
+        "month": 0,
+        "treated": 0,
+        "to_process": len(formulaires),
+        "total": len(formulaires),
+    }
+    return render_template("admin_devis_formulaires_abandonnes.html", formulaires=formulaires, stats=stats)
+
+
 @app.route("/admin-devis/formulaires/<formulaire_id>/supprimer", methods=["POST"])
 @login_required
 def supprimer_formulaire_admin_devis(formulaire_id):
     data = load_data()
+
+    # 1) Formulaires "classiques" dans demandes
     demandes = data.get("demandes", [])
     to_remove = next((d for d in demandes if d.get("id") == formulaire_id), None)
-    if not to_remove:
-        abort(404)
+    if to_remove:
+        is_target = (
+            to_remove.get("motif") == "Demande de devis détaillé"
+            or to_remove.get("source") == "demande_infos_formations"
+        )
+        if not is_target:
+            abort(404)
 
-    is_target = (
-        to_remove.get("motif") == "Demande de devis détaillé"
-        or to_remove.get("source") == "demande_infos_formations"
-    )
-    if not is_target:
-        abort(404)
+        data.setdefault("archives", []).append(to_remove)
+        supprimer_fichier(to_remove.get("justificatif"))
+        for pj in to_remove.get("pieces_jointes", []):
+            supprimer_fichier(pj)
 
-    data.setdefault("archives", []).append(to_remove)
-    supprimer_fichier(to_remove.get("justificatif"))
-    for pj in to_remove.get("pieces_jointes", []):
-        supprimer_fichier(pj)
+        demandes.remove(to_remove)
+        save_data(data)
+        return redirect(url_for("admin_devis_formulaires"))
 
-    demandes.remove(to_remove)
-    save_data(data)
-    return redirect(url_for("admin_devis_formulaires"))
+    # 2) Formulaires abandonnés dans formulaires_abandonnes
+    abandons = data.get("formulaires_abandonnes", [])
+    abandon_to_remove = next((d for d in abandons if d.get("form_id") == formulaire_id), None)
+    if abandon_to_remove:
+        abandons.remove(abandon_to_remove)
+        save_data(data)
+        return redirect(url_for("admin_devis_formulaires_abandonnes"))
+
+    abort(404)
 
 
 @app.route("/admin-devis/formulaires/supprimer-tout", methods=["POST"])
@@ -2153,15 +2249,29 @@ def supprimer_tous_formulaires_admin_devis():
 def imprimer_formulaire_admin_devis(formulaire_id):
     data = load_data()
     demande = next((d for d in data.get("demandes", []) if d.get("id") == formulaire_id), None)
-    if not demande:
-        abort(404)
+    is_abandoned = False
 
-    is_target = (
-        demande.get("motif") == "Demande de devis détaillé"
-        or demande.get("source") == "demande_infos_formations"
-    )
-    if not is_target:
-        abort(404)
+    if demande:
+        is_target = (
+            demande.get("motif") == "Demande de devis détaillé"
+            or demande.get("source") == "demande_infos_formations"
+        )
+        if not is_target:
+            abort(404)
+    else:
+        draft = next((d for d in data.get("formulaires_abandonnes", []) if d.get("form_id") == formulaire_id), None)
+        if not draft:
+            abort(404)
+        is_abandoned = True
+
+        draft_fields = draft.get("fields") or {}
+        demande = {
+            "id": draft.get("form_id", ""),
+            "date": draft.get("updated_at") or draft.get("created_at") or "",
+            "motif": "Demande de devis détaillé",
+            "source": "demande_infos_formations",
+            "details": json.dumps(draft_fields, ensure_ascii=False),
+        }
 
     infos = {}
     try:
@@ -2294,7 +2404,7 @@ def imprimer_formulaire_admin_devis(formulaire_id):
         formation_badge_text = "APS"
         formation_badge_theme = "aps"
 
-    badge_text = "AURILLAC"
+    badge_text = "INCONNU"
     campus_theme = "aurillac"
     centre_normalized = (centre_value or "").strip().lower()
 
@@ -2315,6 +2425,7 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     return render_template(
         "admin_devis_formulaire_imprimable.html",
         demande=demande,
+        is_abandoned=is_abandoned,
         source_label=source_label,
         infos_rows=infos_rows,
         categorized_infos=categorized_infos,
