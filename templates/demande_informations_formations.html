@@ -968,9 +968,9 @@
         const countFromBadge = countMatch ? Number(countMatch[1]) : null;
         const finalCount = Number.isFinite(dynamicPlaces) ? dynamicPlaces : countFromBadge;
         if (Number.isFinite(finalCount)) {
-          const safeCount = Math.max(1, finalCount);
+          const safeCount = Math.max(0, finalCount);
           const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
-          if (safeCount <= 3) return { text: `⚠️ ${text}`, className: 'badge-danger' };
+          if (safeCount <= 4) return { text: `⚠️ ${text}`, className: 'badge-danger' };
           if (safeCount <= 6) return { text, className: 'badge-warning' };
           return { text: `✅ ${text}`, className: 'badge-success' };
         }
