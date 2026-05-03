@@ -1210,8 +1210,11 @@
       };
       const parseStartDate = (label) => {
         if (!label) return null;
-        const normalized = String(label).toLowerCase();
-        const match = normalized.match(/\bdu\s+(\d{1,2})\s+([a-zéûôîàùç]+)\s+(\d{4})\b/);
+        const normalized = String(label)
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '');
+        const match = normalized.match(/\b(?:du\s+)?(\d{1,2})(?:er)?\s+([a-z]+)\s+(\d{4})\b/);
         if (!match) return null;
         const day = parseInt(match[1], 10);
         const month = monthMap[match[2]];

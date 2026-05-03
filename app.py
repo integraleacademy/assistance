@@ -280,7 +280,7 @@ FORMATION_CENTRES = {
 
 PLAN_DATES = {
     "A3P": [
-        "30 mars au 2 juin 2026 – examen le 3 juin 2026",
+        "30 juin au 2 septembre 2026 – examen le 3 septembre 2026",
         "8 juin au 4 août 2026 – examen le 5 août 2026",
         "1 septembre au 27 octobre 2026 – examen le 28 octobre 2026",
         "9 novembre 2026 au 19 janvier 2027 – examen le 20 janvier 2027"
@@ -309,7 +309,7 @@ DEFAULT_FORMATION_SESSIONS = {
             {"label": "Du 3 novembre au 8 décembre 2026 - examen le 9 décembre 2026", "badge": ""}
         ],
         "A3P": [
-            {"label": "Du 30 mars au 2 juin 2026 - examen le 3 juin 2026", "badge": ""},
+            {"label": "Du 30 juin au 2 septembre 2026 - examen le 3 septembre 2026", "badge": ""},
             {"label": "Du 8 juin au 4 août 2026 - examen le 5 août 2026", "badge": ""},
             {"label": "Du 1er septembre au 27 octobre 2026 - examen le 28 octobre 2026", "badge": ""},
             {"label": "Du 9 novembre 2026 au 19 janvier 2027 - examen le 20 janvier 2027", "badge": ""}
