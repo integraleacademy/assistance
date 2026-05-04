@@ -1082,6 +1082,37 @@ def envoyer_mail_admin(demande):
     )
     send_email_html("elsaduq83@gmail.com, ecole@integraleacademy.com", sujet, plain, html)
 
+
+
+def envoyer_mail_formulaire_rappel_admin(callback_data):
+    sujet = "📞 Nouveau formulaire à rappeler — Admin devis"
+    plain = (
+        "Nouveau formulaire à rappeler :\n\n"
+        f"Nom: {callback_data.get('nom', '')}\n"
+        f"Prénom: {callback_data.get('prenom', '')}\n"
+        f"Email: {callback_data.get('mail', '')}\n"
+        f"Téléphone: {callback_data.get('telephone', '')}\n"
+        f"Objet de l'appel: {callback_data.get('objet_appel', '')}\n"
+        f"Créneau de rappel: {callback_data.get('creneau_rappel', '')}\n"
+    )
+
+    rows = f"""
+      <tr><td style="padding:6px 8px;color:#555;width:170px;">Nom</td><td style="padding:6px 8px;"><strong>{callback_data.get('nom', '')}</strong></td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">Prénom</td><td style="padding:6px 8px;"><strong>{callback_data.get('prenom', '')}</strong></td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">Email</td><td style="padding:6px 8px;">{callback_data.get('mail', '')}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">Téléphone</td><td style="padding:6px 8px;">{callback_data.get('telephone', '')}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">Objet de l'appel</td><td style="padding:6px 8px;white-space:pre-wrap;">{callback_data.get('objet_appel', '')}</td></tr>
+      <tr><td style="padding:6px 8px;color:#555;">Créneau de rappel</td><td style="padding:6px 8px;">{callback_data.get('creneau_rappel', '')}</td></tr>
+    """
+    html = _wrap_html(
+        '<h1 style="margin:0 0 12px;font-size:20px;">📞 Nouveau formulaire à rappeler</h1>',
+        f"""
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;">
+          {rows}
+        </table>
+        """
+    )
+    send_email_html("clement@integraleacademy.com", sujet, plain, html)
 def envoyer_mail_accuse(demande):
     sujet = "📩 Accusé de réception — Intégrale Academy"
     plain = (
@@ -2046,6 +2077,77 @@ def admin_devis():
             devis.append(d)
 
     return render_template("admin_devis.html", devis=devis)
+
+
+
+
+@app.route("/admin-devis/rappels", methods=["GET"])
+@login_required
+def admin_devis_rappels():
+    data = load_data()
+    rappels = [d for d in data.get("demandes", []) if d.get("motif") == "Formulaire à rappeler"]
+    rappels.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return jsonify(rappels)
+
+
+@app.route("/admin-devis/rappels", methods=["POST"])
+@login_required
+def create_admin_devis_rappel():
+    data = load_data()
+    payload = request.get_json(silent=True) or {}
+    entry = {
+        "id": str(uuid.uuid4()),
+        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "nom": (payload.get("nom") or "").strip(),
+        "prenom": (payload.get("prenom") or "").strip(),
+        "mail": (payload.get("mail") or "").strip(),
+        "telephone": (payload.get("telephone") or "").strip(),
+        "motif": "Formulaire à rappeler",
+        "details": "Créé depuis l'admin devis",
+        "objet_appel": (payload.get("objet_appel") or "").strip(),
+        "creneau_rappel": (payload.get("creneau_rappel") or "").strip(),
+        "statut": "A rappeler",
+        "traite": False,
+        "commentaire": "",
+    }
+    data.setdefault("demandes", []).append(entry)
+    save_data(data)
+    try:
+        envoyer_mail_formulaire_rappel_admin(entry)
+    except Exception as e:
+        print("⚠️ Erreur envoi mail formulaire rappel admin:", e)
+    return jsonify({"ok": True, "item": entry})
+
+
+@app.route("/admin-devis/rappels/<rappel_id>", methods=["PATCH"])
+@login_required
+def update_admin_devis_rappel(rappel_id):
+    data = load_data()
+    payload = request.get_json(silent=True) or {}
+    rappel = next((d for d in data.get("demandes", []) if d.get("id") == rappel_id and d.get("motif") == "Formulaire à rappeler"), None)
+    if not rappel:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    if "traite" in payload:
+        rappel["traite"] = bool(payload.get("traite"))
+        rappel["statut"] = "Traité" if rappel["traite"] else "A rappeler"
+    if "commentaire" in payload:
+        rappel["commentaire"] = str(payload.get("commentaire") or "")
+
+    save_data(data)
+    return jsonify({"ok": True, "item": rappel})
+
+
+@app.route("/admin-devis/rappels/<rappel_id>", methods=["DELETE"])
+@login_required
+def delete_admin_devis_rappel(rappel_id):
+    data = load_data()
+    before = len(data.get("demandes", []))
+    data["demandes"] = [d for d in data.get("demandes", []) if not (d.get("id") == rappel_id and d.get("motif") == "Formulaire à rappeler")]
+    if len(data["demandes"]) == before:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    save_data(data)
+    return jsonify({"ok": True})
 
 
 @app.route("/admin-devis/formulaires")

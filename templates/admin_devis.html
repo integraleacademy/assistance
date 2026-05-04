@@ -124,6 +124,17 @@ tbody tr:nth-child(even){
 .btn-change{ background:#0d6efd; }
 .btn-delete{ background:#dc3545; }
 
+
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:999;}
+.modal{background:#fff;width:min(760px,95vw);border-radius:12px;padding:18px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.form-grid .full{grid-column:1 / -1;}
+.form-grid input,.form-grid textarea{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;}
+.form-grid textarea{min-height:110px;resize:vertical;}
+.rappel-row.traite{background:#d1fae5 !important;}
+.btn-callback{background:#2563eb;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;}
+.btn-rappels{background:#0f766e;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;}
+
 </style>
 </head>
 
@@ -143,6 +154,8 @@ tbody tr:nth-child(even){
     <a class="btn-simulate" href="{{ url_for('admin_formation_sessions') }}" style="background:#7c3aed;">🗓️ Gérer les dates</a>
     <a class="btn-simulate" href="{{ url_for('admin_devis_formulaires') }}" style="background:#0f766e;">🧾 Traitement formulaires</a>
     <a class="btn-simulate" href="{{ url_for('admin_devis_formulaires_abandonnes') }}" style="background:#b45309;">🕘 Formulaires abandonnés</a>
+    <a href="#" id="open-callback-form" class="btn-callback">📞 Formulaire à rappeler</a>
+    <a href="#rappels-section" id="show-rappels" class="btn-rappels">🗂️ A rappeler</a>
 </div>
 
 <table>
@@ -224,6 +237,33 @@ tbody tr:nth-child(even){
 {% endfor %}
 </tbody>
 </table>
+    
+<div id="rappels-section" style="margin-top:28px;">
+    <h2>🗂️ A rappeler</h2>
+    <table>
+      <thead><tr><th>Date</th><th>Nom</th><th>Prénom</th><th>Mail</th><th>Téléphone</th><th>Objet</th><th>Créneau</th><th>Commentaire</th><th>Actions</th></tr></thead>
+      <tbody id="rappels-body"></tbody>
+    </table>
+</div>
+
+<div class="modal-backdrop" id="callback-modal">
+  <div class="modal">
+    <h3>Formulaire à rappeler</h3>
+    <form id="callback-form" class="form-grid">
+      <input required name="nom" placeholder="Nom">
+      <input required name="prenom" placeholder="Prénom">
+      <input required type="email" name="mail" placeholder="Mail">
+      <input required name="telephone" placeholder="Téléphone">
+      <textarea required class="full" name="objet_appel" placeholder="Objet de l'appel"></textarea>
+      <input required class="full" name="creneau_rappel" placeholder="Créneau de rappel">
+      <div class="full" style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" id="close-modal">Annuler</button>
+        <button type="submit" class="btn-callback" style="border:none;">Envoyer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
     <!-- 🔹 Légende des actions -->
 <div style="margin-top:20px;padding-top:15px;border-top:1px solid #eee;font-size:13px;color:#444;">
     <strong>Légende :</strong>
@@ -296,6 +336,58 @@ document.getElementById("filtre-envoyes").onclick = e => {
 setActive(document.getElementById("filtre-envoyer"));
 currentFilter = "envoyer";
 refreshDisplay();
+
+const modal = document.getElementById("callback-modal");
+document.getElementById("open-callback-form").onclick = (e) => { e.preventDefault(); modal.style.display = "flex"; };
+document.getElementById("close-modal").onclick = () => { modal.style.display = "none"; };
+modal.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
+
+async function loadRappels(){
+  const res = await fetch("/admin-devis/rappels");
+  const data = await res.json();
+  const body = document.getElementById("rappels-body");
+  body.innerHTML = "";
+  data.forEach(item => {
+    const tr = document.createElement("tr");
+    tr.className = `rappel-row ${item.traite ? 'traite' : ''}`;
+    tr.innerHTML = `<td>${item.date||''}</td><td>${item.nom||''}</td><td>${item.prenom||''}</td><td>${item.mail||''}</td><td>${item.telephone||''}</td><td>${item.objet_appel||''}</td><td>${item.creneau_rappel||''}</td>
+      <td><textarea data-id="${item.id}" class="commentaire" style="min-height:62px;">${item.commentaire||''}</textarea></td>
+      <td><button class="action-mini btn-change traite-btn" data-id="${item.id}" data-traite="${item.traite ? '1':'0'}">Traité</button>
+      <button class="action-mini btn-delete delete-btn" data-id="${item.id}">Supprimer</button></td>`;
+    body.appendChild(tr);
+  });
+}
+
+document.getElementById("callback-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const formData = Object.fromEntries(new FormData(e.target).entries());
+  await fetch("/admin-devis/rappels", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(formData)});
+  e.target.reset();
+  modal.style.display = "none";
+  loadRappels();
+});
+
+document.getElementById("rappels-body").addEventListener("click", async (e) => {
+  const id = e.target.dataset.id;
+  if (e.target.classList.contains("traite-btn")) {
+    const traite = e.target.dataset.traite !== '1';
+    await fetch(`/admin-devis/rappels/${id}`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({traite})});
+    loadRappels();
+  }
+  if (e.target.classList.contains("delete-btn")) {
+    await fetch(`/admin-devis/rappels/${id}`, {method:"DELETE"});
+    loadRappels();
+  }
+});
+
+document.getElementById("rappels-body").addEventListener("change", async (e) => {
+  if (!e.target.classList.contains("commentaire")) return;
+  const id = e.target.dataset.id;
+  await fetch(`/admin-devis/rappels/${id}`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({commentaire:e.target.value})});
+});
+
+loadRappels();
+
 </script>
 
 
