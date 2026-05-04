@@ -976,6 +976,7 @@
         const countMatch = cleanBadge.match(/(\d+)/);
         const countFromBadge = countMatch ? Number(countMatch[1]) : null;
         const finalCount = Number.isFinite(dynamicPlaces) ? dynamicPlaces : countFromBadge;
+
         if (Number.isFinite(finalCount)) {
           const safeCount = Math.max(0, finalCount);
           const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
@@ -984,10 +985,8 @@
           return { text: `✅ ${text}`, className: 'badge-success' };
         }
 
-        const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
-        if (safeCount <= 3) return { text: `⚠️ ${text}`, className: 'badge-danger' };
-        if (safeCount <= 6) return { text, className: 'badge-warning' };
-        return { text: `✅ ${text}`, className: 'badge-success' };
+        if (!cleanBadge) return null;
+        return { text: cleanBadge, className: 'badge-warning' };
       };
       rows.forEach((r, index) => {
         const btn = document.createElement('button');
@@ -1009,7 +1008,9 @@
           .trim();
         const rawBadge = (r.badge || '').trim();
         const badgeInfo = getBadgeInfo(rawBadge, fullLabel);
-        const badgeLine = `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`;
+        const badgeLine = badgeInfo
+          ? `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`
+          : '';
         btn.innerHTML = `
           <span class="session-pill-title">📅 ${displayTitle}</span>
           ${presentielLine}
