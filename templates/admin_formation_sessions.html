@@ -81,7 +81,7 @@
     input { width: 100%; padding: 8px; border: 1px solid #c8d3e4; border-radius: 8px; }
     td input[name="label"] { min-width: 360px; }
     .actions { display: flex; align-items: center; gap: 6px; }
-    th.actions-col, td.actions-col { width: 168px; white-space: nowrap; }
+    th.actions-col, td.actions-col { width: 190px; white-space: nowrap; }
     .actions .u, .actions .d { padding: 8px 9px; min-width: 46px; }
     button {
       border: none;
@@ -150,28 +150,54 @@
                   <tr><th>Session</th><th>Date examen</th><th>Badge rouge</th><th class="actions-col">Actions</th></tr>
                   {% for item in rows %}
                     <tr>
-                      <form method="POST" class="autosave-form">
-                        <input type="hidden" name="action" value="update">
-                        <input type="hidden" name="centre" value="{{ centre }}">
-                        <input type="hidden" name="formation" value="{{ code }}">
-                        <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                        <td><input name="label" value="{{ item.label }}" placeholder="Session"></td>
-                        <td><input name="date_examen" type="date" value="{{ item.date_examen or '' }}"></td>
-                        <td><input name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place dispo"></td>
-                        <td class="actions-col">
-                          <div class="actions">
+                      <td>
+                        <form method="POST" class="autosave-form">
+                          <input type="hidden" name="action" value="update">
+                          <input type="hidden" name="centre" value="{{ centre }}">
+                          <input type="hidden" name="formation" value="{{ code }}">
+                          <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                          <input name="label" value="{{ item.label }}" placeholder="Session">
+                        </form>
+                      </td>
+                      <td>
+                        <form method="POST" class="autosave-form">
+                          <input type="hidden" name="action" value="update">
+                          <input type="hidden" name="centre" value="{{ centre }}">
+                          <input type="hidden" name="formation" value="{{ code }}">
+                          <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                          <input name="date_examen" type="date" value="{{ item.date_examen or '' }}">
+                        </form>
+                      </td>
+                      <td>
+                        <form method="POST" class="autosave-form">
+                          <input type="hidden" name="action" value="update">
+                          <input type="hidden" name="centre" value="{{ centre }}">
+                          <input type="hidden" name="formation" value="{{ code }}">
+                          <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                          <input name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place dispo">
+                        </form>
+                      </td>
+                      <td class="actions-col">
+                        <div class="actions">
+                          <form method="POST" class="autosave-form">
+                            <input type="hidden" name="action" value="update">
+                            <input type="hidden" name="centre" value="{{ centre }}">
+                            <input type="hidden" name="formation" value="{{ code }}">
+                            <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                            <input type="hidden" name="label" value="{{ item.label }}">
+                            <input type="hidden" name="date_examen" value="{{ item.date_examen or '' }}">
+                            <input type="hidden" name="badge" value="{{ item.badge }}">
                             <button class="u" type="submit">💾</button>
-                            <div class="autosave-status"></div>
-                      </form>
-                            <form method="POST" style="display:inline">
-                              <input type="hidden" name="action" value="delete">
-                              <input type="hidden" name="centre" value="{{ centre }}">
-                              <input type="hidden" name="formation" value="{{ code }}">
-                              <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                              <button class="d" type="submit">🗑️</button>
-                            </form>
-                          </div>
-                        </td>
+                          </form>
+                          <form method="POST" style="display:inline">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="centre" value="{{ centre }}">
+                            <input type="hidden" name="formation" value="{{ code }}">
+                            <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                            <button class="d" type="submit">🗑️</button>
+                          </form>
+                        </div>
+                      </td>
                     </tr>
                   {% endfor %}
                   <tr>
