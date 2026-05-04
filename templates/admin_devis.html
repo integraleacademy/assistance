@@ -154,7 +154,7 @@ tbody tr:nth-child(even){
     <a class="btn-simulate" href="{{ url_for('admin_formation_sessions') }}" style="background:#7c3aed;">🗓️ Gérer les dates</a>
     <a class="btn-simulate" href="{{ url_for('admin_devis_formulaires') }}" style="background:#0f766e;">🧾 Traitement formulaires</a>
     <a class="btn-simulate" href="{{ url_for('admin_devis_formulaires_abandonnes') }}" style="background:#b45309;">🕘 Formulaires abandonnés</a>
-    <a href="#" id="open-callback-form" class="btn-callback">📞 Formulaire à rappeler</a>
+    <a href="/formulaire-a-rappeler" target="_blank" rel="noopener" class="btn-callback">📞 Formulaire à rappeler</a>
     <a href="#rappels-section" id="show-rappels" class="btn-rappels">🗂️ A rappeler</a>
 </div>
 
@@ -246,23 +246,7 @@ tbody tr:nth-child(even){
     </table>
 </div>
 
-<div class="modal-backdrop" id="callback-modal">
-  <div class="modal">
-    <h3>Formulaire à rappeler</h3>
-    <form id="callback-form" class="form-grid">
-      <input required name="nom" placeholder="Nom">
-      <input required name="prenom" placeholder="Prénom">
-      <input required type="email" name="mail" placeholder="Mail">
-      <input required name="telephone" placeholder="Téléphone">
-      <textarea required class="full" name="objet_appel" placeholder="Objet de l'appel"></textarea>
-      <input required class="full" name="creneau_rappel" placeholder="Créneau de rappel">
-      <div class="full" style="display:flex;gap:10px;justify-content:flex-end;">
-        <button type="button" id="close-modal">Annuler</button>
-        <button type="submit" class="btn-callback" style="border:none;">Envoyer</button>
-      </div>
-    </form>
-  </div>
-</div>
+
 
     <!-- 🔹 Légende des actions -->
 <div style="margin-top:20px;padding-top:15px;border-top:1px solid #eee;font-size:13px;color:#444;">
@@ -337,11 +321,6 @@ setActive(document.getElementById("filtre-envoyer"));
 currentFilter = "envoyer";
 refreshDisplay();
 
-const modal = document.getElementById("callback-modal");
-document.getElementById("open-callback-form").onclick = (e) => { e.preventDefault(); modal.style.display = "flex"; };
-document.getElementById("close-modal").onclick = () => { modal.style.display = "none"; };
-modal.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
-
 async function loadRappels(){
   const res = await fetch("/admin-devis/rappels");
   const data = await res.json();
@@ -357,15 +336,6 @@ async function loadRappels(){
     body.appendChild(tr);
   });
 }
-
-document.getElementById("callback-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const formData = Object.fromEntries(new FormData(e.target).entries());
-  await fetch("/admin-devis/rappels", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(formData)});
-  e.target.reset();
-  modal.style.display = "none";
-  loadRappels();
-});
 
 document.getElementById("rappels-body").addEventListener("click", async (e) => {
   const id = e.target.dataset.id;

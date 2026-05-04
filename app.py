@@ -2081,6 +2081,48 @@ def admin_devis():
 
 
 
+
+
+@app.route("/formulaire-a-rappeler", methods=["GET", "POST"])
+def formulaire_a_rappeler():
+    success = False
+    if request.method == "POST":
+        payload = {
+            "nom": (request.form.get("nom") or "").strip(),
+            "prenom": (request.form.get("prenom") or "").strip(),
+            "mail": (request.form.get("mail") or "").strip(),
+            "telephone": (request.form.get("telephone") or "").strip(),
+            "objet_appel": (request.form.get("objet_appel") or "").strip(),
+            "creneau_rappel": (request.form.get("creneau_rappel") or "").strip(),
+        }
+
+        if all(payload.values()):
+            data = load_data()
+            paris_tz = pytz.timezone("Europe/Paris")
+            entry = {
+                "id": str(uuid.uuid4()),
+                "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+                "motif": "Formulaire à rappeler",
+                "nom": payload["nom"],
+                "prenom": payload["prenom"],
+                "mail": payload["mail"],
+                "telephone": payload["telephone"],
+                "objet_appel": payload["objet_appel"],
+                "creneau_rappel": payload["creneau_rappel"],
+                "commentaire": "",
+                "attribution": "Mohamed",
+                "statut": "A rappeler",
+                "traite": False,
+            }
+            data.setdefault("demandes", []).append(entry)
+            save_data(data)
+            try:
+                envoyer_mail_formulaire_rappel_admin(entry)
+            except Exception as e:
+                print("⚠️ Erreur envoi mail formulaire rappel admin:", e)
+            success = True
+
+    return render_template("formulaire_a_rappeler.html", success=success)
 @app.route("/admin-devis/rappels", methods=["GET"])
 @login_required
 def admin_devis_rappels():
