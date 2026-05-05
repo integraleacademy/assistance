@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Formulaire à rappeler - Intégrale Academy</title>
+  <style>
+    :root{--bg:#f8fafc;--card:#fff;--line:#d9dde6;--text:#0f172a;--muted:#64748b;--primary:#2563eb;}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,Arial,sans-serif;background:linear-gradient(180deg,#eef2ff 0%,var(--bg) 45%);color:var(--text)}
+    .page{max-width:980px;margin:40px auto;padding:0 18px}
+    .card{background:var(--card);border-radius:22px;padding:28px;box-shadow:0 16px 45px rgba(15,23,42,.12)}
+    .brand{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;padding-bottom:14px;border-bottom:1px solid #e2e8f0}
+    .brand img{width:clamp(120px,18vw,210px);height:auto}
+    .brand .tag{color:#1d4ed8;font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase}
+    h1{margin:0 0 8px;font-size:34px}
+    p{margin:0 0 22px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .full{grid-column:1 / -1}
+    input,textarea{width:100%;border:2px solid var(--line);border-radius:14px;padding:14px 16px;font-size:20px;color:#1e293b;outline:none;background:#fff}
+    input:focus,textarea:focus{border-color:#93c5fd;box-shadow:0 0 0 4px rgba(37,99,235,.1)}
+    textarea{min-height:210px;resize:vertical}
+    .actions{display:flex;justify-content:flex-end;margin-top:18px}
+    button{border:none;background:var(--primary);color:#fff;border-radius:12px;padding:14px 28px;font-weight:700;font-size:30px;cursor:pointer}
+    .ok{margin-top:16px;padding:12px 14px;border-radius:10px;background:#dcfce7;color:#166534;font-weight:600}
+    @media (max-width:720px){.grid{grid-template-columns:1fr}h1{font-size:28px}input,textarea{font-size:18px}button{font-size:24px;width:100%}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="card">
+      <div class="brand">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
+        <div class="tag">Demande de rappel</div>
+      </div>
+      <h1>Formulaire à rappeler</h1>
+      <p>Renseignez les informations ci-dessous. Nous traiterons la demande rapidement.</p>
+
+      {% if success %}
+        <div class="ok">✅ Demande envoyée avec succès.</div>
+      {% endif %}
+
+      <form method="POST" class="grid">
+        <input required name="nom" placeholder="Nom">
+        <input required name="prenom" placeholder="Prénom">
+        <input required type="email" name="mail" placeholder="Mail">
+        <input required name="telephone" placeholder="Téléphone">
+        <textarea required class="full" name="objet_appel" placeholder="Objet de l'appel"></textarea>
+        <input required class="full" name="creneau_rappel" placeholder="Créneau de rappel">
+        <div class="actions full">
+          <button type="submit">Envoyer</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
