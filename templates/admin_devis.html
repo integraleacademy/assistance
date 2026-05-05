@@ -134,6 +134,16 @@ tbody tr:nth-child(even){
 .rappel-row.traite{background:#d1fae5 !important;}
 .btn-callback{background:#2563eb;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;}
 .btn-rappels{background:#0f766e;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;}
+#rappels-section th.objet-col,
+#rappels-section td.objet-col{
+    width:220px;
+    min-width:220px;
+}
+#rappels-section td.objet-col{
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
 
 </style>
 </head>
@@ -158,7 +168,7 @@ tbody tr:nth-child(even){
     <a href="#rappels-section" id="show-rappels" class="btn-rappels">🗂️ A rappeler</a>
 </div>
 
-<table>
+<table id="devis-table">
 <thead>
 <tr>
     <th>Date</th>
@@ -241,7 +251,7 @@ tbody tr:nth-child(even){
 <div id="rappels-section" style="margin-top:28px;">
     <h2>🗂️ A rappeler</h2>
     <table>
-      <thead><tr><th>Date</th><th>Nom</th><th>Prénom</th><th>Mail</th><th>Téléphone</th><th>Objet</th><th>Créneau</th><th>Commentaire</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Date</th><th>Nom</th><th>Prénom</th><th>Mail</th><th>Téléphone</th><th class="objet-col">Objet</th><th>Créneau</th><th>Commentaire</th><th>Actions</th></tr></thead>
       <tbody id="rappels-body"></tbody>
     </table>
 </div>
@@ -329,7 +339,7 @@ async function loadRappels(){
   data.forEach(item => {
     const tr = document.createElement("tr");
     tr.className = `rappel-row ${item.traite ? 'traite' : ''}`;
-    tr.innerHTML = `<td>${item.date||''}</td><td>${item.nom||''}</td><td>${item.prenom||''}</td><td>${item.mail||''}</td><td>${item.telephone||''}</td><td>${item.objet_appel||''}</td><td>${item.creneau_rappel||''}</td>
+    tr.innerHTML = `<td>${item.date||''}</td><td>${item.nom||''}</td><td>${item.prenom||''}</td><td>${item.mail||''}</td><td>${item.telephone||''}</td><td class="objet-col" title="${item.objet_appel||''}">${item.objet_appel||''}</td><td>${item.creneau_rappel||''}</td>
       <td><textarea data-id="${item.id}" class="commentaire" style="min-height:62px;">${item.commentaire||''}</textarea></td>
       <td><button class="action-mini btn-change traite-btn" data-id="${item.id}" data-traite="${item.traite ? '1':'0'}">Traité</button>
       <button class="action-mini btn-delete delete-btn" data-id="${item.id}">Supprimer</button></td>`;
@@ -358,10 +368,14 @@ document.getElementById("rappels-body").addEventListener("change", async (e) => 
 
 loadRappels();
 
+if (window.location.hash === "#rappels-section") {
+  const devisTable = document.getElementById("devis-table");
+  if (devisTable) devisTable.style.display = "none";
+}
+
 </script>
 
 
 </body>
 </html>
-
 
