@@ -25,40 +25,99 @@ h1{
 /* Outils */
 .tools{
     display:flex;
+    flex-wrap:wrap;
+    align-items:stretch;
+    gap:12px;
+    margin-bottom:20px;
+}
+.tool-group{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:stretch;
+    gap:8px;
+}
+.filter-group{
+    flex:0 1 auto;
+}
+.search-group{
+    flex:1 1 300px;
+    min-width:260px;
+}
+.actions-group{
+    flex:2 1 520px;
+}
+.tools button,
+.tool-link{
+    min-height:48px;
+    border:none;
+    padding:10px 16px;
+    border-radius:12px;
+    cursor:pointer;
+    font-size:14px;
+    line-height:1.15;
+    font-weight:700;
+    text-decoration:none;
+    display:inline-flex;
     align-items:center;
-    gap:10px;
-    margin-bottom:15px;
+    justify-content:center;
+    gap:8px;
+    text-align:center;
+    box-sizing:border-box;
+    box-shadow:0 8px 18px rgba(15,23,42,.08);
+    transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
 }
 .tools button{
-    border:none;
-    padding:8px 14px;
-    border-radius:8px;
-    cursor:pointer;
-    background:#e9ecef;
-    font-size:13px;
+    min-width:110px;
+    background:#eef2f7;
+    color:#111827;
 }
-.tools .btn-simulate{
-    padding:8px 14px;
-    border-radius:8px;
-    background:#20c997;
+.tool-link{
+    flex:1 1 170px;
+    max-width:230px;
     color:white;
-    font-size:13px;
-    text-decoration:none;
-    font-weight:600;
 }
-.tools .btn-simulate:hover{
-    background:#17b58a;
+.tool-link:hover,
+.tools button:hover{
+    transform:translateY(-1px);
+    box-shadow:0 10px 22px rgba(15,23,42,.12);
+    filter:brightness(.98);
 }
 .tools button.active{
     background:#0d6efd;
     color:white;
 }
 #search{
-    flex:1;
-    padding:8px 14px;
-    border:1px solid #ccc;
-    border-radius:8px;
-    font-size:14px;
+    width:100%;
+    min-height:48px;
+    padding:10px 16px;
+    border:1px solid #cfd4dc;
+    border-radius:12px;
+    font-size:15px;
+    box-sizing:border-box;
+    box-shadow:inset 0 1px 2px rgba(15,23,42,.05);
+}
+.btn-simulate{ background:#20c997; }
+.btn-form-new{ background:#f97316; }
+.btn-dates{ background:#7c3aed; }
+.btn-processing{ background:#0f766e; }
+.btn-abandoned{ background:#b45309; }
+.btn-callback{ background:#2563eb; }
+.btn-rappels{ background:#0f766e; }
+@media (max-width: 900px){
+    .container{
+        margin:15px;
+        padding:18px;
+    }
+    .filter-group,
+    .search-group,
+    .actions-group{
+        flex-basis:100%;
+    }
+    .tools button,
+    .tool-link{
+        flex:1 1 150px;
+        max-width:none;
+    }
 }
 
 /* Tableau */
@@ -132,30 +191,6 @@ tbody tr:nth-child(even){
 .form-grid input,.form-grid textarea{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;}
 .form-grid textarea{min-height:110px;resize:vertical;}
 .rappel-row.traite{background:#d1fae5 !important;}
-.btn-callback{background:#2563eb;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;}
-.btn-rappels{background:#0f766e;color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;}
-#rappels-section{
-    overflow-x:auto;
-}
-#rappels-section table{
-    table-layout:fixed;
-}
-#rappels-section th,
-#rappels-section td{
-    vertical-align:top;
-    overflow-wrap:anywhere;
-    word-break:normal;
-}
-#rappels-section th:nth-child(1),
-#rappels-section td:nth-child(1){ width:7%; }
-#rappels-section th:nth-child(2),
-#rappels-section td:nth-child(2),
-#rappels-section th:nth-child(3),
-#rappels-section td:nth-child(3){ width:7%; }
-#rappels-section th:nth-child(4),
-#rappels-section td:nth-child(4){ width:16%; }
-#rappels-section th:nth-child(5),
-#rappels-section td:nth-child(5){ width:9%; }
 #rappels-section th.objet-col,
 #rappels-section td.objet-col{
     width:28%;
@@ -195,17 +230,23 @@ tbody tr:nth-child(even){
 
 <!-- 🔹 Barre outils -->
 <div class="tools">
-    <button id="filtre-tous" class="active">Tous</button>
-    <button id="filtre-envoyer">À envoyer</button>
-    <button id="filtre-envoyes">Envoyés</button>
-    <input type="text" id="search" placeholder="🔍 Rechercher un nom, prénom, formation…">
-    <a class="btn-simulate" href="{{ url_for('simulateur_plan_financement') }}" target="_blank">⚡ Simuler un plan</a>
-    <a class="btn-simulate" href="{{ url_for('demande_informations_formations') }}" target="_blank" style="background:#f97316;">✨ Ouvrir le nouveau formulaire</a>
-    <a class="btn-simulate" href="{{ url_for('admin_formation_sessions') }}" style="background:#7c3aed;">🗓️ Gérer les dates</a>
-    <a class="btn-simulate" href="{{ url_for('admin_devis_formulaires') }}" style="background:#0f766e;">🧾 Traitement formulaires</a>
-    <a class="btn-simulate" href="{{ url_for('admin_devis_formulaires_abandonnes') }}" style="background:#b45309;">🕘 Formulaires abandonnés</a>
-    <a href="/formulaire-a-rappeler" target="_blank" rel="noopener" class="btn-callback">📞 Formulaire à rappeler</a>
-    <a href="#rappels-section" id="show-rappels" class="btn-rappels">🗂️ A rappeler</a>
+    <div class="tool-group filter-group" aria-label="Filtres de statut">
+        <button id="filtre-tous" class="active">Tous</button>
+        <button id="filtre-envoyer">À envoyer</button>
+        <button id="filtre-envoyes">Envoyés</button>
+    </div>
+    <div class="tool-group search-group">
+        <input type="text" id="search" placeholder="🔍 Rechercher un nom, prénom, formation…">
+    </div>
+    <div class="tool-group actions-group" aria-label="Actions rapides">
+        <a class="tool-link btn-simulate" href="{{ url_for('simulateur_plan_financement') }}" target="_blank">⚡ Simuler un plan</a>
+        <a class="tool-link btn-form-new" href="{{ url_for('demande_informations_formations') }}" target="_blank">✨ Ouvrir le formulaire</a>
+        <a class="tool-link btn-dates" href="{{ url_for('admin_formation_sessions') }}">🗓️ Gérer les dates</a>
+        <a class="tool-link btn-processing" href="{{ url_for('admin_devis_formulaires') }}">🧾 Traiter les formulaires</a>
+        <a class="tool-link btn-abandoned" href="{{ url_for('admin_devis_formulaires_abandonnes') }}">🕘 Formulaires abandonnés</a>
+        <a href="/formulaire-a-rappeler" target="_blank" rel="noopener" class="tool-link btn-callback">📞 Formulaire à rappeler</a>
+        <a href="#rappels-section" id="show-rappels" class="tool-link btn-rappels">🗂️ À rappeler</a>
+    </div>
 </div>
 
 <table id="devis-table">
