@@ -2286,6 +2286,35 @@ def admin_devis_formulaires():
     return render_template("admin_devis_formulaires.html", formulaires=formulaires, stats=stats)
 
 
+@app.route("/admin-devis/formulaires/<formulaire_id>/statut", methods=["POST"])
+@login_required
+def modifier_statut_formulaire_admin_devis(formulaire_id):
+    data = load_data()
+    demande = next((d for d in data.get("demandes", []) if d.get("id") == formulaire_id), None)
+    if not demande:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    is_target = (
+        demande.get("motif") == "Demande de devis détaillé"
+        or demande.get("source") == "demande_infos_formations"
+    )
+    if not is_target:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    raw_statut = str(payload.get("statut") or "").strip().lower()
+    if raw_statut in {"traite", "traité"}:
+        nouveau_statut = "Traité"
+    elif raw_statut in {"a traiter", "à traiter", "non traite", "non traité"}:
+        nouveau_statut = "À traiter"
+    else:
+        return jsonify({"ok": False, "error": "invalid_status"}), 400
+
+    demande["statut"] = nouveau_statut
+    save_data(data)
+    return jsonify({"ok": True, "statut": nouveau_statut})
+
+
 @app.route("/admin-devis/formulaires-abandonnes")
 @login_required
 def admin_devis_formulaires_abandonnes():

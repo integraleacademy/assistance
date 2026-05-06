@@ -154,7 +154,15 @@ tr:nth-child(even) td{background:#fbfdff}
         <div class="formation-badge" data-formation-theme="{{ formation_badge_theme }}">{{ formation_badge_text }}</div>
         {% endif %}
         <div class="top-actions-controls">
-            <button class="btn btn-status" id="status-toggle" type="button">À traiter</button>
+            {% if not is_abandoned %}
+            <button
+              class="btn btn-status{% if demande.statut == 'Traité' %} is-treated{% endif %}"
+              id="status-toggle"
+              type="button"
+              data-status-url="{{ url_for('modifier_statut_formulaire_admin_devis', formulaire_id=demande.id) }}"
+              data-current-status="{{ demande.statut or 'À traiter' }}"
+            >{% if demande.statut == 'Traité' %}Traité{% else %}À traiter{% endif %}</button>
+            {% endif %}
             <button class="btn btn-print" onclick="window.print()" type="button">🖨️ Imprimer</button>
         </div>
     </div>
@@ -207,9 +215,41 @@ tr:nth-child(even) td{background:#fbfdff}
 (function(){
   const statusBtn = document.getElementById('status-toggle');
   if(!statusBtn) return;
-  statusBtn.addEventListener('click', function(){
-    const treated = statusBtn.classList.toggle('is-treated');
+
+  const setButtonState = (statut) => {
+    const treated = statut === 'Traité';
+    statusBtn.classList.toggle('is-treated', treated);
     statusBtn.textContent = treated ? 'Traité' : 'À traiter';
+    statusBtn.dataset.currentStatus = treated ? 'Traité' : 'À traiter';
+  };
+
+  setButtonState(statusBtn.dataset.currentStatus === 'Traité' ? 'Traité' : 'À traiter');
+
+  statusBtn.addEventListener('click', async function(){
+    const previousStatus = statusBtn.dataset.currentStatus === 'Traité' ? 'Traité' : 'À traiter';
+    const nextStatus = previousStatus === 'Traité' ? 'À traiter' : 'Traité';
+
+    setButtonState(nextStatus);
+    statusBtn.disabled = true;
+
+    try {
+      const response = await fetch(statusBtn.dataset.statusUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify({statut: nextStatus})
+      });
+      const payload = await response.json().catch(() => ({}));
+      if(!response.ok || !payload.ok){
+        throw new Error(payload.error || 'Erreur de sauvegarde');
+      }
+      setButtonState(payload.statut);
+    } catch (error) {
+      setButtonState(previousStatus);
+      alert("Le statut n'a pas pu être sauvegardé. Réessayez dans quelques secondes.");
+    } finally {
+      statusBtn.disabled = false;
+    }
   });
 })();
 </script>
