@@ -193,13 +193,31 @@ tbody tr:nth-child(even){
 .rappel-row.traite{background:#d1fae5 !important;}
 #rappels-section th.objet-col,
 #rappels-section td.objet-col{
-    width:220px;
-    min-width:220px;
+    width:28%;
 }
+#rappels-section th:nth-child(7),
+#rappels-section td:nth-child(7){ width:8%; }
+#rappels-section th:nth-child(8),
+#rappels-section td:nth-child(8){ width:12%; }
+#rappels-section th:nth-child(9),
+#rappels-section td:nth-child(9){ width:6%; }
 #rappels-section td.objet-col{
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
+    white-space:normal;
+    line-height:1.35;
+}
+#rappels-section .commentaire{
+    box-sizing:border-box;
+    min-height:62px;
+    width:100%;
+    resize:vertical;
+}
+#rappels-section .rappel-actions{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+}
+#rappels-section .rappel-actions .action-mini{
+    margin-right:0;
 }
 
 </style>
@@ -403,9 +421,9 @@ async function loadRappels(){
     const tr = document.createElement("tr");
     tr.className = `rappel-row ${item.traite ? 'traite' : ''}`;
     tr.innerHTML = `<td>${item.date||''}</td><td>${item.nom||''}</td><td>${item.prenom||''}</td><td>${item.mail||''}</td><td>${item.telephone||''}</td><td class="objet-col" title="${item.objet_appel||''}">${item.objet_appel||''}</td><td>${item.creneau_rappel||''}</td>
-      <td><textarea data-id="${item.id}" class="commentaire" style="min-height:62px;">${item.commentaire||''}</textarea></td>
-      <td><button class="action-mini btn-change traite-btn" data-id="${item.id}" data-traite="${item.traite ? '1':'0'}">Traité</button>
-      <button class="action-mini btn-delete delete-btn" data-id="${item.id}">Supprimer</button></td>`;
+      <td><textarea data-id="${item.id}" class="commentaire">${item.commentaire||''}</textarea></td>
+      <td><div class="rappel-actions"><button class="action-mini btn-change traite-btn" data-id="${item.id}" data-traite="${item.traite ? '1':'0'}">Traité</button>
+      <button class="action-mini btn-delete delete-btn" data-id="${item.id}">Supprimer</button></div></td>`;
     body.appendChild(tr);
   });
 }
