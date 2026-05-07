@@ -72,7 +72,7 @@ def creer_piste_salesforce(form):
         "phone": form.get("telephone", ""),
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
-        "lead_source": "Google",
+        "lead_source": "google",
         "industry": "Education",
         "00NSa00000G2PxB": formation_sf,
         "00NSa00000KDPOT": lieu,
