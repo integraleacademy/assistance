@@ -2306,7 +2306,7 @@ def modifier_statut_formulaire_admin_devis(formulaire_id):
     if raw_statut in {"traite", "traité"}:
         nouveau_statut = "Traité"
     elif raw_statut in {"a traiter", "à traiter", "non traite", "non traité"}:
-        nouveau_statut = "À traiter"
+        nouveau_statut = "Non traité"
     else:
         return jsonify({"ok": False, "error": "invalid_status"}), 400
 
