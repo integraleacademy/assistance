@@ -2549,36 +2549,14 @@ def autosave_demande_informations_formations():
         }
         entries.append(draft_entry)
 
-    if (
-        status == "abandoned"
-        and not draft_entry.get("salesforce_abandoned_sent_at")
-        and _is_abandoned_training_form_ready_for_salesforce(cleaned_fields)
-    ):
-        creer_piste_salesforce(_abandoned_training_form_salesforce_payload(cleaned_fields))
-        draft_entry["salesforce_abandoned_sent_at"] = now_str
-        draft_entry["salesforce_abandoned_status"] = "Formulaire abandonné"
-
-    if (
-        status == "abandoned"
-        and not draft_entry.get("abandoned_mail_sent_at")
-        and _has_required_abandoned_form_contact_fields(cleaned_fields)
-    ):
-        try:
-            envoyer_mail_formulaire_formation_abandonne(draft_entry, cleaned_fields)
-        except Exception as e:
-            print("❌ Erreur envoi mail formulaire abandonné :", e)
-            draft_entry["abandoned_mail_error"] = now_str
-
-    if (
-        status == "abandoned"
-        and not draft_entry.get("abandoned_sms_sent_at")
-        and _has_required_abandoned_form_contact_fields(cleaned_fields)
-    ):
-        try:
-            envoyer_sms_formulaire_formation_abandonne(draft_entry, cleaned_fields)
-        except Exception as e:
-            print("❌ Erreur envoi SMS formulaire abandonné :", e)
-            draft_entry["abandoned_sms_error"] = now_str
+    if status == "abandoned":
+        # Un évènement pagehide/beforeunload peut être déclenché lors d'un simple
+        # rafraîchissement, d'un changement d'onglet ou d'une navigation temporaire.
+        # On conserve donc uniquement le brouillon côté admin : aucun lead
+        # Salesforce, e-mail ou SMS ne doit partir automatiquement depuis
+        # l'autosave. La relance reste une action manuelle depuis l'administration.
+        draft_entry["abandoned_at"] = draft_entry.get("abandoned_at") or now_str
+        draft_entry["abandoned_status"] = "Formulaire abandonné"
 
     save_data(data)
     return ("", 204)
@@ -3042,7 +3020,7 @@ def relancer_formulaire_abandonne_admin_devis(formulaire_id):
         draft["salesforce_abandoned_sent_at"] = draft.get("salesforce_abandoned_sent_at") or now_str
         draft["salesforce_abandoned_status"] = "Formulaire abandonné"
         draft["manual_abandoned_sent_at"] = now_str
-        mail_ok = envoyer_mail_formulaire_formation_abandonne(data, draft, fields)
+        mail_ok = envoyer_mail_formulaire_formation_abandonne(draft, fields)
     else:
         demande["salesforce_abandoned_sent_at"] = demande.get("salesforce_abandoned_sent_at") or now_str
         demande["salesforce_abandoned_status"] = "Formulaire abandonné"
