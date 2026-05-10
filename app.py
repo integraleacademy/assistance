@@ -1213,7 +1213,7 @@ def _highlights_html(items) -> str:
     return "\n".join(blocks)
 
 
-def build_abandoned_training_email_html(prenom: str, formation_code: str) -> str:
+def build_abandoned_training_email_html(prenom: str, formation_code: str, devis_url: str = "") -> str:
     config = _abandoned_training_config(formation_code)
     price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
     learning_items_html = "".join(f"<li>{html.escape(item)}</li>" for item in config["learning"])
@@ -1233,7 +1233,7 @@ def build_abandoned_training_email_html(prenom: str, formation_code: str) -> str
     )
 
 
-def build_abandoned_training_email_plain(prenom: str, formation_code: str) -> str:
+def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis_url: str = "") -> str:
     config = _abandoned_training_config(formation_code)
     price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
     return (
@@ -2938,6 +2938,8 @@ def admin_devis_formulaires_abandonnes():
             "infos": fields,
             "sort_date": sort_date,
             "manual_abandoned_sent_at": meta.get("manual_abandoned_sent_at", ""),
+            "abandoned_mail_sent_at": meta.get("abandoned_mail_sent_at", ""),
+            "abandoned_sms_sent_at": meta.get("abandoned_sms_sent_at", ""),
         })
 
     for draft in data.get("formulaires_abandonnes", []):
@@ -3021,19 +3023,25 @@ def relancer_formulaire_abandonne_admin_devis(formulaire_id):
         draft["salesforce_abandoned_status"] = "Formulaire abandonné"
         draft["manual_abandoned_sent_at"] = now_str
         mail_ok = envoyer_mail_formulaire_formation_abandonne(draft, fields)
+        sms_ok = envoyer_sms_formulaire_formation_abandonne(draft, fields)
     else:
         demande["salesforce_abandoned_sent_at"] = demande.get("salesforce_abandoned_sent_at") or now_str
         demande["salesforce_abandoned_status"] = "Formulaire abandonné"
         demande["manual_abandoned_sent_at"] = now_str
         mail_ok = _envoyer_mail_formulaire_abandonne_depuis_demande(demande, fields)
+        sms_ok = envoyer_sms_formulaire_formation_abandonne(demande, fields)
 
     save_data(data)
 
     nom_affiche = f"{fields.get('prenom', '')} {fields.get('nom', '')}".strip() or "ce contact"
-    if mail_ok:
-        flash(f"Mail formulaire abandonné envoyé et piste Salesforce créée pour {nom_affiche}.", "success")
+    if mail_ok and sms_ok:
+        flash(f"Mail et SMS formulaire abandonné envoyés, piste Salesforce créée pour {nom_affiche}.", "success")
+    elif mail_ok:
+        flash(f"Mail formulaire abandonné envoyé et piste Salesforce créée pour {nom_affiche}, mais l'envoi du SMS a échoué.", "error")
+    elif sms_ok:
+        flash(f"SMS formulaire abandonné envoyé et piste Salesforce créée pour {nom_affiche}, mais l'envoi du mail a échoué.", "error")
     else:
-        flash(f"Piste Salesforce créée pour {nom_affiche}, mais l'envoi du mail a échoué.", "error")
+        flash(f"Piste Salesforce créée pour {nom_affiche}, mais l'envoi du mail et du SMS a échoué.", "error")
     return redirect(url_for("admin_devis_formulaires_abandonnes"))
 
 

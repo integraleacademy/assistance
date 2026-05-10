@@ -110,7 +110,16 @@ thead{background:#f0f2f5}
         <tr class="row" data-search="{{ (f.nom ~ ' ' ~ f.prenom ~ ' ' ~ f.mail ~ ' ' ~ f.telephone ~ ' ' ~ (f.infos.formation or '') ~ ' ' ~ centre_label ~ ' ' ~ (f.statut or ''))|lower }}">
             <td>{{ f.date }}</td>
             <td><strong>{{ f.prenom }} {{ f.nom }}</strong></td>
-            <td>{{ f.mail }}<br>{{ f.telephone or '—' }}</td>
+            <td>
+                {{ f.mail }}<br>{{ f.telephone or '—' }}
+                {% if f.abandoned_mail_sent_at or f.abandoned_sms_sent_at %}
+                    <br><small>
+                        {% if f.abandoned_mail_sent_at %}📨 Mail envoyé le {{ f.abandoned_mail_sent_at }}{% endif %}
+                        {% if f.abandoned_mail_sent_at and f.abandoned_sms_sent_at %}<br>{% endif %}
+                        {% if f.abandoned_sms_sent_at %}📱 SMS envoyé le {{ f.abandoned_sms_sent_at }}{% endif %}
+                    </small>
+                {% endif %}
+            </td>
             <td>{{ f.infos.formation or '—' }}</td>
             <td>
                 <span class="badge {% if f.statut == 'Traité' %}badge-status-treated{% else %}badge-status{% endif %}">
@@ -122,8 +131,8 @@ thead{background:#f0f2f5}
             </td>
             <td>
                 <div class="actions">
-                    <form method="POST" action="{{ url_for('relancer_formulaire_abandonne_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Envoyer le mail formulaire abandonné et ajouter cette personne sur Salesforce ?')">
-                        <button class="btn btn-relance" type="submit" title="Envoyer le mail formulaire abandonné et créer une piste Salesforce">📨 Relancer</button>
+                    <form method="POST" action="{{ url_for('relancer_formulaire_abandonne_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Envoyer le mail et le SMS formulaire abandonné, puis ajouter cette personne sur Salesforce ?')">
+                        <button class="btn btn-relance" type="submit" title="Envoyer le mail et le SMS formulaire abandonné, puis créer une piste Salesforce">📨 Relancer</button>
                     </form>
                     <a class="btn" target="_blank" href="{{ url_for('imprimer_formulaire_admin_devis', formulaire_id=f.id) }}">🖨️ Ouvrir imprimable</a>
                     <form method="POST" action="{{ url_for('supprimer_formulaire_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Supprimer ce formulaire ?')">
