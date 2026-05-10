@@ -23,6 +23,7 @@ from openai import OpenAI
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
+SALESFORCE_LEAD_SOURCE_VALUE = "Google"
 
 def valeur_refus_ft(value):
     if value == "OUI":
@@ -63,7 +64,7 @@ def creer_piste_salesforce(form):
     cpf_sf = oui_non_map.get(form.get("cpf_consulte", ""), "")
     france_travail_sf = oui_non_map.get(form.get("france_travail", ""), "")
 
-    payload = {
+    data = {
         "oid": SALESFORCE_OID,
         "retURL": "https://assistance-alw9.onrender.com/confirmation-demande-informations",
         "first_name": form.get("prenom", ""),
@@ -72,7 +73,7 @@ def creer_piste_salesforce(form):
         "phone": form.get("telephone", ""),
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
-        "lead_source": "google",
+        "lead_source": SALESFORCE_LEAD_SOURCE_VALUE,
         "industry": "Education",
         "00NSa00000G2PxB": formation_sf,
         "00NSa00000KDPOT": lieu,
@@ -90,11 +91,14 @@ def creer_piste_salesforce(form):
     }
 
     try:
-        print("ENVOI SALESFORCE PRODUCTION SANS DEBUG")
-        print("SALESFORCE PAYLOAD:", payload)
-        response = requests.post(SALESFORCE_URL, data=payload, timeout=10)
+        print("ENVOI SALESFORCE WEB-TO-LEAD:", SALESFORCE_URL)
+        print("WEB TO LEAD ENDPOINT OK:", "/servlet/servlet.WebToLead" in SALESFORCE_URL)
+        print("WEB TO LEAD DATA SENT:", data)
+        print("LEAD SOURCE SENT:", data.get("lead_source"))
+        print("WEB TO LEAD FIELDS SENT:", list(data.keys()))
+        response = requests.post(SALESFORCE_URL, data=data, timeout=10)
         print("SALESFORCE STATUS:", response.status_code)
-        print("SALESFORCE RESPONSE:", response.text[:1000])
+        print("SALESFORCE RESPONSE:", response.text)
     except Exception as e:
         print("Erreur envoi Salesforce:", e)
 
