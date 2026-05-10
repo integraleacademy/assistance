@@ -132,19 +132,32 @@ def _is_abandoned_training_form_ready_for_salesforce(fields):
     return _has_required_abandoned_form_contact_fields(fields)
 
 
+ABANDONED_FORM_LABEL = "Formulaire abandonné"
+ABANDONED_DEMANDE_SOURCE = "formulaire_abandonne_demande_infos"
+
+
 def _abandoned_training_form_salesforce_payload(fields):
     salesforce_fields = copy.deepcopy(fields)
-    salesforce_fields["statut_formulaire"] = "Formulaire abandonné"
+    salesforce_fields["statut_formulaire"] = ABANDONED_FORM_LABEL
     salesforce_fields["source_formulaire"] = "demande-informations-formations"
+    salesforce_fields["infos_complementaires"] = ABANDONED_FORM_LABEL
     return salesforce_fields
+
+
+def _est_payload_formulaire_abandonne(form):
+    return (
+        form.get("statut_formulaire") == ABANDONED_FORM_LABEL
+        or form.get("infos_complementaires") == ABANDONED_FORM_LABEL
+    )
 
 
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
     description_prefix = []
-    if form.get("statut_formulaire") == "Formulaire abandonné":
+    if _est_payload_formulaire_abandonne(form):
         description_prefix = [
-            "STATUT FORMULAIRE : Formulaire abandonné",
+            f"STATUT FORMULAIRE : {ABANDONED_FORM_LABEL}",
+            "INFOS COMPLÉMENTAIRES : Formulaire abandonné",
             "SOURCE : demande-informations-formations",
             "",
         ]
@@ -1228,7 +1241,7 @@ def ensure_abandoned_training_devis(data_store: dict, draft_entry: dict, fields:
             "notation_interne": "",
             "echeancier_manuel": [],
             "pdf_path": "",
-            "source": "formulaire_abandonne_demande_infos",
+            "source": ABANDONED_DEMANDE_SOURCE,
         })
         draft_entry["abandoned_devis_id"] = devis_id
         draft_entry["abandoned_devis_token"] = token_plan
@@ -2029,7 +2042,16 @@ def _normaliser_telephone_formulaire(value):
     return re.sub(r"\D+", "", str(value or ""))
 
 
+def _est_demande_issue_formulaire_abandonne(demande):
+    return (
+        demande.get("source") == ABANDONED_DEMANDE_SOURCE
+        or bool(demande.get("source_formulaire_abandonne_id"))
+    )
+
+
 def _est_formulaire_admin_devis(demande):
+    if _est_demande_issue_formulaire_abandonne(demande):
+        return False
     return (
         demande.get("motif") == "Demande de devis détaillé"
         or demande.get("source") == "demande_infos_formations"
@@ -2743,10 +2765,7 @@ def admin_devis_formulaires():
     }
 
     for d in demandes:
-        is_target = (
-            d.get("motif") == "Demande de devis détaillé"
-            or d.get("source") == "demande_infos_formations"
-        )
+        is_target = _est_formulaire_admin_devis(d)
         if not is_target:
             continue
 
@@ -2831,10 +2850,7 @@ def modifier_statut_formulaire_admin_devis(formulaire_id):
     if not demande:
         return jsonify({"ok": False, "error": "not_found"}), 404
 
-    is_target = (
-        demande.get("motif") == "Demande de devis détaillé"
-        or demande.get("source") == "demande_infos_formations"
-    )
+    is_target = _est_formulaire_admin_devis(demande)
     if not is_target:
         return jsonify({"ok": False, "error": "not_found"}), 404
 
@@ -2860,20 +2876,21 @@ def admin_devis_formulaires_abandonnes():
         save_data(data)
     formulaires = []
 
-    for draft in data.get("formulaires_abandonnes", []):
-        fields = draft.get("fields") or {}
-        if not _has_required_abandoned_form_contact_fields(fields):
-            continue
+    abandoned_devis_ids = set()
+    abandoned_form_ids = set()
 
-        updated = draft.get("updated_at") or draft.get("created_at") or ""
+    def append_abandoned_formulaire(formulaire_id, date_value, fields):
+        if not _has_required_abandoned_form_contact_fields(fields):
+            return
+
         try:
-            sort_date = datetime.datetime.strptime(updated, "%d/%m/%Y %H:%M")
+            sort_date = datetime.datetime.strptime(date_value, "%d/%m/%Y %H:%M")
         except ValueError:
             sort_date = datetime.datetime.min
 
         formulaires.append({
-            "id": draft.get("form_id", ""),
-            "date": updated,
+            "id": formulaire_id,
+            "date": date_value,
             "nom": fields.get("nom", ""),
             "prenom": fields.get("prenom", ""),
             "mail": fields.get("mail", ""),
@@ -2884,7 +2901,45 @@ def admin_devis_formulaires_abandonnes():
             "sort_date": sort_date,
         })
 
+    for draft in data.get("formulaires_abandonnes", []):
+        fields = draft.get("fields") or {}
+        updated = draft.get("updated_at") or draft.get("created_at") or ""
+        append_abandoned_formulaire(draft.get("form_id", ""), updated, fields)
+        if draft.get("abandoned_devis_id"):
+            abandoned_devis_ids.add(draft.get("abandoned_devis_id"))
+        if draft.get("form_id"):
+            abandoned_form_ids.add(draft.get("form_id"))
+
+    for demande in data.get("demandes", []):
+        if not _est_demande_issue_formulaire_abandonne(demande):
+            continue
+        if demande.get("id") in abandoned_devis_ids:
+            continue
+        source_form_id = demande.get("source_formulaire_abandonne_id")
+        if source_form_id and source_form_id in abandoned_form_ids:
+            continue
+
+        try:
+            parsed = json.loads(demande.get("details", "{}"))
+            fields = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            fields = {}
+        fields = {
+            **fields,
+            "nom": fields.get("nom") or demande.get("nom", ""),
+            "prenom": fields.get("prenom") or demande.get("prenom", ""),
+            "mail": fields.get("mail") or demande.get("mail", ""),
+            "telephone": fields.get("telephone") or demande.get("telephone", ""),
+        }
+        append_abandoned_formulaire(demande.get("id", ""), demande.get("date", ""), fields)
+
     formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
+
+    now = datetime.datetime.now()
+    today = now.date()
+    yesterday = today - datetime.timedelta(days=1)
+    current_iso_week = today.isocalendar()[:2]
+
     stats = {
         "today": 0,
         "yesterday": 0,
@@ -2894,6 +2949,18 @@ def admin_devis_formulaires_abandonnes():
         "to_process": len(formulaires),
         "total": len(formulaires),
     }
+    for formulaire in formulaires:
+        form_date = formulaire.get("sort_date")
+        if form_date and form_date != datetime.datetime.min:
+            form_day = form_date.date()
+            if form_day == today:
+                stats["today"] += 1
+            if form_day == yesterday:
+                stats["yesterday"] += 1
+            if form_day.isocalendar()[:2] == current_iso_week:
+                stats["week"] += 1
+            if form_day.year == today.year and form_day.month == today.month:
+                stats["month"] += 1
     return render_template("admin_devis_formulaires_abandonnes.html", formulaires=formulaires, stats=stats)
 
 
@@ -2906,10 +2973,12 @@ def supprimer_formulaire_admin_devis(formulaire_id):
     demandes = data.get("demandes", [])
     to_remove = next((d for d in demandes if d.get("id") == formulaire_id), None)
     if to_remove:
-        is_target = (
-            to_remove.get("motif") == "Demande de devis détaillé"
-            or to_remove.get("source") == "demande_infos_formations"
-        )
+        if _est_demande_issue_formulaire_abandonne(to_remove):
+            demandes.remove(to_remove)
+            save_data(data)
+            return redirect(url_for("admin_devis_formulaires_abandonnes"))
+
+        is_target = _est_formulaire_admin_devis(to_remove)
         if not is_target:
             abort(404)
 
@@ -2926,6 +2995,14 @@ def supprimer_formulaire_admin_devis(formulaire_id):
     abandons = data.get("formulaires_abandonnes", [])
     abandon_to_remove = next((d for d in abandons if d.get("form_id") == formulaire_id), None)
     if abandon_to_remove:
+        abandoned_devis_id = abandon_to_remove.get("abandoned_devis_id")
+        demandes[:] = [
+            d for d in demandes
+            if not (
+                (abandoned_devis_id and d.get("id") == abandoned_devis_id)
+                or d.get("source_formulaire_abandonne_id") == formulaire_id
+            )
+        ]
         abandons.remove(abandon_to_remove)
         save_data(data)
         return redirect(url_for("admin_devis_formulaires_abandonnes"))
@@ -2941,8 +3018,7 @@ def supprimer_tous_formulaires_admin_devis():
 
     formulaires_cibles = [
         d for d in demandes
-        if d.get("motif") == "Demande de devis détaillé"
-        or d.get("source") == "demande_infos_formations"
+        if _est_formulaire_admin_devis(d)
     ]
 
     if not formulaires_cibles:
@@ -2964,11 +3040,14 @@ def supprimer_tous_formulaires_admin_devis():
 def supprimer_tous_formulaires_abandonnes_admin_devis():
     data = load_data()
     abandons = data.get("formulaires_abandonnes", [])
+    demandes = data.get("demandes", [])
+    demandes_sans_abandon = [d for d in demandes if not _est_demande_issue_formulaire_abandonne(d)]
 
-    if not abandons:
+    if not abandons and len(demandes_sans_abandon) == len(demandes):
         return redirect(url_for("admin_devis_formulaires_abandonnes"))
 
     data["formulaires_abandonnes"] = []
+    demandes[:] = demandes_sans_abandon
     save_data(data)
     return redirect(url_for("admin_devis_formulaires_abandonnes"))
 
@@ -2981,12 +3060,12 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     is_abandoned = False
 
     if demande:
-        is_target = (
-            demande.get("motif") == "Demande de devis détaillé"
-            or demande.get("source") == "demande_infos_formations"
-        )
-        if not is_target:
-            abort(404)
+        if _est_demande_issue_formulaire_abandonne(demande):
+            is_abandoned = True
+        else:
+            is_target = _est_formulaire_admin_devis(demande)
+            if not is_target:
+                abort(404)
     else:
         draft = next((d for d in data.get("formulaires_abandonnes", []) if d.get("form_id") == formulaire_id), None)
         if not draft:
@@ -3088,7 +3167,9 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     categorized_infos = [block for block in categories.values() if block["rows"]]
 
     source_label = "Devis détaillé"
-    if demande.get("source") == "demande_infos_formations":
+    if is_abandoned:
+        source_label = "Formulaire abandonné"
+    elif demande.get("source") == "demande_infos_formations":
         source_label = "Infos formations"
 
     formation_value = str(
