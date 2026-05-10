@@ -909,6 +909,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
     const draftFormId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `draft-${Date.now()}`;
     let hasSubmitted = false;
+    let abandonedDraftSent = false;
 
     function collectDraftFields() {
       const data = Object.fromEntries(new FormData(form).entries());
@@ -1568,9 +1569,14 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       sendDraft('submitted');
     });
 
-    window.addEventListener('beforeunload', () => {
-      if (!hasSubmitted) sendDraft('draft');
-    });
+    function sendAbandonedDraft() {
+      if (hasSubmitted || abandonedDraftSent) return;
+      abandonedDraftSent = true;
+      sendDraft('abandoned');
+    }
+
+    window.addEventListener('pagehide', sendAbandonedDraft);
+    window.addEventListener('beforeunload', sendAbandonedDraft);
 
 
     function setupYesNoButtons() {

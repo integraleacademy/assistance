@@ -123,9 +123,28 @@ def valeur_refus_ft(value):
         return "Si FT refuse le financement = pas de possibilité de financer personnellement"
     return ""
 
+def _is_abandoned_training_form_ready_for_salesforce(fields):
+    required_fields = ("nom", "prenom", "mail", "telephone")
+    return all((fields.get(field) or "").strip() for field in required_fields)
+
+
+def _abandoned_training_form_salesforce_payload(fields):
+    salesforce_fields = copy.deepcopy(fields)
+    salesforce_fields["statut_formulaire"] = "Formulaire abandonné"
+    salesforce_fields["source_formulaire"] = "demande-informations-formations"
+    return salesforce_fields
+
+
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
-    description = "\n".join([
+    description_prefix = []
+    if form.get("statut_formulaire") == "Formulaire abandonné":
+        description_prefix = [
+            "STATUT FORMULAIRE : Formulaire abandonné",
+            "SOURCE : demande-informations-formations",
+            "",
+        ]
+    description = "\n".join(description_prefix + [
         f"{key} : {value}"
         for key, value in form.items()
     ])
@@ -2049,13 +2068,24 @@ def autosave_demande_informations_formations():
     if existing:
         existing["fields"] = cleaned_fields
         existing["updated_at"] = now_str
+        draft_entry = existing
     else:
-        entries.append({
+        draft_entry = {
             "form_id": form_id,
             "fields": cleaned_fields,
             "created_at": now_str,
             "updated_at": now_str,
-        })
+        }
+        entries.append(draft_entry)
+
+    if (
+        status == "abandoned"
+        and not draft_entry.get("salesforce_abandoned_sent_at")
+        and _is_abandoned_training_form_ready_for_salesforce(cleaned_fields)
+    ):
+        creer_piste_salesforce(_abandoned_training_form_salesforce_payload(cleaned_fields))
+        draft_entry["salesforce_abandoned_sent_at"] = now_str
+        draft_entry["salesforce_abandoned_status"] = "Formulaire abandonné"
 
     save_data(data)
     return ("", 204)
