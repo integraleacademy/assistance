@@ -23,6 +23,98 @@ from openai import OpenAI
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
+SALESFORCE_LEAD_SOURCE_VALUE = "Google"
+SALESFORCE_API_VERSION = os.environ.get("SALESFORCE_API_VERSION", "v60.0")
+
+def _salesforce_rest_headers():
+    access_token = os.environ.get("SALESFORCE_ACCESS_TOKEN")
+    if not access_token:
+        return None
+    return {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+def _salesforce_instance_url():
+    instance_url = os.environ.get("SALESFORCE_INSTANCE_URL")
+    if not instance_url:
+        return None
+    return instance_url.rstrip("/")
+
+def _salesforce_describe_lead():
+    """Retourne la description REST du Lead si un token Salesforce est configuré."""
+    instance_url = _salesforce_instance_url()
+    headers = _salesforce_rest_headers()
+    if not instance_url or not headers:
+        print(
+            "SALESFORCE METADATA: impossible de vérifier la picklist "
+            "LeadSource sans SALESFORCE_INSTANCE_URL et SALESFORCE_ACCESS_TOKEN"
+        )
+        return None
+
+    describe_url = f"{instance_url}/services/data/{SALESFORCE_API_VERSION}/sobjects/Lead/describe"
+    try:
+        response = requests.get(describe_url, headers=headers, timeout=10)
+        print("SALESFORCE DESCRIBE STATUS:", response.status_code)
+        print("SALESFORCE DESCRIBE RESPONSE:", response.text)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print("Erreur récupération metadata Salesforce Lead:", e)
+        return None
+
+def _verifier_origine_salesforce():
+    describe = _salesforce_describe_lead()
+    if not describe:
+        return None
+
+    fields = describe.get("fields", [])
+    field_by_name = {field.get("name"): field for field in fields}
+    lead_source_field = field_by_name.get("LeadSource")
+
+    if lead_source_field:
+        picklist_values = [
+            value.get("value")
+            for value in lead_source_field.get("picklistValues", [])
+            if value.get("active", True)
+        ]
+        print("SALESFORCE LEADSOURCE PICKLIST VALUES:", picklist_values)
+        print(
+            "SALESFORCE LEADSOURCE GOOGLE AUTORISE:",
+            SALESFORCE_LEAD_SOURCE_VALUE in picklist_values
+        )
+    else:
+        print("SALESFORCE FIELD LeadSource introuvable dans Lead.describe")
+
+    origine_fields = [
+        {
+            "name": field.get("name"),
+            "label": field.get("label"),
+            "type": field.get("type"),
+        }
+        for field in fields
+        if (field.get("label") or "").strip().lower() == "origine"
+    ]
+    print("SALESFORCE CHAMPS LABEL ORIGINE:", origine_fields)
+    return describe
+
+def _verifier_champs_ignores_salesforce(payload, describe):
+    if not describe:
+        print(
+            "SALESFORCE IGNORE CHECK: impossible de confirmer les champs ignorés "
+            "sans metadata REST Salesforce"
+        )
+        return
+
+    lead_field_names = {field.get("name") for field in describe.get("fields", [])}
+    web_to_lead_standard_fields = {
+        "oid", "retURL", "first_name", "last_name", "email", "phone",
+        "mobile", "company", "industry", "description",
+    }
+    fields_without_metadata_match = [
+        key for key in payload.keys()
+        if key not in lead_field_names
+        and key not in web_to_lead_standard_fields
+        and not key.startswith("00N")
+    ]
+    print("SALESFORCE CHAMPS SANS CORRESPONDANCE METADATA:", fields_without_metadata_match)
 
 def valeur_refus_ft(value):
     if value == "OUI":
@@ -72,7 +164,7 @@ def creer_piste_salesforce(form):
         "phone": form.get("telephone", ""),
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
-        "lead_source": "google",
+        "LeadSource": SALESFORCE_LEAD_SOURCE_VALUE,
         "industry": "Education",
         "00NSa00000G2PxB": formation_sf,
         "00NSa00000KDPOT": lieu,
@@ -91,10 +183,13 @@ def creer_piste_salesforce(form):
 
     try:
         print("ENVOI SALESFORCE PRODUCTION SANS DEBUG")
+        describe = _verifier_origine_salesforce()
         print("SALESFORCE PAYLOAD:", payload)
+        print("SALESFORCE CHAMPS ENVOYES:", list(payload.keys()))
+        _verifier_champs_ignores_salesforce(payload, describe)
         response = requests.post(SALESFORCE_URL, data=payload, timeout=10)
         print("SALESFORCE STATUS:", response.status_code)
-        print("SALESFORCE RESPONSE:", response.text[:1000])
+        print("SALESFORCE RESPONSE:", response.text)
     except Exception as e:
         print("Erreur envoi Salesforce:", e)
 
