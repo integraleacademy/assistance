@@ -20,10 +20,10 @@ Dans `demande_informations_formations()`, le modèle est choisi par `form_data.g
   - Sujet: `📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)`
 - `A3P`
   - HTML: `build_a3p_email_html(prenom, dates, centre, devis_url)`
-  - Sujet: `🛡️ Formation Agent de Protection Physique des Personnes (A3P)`
+  - Sujet: `👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)`
 - `APS`
   - HTML: `build_aps_email_html(prenom, dates, centre)`
-  - Sujet: `🛡️ Formation Agent de Sécurité Privée (APS)`
+  - Sujet: `👮‍♂️ Formation Agent de Sécurité Privée (APS)`
 - `VTC`
   - HTML: `build_vtc_email_html(prenom, centre, devis_url)`
   - Sujet: `🚗 Formation Chauffeur VTC`
