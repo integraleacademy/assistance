@@ -1803,7 +1803,7 @@ def demande_informations_formations():
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
             html = build_a3p_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
-            email_subject = "🛡️ Formation Agent de Protection Physique des Personnes (A3P)"
+            email_subject = "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
         elif form_data.get("formation") == "APS":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
             centre_label, centre_address = _centre_label_and_address(form_data.get("centre", ""))
@@ -1821,7 +1821,7 @@ def demande_informations_formations():
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
             html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
-            email_subject = "🛡️ Formation Agent de Sécurité Privée (APS)"
+            email_subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
         elif form_data.get("formation") == "VTC":
             plain = (
                 f"Bonjour {prenom},\n\n"
