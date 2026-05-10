@@ -1065,7 +1065,7 @@ def _highlights_html(items) -> str:
     return "\n".join(blocks)
 
 
-def build_abandoned_training_email_html(prenom: str, formation_code: str, devis_url: str) -> str:
+def build_abandoned_training_email_html(prenom: str, formation_code: str) -> str:
     config = _abandoned_training_config(formation_code)
     price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
     learning_items_html = "".join(f"<li>{html.escape(item)}</li>" for item in config["learning"])
@@ -1082,11 +1082,10 @@ def build_abandoned_training_email_html(prenom: str, formation_code: str, devis_
         about_extra=config["about_extra"],
         learning_items_html=learning_items_html,
         price=price,
-        devis_url=devis_url,
     )
 
 
-def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis_url: str) -> str:
+def build_abandoned_training_email_plain(prenom: str, formation_code: str) -> str:
     config = _abandoned_training_config(formation_code)
     price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
     return (
@@ -1095,7 +1094,6 @@ def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis
         "Aucun souci : je vous transmets les informations principales et vous propose un échange téléphonique si vous souhaitez avancer plus facilement.\n\n"
         f"Tarif : {price}\n"
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
-        f"Devis détaillé : {devis_url}\n"
         f"Réserver un rendez-vous : {config['calendly']}\n"
         "Identité Numérique La Poste : https://lidentitenumerique.laposte.fr\n\n"
         "Vous pouvez répondre directement à ce mail.\n\n"
@@ -1104,67 +1102,14 @@ def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis
     )
 
 
-def ensure_abandoned_training_devis(data_store: dict, draft_entry: dict, fields: dict) -> str:
-    token_plan = draft_entry.get("abandoned_devis_token")
-    if not token_plan:
-        token_plan = uuid.uuid4().hex
-        devis_id = str(uuid.uuid4())
-        devis_payload = {
-            "nom": fields.get("nom", ""),
-            "prenom": fields.get("prenom", ""),
-            "telephone": fields.get("telephone", ""),
-            "mail": fields.get("mail", ""),
-            "formation": fields.get("formation", ""),
-            "dates": fields.get("dates", ""),
-            "centre": fields.get("centre", ""),
-            "cpf_montant": fields.get("cpf_montant", "0"),
-            "france_travail": fields.get("france_travail", "NON"),
-            "identite_numerique": fields.get("identite_numerique", "NON"),
-        }
-        now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
-        data_store.setdefault("demandes", []).append({
-            "id": devis_id,
-            "token_plan": token_plan,
-            "source_formulaire_abandonne_id": draft_entry.get("form_id", ""),
-            "nom": devis_payload["nom"],
-            "prenom": devis_payload["prenom"],
-            "telephone": devis_payload["telephone"],
-            "mail": devis_payload["mail"],
-            "motif": "Demande de devis détaillé",
-            "details": json.dumps(devis_payload, ensure_ascii=False),
-            "date": now_str,
-            "statut": "Non traité",
-            "attribution": "",
-            "commentaire": "",
-            "commentaire_admin": "",
-            "mail_confirme": "",
-            "mail_erreur": "",
-            "mail_contenu": "",
-            "mail_html": "",
-            "pieces_jointes": [],
-            "reponses": [],
-            "is_doublon": False,
-            "rappel_date": "",
-            "plage": "",
-            "statut_devis": "A envoyer",
-            "notation_interne": "",
-            "echeancier_manuel": [],
-            "pdf_path": "",
-            "source": ABANDONED_DEMANDE_SOURCE,
-        })
-        draft_entry["abandoned_devis_id"] = devis_id
-        draft_entry["abandoned_devis_token"] = token_plan
-    return url_for("plan_public", token=token_plan, _external=True)
 
-
-def envoyer_mail_formulaire_formation_abandonne(data_store: dict, draft_entry: dict, fields: dict) -> bool:
-    devis_url = ensure_abandoned_training_devis(data_store, draft_entry, fields)
+def envoyer_mail_formulaire_formation_abandonne(draft_entry: dict, fields: dict) -> bool:
     formation_code = fields.get("formation", "")
     config = _abandoned_training_config(formation_code)
     prenom = fields.get("prenom", "")
     subject = f"Votre demande d'informations - {config['short']}"
-    plain = build_abandoned_training_email_plain(prenom, formation_code, devis_url)
-    html_body = build_abandoned_training_email_html(prenom, formation_code, devis_url)
+    plain = build_abandoned_training_email_plain(prenom, formation_code)
+    html_body = build_abandoned_training_email_html(prenom, formation_code)
     ok = send_email_html(fields.get("mail"), subject, plain, html_body)
     now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
     if ok:
@@ -2425,7 +2370,7 @@ def autosave_demande_informations_formations():
         and _has_required_abandoned_form_contact_fields(cleaned_fields)
     ):
         try:
-            envoyer_mail_formulaire_formation_abandonne(data, draft_entry, cleaned_fields)
+            envoyer_mail_formulaire_formation_abandonne(draft_entry, cleaned_fields)
         except Exception as e:
             print("❌ Erreur envoi mail formulaire abandonné :", e)
             draft_entry["abandoned_mail_error"] = now_str
