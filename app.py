@@ -24,6 +24,9 @@ from openai import OpenAI
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
 SALESFORCE_LEAD_SOURCE_VALUE = "Google"
+SALESFORCE_INFOS_COMPLEMENTAIRES_FIELD = "00NSa00000GcKVx"
+SALESFORCE_ORIGINE_FIELD = "00NSa00000KPDmX"
+ABANDONED_INFOS_COMPLEMENTAIRES_MESSAGE = "FORMULAIRE ABANDONNÉ - Prospect n’a pas terminé le formulaire complet."
 
 def valeur_refus_ft(value):
     if value == "OUI":
@@ -49,7 +52,6 @@ def _abandoned_training_form_salesforce_payload(fields):
     salesforce_fields = copy.deepcopy(fields)
     salesforce_fields["statut_formulaire"] = ABANDONED_FORM_LABEL
     salesforce_fields["source_formulaire"] = "demande-informations-formations"
-    salesforce_fields["infos_complementaires"] = ABANDONED_FORM_LABEL
     return salesforce_fields
 
 
@@ -60,17 +62,25 @@ def _est_payload_formulaire_abandonne(form):
     )
 
 
+def _infos_complementaires_salesforce(form, formulaire_abandonne):
+    infos_existantes = str(
+        form.get(SALESFORCE_INFOS_COMPLEMENTAIRES_FIELD)
+        or form.get("infos_complementaires")
+        or ""
+    ).strip()
+
+    if formulaire_abandonne:
+        if infos_existantes and infos_existantes != ABANDONED_FORM_LABEL:
+            return f"{ABANDONED_INFOS_COMPLEMENTAIRES_MESSAGE}\n\n{infos_existantes}"
+        return ABANDONED_INFOS_COMPLEMENTAIRES_MESSAGE
+
+    return infos_existantes
+
+
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
-    description_prefix = []
-    if _est_payload_formulaire_abandonne(form):
-        description_prefix = [
-            f"STATUT FORMULAIRE : {ABANDONED_FORM_LABEL}",
-            "INFOS COMPLÉMENTAIRES : Formulaire abandonné",
-            "SOURCE : demande-informations-formations",
-            "",
-        ]
-    description = "\n".join(description_prefix + [
+    formulaire_abandonne = _est_payload_formulaire_abandonne(form)
+    description = "\n".join([
         f"{key} : {value}"
         for key, value in form.items()
     ])
@@ -112,6 +122,7 @@ def creer_piste_salesforce(form):
         # Origine personnalisée Salesforce
         "00NSa00000KPDmX": "Google",
         "industry": "Education",
+        SALESFORCE_ORIGINE_FIELD: SALESFORCE_LEAD_SOURCE_VALUE,
         "00NSa00000G2PxB": formation_sf,
         "00NSa00000KDPOT": lieu,
         "00NSa00000GcJMz": cpf_sf,
@@ -124,6 +135,9 @@ def creer_piste_salesforce(form):
         "00NSa00000GcKxN": form.get("dates", ""),
         "00NSa00000GcK4X": france_travail_sf,
         "00NSa00000GcQl3": form.get("financement_perso", ""),
+        "00NSa00000GcKVx": _infos_complementaires_salesforce(
+            form, formulaire_abandonne
+        ),
         "description": description
     }
 
@@ -131,8 +145,8 @@ def creer_piste_salesforce(form):
         print("ENVOI SALESFORCE WEB-TO-LEAD:", SALESFORCE_URL)
         print("WEB TO LEAD ENDPOINT OK:", "/servlet/servlet.WebToLead" in SALESFORCE_URL)
         print("WEB TO LEAD DATA SENT:", data)
-        print("ORIGINE CUSTOM SENT:", data.get("00NSa00000KPDmX"))
-        print("WEB TO LEAD CONTAINS 00NSa00000KPDmX=Google:", data.get("00NSa00000KPDmX") == "Google")
+        print("LEAD SOURCE SENT:", data.get("lead_source"))
+        print("INFOS COMPLEMENTAIRES SENT:", data.get("00NSa00000GcKVx"))
         print("WEB TO LEAD FIELDS SENT:", list(data.keys()))
         response = requests.post(SALESFORCE_URL, data=data, timeout=10)
         print("SALESFORCE STATUS:", response.status_code)
