@@ -141,7 +141,8 @@ def creer_piste_salesforce(form):
         "phone": form.get("telephone", ""),
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
-        "lead_source": SALESFORCE_LEAD_SOURCE_VALUE,
+        # Origine personnalisée Salesforce
+        "00NSa00000KPDmX": "Google",
         "industry": "Education",
         SALESFORCE_ORIGINE_FIELD: SALESFORCE_LEAD_SOURCE_VALUE,
         "00NSa00000G2PxB": formation_sf,
