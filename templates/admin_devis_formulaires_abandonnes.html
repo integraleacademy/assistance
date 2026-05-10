@@ -19,9 +19,14 @@ thead{background:#f0f2f5}
 .badge-status{background:#fee2e2;color:#991b1b}
 .badge-status-treated{background:#dcfce7;color:#166534}
 .badge-centre{background:#ecfeff;color:#0f766e}
-.btn{display:inline-block;padding:6px 10px;border-radius:7px;background:#111827;color:#fff;text-decoration:none;font-size:12px}
-.btn-danger{background:#b91c1c;border:none;cursor:pointer}
+.btn{display:inline-block;padding:6px 10px;border-radius:7px;background:#111827;color:#fff;text-decoration:none;font-size:12px;border:none;cursor:pointer;font-weight:700}
+.btn-relance{background:#0f766e}
+.btn-danger{background:#b91c1c}
 .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.flash-messages{display:grid;gap:8px;margin:12px 0 16px}
+.flash{padding:10px 12px;border-radius:10px;font-size:13px;font-weight:700}
+.flash-success{background:#dcfce7;color:#166534}
+.flash-error{background:#fee2e2;color:#991b1b}
 .stats-card{position:relative;overflow:hidden;margin:22px 0 24px;background:linear-gradient(125deg,#0b1736 0%,#132a57 45%,#18325f 100%);color:#fff;border-radius:20px;padding:24px;border:1px solid rgba(255,255,255,.12);box-shadow:0 16px 40px rgba(8,22,56,.30)}
 .stats-card::before,.stats-card::after{content:'';position:absolute;border-radius:50%;pointer-events:none;filter:blur(2px)}
 .stats-card::before{width:280px;height:280px;top:-120px;right:-120px;background:radial-gradient(circle,rgba(56,189,248,.30) 0%,rgba(56,189,248,0) 72%)}
@@ -54,6 +59,16 @@ thead{background:#f0f2f5}
             <button class="btn btn-danger" type="submit">🗑️ Tout supprimer</button>
         </form>
     </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages">
+        {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
 
     <section class="stats-card">
         <h2 class="stats-title">📊 Statistiques</h2>
@@ -107,6 +122,9 @@ thead{background:#f0f2f5}
             </td>
             <td>
                 <div class="actions">
+                    <form method="POST" action="{{ url_for('relancer_formulaire_abandonne_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Envoyer le mail formulaire abandonné et ajouter cette personne sur Salesforce ?')">
+                        <button class="btn btn-relance" type="submit" title="Envoyer le mail formulaire abandonné et créer une piste Salesforce">📨 Relancer</button>
+                    </form>
                     <a class="btn" target="_blank" href="{{ url_for('imprimer_formulaire_admin_devis', formulaire_id=f.id) }}">🖨️ Ouvrir imprimable</a>
                     <form method="POST" action="{{ url_for('supprimer_formulaire_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Supprimer ce formulaire ?')">
                         <button class="btn btn-danger" type="submit">🗑️ Supprimer</button>
