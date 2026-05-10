@@ -123,9 +123,13 @@ def valeur_refus_ft(value):
         return "Si FT refuse le financement = pas de possibilité de financer personnellement"
     return ""
 
-def _is_abandoned_training_form_ready_for_salesforce(fields):
+def _has_required_abandoned_form_contact_fields(fields):
     required_fields = ("nom", "prenom", "mail", "telephone")
     return all((fields.get(field) or "").strip() for field in required_fields)
+
+
+def _is_abandoned_training_form_ready_for_salesforce(fields):
+    return _has_required_abandoned_form_contact_fields(fields)
 
 
 def _abandoned_training_form_salesforce_payload(fields):
@@ -2575,6 +2579,9 @@ def admin_devis_formulaires_abandonnes():
 
     for draft in data.get("formulaires_abandonnes", []):
         fields = draft.get("fields") or {}
+        if not _has_required_abandoned_form_contact_fields(fields):
+            continue
+
         updated = draft.get("updated_at") or draft.get("created_at") or ""
         try:
             sort_date = datetime.datetime.strptime(updated, "%d/%m/%Y %H:%M")
