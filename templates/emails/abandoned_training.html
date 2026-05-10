@@ -1,0 +1,245 @@
+<html style="overflow-y:hidden;">
+<head>
+<meta charset="UTF-8">
+<title>Votre demande d'informations - {formation_short}</title>
+
+<style>
+  body, table, td, div, p, a, span, strong, h1, h2, h3, ul, li {
+    font-family: Arial, Helvetica, sans-serif !important;
+  }
+</style>
+
+</head>
+
+<body style="height:auto; min-height:auto; margin:0; padding:0; background:#eef1f5; font-family:Arial, Helvetica, sans-serif !important; color:#1f2937;">
+
+<div style="max-width:680px; margin:0 auto; padding:24px 12px; background:#eef1f5; font-family:Arial, Helvetica, sans-serif !important;">
+
+  <div style="background:#ffffff; border-radius:22px; overflow:hidden; box-shadow:0 12px 35px rgba(15,31,51,0.14); font-family:Arial, Helvetica, sans-serif !important;">
+
+    <!-- HERO -->
+    <div style="background:#0f1f33; padding:30px 24px 28px 24px; text-align:center;">
+      <img alt="Intégrale Academy" src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" style="max-width:105px; height:auto; display:block; margin:0 auto 16px auto;" />
+
+      <div style="display:inline-block; background:rgba(244,196,90,0.14); border:1px solid rgba(244,196,90,0.45); color:#F4C45A; padding:7px 14px; border-radius:999px; font-size:13px; font-weight:bold; margin-bottom:16px;">
+        Votre demande d'informations
+      </div>
+
+      <h1 style="margin:0; color:#ffffff; font-size:27px; line-height:1.25;">
+        Votre projet {project_title}
+      </h1>
+
+      <p style="margin:14px 0 0 0; color:#dbeafe; font-size:16px; line-height:1.6;">
+        Comment obtenir toutes les informations ?
+      </p>
+    </div>
+
+    <!-- INTRO -->
+    <div style="padding:26px 28px 12px 28px; font-size:15.5px; color:#1f2937; line-height:1.7;">
+      <p style="margin:0 0 14px 0;">Bonjour {prenom},</p>
+
+      <p style="margin:0 0 14px 0;">
+        Vous aviez commencé une demande d’informations concernant notre formation
+        <strong>{formation_name}</strong>, mais votre demande n’a pas été finalisée.
+      </p>
+
+      <p style="margin:0 0 14px 0;">
+        Aucun souci, cela arrive souvent : manque de temps, interruption, téléphone non compatible.
+        Je me permets simplement de vous transmettre ici les informations principales et de vous proposer
+        un échange téléphonique si vous souhaitez avancer plus facilement.
+      </p>
+
+      <div style="background:#fff7df; border:1px solid #f4cf6b; border-radius:14px; padding:15px 16px; margin:18px 0;">
+        <p style="margin:0; color:#7c4a03; font-weight:bold;">
+          💡 N'hésitez pas à réserver un créneau téléphonique avec notre équipe.
+        </p>
+      </div>
+    </div>
+
+    <!-- CTA PRINCIPAL -->
+    <div style="padding:4px 28px 22px 28px;">
+      <div style="background:#0f1f33; border-radius:18px; padding:24px 20px; text-align:center; color:#ffffff;">
+        <h2 style="margin:0 0 10px 0; font-size:21px; color:#F4C45A;">
+          📞 Vous souhaitez être guidé ?
+        </h2>
+
+        <p style="margin:0 0 18px 0; color:#ffffff; line-height:1.6;">
+          Nous vous proposer de réserver un court rendez-vous téléphonique.
+          Nous pourrons vous donner tous les détails : les dates, les modes financement, le programme de formation, les modalités d'inscription. 
+        </p>
+
+        <a href="{calendly_url}" style="display:inline-block; background:#F4C45A; color:#111827; text-decoration:none; padding:15px 28px; border-radius:12px; font-weight:bold; font-size:16px;">
+          📅 Réserver un rendez-vous téléphonique
+        </a>
+
+        <p style="margin:16px 0 0 0; font-size:13px; color:#dbeafe;">
+          Sans engagement — échange rapide avec notre équipe
+        </p>
+      </div>
+    </div>
+
+    <!-- HIGHLIGHTS -->
+    <div style="padding:0 28px 20px 28px;">
+      {highlights_html}
+    </div>
+
+    <!-- BLOCS INFOS -->
+    <div style="padding:0 28px 10px 28px;">
+
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:18px; padding:20px; margin-bottom:14px;">
+        <h2 style="margin:0 0 12px 0; font-size:18px; color:#0f1f33;">🎓 {about_title}</h2>
+
+        <p style="margin:0 0 12px 0; line-height:1.7;">
+          {about_text}
+        </p>
+
+        <p style="margin:0; line-height:1.7;">
+          {about_extra}
+        </p>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:18px; padding:20px; margin-bottom:14px;">
+        <h2 style="margin:0 0 12px 0; font-size:18px; color:#0f1f33;">📌 Ce que vous allez apprendre</h2>
+
+        <ul style="margin:0; padding-left:20px; line-height:1.8;">
+          {learning_items_html}
+        </ul>
+      </div>
+
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:18px; padding:20px; margin-bottom:14px;">
+        <h2 style="margin:0 0 12px 0; font-size:18px; color:#0f1f33;">📄 Dossier de présentation</h2>
+
+        <p style="margin:0 0 14px 0; line-height:1.6;">
+          Vous pouvez consulter le dossier complet de présentation : programme, objectifs,
+          organisation, conditions d’accès et informations pratiques.
+        </p>
+
+        <p style="margin:0; text-align:center;">
+          <a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block; background:#0f1f33; color:#ffffff; text-decoration:none; padding:13px 20px; border-radius:10px; font-weight:bold;">
+            Télécharger le dossier de présentation
+          </a>
+        </p>
+      </div>
+
+      <div style="background:#0f1f33; border-radius:18px; padding:22px; margin-bottom:14px; color:#ffffff;">
+        <h2 style="margin:0 0 12px 0; font-size:18px; color:#F4C45A;">💶 Tarif & financement</h2>
+
+        <p style="margin:0 0 12px 0; font-size:24px; font-weight:bold; color:#ffffff;">
+          {price}
+        </p>
+
+        <p style="margin:0 0 12px 0; color:#e5e7eb; line-height:1.7;">
+          La formation peut être finançable selon votre situation :
+          <strong>CPF</strong>, <strong>France Travail</strong>, financement personnel ou autre dispositif.
+        </p>
+
+        <p style="margin:0 0 16px 0; color:#e5e7eb; line-height:1.7;">
+          Lors du rendez-vous téléphonique, nous pouvons vous aider à identifier la solution la plus adaptée.
+        </p>
+
+        <p style="margin:0; text-align:center;">
+          <a href="{calendly_url}" style="display:inline-block; background:#F4C45A; color:#111827; text-decoration:none; padding:13px 22px; border-radius:10px; font-weight:bold;">
+            Échanger sur mon financement
+          </a>
+        </p>
+      </div>
+
+      <div style="background:#fff7df; border:1px solid #f4cf6b; border-radius:18px; padding:22px; margin-bottom:14px; text-align:center;">
+        <div style="display:inline-block; background:#F4C45A; color:#000; padding:6px 14px; border-radius:999px; font-size:12px; font-weight:bold; margin-bottom:12px;">
+          ÉTAPE IMPORTANTE
+        </div>
+
+        <h2 style="margin:0 0 10px 0; font-size:20px; color:#0f1f33;">
+          🔐 Identité Numérique La Poste
+        </h2>
+
+        <p style="margin:0 0 14px 0; line-height:1.6; color:#1f2937;">
+          Pour utiliser votre <strong>Compte Personnel de Formation CPF</strong> ou déposer une demande de financement,
+          il est souvent nécessaire d’avoir une <strong>Identité Numérique La Poste</strong> active.
+        </p>
+
+        <a href="https://lidentitenumerique.laposte.fr" style="display:inline-block; background:#F4C45A; color:#000; text-decoration:none; padding:15px 26px; border-radius:12px; font-weight:bold; font-size:16px;">
+          Activer mon Identité Numérique
+        </a>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:18px; padding:20px; margin-bottom:14px;">
+        <h2 style="margin:0 0 12px 0; font-size:18px; color:#0f1f33;">🛏️ Hébergement possible</h2>
+
+        <p style="margin:0 0 10px 0; line-height:1.7;">
+          Selon la session et les disponibilités, une solution d’hébergement peut être proposée sur place.
+        </p>
+
+        <p style="margin:0; line-height:1.7;">
+          Cela permet aux stagiaires venant d’une autre région de suivre la formation plus simplement,
+          sans devoir chercher un logement à proximité.
+        </p>
+      </div>
+
+      <div style="background:#fff8e1; border:1px solid #f4cf6b; border-radius:18px; padding:22px; margin-bottom:14px; text-align:center;">
+        <h2 style="margin:0 0 10px 0; font-size:20px; color:#0f1f33;">📞 Reprendre votre demande</h2>
+
+        <p style="margin:0 0 16px 0; line-height:1.6; color:#1f2937;">
+          Si vous souhaitez avancer sur votre projet, le plus simple est de prendre un rendez-vous téléphonique.
+          Nous vous expliquerons clairement les étapes et les possibilités de financement.
+        </p>
+
+        <a href="{calendly_url}" style="display:inline-block; background:#F4C45A; color:#111827; text-decoration:none; padding:15px 28px; border-radius:12px; font-weight:bold; font-size:16px;">
+          Réserver mon rendez-vous
+        </a>
+
+        <p style="margin:14px 0 0 0; font-size:13px; color:#7c4a03;">
+          Vous pouvez aussi répondre directement à ce mail.
+        </p>
+      </div>
+
+      <div style="background:#0f1f33; border-radius:18px; padding:22px; margin-bottom:18px; text-align:center;">
+        <h2 style="margin:0 0 10px 0; font-size:20px; color:#F4C45A;">🤖 Une question immédiate ?</h2>
+
+        <p style="margin:0 0 16px 0; color:#ffffff; line-height:1.6;">
+          Vous pouvez également discuter avec notre <strong>IA Intégrale Academy</strong>
+          pour obtenir des réponses immédiates sur la formation, le CPF, France Travail,
+          l’hébergement ou les démarches administratives.
+        </p>
+
+        <p style="margin:0 0 16px 0; font-size:14px; color:#F4C45A; text-align:center;">
+          💬 Réponse immédiate, même le soir ou le week-end.
+        </p>
+
+        <a href="https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy" style="display:inline-block; background:#F4C45A; color:#111827; text-decoration:none; padding:15px 24px; border-radius:12px; font-weight:bold;">
+          🚀 Poser une question à l’IA Intégrale Academy
+        </a>
+      </div>
+
+    </div>
+
+    <!-- SIGNATURE -->
+    <div style="padding:10px 28px 24px 28px; font-size:15px; color:#1f2937; line-height:1.6;">
+      <p style="margin:0 0 14px 0;">
+        Je reste à votre disposition pour tous renseignements complémentaires.<br>
+        Je vous souhaite une excellente journée,
+      </p>
+
+      <p style="margin:0;">
+        <strong>Clément VAILLANT</strong><br>
+        Directeur Intégrale Group<br>
+        ecole@integraleacademy.com – integraleacademy.com<br>
+        📞 04 22 47 07 68<br>
+        📍 Paris - Aurillac - Côte d’Azur
+      </p>
+    </div>
+
+    <!-- FOOTER -->
+    <div style="background:#f8fafc; padding:20px 24px; font-size:12px; color:#64748b; text-align:center; line-height:1.6; border-top:1px solid #e5e7eb;">
+      © Intégrale Academy — Merci de votre confiance 💛<br>
+      SIREN 840 899 884 - NDA 93830600283<br>
+      Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br>
+      UAI Côte d’Azur 0831774C - UAI Paris 0756548K<br>
+      integraleacademy.com
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
