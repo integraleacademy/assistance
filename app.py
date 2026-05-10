@@ -1120,6 +1120,45 @@ def envoyer_mail_formulaire_formation_abandonne(draft_entry: dict, fields: dict)
     return ok
 
 
+def _fields_formulaire_abandonne_depuis_demande(demande: dict) -> dict:
+    try:
+        parsed = json.loads(demande.get("details", "{}"))
+        fields = parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        fields = {}
+
+    return {
+        **fields,
+        "nom": fields.get("nom") or demande.get("nom", ""),
+        "prenom": fields.get("prenom") or demande.get("prenom", ""),
+        "mail": fields.get("mail") or demande.get("mail", ""),
+        "telephone": fields.get("telephone") or demande.get("telephone", ""),
+    }
+
+
+def _envoyer_mail_formulaire_abandonne_depuis_demande(demande: dict, fields: dict) -> bool:
+    token_plan = demande.get("token_plan")
+    if not token_plan:
+        token_plan = uuid.uuid4().hex
+        demande["token_plan"] = token_plan
+
+    devis_url = url_for("plan_public", token=token_plan, _external=True)
+    formation_code = fields.get("formation", "")
+    config = _abandoned_training_config(formation_code)
+    prenom = fields.get("prenom", "")
+    subject = f"Votre demande d'informations - {config['short']}"
+    plain = build_abandoned_training_email_plain(prenom, formation_code, devis_url)
+    html_body = build_abandoned_training_email_html(prenom, formation_code, devis_url)
+    ok = send_email_html(fields.get("mail"), subject, plain, html_body)
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+    if ok:
+        demande["abandoned_mail_sent_at"] = now_str
+        demande["abandoned_mail_subject"] = subject
+    else:
+        demande["abandoned_mail_error"] = now_str
+    return ok
+
+
 def _format_selected_session_date(dates_txt: str) -> str:
     if not dates_txt:
         return ""
@@ -2733,10 +2772,11 @@ def admin_devis_formulaires_abandonnes():
     abandoned_devis_ids = set()
     abandoned_form_ids = set()
 
-    def append_abandoned_formulaire(formulaire_id, date_value, fields):
+    def append_abandoned_formulaire(formulaire_id, date_value, fields, meta=None):
         if not _has_required_abandoned_form_contact_fields(fields):
             return
 
+        meta = meta or {}
         try:
             sort_date = datetime.datetime.strptime(date_value, "%d/%m/%Y %H:%M")
         except ValueError:
@@ -2753,12 +2793,13 @@ def admin_devis_formulaires_abandonnes():
             "statut": "Abandonné",
             "infos": fields,
             "sort_date": sort_date,
+            "manual_abandoned_sent_at": meta.get("manual_abandoned_sent_at", ""),
         })
 
     for draft in data.get("formulaires_abandonnes", []):
         fields = draft.get("fields") or {}
         updated = draft.get("updated_at") or draft.get("created_at") or ""
-        append_abandoned_formulaire(draft.get("form_id", ""), updated, fields)
+        append_abandoned_formulaire(draft.get("form_id", ""), updated, fields, draft)
         if draft.get("abandoned_devis_id"):
             abandoned_devis_ids.add(draft.get("abandoned_devis_id"))
         if draft.get("form_id"):
@@ -2773,19 +2814,8 @@ def admin_devis_formulaires_abandonnes():
         if source_form_id and source_form_id in abandoned_form_ids:
             continue
 
-        try:
-            parsed = json.loads(demande.get("details", "{}"))
-            fields = parsed if isinstance(parsed, dict) else {}
-        except Exception:
-            fields = {}
-        fields = {
-            **fields,
-            "nom": fields.get("nom") or demande.get("nom", ""),
-            "prenom": fields.get("prenom") or demande.get("prenom", ""),
-            "mail": fields.get("mail") or demande.get("mail", ""),
-            "telephone": fields.get("telephone") or demande.get("telephone", ""),
-        }
-        append_abandoned_formulaire(demande.get("id", ""), demande.get("date", ""), fields)
+        fields = _fields_formulaire_abandonne_depuis_demande(demande)
+        append_abandoned_formulaire(demande.get("id", ""), demande.get("date", ""), fields, demande)
 
     formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
 
@@ -2816,6 +2846,51 @@ def admin_devis_formulaires_abandonnes():
             if form_day.year == today.year and form_day.month == today.month:
                 stats["month"] += 1
     return render_template("admin_devis_formulaires_abandonnes.html", formulaires=formulaires, stats=stats)
+
+
+@app.route("/admin-devis/formulaires-abandonnes/<formulaire_id>/relancer", methods=["POST"])
+@login_required
+def relancer_formulaire_abandonne_admin_devis(formulaire_id):
+    data = load_data()
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+
+    draft = next((d for d in data.get("formulaires_abandonnes", []) if d.get("form_id") == formulaire_id), None)
+    demande = None
+    fields = {}
+
+    if draft:
+        fields = draft.get("fields") or {}
+    else:
+        demande = next((d for d in data.get("demandes", []) if d.get("id") == formulaire_id), None)
+        if not demande or not _est_demande_issue_formulaire_abandonne(demande):
+            abort(404)
+        fields = _fields_formulaire_abandonne_depuis_demande(demande)
+
+    if not _has_required_abandoned_form_contact_fields(fields):
+        flash("Impossible de relancer : nom, prénom, email et téléphone sont nécessaires.", "error")
+        return redirect(url_for("admin_devis_formulaires_abandonnes"))
+
+    creer_piste_salesforce(_abandoned_training_form_salesforce_payload(fields))
+
+    if draft:
+        draft["salesforce_abandoned_sent_at"] = draft.get("salesforce_abandoned_sent_at") or now_str
+        draft["salesforce_abandoned_status"] = "Formulaire abandonné"
+        draft["manual_abandoned_sent_at"] = now_str
+        mail_ok = envoyer_mail_formulaire_formation_abandonne(data, draft, fields)
+    else:
+        demande["salesforce_abandoned_sent_at"] = demande.get("salesforce_abandoned_sent_at") or now_str
+        demande["salesforce_abandoned_status"] = "Formulaire abandonné"
+        demande["manual_abandoned_sent_at"] = now_str
+        mail_ok = _envoyer_mail_formulaire_abandonne_depuis_demande(demande, fields)
+
+    save_data(data)
+
+    nom_affiche = f"{fields.get('prenom', '')} {fields.get('nom', '')}".strip() or "ce contact"
+    if mail_ok:
+        flash(f"Mail formulaire abandonné envoyé et piste Salesforce créée pour {nom_affiche}.", "success")
+    else:
+        flash(f"Piste Salesforce créée pour {nom_affiche}, mais l'envoi du mail a échoué.", "error")
+    return redirect(url_for("admin_devis_formulaires_abandonnes"))
 
 
 @app.route("/admin-devis/formulaires/<formulaire_id>/supprimer", methods=["POST"])
