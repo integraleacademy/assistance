@@ -884,6 +884,113 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         return False
 
 
+# -------------------------------------------------------------------
+# SMS helper
+# -------------------------------------------------------------------
+def _formation_sms_context(formation_code: str) -> dict:
+    config = _abandoned_training_config(formation_code)
+    return {
+        "formation_name": config.get("formation_name") or PLAN_FORMATIONS.get(formation_code, formation_code or "Formation"),
+        "calendly": config.get("calendly") or "https://calendly.com/integraleacademy/apr",
+    }
+
+
+def build_training_information_sms_text(formation_code: str) -> str:
+    context = _formation_sms_context(formation_code)
+    return (
+        "Bonjour, \n"
+        f"Je fais suite à votre demande d’informations concernant notre formation {context['formation_name']}. "
+        "Je viens de vous adresser par mail toutes les informations utiles (pensez à vérifier vos courriers indésirables). \n"
+        "Je vous invite à réserver un RDV téléphonique avec un membre de notre équipe qui pourra vous renseigner "
+        f"et vous présenter en détails notre formation : {context['calendly']}\n"
+        "Vous pouvez également nous contacter par téléphone du lundi au vendredi de 09h00 à 17h00 au 04 22 47 07 68. \n"
+        "Je vous souhaite une bonne journée, \n"
+        "Clément VAILLANT - Directeur Intégrale Academy"
+    )
+
+
+def _normaliser_telephone_sms(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+
+    digits = re.sub(r"\D+", "", raw)
+    if len(digits) < 8:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    elif digits.startswith("0") and len(digits) == 10:
+        digits = f"33{digits[1:]}"
+
+    return digits
+
+
+def send_sms(to_phone: str, body: str) -> bool:
+    recipient = _normaliser_telephone_sms(to_phone)
+    if not recipient:
+        print("❌ Erreur envoi SMS Brevo : numéro invalide")
+        return False
+
+    api_key = os.getenv("BREVO_API_KEY")
+    sender = os.getenv("BREVO_SMS_SENDER", "FORMATION")
+
+    if not api_key or not sender:
+        print("❌ Erreur envoi SMS Brevo : configuration incomplète")
+        return False
+
+    payload = {
+        "sender": sender,
+        "recipient": recipient,
+        "content": body,
+        "type": "transactional",
+        "tag": "demande-informations-formations",
+    }
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/transactionalSMS/send",
+            json=payload,
+            headers=headers,
+            timeout=10,
+        )
+        print("BREVO SMS STATUS:", response.status_code)
+        print("BREVO SMS RESPONSE:", response.text)
+        return 200 <= response.status_code < 300
+    except Exception as e:
+        print("❌ Erreur envoi SMS Brevo :", e)
+        return False
+
+
+def envoyer_sms_demande_infos_formation(record: dict, fields: dict) -> bool:
+    body = build_training_information_sms_text(fields.get("formation", ""))
+    ok = send_sms(fields.get("telephone", ""), body)
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+    if ok:
+        record["sms_sent_at"] = now_str
+        record["sms_body"] = body
+    else:
+        record["sms_error"] = now_str
+    return ok
+
+
+def envoyer_sms_formulaire_formation_abandonne(draft_entry: dict, fields: dict) -> bool:
+    body = build_training_information_sms_text(fields.get("formation", ""))
+    ok = send_sms(fields.get("telephone", ""), body)
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+    if ok:
+        draft_entry["abandoned_sms_sent_at"] = now_str
+        draft_entry["abandoned_sms_body"] = body
+    else:
+        draft_entry["abandoned_sms_error"] = now_str
+    return ok
+
+
+
 
 
 def _render_email_template(template_name: str, **kwargs) -> str:
@@ -2315,6 +2422,13 @@ def demande_informations_formations():
         except:
             pass
 
+        try:
+            envoyer_sms_demande_infos_formation(demande_entry, form_data)
+        except Exception as e:
+            print("❌ Erreur envoi SMS demande informations formations :", e)
+            demande_entry["sms_error"] = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+        save_data(data_store)
+
         if prospect_chaud:
             try:
                 send_email_html(
@@ -2413,6 +2527,17 @@ def autosave_demande_informations_formations():
         except Exception as e:
             print("❌ Erreur envoi mail formulaire abandonné :", e)
             draft_entry["abandoned_mail_error"] = now_str
+
+    if (
+        status == "abandoned"
+        and not draft_entry.get("abandoned_sms_sent_at")
+        and _has_required_abandoned_form_contact_fields(cleaned_fields)
+    ):
+        try:
+            envoyer_sms_formulaire_formation_abandonne(draft_entry, cleaned_fields)
+        except Exception as e:
+            print("❌ Erreur envoi SMS formulaire abandonné :", e)
+            draft_entry["abandoned_sms_error"] = now_str
 
     save_data(data)
     return ("", 204)
