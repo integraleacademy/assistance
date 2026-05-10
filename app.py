@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -979,6 +979,223 @@ def build_vae_desp_email_html(prenom, devis_url):
 
 
 
+
+
+def _eur_display(amount: int) -> str:
+    return f"{amount:,.0f} € TTC".replace(",", " ")
+
+
+ABANDONED_TRAINING_EMAIL_CONFIG = {
+    "A3P": {
+        "short": "Formation A3P Bodyguard",
+        "project_title": "de formation A3P Bodyguard",
+        "formation_name": "Agent de Protection Physique des Personnes (A3P – Bodyguard)",
+        "about_title": "La formation A3P en quelques mots",
+        "about_text": "La formation <strong>A3P – Agent de Protection Physique des Personnes</strong> permet de se former aux métiers de la protection rapprochée, dans le respect de la réglementation française.",
+        "about_extra": "Elle prépare à l’obtention de la carte professionnelle délivrée par le <strong>CNAPS</strong> pour exercer légalement dans le domaine de la protection physique des personnes.",
+        "learning": [
+            "Protection rapprochée et accompagnement de personnes exposées",
+            "Préparation, anticipation et sécurisation des déplacements",
+            "Gestion des situations sensibles et des comportements à risque",
+            "Cadre légal de l’activité de sécurité privée",
+            "Posture professionnelle, discrétion et communication",
+            "Préparation à l’examen et à la demande de carte professionnelle CNAPS",
+        ],
+        "highlights": [
+            ("✅", "Titre reconnu par l’État", "RNCP38002 — niveau 4"),
+            ("👮", "Carte professionnelle CNAPS", "Protection Physique des Personnes"),
+            ("🏨", "Hébergement possible", "Solution sur place selon disponibilités"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/apr",
+    },
+    "APS": {
+        "short": "Formation APS",
+        "project_title": "de formation APS",
+        "formation_name": "Agent de Prévention et de Sécurité (APS)",
+        "about_title": "La formation APS en quelques mots",
+        "about_text": "La formation <strong>APS – Agent de Prévention et de Sécurité</strong> prépare aux missions de surveillance, de prévention et de protection des biens et des personnes.",
+        "about_extra": "Elle permet de se préparer à l’exercice réglementé d’agent de sécurité privée et aux démarches liées à la carte professionnelle CNAPS.",
+        "learning": [
+            "Surveillance générale et prévention des actes de malveillance",
+            "Accueil, contrôle d’accès et filtrage",
+            "Gestion des conflits et des situations sensibles",
+            "Bases juridiques de la sécurité privée",
+            "Prévention incendie et secours à personne",
+            "Préparation à l’examen APS et à la carte professionnelle CNAPS",
+        ],
+        "highlights": [
+            ("✅", "Formation réglementée", "Accès au métier d’agent de sécurité"),
+            ("👮", "Démarches CNAPS", "Accompagnement possible"),
+            ("📍", "Sessions régulières", "Selon centres et disponibilités"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/aps",
+    },
+    "VTC": {
+        "short": "Formation Chauffeur VTC",
+        "project_title": "de formation Chauffeur VTC",
+        "formation_name": "Chauffeur de transport avec chauffeur (VTC)",
+        "about_title": "La formation VTC en quelques mots",
+        "about_text": "La formation <strong>VTC</strong> permet de préparer votre projet de chauffeur professionnel avec une organisation flexible combinant théorie à distance et pratique.",
+        "about_extra": "Elle vous accompagne sur les compétences attendues à l’examen et sur les démarches nécessaires pour lancer votre activité.",
+        "learning": [
+            "Réglementation du transport public particulier de personnes",
+            "Sécurité routière, relation client et qualité de service",
+            "Gestion, développement commercial et préparation d’activité",
+            "Préparation à l’examen théorique VTC",
+            "Mise en pratique de la conduite professionnelle",
+            "Organisation des démarches administratives VTC",
+        ],
+        "highlights": [
+            ("💻", "Théorie en ligne", "Accessible à distance"),
+            ("🚗", "Pratique encadrée", "Préparation terrain"),
+            ("📄", "Dossier complet", "Programme et démarches"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/chauffeurvtc",
+    },
+    "DESP_INIT": {
+        "short": "Formation DESP initial",
+        "project_title": "de formation DESP initial",
+        "formation_name": "Dirigeant d’Entreprise de Sécurité Privée (DESP – initial)",
+        "about_title": "La formation DESP initial en quelques mots",
+        "about_text": "La formation <strong>DESP</strong> prépare les futurs dirigeants d’entreprise de sécurité privée à créer, piloter et gérer leur structure conformément à la réglementation.",
+        "about_extra": "Elle prépare aux compétences nécessaires pour solliciter l’agrément dirigeant auprès du CNAPS.",
+        "learning": [
+            "Cadre juridique de la sécurité privée et obligations du dirigeant",
+            "Création, gestion et pilotage d’une entreprise de sécurité",
+            "Gestion administrative, commerciale et financière",
+            "Management des équipes et organisation opérationnelle",
+            "Déontologie, contrôle interne et conformité CNAPS",
+            "Préparation à l’examen et à l’agrément dirigeant",
+        ],
+        "highlights": [
+            ("✅", "Titre reconnu par l’État", "RNCP40385 — niveau 5"),
+            ("🏢", "Projet dirigeant", "Créer ou gérer une société"),
+            ("💻", "E-learning + présentiel", "Organisation mixte"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/dirigeant",
+    },
+    "DESP_VAE": {
+        "short": "VAE DESP",
+        "project_title": "de VAE DESP",
+        "formation_name": "VAE Dirigeant d’Entreprise de Sécurité Privée (DESP)",
+        "about_title": "La VAE DESP en quelques mots",
+        "about_text": "La <strong>VAE DESP</strong> permet de valoriser votre expérience professionnelle pour viser la certification Dirigeant d’Entreprise de Sécurité Privée.",
+        "about_extra": "Notre équipe peut vous accompagner dans la constitution du dossier, la formalisation de vos compétences et la préparation du passage devant le jury.",
+        "learning": [
+            "Analyse de votre expérience et de sa cohérence avec le référentiel",
+            "Constitution et structuration du dossier VAE",
+            "Mise en valeur des compétences de dirigeant sécurité privée",
+            "Préparation à l’entretien avec le jury",
+            "Compréhension des attendus réglementaires et CNAPS",
+            "Accompagnement méthodologique jusqu’au dépôt du dossier",
+        ],
+        "highlights": [
+            ("✅", "Certification visée", "RNCP40385 — niveau 5"),
+            ("📝", "Accompagnement dossier", "Méthode et structuration"),
+            ("📞", "Suivi personnalisé", "Échange avec notre équipe"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/dirigeant",
+    },
+}
+
+
+def _abandoned_training_config(formation_code: str):
+    default_label = PLAN_FORMATIONS.get(formation_code, formation_code or "Formation")
+    return ABANDONED_TRAINING_EMAIL_CONFIG.get(formation_code) or {
+        "short": default_label,
+        "project_title": f"de formation {default_label}",
+        "formation_name": default_label,
+        "about_title": "La formation en quelques mots",
+        "about_text": f"Cette formation <strong>{html.escape(default_label)}</strong> répond à un projet professionnel concret et peut faire l’objet d’un accompagnement par notre équipe.",
+        "about_extra": "Nous pouvons vous expliquer les objectifs, les prérequis, les dates, le financement et les étapes d’inscription lors d’un échange téléphonique.",
+        "learning": [
+            "Objectifs et organisation de la formation",
+            "Prérequis et conditions d’accès",
+            "Dates, lieux et modalités pratiques",
+            "Solutions de financement possibles",
+            "Étapes d’inscription et documents utiles",
+            "Réponses personnalisées à vos questions",
+        ],
+        "highlights": [
+            ("📄", "Dossier complet", "Programme et informations pratiques"),
+            ("💶", "Financement", "CPF, France Travail ou personnel"),
+            ("📞", "Accompagnement", "Échange avec notre équipe"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/apr",
+    }
+
+
+def _highlights_html(items) -> str:
+    blocks = []
+    for idx, (emoji, title, subtitle) in enumerate(items):
+        margin = " margin-top:10px;" if idx else ""
+        blocks.append(
+            f"""<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;{margin}\">
+        <tr>
+          <td style=\"background:#f8fafc; border:1px solid #e5e7eb; border-radius:14px; padding:14px; text-align:center;\">
+            <div style=\"font-size:24px;\">{emoji}</div>
+            <div style=\"font-weight:bold; margin-top:6px;\">{html.escape(title)}</div>
+            <div style=\"font-size:13px; color:#64748b;\">{html.escape(subtitle)}</div>
+          </td>
+        </tr>
+      </table>"""
+        )
+    return "\n".join(blocks)
+
+
+def build_abandoned_training_email_html(prenom: str, formation_code: str) -> str:
+    config = _abandoned_training_config(formation_code)
+    price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
+    learning_items_html = "".join(f"<li>{html.escape(item)}</li>" for item in config["learning"])
+    return _render_email_template(
+        "abandoned_training.html",
+        prenom=html.escape(prenom or ""),
+        formation_short=html.escape(config["short"]),
+        project_title=html.escape(config["project_title"]),
+        formation_name=html.escape(config["formation_name"]),
+        calendly_url=config["calendly"],
+        highlights_html=_highlights_html(config["highlights"]),
+        about_title=html.escape(config["about_title"]),
+        about_text=config["about_text"],
+        about_extra=config["about_extra"],
+        learning_items_html=learning_items_html,
+        price=price,
+    )
+
+
+def build_abandoned_training_email_plain(prenom: str, formation_code: str) -> str:
+    config = _abandoned_training_config(formation_code)
+    price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
+    return (
+        f"Bonjour {prenom},\n\n"
+        f"Vous aviez commencé une demande d’informations concernant notre formation {config['formation_name']}, mais votre demande n’a pas été finalisée.\n\n"
+        "Aucun souci : je vous transmets les informations principales et vous propose un échange téléphonique si vous souhaitez avancer plus facilement.\n\n"
+        f"Tarif : {price}\n"
+        "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+        f"Réserver un rendez-vous : {config['calendly']}\n"
+        "Identité Numérique La Poste : https://lidentitenumerique.laposte.fr\n\n"
+        "Vous pouvez répondre directement à ce mail.\n\n"
+        "Clément VAILLANT\nDirecteur Intégrale Group\n"
+        "04 22 47 07 68\n"
+    )
+
+
+
+def envoyer_mail_formulaire_formation_abandonne(draft_entry: dict, fields: dict) -> bool:
+    formation_code = fields.get("formation", "")
+    config = _abandoned_training_config(formation_code)
+    prenom = fields.get("prenom", "")
+    subject = f"Votre demande d'informations - {config['short']}"
+    plain = build_abandoned_training_email_plain(prenom, formation_code)
+    html_body = build_abandoned_training_email_html(prenom, formation_code)
+    ok = send_email_html(fields.get("mail"), subject, plain, html_body)
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+    if ok:
+        draft_entry["abandoned_mail_sent_at"] = now_str
+        draft_entry["abandoned_mail_subject"] = subject
+    else:
+        draft_entry["abandoned_mail_error"] = now_str
+    return ok
 
 
 def _format_selected_session_date(dates_txt: str) -> str:
@@ -2215,6 +2432,17 @@ def autosave_demande_informations_formations():
         creer_piste_salesforce(_abandoned_training_form_salesforce_payload(cleaned_fields))
         draft_entry["salesforce_abandoned_sent_at"] = now_str
         draft_entry["salesforce_abandoned_status"] = "Formulaire abandonné"
+
+    if (
+        status == "abandoned"
+        and not draft_entry.get("abandoned_mail_sent_at")
+        and _has_required_abandoned_form_contact_fields(cleaned_fields)
+    ):
+        try:
+            envoyer_mail_formulaire_formation_abandonne(draft_entry, cleaned_fields)
+        except Exception as e:
+            print("❌ Erreur envoi mail formulaire abandonné :", e)
+            draft_entry["abandoned_mail_error"] = now_str
 
     save_data(data)
     return ("", 204)
