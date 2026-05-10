@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -32,9 +32,45 @@ def valeur_refus_ft(value):
         return "Si FT refuse le financement = pas de possibilité de financer personnellement"
     return ""
 
+def _has_required_abandoned_form_contact_fields(fields):
+    required_fields = ("nom", "prenom", "mail", "telephone")
+    return all((fields.get(field) or "").strip() for field in required_fields)
+
+
+def _is_abandoned_training_form_ready_for_salesforce(fields):
+    return _has_required_abandoned_form_contact_fields(fields)
+
+
+ABANDONED_FORM_LABEL = "Formulaire abandonné"
+ABANDONED_DEMANDE_SOURCE = "formulaire_abandonne_demande_infos"
+
+
+def _abandoned_training_form_salesforce_payload(fields):
+    salesforce_fields = copy.deepcopy(fields)
+    salesforce_fields["statut_formulaire"] = ABANDONED_FORM_LABEL
+    salesforce_fields["source_formulaire"] = "demande-informations-formations"
+    salesforce_fields["infos_complementaires"] = ABANDONED_FORM_LABEL
+    return salesforce_fields
+
+
+def _est_payload_formulaire_abandonne(form):
+    return (
+        form.get("statut_formulaire") == ABANDONED_FORM_LABEL
+        or form.get("infos_complementaires") == ABANDONED_FORM_LABEL
+    )
+
+
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
-    description = "\n".join([
+    description_prefix = []
+    if _est_payload_formulaire_abandonne(form):
+        description_prefix = [
+            f"STATUT FORMULAIRE : {ABANDONED_FORM_LABEL}",
+            "INFOS COMPLÉMENTAIRES : Formulaire abandonné",
+            "SOURCE : demande-informations-formations",
+            "",
+        ]
+    description = "\n".join(description_prefix + [
         f"{key} : {value}"
         for key, value in form.items()
     ])
@@ -867,6 +903,278 @@ def build_vae_desp_email_html(prenom, devis_url):
 
 
 
+def _eur_display(amount: int) -> str:
+    return f"{amount:,.0f} € TTC".replace(",", " ")
+
+
+ABANDONED_TRAINING_EMAIL_CONFIG = {
+    "A3P": {
+        "short": "Formation A3P Bodyguard",
+        "project_title": "de formation A3P Bodyguard",
+        "formation_name": "Agent de Protection Physique des Personnes (A3P – Bodyguard)",
+        "about_title": "La formation A3P en quelques mots",
+        "about_text": "La formation <strong>A3P – Agent de Protection Physique des Personnes</strong> permet de se former aux métiers de la protection rapprochée, dans le respect de la réglementation française.",
+        "about_extra": "Elle prépare à l’obtention de la carte professionnelle délivrée par le <strong>CNAPS</strong> pour exercer légalement dans le domaine de la protection physique des personnes.",
+        "learning": [
+            "Protection rapprochée et accompagnement de personnes exposées",
+            "Préparation, anticipation et sécurisation des déplacements",
+            "Gestion des situations sensibles et des comportements à risque",
+            "Cadre légal de l’activité de sécurité privée",
+            "Posture professionnelle, discrétion et communication",
+            "Préparation à l’examen et à la demande de carte professionnelle CNAPS",
+        ],
+        "highlights": [
+            ("✅", "Titre reconnu par l’État", "RNCP38002 — niveau 4"),
+            ("👮", "Carte professionnelle CNAPS", "Protection Physique des Personnes"),
+            ("🏨", "Hébergement possible", "Solution sur place selon disponibilités"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/apr",
+    },
+    "APS": {
+        "short": "Formation APS",
+        "project_title": "de formation APS",
+        "formation_name": "Agent de Prévention et de Sécurité (APS)",
+        "about_title": "La formation APS en quelques mots",
+        "about_text": "La formation <strong>APS – Agent de Prévention et de Sécurité</strong> prépare aux missions de surveillance, de prévention et de protection des biens et des personnes.",
+        "about_extra": "Elle permet de se préparer à l’exercice réglementé d’agent de sécurité privée et aux démarches liées à la carte professionnelle CNAPS.",
+        "learning": [
+            "Surveillance générale et prévention des actes de malveillance",
+            "Accueil, contrôle d’accès et filtrage",
+            "Gestion des conflits et des situations sensibles",
+            "Bases juridiques de la sécurité privée",
+            "Prévention incendie et secours à personne",
+            "Préparation à l’examen APS et à la carte professionnelle CNAPS",
+        ],
+        "highlights": [
+            ("✅", "Formation réglementée", "Accès au métier d’agent de sécurité"),
+            ("👮", "Démarches CNAPS", "Accompagnement possible"),
+            ("📍", "Sessions régulières", "Selon centres et disponibilités"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/aps",
+    },
+    "VTC": {
+        "short": "Formation Chauffeur VTC",
+        "project_title": "de formation Chauffeur VTC",
+        "formation_name": "Chauffeur de transport avec chauffeur (VTC)",
+        "about_title": "La formation VTC en quelques mots",
+        "about_text": "La formation <strong>VTC</strong> permet de préparer votre projet de chauffeur professionnel avec une organisation flexible combinant théorie à distance et pratique.",
+        "about_extra": "Elle vous accompagne sur les compétences attendues à l’examen et sur les démarches nécessaires pour lancer votre activité.",
+        "learning": [
+            "Réglementation du transport public particulier de personnes",
+            "Sécurité routière, relation client et qualité de service",
+            "Gestion, développement commercial et préparation d’activité",
+            "Préparation à l’examen théorique VTC",
+            "Mise en pratique de la conduite professionnelle",
+            "Organisation des démarches administratives VTC",
+        ],
+        "highlights": [
+            ("💻", "Théorie en ligne", "Accessible à distance"),
+            ("🚗", "Pratique encadrée", "Préparation terrain"),
+            ("📄", "Dossier complet", "Programme et démarches"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/chauffeurvtc",
+    },
+    "DESP_INIT": {
+        "short": "Formation DESP initial",
+        "project_title": "de formation DESP initial",
+        "formation_name": "Dirigeant d’Entreprise de Sécurité Privée (DESP – initial)",
+        "about_title": "La formation DESP initial en quelques mots",
+        "about_text": "La formation <strong>DESP</strong> prépare les futurs dirigeants d’entreprise de sécurité privée à créer, piloter et gérer leur structure conformément à la réglementation.",
+        "about_extra": "Elle prépare aux compétences nécessaires pour solliciter l’agrément dirigeant auprès du CNAPS.",
+        "learning": [
+            "Cadre juridique de la sécurité privée et obligations du dirigeant",
+            "Création, gestion et pilotage d’une entreprise de sécurité",
+            "Gestion administrative, commerciale et financière",
+            "Management des équipes et organisation opérationnelle",
+            "Déontologie, contrôle interne et conformité CNAPS",
+            "Préparation à l’examen et à l’agrément dirigeant",
+        ],
+        "highlights": [
+            ("✅", "Titre reconnu par l’État", "RNCP40385 — niveau 5"),
+            ("🏢", "Projet dirigeant", "Créer ou gérer une société"),
+            ("💻", "E-learning + présentiel", "Organisation mixte"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/dirigeant",
+    },
+    "DESP_VAE": {
+        "short": "VAE DESP",
+        "project_title": "de VAE DESP",
+        "formation_name": "VAE Dirigeant d’Entreprise de Sécurité Privée (DESP)",
+        "about_title": "La VAE DESP en quelques mots",
+        "about_text": "La <strong>VAE DESP</strong> permet de valoriser votre expérience professionnelle pour viser la certification Dirigeant d’Entreprise de Sécurité Privée.",
+        "about_extra": "Notre équipe peut vous accompagner dans la constitution du dossier, la formalisation de vos compétences et la préparation du passage devant le jury.",
+        "learning": [
+            "Analyse de votre expérience et de sa cohérence avec le référentiel",
+            "Constitution et structuration du dossier VAE",
+            "Mise en valeur des compétences de dirigeant sécurité privée",
+            "Préparation à l’entretien avec le jury",
+            "Compréhension des attendus réglementaires et CNAPS",
+            "Accompagnement méthodologique jusqu’au dépôt du dossier",
+        ],
+        "highlights": [
+            ("✅", "Certification visée", "RNCP40385 — niveau 5"),
+            ("📝", "Accompagnement dossier", "Méthode et structuration"),
+            ("📞", "Suivi personnalisé", "Échange avec notre équipe"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/dirigeant",
+    },
+}
+
+
+def _abandoned_training_config(formation_code: str):
+    default_label = PLAN_FORMATIONS.get(formation_code, formation_code or "Formation")
+    return ABANDONED_TRAINING_EMAIL_CONFIG.get(formation_code) or {
+        "short": default_label,
+        "project_title": f"de formation {default_label}",
+        "formation_name": default_label,
+        "about_title": "La formation en quelques mots",
+        "about_text": f"Cette formation <strong>{html.escape(default_label)}</strong> répond à un projet professionnel concret et peut faire l’objet d’un accompagnement par notre équipe.",
+        "about_extra": "Nous pouvons vous expliquer les objectifs, les prérequis, les dates, le financement et les étapes d’inscription lors d’un échange téléphonique.",
+        "learning": [
+            "Objectifs et organisation de la formation",
+            "Prérequis et conditions d’accès",
+            "Dates, lieux et modalités pratiques",
+            "Solutions de financement possibles",
+            "Étapes d’inscription et documents utiles",
+            "Réponses personnalisées à vos questions",
+        ],
+        "highlights": [
+            ("📄", "Dossier complet", "Programme et informations pratiques"),
+            ("💶", "Financement", "CPF, France Travail ou personnel"),
+            ("📞", "Accompagnement", "Échange avec notre équipe"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/apr",
+    }
+
+
+def _highlights_html(items) -> str:
+    blocks = []
+    for idx, (emoji, title, subtitle) in enumerate(items):
+        margin = " margin-top:10px;" if idx else ""
+        blocks.append(
+            f"""<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;{margin}\">
+        <tr>
+          <td style=\"background:#f8fafc; border:1px solid #e5e7eb; border-radius:14px; padding:14px; text-align:center;\">
+            <div style=\"font-size:24px;\">{emoji}</div>
+            <div style=\"font-weight:bold; margin-top:6px;\">{html.escape(title)}</div>
+            <div style=\"font-size:13px; color:#64748b;\">{html.escape(subtitle)}</div>
+          </td>
+        </tr>
+      </table>"""
+        )
+    return "\n".join(blocks)
+
+
+def build_abandoned_training_email_html(prenom: str, formation_code: str, devis_url: str) -> str:
+    config = _abandoned_training_config(formation_code)
+    price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
+    learning_items_html = "".join(f"<li>{html.escape(item)}</li>" for item in config["learning"])
+    return _render_email_template(
+        "abandoned_training.html",
+        prenom=html.escape(prenom or ""),
+        formation_short=html.escape(config["short"]),
+        project_title=html.escape(config["project_title"]),
+        formation_name=html.escape(config["formation_name"]),
+        calendly_url=config["calendly"],
+        highlights_html=_highlights_html(config["highlights"]),
+        about_title=html.escape(config["about_title"]),
+        about_text=config["about_text"],
+        about_extra=config["about_extra"],
+        learning_items_html=learning_items_html,
+        price=price,
+        devis_url=devis_url,
+    )
+
+
+def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis_url: str) -> str:
+    config = _abandoned_training_config(formation_code)
+    price = _eur_display(PLAN_TARIFS.get(formation_code, 0)) if PLAN_TARIFS.get(formation_code) else "Tarif transmis sur demande"
+    return (
+        f"Bonjour {prenom},\n\n"
+        f"Vous aviez commencé une demande d’informations concernant notre formation {config['formation_name']}, mais votre demande n’a pas été finalisée.\n\n"
+        "Aucun souci : je vous transmets les informations principales et vous propose un échange téléphonique si vous souhaitez avancer plus facilement.\n\n"
+        f"Tarif : {price}\n"
+        "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+        f"Devis détaillé : {devis_url}\n"
+        f"Réserver un rendez-vous : {config['calendly']}\n"
+        "Identité Numérique La Poste : https://lidentitenumerique.laposte.fr\n\n"
+        "Vous pouvez répondre directement à ce mail.\n\n"
+        "Clément VAILLANT\nDirecteur Intégrale Group\n"
+        "04 22 47 07 68\n"
+    )
+
+
+def ensure_abandoned_training_devis(data_store: dict, draft_entry: dict, fields: dict) -> str:
+    token_plan = draft_entry.get("abandoned_devis_token")
+    if not token_plan:
+        token_plan = uuid.uuid4().hex
+        devis_id = str(uuid.uuid4())
+        devis_payload = {
+            "nom": fields.get("nom", ""),
+            "prenom": fields.get("prenom", ""),
+            "telephone": fields.get("telephone", ""),
+            "mail": fields.get("mail", ""),
+            "formation": fields.get("formation", ""),
+            "dates": fields.get("dates", ""),
+            "centre": fields.get("centre", ""),
+            "cpf_montant": fields.get("cpf_montant", "0"),
+            "france_travail": fields.get("france_travail", "NON"),
+            "identite_numerique": fields.get("identite_numerique", "NON"),
+        }
+        now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+        data_store.setdefault("demandes", []).append({
+            "id": devis_id,
+            "token_plan": token_plan,
+            "source_formulaire_abandonne_id": draft_entry.get("form_id", ""),
+            "nom": devis_payload["nom"],
+            "prenom": devis_payload["prenom"],
+            "telephone": devis_payload["telephone"],
+            "mail": devis_payload["mail"],
+            "motif": "Demande de devis détaillé",
+            "details": json.dumps(devis_payload, ensure_ascii=False),
+            "date": now_str,
+            "statut": "Non traité",
+            "attribution": "",
+            "commentaire": "",
+            "commentaire_admin": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+            "rappel_date": "",
+            "plage": "",
+            "statut_devis": "A envoyer",
+            "notation_interne": "",
+            "echeancier_manuel": [],
+            "pdf_path": "",
+            "source": ABANDONED_DEMANDE_SOURCE,
+        })
+        draft_entry["abandoned_devis_id"] = devis_id
+        draft_entry["abandoned_devis_token"] = token_plan
+    return url_for("plan_public", token=token_plan, _external=True)
+
+
+def envoyer_mail_formulaire_formation_abandonne(data_store: dict, draft_entry: dict, fields: dict) -> bool:
+    devis_url = ensure_abandoned_training_devis(data_store, draft_entry, fields)
+    formation_code = fields.get("formation", "")
+    config = _abandoned_training_config(formation_code)
+    prenom = fields.get("prenom", "")
+    subject = f"Votre demande d'informations - {config['short']}"
+    plain = build_abandoned_training_email_plain(prenom, formation_code, devis_url)
+    html_body = build_abandoned_training_email_html(prenom, formation_code, devis_url)
+    ok = send_email_html(fields.get("mail"), subject, plain, html_body)
+    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+    if ok:
+        draft_entry["abandoned_mail_sent_at"] = now_str
+        draft_entry["abandoned_mail_subject"] = subject
+    else:
+        draft_entry["abandoned_mail_error"] = now_str
+    return ok
+
+
 def _format_selected_session_date(dates_txt: str) -> str:
     if not dates_txt:
         return ""
@@ -1633,6 +1941,125 @@ def admin_formation_sessions():
     return render_template("admin_formation_sessions.html", sessions=sessions, formations=PLAN_FORMATIONS, centres=FORMATION_CENTRES)
 
 
+
+
+def _normaliser_email_formulaire(value):
+    return str(value or "").strip().lower()
+
+
+def _normaliser_telephone_formulaire(value):
+    return re.sub(r"\D+", "", str(value or ""))
+
+
+def _est_demande_issue_formulaire_abandonne(demande):
+    return (
+        demande.get("source") == ABANDONED_DEMANDE_SOURCE
+        or bool(demande.get("source_formulaire_abandonne_id"))
+    )
+
+
+def _est_formulaire_admin_devis(demande):
+    if _est_demande_issue_formulaire_abandonne(demande):
+        return False
+    return (
+        demande.get("motif") == "Demande de devis détaillé"
+        or demande.get("source") == "demande_infos_formations"
+    )
+
+
+def _identifiants_formulaires_soumis(demandes):
+    identifiants = {"draft_ids": set(), "emails": set(), "telephones": set()}
+    for demande in demandes:
+        if not _est_formulaire_admin_devis(demande):
+            continue
+
+        details = {}
+        try:
+            parsed = json.loads(demande.get("details", "{}"))
+            if isinstance(parsed, dict):
+                details = parsed
+        except Exception:
+            details = {}
+
+        draft_id = str(details.get("draft_form_id") or demande.get("draft_form_id") or "").strip()
+        if draft_id:
+            identifiants["draft_ids"].add(draft_id)
+
+        email = _normaliser_email_formulaire(demande.get("mail") or details.get("mail"))
+        if email:
+            identifiants["emails"].add(email)
+
+        telephone = _normaliser_telephone_formulaire(demande.get("telephone") or details.get("telephone"))
+        if len(telephone) >= 6:
+            identifiants["telephones"].add(telephone)
+
+    return identifiants
+
+
+def _brouillon_correspond_a_formulaire_soumis(draft, identifiants):
+    fields = draft.get("fields") or {}
+
+    form_id = str(draft.get("form_id") or fields.get("draft_form_id") or "").strip()
+    if form_id and form_id in identifiants["draft_ids"]:
+        return True
+
+    email = _normaliser_email_formulaire(fields.get("mail"))
+    if email and email in identifiants["emails"]:
+        return True
+
+    telephone = _normaliser_telephone_formulaire(fields.get("telephone"))
+    if len(telephone) >= 6 and telephone in identifiants["telephones"]:
+        return True
+
+    return False
+
+
+def _nettoyer_formulaires_abandonnes_soumis(data):
+    abandons = data.get("formulaires_abandonnes", [])
+    if not abandons:
+        return False
+
+    identifiants = _identifiants_formulaires_soumis(data.get("demandes", []))
+    abandons_filtres = [
+        draft for draft in abandons
+        if not _brouillon_correspond_a_formulaire_soumis(draft, identifiants)
+    ]
+
+    if len(abandons_filtres) == len(abandons):
+        return False
+
+    data["formulaires_abandonnes"] = abandons_filtres
+    return True
+
+
+def _supprimer_brouillon_formulaire_soumis(data, form_data):
+    abandons = data.get("formulaires_abandonnes", [])
+    if not abandons:
+        return False
+
+    submitted_draft_id = str(form_data.get("draft_form_id") or "").strip()
+    submitted_email = _normaliser_email_formulaire(form_data.get("mail"))
+    submitted_phone = _normaliser_telephone_formulaire(form_data.get("telephone"))
+
+    def doit_garder(draft):
+        fields = draft.get("fields") or {}
+        if submitted_draft_id and draft.get("form_id") == submitted_draft_id:
+            return False
+        draft_email = _normaliser_email_formulaire(fields.get("mail"))
+        if submitted_email and draft_email == submitted_email:
+            return False
+        draft_phone = _normaliser_telephone_formulaire(fields.get("telephone"))
+        if len(submitted_phone) >= 6 and draft_phone == submitted_phone:
+            return False
+        return True
+
+    abandons_filtres = [draft for draft in abandons if doit_garder(draft)]
+    if len(abandons_filtres) == len(abandons):
+        return False
+
+    data["formulaires_abandonnes"] = abandons_filtres
+    return True
+
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
 def demande_informations_formations():
     data_store = load_data()
@@ -1677,6 +2104,7 @@ def demande_informations_formations():
             "source": "demande_infos_formations"
         }
         data_store.setdefault("demandes", []).append(demande_entry)
+        _supprimer_brouillon_formulaire_soumis(data_store, form_data)
 
         if form_data.get("souhaite_devis") != "OUI":
             rappel = {
@@ -1937,7 +2365,21 @@ def autosave_demande_informations_formations():
 
     status = (payload.get("status") or "draft").strip().lower()
     if status == "submitted":
-        data["formulaires_abandonnes"] = [e for e in entries if e.get("form_id") != form_id]
+        fields = payload.get("fields")
+        if not isinstance(fields, dict):
+            fields = {}
+
+        submitted_email = _normaliser_email_formulaire(fields.get("mail"))
+        submitted_phone = _normaliser_telephone_formulaire(fields.get("telephone"))
+
+        data["formulaires_abandonnes"] = [
+            e for e in entries
+            if not (
+                e.get("form_id") == form_id
+                or (submitted_email and _normaliser_email_formulaire((e.get("fields") or {}).get("mail")) == submitted_email)
+                or (len(submitted_phone) >= 6 and _normaliser_telephone_formulaire((e.get("fields") or {}).get("telephone")) == submitted_phone)
+            )
+        ]
         save_data(data)
         return ("", 204)
 
@@ -1958,13 +2400,35 @@ def autosave_demande_informations_formations():
     if existing:
         existing["fields"] = cleaned_fields
         existing["updated_at"] = now_str
+        draft_entry = existing
     else:
-        entries.append({
+        draft_entry = {
             "form_id": form_id,
             "fields": cleaned_fields,
             "created_at": now_str,
             "updated_at": now_str,
-        })
+        }
+        entries.append(draft_entry)
+
+    if (
+        status == "abandoned"
+        and not draft_entry.get("salesforce_abandoned_sent_at")
+        and _is_abandoned_training_form_ready_for_salesforce(cleaned_fields)
+    ):
+        creer_piste_salesforce(_abandoned_training_form_salesforce_payload(cleaned_fields))
+        draft_entry["salesforce_abandoned_sent_at"] = now_str
+        draft_entry["salesforce_abandoned_status"] = "Formulaire abandonné"
+
+    if (
+        status == "abandoned"
+        and not draft_entry.get("abandoned_mail_sent_at")
+        and _has_required_abandoned_form_contact_fields(cleaned_fields)
+    ):
+        try:
+            envoyer_mail_formulaire_formation_abandonne(data, draft_entry, cleaned_fields)
+        except Exception as e:
+            print("❌ Erreur envoi mail formulaire abandonné :", e)
+            draft_entry["abandoned_mail_error"] = now_str
 
     save_data(data)
     return ("", 204)
@@ -2210,10 +2674,7 @@ def admin_devis_formulaires():
     }
 
     for d in demandes:
-        is_target = (
-            d.get("motif") == "Demande de devis détaillé"
-            or d.get("source") == "demande_infos_formations"
-        )
+        is_target = _est_formulaire_admin_devis(d)
         if not is_target:
             continue
 
@@ -2298,10 +2759,7 @@ def modifier_statut_formulaire_admin_devis(formulaire_id):
     if not demande:
         return jsonify({"ok": False, "error": "not_found"}), 404
 
-    is_target = (
-        demande.get("motif") == "Demande de devis détaillé"
-        or demande.get("source") == "demande_infos_formations"
-    )
+    is_target = _est_formulaire_admin_devis(demande)
     if not is_target:
         return jsonify({"ok": False, "error": "not_found"}), 404
 
@@ -2323,19 +2781,25 @@ def modifier_statut_formulaire_admin_devis(formulaire_id):
 @login_required
 def admin_devis_formulaires_abandonnes():
     data = load_data()
+    if _nettoyer_formulaires_abandonnes_soumis(data):
+        save_data(data)
     formulaires = []
 
-    for draft in data.get("formulaires_abandonnes", []):
-        fields = draft.get("fields") or {}
-        updated = draft.get("updated_at") or draft.get("created_at") or ""
+    abandoned_devis_ids = set()
+    abandoned_form_ids = set()
+
+    def append_abandoned_formulaire(formulaire_id, date_value, fields):
+        if not _has_required_abandoned_form_contact_fields(fields):
+            return
+
         try:
-            sort_date = datetime.datetime.strptime(updated, "%d/%m/%Y %H:%M")
+            sort_date = datetime.datetime.strptime(date_value, "%d/%m/%Y %H:%M")
         except ValueError:
             sort_date = datetime.datetime.min
 
         formulaires.append({
-            "id": draft.get("form_id", ""),
-            "date": updated,
+            "id": formulaire_id,
+            "date": date_value,
             "nom": fields.get("nom", ""),
             "prenom": fields.get("prenom", ""),
             "mail": fields.get("mail", ""),
@@ -2346,7 +2810,45 @@ def admin_devis_formulaires_abandonnes():
             "sort_date": sort_date,
         })
 
+    for draft in data.get("formulaires_abandonnes", []):
+        fields = draft.get("fields") or {}
+        updated = draft.get("updated_at") or draft.get("created_at") or ""
+        append_abandoned_formulaire(draft.get("form_id", ""), updated, fields)
+        if draft.get("abandoned_devis_id"):
+            abandoned_devis_ids.add(draft.get("abandoned_devis_id"))
+        if draft.get("form_id"):
+            abandoned_form_ids.add(draft.get("form_id"))
+
+    for demande in data.get("demandes", []):
+        if not _est_demande_issue_formulaire_abandonne(demande):
+            continue
+        if demande.get("id") in abandoned_devis_ids:
+            continue
+        source_form_id = demande.get("source_formulaire_abandonne_id")
+        if source_form_id and source_form_id in abandoned_form_ids:
+            continue
+
+        try:
+            parsed = json.loads(demande.get("details", "{}"))
+            fields = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            fields = {}
+        fields = {
+            **fields,
+            "nom": fields.get("nom") or demande.get("nom", ""),
+            "prenom": fields.get("prenom") or demande.get("prenom", ""),
+            "mail": fields.get("mail") or demande.get("mail", ""),
+            "telephone": fields.get("telephone") or demande.get("telephone", ""),
+        }
+        append_abandoned_formulaire(demande.get("id", ""), demande.get("date", ""), fields)
+
     formulaires.sort(key=lambda formulaire: formulaire["sort_date"], reverse=True)
+
+    now = datetime.datetime.now()
+    today = now.date()
+    yesterday = today - datetime.timedelta(days=1)
+    current_iso_week = today.isocalendar()[:2]
+
     stats = {
         "today": 0,
         "yesterday": 0,
@@ -2356,6 +2858,18 @@ def admin_devis_formulaires_abandonnes():
         "to_process": len(formulaires),
         "total": len(formulaires),
     }
+    for formulaire in formulaires:
+        form_date = formulaire.get("sort_date")
+        if form_date and form_date != datetime.datetime.min:
+            form_day = form_date.date()
+            if form_day == today:
+                stats["today"] += 1
+            if form_day == yesterday:
+                stats["yesterday"] += 1
+            if form_day.isocalendar()[:2] == current_iso_week:
+                stats["week"] += 1
+            if form_day.year == today.year and form_day.month == today.month:
+                stats["month"] += 1
     return render_template("admin_devis_formulaires_abandonnes.html", formulaires=formulaires, stats=stats)
 
 
@@ -2368,10 +2882,12 @@ def supprimer_formulaire_admin_devis(formulaire_id):
     demandes = data.get("demandes", [])
     to_remove = next((d for d in demandes if d.get("id") == formulaire_id), None)
     if to_remove:
-        is_target = (
-            to_remove.get("motif") == "Demande de devis détaillé"
-            or to_remove.get("source") == "demande_infos_formations"
-        )
+        if _est_demande_issue_formulaire_abandonne(to_remove):
+            demandes.remove(to_remove)
+            save_data(data)
+            return redirect(url_for("admin_devis_formulaires_abandonnes"))
+
+        is_target = _est_formulaire_admin_devis(to_remove)
         if not is_target:
             abort(404)
 
@@ -2388,6 +2904,14 @@ def supprimer_formulaire_admin_devis(formulaire_id):
     abandons = data.get("formulaires_abandonnes", [])
     abandon_to_remove = next((d for d in abandons if d.get("form_id") == formulaire_id), None)
     if abandon_to_remove:
+        abandoned_devis_id = abandon_to_remove.get("abandoned_devis_id")
+        demandes[:] = [
+            d for d in demandes
+            if not (
+                (abandoned_devis_id and d.get("id") == abandoned_devis_id)
+                or d.get("source_formulaire_abandonne_id") == formulaire_id
+            )
+        ]
         abandons.remove(abandon_to_remove)
         save_data(data)
         return redirect(url_for("admin_devis_formulaires_abandonnes"))
@@ -2403,8 +2927,7 @@ def supprimer_tous_formulaires_admin_devis():
 
     formulaires_cibles = [
         d for d in demandes
-        if d.get("motif") == "Demande de devis détaillé"
-        or d.get("source") == "demande_infos_formations"
+        if _est_formulaire_admin_devis(d)
     ]
 
     if not formulaires_cibles:
@@ -2426,11 +2949,14 @@ def supprimer_tous_formulaires_admin_devis():
 def supprimer_tous_formulaires_abandonnes_admin_devis():
     data = load_data()
     abandons = data.get("formulaires_abandonnes", [])
+    demandes = data.get("demandes", [])
+    demandes_sans_abandon = [d for d in demandes if not _est_demande_issue_formulaire_abandonne(d)]
 
-    if not abandons:
+    if not abandons and len(demandes_sans_abandon) == len(demandes):
         return redirect(url_for("admin_devis_formulaires_abandonnes"))
 
     data["formulaires_abandonnes"] = []
+    demandes[:] = demandes_sans_abandon
     save_data(data)
     return redirect(url_for("admin_devis_formulaires_abandonnes"))
 
@@ -2443,12 +2969,12 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     is_abandoned = False
 
     if demande:
-        is_target = (
-            demande.get("motif") == "Demande de devis détaillé"
-            or demande.get("source") == "demande_infos_formations"
-        )
-        if not is_target:
-            abort(404)
+        if _est_demande_issue_formulaire_abandonne(demande):
+            is_abandoned = True
+        else:
+            is_target = _est_formulaire_admin_devis(demande)
+            if not is_target:
+                abort(404)
     else:
         draft = next((d for d in data.get("formulaires_abandonnes", []) if d.get("form_id") == formulaire_id), None)
         if not draft:
@@ -2550,7 +3076,9 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     categorized_infos = [block for block in categories.values() if block["rows"]]
 
     source_label = "Devis détaillé"
-    if demande.get("source") == "demande_infos_formations":
+    if is_abandoned:
+        source_label = "Formulaire abandonné"
+    elif demande.get("source") == "demande_infos_formations":
         source_label = "Infos formations"
 
     formation_value = str(
