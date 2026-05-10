@@ -1724,6 +1724,116 @@ def admin_formation_sessions():
     return render_template("admin_formation_sessions.html", sessions=sessions, formations=PLAN_FORMATIONS, centres=FORMATION_CENTRES)
 
 
+
+
+def _normaliser_email_formulaire(value):
+    return str(value or "").strip().lower()
+
+
+def _normaliser_telephone_formulaire(value):
+    return re.sub(r"\D+", "", str(value or ""))
+
+
+def _est_formulaire_admin_devis(demande):
+    return (
+        demande.get("motif") == "Demande de devis détaillé"
+        or demande.get("source") == "demande_infos_formations"
+    )
+
+
+def _identifiants_formulaires_soumis(demandes):
+    identifiants = {"draft_ids": set(), "emails": set(), "telephones": set()}
+    for demande in demandes:
+        if not _est_formulaire_admin_devis(demande):
+            continue
+
+        details = {}
+        try:
+            parsed = json.loads(demande.get("details", "{}"))
+            if isinstance(parsed, dict):
+                details = parsed
+        except Exception:
+            details = {}
+
+        draft_id = str(details.get("draft_form_id") or demande.get("draft_form_id") or "").strip()
+        if draft_id:
+            identifiants["draft_ids"].add(draft_id)
+
+        email = _normaliser_email_formulaire(demande.get("mail") or details.get("mail"))
+        if email:
+            identifiants["emails"].add(email)
+
+        telephone = _normaliser_telephone_formulaire(demande.get("telephone") or details.get("telephone"))
+        if len(telephone) >= 6:
+            identifiants["telephones"].add(telephone)
+
+    return identifiants
+
+
+def _brouillon_correspond_a_formulaire_soumis(draft, identifiants):
+    fields = draft.get("fields") or {}
+
+    form_id = str(draft.get("form_id") or fields.get("draft_form_id") or "").strip()
+    if form_id and form_id in identifiants["draft_ids"]:
+        return True
+
+    email = _normaliser_email_formulaire(fields.get("mail"))
+    if email and email in identifiants["emails"]:
+        return True
+
+    telephone = _normaliser_telephone_formulaire(fields.get("telephone"))
+    if len(telephone) >= 6 and telephone in identifiants["telephones"]:
+        return True
+
+    return False
+
+
+def _nettoyer_formulaires_abandonnes_soumis(data):
+    abandons = data.get("formulaires_abandonnes", [])
+    if not abandons:
+        return False
+
+    identifiants = _identifiants_formulaires_soumis(data.get("demandes", []))
+    abandons_filtres = [
+        draft for draft in abandons
+        if not _brouillon_correspond_a_formulaire_soumis(draft, identifiants)
+    ]
+
+    if len(abandons_filtres) == len(abandons):
+        return False
+
+    data["formulaires_abandonnes"] = abandons_filtres
+    return True
+
+
+def _supprimer_brouillon_formulaire_soumis(data, form_data):
+    abandons = data.get("formulaires_abandonnes", [])
+    if not abandons:
+        return False
+
+    submitted_draft_id = str(form_data.get("draft_form_id") or "").strip()
+    submitted_email = _normaliser_email_formulaire(form_data.get("mail"))
+    submitted_phone = _normaliser_telephone_formulaire(form_data.get("telephone"))
+
+    def doit_garder(draft):
+        fields = draft.get("fields") or {}
+        if submitted_draft_id and draft.get("form_id") == submitted_draft_id:
+            return False
+        draft_email = _normaliser_email_formulaire(fields.get("mail"))
+        if submitted_email and draft_email == submitted_email:
+            return False
+        draft_phone = _normaliser_telephone_formulaire(fields.get("telephone"))
+        if len(submitted_phone) >= 6 and draft_phone == submitted_phone:
+            return False
+        return True
+
+    abandons_filtres = [draft for draft in abandons if doit_garder(draft)]
+    if len(abandons_filtres) == len(abandons):
+        return False
+
+    data["formulaires_abandonnes"] = abandons_filtres
+    return True
+
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
 def demande_informations_formations():
     data_store = load_data()
@@ -1768,6 +1878,7 @@ def demande_informations_formations():
             "source": "demande_infos_formations"
         }
         data_store.setdefault("demandes", []).append(demande_entry)
+        _supprimer_brouillon_formulaire_soumis(data_store, form_data)
 
         if form_data.get("souhaite_devis") != "OUI":
             rappel = {
@@ -2028,7 +2139,21 @@ def autosave_demande_informations_formations():
 
     status = (payload.get("status") or "draft").strip().lower()
     if status == "submitted":
-        data["formulaires_abandonnes"] = [e for e in entries if e.get("form_id") != form_id]
+        fields = payload.get("fields")
+        if not isinstance(fields, dict):
+            fields = {}
+
+        submitted_email = _normaliser_email_formulaire(fields.get("mail"))
+        submitted_phone = _normaliser_telephone_formulaire(fields.get("telephone"))
+
+        data["formulaires_abandonnes"] = [
+            e for e in entries
+            if not (
+                e.get("form_id") == form_id
+                or (submitted_email and _normaliser_email_formulaire((e.get("fields") or {}).get("mail")) == submitted_email)
+                or (len(submitted_phone) >= 6 and _normaliser_telephone_formulaire((e.get("fields") or {}).get("telephone")) == submitted_phone)
+            )
+        ]
         save_data(data)
         return ("", 204)
 
@@ -2414,6 +2539,8 @@ def modifier_statut_formulaire_admin_devis(formulaire_id):
 @login_required
 def admin_devis_formulaires_abandonnes():
     data = load_data()
+    if _nettoyer_formulaires_abandonnes_soumis(data):
+        save_data(data)
     formulaires = []
 
     for draft in data.get("formulaires_abandonnes", []):
