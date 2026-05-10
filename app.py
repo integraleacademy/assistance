@@ -26,6 +26,7 @@ SALESFORCE_OID = "00DJ9000000PT9F"
 SALESFORCE_LEAD_SOURCE_VALUE = "Google"
 SALESFORCE_INFOS_COMPLEMENTAIRES_FIELD = "00NSa00000GcKVx"
 SALESFORCE_ORIGINE_FIELD = "00NSa00000KPDmX"
+SALESFORCE_CHOIX_DIRIGEANT_DESP_FIELD = "00NSa00000KDPJd"
 ABANDONED_INFOS_COMPLEMENTAIRES_MESSAGE = "FORMULAIRE ABANDONNÉ - Prospect n’a pas terminé le formulaire complet."
 
 def valeur_refus_ft(value):
@@ -77,6 +78,25 @@ def _infos_complementaires_salesforce(form, formulaire_abandonne):
     return infos_existantes
 
 
+def _choix_dirigeant_desp_salesforce(form):
+    formation_text = " ".join([
+        str(form.get("formation", "")),
+        str(form.get("type_formation", "")),
+        str(form.get("choix_dirigeant", "")),
+        str(form.get("desp", "")),
+    ]).lower()
+
+    if "vae" in formation_text:
+        return "DESP VAE"
+    if (
+        "initial" in formation_text
+        or "dirigeant" in formation_text
+        or "desp" in formation_text
+    ):
+        return "DESP INITIAL"
+    return ""
+
+
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
     formulaire_abandonne = _est_payload_formulaire_abandonne(form)
@@ -110,6 +130,8 @@ def creer_piste_salesforce(form):
     cpf_sf = oui_non_map.get(form.get("cpf_consulte", ""), "")
     france_travail_sf = oui_non_map.get(form.get("france_travail", ""), "")
 
+    choix_dirigeant_desp = _choix_dirigeant_desp_salesforce(form)
+
     data = {
         "oid": SALESFORCE_OID,
         "retURL": "https://assistance-alw9.onrender.com/confirmation-demande-informations",
@@ -140,6 +162,8 @@ def creer_piste_salesforce(form):
         ),
         "description": description
     }
+    if choix_dirigeant_desp:
+        data[SALESFORCE_CHOIX_DIRIGEANT_DESP_FIELD] = choix_dirigeant_desp
 
     try:
         print("ENVOI SALESFORCE WEB-TO-LEAD:", SALESFORCE_URL)
@@ -147,6 +171,7 @@ def creer_piste_salesforce(form):
         print("WEB TO LEAD DATA SENT:", data)
         print("LEAD SOURCE SENT:", data.get("lead_source"))
         print("INFOS COMPLEMENTAIRES SENT:", data.get("00NSa00000GcKVx"))
+        print("CHOIX DIRIGEANT DESP SENT:", data.get("00NSa00000KDPJd"))
         print("WEB TO LEAD FIELDS SENT:", list(data.keys()))
         response = requests.post(SALESFORCE_URL, data=data, timeout=10)
         print("SALESFORCE STATUS:", response.status_code)
