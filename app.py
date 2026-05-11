@@ -1499,6 +1499,16 @@ def current_user():
     return USERS.get(ue.lower())
 
 
+def can_manage_admin_devis_rappels():
+    """Autorise Clément et Mohamed à gérer les rappels Demoiselles du téléphone."""
+    user = current_user()
+    if not user:
+        return False
+    if user.get("role") == "admin":
+        return True
+    return (user.get("name") or "").strip().lower() == "mohamed"
+
+
 # -------------------------------------------------------------------
 # Emails (admin, accusé, confirmation)
 # -------------------------------------------------------------------
@@ -2740,9 +2750,14 @@ def formulaire_a_rappeler():
             success = True
 
     return render_template("formulaire_a_rappeler.html", success=success)
+
+
 @app.route("/admin-devis/rappels", methods=["GET"])
 @login_required
 def admin_devis_rappels():
+    if not can_manage_admin_devis_rappels():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     data = load_data()
     rappels = [d for d in data.get("demandes", []) if d.get("motif") == "Formulaire à rappeler"]
     rappels.sort(key=lambda x: x.get("date", ""), reverse=True)
@@ -2752,6 +2767,9 @@ def admin_devis_rappels():
 @app.route("/admin-devis/rappels", methods=["POST"])
 @login_required
 def create_admin_devis_rappel():
+    if not can_manage_admin_devis_rappels():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     data = load_data()
     payload = request.get_json(silent=True) or {}
     entry = {
@@ -2778,9 +2796,12 @@ def create_admin_devis_rappel():
     return jsonify({"ok": True, "item": entry})
 
 
-@app.route("/admin-devis/rappels/<rappel_id>", methods=["PATCH"])
+@app.route("/admin-devis/rappels/<rappel_id>", methods=["PATCH", "POST"])
 @login_required
 def update_admin_devis_rappel(rappel_id):
+    if not can_manage_admin_devis_rappels():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     data = load_data()
     payload = request.get_json(silent=True) or {}
     rappel = next((d for d in data.get("demandes", []) if d.get("id") == rappel_id and d.get("motif") == "Formulaire à rappeler"), None)
@@ -2800,6 +2821,9 @@ def update_admin_devis_rappel(rappel_id):
 @app.route("/admin-devis/rappels/<rappel_id>", methods=["DELETE"])
 @login_required
 def delete_admin_devis_rappel(rappel_id):
+    if not can_manage_admin_devis_rappels():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     data = load_data()
     before = len(data.get("demandes", []))
     data["demandes"] = [d for d in data.get("demandes", []) if not (d.get("id") == rappel_id and d.get("motif") == "Formulaire à rappeler")]
