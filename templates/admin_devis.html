@@ -413,9 +413,13 @@ currentFilter = "envoyer";
 refreshDisplay();
 
 async function loadRappels(){
-  const res = await fetch("/admin-devis/rappels");
-  const data = await res.json();
   const body = document.getElementById("rappels-body");
+  const res = await fetch("/admin-devis/rappels", {credentials:"same-origin"});
+  if (!res.ok) {
+    body.innerHTML = `<tr><td colspan="9">Impossible de charger les rappels.</td></tr>`;
+    return;
+  }
+  const data = await res.json();
   body.innerHTML = "";
   data.forEach(item => {
     const tr = document.createElement("tr");
@@ -432,11 +436,19 @@ document.getElementById("rappels-body").addEventListener("click", async (e) => {
   const id = e.target.dataset.id;
   if (e.target.classList.contains("traite-btn")) {
     const traite = e.target.dataset.traite !== '1';
-    await fetch(`/admin-devis/rappels/${id}`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({traite})});
+    const response = await fetch(`/admin-devis/rappels/${id}`, {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({traite})});
+    if (!response.ok) {
+      alert("Le statut n'a pas pu être enregistré.");
+      return;
+    }
     loadRappels();
   }
   if (e.target.classList.contains("delete-btn")) {
-    await fetch(`/admin-devis/rappels/${id}`, {method:"DELETE"});
+    const response = await fetch(`/admin-devis/rappels/${id}`, {method:"DELETE", credentials:"same-origin"});
+    if (!response.ok) {
+      alert("Le rappel n'a pas pu être supprimé.");
+      return;
+    }
     loadRappels();
   }
 });
@@ -444,7 +456,10 @@ document.getElementById("rappels-body").addEventListener("click", async (e) => {
 document.getElementById("rappels-body").addEventListener("change", async (e) => {
   if (!e.target.classList.contains("commentaire")) return;
   const id = e.target.dataset.id;
-  await fetch(`/admin-devis/rappels/${id}`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({commentaire:e.target.value})});
+  const response = await fetch(`/admin-devis/rappels/${id}`, {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({commentaire:e.target.value})});
+  if (!response.ok) {
+    alert("Le commentaire n'a pas pu être enregistré.");
+  }
 });
 
 loadRappels();
