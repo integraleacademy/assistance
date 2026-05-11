@@ -1307,6 +1307,31 @@ def _envoyer_mail_formulaire_abandonne_depuis_demande(demande: dict, fields: dic
     return ok
 
 
+def _declencher_relance_formulaire_abandonne(record: dict, fields: dict, now_str: str) -> dict:
+    result = {"salesforce": False, "mail": False, "sms": False, "skipped": False}
+    if not _has_required_abandoned_form_contact_fields(fields):
+        result["skipped"] = True
+        record["abandoned_automation_skipped_at"] = now_str
+        record["abandoned_automation_skip_reason"] = "Coordonnées incomplètes"
+        return result
+
+    if not record.get("salesforce_abandoned_sent_at"):
+        creer_piste_salesforce(_abandoned_training_form_salesforce_payload(fields))
+        record["salesforce_abandoned_sent_at"] = now_str
+        record["salesforce_abandoned_status"] = ABANDONED_FORM_LABEL
+        result["salesforce"] = True
+
+    if not record.get("abandoned_mail_sent_at"):
+        result["mail"] = envoyer_mail_formulaire_formation_abandonne(record, fields)
+
+    if not record.get("abandoned_sms_sent_at"):
+        result["sms"] = envoyer_sms_formulaire_formation_abandonne(record, fields)
+
+    record["auto_abandoned_sent_at"] = record.get("auto_abandoned_sent_at") or now_str
+    record["abandoned_automation_status"] = "Relance automatique déclenchée"
+    return result
+
+
 def _format_selected_session_date(dates_txt: str) -> str:
     if not dates_txt:
         return ""
@@ -2550,13 +2575,9 @@ def autosave_demande_informations_formations():
         entries.append(draft_entry)
 
     if status == "abandoned":
-        # Un évènement pagehide/beforeunload peut être déclenché lors d'un simple
-        # rafraîchissement, d'un changement d'onglet ou d'une navigation temporaire.
-        # On conserve donc uniquement le brouillon côté admin : aucun lead
-        # Salesforce, e-mail ou SMS ne doit partir automatiquement depuis
-        # l'autosave. La relance reste une action manuelle depuis l'administration.
         draft_entry["abandoned_at"] = draft_entry.get("abandoned_at") or now_str
-        draft_entry["abandoned_status"] = "Formulaire abandonné"
+        draft_entry["abandoned_status"] = ABANDONED_FORM_LABEL
+        _declencher_relance_formulaire_abandonne(draft_entry, cleaned_fields, now_str)
 
     save_data(data)
     return ("", 204)
@@ -3016,20 +3037,19 @@ def relancer_formulaire_abandonne_admin_devis(formulaire_id):
         flash("Impossible de relancer : nom, prénom, email et téléphone sont nécessaires.", "error")
         return redirect(url_for("admin_devis_formulaires_abandonnes"))
 
-    creer_piste_salesforce(_abandoned_training_form_salesforce_payload(fields))
-
     if draft:
-        draft["salesforce_abandoned_sent_at"] = draft.get("salesforce_abandoned_sent_at") or now_str
-        draft["salesforce_abandoned_status"] = "Formulaire abandonné"
         draft["manual_abandoned_sent_at"] = now_str
-        mail_ok = envoyer_mail_formulaire_formation_abandonne(draft, fields)
-        sms_ok = envoyer_sms_formulaire_formation_abandonne(draft, fields)
+        _declencher_relance_formulaire_abandonne(draft, fields, now_str)
+        mail_ok = bool(draft.get("abandoned_mail_sent_at"))
+        sms_ok = bool(draft.get("abandoned_sms_sent_at"))
     else:
+        if not demande.get("salesforce_abandoned_sent_at"):
+            creer_piste_salesforce(_abandoned_training_form_salesforce_payload(fields))
         demande["salesforce_abandoned_sent_at"] = demande.get("salesforce_abandoned_sent_at") or now_str
-        demande["salesforce_abandoned_status"] = "Formulaire abandonné"
+        demande["salesforce_abandoned_status"] = ABANDONED_FORM_LABEL
         demande["manual_abandoned_sent_at"] = now_str
-        mail_ok = _envoyer_mail_formulaire_abandonne_depuis_demande(demande, fields)
-        sms_ok = envoyer_sms_formulaire_formation_abandonne(demande, fields)
+        mail_ok = bool(demande.get("abandoned_mail_sent_at")) or _envoyer_mail_formulaire_abandonne_depuis_demande(demande, fields)
+        sms_ok = bool(demande.get("abandoned_sms_sent_at")) or envoyer_sms_formulaire_formation_abandonne(demande, fields)
 
     save_data(data)
 
