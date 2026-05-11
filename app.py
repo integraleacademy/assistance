@@ -1529,9 +1529,9 @@ def envoyer_mail_admin(demande):
 
 
 def envoyer_mail_formulaire_rappel_admin(callback_data):
-    sujet = "📞 Nouveau formulaire à rappeler — Admin devis"
+    sujet = "Formulaire Demoiselles du Téléphone"
     plain = (
-        "Nouveau formulaire à rappeler :\n\n"
+        "Formulaire Demoiselles du Téléphone :\n\n"
         f"Nom: {callback_data.get('nom', '')}\n"
         f"Prénom: {callback_data.get('prenom', '')}\n"
         f"Email: {callback_data.get('mail', '')}\n"
@@ -1549,14 +1549,14 @@ def envoyer_mail_formulaire_rappel_admin(callback_data):
       <tr><td style="padding:6px 8px;color:#555;">Créneau de rappel</td><td style="padding:6px 8px;">{callback_data.get('creneau_rappel', '')}</td></tr>
     """
     html = _wrap_html(
-        '<h1 style="margin:0 0 12px;font-size:20px;">📞 Nouveau formulaire à rappeler</h1>',
+        '<h1 style="margin:0 0 12px;font-size:20px;">Formulaire Demoiselles du Téléphone</h1>',
         f"""
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;">
           {rows}
         </table>
         """
     )
-    send_email_html("clement@integraleacademy.com", sujet, plain, html)
+    send_email_html("clement@integraleacademy.com, cassandre@integraleacademy.com", sujet, plain, html)
 def envoyer_mail_accuse(demande):
     sujet = "📩 Accusé de réception — Intégrale Academy"
     plain = (
