@@ -2752,6 +2752,18 @@ def formulaire_a_rappeler():
     return render_template("formulaire_a_rappeler.html", success=success)
 
 
+def _rappel_est_traite(rappel):
+    statut = str(rappel.get("statut") or "").strip().lower()
+    return bool(rappel.get("traite")) or statut in {"traite", "traité"}
+
+
+def _normaliser_rappel_telephone(rappel):
+    """Garde le booléen `traite` et le libellé `statut` synchronisés."""
+    rappel["traite"] = _rappel_est_traite(rappel)
+    rappel["statut"] = "Traité" if rappel["traite"] else "A rappeler"
+    return rappel
+
+
 @app.route("/admin-devis/rappels", methods=["GET"])
 @login_required
 def admin_devis_rappels():
@@ -2760,6 +2772,15 @@ def admin_devis_rappels():
 
     data = load_data()
     rappels = [d for d in data.get("demandes", []) if d.get("motif") == "Formulaire à rappeler"]
+    changed = False
+    for rappel in rappels:
+        previous_traite = rappel.get("traite")
+        previous_statut = rappel.get("statut")
+        _normaliser_rappel_telephone(rappel)
+        if rappel.get("traite") != previous_traite or rappel.get("statut") != previous_statut:
+            changed = True
+    if changed:
+        save_data(data)
     rappels.sort(key=lambda x: x.get("date", ""), reverse=True)
     return jsonify(rappels)
 
@@ -2810,9 +2831,9 @@ def update_admin_devis_rappel(rappel_id):
 
     if "traite" in payload:
         rappel["traite"] = bool(payload.get("traite"))
-        rappel["statut"] = "Traité" if rappel["traite"] else "A rappeler"
     if "commentaire" in payload:
         rappel["commentaire"] = str(payload.get("commentaire") or "")
+    _normaliser_rappel_telephone(rappel)
 
     save_data(data)
     return jsonify({"ok": True, "item": rappel})

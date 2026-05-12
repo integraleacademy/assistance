@@ -181,6 +181,7 @@ tbody tr:nth-child(even){
     cursor:not-allowed;
 }
 .btn-change{ background:#0d6efd; }
+.btn-reopen{ background:#f97316; }
 .btn-delete{ background:#dc3545; }
 
 
@@ -423,10 +424,13 @@ async function loadRappels(){
   body.innerHTML = "";
   data.forEach(item => {
     const tr = document.createElement("tr");
-    tr.className = `rappel-row ${item.traite ? 'traite' : ''}`;
+    const isTreated = item.traite === true || item.statut === "Traité";
+    const statusButtonClass = isTreated ? "btn-reopen" : "btn-change";
+    const statusButtonLabel = isTreated ? "À rappeler" : "Traité";
+    tr.className = `rappel-row ${isTreated ? 'traite' : ''}`;
     tr.innerHTML = `<td>${item.date||''}</td><td>${item.nom||''}</td><td>${item.prenom||''}</td><td>${item.mail||''}</td><td>${item.telephone||''}</td><td class="objet-col" title="${item.objet_appel||''}">${item.objet_appel||''}</td><td>${item.creneau_rappel||''}</td>
       <td><textarea data-id="${item.id}" class="commentaire">${item.commentaire||''}</textarea></td>
-      <td><div class="rappel-actions"><button class="action-mini btn-change traite-btn" data-id="${item.id}" data-traite="${item.traite ? '1':'0'}">Traité</button>
+      <td><div class="rappel-actions"><button class="action-mini ${statusButtonClass} traite-btn" data-id="${item.id}" data-traite="${isTreated ? '1':'0'}">${statusButtonLabel}</button>
       <button class="action-mini btn-delete delete-btn" data-id="${item.id}">Supprimer</button></div></td>`;
     body.appendChild(tr);
   });
@@ -435,7 +439,9 @@ async function loadRappels(){
 document.getElementById("rappels-body").addEventListener("click", async (e) => {
   const id = e.target.dataset.id;
   if (e.target.classList.contains("traite-btn")) {
-    const traite = e.target.dataset.traite !== '1';
+    const currentlyTreated = e.target.dataset.traite === '1';
+    if (currentlyTreated && !confirm("Remettre ce rappel en À rappeler ?")) return;
+    const traite = !currentlyTreated;
     const response = await fetch(`/admin-devis/rappels/${id}`, {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({traite})});
     if (!response.ok) {
       alert("Le statut n'a pas pu être enregistré.");
