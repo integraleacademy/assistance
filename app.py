@@ -1332,6 +1332,66 @@ def _declencher_relance_formulaire_abandonne(record: dict, fields: dict, now_str
     return result
 
 
+def _parse_datetime_paris(value: str):
+    try:
+        return datetime.datetime.strptime(str(value or ""), "%d/%m/%Y %H:%M")
+    except (TypeError, ValueError):
+        return None
+
+
+def _delai_relance_formulaire_abandonne_minutes() -> int:
+    try:
+        return max(1, int(os.getenv("ABANDONED_FORM_AUTO_RELAUNCH_DELAY_MINUTES", "15")))
+    except (TypeError, ValueError):
+        return 15
+
+
+def _formulaire_abandonne_doit_declencher_relance(record: dict, now_dt=None) -> bool:
+    if not isinstance(record, dict):
+        return False
+
+    fields = record.get("fields") or {}
+    if not _has_required_abandoned_form_contact_fields(fields):
+        return False
+
+    if (
+        record.get("salesforce_abandoned_sent_at")
+        and record.get("abandoned_mail_sent_at")
+        and record.get("abandoned_sms_sent_at")
+    ):
+        return False
+
+    if record.get("abandoned_at") or record.get("abandoned_status") == ABANDONED_FORM_LABEL:
+        return True
+
+    last_update = _parse_datetime_paris(record.get("updated_at") or record.get("created_at"))
+    if not last_update:
+        return False
+
+    now_dt = now_dt or datetime.datetime.now(pytz.timezone("Europe/Paris")).replace(tzinfo=None)
+    age = now_dt - last_update
+    return age >= datetime.timedelta(minutes=_delai_relance_formulaire_abandonne_minutes())
+
+
+def _declencher_relances_formulaires_abandonnes_eligibles(data: dict) -> bool:
+    now_dt = datetime.datetime.now(pytz.timezone("Europe/Paris")).replace(tzinfo=None)
+    now_str = now_dt.strftime("%d/%m/%Y %H:%M")
+    changed = False
+
+    for draft in data.get("formulaires_abandonnes", []):
+        if not _formulaire_abandonne_doit_declencher_relance(draft, now_dt):
+            continue
+
+        draft["abandoned_at"] = draft.get("abandoned_at") or now_str
+        draft["abandoned_status"] = ABANDONED_FORM_LABEL
+        draft["auto_abandoned_trigger_reason"] = (
+            "Formulaire abandonné détecté automatiquement après inactivité"
+        )
+        _declencher_relance_formulaire_abandonne(draft, draft.get("fields") or {}, now_str)
+        changed = True
+
+    return changed
+
 def _format_selected_session_date(dates_txt: str) -> str:
     if not dates_txt:
         return ""
@@ -2975,7 +3035,9 @@ def modifier_statut_formulaire_admin_devis(formulaire_id):
 @login_required
 def admin_devis_formulaires_abandonnes():
     data = load_data()
-    if _nettoyer_formulaires_abandonnes_soumis(data):
+    data_changed = _nettoyer_formulaires_abandonnes_soumis(data)
+    data_changed = _declencher_relances_formulaires_abandonnes_eligibles(data) or data_changed
+    if data_changed:
         save_data(data)
     formulaires = []
 
