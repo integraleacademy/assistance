@@ -34,6 +34,14 @@ Dans `demande_informations_formations()`, le modèle est choisi par `form_data.g
   - HTML généré inline via `_wrap_html(...)`
   - Sujet: `Votre demande de renseignements – Intégrale Academy`
 
+
+## Formulaires abandonnés
+
+Les relances de formulaires abandonnés sont envoyées par `envoyer_mail_formulaire_formation_abandonne()` et `_envoyer_mail_formulaire_abandonne_depuis_demande()` dans `app.py`.
+
+- Pour `DESP_VAE`, la relance utilise toujours le même modèle HTML que le formulaire soumis : `templates/emails/vae_desp.html` via `build_vae_desp_email_html(prenom, devis_url)`.
+- Pour les autres formations, la relance conserve le modèle générique `templates/emails/abandoned_training.html`.
+
 ## Fonctions HTML à modifier
 
 Toutes ces fonctions sont dans `app.py`:
