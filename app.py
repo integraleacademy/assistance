@@ -1048,6 +1048,21 @@ def build_vae_desp_email_html(prenom, devis_url):
     return _render_email_template("vae_desp.html", prenom=prenom, devis_url=devis_url)
 
 
+def build_vae_desp_email_plain(prenom, devis_url):
+    return (
+        f"Bonjour {prenom},\n\n"
+        "Je fais suite à votre demande de renseignements concernant notre VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
+        "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+        f"Télécharger votre devis détaillé : {devis_url}\n"
+        "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
+        "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
+        "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
+        "Clément VAILLANT\nDirecteur – Intégrale Academy"
+    )
+
+
+def _is_vae_desp_formation(formation_code: str) -> bool:
+    return str(formation_code or "").strip() == "DESP_VAE"
 
 
 
@@ -1251,13 +1266,26 @@ def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis
 
 
 
+def _abandoned_training_email_content(prenom: str, formation_code: str, devis_url: str = ""):
+    if _is_vae_desp_formation(formation_code):
+        return (
+            "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)",
+            build_vae_desp_email_plain(prenom, devis_url),
+            build_vae_desp_email_html(prenom, devis_url),
+        )
+
+    config = _abandoned_training_config(formation_code)
+    return (
+        f"Votre demande d'informations - {config['short']}",
+        build_abandoned_training_email_plain(prenom, formation_code, devis_url),
+        build_abandoned_training_email_html(prenom, formation_code, devis_url),
+    )
+
+
 def envoyer_mail_formulaire_formation_abandonne(draft_entry: dict, fields: dict) -> bool:
     formation_code = fields.get("formation", "")
-    config = _abandoned_training_config(formation_code)
     prenom = fields.get("prenom", "")
-    subject = f"Votre demande d'informations - {config['short']}"
-    plain = build_abandoned_training_email_plain(prenom, formation_code)
-    html_body = build_abandoned_training_email_html(prenom, formation_code)
+    subject, plain, html_body = _abandoned_training_email_content(prenom, formation_code)
     ok = send_email_html(fields.get("mail"), subject, plain, html_body)
     now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
     if ok:
@@ -1292,11 +1320,8 @@ def _envoyer_mail_formulaire_abandonne_depuis_demande(demande: dict, fields: dic
 
     devis_url = url_for("plan_public", token=token_plan, _external=True)
     formation_code = fields.get("formation", "")
-    config = _abandoned_training_config(formation_code)
     prenom = fields.get("prenom", "")
-    subject = f"Votre demande d'informations - {config['short']}"
-    plain = build_abandoned_training_email_plain(prenom, formation_code, devis_url)
-    html_body = build_abandoned_training_email_html(prenom, formation_code, devis_url)
+    subject, plain, html_body = _abandoned_training_email_content(prenom, formation_code, devis_url)
     ok = send_email_html(fields.get("mail"), subject, plain, html_body)
     now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
     if ok:
