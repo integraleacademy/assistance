@@ -149,45 +149,26 @@
                   </colgroup>
                   <tr><th>Session</th><th>Date examen</th><th>Badge rouge</th><th class="actions-col">Actions</th></tr>
                   {% for item in rows %}
+                    {% set row_form_id = "session-form-" ~ centre ~ "-" ~ code ~ "-" ~ loop.index0 %}
                     <tr>
                       <td>
-                        <form method="POST" class="autosave-form">
-                          <input type="hidden" name="action" value="update">
-                          <input type="hidden" name="centre" value="{{ centre }}">
-                          <input type="hidden" name="formation" value="{{ code }}">
-                          <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                          <input name="label" value="{{ item.label }}" placeholder="Session">
-                        </form>
+                        <input form="{{ row_form_id }}" name="label" value="{{ item.label }}" placeholder="Session">
                       </td>
                       <td>
-                        <form method="POST" class="autosave-form">
-                          <input type="hidden" name="action" value="update">
-                          <input type="hidden" name="centre" value="{{ centre }}">
-                          <input type="hidden" name="formation" value="{{ code }}">
-                          <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                          <input name="date_examen" type="date" value="{{ item.date_examen or '' }}">
-                        </form>
+                        <input form="{{ row_form_id }}" name="date_examen" type="date" value="{{ item.date_examen or '' }}">
                       </td>
                       <td>
-                        <form method="POST" class="autosave-form">
-                          <input type="hidden" name="action" value="update">
-                          <input type="hidden" name="centre" value="{{ centre }}">
-                          <input type="hidden" name="formation" value="{{ code }}">
-                          <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                          <input name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place dispo">
-                        </form>
+                        <input form="{{ row_form_id }}" name="badge" value="{{ item.badge }}" placeholder="COMPLET / 1 place dispo">
                       </td>
                       <td class="actions-col">
                         <div class="actions">
-                          <form method="POST" class="autosave-form">
+                          <form id="{{ row_form_id }}" method="POST" class="autosave-form">
                             <input type="hidden" name="action" value="update">
                             <input type="hidden" name="centre" value="{{ centre }}">
                             <input type="hidden" name="formation" value="{{ code }}">
                             <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                            <input type="hidden" name="label" value="{{ item.label }}">
-                            <input type="hidden" name="date_examen" value="{{ item.date_examen or '' }}">
-                            <input type="hidden" name="badge" value="{{ item.badge }}">
                             <button class="u" type="submit">💾</button>
+                            <span class="autosave-status" aria-live="polite"></span>
                           </form>
                           <form method="POST" style="display:inline">
                             <input type="hidden" name="action" value="delete">
@@ -224,6 +205,7 @@
 <script>
 (() => {
   const timers = new Map();
+  const dirtyForms = new Set();
   const delayMs = 700;
 
   function setStatus(form, message, className = "") {
@@ -242,6 +224,7 @@
         credentials: "same-origin"
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      dirtyForms.delete(form);
       setStatus(form, "Enregistré", "saved");
     } catch (error) {
       setStatus(form, "Erreur de sauvegarde", "error");
@@ -250,6 +233,7 @@
   }
 
   function queueSave(form) {
+    dirtyForms.add(form);
     const existing = timers.get(form);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => submitForm(form), delayMs);
@@ -259,11 +243,22 @@
   document.querySelectorAll("form.autosave-form").forEach((form) => {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      queueSave(form);
+      submitForm(form);
     });
-    form.querySelectorAll("input").forEach((input) => {
+    Array.from(form.elements).forEach((input) => {
       input.addEventListener("input", () => queueSave(form));
       input.addEventListener("change", () => queueSave(form));
+    });
+  });
+
+  window.addEventListener("beforeunload", () => {
+    dirtyForms.forEach((form) => {
+      const existing = timers.get(form);
+      if (existing) clearTimeout(existing);
+      navigator.sendBeacon(
+        window.location.pathname,
+        new URLSearchParams(new FormData(form))
+      );
     });
   });
 
