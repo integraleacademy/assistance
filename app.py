@@ -2175,9 +2175,10 @@ def admin_formation_sessions():
             except:
                 idx = -1
             if 0 <= idx < len(sessions[centre][formation]):
-                sessions[centre][formation][idx]["label"] = (request.form.get("label") or "").strip()
-                sessions[centre][formation][idx]["badge"] = (request.form.get("badge") or "").strip()
-                sessions[centre][formation][idx]["date_examen"] = (request.form.get("date_examen") or "").strip()
+                current_row = sessions[centre][formation][idx]
+                for field in ("label", "badge", "date_examen"):
+                    if field in request.form:
+                        current_row[field] = (request.form.get(field) or "").strip()
         elif action == "delete":
             try:
                 idx = int(idx_raw)
