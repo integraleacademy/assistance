@@ -6,363 +6,569 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-body{
-    font-family: Arial, Helvetica, sans-serif;
-    background:#f5f6f8;
+:root{
+    --navy:#0f172a;
+    --navy-2:#111c3d;
+    --blue:#2563eb;
+    --blue-2:#38bdf8;
+    --purple:#7c3aed;
+    --green:#10b981;
+    --orange:#f97316;
+    --red:#ef4444;
+    --amber:#f59e0b;
+    --slate:#64748b;
+    --muted:#f8fafc;
+    --line:#e2e8f0;
+    --card:rgba(255,255,255,.88);
+    --shadow:0 24px 70px rgba(15,23,42,.16);
+    --shadow-soft:0 16px 36px rgba(15,23,42,.10);
 }
-.container{
-    max-width:1200px;
-    margin:30px auto;
-    background:white;
-    padding:25px;
-    border-radius:14px;
-    box-shadow:0 8px 25px rgba(0,0,0,0.08);
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+    margin:0;
+    min-height:100vh;
+    font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color:var(--navy);
+    background:
+        radial-gradient(circle at 8% 10%, rgba(37,99,235,.18), transparent 30%),
+        radial-gradient(circle at 92% 6%, rgba(124,58,237,.16), transparent 26%),
+        linear-gradient(135deg,#eef4ff 0%,#f8fafc 46%,#fff7ed 100%);
+}
+body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    background-image:linear-gradient(rgba(15,23,42,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,.035) 1px, transparent 1px);
+    background-size:42px 42px;
+    mask-image:linear-gradient(to bottom, #000, transparent 72%);
+}
+.page-shell{
+    width:min(1480px, calc(100% - 36px));
+    margin:28px auto 44px;
+    position:relative;
+}
+.hero{
+    position:relative;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.55);
+    border-radius:32px;
+    padding:28px;
+    background:linear-gradient(135deg, rgba(15,23,42,.96), rgba(30,41,80,.94) 55%, rgba(37,99,235,.92));
+    color:white;
+    box-shadow:var(--shadow);
+}
+.hero::after{
+    content:"";
+    position:absolute;
+    width:420px;
+    height:420px;
+    right:-140px;
+    top:-190px;
+    border-radius:999px;
+    background:radial-gradient(circle, rgba(56,189,248,.46), rgba(56,189,248,0) 68%);
+}
+.hero-top{
+    position:relative;
+    z-index:1;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:24px;
+}
+.brand{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    min-width:0;
+}
+.logo-card{
+    width:112px;
+    height:112px;
+    flex:0 0 112px;
+    display:grid;
+    place-items:center;
+    border-radius:24px;
+    background:rgba(255,255,255,.96);
+    box-shadow:0 16px 42px rgba(0,0,0,.24);
+}
+.logo-card img{
+    width:92px;
+    height:92px;
+    object-fit:contain;
+    display:block;
+}
+.kicker{
+    margin:0 0 8px;
+    color:#bfdbfe;
+    font-size:12px;
+    font-weight:900;
+    letter-spacing:.16em;
+    text-transform:uppercase;
 }
 h1{
-    margin-top:0;
+    margin:0;
+    font-size:clamp(30px, 4vw, 52px);
+    line-height:.95;
+    letter-spacing:-.055em;
 }
-
-/* Outils */
-.tools{
+.hero-badges{
     display:flex;
-    flex-wrap:wrap;
     align-items:stretch;
+    justify-content:flex-end;
+    flex-wrap:wrap;
     gap:12px;
+}
+.metric-card{
+    min-width:132px;
+    padding:14px 16px;
+    border:1px solid rgba(255,255,255,.18);
+    border-radius:22px;
+    background:rgba(255,255,255,.10);
+    backdrop-filter:blur(14px);
+    text-align:left;
+}
+.metric-card strong{
+    display:block;
+    font-size:30px;
+    line-height:1;
+    letter-spacing:-.04em;
+}
+.metric-card span{
+    display:block;
+    margin-top:7px;
+    color:#dbeafe;
+    font-size:12px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+}
+.content-card{
+    margin-top:-18px;
+    position:relative;
+    z-index:2;
+    background:var(--card);
+    backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.8);
+    border-radius:30px;
+    padding:22px;
+    box-shadow:var(--shadow-soft);
+}
+.tools{
+    display:grid;
+    grid-template-columns:minmax(260px, .8fr) minmax(300px, 1fr) minmax(520px, 1.6fr);
+    gap:14px;
+    align-items:stretch;
     margin-bottom:20px;
 }
 .tool-group{
     display:flex;
-    flex-wrap:wrap;
     align-items:stretch;
-    gap:8px;
+    gap:10px;
 }
 .filter-group{
-    flex:0 1 auto;
+    padding:6px;
+    border:1px solid var(--line);
+    border-radius:20px;
+    background:#f8fafc;
 }
-.search-group{
-    flex:1 1 300px;
-    min-width:260px;
-}
-.actions-group{
-    flex:2 1 520px;
-}
+.search-group{position:relative;}
 .tools button,
 .tool-link{
-    min-height:48px;
-    border:none;
-    padding:10px 16px;
-    border-radius:12px;
+    min-height:52px;
+    border:0;
+    border-radius:16px;
     cursor:pointer;
     font-size:14px;
     line-height:1.15;
-    font-weight:700;
+    font-weight:900;
     text-decoration:none;
     display:inline-flex;
     align-items:center;
     justify-content:center;
-    gap:8px;
+    gap:9px;
     text-align:center;
-    box-sizing:border-box;
-    box-shadow:0 8px 18px rgba(15,23,42,.08);
-    transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
+    transition:transform .18s ease, box-shadow .18s ease, filter .18s ease, background .18s ease, color .18s ease;
 }
 .tools button{
-    min-width:110px;
-    background:#eef2f7;
-    color:#111827;
+    flex:1 1 0;
+    padding:10px 14px;
+    background:transparent;
+    color:#475569;
+}
+.tools button:hover,
+.tools button.active{
+    transform:translateY(-1px);
+    color:white;
+    background:linear-gradient(135deg, var(--blue), var(--purple));
+    box-shadow:0 14px 28px rgba(37,99,235,.26);
 }
 .tool-link{
     flex:1 1 170px;
-    max-width:230px;
+    padding:12px 15px;
     color:white;
+    box-shadow:0 13px 27px rgba(15,23,42,.12);
 }
-.tool-link:hover,
-.tools button:hover{
-    transform:translateY(-1px);
-    box-shadow:0 10px 22px rgba(15,23,42,.12);
-    filter:brightness(.98);
+.tool-link:hover{
+    transform:translateY(-2px);
+    box-shadow:0 18px 34px rgba(15,23,42,.18);
+    filter:saturate(1.08) brightness(1.02);
 }
-.tools button.active{
-    background:#0d6efd;
-    color:white;
-}
+.actions-group{flex-wrap:wrap;}
 #search{
     width:100%;
-    min-height:48px;
-    padding:10px 16px;
-    border:1px solid #cfd4dc;
-    border-radius:12px;
+    min-height:64px;
+    padding:12px 20px 12px 52px;
+    border:1px solid var(--line);
+    border-radius:20px;
+    background:#fff;
+    color:var(--navy);
     font-size:15px;
-    box-sizing:border-box;
-    box-shadow:inset 0 1px 2px rgba(15,23,42,.05);
+    font-weight:700;
+    outline:none;
+    box-shadow:inset 0 1px 2px rgba(15,23,42,.04);
+    transition:border-color .18s ease, box-shadow .18s ease;
 }
-.btn-simulate{ background:#20c997; }
-.btn-form-new{ background:#f97316; }
-.btn-dates{ background:#7c3aed; }
-.btn-processing{ background:#0f766e; }
-.btn-abandoned{ background:#b45309; }
-.btn-callback{ background:#2563eb; }
-.btn-rappels{ background:#0f766e; }
-@media (max-width: 900px){
-    .container{
-        margin:15px;
-        padding:18px;
-    }
-    .filter-group,
-    .search-group,
-    .actions-group{
-        flex-basis:100%;
-    }
-    .tools button,
-    .tool-link{
-        flex:1 1 150px;
-        max-width:none;
-    }
+#search:focus{
+    border-color:rgba(37,99,235,.65);
+    box-shadow:0 0 0 4px rgba(37,99,235,.12);
 }
-
-/* Tableau */
+.search-group::before{
+    content:"🔎";
+    position:absolute;
+    left:20px;
+    top:50%;
+    transform:translateY(-50%);
+    z-index:1;
+    font-size:18px;
+}
+.btn-simulate{ background:linear-gradient(135deg,#14b8a6,#22c55e); }
+.btn-form-new{ background:linear-gradient(135deg,#f97316,#f59e0b); }
+.btn-dates{ background:linear-gradient(135deg,#7c3aed,#a855f7); }
+.btn-processing{ background:linear-gradient(135deg,#0f766e,#06b6d4); }
+.btn-abandoned{ background:linear-gradient(135deg,#92400e,#f97316); }
+.btn-callback{ background:linear-gradient(135deg,#1d4ed8,#38bdf8); }
+.btn-rappels{ background:linear-gradient(135deg,#0f172a,#475569); }
+.section-header{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:16px;
+    margin:20px 4px 14px;
+}
+.section-title{margin:0;font-size:22px;letter-spacing:-.035em;}
+.section-caption{margin:6px 0 0;color:var(--slate);font-weight:700;font-size:13px;}
+.table-wrap{
+    overflow:auto;
+    border:1px solid var(--line);
+    border-radius:24px;
+    background:white;
+    box-shadow:0 12px 28px rgba(15,23,42,.06);
+}
 table{
     width:100%;
-    border-collapse:collapse;
+    border-collapse:separate;
+    border-spacing:0;
+    min-width:980px;
 }
 thead{
-    background:#f0f2f5;
+    background:linear-gradient(180deg,#f8fafc,#f1f5f9);
 }
 th, td{
-    padding:10px 8px;
+    padding:16px 14px;
     font-size:14px;
-    border-bottom:1px solid #eee;
+    border-bottom:1px solid #edf2f7;
+    text-align:left;
+    vertical-align:middle;
 }
-
-/* Alternance */
-tbody tr:nth-child(odd){
-    background:#ffffff;
+th{
+    color:#475569;
+    font-size:12px;
+    font-weight:950;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    white-space:nowrap;
 }
-tbody tr:nth-child(even){
-    background:#f7f7f7;
+tbody tr{
+    background:#fff;
+    transition:background .16s ease, transform .16s ease, box-shadow .16s ease;
 }
-
-/* Badges */
+tbody tr:nth-child(even){background:#fbfdff;}
+tbody tr:hover{background:#eff6ff;}
+.person-name{font-weight:950;color:#0f172a;}
+.formation-cell{font-weight:800;color:#1e293b;}
+.date-chip{
+    display:inline-flex;
+    align-items:center;
+    padding:7px 10px;
+    border-radius:999px;
+    background:#f1f5f9;
+    color:#475569;
+    font-weight:800;
+    font-size:12px;
+}
 .badge{
-    padding:4px 10px;
-    border-radius:14px;
-    font-size:11px;
-    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:8px 12px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:950;
+    white-space:nowrap;
 }
-.badge-red{
-    background:#fdecea;
-    color:#c0392b;
-}
-.badge-green{
-    background:#eafaf1;
-    color:#1e8449;
-}
-
-/* Actions compactes */
+.badge-red{background:#fff1f2;color:#be123c;border:1px solid #fecdd3;}
+.badge-green{background:#ecfdf5;color:#047857;border:1px solid #bbf7d0;}
+.actions-cell{white-space:nowrap;}
 .action-mini{
-    padding:5px 9px;
-    margin-right:4px;
-    border-radius:6px;
-    border:none;
-    font-size:11px;
+    min-width:36px;
+    min-height:36px;
+    padding:8px 10px;
+    margin:2px;
+    border-radius:12px;
+    border:0;
+    font-size:13px;
     cursor:pointer;
     color:white;
     text-decoration:none !important;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:900;
+    box-shadow:0 8px 18px rgba(15,23,42,.14);
+    transition:transform .16s ease, filter .16s ease, box-shadow .16s ease;
 }
-.action-mini:hover{
-    text-decoration:none !important;
-}
-
-.btn-plan{ background:#6f42c1; }
-.btn-voir{ background:#343a40; }
-.btn-send{ background:#198754; }
-.btn-send.disabled{
-    background:#adb5bd;
-    cursor:not-allowed;
-}
-.btn-change{ background:#0d6efd; }
+.action-mini:hover{transform:translateY(-1px);filter:brightness(1.03);box-shadow:0 10px 22px rgba(15,23,42,.18);}
+.btn-plan{ background:#6d28d9; }
+.btn-voir{ background:#1f2937; }
+.btn-send{ background:#059669; }
+.btn-send.disabled{background:#94a3b8;cursor:not-allowed;}
+.btn-change{ background:#2563eb; }
 .btn-reopen{ background:#f97316; }
-.btn-delete{ background:#dc3545; }
-
-
-.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:999;}
-.modal{background:#fff;width:min(760px,95vw);border-radius:12px;padding:18px;}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.form-grid .full{grid-column:1 / -1;}
-.form-grid input,.form-grid textarea{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;}
-.form-grid textarea{min-height:110px;resize:vertical;}
-.rappel-row.traite{background:#d1fae5 !important;}
-#rappels-section th.objet-col,
-#rappels-section td.objet-col{
-    width:28%;
+.btn-delete{ background:#dc2626; }
+.empty-hint{
+    display:none;
+    margin:0 0 18px;
+    padding:16px 18px;
+    border-radius:18px;
+    background:#fff7ed;
+    border:1px solid #fed7aa;
+    color:#9a3412;
+    font-weight:850;
 }
-#rappels-section th:nth-child(7),
-#rappels-section td:nth-child(7){ width:8%; }
-#rappels-section th:nth-child(8),
-#rappels-section td:nth-child(8){ width:12%; }
-#rappels-section th:nth-child(9),
-#rappels-section td:nth-child(9){ width:6%; }
-#rappels-section td.objet-col{
-    white-space:normal;
-    line-height:1.35;
-}
+.rappels-card{margin-top:26px;}
+#rappels-section th.objet-col,#rappels-section td.objet-col{width:28%;}
+#rappels-section th:nth-child(7),#rappels-section td:nth-child(7){ width:8%; }
+#rappels-section th:nth-child(8),#rappels-section td:nth-child(8){ width:12%; }
+#rappels-section th:nth-child(9),#rappels-section td:nth-child(9){ width:6%; }
+#rappels-section td.objet-col{white-space:normal;line-height:1.35;}
 #rappels-section .commentaire{
     box-sizing:border-box;
-    min-height:62px;
+    min-height:68px;
     width:100%;
     resize:vertical;
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:10px;
+    font-family:inherit;
+    outline:none;
 }
-#rappels-section .rappel-actions{
-    display:flex;
-    flex-direction:column;
-    gap:6px;
+#rappels-section .commentaire:focus{border-color:rgba(37,99,235,.65);box-shadow:0 0 0 4px rgba(37,99,235,.10);}
+#rappels-section .rappel-actions{display:flex;flex-direction:column;gap:7px;}
+#rappels-section .rappel-actions .action-mini{margin-right:0;}
+.rappel-row.traite{background:#ecfdf5 !important;}
+.legend{
+    margin-top:20px;
+    padding:18px;
+    border:1px solid var(--line);
+    border-radius:22px;
+    background:linear-gradient(180deg,#fff,#f8fafc);
+    color:#475569;
+    font-size:13px;
+    font-weight:750;
 }
-#rappels-section .rappel-actions .action-mini{
-    margin-right:0;
+.legend strong{color:#0f172a;}
+.legend-grid{margin-top:12px;display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:999;}
+.modal{background:#fff;width:min(760px,95vw);border-radius:20px;padding:20px;box-shadow:var(--shadow);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.form-grid .full{grid-column:1 / -1;}
+.form-grid input,.form-grid textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:12px;}
+.form-grid textarea{min-height:110px;resize:vertical;}
+@media (max-width: 1180px){
+    .tools{grid-template-columns:1fr;}
+    .hero-top{align-items:flex-start;flex-direction:column;}
+    .hero-badges{justify-content:flex-start;}
 }
-
+@media (max-width: 760px){
+    .page-shell{width:min(100% - 20px, 1480px);margin:10px auto 24px;}
+    .hero{padding:20px;border-radius:24px;}
+    .brand{align-items:flex-start;}
+    .logo-card{width:82px;height:82px;flex-basis:82px;border-radius:20px;}
+    .logo-card img{width:68px;height:68px;}
+    .content-card{padding:14px;border-radius:24px;}
+    .filter-group,.actions-group{flex-wrap:wrap;}
+    .tools button,.tool-link{flex:1 1 145px;}
+    .metric-card{flex:1 1 120px;}
+}
 </style>
 </head>
 
 <body>
-<div class="container">
+<div class="page-shell">
+    <header class="hero">
+        <div class="hero-top">
+            <div class="brand">
+                <a class="logo-card" href="{{ url_for('admin') }}" aria-label="Retour à l'administration Intégrale Academy">
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
+                </a>
+                <div>
+                    <p class="kicker">Intégrale Academy · Admin commercial</p>
+                    <h1>Demandes de devis</h1>
+                </div>
+            </div>
+            <div class="hero-badges" aria-label="Statistiques des devis">
+                <div class="metric-card"><strong id="metric-total">0</strong><span>Total</span></div>
+                <div class="metric-card"><strong id="metric-pending">0</strong><span>À envoyer</span></div>
+                <div class="metric-card"><strong id="metric-sent">0</strong><span>Envoyés</span></div>
+            </div>
+        </div>
+    </header>
 
-<h1>📄 Demandes de devis</h1>
+    <main class="content-card">
+        <div class="tools">
+            <div class="tool-group filter-group" aria-label="Filtres de statut">
+                <button id="filtre-tous" class="active">Tous</button>
+                <button id="filtre-envoyer">À envoyer</button>
+                <button id="filtre-envoyes">Envoyés</button>
+            </div>
+            <div class="tool-group search-group">
+                <input type="text" id="search" placeholder="Rechercher un nom, prénom, formation…">
+            </div>
+            <div class="tool-group actions-group" aria-label="Actions rapides">
+                <a class="tool-link btn-simulate" href="{{ url_for('simulateur_plan_financement') }}" target="_blank">⚡ Simuler un plan</a>
+                <a class="tool-link btn-form-new" href="{{ url_for('demande_informations_formations') }}" target="_blank">✨ Ouvrir le formulaire</a>
+                <a class="tool-link btn-dates" href="{{ url_for('admin_formation_sessions') }}">🗓️ Gérer les dates</a>
+                <a class="tool-link btn-processing" href="{{ url_for('admin_devis_formulaires') }}">🧾 Traiter les formulaires</a>
+                <a class="tool-link btn-abandoned" href="{{ url_for('admin_devis_formulaires_abandonnes') }}">🕘 Formulaires abandonnés</a>
+                <a href="/formulaire-a-rappeler" target="_blank" rel="noopener" class="tool-link btn-callback">📞 Formulaire à rappeler</a>
+                <a href="#rappels-section" id="show-rappels" class="tool-link btn-rappels">☎️ Demoiselles du téléphone</a>
+            </div>
+        </div>
 
-<!-- 🔹 Barre outils -->
-<div class="tools">
-    <div class="tool-group filter-group" aria-label="Filtres de statut">
-        <button id="filtre-tous" class="active">Tous</button>
-        <button id="filtre-envoyer">À envoyer</button>
-        <button id="filtre-envoyes">Envoyés</button>
-    </div>
-    <div class="tool-group search-group">
-        <input type="text" id="search" placeholder="🔍 Rechercher un nom, prénom, formation…">
-    </div>
-    <div class="tool-group actions-group" aria-label="Actions rapides">
-        <a class="tool-link btn-simulate" href="{{ url_for('simulateur_plan_financement') }}" target="_blank">⚡ Simuler un plan</a>
-        <a class="tool-link btn-form-new" href="{{ url_for('demande_informations_formations') }}" target="_blank">✨ Ouvrir le formulaire</a>
-        <a class="tool-link btn-dates" href="{{ url_for('admin_formation_sessions') }}">🗓️ Gérer les dates</a>
-        <a class="tool-link btn-processing" href="{{ url_for('admin_devis_formulaires') }}">🧾 Traiter les formulaires</a>
-        <a class="tool-link btn-abandoned" href="{{ url_for('admin_devis_formulaires_abandonnes') }}">🕘 Formulaires abandonnés</a>
-        <a href="/formulaire-a-rappeler" target="_blank" rel="noopener" class="tool-link btn-callback">📞 Formulaire à rappeler</a>
-        <a href="#rappels-section" id="show-rappels" class="tool-link btn-rappels">Demoiselles du téléphone</a>
-    </div>
-</div>
+        <section aria-labelledby="devis-title">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title" id="devis-title">Pipeline devis</h2>
+                    <p class="section-caption">Filtre par défaut sur les devis à envoyer pour accélérer le traitement commercial.</p>
+                </div>
+            </div>
+            <p class="empty-hint" id="empty-hint">Aucun devis ne correspond à ce filtre ou à cette recherche.</p>
+            <div class="table-wrap">
+                <table id="devis-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Nom</th>
+                        <th>Prénom</th>
+                        <th>Formation</th>
+                        <th>Dates réelles VTC</th>
+                        <th>Statut</th>
+                        <th>Action</th>
+                    </tr>
+                    </thead>
 
-<table id="devis-table">
-<thead>
-<tr>
-    <th>Date</th>
-    <th>Nom</th>
-    <th>Prénom</th>
-    <th>Formation</th>
-    <th>Dates réelles VTC</th>
-    <th>Statut</th>
-    <th>Action</th>
-</tr>
-</thead>
+                    <tbody id="table-body">
+                    {% for d in devis %}
+                    <tr class="row"
+                        data-statut="{% if d.statut_devis == 'Envoyé' %}envoye{% else %}a_envoyer{% endif %}"
+                        data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation ~ ' ' ~ (d.infos.dates_reelles_formation_vtc or ''))|lower }}">
+                        <td><span class="date-chip">{{ d.date }}</span></td>
+                        <td class="person-name">
+                            {{ d.nom }}
+                            {% if d.notation_interne == "CHAUD" %}
+                                <span title="Prospect chaud" style="font-size:16px;margin-left:5px;">🔥</span>
+                            {% endif %}
+                        </td>
+                        <td class="person-name">{{ d.prenom }}</td>
+                        <td class="formation-cell">{{ d.infos.formation }}</td>
+                        <td>{{ d.infos.dates_reelles_formation_vtc or '—' }}</td>
+                        <td>
+                            {% if d.statut_devis == "Envoyé" %}
+                                <span class="badge badge-green">● Envoyé</span>
+                            {% else %}
+                                <span class="badge badge-red">● À envoyer</span>
+                            {% endif %}
+                        </td>
+                        <td class="actions-cell">
+                            <a href="{{ url_for('plan_financement_devis', devis_id=d.id) }}" target="_blank" class="action-mini btn-plan" title="Plan de financement">📄</a>
+                            <a href="{{ url_for('voir_dossier_devis', devis_id=d.id) }}" target="_blank" class="action-mini btn-voir" title="Voir le dossier">👁️</a>
+                            <form method="POST" action="{{ url_for('envoyer_plan_financement', devis_id=d.id) }}" style="display:inline;">
+                                <button type="submit" class="action-mini btn-send {% if d.statut_devis == 'Envoyé' %}disabled{% endif %}" title="Envoyer par e-mail">📧</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('toggle_devis', devis_id=d.id) }}" style="display:inline;">
+                                <button class="action-mini btn-change" title="Changer le statut">🔄</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('delete_devis', devis_id=d.id) }}" style="display:inline;" onsubmit="return confirm('Supprimer définitivement ?');">
+                                <button class="action-mini btn-delete" title="Supprimer">🗑️</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
 
-<tbody id="table-body">
-{% for d in devis %}
-<tr class="row"
-    data-statut="{% if d.statut_devis == 'Envoyé' %}envoye{% else %}a_envoyer{% endif %}"
+        <section id="rappels-section" class="rappels-card" aria-labelledby="rappels-title">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title" id="rappels-title">Demoiselles du téléphone</h2>
+                    <p class="section-caption">Suivi des appels, commentaires et statuts de rappel.</p>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Date</th><th>Nom</th><th>Prénom</th><th>Mail</th><th>Téléphone</th><th class="objet-col">Objet</th><th>Créneau</th><th>Commentaire</th><th>Actions</th></tr></thead>
+                    <tbody id="rappels-body"></tbody>
+                </table>
+            </div>
+        </section>
 
-    data-search="{{ (d.nom ~ ' ' ~ d.prenom ~ ' ' ~ d.infos.formation ~ ' ' ~ (d.infos.dates_reelles_formation_vtc or ''))|lower }}">
-    
-    <td>{{ d.date }}</td>
-
-    <td>
-        {{ d.nom }}
-        {% if d.notation_interne == "CHAUD" %}
-            <span style="font-size:16px;margin-left:5px;">🔥</span>
-        {% endif %}
-    </td>
-
-    <td>{{ d.prenom }}</td>
-    <td>{{ d.infos.formation }}</td>
-    <td>{{ d.infos.dates_reelles_formation_vtc or '—' }}</td>
-
-    <td>
-        {% if d.statut_devis == "Envoyé" %}
-            <span class="badge badge-green">Envoyé</span>
-        {% else %}
-            <span class="badge badge-red">À envoyer</span>
-        {% endif %}
-    </td>
-
-    <td>
-
-        <a href="{{ url_for('plan_financement_devis', devis_id=d.id) }}"
-           target="_blank"
-           class="action-mini btn-plan">📄</a>
-
-        <a href="{{ url_for('voir_dossier_devis', devis_id=d.id) }}"
-           target="_blank"
-           class="action-mini btn-voir">👁️</a>
-
-        <form method="POST"
-              action="{{ url_for('envoyer_plan_financement', devis_id=d.id) }}"
-              style="display:inline;">
-            <button type="submit"
-                class="action-mini btn-send {% if d.statut_devis == 'Envoyé' %}disabled{% endif %}">
-                📧
-            </button>
-        </form>
-
-        <form method="POST"
-              action="{{ url_for('toggle_devis', devis_id=d.id) }}"
-              style="display:inline;">
-            <button class="action-mini btn-change">🔄</button>
-        </form>
-
-        <form method="POST"
-              action="{{ url_for('delete_devis', devis_id=d.id) }}"
-              style="display:inline;"
-              onsubmit="return confirm('Supprimer définitivement ?');">
-            <button class="action-mini btn-delete">🗑️</button>
-        </form>
-
-    </td>
-
-</tr>
-{% endfor %}
-</tbody>
-</table>
-    
-<div id="rappels-section" style="margin-top:28px;">
-    <h2>Demoiselles du téléphone</h2>
-    <table>
-      <thead><tr><th>Date</th><th>Nom</th><th>Prénom</th><th>Mail</th><th>Téléphone</th><th class="objet-col">Objet</th><th>Créneau</th><th>Commentaire</th><th>Actions</th></tr></thead>
-      <tbody id="rappels-body"></tbody>
-    </table>
-</div>
-
-
-
-    <!-- 🔹 Légende des actions -->
-<div style="margin-top:20px;padding-top:15px;border-top:1px solid #eee;font-size:13px;color:#444;">
-    <strong>Légende :</strong>
-    <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:12px;">
-        <div><span class="action-mini btn-plan">📄</span> Plan de financement</div>
-        <div><span class="action-mini btn-voir">👁️</span> Voir le dossier</div>
-        <div><span class="action-mini btn-send">📧</span> Envoyer par e-mail</div>
-        <div><span class="action-mini btn-change">🔄</span> Changer le statut</div>
-        <div><span class="action-mini btn-delete">🗑️</span> Supprimer</div>
-    </div>
-</div>
-
+        <div class="legend">
+            <strong>Légende des actions</strong>
+            <div class="legend-grid">
+                <div><span class="action-mini btn-plan">📄</span> Plan de financement</div>
+                <div><span class="action-mini btn-voir">👁️</span> Voir le dossier</div>
+                <div><span class="action-mini btn-send">📧</span> Envoyer par e-mail</div>
+                <div><span class="action-mini btn-change">🔄</span> Changer le statut</div>
+                <div><span class="action-mini btn-delete">🗑️</span> Supprimer</div>
+            </div>
+        </div>
+    </main>
 </div>
 
 <script>
 const search = document.getElementById("search");
 const rows = document.querySelectorAll(".row");
+const emptyHint = document.getElementById("empty-hint");
 
 let currentFilter = "envoyer";
+
+function updateMetrics() {
+    const total = rows.length;
+    const pending = Array.from(rows).filter(r => r.dataset.statut === "a_envoyer").length;
+    const sent = Array.from(rows).filter(r => r.dataset.statut === "envoye").length;
+    document.getElementById("metric-total").textContent = total;
+    document.getElementById("metric-pending").textContent = pending;
+    document.getElementById("metric-sent").textContent = sent;
+}
 
 // --- Fonction centrale : applique recherche + filtre ---
 function refreshDisplay() {
     const q = search.value.toLowerCase();
+    let visibleCount = 0;
 
     rows.forEach(r => {
         const matchesSearch = r.dataset.search.includes(q);
@@ -376,9 +582,12 @@ function refreshDisplay() {
             matchesFilter = (statut === "envoye");
         }
 
-
-        r.style.display = (matchesSearch && matchesFilter) ? "" : "none";
+        const isVisible = matchesSearch && matchesFilter;
+        r.style.display = isVisible ? "" : "none";
+        if (isVisible) visibleCount += 1;
     });
+
+    if (emptyHint) emptyHint.style.display = visibleCount === 0 ? "block" : "none";
 }
 
 // --- Recherche live ---
@@ -386,7 +595,7 @@ search.addEventListener("input", refreshDisplay);
 
 // --- Changement de filtre ---
 function setActive(btn){
-    document.querySelectorAll(".tools button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".filter-group button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
 }
 
@@ -411,6 +620,7 @@ document.getElementById("filtre-envoyes").onclick = e => {
 // --- Filtre par défaut : À envoyer ---
 setActive(document.getElementById("filtre-envoyer"));
 currentFilter = "envoyer";
+updateMetrics();
 refreshDisplay();
 
 async function loadRappels(){
@@ -480,4 +690,3 @@ if (window.location.hash === "#rappels-section") {
 
 </body>
 </html>
-
