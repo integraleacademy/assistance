@@ -820,6 +820,25 @@ def supprimer_fichier(filename):
     if os.path.exists(chemin):
         os.remove(chemin)
 
+
+def supprimer_fichiers_demande(demande):
+    """Supprime définitivement les fichiers liés à une demande.
+
+    À utiliser uniquement quand la demande est supprimée définitivement
+    (ex: vidage des archives), pas lors d'un simple archivage.
+    """
+    if not demande:
+        return
+
+    supprimer_fichier(demande.get("justificatif"))
+
+    for pj in demande.get("pieces_jointes", []) or []:
+        supprimer_fichier(pj)
+
+    for reponse in demande.get("reponses", []) or []:
+        for pj in reponse.get("pj", []) or []:
+            supprimer_fichier(pj)
+
 # -------------------------------------------------------------------
 # Email helper
 # -------------------------------------------------------------------
@@ -2065,9 +2084,6 @@ def admin():
             to_remove = next((d for d in demandes if d["id"] == demande_id), None)
             if to_remove:
                 data["archives"].append(to_remove)
-                supprimer_fichier(to_remove.get("justificatif"))
-                for pj in to_remove.get("pieces_jointes", []):
-                    supprimer_fichier(pj)
                 data["demandes"].remove(to_remove)
                 save_data(data)
             return redirect_with_query()
@@ -2077,9 +2093,6 @@ def admin():
             traitees = [d for d in demandes if d.get("statut") == "Traité"]
             for d in traitees:
                 data["archives"].append(d)
-                supprimer_fichier(d.get("justificatif"))
-                for pj in d.get("pieces_jointes", []):
-                    supprimer_fichier(pj)
                 data["demandes"].remove(d)
             save_data(data)
             return redirect_with_query()
@@ -3217,10 +3230,6 @@ def supprimer_formulaire_admin_devis(formulaire_id):
             abort(404)
 
         data.setdefault("archives", []).append(to_remove)
-        supprimer_fichier(to_remove.get("justificatif"))
-        for pj in to_remove.get("pieces_jointes", []):
-            supprimer_fichier(pj)
-
         demandes.remove(to_remove)
         save_data(data)
         return redirect(url_for("admin_devis_formulaires"))
@@ -3260,9 +3269,6 @@ def supprimer_tous_formulaires_admin_devis():
 
     data.setdefault("archives", []).extend(formulaires_cibles)
     for demande in formulaires_cibles:
-        supprimer_fichier(demande.get("justificatif"))
-        for pj in demande.get("pieces_jointes", []):
-            supprimer_fichier(pj)
         demandes.remove(demande)
 
     save_data(data)
@@ -3752,6 +3758,9 @@ def archives():
         action = request.form.get("action")
         if action == "delete_one":
             archive_id = request.form.get("id")
+            archive_to_delete = next((a for a in data["archives"] if a.get("id") == archive_id), None)
+            if archive_to_delete:
+                supprimer_fichiers_demande(archive_to_delete)
             data["archives"] = [a for a in data["archives"] if a["id"] != archive_id]
             save_data(data)
         elif action == "restore_one":
@@ -3767,6 +3776,8 @@ def archives():
                 data["archives"] = []
                 save_data(data)
         elif action == "clear":
+            for archive in data.get("archives", []):
+                supprimer_fichiers_demande(archive)
             data["archives"] = []
             save_data(data)
         return redirect(url_for("archives"))
