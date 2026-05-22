@@ -17,7 +17,9 @@
     .q h3{margin:0 0 10px;font-size:16px}
     .opts{display:flex;gap:10px}
     .opts label{flex:1;border:1px solid #cbd5e1;border-radius:12px;padding:10px;background:#fff;font-weight:700}
-    .submit{width:100%;border:0;border-radius:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;padding:14px;font-size:16px;font-weight:900;cursor:pointer}
+    .submit{width:100%;border:0;border-radius:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);background-size:220% 220%;color:#fff;padding:14px;font-size:16px;font-weight:900;cursor:pointer;animation:ctaGlow 2.2s ease-in-out infinite;box-shadow:0 10px 24px rgba(37,99,235,.35);transition:transform .2s ease,box-shadow .2s ease}
+    .submit:hover{transform:translateY(-1px);box-shadow:0 14px 28px rgba(124,58,237,.42)}
+    .submit:active{transform:translateY(0)}
     .result{display:none;margin-top:14px;padding:16px;border-radius:16px;border:1px solid #cbd5e1;background:#fff}
     .result h2{margin:0 0 8px}
     .cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
@@ -26,6 +28,7 @@
     .phone{font-weight:900;margin-top:10px;display:block}
     .eligible{animation:pulse .8s ease-in-out 2}
     @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.02)}100%{transform:scale(1)}}
+    @keyframes ctaGlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
     #confetti{position:fixed;inset:0;pointer-events:none}
     .loading-overlay{position:fixed;inset:0;background:rgba(15,23,42,.72);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:60}
     .loading-box{width:min(620px,92vw);background:#fff;border-radius:24px;padding:30px 22px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.25)}
@@ -58,7 +61,7 @@
   </div>
 </div>
 <div class="shell"><div class="card">
-  <div class="head"><img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy"><div><h1>Eligibilité VAE DESP</h1><p>Simulateur public à partager ✨</p></div></div>
+  <div class="head"><img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy"><div><h1>Testez votre éligibilité à la VAE Dirigeant d’entreprise de sécurité privée (DESP)</h1></div></div>
   <div class="content">
     <div class="q"><h3>1. Avez-vous déjà une carte professionnelle CNAPS ?</h3><div class="opts"><label><input type="radio" name="q1" value="oui"> Oui</label><label><input type="radio" name="q1" value="non"> Non</label></div></div>
     <div class="q"><h3>2. Avez-vous déjà créé, repris ou dirigé une entreprise, même hors secteur sécurité privée ?</h3><div class="opts"><label><input type="radio" name="q2" value="oui"> Oui</label><label><input type="radio" name="q2" value="non"> Non</label></div></div>
