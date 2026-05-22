@@ -250,6 +250,7 @@ h1{
 .btn-abandoned{ background:linear-gradient(135deg,#92400e,#f97316); }
 .btn-callback{ background:linear-gradient(135deg,#1d4ed8,#38bdf8); }
 .btn-rappels{ background:linear-gradient(135deg,#0f172a,#475569); }
+.btn-vae{ background:linear-gradient(135deg,#0ea5e9,#4f46e5); }
 .section-header{
     display:flex;
     align-items:flex-end;
@@ -392,6 +393,47 @@ tbody tr:hover{background:#eff6ff;}
 .legend-grid{margin-top:12px;display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;}
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:999;}
 .modal{background:#fff;width:min(760px,95vw);border-radius:20px;padding:20px;box-shadow:var(--shadow);}
+.vae-modal-backdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(2,6,23,.66);
+    backdrop-filter:blur(4px);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:1200;
+    padding:22px;
+}
+.vae-modal{
+    width:min(860px, 100%);
+    max-height:92vh;
+    overflow:auto;
+    border-radius:30px;
+    background:linear-gradient(180deg,#f8fbff 0%,#eef4ff 100%);
+    box-shadow:0 28px 66px rgba(15,23,42,.36);
+    border:1px solid rgba(255,255,255,.9);
+}
+.vae-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 20px;background:#0f172a;color:#fff;border-radius:30px 30px 0 0;}
+.vae-brand{display:flex;align-items:center;gap:12px;}
+.vae-brand img{width:54px;height:54px;border-radius:14px;background:#fff;padding:6px;object-fit:contain;}
+.vae-header h3{margin:0;font-size:20px;letter-spacing:-.02em;}
+.vae-header p{margin:4px 0 0;color:#bfdbfe;font-weight:600;font-size:13px;}
+.vae-close{border:0;background:#1e293b;color:#fff;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;}
+.vae-content{padding:18px 20px 24px;}
+.vae-question{background:#fff;border:1px solid #dbeafe;border-radius:18px;padding:14px 14px 12px;margin-bottom:12px;box-shadow:0 8px 20px rgba(37,99,235,.08);}
+.vae-question h4{margin:0 0 10px;font-size:15px;}
+.vae-options{display:flex;gap:10px;}
+.vae-options label{flex:1;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;font-weight:700;background:#f8fafc;cursor:pointer;}
+.vae-options input{margin-right:8px;}
+.vae-submit{margin-top:8px;width:100%;border:0;border-radius:16px;padding:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:16px;font-weight:900;cursor:pointer;}
+.vae-result{margin-top:14px;padding:16px;border-radius:16px;background:#fff;border:1px solid #cbd5e1;display:none;}
+.vae-result h4{margin:0 0 8px;font-size:22px;letter-spacing:-.02em;}
+.vae-note{margin:0 0 10px;font-weight:700;}
+.vae-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
+.vae-actions a{flex:1 1 220px;text-decoration:none;text-align:center;padding:11px 12px;border-radius:12px;font-weight:900;}
+.vae-primary{background:#16a34a;color:#fff;}
+.vae-secondary{background:#1d4ed8;color:#fff;}
+.vae-phone{display:block;margin-top:10px;font-weight:900;color:#0f172a;}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .form-grid .full{grid-column:1 / -1;}
 .form-grid input,.form-grid textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:12px;}
@@ -454,6 +496,7 @@ tbody tr:hover{background:#eff6ff;}
                 <a class="tool-link btn-abandoned" href="{{ url_for('admin_devis_formulaires_abandonnes') }}">🕘 Formulaires abandonnés</a>
                 <a href="/formulaire-a-rappeler" target="_blank" rel="noopener" class="tool-link btn-callback">📞 Formulaire à rappeler</a>
                 <a href="#rappels-section" id="show-rappels" class="tool-link btn-rappels">☎️ Demoiselles du téléphone</a>
+                <button type="button" id="open-vae-simulator" class="tool-link btn-vae">🎓 Eligibilité VAE</button>
             </div>
         </div>
 
@@ -547,6 +590,29 @@ tbody tr:hover{background:#eff6ff;}
             </div>
         </div>
     </main>
+</div>
+<div class="vae-modal-backdrop" id="vae-modal-backdrop" aria-hidden="true">
+    <div class="vae-modal" role="dialog" aria-modal="true" aria-labelledby="vae-title">
+        <div class="vae-header">
+            <div class="vae-brand">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
+                <div>
+                    <h3 id="vae-title">Simulateur d’éligibilité VAE DESP</h3>
+                    <p>Évaluez votre profil et choisissez la meilleure suite.</p>
+                </div>
+            </div>
+            <button class="vae-close" id="close-vae-simulator" type="button">Fermer ✕</button>
+        </div>
+        <div class="vae-content">
+            <div class="vae-question" data-q="q1"><h4>1. Avez-vous déjà une carte professionnelle CNAPS ?</h4><div class="vae-options"><label><input type="radio" name="q1" value="oui">Oui</label><label><input type="radio" name="q1" value="non">Non</label></div></div>
+            <div class="vae-question" data-q="q2"><h4>2. Avez-vous déjà créé, repris ou dirigé une entreprise, même hors secteur sécurité privée ?</h4><div class="vae-options"><label><input type="radio" name="q2" value="oui">Oui</label><label><input type="radio" name="q2" value="non">Non</label></div></div>
+            <div class="vae-question" data-q="q3"><h4>3. Avez-vous une expérience en gestion d’entreprise, management, encadrement d’équipe ou comptabilité ?</h4><div class="vae-options"><label><input type="radio" name="q3" value="oui">Oui</label><label><input type="radio" name="q3" value="non">Non</label></div></div>
+            <div class="vae-question" data-q="q4"><h4>4. Avez-vous un diplôme en gestion, comptabilité, management ou gestion d’entreprise ?</h4><div class="vae-options"><label><input type="radio" name="q4" value="oui">Oui</label><label><input type="radio" name="q4" value="non">Non</label></div></div>
+            <div class="vae-question" data-q="q5"><h4>5. Disposez-vous de documents pour justifier votre expérience ?</h4><div class="vae-options"><label><input type="radio" name="q5" value="oui">Oui</label><label><input type="radio" name="q5" value="non">Non</label></div></div>
+            <button class="vae-submit" id="run-vae-simulator" type="button">Voir mon résultat</button>
+            <div class="vae-result" id="vae-result"></div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -684,6 +750,76 @@ if (window.location.hash === "#rappels-section") {
   const devisTable = document.getElementById("devis-table");
   if (devisTable) devisTable.style.display = "none";
 }
+
+const vaeModalBackdrop = document.getElementById("vae-modal-backdrop");
+const openVaeButton = document.getElementById("open-vae-simulator");
+const closeVaeButton = document.getElementById("close-vae-simulator");
+const runVaeButton = document.getElementById("run-vae-simulator");
+const vaeResult = document.getElementById("vae-result");
+
+function toggleVaeModal(show) {
+  vaeModalBackdrop.style.display = show ? "flex" : "none";
+  vaeModalBackdrop.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
+function getAnswer(name) {
+  const selected = document.querySelector(`input[name="${name}"]:checked`);
+  return selected ? selected.value : null;
+}
+
+openVaeButton.addEventListener("click", () => toggleVaeModal(true));
+closeVaeButton.addEventListener("click", () => toggleVaeModal(false));
+vaeModalBackdrop.addEventListener("click", (event) => {
+  if (event.target === vaeModalBackdrop) toggleVaeModal(false);
+});
+
+runVaeButton.addEventListener("click", () => {
+  const answers = {
+    q1: getAnswer("q1"),
+    q2: getAnswer("q2"),
+    q3: getAnswer("q3"),
+    q4: getAnswer("q4"),
+    q5: getAnswer("q5")
+  };
+
+  const unanswered = Object.entries(answers).filter(([, value]) => !value).map(([key]) => key.toUpperCase());
+  if (unanswered.length > 0) {
+    vaeResult.style.display = "block";
+    vaeResult.innerHTML = `<h4>Réponses incomplètes</h4><p>Merci de répondre à toutes les questions avant de lancer le résultat.</p>`;
+    return;
+  }
+
+  const hasEntrepriseExperience = answers.q2 === "oui" || answers.q3 === "oui" || answers.q4 === "oui";
+  const eligible = answers.q5 === "oui" && hasEntrepriseExperience;
+  const q1Message = answers.q1 === "oui"
+    ? "Votre expérience sécurité privée est un atout pour votre dossier."
+    : "Ce n’est pas bloquant. Un module e-learning pourra vous permettre d’acquérir les compétences liées à la sécurité privée.";
+
+  let title = "";
+  let body = "";
+  if (!hasEntrepriseExperience) {
+    title = "La VAE DESP ne semble pas adaptée à votre profil.";
+    body = "Nous vous conseillons plutôt la formation DESP initiale pour obtenir le titre de Dirigeant d’Entreprise de Sécurité Privée.";
+  } else if (answers.q5 === "non") {
+    title = "Votre dossier nécessite des justificatifs.";
+    body = "Pour une VAE, vous devez pouvoir prouver votre expérience avec des documents : Kbis, fiches de paie, contrat de travail, attestations, documents comptables…";
+  } else if (eligible) {
+    title = "Bonne nouvelle, votre profil semble éligible à la VAE DESP.";
+    body = "Vous pouvez démarrer votre dossier de recevabilité en ligne. Notre plateforme vous guide étape par étape.";
+  }
+
+  vaeResult.style.display = "block";
+  vaeResult.innerHTML = `
+    <h4>${title}</h4>
+    <p>${body}</p>
+    <p class="vae-note">${q1Message}</p>
+    <div class="vae-actions">
+      <a class="vae-primary" href="https://gestionstagiaires-r5no.onrender.com/vae-desp" target="_blank" rel="noopener">Démarrer ma VAE DESP</a>
+      <a class="vae-secondary" href="https://assistance-alw9.onrender.com/demande-informations-formations" target="_blank" rel="noopener">Être rappelé par un conseiller</a>
+    </div>
+    <span class="vae-phone">Téléphone : 04 22 47 07 68</span>
+  `;
+});
 
 </script>
 
