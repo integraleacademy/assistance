@@ -35,6 +35,8 @@
     .full-result{display:none;min-height:100vh;padding:34px 18px 56px}.full-result.show{display:block}
     .result-panel{max-width:1100px;margin:0 auto;padding:36px;border-radius:28px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-lg)}
     .result-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.result-brand{display:flex;align-items:center;justify-content:flex-end;flex:1;min-width:180px}
+.result-brand img{max-height:72px;width:auto;object-fit:contain}
     .tag{display:inline-flex;align-items:center;padding:8px 14px;border-radius:999px;background:#dbeafe;color:#1e40af;font-weight:800;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
     .result-title{margin:14px 0 10px;font-size:clamp(34px,5vw,60px);line-height:1.02;letter-spacing:-.03em;max-width:16ch}
     .result-body{margin:0;color:#334155;font-size:clamp(20px,2.9vw,32px);line-height:1.25;max-width:30ch}
@@ -74,7 +76,12 @@
 </div></div>
 <section class="full-result" id="full-result">
   <div class="result-panel">
-    <span class="tag" id="result-tag">Résultat personnalisé</span>
+    <div class="result-top">
+      <span class="tag" id="result-tag">Résultat personnalisé</span>
+      <div class="result-brand">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
+      </div>
+    </div>
     <h2 class="result-title" id="full-title"></h2>
     <p class="result-body" id="full-body"></p>
     <p class="result-note" id="full-note"></p>
