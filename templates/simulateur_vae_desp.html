@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulateur d'éligibilité VAE DESP</title>
+  <style>
+    body{margin:0;font-family:Inter,system-ui,sans-serif;background:radial-gradient(circle at top,#dbeafe,#eff6ff 40%,#f8fafc);color:#0f172a}
+    .shell{max-width:980px;margin:24px auto;padding:16px}
+    .card{background:#fff;border-radius:24px;box-shadow:0 20px 50px rgba(15,23,42,.15);overflow:hidden}
+    .head{padding:20px;background:linear-gradient(135deg,#0f172a,#1d4ed8);color:#fff;display:flex;align-items:center;gap:12px}
+    .head img{width:58px;height:58px;background:#fff;border-radius:14px;padding:6px}
+    .head h1{margin:0;font-size:28px}
+    .head p{margin:4px 0 0;color:#bfdbfe}
+    .content{padding:20px}
+    .q{border:1px solid #dbeafe;border-radius:16px;padding:14px;margin-bottom:12px;background:#f8fbff}
+    .q h3{margin:0 0 10px;font-size:16px}
+    .opts{display:flex;gap:10px}
+    .opts label{flex:1;border:1px solid #cbd5e1;border-radius:12px;padding:10px;background:#fff;font-weight:700}
+    .submit{width:100%;border:0;border-radius:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;padding:14px;font-size:16px;font-weight:900;cursor:pointer}
+    .result{display:none;margin-top:14px;padding:16px;border-radius:16px;border:1px solid #cbd5e1;background:#fff}
+    .result h2{margin:0 0 8px}
+    .cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .cta a{text-decoration:none;color:#fff;padding:11px 12px;border-radius:10px;font-weight:900;flex:1 1 220px;text-align:center}
+    .c1{background:#16a34a}.c2{background:#1d4ed8}
+    .phone{font-weight:900;margin-top:10px;display:block}
+    .eligible{animation:pulse .8s ease-in-out 2}
+    @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.02)}100%{transform:scale(1)}}
+    #confetti{position:fixed;inset:0;pointer-events:none}
+  </style>
+</head>
+<body>
+<canvas id="confetti"></canvas>
+<div class="shell"><div class="card">
+  <div class="head"><img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy"><div><h1>Eligibilité VAE DESP</h1><p>Simulateur public à partager ✨</p></div></div>
+  <div class="content">
+    <div class="q"><h3>1. Avez-vous déjà une carte professionnelle CNAPS ?</h3><div class="opts"><label><input type="radio" name="q1" value="oui"> Oui</label><label><input type="radio" name="q1" value="non"> Non</label></div></div>
+    <div class="q"><h3>2. Avez-vous déjà créé, repris ou dirigé une entreprise, même hors secteur sécurité privée ?</h3><div class="opts"><label><input type="radio" name="q2" value="oui"> Oui</label><label><input type="radio" name="q2" value="non"> Non</label></div></div>
+    <div class="q"><h3>3. Avez-vous une expérience en gestion d’entreprise, management, encadrement d’équipe ou comptabilité ?</h3><div class="opts"><label><input type="radio" name="q3" value="oui"> Oui</label><label><input type="radio" name="q3" value="non"> Non</label></div></div>
+    <div class="q"><h3>4. Avez-vous un diplôme en gestion, comptabilité, management ou gestion d’entreprise ?</h3><div class="opts"><label><input type="radio" name="q4" value="oui"> Oui</label><label><input type="radio" name="q4" value="non"> Non</label></div></div>
+    <div class="q"><h3>5. Disposez-vous de documents pour justifier votre expérience ?</h3><div class="opts"><label><input type="radio" name="q5" value="oui"> Oui</label><label><input type="radio" name="q5" value="non"> Non</label></div></div>
+    <button class="submit" id="run">Voir mon résultat</button>
+    <div class="result" id="result"></div>
+  </div>
+</div></div>
+<script>
+const result = document.getElementById("result");
+const confettiCanvas = document.getElementById("confetti");
+const ctx = confettiCanvas.getContext("2d");
+function ans(q){const s=document.querySelector(`input[name="${q}"]:checked`);return s?s.value:null;}
+function sizeCanvas(){confettiCanvas.width=window.innerWidth;confettiCanvas.height=window.innerHeight;} sizeCanvas(); window.addEventListener("resize", sizeCanvas);
+function firework(){
+  const particles = Array.from({length:140},()=>({x:confettiCanvas.width/2,y:confettiCanvas.height/3,vx:(Math.random()-.5)*8,vy:(Math.random()-.5)*8,c:`hsl(${Math.random()*360},100%,50%)`,life:80+Math.random()*40}));
+  let frame=0;
+  const anim=()=>{ctx.clearRect(0,0,confettiCanvas.width,confettiCanvas.height);particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.03;p.life--;ctx.fillStyle=p.c;ctx.fillRect(p.x,p.y,4,4)});frame++;if(frame<120){requestAnimationFrame(anim);}else{ctx.clearRect(0,0,confettiCanvas.width,confettiCanvas.height);}};
+  anim();
+}
+document.getElementById("run").addEventListener("click", ()=>{
+  const q1=ans("q1"),q2=ans("q2"),q3=ans("q3"),q4=ans("q4"),q5=ans("q5");
+  if(!q1||!q2||!q3||!q4||!q5){result.style.display="block";result.innerHTML="<h2>Réponses incomplètes</h2><p>Merci de répondre aux 5 questions.</p>";return;}
+  const hasExp = q2==="oui"||q3==="oui"||q4==="oui";
+  const q1Msg = q1==="oui" ? "Votre expérience sécurité privée est un atout pour votre dossier." : "Ce n’est pas bloquant. Un module e-learning pourra vous permettre d’acquérir les compétences liées à la sécurité privée.";
+  let title="",body="",emoji="";
+  if(!hasExp){title="La VAE DESP ne semble pas adaptée à votre profil.";body="Nous vous conseillons plutôt la formation DESP initiale pour obtenir le titre de Dirigeant d’Entreprise de Sécurité Privée.";emoji="🧭";}
+  else if(q5==="non"){title="Votre dossier nécessite des justificatifs.";body="Pour une VAE, vous devez pouvoir prouver votre expérience avec des documents : Kbis, fiches de paie, contrat de travail, attestations, documents comptables…";emoji="📁";}
+  else {title="Bonne nouvelle, votre profil semble éligible à la VAE DESP.";body="Vous pouvez démarrer votre dossier de recevabilité en ligne. Notre plateforme vous guide étape par étape.";emoji="🎉🚀🔥";result.classList.add("eligible");firework();setTimeout(()=>result.classList.remove("eligible"),1600);}
+  result.style.display="block";
+  result.innerHTML=`<h2>${emoji} ${title}</h2><p>${body}</p><p><strong>${q1Msg}</strong></p><div class="cta"><a class="c1" href="https://gestionstagiaires-r5no.onrender.com/vae-desp" target="_blank" rel="noopener">Démarrer ma VAE DESP</a><a class="c2" href="https://assistance-alw9.onrender.com/demande-informations-formations" target="_blank" rel="noopener">Être rappelé par un conseiller</a></div><span class="phone">📞 04 22 47 07 68</span>`;
+});
+</script>
+</body>
+</html>

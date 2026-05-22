@@ -3507,6 +3507,10 @@ def simulateur_plan_financement():
         simulation=simulation
     )
 
+@app.route("/simulateur-eligibilite-vae-desp")
+def simulateur_vae_desp():
+    return render_template("simulateur_vae_desp.html")
+
 @app.route("/admin-devis/simulateur/data", methods=["POST"])
 @login_required
 def simulateur_plan_financement_data():
