@@ -33,9 +33,10 @@
     @keyframes spin{to{transform:rotate(360deg)}}
     .full-result{display:none;min-height:100vh;padding:46px 18px;background:transparent}.full-result.show{display:block}
     .result-panel{max-width:1200px;margin:0 auto;border:1px solid #c8dbff;border-radius:30px;background:linear-gradient(180deg,#ffffff 0%, #f7faff 100%);padding:34px;box-shadow:var(--shadow)}
-    .result-brand{display:inline-flex;align-items:center;gap:12px;margin-bottom:14px;font-weight:800;color:#0f172a}
-    .result-brand img{width:52px;height:52px;background:#fff;border-radius:12px;padding:6px;box-shadow:0 8px 18px rgba(15,23,42,.16);border:1px solid #dbe7ff}
-    .tag{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:#e8f1ff;color:#1d4ed8;font-weight:800;font-size:14px;letter-spacing:.02em;text-transform:uppercase}
+    .result-head{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:14px}
+    .result-brand{display:flex;align-items:center;gap:14px;font-weight:800;color:#0f172a;font-size:46px;line-height:1}
+    .result-brand img{width:96px;height:96px;background:#fff;border-radius:20px;padding:9px;box-shadow:0 10px 22px rgba(15,23,42,.18);border:1px solid #dbe7ff}
+    .tag{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;background:#e8f1ff;color:#1d4ed8;font-weight:800;font-size:30px;letter-spacing:.02em;text-transform:uppercase}
     .result-title{margin:16px 0 14px;font-size:50px;line-height:1.03;letter-spacing:-.03em;color:#0f172a}
     .result-body{margin:0 0 20px;font-size:31px;line-height:1.2;color:#1e293b;max-width:26ch}.result-note{display:none;margin:0 0 26px;padding:18px 20px;border-radius:18px;background:linear-gradient(135deg,#ecfeff,#eef2ff);border:1px solid #bfdbfe;font-size:26px;line-height:1.2;font-weight:800;color:#0f172a}
     .score-card{margin:8px 0 24px;padding:16px;border-radius:16px;border:1px solid #dbe7ff;background:#f8fbff}
@@ -48,8 +49,8 @@
     .result-ctas a:hover{transform:translateY(-3px);filter:brightness(1.04)}
     .green{background:linear-gradient(135deg,#22c55e,#16a34a)}.blue{background:linear-gradient(135deg,#3b82f6,#1d4ed8)}
     .result-phone{display:inline-flex;align-items:center;gap:10px;margin-top:22px;font-size:42px;font-weight:900}.phone-pill{background:#0f172a;color:#fff;border-radius:14px;padding:10px 16px}
-    @media (max-width:1200px){.result-title{font-size:40px}.result-body{font-size:28px}.result-note{font-size:23px}.result-ctas a{font-size:28px}.result-phone{font-size:34px}}
-    @media (max-width:820px){.result-panel{padding:22px}.result-ctas{grid-template-columns:1fr}.result-title{font-size:32px}.result-body{font-size:22px}.result-note{font-size:19px}.result-ctas a{font-size:22px;padding:18px 14px}.result-phone{font-size:26px;display:flex;flex-wrap:wrap}.opts{flex-direction:column}}
+    @media (max-width:1200px){.result-brand{font-size:38px}.result-brand img{width:82px;height:82px}.tag{font-size:24px}.result-title{font-size:40px}.result-body{font-size:28px}.result-note{font-size:23px}.result-ctas a{font-size:28px}.result-phone{font-size:34px}}
+    @media (max-width:820px){.result-panel{padding:22px}.result-brand{font-size:28px}.result-brand img{width:70px;height:70px}.tag{font-size:18px;padding:8px 14px}.result-ctas{grid-template-columns:1fr}.result-title{font-size:32px}.result-body{font-size:22px}.result-note{font-size:19px}.result-ctas a{font-size:22px;padding:18px 14px}.result-phone{font-size:26px;display:flex;flex-wrap:wrap}.opts{flex-direction:column}}
   </style>
 </head>
 <body>
@@ -69,8 +70,10 @@
 </div></div>
 <section class="full-result" id="full-result">
   <div class="result-panel">
-    <div class="result-brand"><img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy"><span>Intégrale Academy</span></div>
-    <span class="tag" id="result-tag">Résultat personnalisé</span>
+    <div class="result-head">
+      <div class="result-brand"><img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy"><span>Intégrale Academy</span></div>
+      <span class="tag" id="result-tag">Résultat personnalisé</span>
+    </div>
     <h2 class="result-title" id="full-title"></h2>
     <p class="result-body" id="full-body"></p>
     <p class="result-note" id="full-note"></p>
