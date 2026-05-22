@@ -31,12 +31,17 @@
     .loading-box{width:min(620px,92vw);background:#fff;border-radius:24px;padding:30px 22px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.25)}
     .loading-box h2{margin:0 0 8px;font-size:34px}.loading-box p{margin:0;color:#334155;font-size:20px;font-weight:600}.loader{width:74px;height:74px;border-radius:50%;border:6px solid #c7d2fe;border-top-color:#1d4ed8;animation:spin 1s linear infinite;margin:16px auto}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .full-result{display:none;min-height:100vh;padding:46px 18px;background:transparent}.full-result.show{display:block}
-    .result-panel{max-width:1200px;margin:0 auto;border:1px solid #c8dbff;border-radius:30px;background:linear-gradient(180deg,#ffffff 0%, #f7faff 100%);padding:34px;box-shadow:var(--shadow)}
-    .tag{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:#e8f1ff;color:#1d4ed8;font-weight:800;font-size:14px;letter-spacing:.02em;text-transform:uppercase}
-    .result-title{margin:16px 0 14px;font-size:50px;line-height:1.03;letter-spacing:-.03em;color:#0f172a}
-    .result-body{margin:0 0 20px;font-size:31px;line-height:1.2;color:#1e293b;max-width:26ch}.result-note{display:none;margin:0 0 26px;padding:18px 20px;border-radius:18px;background:linear-gradient(135deg,#ecfeff,#eef2ff);border:1px solid #bfdbfe;font-size:26px;line-height:1.2;font-weight:800;color:#0f172a}
-    .score-card{margin:8px 0 24px;padding:16px;border-radius:16px;border:1px solid #dbe7ff;background:#f8fbff}
+
+    .full-result{display:none;min-height:100vh;padding:34px 18px 56px}.full-result.show{display:block}
+    .result-panel{max-width:1100px;margin:0 auto;padding:36px;border-radius:28px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-lg)}
+    .result-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.result-brand{display:flex;align-items:center;justify-content:flex-end;flex:1;min-width:180px}
+.result-brand img{max-height:72px;width:auto;object-fit:contain}
+    .tag{display:inline-flex;align-items:center;padding:8px 14px;border-radius:999px;background:#dbeafe;color:#1e40af;font-weight:800;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+    .result-title{margin:14px 0 10px;font-size:clamp(34px,5vw,60px);line-height:1.02;letter-spacing:-.03em;max-width:16ch}
+    .result-body{margin:0;color:#334155;font-size:clamp(20px,2.9vw,32px);line-height:1.25;max-width:30ch}
+    .result-note{display:none;margin:18px 0 0;padding:16px 18px;border-radius:14px;background:#eff6ff;border:1px solid #bfdbfe;font-size:20px;line-height:1.35;font-weight:700;color:#0f172a;max-width:42ch}
+    .score-card{margin:26px 0 20px;padding:18px;border-radius:16px;border:1px solid var(--border);background:#f8fafc}
     .score-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;font-weight:800}
     .score-bar{height:12px;background:#dbeafe;border-radius:999px;overflow:hidden;margin-top:12px}
     .score-fill{height:100%;width:0;background:linear-gradient(90deg,#ef4444,#f59e0b,#22c55e);transition:width .6s ease}
@@ -67,7 +72,12 @@
 </div></div>
 <section class="full-result" id="full-result">
   <div class="result-panel">
-    <span class="tag" id="result-tag">Résultat personnalisé</span>
+    <div class="result-top">
+      <span class="tag" id="result-tag">Résultat personnalisé</span>
+      <div class="result-brand">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
+      </div>
+    </div>
     <h2 class="result-title" id="full-title"></h2>
     <p class="result-body" id="full-body"></p>
     <p class="result-note" id="full-note"></p>
