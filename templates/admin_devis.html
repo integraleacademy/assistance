@@ -250,6 +250,7 @@ h1{
 .btn-abandoned{ background:linear-gradient(135deg,#92400e,#f97316); }
 .btn-callback{ background:linear-gradient(135deg,#1d4ed8,#38bdf8); }
 .btn-rappels{ background:linear-gradient(135deg,#0f172a,#475569); }
+.btn-vae{ background:linear-gradient(135deg,#0ea5e9,#4f46e5); }
 .section-header{
     display:flex;
     align-items:flex-end;
@@ -454,6 +455,7 @@ tbody tr:hover{background:#eff6ff;}
                 <a class="tool-link btn-abandoned" href="{{ url_for('admin_devis_formulaires_abandonnes') }}">🕘 Formulaires abandonnés</a>
                 <a href="/formulaire-a-rappeler" target="_blank" rel="noopener" class="tool-link btn-callback">📞 Formulaire à rappeler</a>
                 <a href="#rappels-section" id="show-rappels" class="tool-link btn-rappels">☎️ Demoiselles du téléphone</a>
+                <a class="tool-link btn-vae" href="{{ url_for('simulateur_vae_desp') }}" target="_blank" rel="noopener">🎓 Eligibilité VAE</a>
             </div>
         </div>
 
