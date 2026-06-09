@@ -655,6 +655,9 @@ tbody tr:hover{background:#eff6ff;}
                     <h2 class="section-title" id="rappels-title">Demoiselles du téléphone</h2>
                     <p class="section-caption">Suivi des appels, commentaires et statuts de rappel.</p>
                 </div>
+                <div class="section-actions">
+                    <button id="delete-treated-rappels" class="delete-all-button" type="button" disabled aria-disabled="true">✕ Supprimer les traités</button>
+                </div>
             </div>
             <div class="table-wrap">
                 <table>
@@ -782,7 +785,16 @@ async function loadRappels(){
     return;
   }
   const data = await res.json();
+  const deleteTreatedButton = document.getElementById("delete-treated-rappels");
+  const treatedCount = data.filter(item => item.traite === true || item.statut === "Traité").length;
+  deleteTreatedButton.disabled = treatedCount === 0;
+  deleteTreatedButton.setAttribute("aria-disabled", treatedCount === 0 ? "true" : "false");
+  deleteTreatedButton.dataset.count = String(treatedCount);
   body.innerHTML = "";
+  if (data.length === 0) {
+    body.innerHTML = `<tr><td colspan="9">Aucun rappel à afficher.</td></tr>`;
+    return;
+  }
   data.forEach(item => {
     const tr = document.createElement("tr");
     const isTreated = item.traite === true || item.statut === "Traité";
@@ -796,6 +808,25 @@ async function loadRappels(){
     body.appendChild(tr);
   });
 }
+
+document.getElementById("delete-treated-rappels").addEventListener("click", async (e) => {
+  const button = e.currentTarget;
+  const treatedCount = Number(button.dataset.count || 0);
+  if (!treatedCount) return;
+
+  const label = treatedCount === 1 ? "le rappel traité" : `les ${treatedCount} rappels traités`;
+  if (!confirm(`Supprimer définitivement ${label} affiché${treatedCount === 1 ? "" : "s"} en vert ?`)) return;
+
+  button.disabled = true;
+  button.setAttribute("aria-disabled", "true");
+  const response = await fetch("/admin-devis/rappels/traites", {method:"DELETE", credentials:"same-origin"});
+  if (!response.ok) {
+    alert("Les rappels traités n'ont pas pu être supprimés.");
+    await loadRappels();
+    return;
+  }
+  await loadRappels();
+});
 
 document.getElementById("rappels-body").addEventListener("click", async (e) => {
   const id = e.target.dataset.id;
