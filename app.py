@@ -2980,6 +2980,31 @@ def update_admin_devis_rappel(rappel_id):
     return jsonify({"ok": True, "item": rappel})
 
 
+@app.route("/admin-devis/rappels/traites", methods=["DELETE"])
+@login_required
+def delete_admin_devis_rappels_traites():
+    if not can_manage_admin_devis_rappels():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    data = load_data()
+    demandes = data.get("demandes", [])
+    demandes_conservees = [
+        demande
+        for demande in demandes
+        if not (
+            demande.get("motif") == "Formulaire à rappeler"
+            and _rappel_est_traite(demande)
+        )
+    ]
+    deleted_count = len(demandes) - len(demandes_conservees)
+
+    if deleted_count:
+        data["demandes"] = demandes_conservees
+        save_data(data)
+
+    return jsonify({"ok": True, "deleted_count": deleted_count})
+
+
 @app.route("/admin-devis/rappels/<rappel_id>", methods=["DELETE"])
 @login_required
 def delete_admin_devis_rappel(rappel_id):
