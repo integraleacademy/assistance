@@ -541,6 +541,7 @@ tbody tr:hover{background:#eff6ff;}
                         <th>Nom</th>
                         <th>Prénom</th>
                         <th>E-mail</th>
+                        <th>Téléphone</th>
                         <th>Score</th>
                         <th>Résultat</th>
                         <th>Réponses</th>
@@ -554,6 +555,7 @@ tbody tr:hover{background:#eff6ff;}
                         <td class="person-name">{{ simulation.nom }}</td>
                         <td class="person-name">{{ simulation.prenom }}</td>
                         <td><a class="contact-link" href="mailto:{{ simulation.mail }}">{{ simulation.mail }}</a></td>
+                        <td><a class="contact-link" href="tel:{{ simulation.telephone }}">{{ simulation.telephone }}</a></td>
                         <td><span class="score-chip">{{ simulation.infos.score }} %</span></td>
                         <td class="formation-cell">{{ simulation.infos.resultat }}</td>
                         <td>

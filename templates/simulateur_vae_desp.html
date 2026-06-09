@@ -19,7 +19,7 @@
     .content{padding:22px;background:linear-gradient(180deg,#ffffff 0%, #f8fbff 100%)}
     .contact-card{border:1px solid #bfdbfe;border-radius:18px;padding:18px;margin-bottom:16px;background:linear-gradient(135deg,#eff6ff,#f8fafc);box-shadow:0 8px 20px rgba(37,99,235,.08)}
     .contact-card h2{margin:0 0 6px;font-size:20px}.contact-card p{margin:0 0 14px;color:#475569;font-size:14px}
-    .contact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.contact-field.mail{grid-column:1 / -1}
+    .contact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .contact-field label{display:block;margin-bottom:6px;font-size:13px;font-weight:800;color:#1e293b}.contact-field input{width:100%;padding:12px 13px;border:1px solid #bfd0ee;border-radius:12px;background:#fff;color:#0f172a;font:inherit;outline:none}.contact-field input:focus{border-color:#2563eb;box-shadow:0 0 0 4px rgba(37,99,235,.12)}
     .q{border:1px solid #dbe7ff;border-radius:16px;padding:14px;margin-bottom:12px;background:#fff;box-shadow:0 8px 20px rgba(148,163,184,.08);transition:transform .2s, box-shadow .2s}
     .q:hover{transform:translateY(-1px);box-shadow:0 12px 24px rgba(30,64,175,.12)}
@@ -54,7 +54,7 @@
     .green{background:linear-gradient(135deg,#22c55e,#16a34a)}.blue{background:linear-gradient(135deg,#3b82f6,#1d4ed8)}
     .result-phone{display:inline-flex;align-items:center;gap:10px;margin-top:22px;font-size:42px;font-weight:900}.phone-pill{background:#0f172a;color:#fff;border-radius:14px;padding:10px 16px}
     @media (max-width:1200px){.result-brand{font-size:38px}.result-brand img{width:82px;height:82px}.tag{font-size:24px}.result-title{font-size:40px}.result-body{font-size:28px}.result-note{font-size:23px}.result-ctas a{font-size:28px}.result-phone{font-size:34px}}
-    @media (max-width:820px){.result-panel{padding:22px}.result-brand{font-size:28px}.result-brand img{width:70px;height:70px}.tag{font-size:18px;padding:8px 14px}.result-ctas{grid-template-columns:1fr}.result-title{font-size:32px}.result-body{font-size:22px}.result-note{font-size:19px}.result-ctas a{font-size:22px;padding:18px 14px}.result-phone{font-size:26px;display:flex;flex-wrap:wrap}.opts{flex-direction:column}.contact-grid{grid-template-columns:1fr}.contact-field.mail{grid-column:auto}}
+    @media (max-width:820px){.result-panel{padding:22px}.result-brand{font-size:28px}.result-brand img{width:70px;height:70px}.tag{font-size:18px;padding:8px 14px}.result-ctas{grid-template-columns:1fr}.result-title{font-size:32px}.result-body{font-size:22px}.result-note{font-size:19px}.result-ctas a{font-size:22px;padding:18px 14px}.result-phone{font-size:26px;display:flex;flex-wrap:wrap}.opts{flex-direction:column}.contact-grid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -69,7 +69,8 @@
       <div class="contact-grid">
         <div class="contact-field"><label for="nom">Nom *</label><input id="nom" name="nom" type="text" autocomplete="family-name" required></div>
         <div class="contact-field"><label for="prenom">Prénom *</label><input id="prenom" name="prenom" type="text" autocomplete="given-name" required></div>
-        <div class="contact-field mail"><label for="mail">Adresse e-mail *</label><input id="mail" name="mail" type="email" autocomplete="email" required></div>
+        <div class="contact-field"><label for="mail">Adresse e-mail *</label><input id="mail" name="mail" type="email" autocomplete="email" required></div>
+        <div class="contact-field"><label for="telephone">Numéro de téléphone *</label><input id="telephone" name="telephone" type="tel" autocomplete="tel" inputmode="tel" placeholder="06 12 34 56 78" required></div>
       </div>
     </div>
     <div class="q"><h3>1. Avez-vous déjà une carte professionnelle CNAPS ?</h3><div class="opts"><label><input type="radio" name="q1" value="oui"> Oui</label><label><input type="radio" name="q1" value="non"> Non</label></div><p class="q-note">En l'absence de carte professionnelle CNAPS un complément de compétences peut être proposé si nécessaire (e-learning sécurité privée).</p></div>
@@ -134,9 +135,13 @@ runButton.addEventListener("click", async ()=>{
   const prenom=document.getElementById("prenom").value.trim();
   const mailInput=document.getElementById("mail");
   const mail=mailInput.value.trim();
+  const telephoneInput=document.getElementById("telephone");
+  const telephone=telephoneInput.value.trim();
   const q1=ans("q1"),q2=ans("q2"),q3=ans("q3"),q4=ans("q4"),q5=ans("q5");
-  if(!nom||!prenom||!mail){result.style.display="block";result.innerHTML="<h2>Coordonnées incomplètes</h2><p>Merci de renseigner votre nom, votre prénom et votre adresse e-mail.</p>";return;}
+  if(!nom||!prenom||!mail||!telephone){result.style.display="block";result.innerHTML="<h2>Coordonnées incomplètes</h2><p>Merci de renseigner votre nom, votre prénom, votre adresse e-mail et votre numéro de téléphone.</p>";return;}
   if(!mailInput.checkValidity()){result.style.display="block";result.innerHTML="<h2>Adresse e-mail invalide</h2><p>Merci de vérifier votre adresse e-mail.</p>";mailInput.focus();return;}
+  const telephoneDigits=telephone.replace(/\D/g, "");
+  if(telephoneDigits.length<8||telephoneDigits.length>15){result.style.display="block";result.innerHTML="<h2>Numéro de téléphone invalide</h2><p>Merci de saisir un numéro de téléphone valide.</p>";telephoneInput.focus();return;}
   if(!q1||!q2||!q3||!q4||!q5){result.style.display="block";result.innerHTML="<h2>Réponses incomplètes</h2><p>Merci de répondre aux 5 questions.</p>";return;}
   const hasExp = q2==="oui"||q3==="oui"||q4==="oui";
   const score = getScore(q1,q2,q3,q4,q5);
@@ -151,7 +156,7 @@ runButton.addEventListener("click", async ()=>{
   runButton.disabled=true;
   loadingOverlay.style.display="flex";
   try {
-    const response=await fetch(window.location.pathname,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nom,prenom,mail,reponses:{q1,q2,q3,q4,q5}})});
+    const response=await fetch(window.location.pathname,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nom,prenom,mail,telephone,reponses:{q1,q2,q3,q4,q5}})});
     if(!response.ok) throw new Error("save_failed");
   } catch (error) {
     loadingOverlay.style.display="none";
