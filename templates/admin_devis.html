@@ -298,6 +298,9 @@ tbody tr{
 tbody tr:nth-child(even){background:#fbfdff;}
 tbody tr:hover{background:#eff6ff;}
 .person-name{font-weight:950;color:#0f172a;}
+.contact-link{color:#1d4ed8;font-weight:800;text-decoration:none}.contact-link:hover{text-decoration:underline}
+.score-chip{display:inline-flex;align-items:center;padding:7px 11px;border-radius:999px;background:#dbeafe;color:#1e40af;font-weight:950;font-size:12px}
+.answer-list{display:flex;gap:5px;flex-wrap:wrap}.answer-chip{padding:5px 7px;border-radius:8px;background:#f1f5f9;color:#475569;font-size:11px;font-weight:850;text-transform:uppercase}.answer-chip.yes{background:#dcfce7;color:#166534}.answer-chip.no{background:#fee2e2;color:#991b1b}
 .formation-cell{font-weight:800;color:#1e293b;}
 .date-chip{
     display:inline-flex;
@@ -499,6 +502,52 @@ tbody tr:hover{background:#eff6ff;}
                 <a class="tool-link btn-vae" href="{{ url_for('simulateur_vae_desp') }}" target="_blank" rel="noopener">🎓 Eligibilité VAE</a>
             </div>
         </div>
+
+        <section aria-labelledby="vae-completions-title">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title" id="vae-completions-title">Simulations d’éligibilité VAE DESP</h2>
+                    <p class="section-caption">Personnes ayant complété le simulateur public avec leurs coordonnées et leur résultat.</p>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Nom</th>
+                        <th>Prénom</th>
+                        <th>E-mail</th>
+                        <th>Score</th>
+                        <th>Résultat</th>
+                        <th>Réponses</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for simulation in simulations_vae %}
+                    <tr>
+                        <td><span class="date-chip">{{ simulation.date }}</span></td>
+                        <td class="person-name">{{ simulation.nom }}</td>
+                        <td class="person-name">{{ simulation.prenom }}</td>
+                        <td><a class="contact-link" href="mailto:{{ simulation.mail }}">{{ simulation.mail }}</a></td>
+                        <td><span class="score-chip">{{ simulation.infos.score }} %</span></td>
+                        <td class="formation-cell">{{ simulation.infos.resultat }}</td>
+                        <td>
+                            <div class="answer-list" aria-label="Réponses au questionnaire">
+                                {% for question in ['q1', 'q2', 'q3', 'q4', 'q5'] %}
+                                {% set answer = simulation.infos.reponses.get(question, '') if simulation.infos.reponses else '' %}
+                                <span class="answer-chip {{ 'yes' if answer == 'oui' else 'no' }}">{{ question }} : {{ answer or '—' }}</span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7">Aucune simulation VAE complétée pour le moment.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
 
         <section aria-labelledby="devis-title">
             <div class="section-header">
