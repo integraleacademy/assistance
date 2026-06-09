@@ -526,13 +526,6 @@ tbody tr:hover{background:#eff6ff;}
                     <h2 class="section-title" id="vae-completions-title">Simulations d’éligibilité VAE DESP</h2>
                     <p class="section-caption">Personnes ayant complété le simulateur public avec leurs coordonnées et leur résultat.</p>
                 </div>
-                {% if simulations_vae %}
-                <div class="section-actions">
-                    <form class="delete-all-form" method="POST" action="{{ url_for('delete_all_simulations_vae') }}" onsubmit="return confirm('Supprimer définitivement toutes les simulations VAE ?');">
-                        <button class="delete-all-button" type="submit">✕ Tout supprimer</button>
-                    </form>
-                </div>
-                {% endif %}
             </div>
             <div class="table-wrap">
                 <table>
@@ -542,10 +535,10 @@ tbody tr:hover{background:#eff6ff;}
                         <th>Nom</th>
                         <th>Prénom</th>
                         <th>E-mail</th>
+                        <th>Téléphone</th>
                         <th>Score</th>
                         <th>Résultat</th>
                         <th>Réponses</th>
-                        <th>Action</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -555,6 +548,7 @@ tbody tr:hover{background:#eff6ff;}
                         <td class="person-name">{{ simulation.nom }}</td>
                         <td class="person-name">{{ simulation.prenom }}</td>
                         <td><a class="contact-link" href="mailto:{{ simulation.mail }}">{{ simulation.mail }}</a></td>
+                        <td><a class="contact-link" href="tel:{{ simulation.telephone }}">{{ simulation.telephone }}</a></td>
                         <td><span class="score-chip">{{ simulation.infos.score }} %</span></td>
                         <td class="formation-cell">{{ simulation.infos.resultat }}</td>
                         <td>
@@ -564,11 +558,6 @@ tbody tr:hover{background:#eff6ff;}
                                 <span class="answer-chip {{ 'yes' if answer == 'oui' else 'no' }}">{{ question }} : {{ answer or '—' }}</span>
                                 {% endfor %}
                             </div>
-                        </td>
-                        <td class="actions-cell">
-                            <form method="POST" action="{{ url_for('delete_simulation_vae', simulation_id=simulation.id) }}" style="display:inline;" onsubmit="return confirm('Supprimer définitivement cette simulation VAE ?');">
-                                <button type="submit" class="action-mini btn-delete" title="Supprimer cette simulation" aria-label="Supprimer cette simulation">×</button>
-                            </form>
                         </td>
                     </tr>
                     {% else %}

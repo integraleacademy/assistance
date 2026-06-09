@@ -97,7 +97,7 @@ def _choix_dirigeant_desp_salesforce(form):
     return ""
 
 
-def _payload_salesforce_simulation_vae(nom, prenom, mail, reponses, score, resultat):
+def _payload_salesforce_simulation_vae(nom, prenom, mail, telephone, reponses, score, resultat):
     reponses_salesforce = {
         question: str(reponses.get(question) or "").strip().upper()
         for question in ("q1", "q2", "q3", "q4", "q5")
@@ -111,7 +111,7 @@ def _payload_salesforce_simulation_vae(nom, prenom, mail, reponses, score, resul
         "nom": nom,
         "prenom": prenom,
         "mail": mail,
-        "telephone": "",
+        "telephone": telephone,
         "formation": "DESP_VAE",
         "type_formation": "VAE DESP",
         "choix_dirigeant": "DESP VAE",
@@ -3558,12 +3558,16 @@ def simulateur_vae_desp():
     nom = str(payload.get("nom") or "").strip()
     prenom = str(payload.get("prenom") or "").strip()
     mail = str(payload.get("mail") or "").strip()
+    telephone = str(payload.get("telephone") or "").strip()
     reponses = payload.get("reponses") or {}
 
-    if not nom or not prenom or not mail:
+    if not nom or not prenom or not mail or not telephone:
         return jsonify({"ok": False, "error": "missing_contact_fields"}), 400
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", mail):
         return jsonify({"ok": False, "error": "invalid_email"}), 400
+    telephone_digits = re.sub(r"\D", "", telephone)
+    if len(telephone_digits) < 8 or len(telephone_digits) > 15:
+        return jsonify({"ok": False, "error": "invalid_phone"}), 400
     if not isinstance(reponses, dict) or any(reponses.get(f"q{i}") not in {"oui", "non"} for i in range(1, 6)):
         return jsonify({"ok": False, "error": "incomplete_answers"}), 400
 
@@ -3591,7 +3595,7 @@ def simulateur_vae_desp():
         "nom": nom,
         "prenom": prenom,
         "mail": mail,
-        "telephone": "",
+        "telephone": telephone,
         "motif": "Simulation éligibilité VAE DESP",
         "source": "simulateur_vae_desp",
         "details": json.dumps(details, ensure_ascii=False),
@@ -3604,6 +3608,7 @@ def simulateur_vae_desp():
         nom=nom,
         prenom=prenom,
         mail=mail,
+        telephone=telephone,
         reponses=reponses,
         score=score,
         resultat=resultat,
