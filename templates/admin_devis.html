@@ -276,7 +276,8 @@ h1{
     white-space:nowrap;
     transition:transform .16s ease, background .16s ease, box-shadow .16s ease;
 }
-.delete-all-button:hover{transform:translateY(-1px);background:#ffe4e6;box-shadow:0 9px 20px rgba(190,18,60,.14);}
+.delete-all-button:hover:not(:disabled){transform:translateY(-1px);background:#ffe4e6;box-shadow:0 9px 20px rgba(190,18,60,.14);}
+.delete-all-button:disabled{cursor:not-allowed;opacity:.45;}
 .table-wrap{
     overflow:auto;
     border:1px solid var(--line);
@@ -526,6 +527,11 @@ tbody tr:hover{background:#eff6ff;}
                     <h2 class="section-title" id="vae-completions-title">Simulations d’éligibilité VAE DESP</h2>
                     <p class="section-caption">Personnes ayant complété le simulateur public avec leurs coordonnées et leur résultat.</p>
                 </div>
+                <div class="section-actions">
+                    <form class="delete-all-form" method="POST" action="{{ url_for('delete_all_simulations_vae') }}" onsubmit="return confirm('Supprimer définitivement toutes les simulations VAE ?');">
+                        <button id="delete-all-vae" class="delete-all-button" type="submit"{% if not simulations_vae %} disabled aria-disabled="true"{% endif %}>✕ Tout supprimer</button>
+                    </form>
+                </div>
             </div>
             <div class="table-wrap">
                 <table>
@@ -539,6 +545,7 @@ tbody tr:hover{background:#eff6ff;}
                         <th>Score</th>
                         <th>Résultat</th>
                         <th>Réponses</th>
+                        <th>Action</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -559,6 +566,11 @@ tbody tr:hover{background:#eff6ff;}
                                 {% endfor %}
                             </div>
                         </td>
+                        <td class="actions-cell">
+                            <form method="POST" action="{{ url_for('delete_simulation_vae', simulation_id=simulation.id) }}" style="display:inline;" onsubmit="return confirm('Supprimer définitivement cette simulation VAE ?');">
+                                <button type="submit" class="action-mini btn-delete" title="Supprimer cette simulation" aria-label="Supprimer cette simulation">×</button>
+                            </form>
+                        </td>
                     </tr>
                     {% else %}
                     <tr><td colspan="8">Aucune simulation VAE complétée pour le moment.</td></tr>
@@ -574,13 +586,11 @@ tbody tr:hover{background:#eff6ff;}
                     <h2 class="section-title" id="devis-title">Pipeline devis</h2>
                     <p class="section-caption">Filtre par défaut sur les devis à envoyer pour accélérer le traitement commercial.</p>
                 </div>
-                {% if devis %}
                 <div class="section-actions">
                     <form class="delete-all-form" method="POST" action="{{ url_for('delete_all_devis') }}" onsubmit="return confirm('Supprimer définitivement tous les devis ? Cette action est irréversible.');">
-                        <button class="delete-all-button" type="submit">✕ Tout supprimer</button>
+                        <button id="delete-all-devis" class="delete-all-button" type="submit"{% if not devis %} disabled aria-disabled="true"{% endif %}>✕ Tout supprimer</button>
                     </form>
                 </div>
-                {% endif %}
             </div>
             <p class="empty-hint" id="empty-hint">Aucun devis ne correspond à ce filtre ou à cette recherche.</p>
             <div class="table-wrap">
