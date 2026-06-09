@@ -3903,6 +3903,44 @@ def archives():
     return render_template("archives.html", archives=archives, query=query)
 
 
+def _supprimer_fichiers_devis(devis):
+    """Supprime les fichiers générés associés à un devis."""
+    for cle in ("pdf_path", "pdf_client_path"):
+        chemin = devis.get(cle)
+        if chemin and os.path.isfile(chemin):
+            try:
+                os.remove(chemin)
+            except OSError:
+                pass
+
+
+@app.route("/admin-devis/simulations-vae/delete/<simulation_id>", methods=["POST"])
+@login_required
+def delete_simulation_vae(simulation_id):
+    data = load_data()
+    data["demandes"] = [
+        demande for demande in data.get("demandes", [])
+        if not (
+            demande.get("id") == simulation_id
+            and demande.get("source") == "simulateur_vae_desp"
+        )
+    ]
+    save_data(data)
+    return redirect(url_for("admin_devis"))
+
+
+@app.route("/admin-devis/simulations-vae/delete-all", methods=["POST"])
+@login_required
+def delete_all_simulations_vae():
+    data = load_data()
+    data["demandes"] = [
+        demande for demande in data.get("demandes", [])
+        if demande.get("source") != "simulateur_vae_desp"
+    ]
+    save_data(data)
+    return redirect(url_for("admin_devis"))
+
+
 @app.route("/admin-devis/delete/<devis_id>", methods=["POST"])
 @login_required
 def delete_devis(devis_id):
@@ -3915,17 +3953,27 @@ def delete_devis(devis_id):
     )
 
     if devis:
-        # Suppression du PDF s'il existe
-        pdf = devis.get("pdf_path")
-        if pdf and os.path.exists(pdf):
-            try:
-                os.remove(pdf)
-            except:
-                pass
-
+        _supprimer_fichiers_devis(devis)
         data["demandes"].remove(devis)
         save_data(data)
 
+    return redirect(url_for("admin_devis"))
+
+
+@app.route("/admin-devis/delete-all", methods=["POST"])
+@login_required
+def delete_all_devis():
+    data = load_data()
+    demandes_conservees = []
+
+    for demande in data.get("demandes", []):
+        if demande.get("motif") == "Demande de devis détaillé":
+            _supprimer_fichiers_devis(demande)
+        else:
+            demandes_conservees.append(demande)
+
+    data["demandes"] = demandes_conservees
+    save_data(data)
     return redirect(url_for("admin_devis"))
 
 
