@@ -97,6 +97,38 @@ def _choix_dirigeant_desp_salesforce(form):
     return ""
 
 
+def _payload_salesforce_simulation_vae(nom, prenom, mail, reponses, score, resultat):
+    reponses_salesforce = {
+        question: str(reponses.get(question) or "").strip().upper()
+        for question in ("q1", "q2", "q3", "q4", "q5")
+    }
+    resume_reponses = " | ".join(
+        f"{question.upper()} : {reponse or 'NON RENSEIGNÉ'}"
+        for question, reponse in reponses_salesforce.items()
+    )
+
+    return {
+        "nom": nom,
+        "prenom": prenom,
+        "mail": mail,
+        "telephone": "",
+        "formation": "DESP_VAE",
+        "type_formation": "VAE DESP",
+        "choix_dirigeant": "DESP VAE",
+        "source_formulaire": "simulateur-eligibilite-vae-desp",
+        "cnaps_ok": reponses_salesforce["q1"],
+        "score_eligibilite_vae": f"{score}%",
+        "resultat_eligibilite_vae": resultat,
+        "infos_complementaires": (
+            "SIMULATEUR ÉLIGIBILITÉ VAE DESP COMPLÉTÉ\n"
+            f"Score : {score}%\n"
+            f"Résultat : {resultat}\n"
+            f"Réponses : {resume_reponses}"
+        ),
+        **reponses_salesforce,
+    }
+
+
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
     formulaire_abandonne = _est_payload_formulaire_abandonne(form)
@@ -3567,6 +3599,15 @@ def simulateur_vae_desp():
         "statut": "Non traité",
     })
     save_data(data)
+
+    creer_piste_salesforce(_payload_salesforce_simulation_vae(
+        nom=nom,
+        prenom=prenom,
+        mail=mail,
+        reponses=reponses,
+        score=score,
+        resultat=resultat,
+    ))
 
     return jsonify({"ok": True, "score": score, "resultat": resultat})
 
