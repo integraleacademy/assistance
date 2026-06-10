@@ -575,10 +575,26 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <option value="">— Sélectionnez —</option>
           <option value="A3P">Agent de Protection Physique des Personnes (A3P)</option>
           <option value="APS">Agent de Prévention et de Sécurité (APS)</option>
+          <option value="SSIAP">Agent de sécurité incendie SSIAP 1</option>
           <option value="DESP_INIT">Dirigeant d’entreprise de sécurité privée (DESP) en initial</option>
           <option value="DESP_VAE">Dirigeant d’entreprise de sécurité privée (DESP) en VAE</option>
           <option value="VTC">Chauffeur VTC</option>
         </select>
+
+        <div id="ssiapDetails" class="simu-box hidden" style="margin-top:18px;">
+          <p class="help-copy"><strong>📍 Formation organisée uniquement à Puget-sur-Argens.</strong></p>
+          <p class="help-copy"><strong>Tarif :</strong> 980 € TTC avec un certificat SST ou PSC1 de moins de 2 ans, ou 1 200 € TTC si la formation SST doit être incluse.</p>
+          <label style="margin-top:12px;">Je possède un certificat SST ou PSC1 de moins de 2 ans</label>
+          <div class="yn-choice" data-for="ssiapSecourismeValide">
+            <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+            <button type="button" class="yn-btn" data-value="NON">NON</button>
+          </div>
+          <select class="yn-select-hidden" name="ssiap_secourisme_valide" id="ssiapSecourismeValide">
+            <option value="">— Sélectionnez —</option>
+            <option value="OUI">OUI</option>
+            <option value="NON">NON</option>
+          </select>
+        </div>
       </section>
 
       <div class="nav-actions form-actions">
@@ -622,7 +638,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <label>
             <input type="radio" name="centre" value="cote_azur">
             <span>
-              <strong class="location-title">Intégrale Academy Côte d’Azur (Fréjus, Var)</strong>
+              <strong class="location-title">Intégrale Academy Côte d’Azur (Puget-sur-Argens, Var)</strong>
               <p class="location-copy">
                 🌊☀️
               </p>
@@ -854,6 +870,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const mail = document.getElementById('mail');
     const mail2 = document.getElementById('mail_confirm');
     const formation = document.getElementById('formation');
+    const ssiapDetails = document.getElementById('ssiapDetails');
+    const ssiapSecourismeValide = document.getElementById('ssiapSecourismeValide');
     const datesSelect = document.getElementById('datesSelect');
     const dateExamen = document.getElementById('dateExamen');
     const sessions = {{ sessions|tojson }};
@@ -1210,6 +1228,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       }
     }
 
+    function updateSsiapDetails() {
+      const isSsiap = formation.value === 'SSIAP';
+      ssiapDetails.classList.toggle('hidden', !isSsiap);
+      ssiapSecourismeValide.required = isSsiap;
+      if (!isSsiap) ssiapSecourismeValide.value = '';
+    }
+
     function loadDates() {
       const f = formation.value;
       const centre = selectedCentre();
@@ -1289,7 +1314,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     }
 
     function isStep2Complete() {
-      return Boolean(formation.value);
+      return Boolean(formation.value)
+        && (formation.value !== 'SSIAP' || Boolean(ssiapSecourismeValide.value));
     }
 
     function isStep3Complete() {
@@ -1460,14 +1486,18 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     });
 
     updateCoteHebergementLine(formation.value);
+    updateSsiapDetails();
 
     formation.addEventListener('change', () => {
       step5ManualIndex = null;
+      updateSsiapDetails();
       showLocationCards(formation.value);
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
       loadDates();
       updateStepReveal();
     });
+
+    ssiapSecourismeValide.addEventListener('change', updateStepReveal);
 
     document.addEventListener('change', (e) => {
       if (e.target.name === 'centre') {
