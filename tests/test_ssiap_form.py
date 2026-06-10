@@ -7,16 +7,29 @@ class SsiapInformationFormTestCase(unittest.TestCase):
     def setUp(self):
         self.client = application.app.test_client()
 
-    def test_form_exposes_ssiap_training_location_pricing_and_session(self):
+    def test_form_uses_the_same_step_order_as_aps_for_ssiap(self):
         response = self.client.get("/demande-informations-formations")
 
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn('<option value="SSIAP">Agent de sécurité incendie SSIAP 1</option>', page)
-        self.assertIn("Formation organisée uniquement à Puget-sur-Argens", page)
+        formation_option = '<option value="SSIAP">Agent de sécurité incendie SSIAP 1</option>'
+        self.assertIn(formation_option, page)
+        step2_end = page.index("</section>", page.index(formation_option))
+        self.assertNotIn("ssiap_secourisme_valide", page[page.index(formation_option):step2_end])
+
+        location_step = page.index("Lieu de formation souhaité")
+        puget_location = page.index("Intégrale Academy Côte d’Azur (Puget-sur-Argens, Var)")
+        dates_step = page.index("Dates de formation souhaitées")
+        question = page.index("Je possède un certificat SST ou PSC1 de moins de 2 ans")
+        financing_step = page.index("Financement de votre formation")
+
+        self.assertLess(location_step, puget_location)
+        self.assertLess(puget_location, dates_step)
+        self.assertLess(financing_step, question)
         self.assertIn("980 € TTC", page)
         self.assertIn("1 200 € TTC", page)
         self.assertIn("Du 12 au 27 octobre 2026 - examen le 28 octobre 2026", page)
+        self.assertIn("['VTC', 'APS', 'SSIAP', 'DESP_VAE']", page)
 
     def test_ssiap_session_is_only_available_at_cote_azur_centre(self):
         sessions = application.get_formation_sessions({})
