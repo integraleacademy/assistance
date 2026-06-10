@@ -1635,6 +1635,42 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
 
 
 
+def build_ssiap1_email_html(
+    prenom: str,
+    dates_txt: str,
+    centre_code: str,
+    devis_url: str,
+    ssiap_secourisme_valide: str,
+):
+    session_date = _format_selected_session_date(dates_txt)
+    centre_label, centre_address = _centre_label_and_address(centre_code)
+    tarif = get_formation_tarif(
+        "SSIAP",
+        {"ssiap_secourisme_valide": ssiap_secourisme_valide},
+    )
+    session_html = (
+        f'<p style="margin:0; line-height:1.65;">📅 <strong>{html_module.escape(session_date)}</strong></p>'
+        if session_date
+        else '<p style="margin:0; line-height:1.65;">📅 <strong>Date transmise lors de notre échange téléphonique.</strong></p>'
+    )
+    secourisme_info = (
+        "La formation SST est incluse dans ce tarif."
+        if tarif == 1200
+        else "Tarif applicable avec un certificat SST valide ou un PSC1 de moins de 2 ans."
+    )
+    return _render_email_template(
+        "ssiap1.html",
+        prenom=html_module.escape(prenom or ""),
+        session_html=session_html,
+        centre_label=html_module.escape(centre_label),
+        centre_address=html_module.escape(centre_address),
+        tarif_display=_eur_display(tarif),
+        secourisme_info=secourisme_info,
+        devis_url=html_module.escape(devis_url, quote=True),
+    )
+
+
+
 def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
     return _render_email_template("vtc.html", prenom=prenom, devis_url=devis_url)
 
@@ -2603,21 +2639,16 @@ def demande_informations_formations():
                 "Lieu : Intégrale Academy Côte d’Azur — 54 chemin du Carreou, 83480 Puget-sur-Argens.\n"
                 f"Tarif : {tarif_ssiap} € TTC. {secourisme_info}\n\n"
                 f"Devis détaillé : {devis_url}\n"
+                "Prendre rendez-vous : https://calendly.com/integraleacademy/ssiap1\n"
                 "Contact : 04 22 47 07 68\n\n"
                 "Clément VAILLANT\nDirecteur – Intégrale Academy"
             )
-            html = _wrap_html(
-                "<h1>🔥 Formation Agent de sécurité incendie SSIAP 1</h1>",
-                f"""
-                <p>Bonjour <strong>{html_module.escape(prenom)}</strong>,</p>
-                <p>Voici les informations concernant notre formation <strong>Agent de sécurité incendie SSIAP 1</strong>.</p>
-                <p><strong>📅 Session :</strong> {html_module.escape(session_date)}<br>
-                <strong>📝 Examen :</strong> 28 octobre 2026<br>
-                <strong>📍 Lieu :</strong> 54 chemin du Carreou, 83480 Puget-sur-Argens</p>
-                <p><strong>💶 Tarif : {tarif_ssiap} € TTC.</strong><br>{html_module.escape(secourisme_info)}</p>
-                {extra_devis}
-                <p>Notre équipe reste disponible au <strong>04 22 47 07 68</strong>.</p>
-                """,
+            html = build_ssiap1_email_html(
+                prenom,
+                form_data.get("dates", ""),
+                form_data.get("centre", ""),
+                devis_url,
+                form_data.get("ssiap_secourisme_valide", ""),
             )
             email_subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
         elif form_data.get("formation") == "VTC":
@@ -2800,6 +2831,7 @@ def confirmation_demande_infos():
         "DESP_VAE": "https://calendly.com/integraleacademy/dirigeant",
         "A3P": "https://calendly.com/integraleacademy/apr",
         "APS": "https://calendly.com/integraleacademy/aps",
+        "SSIAP": "https://calendly.com/integraleacademy/ssiap1",
         "VTC": "https://calendly.com/integraleacademy/chauffeurvtc"
     }
     return render_template("confirmation_demande_informations.html", hot=hot, calendly_url=calendly_map.get(formation))

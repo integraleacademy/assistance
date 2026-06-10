@@ -98,6 +98,49 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         self.assertEqual(context["devis_lignes"][0]["prix_unitaire"], "1200 €")
         self.assertIn("SST inclus", context["devis_lignes"][0]["intitule"])
 
+    def test_ssiap_email_uses_dedicated_aps_style_template(self):
+        email_html = application.build_ssiap1_email_html(
+            "Clément",
+            "Du 12 au 27 octobre 2026 - examen le 28 octobre 2026",
+            "cote_azur",
+            "https://example.com/devis/ssiap",
+            "OUI",
+        )
+
+        self.assertIn("Devenez Agent de Sécurité Incendie SSIAP 1", email_html)
+        self.assertIn("Du 12 au 27 octobre 2026 — examen le 28 octobre 2026", email_html)
+        self.assertIn("67 heures de formation", email_html)
+        self.assertIn("Puget-sur-Argens", email_html)
+        self.assertIn("980 € TTC", email_html)
+        self.assertIn("certificat SST valide ou un PSC1 de moins de 2 ans", email_html)
+        self.assertIn("https://example.com/devis/ssiap", email_html)
+        self.assertIn("https://calendly.com/integraleacademy/ssiap1", email_html)
+        self.assertNotIn("{session_html}", email_html)
+        self.assertNotIn("formation APS", email_html)
+
+    def test_ssiap_email_displays_sst_included_tariff(self):
+        email_html = application.build_ssiap1_email_html(
+            "Nadia",
+            "Du 12 au 27 octobre 2026 - examen le 28 octobre 2026",
+            "cote_azur",
+            "https://example.com/devis/ssiap-sst",
+            "NON",
+        )
+
+        self.assertIn("1 200 € TTC", email_html)
+        self.assertIn("La formation SST est incluse dans ce tarif", email_html)
+
+    def test_ssiap_confirmation_uses_ssiap_calendly(self):
+        response = self.client.get(
+            "/confirmation-demande-informations?formation=SSIAP&hot=1"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            "https://calendly.com/integraleacademy/ssiap1",
+            response.get_data(as_text=True),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
