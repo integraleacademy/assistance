@@ -575,10 +575,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <option value="">— Sélectionnez —</option>
           <option value="A3P">Agent de Protection Physique des Personnes (A3P)</option>
           <option value="APS">Agent de Prévention et de Sécurité (APS)</option>
+          <option value="SSIAP">Agent de sécurité incendie SSIAP 1</option>
           <option value="DESP_INIT">Dirigeant d’entreprise de sécurité privée (DESP) en initial</option>
           <option value="DESP_VAE">Dirigeant d’entreprise de sécurité privée (DESP) en VAE</option>
           <option value="VTC">Chauffeur VTC</option>
         </select>
+
       </section>
 
       <div class="nav-actions form-actions">
@@ -622,7 +624,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <label>
             <input type="radio" name="centre" value="cote_azur">
             <span>
-              <strong class="location-title">Intégrale Academy Côte d’Azur (Fréjus, Var)</strong>
+              <strong class="location-title">Intégrale Academy Côte d’Azur (Puget-sur-Argens, Var)</strong>
               <p class="location-copy">
                 🌊☀️
               </p>
@@ -805,6 +807,21 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           </div>
         </div>
 
+        <div id="blocSsiap" class="hidden">
+          <h3>Informations complémentaires</h3>
+          <label style="margin-top:12px;">Je possède un certificat SST ou PSC1 de moins de 2 ans</label>
+          <div class="yn-choice" data-for="ssiapSecourismeValide">
+            <button type="button" class="yn-btn" data-value="OUI">OUI</button>
+            <button type="button" class="yn-btn" data-value="NON">NON</button>
+          </div>
+          <select class="yn-select-hidden" name="ssiap_secourisme_valide" id="ssiapSecourismeValide">
+            <option value="">— Sélectionnez —</option>
+            <option value="OUI">OUI</option>
+            <option value="NON">NON</option>
+          </select>
+          <p class="small-note"><strong>Tarif SSIAP 1 :</strong> 980 € TTC avec un certificat valide, ou 1 200 € TTC avec la formation SST incluse.</p>
+        </div>
+
           </div>
           <div class="step5-card hidden" data-q="5">
             <label for="souhaiteDevis">Souhaitez-vous recevoir un devis détaillé ?</label>
@@ -854,6 +871,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const mail = document.getElementById('mail');
     const mail2 = document.getElementById('mail_confirm');
     const formation = document.getElementById('formation');
+    const ssiapSecourismeValide = document.getElementById('ssiapSecourismeValide');
     const datesSelect = document.getElementById('datesSelect');
     const dateExamen = document.getElementById('dateExamen');
     const sessions = {{ sessions|tojson }};
@@ -868,6 +886,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const blocFranceTravail = document.getElementById('blocFranceTravail');
     const blocPerso = document.getElementById('blocPerso');
     const blocCnaps = document.getElementById('blocCnaps');
+    const blocSsiap = document.getElementById('blocSsiap');
     const optCote = document.getElementById('optCote');
     const optAuv = document.getElementById('optAuv');
     const optParis = document.getElementById('optParis');
@@ -1202,8 +1221,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         if (coteRadio) coteRadio.checked = true;
       }
 
-      // Simulateur masqué pour VTC, APS et DESP_VAE
-      if (!['VTC', 'APS', 'DESP_VAE'].includes(v)) {
+      // Simulateur masqué pour les formations proposées dans un centre unique.
+      if (!['VTC', 'APS', 'SSIAP', 'DESP_VAE'].includes(v)) {
         simuBox.classList.remove('hidden');
         openSimu.style.display = 'inline-flex';
         simuText.classList.remove('hidden');
@@ -1306,12 +1325,29 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       if (franceTravail.value === 'NON') return !!financementPerso.value;
       return false;
     }
+
+    function hasAdditionalQuestions() {
+      const hasCnapsQuestions = blocCnaps && !blocCnaps.classList.contains('hidden');
+      const hasSsiapQuestion = blocSsiap && !blocSsiap.classList.contains('hidden');
+      return Boolean(hasCnapsQuestions || hasSsiapQuestion);
+    }
+
+    function areAdditionalQuestionsComplete() {
+      if (blocSsiap && !blocSsiap.classList.contains('hidden')) {
+        return !!(ssiapSecourismeValide && ssiapSecourismeValide.value);
+      }
+      if (blocCnaps && !blocCnaps.classList.contains('hidden')) {
+        return !!(titreSejourSelect && titreSejourSelect.value);
+      }
+      return true;
+    }
+
     function updateStep5Flow() {
       const previousIndex = step5ManualIndex;
       const q1Done = !!cpfConsulte.value && (cpfConsulte.value !== 'OUI' || !!cpfMontant.value.trim());
       const q2Done = q1Done && isStep5Question2Complete();
       const q3Done = q2Done && !!identiteNumerique.value;
-      const q4Done = q3Done && (blocCnaps.classList.contains('hidden') || !!(titreSejourSelect && titreSejourSelect.value));
+      const q4Done = q3Done && areAdditionalQuestionsComplete();
       let activeIndex = 0;
       if (q1Done && !q2Done) activeIndex = 1;
       else if (q2Done && !q3Done) activeIndex = 2;
@@ -1371,7 +1407,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       }
 
       if (step5ManualIndex === 3) {
-        return blocCnaps.classList.contains('hidden') || !!(titreSejourSelect && titreSejourSelect.value);
+        return areAdditionalQuestionsComplete();
       }
 
       return true;
@@ -1385,7 +1421,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
       if (step5ManualIndex < 4) {
         step5ManualIndex += 1;
-        if (step5ManualIndex === 3 && blocCnaps.classList.contains('hidden')) {
+        if (step5ManualIndex === 3 && !hasAdditionalQuestions()) {
           step5ManualIndex = 4;
         }
         updateStep5Flow();
@@ -1398,7 +1434,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       if (step5ManualIndex === null) return 0;
       let previousIndex = step5ManualIndex - 1;
       while (previousIndex >= 0) {
-        if (previousIndex === 3 && blocCnaps.classList.contains('hidden')) {
+        if (previousIndex === 3 && !hasAdditionalQuestions()) {
           previousIndex -= 1;
           continue;
         }
@@ -1465,9 +1501,22 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       step5ManualIndex = null;
       showLocationCards(formation.value);
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
+      if (blocSsiap) blocSsiap.classList.toggle('hidden', formation.value !== 'SSIAP');
+      if (ssiapSecourismeValide) {
+        ssiapSecourismeValide.required = formation.value === 'SSIAP';
+        if (formation.value !== 'SSIAP') ssiapSecourismeValide.value = '';
+      }
       loadDates();
+      updateStep5Flow();
       updateStepReveal();
     });
+
+    if (ssiapSecourismeValide) {
+      ssiapSecourismeValide.addEventListener('change', () => {
+        updateStep5Flow();
+        updateStepReveal();
+      });
+    }
 
     document.addEventListener('change', (e) => {
       if (e.target.name === 'centre') {
@@ -1609,12 +1658,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       updateStepReveal();
     });
 
-    cpfConsulte.dispatchEvent(new Event('change'));
-    identiteNumerique.dispatchEvent(new Event('change'));
-    franceTravail.dispatchEvent(new Event('change'));
-    formation.dispatchEvent(new Event('change'));
     setupYesNoButtons();
-    updateStep5Flow();
+
+    // La navigation doit être branchée avant l'initialisation des champs :
+    // une donnée optionnelle ne doit jamais rendre le bouton « Continuer » inactif.
     prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
         step5ManualIndex = getPreviousStep5Index();
@@ -1636,6 +1683,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       }
       goToSlide(currentStep + 1);
     }));
+
+    cpfConsulte.dispatchEvent(new Event('change'));
+    identiteNumerique.dispatchEvent(new Event('change'));
+    franceTravail.dispatchEvent(new Event('change'));
+    formation.dispatchEvent(new Event('change'));
+    updateStep5Flow();
     currentStep = 0;
     step5ManualIndex = null;
     updateStep();
