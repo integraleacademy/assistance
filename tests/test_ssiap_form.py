@@ -47,6 +47,22 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         self.assertNotIn("SSIAP", sessions["auvergne"])
         self.assertNotIn("SSIAP", sessions["paris"])
 
+    def test_navigation_is_bound_before_optional_field_initialization(self):
+        response = self.client.get("/demande-informations-formations")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        navigation_binding = page.index(
+            "nextBtns.forEach((nextBtn) => nextBtn.addEventListener('click'"
+        )
+        first_initialization_event = page.index(
+            "cpfConsulte.dispatchEvent(new Event('change'))"
+        )
+
+        self.assertLess(navigation_binding, first_initialization_event)
+        self.assertIn("if (blocSsiap)", page)
+        self.assertIn("if (ssiapSecourismeValide)", page)
+
     def test_ssiap_quote_uses_base_price_with_valid_first_aid_certificate(self):
         context = application.build_devis_context(
             "SSIAP",

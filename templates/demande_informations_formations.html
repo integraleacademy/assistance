@@ -1335,12 +1335,18 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     }
 
     function hasAdditionalQuestions() {
-      return !blocCnaps.classList.contains('hidden') || !blocSsiap.classList.contains('hidden');
+      const hasCnapsQuestions = blocCnaps && !blocCnaps.classList.contains('hidden');
+      const hasSsiapQuestion = blocSsiap && !blocSsiap.classList.contains('hidden');
+      return Boolean(hasCnapsQuestions || hasSsiapQuestion);
     }
 
     function areAdditionalQuestionsComplete() {
-      if (!blocSsiap.classList.contains('hidden')) return !!ssiapSecourismeValide.value;
-      if (!blocCnaps.classList.contains('hidden')) return !!(titreSejourSelect && titreSejourSelect.value);
+      if (blocSsiap && !blocSsiap.classList.contains('hidden')) {
+        return !!(ssiapSecourismeValide && ssiapSecourismeValide.value);
+      }
+      if (blocCnaps && !blocCnaps.classList.contains('hidden')) {
+        return !!(titreSejourSelect && titreSejourSelect.value);
+      }
       return true;
     }
 
@@ -1505,20 +1511,22 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       updateSsiapDetails();
       showLocationCards(formation.value);
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
-      blocSsiap.classList.toggle('hidden', formation.value !== 'SSIAP');
-      ssiapSecourismeValide.required = formation.value === 'SSIAP';
-      if (formation.value !== 'SSIAP') ssiapSecourismeValide.value = '';
+      if (blocSsiap) blocSsiap.classList.toggle('hidden', formation.value !== 'SSIAP');
+      if (ssiapSecourismeValide) {
+        ssiapSecourismeValide.required = formation.value === 'SSIAP';
+        if (formation.value !== 'SSIAP') ssiapSecourismeValide.value = '';
+      }
       loadDates();
       updateStep5Flow();
       updateStepReveal();
     });
 
-    ssiapSecourismeValide.addEventListener('change', () => {
-      updateStep5Flow();
-      updateStepReveal();
-    });
-
-    ssiapSecourismeValide.addEventListener('change', updateStepReveal);
+    if (ssiapSecourismeValide) {
+      ssiapSecourismeValide.addEventListener('change', () => {
+        updateStep5Flow();
+        updateStepReveal();
+      });
+    }
 
     document.addEventListener('change', (e) => {
       if (e.target.name === 'centre') {
@@ -1660,12 +1668,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       updateStepReveal();
     });
 
-    cpfConsulte.dispatchEvent(new Event('change'));
-    identiteNumerique.dispatchEvent(new Event('change'));
-    franceTravail.dispatchEvent(new Event('change'));
-    formation.dispatchEvent(new Event('change'));
     setupYesNoButtons();
-    updateStep5Flow();
+
+    // La navigation doit être branchée avant l'initialisation des champs :
+    // une donnée optionnelle ne doit jamais rendre le bouton « Continuer » inactif.
     prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
       if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
         step5ManualIndex = getPreviousStep5Index();
@@ -1687,6 +1693,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       }
       goToSlide(currentStep + 1);
     }));
+
+    cpfConsulte.dispatchEvent(new Event('change'));
+    identiteNumerique.dispatchEvent(new Event('change'));
+    franceTravail.dispatchEvent(new Event('change'));
+    formation.dispatchEvent(new Event('change'));
+    updateStep5Flow();
     currentStep = 0;
     step5ManualIndex = null;
     updateStep();
