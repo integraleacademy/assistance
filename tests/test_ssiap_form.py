@@ -141,6 +141,17 @@ class SsiapInformationFormTestCase(unittest.TestCase):
             response.get_data(as_text=True),
         )
 
+    def test_ssiap_sms_uses_ssiap_calendly(self):
+        sms = application.build_training_information_sms_text("SSIAP")
+
+        self.assertIn(
+            "SSIAP 1 – Agent de Service de Sécurité Incendie et d’Assistance à Personnes",
+            sms,
+        )
+        self.assertIn("https://calendly.com/integraleacademy/ssiap1", sms)
+        self.assertNotIn("https://calendly.com/integraleacademy/apr", sms)
+        self.assertNotIn("https://calendly.com/integraleacademy/aps", sms)
+
 
 if __name__ == "__main__":
     unittest.main()

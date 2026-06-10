@@ -1199,6 +1199,28 @@ ABANDONED_TRAINING_EMAIL_CONFIG = {
         ],
         "calendly": "https://calendly.com/integraleacademy/aps",
     },
+    "SSIAP": {
+        "short": "Formation SSIAP 1",
+        "project_title": "de formation SSIAP 1",
+        "formation_name": "SSIAP 1 – Agent de Service de Sécurité Incendie et d’Assistance à Personnes",
+        "about_title": "La formation SSIAP 1 en quelques mots",
+        "about_text": "La formation <strong>SSIAP 1</strong> prépare au métier d’agent de sécurité incendie dans les établissements recevant du public et les immeubles de grande hauteur.",
+        "about_extra": "Elle prépare au diplôme SSIAP 1 et aux missions de prévention incendie, d’alerte, d’évacuation et d’assistance à personnes.",
+        "learning": [
+            "Prévention des risques d’incendie",
+            "Sensibilisation des occupants aux consignes de sécurité",
+            "Intervention face à un début d’incendie",
+            "Alerte et accueil des secours",
+            "Évacuation du public et assistance aux personnes",
+            "Préparation aux épreuves du diplôme SSIAP 1",
+        ],
+        "highlights": [
+            ("🔥", "Diplôme SSIAP 1", "Sécurité incendie en ERP et IGH"),
+            ("✅", "Programme réglementé", "67 heures hors examen"),
+            ("📍", "Formation en présentiel", "Puget-sur-Argens"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/ssiap1",
+    },
     "VTC": {
         "short": "Formation Chauffeur VTC",
         "project_title": "de formation Chauffeur VTC",
