@@ -47,7 +47,7 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         self.assertNotIn("SSIAP", sessions["auvergne"])
         self.assertNotIn("SSIAP", sessions["paris"])
 
-    def test_navigation_is_bound_before_optional_field_initialization(self):
+    def test_navigation_is_bound_before_all_business_initialization(self):
         response = self.client.get("/demande-informations-formations")
 
         self.assertEqual(response.status_code, 200)
@@ -55,13 +55,24 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         navigation_binding = page.index(
             "nextBtns.forEach((nextBtn) => nextBtn.addEventListener('click'"
         )
-        first_initialization_event = page.index(
-            "cpfConsulte.dispatchEvent(new Event('change'))"
+        first_business_initialization = page.index(
+            "const step5Cards = Array.from(document.querySelectorAll('#step5 .step5-card'))"
         )
 
-        self.assertLess(navigation_binding, first_initialization_event)
+        self.assertLess(navigation_binding, first_business_initialization)
         self.assertIn("if (blocSsiap)", page)
         self.assertIn("if (ssiapSecourismeValide)", page)
+
+    def test_removed_ssiap_details_reference_cannot_break_javascript(self):
+        response = self.client.get("/demande-informations-formations")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertNotIn("function updateSsiapDetails", page)
+        self.assertIn(
+            "const ssiapDetails = document.getElementById('ssiapDetails') || blocSsiap;",
+            page,
+        )
 
     def test_ssiap_quote_uses_base_price_with_valid_first_aid_certificate(self):
         context = application.build_devis_context(

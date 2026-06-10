@@ -887,6 +887,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const blocPerso = document.getElementById('blocPerso');
     const blocCnaps = document.getElementById('blocCnaps');
     const blocSsiap = document.getElementById('blocSsiap');
+    // Compatibilité avec une ancienne version du script qui utilisait encore
+    // le nom `ssiapDetails`. Le bloc SSIAP est désormais uniquement affiché
+    // dans les informations complémentaires de l'étape finale.
+    const ssiapDetails = document.getElementById('ssiapDetails') || blocSsiap;
     const optCote = document.getElementById('optCote');
     const optAuv = document.getElementById('optAuv');
     const optParis = document.getElementById('optParis');
@@ -912,6 +916,32 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const submitBtns = Array.from(document.querySelectorAll('[data-nav="submit"]'));
     let currentStep = 0;
     let step5ManualIndex = null;
+
+    // Brancher la navigation immédiatement, avant toute initialisation métier.
+    // Ainsi, une erreur ultérieure sur un champ optionnel ne peut pas désactiver
+    // les boutons « Retour » et « Continuer ma demande ».
+    prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
+      if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
+        step5ManualIndex = getPreviousStep5Index();
+        updateStep5Flow();
+        scrollToFormTop();
+        return;
+      }
+      goToSlide(currentStep - 1);
+    }));
+    nextBtns.forEach((nextBtn) => nextBtn.addEventListener('click', () => {
+      if (currentStep === 4) {
+        goNextStep5();
+        return;
+      }
+
+      if (!validateSlide(currentStep)) {
+        alert('Merci de compléter cette étape avant de continuer.');
+        return;
+      }
+      goToSlide(currentStep + 1);
+    }));
+
     const step5Cards = Array.from(document.querySelectorAll('#step5 .step5-card'));
     const ftRefusSelect = document.getElementById('ftRefusOk');
     const financementPerso = document.getElementById('financementPerso');
@@ -1669,30 +1699,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     });
 
     setupYesNoButtons();
-
-    // La navigation doit être branchée avant l'initialisation des champs :
-    // une donnée optionnelle ne doit jamais rendre le bouton « Continuer » inactif.
-    prevBtns.forEach((prevBtn) => prevBtn.addEventListener('click', () => {
-      if (currentStep === 4 && step5ManualIndex !== null && step5ManualIndex > 0) {
-        step5ManualIndex = getPreviousStep5Index();
-        updateStep5Flow();
-        scrollToFormTop();
-        return;
-      }
-      goToSlide(currentStep - 1);
-    }));
-    nextBtns.forEach((nextBtn) => nextBtn.addEventListener('click', () => {
-      if (currentStep === 4) {
-        goNextStep5();
-        return;
-      }
-
-      if (!validateSlide(currentStep)) {
-        alert('Merci de compléter cette étape avant de continuer.');
-        return;
-      }
-      goToSlide(currentStep + 1);
-    }));
 
     cpfConsulte.dispatchEvent(new Event('change'));
     identiteNumerique.dispatchEvent(new Event('change'));
