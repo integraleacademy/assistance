@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html
+import html as html_module
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -296,7 +297,20 @@ def _parse_dates_range(dates_txt: str):
     d2 = parse_part(right)
     return (d1, d2)
 
-def build_devis_context(formation_code: str, formation_label: str, dates_txt: str, sequence: int = 1):
+def get_formation_tarif(formation_code: str, formation_details=None) -> int:
+    details = formation_details if isinstance(formation_details, dict) else {}
+    if formation_code == "SSIAP" and details.get("ssiap_secourisme_valide") == "NON":
+        return 1200
+    return PLAN_TARIFS.get(formation_code, 0)
+
+
+def build_devis_context(
+    formation_code: str,
+    formation_label: str,
+    dates_txt: str,
+    sequence: int = 1,
+    formation_details=None,
+):
     """
     Retourne un dict prêt à injecter dans plan_financement.html :
     devis_num, devis_date, devis_valid_until, date_debut, date_fin, devis_lignes, devis_total
@@ -352,6 +366,16 @@ def build_devis_context(formation_code: str, formation_label: str, dates_txt: st
         ]
         total = 1600
 
+    elif formation_code == "SSIAP":
+        total = get_formation_tarif(formation_code, formation_details)
+        intitule = "Agent de sécurité incendie SSIAP 1"
+        if total == 1200:
+            intitule += " (SST inclus)"
+        lignes = [
+            {"intitule": intitule, "prix_unitaire": _eur(total), "quantite": 1, "total": _eur(total)},
+            {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
+        ]
+
     else:
         # fallback si jamais
         lignes = [
@@ -374,7 +398,8 @@ PLAN_FORMATIONS = {
     "APS": "APS – Agent de Prévention et de Sécurité",
     "VTC": "VTC – Chauffeur de transport avec chauffeur",
     "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
-    "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
+    "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)",
+    "SSIAP": "SSIAP 1 – Agent de sécurité incendie"
 }
 
 PLAN_TARIFS = {
@@ -382,7 +407,8 @@ PLAN_TARIFS = {
     "APS": 1650,
     "VTC": 1600,
     "DESP_INIT": 4300,
-    "DESP_VAE": 3800
+    "DESP_VAE": 3800,
+    "SSIAP": 980
 }
 
 FORMATION_CENTRES = {
@@ -433,7 +459,14 @@ DEFAULT_FORMATION_SESSIONS = {
             {"label": "Du 7 septembre au 23 octobre 2026 (présentiel du 12 au 23/10) - examen le 26 octobre 2026", "badge": ""},
             {"label": "Du 2 novembre au 21 décembre 2026 (présentiel du 8 au 21/12) - examen le 22 décembre 2026", "badge": ""}
         ],
-        "DESP_VAE": []
+        "DESP_VAE": [],
+        "SSIAP": [
+            {
+                "label": "Du 12 au 27 octobre 2026 - examen le 28 octobre 2026",
+                "badge": "",
+                "date_examen": "2026-10-28",
+            }
+        ]
     },
     "auvergne": {
         "A3P": [
@@ -1166,6 +1199,28 @@ ABANDONED_TRAINING_EMAIL_CONFIG = {
         ],
         "calendly": "https://calendly.com/integraleacademy/aps",
     },
+    "SSIAP": {
+        "short": "Formation SSIAP 1",
+        "project_title": "de formation SSIAP 1",
+        "formation_name": "SSIAP 1 – Agent de Service de Sécurité Incendie et d’Assistance à Personnes",
+        "about_title": "La formation SSIAP 1 en quelques mots",
+        "about_text": "La formation <strong>SSIAP 1</strong> prépare au métier d’agent de sécurité incendie dans les établissements recevant du public et les immeubles de grande hauteur.",
+        "about_extra": "Elle prépare au diplôme SSIAP 1 et aux missions de prévention incendie, d’alerte, d’évacuation et d’assistance à personnes.",
+        "learning": [
+            "Prévention des risques d’incendie",
+            "Sensibilisation des occupants aux consignes de sécurité",
+            "Intervention face à un début d’incendie",
+            "Alerte et accueil des secours",
+            "Évacuation du public et assistance aux personnes",
+            "Préparation aux épreuves du diplôme SSIAP 1",
+        ],
+        "highlights": [
+            ("🔥", "Diplôme SSIAP 1", "Sécurité incendie en ERP et IGH"),
+            ("✅", "Programme réglementé", "67 heures hors examen"),
+            ("📍", "Formation en présentiel", "Puget-sur-Argens"),
+        ],
+        "calendly": "https://calendly.com/integraleacademy/ssiap1",
+    },
     "VTC": {
         "short": "Formation Chauffeur VTC",
         "project_title": "de formation Chauffeur VTC",
@@ -1599,6 +1654,42 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
     )
 
 
+
+
+
+def build_ssiap1_email_html(
+    prenom: str,
+    dates_txt: str,
+    centre_code: str,
+    devis_url: str,
+    ssiap_secourisme_valide: str,
+):
+    session_date = _format_selected_session_date(dates_txt)
+    centre_label, centre_address = _centre_label_and_address(centre_code)
+    tarif = get_formation_tarif(
+        "SSIAP",
+        {"ssiap_secourisme_valide": ssiap_secourisme_valide},
+    )
+    session_html = (
+        f'<p style="margin:0; line-height:1.65;">📅 <strong>{html_module.escape(session_date)}</strong></p>'
+        if session_date
+        else '<p style="margin:0; line-height:1.65;">📅 <strong>Date transmise lors de notre échange téléphonique.</strong></p>'
+    )
+    secourisme_info = (
+        "La formation SST est incluse dans ce tarif."
+        if tarif == 1200
+        else "Tarif applicable avec un certificat SST valide ou un PSC1 de moins de 2 ans."
+    )
+    return _render_email_template(
+        "ssiap1.html",
+        prenom=html_module.escape(prenom or ""),
+        session_html=session_html,
+        centre_label=html_module.escape(centre_label),
+        centre_address=html_module.escape(centre_address),
+        tarif_display=_eur_display(tarif),
+        secourisme_info=secourisme_info,
+        devis_url=html_module.escape(devis_url, quote=True),
+    )
 
 
 
@@ -2454,6 +2545,8 @@ def demande_informations_formations():
             "formation": form_data.get("formation", ""),
             "dates": form_data.get("dates", ""),
             "centre": form_data.get("centre", ""),
+            "date_examen": form_data.get("date_examen", ""),
+            "ssiap_secourisme_valide": form_data.get("ssiap_secourisme_valide", ""),
             "cpf_montant": form_data.get("cpf_montant", "0"),
             "france_travail": form_data.get("france_travail", "NON"),
             "identite_numerique": form_data.get("identite_numerique", "NON"),
@@ -2552,6 +2645,34 @@ def demande_informations_formations():
             )
             html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
             email_subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+        elif form_data.get("formation") == "SSIAP":
+            session_date = _format_selected_session_date(form_data.get("dates", ""))
+            tarif_ssiap = get_formation_tarif("SSIAP", form_data)
+            secourisme_info = (
+                "Le tarif comprend la formation SST."
+                if tarif_ssiap == 1200
+                else "Tarif applicable avec un certificat SST ou PSC1 de moins de 2 ans."
+            )
+            plain = (
+                f"Bonjour {prenom},\n\n"
+                "Voici les informations concernant notre formation Agent de sécurité incendie SSIAP 1.\n"
+                + (f"Session : {session_date}\n" if session_date else "")
+                + "Examen : 28 octobre 2026\n"
+                "Lieu : Intégrale Academy Côte d’Azur — 54 chemin du Carreou, 83480 Puget-sur-Argens.\n"
+                f"Tarif : {tarif_ssiap} € TTC. {secourisme_info}\n\n"
+                f"Devis détaillé : {devis_url}\n"
+                "Prendre rendez-vous : https://calendly.com/integraleacademy/ssiap1\n"
+                "Contact : 04 22 47 07 68\n\n"
+                "Clément VAILLANT\nDirecteur – Intégrale Academy"
+            )
+            html = build_ssiap1_email_html(
+                prenom,
+                form_data.get("dates", ""),
+                form_data.get("centre", ""),
+                devis_url,
+                form_data.get("ssiap_secourisme_valide", ""),
+            )
+            email_subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
         elif form_data.get("formation") == "VTC":
             plain = (
                 f"Bonjour {prenom},\n\n"
@@ -2732,6 +2853,7 @@ def confirmation_demande_infos():
         "DESP_VAE": "https://calendly.com/integraleacademy/dirigeant",
         "A3P": "https://calendly.com/integraleacademy/apr",
         "APS": "https://calendly.com/integraleacademy/aps",
+        "SSIAP": "https://calendly.com/integraleacademy/ssiap1",
         "VTC": "https://calendly.com/integraleacademy/chauffeurvtc"
     }
     return render_template("confirmation_demande_informations.html", hot=hot, calendly_url=calendly_map.get(formation))
@@ -4872,32 +4994,17 @@ def plan_financement_devis(devis_id):
 
     formation = infos.get("formation")
 
-    formation_label = {
-        "A3P": "A3P – Agent de Protection Physique des Personnes",
-        "APS": "APS – Agent de Prévention et de Sécurité",
-        "VTC": "VTC – Chauffeur de transport avec chauffeur",
-        "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
-        "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
-    }.get(formation, formation)
+    formation_label = PLAN_FORMATIONS.get(formation, formation)
 
     devis_ctx = build_devis_context(
         formation_code=formation,
         formation_label=formation_label,
         dates_txt=infos.get("dates", ""),
-        sequence=1
+        sequence=1,
+        formation_details=infos,
     )
 
-
-
-    TARIFS = {
-        "A3P": 4200,
-        "APS": 1650,
-        "VTC": 1600,
-        "DESP_INIT": 4300,
-        "DESP_VAE": 3800
-    }
-
-    tarif = TARIFS.get(formation, 0)
+    tarif = get_formation_tarif(formation, infos)
 
     try:
         cpf = int(float(infos.get("cpf_montant", 0)))
@@ -5072,13 +5179,7 @@ def envoyer_plan_financement(devis_id):
     
     formation = (infos.get("formation") or "").strip()
     
-    formation_label = {
-        "A3P": "A3P – Agent de Protection Physique des Personnes",
-        "APS": "APS – Agent de Prévention et de Sécurité",
-        "VTC": "VTC – Chauffeur de transport avec chauffeur",
-        "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
-        "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
-    }.get(formation, formation)
+    formation_label = PLAN_FORMATIONS.get(formation, formation)
 
 
     subject = "📄 Votre devis détaillé — Intégrale Academy"
@@ -5243,31 +5344,17 @@ def plan_public(token):
 
     formation = infos.get("formation")
 
-    formation_label = {
-        "A3P": "A3P – Agent de Protection Physique des Personnes",
-        "APS": "APS – Agent de Prévention et de Sécurité",
-        "VTC": "VTC – Chauffeur de transport avec chauffeur",
-        "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
-        "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)"
-    }.get(formation, formation)
+    formation_label = PLAN_FORMATIONS.get(formation, formation)
 
     devis_ctx = build_devis_context(
         formation_code=formation,
         formation_label=formation_label,
         dates_txt=infos.get("dates", ""),
-        sequence=1
+        sequence=1,
+        formation_details=infos,
     )
 
-
-    TARIFS = {
-        "A3P": 4200,
-        "APS": 1650,
-        "VTC": 1600,
-        "DESP_INIT": 4300,
-        "DESP_VAE": 3800
-    }
-
-    tarif = TARIFS.get(formation, 0)
+    tarif = get_formation_tarif(formation, infos)
 
     try:
         cpf = int(float(infos.get("cpf_montant", 0)))
@@ -5351,7 +5438,8 @@ def plan_simulation_public(token):
         formation_code=formation_code,
         formation_label=formation_label,
         dates_txt=simulation.get("dates", ""),
-        sequence=1
+        sequence=1,
+        formation_details=simulation,
     )
     centre_code = _normalize_centre_code(simulation.get("centre"))
     centre_label, centre_address = _centre_label_and_address(centre_code)
