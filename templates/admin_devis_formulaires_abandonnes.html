@@ -21,6 +21,17 @@ thead{background:#f0f2f5}
 .badge-centre{background:#ecfeff;color:#0f766e}
 .btn{display:inline-block;padding:6px 10px;border-radius:7px;background:#111827;color:#fff;text-decoration:none;font-size:12px;border:none;cursor:pointer;font-weight:700}
 .btn-relance{background:#0f766e}
+.btn-relance[disabled]{cursor:wait;opacity:.72}
+.transmission-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:24px;background:rgba(15,23,42,.72);backdrop-filter:blur(3px)}
+.transmission-overlay.is-visible{display:flex}
+.transmission-card{width:min(460px,100%);padding:28px;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(0,0,0,.28);text-align:center;color:#0f172a}
+.transmission-spinner{width:52px;height:52px;margin:0 auto 18px;border:5px solid #ccfbf1;border-top-color:#0f766e;border-radius:50%;animation:transmission-spin .8s linear infinite}
+.transmission-title{margin:0 0 8px;font-size:21px;font-weight:800}
+.transmission-detail{margin:0;color:#475569;font-size:14px;line-height:1.5}
+.row-transmission-status{display:none;margin-top:8px;color:#0f766e;font-size:12px;font-weight:800}
+.row.is-transmitting .row-transmission-status{display:block}
+@keyframes transmission-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.transmission-spinner{animation:none;border-top-color:#ccfbf1;background:#0f766e}}
 .btn-danger{background:#b91c1c}
 .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .flash-messages{display:grid;gap:8px;margin:12px 0 16px}
@@ -50,6 +61,13 @@ thead{background:#f0f2f5}
 </style>
 </head>
 <body>
+<div id="transmission-overlay" class="transmission-overlay" role="status" aria-live="assertive" aria-hidden="true">
+    <div class="transmission-card">
+        <div class="transmission-spinner" aria-hidden="true"></div>
+        <p class="transmission-title">En cours de transmission Yparéo…</p>
+        <p class="transmission-detail">Création de la personne et transmission des informations. Merci de patienter sans fermer cette page.</p>
+    </div>
+</div>
 <div class="container">
     <h1>🕘 Formulaires abandonnés</h1>
     <div class="topbar">
@@ -131,9 +149,10 @@ thead{background:#f0f2f5}
             </td>
             <td>
                 <div class="actions">
-                    <form method="POST" action="{{ url_for('relancer_formulaire_abandonne_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Envoyer le mail et le SMS formulaire abandonné, puis ajouter cette personne sur Salesforce ?')">
-                        <button class="btn btn-relance" type="submit" title="Envoyer le mail et le SMS formulaire abandonné, puis créer une piste Salesforce">📨 Relancer</button>
+                    <form class="relance-form" method="POST" action="{{ url_for('relancer_formulaire_abandonne_admin_devis', formulaire_id=f.id) }}">
+                        <button class="btn btn-relance" type="submit" title="Relancer la création de la personne et la transmission">📨 Relancer</button>
                     </form>
+                    <span class="row-transmission-status" role="status">⏳ En cours de transmission Yparéo…</span>
                     <a class="btn" target="_blank" href="{{ url_for('imprimer_formulaire_admin_devis', formulaire_id=f.id) }}">🖨️ Ouvrir imprimable</a>
                     <form method="POST" action="{{ url_for('supprimer_formulaire_admin_devis', formulaire_id=f.id) }}" onsubmit="return confirm('Supprimer ce formulaire ?')">
                         <button class="btn btn-danger" type="submit">🗑️ Supprimer</button>
@@ -148,9 +167,40 @@ thead{background:#f0f2f5}
 <script>
 const search = document.getElementById('search');
 const rows = document.querySelectorAll('.row');
+const transmissionOverlay = document.getElementById('transmission-overlay');
+let transmissionStarted = false;
+
 search.addEventListener('input', () => {
   const q = search.value.toLowerCase();
   rows.forEach(r => r.style.display = r.dataset.search.includes(q) ? '' : 'none');
+});
+
+document.querySelectorAll('.relance-form').forEach((form) => {
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (transmissionStarted) return;
+
+    const confirmed = window.confirm(
+      'Relancer la création de la personne, envoyer le mail et le SMS, puis transmettre les informations ?'
+    );
+    if (!confirmed) return;
+
+    transmissionStarted = true;
+    const button = form.querySelector('.btn-relance');
+    const row = form.closest('.row');
+    if (button) {
+      button.disabled = true;
+      button.textContent = '⏳ Transmission…';
+    }
+    if (row) row.classList.add('is-transmitting');
+    transmissionOverlay.classList.add('is-visible');
+    transmissionOverlay.setAttribute('aria-hidden', 'false');
+
+    // Laisse le navigateur peindre l'état de chargement avant le POST synchrone.
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => form.submit(), 50);
+    });
+  });
 });
 </script>
 </body>
