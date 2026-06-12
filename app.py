@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64
 import html as html_module
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -975,11 +975,74 @@ def _attach_logo(related_part):
     except Exception as e:
         print("⚠️ Impossible d’attacher le logo :", e)
 
+def _email_recipients(to_emails):
+    if isinstance(to_emails, (list, tuple, set)):
+        values = to_emails
+    else:
+        values = str(to_emails or "").split(",")
+    return [str(value).strip() for value in values if str(value).strip()]
+
+
+def _send_email_brevo(to_emails, subject, plain_text, html_body, attachments_paths=None):
+    api_key = os.getenv("BREVO_API_KEY")
+    sender_email = os.getenv("BREVO_SENDER_EMAIL") or os.getenv("SMTP_USER")
+    recipients = _email_recipients(to_emails)
+    if not api_key or not sender_email or not recipients:
+        return False
+
+    payload = {
+        "sender": {
+            "name": os.getenv("BREVO_SENDER_NAME", "Intégrale Academy"),
+            "email": sender_email,
+        },
+        "to": [{"email": recipient} for recipient in recipients],
+        "subject": subject,
+        "textContent": plain_text,
+        "htmlContent": html_body,
+    }
+
+    attachments = []
+    for path in attachments_paths or []:
+        if not path or not os.path.exists(path):
+            continue
+        with open(path, "rb") as attachment_file:
+            attachments.append({
+                "name": os.path.basename(path),
+                "content": base64.b64encode(attachment_file.read()).decode("ascii"),
+            })
+    if attachments:
+        payload["attachment"] = attachments
+
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            json=payload,
+            headers={
+                "accept": "application/json",
+                "api-key": api_key,
+                "content-type": "application/json",
+            },
+            timeout=10,
+        )
+        if 200 <= response.status_code < 300:
+            print("✅ Email envoyé via le secours Brevo")
+            return True
+        print("❌ Erreur envoi email Brevo :", response.status_code, response.text)
+    except Exception as e:
+        print("❌ Erreur envoi email Brevo :", e)
+    return False
+
+
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
+    recipients = _email_recipients(to_emails)
+    if not recipients:
+        print("❌ Erreur envoi email : aucun destinataire")
+        return False
+
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = os.getenv("SMTP_USER")
-    msg["To"] = to_emails
+    msg["To"] = ", ".join(recipients)
 
     related = MIMEMultipart("related")
     msg.attach(related)
@@ -1005,8 +1068,14 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
             serveur.send_message(msg)
         return True
     except Exception as e:
-        print("❌ Erreur envoi email :", e)
-        return False
+        print("❌ Erreur envoi email SMTP :", e)
+        return _send_email_brevo(
+            recipients,
+            subject,
+            plain_text,
+            html_body,
+            attachments_paths=attachments_paths,
+        )
 
 
 # -------------------------------------------------------------------
@@ -2745,10 +2814,21 @@ def demande_informations_formations():
             )
             email_subject = "Votre demande de renseignements – Intégrale Academy"
 
+        demande_entry["mail_contenu"] = plain
+        demande_entry["mail_html"] = html
         try:
-            send_email_html(form_data.get("mail"), email_subject, plain, html)
-        except:
-            pass
+            email_sent = send_email_html(form_data.get("mail"), email_subject, plain, html)
+        except Exception as e:
+            print("❌ Erreur inattendue envoi email demande informations formations :", e)
+            email_sent = False
+
+        if email_sent:
+            demande_entry["mail_confirme"] = datetime.datetime.now(
+                pytz.timezone("Europe/Paris")
+            ).strftime("%d/%m/%Y %H:%M")
+            demande_entry["mail_erreur"] = ""
+        else:
+            demande_entry["mail_erreur"] = "❌ Erreur lors de l'envoi automatique du mail"
 
         try:
             envoyer_sms_demande_infos_formation(demande_entry, form_data)
