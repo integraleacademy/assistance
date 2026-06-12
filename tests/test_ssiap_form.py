@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest.mock import Mock, patch
 
 import app as application
 
@@ -129,6 +131,101 @@ class SsiapInformationFormTestCase(unittest.TestCase):
 
         self.assertIn("1 200 € TTC", email_html)
         self.assertIn("La formation SST est incluse dans ce tarif", email_html)
+
+    def test_email_uses_brevo_fallback_when_gmail_smtp_fails(self):
+        brevo_response = Mock(status_code=201, text='{"messageId":"test"}')
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SMTP_USER": "ecole@integraleacademy.com",
+                    "SMTP_PASS": "invalid",
+                    "BREVO_API_KEY": "brevo-test-key",
+                },
+                clear=False,
+            ),
+            patch.object(
+                application.smtplib,
+                "SMTP_SSL",
+                side_effect=OSError("SMTP indisponible"),
+            ),
+            patch.object(application.requests, "post", return_value=brevo_response) as post,
+        ):
+            sent = application.send_email_html(
+                "stagiaire@example.com",
+                "Informations SSIAP 1",
+                "Contenu texte",
+                "<p>Contenu HTML</p>",
+            )
+
+        self.assertTrue(sent)
+        post.assert_called_once()
+        self.assertEqual(
+            post.call_args.args[0],
+            "https://api.brevo.com/v3/smtp/email",
+        )
+        self.assertEqual(
+            post.call_args.kwargs["json"]["to"],
+            [{"email": "stagiaire@example.com"}],
+        )
+
+    def test_ssiap_submission_records_automatic_email_failure(self):
+        data_store = {
+            "demandes": [],
+            "archives": [],
+            "compteur_traitees": 0,
+            "hebergements": [],
+            "formation_sessions": {},
+            "plans_simulation": {},
+        }
+
+        with (
+            patch.object(application, "load_data", return_value=data_store),
+            patch.object(application, "save_data") as save_data,
+            patch.object(application, "creer_piste_salesforce"),
+            patch.object(application, "send_email_html", return_value=False),
+            patch.object(
+                application,
+                "envoyer_sms_demande_infos_formation",
+                return_value=True,
+            ),
+        ):
+            response = self.client.post(
+                "/demande-informations-formations",
+                data={
+                    "nom": "Martin",
+                    "prenom": "Nadia",
+                    "mail": "nadia@example.com",
+                    "telephone": "0612345678",
+                    "formation": "SSIAP",
+                    "centre": "cote_azur",
+                    "dates": "Du 12 au 27 octobre 2026 - examen le 28 octobre 2026",
+                    "ssiap_secourisme_valide": "OUI",
+                    "souhaite_devis": "OUI",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        demande = next(
+            entry
+            for entry in data_store["demandes"]
+            if entry.get("source") == "demande_infos_formations"
+        )
+        self.assertEqual(
+            demande["mail_erreur"],
+            "❌ Erreur lors de l'envoi automatique du mail",
+        )
+        self.assertEqual(demande["mail_confirme"], "")
+        self.assertIn(
+            "formation Agent de sécurité incendie SSIAP 1",
+            demande["mail_contenu"],
+        )
+        self.assertIn(
+            "Devenez Agent de Sécurité Incendie SSIAP 1",
+            demande["mail_html"],
+        )
+        save_data.assert_called()
 
     def test_ssiap_confirmation_uses_ssiap_calendly(self):
         response = self.client.get(

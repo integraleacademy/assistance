@@ -1259,13 +1259,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       }
     }
 
-    function updateSsiapDetails() {
-      const isSsiap = formation.value === 'SSIAP';
-      ssiapDetails.classList.toggle('hidden', !isSsiap);
-      ssiapSecourismeValide.required = isSsiap;
-      if (!isSsiap) ssiapSecourismeValide.value = '';
-    }
-
     function loadDates() {
       const f = formation.value;
       const centre = selectedCentre();
@@ -1534,11 +1527,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     });
 
     updateCoteHebergementLine(formation.value);
-    updateSsiapDetails();
 
     formation.addEventListener('change', () => {
       step5ManualIndex = null;
-      updateSsiapDetails();
       showLocationCards(formation.value);
       blocCnaps.classList.toggle('hidden', !['A3P', 'APS'].includes(formation.value));
       if (blocSsiap) blocSsiap.classList.toggle('hidden', formation.value !== 'SSIAP');
