@@ -1887,7 +1887,7 @@ def envoyer_mail_formulaire_rappel_admin(callback_data):
         </table>
         """
     )
-    send_email_html("clement@integraleacademy.com, cassandre@integraleacademy.com", sujet, plain, html)
+    send_email_html("cassandre@integraleacademy.com", sujet, plain, html)
 def envoyer_mail_accuse(demande):
     sujet = "📩 Accusé de réception — Intégrale Academy"
     plain = (
