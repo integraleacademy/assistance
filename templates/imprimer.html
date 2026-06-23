@@ -5,38 +5,12 @@
     <title>Impression demande</title>
     <style>
         body {font-family: Arial, sans-serif; margin: 40px;}
-        .box {border: 1px solid #000; padding: 20px; position: relative; min-height: 45mm;}
-        .photo-identite {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 35mm;
-            height: 45mm;
-            object-fit: cover;
-            border: 1px solid #000;
-            background: #fff;
-        }
-        .has-photo {padding-right: calc(35mm + 40px);}
-        @media print {
-            .photo-identite {
-                width: 35mm;
-                height: 45mm;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-        }
+        .box {border: 1px solid #000; padding: 20px;}
     </style>
 </head>
 <body>
     {% if demande %}
-    <div class="box {% if demande.photo_identite %}has-photo{% endif %}">
-        {% if demande.photo_identite %}
-        <img
-            class="photo-identite"
-            src="{{ url_for('download_file', filename=demande.photo_identite) }}"
-            alt="Photo d'identité de {{ demande.prenom }} {{ demande.nom }}"
-        >
-        {% endif %}
+    <div class="box">
         <h2>Demande stagiaire</h2>
         <p><strong>Nom :</strong> {{ demande.nom }}</p>
         <p><strong>Prénom :</strong> {{ demande.prenom }}</p>
@@ -51,10 +25,6 @@
                 📎 Télécharger
             </a>
         </p>
-        {% endif %}
-
-        {% if demande.photo_identite and demande.photo_identite != "" %}
-        <p><strong>Photo d’identité :</strong> formatée automatiquement en 35&nbsp;mm × 45&nbsp;mm en haut à droite.</p>
         {% endif %}
 
         <p><strong>Date :</strong> {{ demande.date }}</p>

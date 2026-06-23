@@ -896,7 +896,6 @@ def supprimer_fichiers_demande(demande):
         return
 
     supprimer_fichier(demande.get("justificatif"))
-    supprimer_fichier(demande.get("photo_identite"))
 
     for pj in demande.get("pieces_jointes", []) or []:
         supprimer_fichier(pj)
@@ -1823,8 +1822,6 @@ def envoyer_mail_admin(demande):
     )
     if demande.get("justificatif"):
         plain += f"📎 Justificatif: {url_for('download_file', filename=demande['justificatif'], _external=True)}\n"
-    if demande.get("photo_identite"):
-        plain += f"🪪 Photo d'identité: {url_for('download_file', filename=demande['photo_identite'], _external=True)}\n"
 
     rows = f"""
       <tr><td style="padding:6px 8px;color:#555;width:150px;">👤 Nom</td>
@@ -1845,12 +1842,6 @@ def envoyer_mail_admin(demande):
     if demande.get("justificatif"):
         link = url_for('download_file', filename=demande['justificatif'], _external=True)
         rows += f"""<tr><td style="padding:6px 8px;color:#555;width:150px;">📎 Justificatif</td>
-                      <td style="padding:6px 8px;">
-                        <a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a>
-                      </td></tr>"""
-    if demande.get("photo_identite"):
-        link = url_for('download_file', filename=demande['photo_identite'], _external=True)
-        rows += f"""<tr><td style="padding:6px 8px;color:#555;width:150px;">🪪 Photo d'identité</td>
                       <td style="padding:6px 8px;">
                         <a href="{link}" style="color:#0d6efd;text-decoration:none;">Télécharger</a>
                       </td></tr>"""
@@ -2151,14 +2142,6 @@ def index():
                 f.save(os.path.join(UPLOAD_FOLDER, filename))
                 justificatif_filename = filename
 
-        photo_identite_filename = ""
-        if "photo_identite" in request.files:
-            f = request.files["photo_identite"]
-            if f and f.filename:
-                filename = secure_filename(f.filename)
-                f.save(os.path.join(UPLOAD_FOLDER, filename))
-                photo_identite_filename = filename
-
         nom_in = request.form["nom"].strip()
         prenom_in = request.form["prenom"].strip()
         mail_in = request.form["mail"].strip()
@@ -2183,7 +2166,6 @@ def index():
             "motif": motif_in,
             "details": details_in,
             "justificatif": justificatif_filename,
-            "photo_identite": photo_identite_filename,
             "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
             "attribution": "",
             "statut": "Non traité",

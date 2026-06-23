@@ -96,14 +96,6 @@
         <input type="file" name="justificatif" accept=".pdf,.jpg,.jpeg,.png">
       </div>
 
-      <div id="photoIdentiteDiv" style="display:none; margin-top:15px;">
-        <label>Photo d’identité (JPG ou PNG) :</label>
-        <input type="file" name="photo_identite" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
-        <small style="display:block;text-align:left;margin-top:-10px;margin-bottom:15px;color:#666;line-height:1.35;">
-          Pour un diplôme SSIAP, la photo sera automatiquement placée en haut à droite au format officiel 35&nbsp;mm × 45&nbsp;mm.
-        </small>
-      </div>
-
       <label>Votre demande (détails) :</label>
       <textarea name="details" rows="4" required></textarea>
 
@@ -116,9 +108,7 @@
     function toggleJustificatif() {
       let motif = document.getElementById("motif").value;
       let justificatifDiv = document.getElementById("justificatifDiv");
-      let photoIdentiteDiv = document.getElementById("photoIdentiteDiv");
       justificatifDiv.style.display = (motif === "Absence") ? "block" : "none";
-      photoIdentiteDiv.style.display = (motif === "Diplome") ? "block" : "none";
     }
 
     // ✅ Fix iOS : empêche le zoom et les remontées automatiques
