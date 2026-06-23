@@ -1887,7 +1887,7 @@ def envoyer_mail_formulaire_rappel_admin(callback_data):
         </table>
         """
     )
-    send_email_html("clement@integraleacademy.com, cassandre@integraleacademy.com", sujet, plain, html)
+    send_email_html("cassandre@integraleacademy.com", sujet, plain, html)
 def envoyer_mail_accuse(demande):
     sujet = "📩 Accusé de réception — Intégrale Academy"
     plain = (
@@ -2040,7 +2040,7 @@ def _poei_cannes_admin_email(demande):
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #eef2f7;border-radius:12px;overflow:hidden;">{rows}</table>
         """
     )
-    return send_email_html("ecole@integraleacademy.com", "Nouvelle candidature POEI Sécurité Cannes", plain, html_body)
+    return send_email_html("aurelie@integraleacademy.com", "Nouvelle candidature POEI Sécurité Cannes", plain, html_body)
 
 
 @app.route("/poei-agent-securite-cannes", methods=["GET", "POST"])
@@ -3155,6 +3155,33 @@ def admin_devis():
     simulations_vae.reverse()
     return render_template("admin_devis.html", devis=devis, simulations_vae=simulations_vae)
 
+
+
+@app.route("/admin-devis/poei")
+@login_required
+def admin_devis_poei():
+    data = load_data()
+    candidatures = []
+    for demande in data.get("demandes", []):
+        if demande.get("source") != "poei_agent_securite_cannes":
+            continue
+        details = demande.get("details_data")
+        if not isinstance(details, dict):
+            try:
+                details = json.loads(demande.get("details", "{}"))
+            except Exception:
+                details = {}
+        item = dict(demande)
+        item["details"] = details
+        candidatures.append(item)
+
+    candidatures.reverse()
+    stats = {
+        "total": len(candidatures),
+        "non_traites": sum(1 for c in candidatures if (c.get("statut") or "Non traité") == "Non traité"),
+        "mails_confirmes": sum(1 for c in candidatures if c.get("mail_confirme")),
+    }
+    return render_template("admin_devis_poei.html", candidatures=candidatures, stats=stats)
 
 
 
