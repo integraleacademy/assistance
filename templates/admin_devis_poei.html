@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Candidatures POEI — Intégrale Academy</title>
+  <style>
+    :root{--green:#123c2f;--gold:#c8a44d;--bg:#f6f7f4;--line:#e4e8df;--muted:#64748b;--ink:#17211c;}
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    .page{width:min(1180px,calc(100% - 32px));margin:32px auto 56px}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:14px}.brand img{width:58px;height:58px;object-fit:contain;background:white;border-radius:18px;padding:8px;box-shadow:0 12px 30px rgba(18,60,47,.12)}.kicker{margin:0;color:var(--gold);font-weight:900;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:4px 0 0;font-size:clamp(28px,4vw,44px);letter-spacing:-.04em}.back{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:white;border-radius:999px;padding:12px 16px;color:var(--green);font-weight:900;text-decoration:none}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}.stat{background:white;border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 14px 34px rgba(18,60,47,.07)}.stat strong{display:block;font-size:30px;color:var(--green)}.stat span{color:var(--muted);font-weight:800}.card{background:white;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:0 18px 50px rgba(18,60,47,.09)}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:980px}th,td{padding:14px 16px;border-bottom:1px solid #eef2ec;text-align:left;vertical-align:top}th{background:#fbfcf8;color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.08em}td{font-size:14px}.name{font-weight:950;color:var(--green)}.contact a{display:block;color:var(--green);font-weight:800;text-decoration:none}.pill{display:inline-flex;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900;background:#eef7f2;color:#14543d}.pill.error{background:#fff1f2;color:#be123c}.details{display:grid;gap:4px;color:#334155}.details span{white-space:nowrap}.message{max-width:320px;white-space:pre-wrap;color:#475569}.empty{padding:34px;text-align:center;color:var(--muted);font-weight:800}@media(max-width:760px){.top{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr}.page{width:min(100% - 22px,1180px);margin-top:18px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="top">
+      <div class="brand">
+        <a href="{{ url_for('admin_devis') }}" aria-label="Retour demandes de devis"><img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy"></a>
+        <div><p class="kicker">Admin commercial</p><h1>Candidatures POEI Cannes</h1></div>
+      </div>
+      <a class="back" href="{{ url_for('admin_devis') }}">← Retour aux devis</a>
+    </div>
+    <section class="stats" aria-label="Statistiques candidatures POEI">
+      <div class="stat"><strong>{{ stats.total }}</strong><span>Candidatures</span></div>
+      <div class="stat"><strong>{{ stats.non_traites }}</strong><span>Non traitées</span></div>
+      <div class="stat"><strong>{{ stats.mails_confirmes }}</strong><span>Mails admin envoyés</span></div>
+    </section>
+    <section class="card">
+      {% if candidatures %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Candidat</th><th>Contact</th><th>Éligibilité</th><th>France Travail</th><th>Message</th><th>Mail</th><th>Statut</th></tr></thead>
+          <tbody>
+          {% for c in candidatures %}
+            <tr>
+              <td>{{ c.date }}</td>
+              <td><div class="name">{{ c.prenom }} {{ c.nom }}</div><div>{{ c.details.get('Ville de résidence', '') }}</div></td>
+              <td class="contact"><a href="mailto:{{ c.mail }}">{{ c.mail }}</a><a href="tel:{{ c.telephone }}">{{ c.telephone }}</a></td>
+              <td class="details"><span>Permis B : <strong>{{ c.details.get('Permis B', '—') }}</strong></span><span>Formation : <strong>{{ c.details.get('Disponible formation', '—') }}</strong></span><span>Cannes : <strong>{{ c.details.get('Mobilité Cannes', '—') }}</strong></span></td>
+              <td class="details"><span>Inscrit : <strong>{{ c.details.get('Inscrit France Travail', '—') }}</strong></span><span>ID : <strong>{{ c.details.get('Identifiant France Travail', '—') }}</strong></span></td>
+              <td class="message">{{ c.details.get('Message / motivation', '') }}</td>
+              <td>{% if c.mail_confirme %}<span class="pill">Envoyé {{ c.mail_confirme }}</span>{% elif c.mail_erreur %}<span class="pill error" title="{{ c.mail_erreur }}">Erreur</span>{% else %}<span class="pill error">Non envoyé</span>{% endif %}</td>
+              <td><span class="pill">{{ c.statut or 'Non traité' }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}<div class="empty">Aucune candidature POEI pour le moment.</div>{% endif %}
+    </section>
+  </main>
+</body>
+</html>
