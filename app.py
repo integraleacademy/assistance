@@ -2017,6 +2017,110 @@ def envoyer_mail_attribution_mohamed(demande):
 
 
 
+def _poei_cannes_admin_email(demande):
+    details = demande.get("details_data", {})
+    rows = "".join(
+        f"<tr><td style='padding:8px 10px;color:#64748b;border-bottom:1px solid #eef2f7;'>{html_module.escape(label)}</td>"
+        f"<td style='padding:8px 10px;border-bottom:1px solid #eef2f7;'><strong>{html_module.escape(str(value or '—'))}</strong></td></tr>"
+        for label, value in details.items()
+    )
+    plain = (
+        "Nouvelle candidature POEI Sécurité Cannes\n\n"
+        f"Nom : {demande.get('nom', '')}\n"
+        f"Prénom : {demande.get('prenom', '')}\n"
+        f"Email : {demande.get('mail', '')}\n"
+        f"Téléphone : {demande.get('telephone', '')}\n"
+        f"Ville : {details.get('Ville de résidence', '')}\n"
+        f"Message : {details.get('Message / motivation', '')}"
+    )
+    html_body = _wrap_html(
+        "<h1 style='margin:0;color:#123c2f;'>Nouvelle candidature POEI Sécurité Cannes</h1>",
+        f"""
+        <p>Une nouvelle candidature a été transmise depuis la landing page POEI Agent de sécurité + SSIAP 1.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #eef2f7;border-radius:12px;overflow:hidden;">{rows}</table>
+        """
+    )
+    return send_email_html("ecole@integraleacademy.com", "Nouvelle candidature POEI Sécurité Cannes", plain, html_body)
+
+
+@app.route("/poei-agent-securite-cannes", methods=["GET", "POST"])
+def poei_agent_securite_cannes():
+    success = request.args.get("success") == "1"
+    if request.method == "POST":
+        required_fields = [
+            "nom", "prenom", "mail", "telephone", "ville", "permis_b",
+            "disponible_formation", "mobilite_cannes", "france_travail", "message",
+        ]
+        required_checks = ["confirm_disponibilite", "confirm_cannes", "confirm_cnaps", "consentement"]
+        missing = [field for field in required_fields if not (request.form.get(field) or "").strip()]
+        missing += [field for field in required_checks if request.form.get(field) != "on"]
+        mail = (request.form.get("mail") or "").strip()
+        if mail and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", mail):
+            missing.append("mail")
+        if missing:
+            return render_template("poei_agent_securite_cannes.html", success=False, error="missing_fields"), 400
+
+        paris_tz = pytz.timezone("Europe/Paris")
+        details_data = {
+            "Formation": "POEI Agent de sécurité privée + Agent de sécurité incendie SSIAP 1",
+            "Dates": "23 septembre au 22 décembre 2026",
+            "Lieu de formation": "Intégrale Academy, Puget-sur-Argens",
+            "Poste visé": "Agent de sécurité / Agent de sécurité incendie à Cannes",
+            "Contrat prévu": "CDD minimum 6 mois",
+            "Ville de résidence": request.form.get("ville", "").strip(),
+            "Permis B": request.form.get("permis_b", "").strip(),
+            "Disponible formation": request.form.get("disponible_formation", "").strip(),
+            "Mobilité Cannes": request.form.get("mobilite_cannes", "").strip(),
+            "Inscrit France Travail": request.form.get("france_travail", "").strip(),
+            "Confirmation CNAPS": "Oui",
+            "Consentement recontact": "Oui",
+            "Message / motivation": request.form.get("message", "").strip(),
+        }
+        demande = {
+            "id": str(uuid.uuid4()),
+            "nom": request.form.get("nom", "").strip(),
+            "prenom": request.form.get("prenom", "").strip(),
+            "telephone": request.form.get("telephone", "").strip(),
+            "mail": mail,
+            "motif": "Nouvelle candidature POEI Sécurité Cannes",
+            "details": json.dumps(details_data, ensure_ascii=False),
+            "details_data": details_data,
+            "date": datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M"),
+            "statut": "Non traité",
+            "attribution": "",
+            "commentaire": "",
+            "commentaire_admin": "",
+            "mail_confirme": "",
+            "mail_erreur": "",
+            "mail_contenu": "",
+            "mail_html": "",
+            "pieces_jointes": [],
+            "reponses": [],
+            "is_doublon": False,
+            "rappel_date": "",
+            "plage": "",
+            "source": "poei_agent_securite_cannes",
+        }
+        data = load_data()
+        data.setdefault("demandes", []).append(demande)
+        save_data(data)
+        try:
+            if _poei_cannes_admin_email(demande):
+                demande["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+            else:
+                demande["mail_erreur"] = "Variables SMTP/Brevo manquantes ou envoi impossible : SMTP_USER/SMTP_PASS ou BREVO_API_KEY/BREVO_SENDER_EMAIL."
+        except Exception as e:
+            demande["mail_erreur"] = f"Erreur envoi email : {e}"
+        data = load_data()
+        for entry in data.get("demandes", []):
+            if entry.get("id") == demande["id"]:
+                entry.update({"mail_confirme": demande["mail_confirme"], "mail_erreur": demande["mail_erreur"]})
+                break
+        save_data(data)
+        return redirect(url_for("poei_agent_securite_cannes", success="1") + "#candidature")
+    return render_template("poei_agent_securite_cannes.html", success=success)
+
+
 # -------------------------------------------------------------------
 # Routes
 # -------------------------------------------------------------------
