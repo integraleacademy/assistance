@@ -2049,7 +2049,7 @@ def poei_agent_securite_cannes():
     if request.method == "POST":
         required_fields = [
             "nom", "prenom", "mail", "telephone", "ville", "permis_b",
-            "disponible_formation", "mobilite_cannes", "france_travail", "message",
+            "disponible_formation", "mobilite_cannes", "france_travail", "identifiant_france_travail", "message",
         ]
         required_checks = ["confirm_disponibilite", "confirm_cannes", "confirm_cnaps", "consentement"]
         missing = [field for field in required_fields if not (request.form.get(field) or "").strip()]
@@ -2057,6 +2057,8 @@ def poei_agent_securite_cannes():
         mail = (request.form.get("mail") or "").strip()
         if mail and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", mail):
             missing.append("mail")
+        if request.form.get("france_travail", "").strip() != "Oui":
+            missing.append("france_travail")
         if missing:
             return render_template("poei_agent_securite_cannes.html", success=False, error="missing_fields"), 400
 
@@ -2072,6 +2074,7 @@ def poei_agent_securite_cannes():
             "Disponible formation": request.form.get("disponible_formation", "").strip(),
             "Mobilité Cannes": request.form.get("mobilite_cannes", "").strip(),
             "Inscrit France Travail": request.form.get("france_travail", "").strip(),
+            "Identifiant France Travail": request.form.get("identifiant_france_travail", "").strip(),
             "Confirmation CNAPS": "Oui",
             "Consentement recontact": "Oui",
             "Message / motivation": request.form.get("message", "").strip(),
