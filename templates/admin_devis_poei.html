@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Candidatures POEI — Intégrale Academy</title>
   <style>
-    :root{--green:#123c2f;--gold:#c8a44d;--bg:#f6f7f4;--line:#e4e8df;--muted:#64748b;--ink:#17211c;--ok:#15803d;--danger:#be123c;}
+    :root{--green:#123c2f;--gold:#c8a44d;--bg:#f6f7f4;--line:#e4e8df;--muted:#64748b;--ink:#17211c;--ok:#15803d;--danger:#be123c;--blue:#2563eb;--purple:#7c3aed;--pink:#db2777;--paper:#fffdf7;}
     *{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--ink)}
-    .page{width:calc(100% - 32px);margin:32px auto 56px}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:14px}.brand img{width:58px;height:58px;object-fit:contain;background:white;border-radius:18px;padding:8px;box-shadow:0 12px 30px rgba(18,60,47,.12)}.kicker{margin:0;color:var(--gold);font-weight:900;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:4px 0 0;font-size:clamp(28px,4vw,44px);letter-spacing:-.04em}.back{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:white;border-radius:999px;padding:12px 16px;color:var(--green);font-weight:900;text-decoration:none}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}.stat{background:white;border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 14px 34px rgba(18,60,47,.07)}.stat strong{display:block;font-size:30px;color:var(--green)}.stat span{color:var(--muted);font-weight:800}.card{width:100%;background:white;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:0 18px 50px rgba(18,60,47,.09)}.card-head{display:flex;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--line);background:#fbfcf8}.card-head h2{margin:0;color:var(--green)}.autosave-hint{margin:4px 0 0;color:var(--muted);font-weight:800}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:1460px}th,td{padding:14px 16px;border-bottom:1px solid #eef2ec;text-align:left;vertical-align:top}th{background:#fbfcf8;color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.08em}td{font-size:14px}.name{font-weight:950;color:var(--green)}.contact a{display:block;color:var(--green);font-weight:800;text-decoration:none}.pill{display:inline-flex;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900;background:#eef7f2;color:#14543d}.pill.error{background:#fff1f2;color:var(--danger)}.details{display:grid;gap:4px;color:#334155}.details span{white-space:nowrap}.message{max-width:280px;white-space:pre-wrap;color:#475569}.follow-accordion{min-width:360px}.follow-accordion summary{display:flex;align-items:center;justify-content:space-between;gap:10px;list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fbfcf8;color:var(--green);font-weight:950}.follow-accordion summary::-webkit-details-marker{display:none}.follow-accordion summary::after{content:'Ouvrir';font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.follow-accordion[open] summary{margin-bottom:10px}.follow-accordion[open] summary::after{content:'Fermer'}.follow-summary{display:grid;gap:3px}.follow-summary small{color:var(--muted);font-weight:800}.follow{display:grid;gap:8px}.follow-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:grid;gap:5px}.field label,.called{font-size:12px;font-weight:900;color:var(--green);text-transform:uppercase;letter-spacing:.04em}.field select,.field input,.field textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:9px 10px;font:inherit;background:#fff}.field textarea{min-height:74px;resize:vertical}.called{display:flex;align-items:center;gap:8px}.called input{width:18px;height:18px;accent-color:var(--green)}.save-state{font-size:12px;font-weight:900;color:var(--muted);min-height:16px}.save-state.saved{color:var(--ok)}.save-state.error{color:var(--danger)}.delete-form{display:grid;gap:8px}.delete-btn{border:0;border-radius:12px;padding:10px 12px;background:#fff1f2;color:var(--danger);font-weight:950;cursor:pointer}.delete-btn:hover{background:#ffe4e6}.empty{padding:34px;text-align:center;color:var(--muted);font-weight:800}@media(max-width:760px){.top,.card-head{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr}.page{width:min(100% - 22px,1180px);margin-top:18px}}
+    .page{width:calc(100% - 32px);margin:32px auto 56px}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:14px}.brand img{width:58px;height:58px;object-fit:contain;background:white;border-radius:18px;padding:8px;box-shadow:0 12px 30px rgba(18,60,47,.12)}.kicker{margin:0;color:var(--gold);font-weight:900;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:4px 0 0;font-size:clamp(28px,4vw,44px);letter-spacing:-.04em}.back{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:white;border-radius:999px;padding:12px 16px;color:var(--green);font-weight:900;text-decoration:none}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}.stat{background:white;border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 14px 34px rgba(18,60,47,.07)}.stat strong{display:block;font-size:30px;color:var(--green)}.stat span{color:var(--muted);font-weight:800}.card{width:100%;background:white;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:0 18px 50px rgba(18,60,47,.09)}.card-head{display:flex;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--line);background:#fbfcf8}.card-head h2{margin:0;color:var(--green)}.autosave-hint{margin:4px 0 0;color:var(--muted);font-weight:800}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:1460px}th,td{padding:14px 16px;border-bottom:1px solid #eef2ec;text-align:left;vertical-align:top}th{background:#fbfcf8;color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.08em}td{font-size:14px}.name{font-weight:950;color:var(--green)}.contact a{display:block;color:var(--green);font-weight:800;text-decoration:none}.pill{display:inline-flex;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900;background:#eef7f2;color:#14543d}.pill.error{background:#fff1f2;color:var(--danger)}.details{display:grid;gap:4px;color:#334155}.details span{white-space:nowrap}.message{max-width:280px;white-space:pre-wrap;color:#475569}.follow{display:grid;gap:8px;min-width:360px}.follow-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:grid;gap:5px}.field label,.called{font-size:12px;font-weight:900;color:var(--green);text-transform:uppercase;letter-spacing:.04em}.field select,.field input,.field textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:9px 10px;font:inherit;background:#fff}.field textarea{min-height:74px;resize:vertical}.called{display:flex;align-items:center;gap:8px}.called input{width:18px;height:18px;accent-color:var(--green)}.save-state{font-size:12px;font-weight:900;color:var(--muted);min-height:16px}.save-state.saved{color:var(--ok)}.save-state.error{color:var(--danger)}.delete-form{display:grid;gap:8px}.delete-btn{border:0;border-radius:12px;padding:10px 12px;background:#fff1f2;color:var(--danger);font-weight:950;cursor:pointer}.delete-btn:hover{background:#ffe4e6}.profile-btn{margin-top:10px;border:0;border-radius:999px;padding:10px 14px;background:linear-gradient(135deg,var(--blue),var(--purple),var(--pink));color:white;font-weight:950;box-shadow:0 12px 26px rgba(124,58,237,.28);cursor:pointer}.profile-btn:hover{transform:translateY(-1px);box-shadow:0 16px 34px rgba(124,58,237,.34)}.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:26px;background:rgba(15,23,42,.66);z-index:50}.modal.is-open{display:flex}.modal-shell{width:min(980px,100%);max-height:92vh;overflow:auto;border-radius:30px;background:var(--paper);box-shadow:0 28px 80px rgba(0,0,0,.32)}.profile-sheet{position:relative;overflow:hidden;padding:34px;background:radial-gradient(circle at top left,rgba(200,164,77,.22),transparent 34%),linear-gradient(135deg,#fffdf7,#f8fbff 52%,#f7f1ff)}.profile-sheet:before{content:'';position:absolute;right:-80px;top:-90px;width:260px;height:260px;border-radius:50%;background:linear-gradient(135deg,rgba(37,99,235,.18),rgba(219,39,119,.18))}.sheet-head{position:relative;display:flex;justify-content:space-between;gap:18px;align-items:flex-start;border-bottom:1px solid rgba(18,60,47,.13);padding-bottom:22px}.identity{display:flex;gap:16px;align-items:center}.avatar{width:78px;height:78px;border-radius:26px;display:grid;place-items:center;background:linear-gradient(135deg,var(--green),var(--gold));color:white;font-size:28px;font-weight:950;box-shadow:0 18px 38px rgba(18,60,47,.24)}.sheet-head h3{margin:0;font-size:clamp(28px,4vw,46px);letter-spacing:-.04em;color:var(--green)}.sheet-sub{margin:6px 0 0;color:var(--muted);font-weight:850}.sheet-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.print-btn,.close-btn{border:0;border-radius:999px;padding:11px 15px;font-weight:950;cursor:pointer}.print-btn{background:var(--green);color:white}.close-btn{background:#fee2e2;color:#991b1b}.sheet-grid{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:22px}.sheet-section{border:1px solid rgba(18,60,47,.12);border-radius:24px;background:rgba(255,255,255,.78);padding:18px;box-shadow:0 14px 34px rgba(18,60,47,.07)}.sheet-section.full{grid-column:1/-1}.sheet-section h4{margin:0 0 14px;color:var(--green);font-size:15px;text-transform:uppercase;letter-spacing:.08em}.info-list{display:grid;gap:10px}.info-row{display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:start}.info-row span{color:var(--muted);font-size:12px;font-weight:950;text-transform:uppercase;letter-spacing:.04em}.info-row strong,.info-row div{font-weight:850;color:#17211c;overflow-wrap:anywhere}.motivation-box{white-space:pre-wrap;line-height:1.6;color:#334155;font-weight:700}.empty{padding:34px;text-align:center;color:var(--muted);font-weight:800}@media(max-width:760px){.top,.card-head,.sheet-head{align-items:flex-start;flex-direction:column}.stats,.sheet-grid{grid-template-columns:1fr}.page{width:min(100% - 22px,1180px);margin-top:18px}.info-row{grid-template-columns:1fr}}@media print{body.printing-fiche>*:not(.modal.is-open){display:none!important}body.printing-fiche .modal.is-open{position:static;display:block;padding:0;background:white}body.printing-fiche .modal-shell{width:100%;max-height:none;overflow:visible;box-shadow:none;border-radius:0}body.printing-fiche .profile-sheet{min-height:auto;padding:22mm;background:white}body.printing-fiche .sheet-actions,body.printing-fiche .close-btn,body.printing-fiche .print-btn{display:none!important}.sheet-section{break-inside:avoid}}
   </style>
 </head>
 <body>
@@ -34,7 +34,7 @@
           {% for c in candidatures %}
             <tr data-row-id="{{ c.id }}">
               <td>{{ c.date }}</td>
-              <td><div class="name">{{ c.prenom }} {{ c.nom }}</div><div>{{ c.details.get('Ville de résidence', '') }}</div></td>
+              <td><div class="name">{{ c.prenom }} {{ c.nom }}</div><div>{{ c.details.get('Ville de résidence', '') }}</div><button class="profile-btn" type="button" data-open-fiche="fiche-{{ c.id }}">✨ Fiche HTML</button></td>
               <td class="contact"><a href="mailto:{{ c.mail }}">{{ c.mail }}</a><a href="tel:{{ c.telephone }}">{{ c.telephone }}</a></td>
               <td class="details"><span>Permis B : <strong>{{ c.details.get('Permis B', '—') }}</strong></span><span>Formation : <strong>{{ c.details.get('Disponible formation', '—') }}</strong></span><span>Cannes : <strong>{{ c.details.get('Mobilité Cannes', '—') }}</strong></span></td>
               <td class="details"><span>Inscrit : <strong>{{ c.details.get('Inscrit France Travail', '—') }}</strong></span><span>ID : <strong>{{ c.details.get('Identifiant France Travail', '—') }}</strong></span></td>
@@ -68,8 +68,74 @@
       </div>
       {% else %}<div class="empty">Aucune candidature POEI pour le moment.</div>{% endif %}
     </section>
+
+          {% for c in candidatures %}
+          <div class="modal" id="fiche-{{ c.id }}" aria-hidden="true" role="dialog" aria-label="Fiche HTML {{ c.prenom }} {{ c.nom }}">
+            <div class="modal-shell">
+              <article class="profile-sheet">
+                <header class="sheet-head">
+                  <div class="identity">
+                    <div class="avatar">{{ (c.prenom[:1] ~ c.nom[:1])|upper }}</div>
+                    <div>
+                      <p class="kicker">Fiche candidature POEI</p>
+                      <h3>{{ c.prenom }} {{ c.nom }}</h3>
+                      <p class="sheet-sub">Créée le {{ c.date or '—' }} · Statut : {{ c.statut or 'Non traité' }}</p>
+                    </div>
+                  </div>
+                  <div class="sheet-actions">
+                    <button class="print-btn" type="button" data-print-fiche>🖨️ Imprimer la fiche</button>
+                    <button class="close-btn" type="button" data-close-fiche>Fermer</button>
+                  </div>
+                </header>
+                <div class="sheet-grid">
+                  <section class="sheet-section"><h4>Coordonnées</h4><div class="info-list"><div class="info-row"><span>Email</span><strong>{{ c.mail or '—' }}</strong></div><div class="info-row"><span>Téléphone</span><strong>{{ c.telephone or '—' }}</strong></div><div class="info-row"><span>Ville</span><strong>{{ c.details.get('Ville de résidence', '—') }}</strong></div></div></section>
+                  <section class="sheet-section"><h4>Éligibilité</h4><div class="info-list"><div class="info-row"><span>Permis B</span><strong>{{ c.details.get('Permis B', '—') }}</strong></div><div class="info-row"><span>Formation</span><strong>{{ c.details.get('Disponible formation', '—') }}</strong></div><div class="info-row"><span>Mobilité Cannes</span><strong>{{ c.details.get('Mobilité Cannes', '—') }}</strong></div><div class="info-row"><span>France Travail</span><strong>{{ c.details.get('Inscrit France Travail', '—') }}</strong></div><div class="info-row"><span>ID FT</span><strong>{{ c.details.get('Identifiant France Travail', '—') }}</strong></div></div></section>
+                  <section class="sheet-section"><h4>Suivi commercial</h4><div class="info-list"><div class="info-row"><span>Appel effectué</span><strong>{% if c.appel_effectue %}Oui{% else %}Non{% endif %}</strong></div><div class="info-row"><span>Dernier appel</span><strong>{{ c.date_appel or '—' }}</strong></div><div class="info-row"><span>Rappel prévu</span><strong>{{ c.rappel_date or '—' }}</strong></div><div class="info-row"><span>Prochaine action</span><strong>{{ c.prochaine_action or '—' }}</strong></div><div class="info-row"><span>Commentaire</span><div>{{ c.commentaire_suivi or '—' }}</div></div></div></section>
+                  <section class="sheet-section"><h4>Traçabilité</h4><div class="info-list"><div class="info-row"><span>Email admin</span><strong>{% if c.mail_confirme %}Envoyé {{ c.mail_confirme }}{% elif c.mail_erreur %}Erreur : {{ c.mail_erreur }}{% else %}Non envoyé{% endif %}</strong></div><div class="info-row"><span>ID dossier</span><strong>{{ c.id }}</strong></div><div class="info-row"><span>Source</span><strong>{{ c.source or '—' }}</strong></div><div class="info-row"><span>Modifié le</span><strong>{{ c.suivi_modifie or '—' }}</strong></div></div></section>
+                  <section class="sheet-section full"><h4>Message / motivation</h4><div class="motivation-box">{{ c.details.get('Message / motivation', '—') }}</div></section>
+                  <section class="sheet-section full"><h4>Toutes les informations saisies</h4><div class="info-list">{% for label, value in c.details|dictsort %}<div class="info-row"><span>{{ label }}</span><div>{{ value or '—' }}</div></div>{% endfor %}</div></section>
+                </div>
+              </article>
+            </div>
+          </div>
+          {% endfor %}
+
   </main>
   <script>
+    document.querySelectorAll('[data-open-fiche]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const modal = document.getElementById(button.dataset.openFiche);
+        if (!modal) return;
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+      });
+    });
+    document.querySelectorAll('[data-close-fiche]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const modal = button.closest('.modal');
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('printing-fiche');
+      });
+    });
+    document.querySelectorAll('[data-print-fiche]').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.modal.is-open').forEach((modal) => modal.classList.remove('is-open'));
+        button.closest('.modal').classList.add('is-open');
+        document.body.classList.add('printing-fiche');
+        window.print();
+        setTimeout(() => document.body.classList.remove('printing-fiche'), 300);
+      });
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        document.querySelectorAll('.modal.is-open').forEach((modal) => {
+          modal.classList.remove('is-open');
+          modal.setAttribute('aria-hidden', 'true');
+        });
+        document.body.classList.remove('printing-fiche');
+      }
+    });
     document.querySelectorAll('.follow').forEach((form) => {
       let timer;
       const state = form.querySelector('.save-state');
