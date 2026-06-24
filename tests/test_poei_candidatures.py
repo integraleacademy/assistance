@@ -72,7 +72,10 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         self.assertIn("Fiche candidature POEI".encode("utf-8"), response.data)
         self.assertIn("Imprimer la fiche".encode("utf-8"), response.data)
         self.assertIn("Toutes les informations saisies".encode("utf-8"), response.data)
+        self.assertIn("Avez-vous le permis B ?".encode("utf-8"), response.data)
+        self.assertIn("Êtes-vous disponible du 23/09 au 22/12/2026 ?".encode("utf-8"), response.data)
         self.assertIn(b"window.print()", response.data)
+        self.assertIn(b"body.printing-fiche main.page > :not(.modal.is-open)", response.data)
         self.assertNotIn(b"Ignore", response.data)
 
     def test_poei_success_page_shows_modern_confirmation(self):
