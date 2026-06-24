@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Candidatures POEI — Intégrale Academy</title>
   <style>
-    :root{--green:#123c2f;--gold:#c8a44d;--bg:#f6f7f4;--line:#e4e8df;--muted:#64748b;--ink:#17211c;}
+    :root{--green:#123c2f;--gold:#c8a44d;--bg:#f6f7f4;--line:#e4e8df;--muted:#64748b;--ink:#17211c;--ok:#15803d;--danger:#be123c;}
     *{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--ink)}
-    .page{width:min(1180px,calc(100% - 32px));margin:32px auto 56px}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:14px}.brand img{width:58px;height:58px;object-fit:contain;background:white;border-radius:18px;padding:8px;box-shadow:0 12px 30px rgba(18,60,47,.12)}.kicker{margin:0;color:var(--gold);font-weight:900;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:4px 0 0;font-size:clamp(28px,4vw,44px);letter-spacing:-.04em}.back{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:white;border-radius:999px;padding:12px 16px;color:var(--green);font-weight:900;text-decoration:none}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}.stat{background:white;border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 14px 34px rgba(18,60,47,.07)}.stat strong{display:block;font-size:30px;color:var(--green)}.stat span{color:var(--muted);font-weight:800}.card{background:white;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:0 18px 50px rgba(18,60,47,.09)}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:980px}th,td{padding:14px 16px;border-bottom:1px solid #eef2ec;text-align:left;vertical-align:top}th{background:#fbfcf8;color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.08em}td{font-size:14px}.name{font-weight:950;color:var(--green)}.contact a{display:block;color:var(--green);font-weight:800;text-decoration:none}.pill{display:inline-flex;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900;background:#eef7f2;color:#14543d}.pill.error{background:#fff1f2;color:#be123c}.details{display:grid;gap:4px;color:#334155}.details span{white-space:nowrap}.message{max-width:320px;white-space:pre-wrap;color:#475569}.empty{padding:34px;text-align:center;color:var(--muted);font-weight:800}@media(max-width:760px){.top{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr}.page{width:min(100% - 22px,1180px);margin-top:18px}}
+    .page{width:calc(100% - 32px);margin:32px auto 56px}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:14px}.brand img{width:58px;height:58px;object-fit:contain;background:white;border-radius:18px;padding:8px;box-shadow:0 12px 30px rgba(18,60,47,.12)}.kicker{margin:0;color:var(--gold);font-weight:900;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:4px 0 0;font-size:clamp(28px,4vw,44px);letter-spacing:-.04em}.back{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:white;border-radius:999px;padding:12px 16px;color:var(--green);font-weight:900;text-decoration:none}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}.stat{background:white;border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 14px 34px rgba(18,60,47,.07)}.stat strong{display:block;font-size:30px;color:var(--green)}.stat span{color:var(--muted);font-weight:800}.card{width:100%;background:white;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:0 18px 50px rgba(18,60,47,.09)}.card-head{display:flex;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--line);background:#fbfcf8}.card-head h2{margin:0;color:var(--green)}.autosave-hint{margin:4px 0 0;color:var(--muted);font-weight:800}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:1460px}th,td{padding:14px 16px;border-bottom:1px solid #eef2ec;text-align:left;vertical-align:top}th{background:#fbfcf8;color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.08em}td{font-size:14px}.name{font-weight:950;color:var(--green)}.contact a{display:block;color:var(--green);font-weight:800;text-decoration:none}.pill{display:inline-flex;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900;background:#eef7f2;color:#14543d}.pill.error{background:#fff1f2;color:var(--danger)}.details{display:grid;gap:4px;color:#334155}.details span{white-space:nowrap}.message{max-width:280px;white-space:pre-wrap;color:#475569}.follow-accordion{min-width:360px}.follow-accordion summary{display:flex;align-items:center;justify-content:space-between;gap:10px;list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fbfcf8;color:var(--green);font-weight:950}.follow-accordion summary::-webkit-details-marker{display:none}.follow-accordion summary::after{content:'Ouvrir';font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.follow-accordion[open] summary{margin-bottom:10px}.follow-accordion[open] summary::after{content:'Fermer'}.follow-summary{display:grid;gap:3px}.follow-summary small{color:var(--muted);font-weight:800}.follow{display:grid;gap:8px}.follow-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:grid;gap:5px}.field label,.called{font-size:12px;font-weight:900;color:var(--green);text-transform:uppercase;letter-spacing:.04em}.field select,.field input,.field textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:9px 10px;font:inherit;background:#fff}.field textarea{min-height:74px;resize:vertical}.called{display:flex;align-items:center;gap:8px}.called input{width:18px;height:18px;accent-color:var(--green)}.save-state{font-size:12px;font-weight:900;color:var(--muted);min-height:16px}.save-state.saved{color:var(--ok)}.save-state.error{color:var(--danger)}.delete-form{display:grid;gap:8px}.delete-btn{border:0;border-radius:12px;padding:10px 12px;background:#fff1f2;color:var(--danger);font-weight:950;cursor:pointer}.delete-btn:hover{background:#ffe4e6}.empty{padding:34px;text-align:center;color:var(--muted);font-weight:800}@media(max-width:760px){.top,.card-head{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr}.page{width:min(100% - 22px,1180px);margin-top:18px}}
   </style>
 </head>
 <body>
@@ -22,16 +22,17 @@
     <section class="stats" aria-label="Statistiques candidatures POEI">
       <div class="stat"><strong>{{ stats.total }}</strong><span>Candidatures</span></div>
       <div class="stat"><strong>{{ stats.non_traites }}</strong><span>Non traitées</span></div>
-      <div class="stat"><strong>{{ stats.mails_confirmes }}</strong><span>Mails admin envoyés</span></div>
+      <div class="stat"><strong>{{ stats.appeles }}</strong><span>Appelées</span></div>
     </section>
     <section class="card">
+      <div class="card-head"><div><h2>Tableau de suivi pleine largeur</h2><p class="autosave-hint">Statut, appel, commentaire et prochaine action sont enregistrés automatiquement.</p></div></div>
       {% if candidatures %}
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Candidat</th><th>Contact</th><th>Éligibilité</th><th>France Travail</th><th>Message</th><th>Mail</th><th>Statut</th></tr></thead>
+          <thead><tr><th>Date</th><th>Candidat</th><th>Contact</th><th>Éligibilité</th><th>France Travail</th><th>Message</th><th>Mail</th><th>Suivi automatique</th><th>Supprimer</th></tr></thead>
           <tbody>
           {% for c in candidatures %}
-            <tr>
+            <tr data-row-id="{{ c.id }}">
               <td>{{ c.date }}</td>
               <td><div class="name">{{ c.prenom }} {{ c.nom }}</div><div>{{ c.details.get('Ville de résidence', '') }}</div></td>
               <td class="contact"><a href="mailto:{{ c.mail }}">{{ c.mail }}</a><a href="tel:{{ c.telephone }}">{{ c.telephone }}</a></td>
@@ -39,7 +40,27 @@
               <td class="details"><span>Inscrit : <strong>{{ c.details.get('Inscrit France Travail', '—') }}</strong></span><span>ID : <strong>{{ c.details.get('Identifiant France Travail', '—') }}</strong></span></td>
               <td class="message">{{ c.details.get('Message / motivation', '') }}</td>
               <td>{% if c.mail_confirme %}<span class="pill">Envoyé {{ c.mail_confirme }}</span>{% elif c.mail_erreur %}<span class="pill error" title="{{ c.mail_erreur }}">Erreur</span>{% else %}<span class="pill error">Non envoyé</span>{% endif %}</td>
-              <td><span class="pill">{{ c.statut or 'Non traité' }}</span></td>
+              <td>
+                <details class="follow-accordion">
+                  <summary>
+                    <span class="follow-summary">
+                      <span data-follow-status>{{ c.statut or 'Non traité' }}{% if c.appel_effectue %} · Appelé{% endif %}</span>
+                      <small data-follow-action>{{ c.prochaine_action or 'Suivi à compléter' }}</small>
+                    </span>
+                  </summary>
+                  <form class="follow" data-autosave-url="{{ url_for('admin_devis_poei_update', candidature_id=c.id) }}">
+                    <div class="follow-row">
+                    <div class="field"><label>Statut</label><select name="statut"><option {% if (c.statut or 'Non traité') == 'Non traité' %}selected{% endif %}>Non traité</option><option {% if c.statut == 'À rappeler' %}selected{% endif %}>À rappeler</option><option {% if c.statut == 'Appelé' %}selected{% endif %}>Appelé</option><option {% if c.statut == 'Inscrit' %}selected{% endif %}>Inscrit</option><option {% if c.statut == 'Non retenu' %}selected{% endif %}>Non retenu</option><option {% if c.statut == 'Traité' %}selected{% endif %}>Traité</option></select></div>
+                    <label class="called"><input type="checkbox" name="appel_effectue" value="1" {% if c.appel_effectue %}checked{% endif %}> Appelé</label>
+                  </div>
+                  <div class="follow-row"><div class="field"><label>Rappel prévu</label><input type="datetime-local" name="rappel_date" value="{{ c.rappel_date or '' }}"></div><div class="field"><label>Prochaine action</label><input name="prochaine_action" value="{{ c.prochaine_action or '' }}" placeholder="Relancer, envoyer dossier…"></div></div>
+                  <div class="field"><label>Commentaires</label><textarea name="commentaire_suivi" placeholder="Notes d'appel, objections, documents à demander…">{{ c.commentaire_suivi or '' }}</textarea></div>
+                  <div class="details"><span>Dernier appel : <strong data-call-date>{{ c.date_appel or '—' }}</strong></span><span>Dernière sauvegarde : <strong>{{ c.suivi_modifie or '—' }}</strong></span></div>
+                    <div class="save-state" role="status" aria-live="polite">Enregistré automatiquement</div>
+                  </form>
+                </details>
+              </td>
+              <td><form class="delete-form" method="post" action="{{ url_for('admin_devis_poei_delete', candidature_id=c.id) }}"><button class="delete-btn" type="submit">Supprimer</button></form></td>
             </tr>
           {% endfor %}
           </tbody>
@@ -48,5 +69,39 @@
       {% else %}<div class="empty">Aucune candidature POEI pour le moment.</div>{% endif %}
     </section>
   </main>
+  <script>
+    document.querySelectorAll('.follow').forEach((form) => {
+      let timer;
+      const state = form.querySelector('.save-state');
+      const callDate = form.querySelector('[data-call-date]');
+      const accordion = form.closest('.follow-accordion');
+      const summaryStatus = accordion?.querySelector('[data-follow-status]');
+      const summaryAction = accordion?.querySelector('[data-follow-action]');
+      const updateSummary = () => {
+        if (!summaryStatus || !summaryAction) return;
+        const status = form.querySelector('[name="statut"]').value || 'Non traité';
+        const called = form.querySelector('[name="appel_effectue"]').checked;
+        const action = form.querySelector('[name="prochaine_action"]').value.trim();
+        summaryStatus.textContent = `${status}${called ? ' · Appelé' : ''}`;
+        summaryAction.textContent = action || 'Suivi à compléter';
+      };
+      const save = () => {
+        state.textContent = 'Sauvegarde…'; state.className = 'save-state';
+        const payload = new FormData(form);
+        if (!form.querySelector('[name="appel_effectue"]').checked) payload.set('appel_effectue', '0');
+        fetch(form.dataset.autosaveUrl, {method: 'POST', body: payload, headers: {'X-Requested-With': 'fetch'}})
+          .then((response) => { if (!response.ok) throw new Error('Erreur'); return response.json(); })
+          .then((data) => { state.textContent = 'Enregistré'; state.className = 'save-state saved'; if (callDate) callDate.textContent = data.date_appel || '—'; })
+          .catch(() => { state.textContent = 'Erreur de sauvegarde'; state.className = 'save-state error'; });
+      };
+      form.addEventListener('input', () => { updateSummary(); clearTimeout(timer); timer = setTimeout(save, 500); });
+      form.addEventListener('change', () => { updateSummary(); save(); });
+    });
+    document.querySelectorAll('.delete-form').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        if (!confirm('Supprimer définitivement cette candidature POEI ?')) event.preventDefault();
+      });
+    });
+  </script>
 </body>
 </html>

@@ -2088,6 +2088,44 @@ def _poei_cannes_admin_email(demande):
     return send_email_html("aurelie@integraleacademy.com", "Nouvelle candidature POEI Sécurité Cannes", plain, html_body)
 
 
+def _poei_cannes_candidate_email(demande):
+    prenom = html_module.escape(demande.get("prenom", "") or "")
+    plain = (
+        f"Bonjour {demande.get('prenom', '')},\n\n"
+        "Nous avons bien reçu votre candidature pour la formation POEI Agent de sécurité + SSIAP 1 à Cannes.\n"
+        "Notre équipe va l'étudier avec attention et reviendra vers vous très prochainement.\n\n"
+        "À très vite,\n"
+        "L'équipe Intégrale Academy"
+    )
+    html_body = f"""
+    <div style="text-align:center;padding:8px 0 18px;">
+      <span style="display:inline-block;padding:8px 14px;border-radius:999px;background:#ecfdf5;color:#047857;font-weight:800;font-size:13px;letter-spacing:.02em;">Candidature reçue</span>
+    </div>
+    <div style="background:linear-gradient(135deg,#0f172a,#14532d);border-radius:22px;padding:28px 24px;color:#fff;text-align:center;box-shadow:0 18px 38px rgba(15,23,42,.18);">
+      <div style="font-size:42px;line-height:1;margin-bottom:12px;">✅</div>
+      <h1 style="margin:0;font-size:26px;line-height:1.2;color:#fff;">Nous avons bien reçu votre candidature</h1>
+      <p style="margin:14px 0 0;font-size:16px;line-height:1.6;color:#dcfce7;">Formation POEI Agent de sécurité + SSIAP 1 — Cannes</p>
+    </div>
+    <div style="padding:24px 4px 4px;">
+      <p style="font-size:16px;margin:0 0 14px;">Bonjour <strong>{prenom}</strong>,</p>
+      <p style="font-size:16px;margin:0 0 14px;">Merci pour votre candidature. Elle a bien été transmise à notre équipe.</p>
+      <p style="font-size:16px;margin:0 0 18px;">Nous allons l'étudier avec attention et nous reviendrons vers vous <strong>très prochainement</strong> pour les prochaines étapes.</p>
+      <div style="border:1px solid #d1fae5;background:#f0fdf4;border-radius:16px;padding:16px 18px;margin:20px 0;">
+        <p style="margin:0;color:#14532d;font-weight:800;">Votre parcours en bref</p>
+        <p style="margin:8px 0 0;color:#166534;">Formation financée du 23 septembre au 22 décembre 2026, puis opportunité d'emploi à Cannes si votre candidature est retenue.</p>
+      </div>
+      <p style="margin:18px 0 0;">À très vite,<br><strong>L'équipe Intégrale Academy</strong></p>
+    </div>
+    """
+    html = _wrap_html("", html_body)
+    return send_email_html(
+        demande.get("mail", ""),
+        "✅ Nous avons bien reçu votre candidature — Intégrale Academy",
+        plain,
+        html,
+    )
+
+
 @app.route("/poei-agent-securite-cannes", methods=["GET", "POST"])
 def poei_agent_securite_cannes():
     success = request.args.get("success") == "1"
@@ -2142,6 +2180,8 @@ def poei_agent_securite_cannes():
             "mail_erreur": "",
             "mail_contenu": "",
             "mail_html": "",
+            "candidat_mail_confirme": "",
+            "candidat_mail_erreur": "",
             "pieces_jointes": [],
             "reponses": [],
             "is_doublon": False,
@@ -2159,11 +2199,23 @@ def poei_agent_securite_cannes():
             else:
                 demande["mail_erreur"] = "Variables SMTP/Brevo manquantes ou envoi impossible : SMTP_USER/SMTP_PASS ou BREVO_API_KEY/BREVO_SENDER_EMAIL."
         except Exception as e:
-            demande["mail_erreur"] = f"Erreur envoi email : {e}"
+            demande["mail_erreur"] = f"Erreur envoi email admin : {e}"
+        try:
+            if _poei_cannes_candidate_email(demande):
+                demande["candidat_mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+            else:
+                demande["candidat_mail_erreur"] = "Variables SMTP/Brevo manquantes ou envoi impossible : SMTP_USER/SMTP_PASS ou BREVO_API_KEY/BREVO_SENDER_EMAIL."
+        except Exception as e:
+            demande["candidat_mail_erreur"] = f"Erreur envoi email candidat : {e}"
         data = load_data()
         for entry in data.get("demandes", []):
             if entry.get("id") == demande["id"]:
-                entry.update({"mail_confirme": demande["mail_confirme"], "mail_erreur": demande["mail_erreur"]})
+                entry.update({
+                    "mail_confirme": demande["mail_confirme"],
+                    "mail_erreur": demande["mail_erreur"],
+                    "candidat_mail_confirme": demande["candidat_mail_confirme"],
+                    "candidat_mail_erreur": demande["candidat_mail_erreur"],
+                })
                 break
         save_data(data)
         return redirect(url_for("poei_agent_securite_cannes", success="1") + "#candidature")
@@ -3203,6 +3255,27 @@ def admin_devis():
 
 
 
+def _poei_candidature_details(demande):
+    details = demande.get("details_data")
+    if not isinstance(details, dict):
+        try:
+            details = json.loads(demande.get("details", "{}"))
+        except Exception:
+            details = {}
+    return details
+
+
+def _poei_find_candidature(data, candidature_id):
+    for demande in data.get("demandes", []):
+        if demande.get("id") == candidature_id and demande.get("source") == "poei_agent_securite_cannes":
+            return demande
+    return None
+
+
+def _poei_now():
+    return datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+
+
 @app.route("/admin-devis/poei")
 @login_required
 def admin_devis_poei():
@@ -3211,26 +3284,69 @@ def admin_devis_poei():
     for demande in data.get("demandes", []):
         if demande.get("source") != "poei_agent_securite_cannes":
             continue
-        details = demande.get("details_data")
-        if not isinstance(details, dict):
-            try:
-                details = json.loads(demande.get("details", "{}"))
-            except Exception:
-                details = {}
         item = dict(demande)
-        item["details"] = details
+        item["details"] = _poei_candidature_details(demande)
         candidatures.append(item)
 
     candidatures.reverse()
     stats = {
         "total": len(candidatures),
         "non_traites": sum(1 for c in candidatures if (c.get("statut") or "Non traité") == "Non traité"),
-        "mails_confirmes": sum(1 for c in candidatures if c.get("mail_confirme")),
+        "appeles": sum(1 for c in candidatures if c.get("appel_effectue")),
     }
     return render_template("admin_devis_poei.html", candidatures=candidatures, stats=stats)
 
 
+@app.route("/admin-devis/poei/<candidature_id>", methods=["PATCH", "POST"])
+@login_required
+def admin_devis_poei_update(candidature_id):
+    data = load_data()
+    candidature = _poei_find_candidature(data, candidature_id)
+    if candidature is None:
+        abort(404)
 
+    form_data = request.form or (request.get_json(silent=True) or {})
+    previous_appel = bool(candidature.get("appel_effectue"))
+    appel_value = form_data.get("appel_effectue")
+
+    if "statut" in form_data:
+        candidature["statut"] = (form_data.get("statut") or "Non traité").strip() or "Non traité"
+    if "commentaire_suivi" in form_data:
+        candidature["commentaire_suivi"] = (form_data.get("commentaire_suivi") or "").strip()
+    if "prochaine_action" in form_data:
+        candidature["prochaine_action"] = (form_data.get("prochaine_action") or "").strip()
+    if "rappel_date" in form_data:
+        candidature["rappel_date"] = (form_data.get("rappel_date") or "").strip()
+    if appel_value is not None:
+        candidature["appel_effectue"] = str(appel_value).lower() in {"1", "true", "on", "oui", "yes"}
+        if candidature["appel_effectue"] and not previous_appel:
+            candidature["date_appel"] = _poei_now()
+        elif not candidature["appel_effectue"]:
+            candidature["date_appel"] = ""
+
+    candidature["suivi_modifie"] = _poei_now()
+    save_data(data)
+    return jsonify({
+        "ok": True,
+        "date_appel": candidature.get("date_appel", ""),
+        "suivi_modifie": candidature.get("suivi_modifie", ""),
+    })
+
+
+@app.route("/admin-devis/poei/<candidature_id>/supprimer", methods=["POST", "DELETE"])
+@login_required
+def admin_devis_poei_delete(candidature_id):
+    data = load_data()
+    demandes = data.get("demandes", [])
+    candidature = _poei_find_candidature(data, candidature_id)
+    if candidature is None:
+        abort(404)
+    data["demandes"] = [d for d in demandes if d.get("id") != candidature_id]
+    supprimer_fichiers_demande(candidature)
+    save_data(data)
+    if request.method == "DELETE" or request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"ok": True})
+    return redirect(url_for("admin_devis_poei"))
 
 
 @app.route("/formulaire-a-rappeler", methods=["GET", "POST"])
