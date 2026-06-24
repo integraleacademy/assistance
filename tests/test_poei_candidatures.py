@@ -92,10 +92,20 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         with (
             patch.object(application, "DATA_FILE", self.data_file),
             patch.object(application, "send_email_html", return_value=True) as send_email_html,
+            patch.object(application, "creer_piste_salesforce") as creer_piste_salesforce,
         ):
             response = self.client.post("/poei-agent-securite-cannes", data=form_data)
 
         self.assertEqual(response.status_code, 302)
+        creer_piste_salesforce.assert_called_once()
+        salesforce_payload = creer_piste_salesforce.call_args.args[0]
+        self.assertEqual(salesforce_payload["source_formulaire"], "poei-agent-securite-cannes")
+        self.assertEqual(salesforce_payload["formation"], "SSIAP")
+        self.assertEqual(salesforce_payload["centre"], "cote_azur")
+        self.assertEqual(salesforce_payload["france_travail"], "OUI")
+        self.assertIn("CANDIDATURE POEI SÉCURITÉ CANNES", salesforce_payload["infos_complementaires"])
+        self.assertIn("Très motivée", salesforce_payload["infos_complementaires"])
+        self.assertIn("1234567A", salesforce_payload["infos_complementaires"])
         send_email_html.assert_called_once()
         self.assertEqual(send_email_html.call_args.args[0], "aurelie@integraleacademy.com")
         self.assertIn("Très motivée", send_email_html.call_args.args[2])
