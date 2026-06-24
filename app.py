@@ -156,6 +156,7 @@ def creer_piste_salesforce(form):
         "VTC": "CHAUFFEUR VTC",
         "BTS": "BTS",
         "SSIAP": "SSIAP",
+        "POEI": "POEI",
     }
     formation_sf = formation_map.get(form.get("formation", ""), "")
 
@@ -2043,7 +2044,7 @@ def _payload_salesforce_poei_cannes(demande, details):
         "prenom": demande.get("prenom", ""),
         "mail": demande.get("mail", ""),
         "telephone": demande.get("telephone", ""),
-        "formation": "SSIAP",
+        "formation": "POEI",
         "type_formation": "POEI Agent de sécurité privée + SSIAP 1",
         "source_formulaire": "poei-agent-securite-cannes",
         "origine": "POEI",
@@ -2091,7 +2092,7 @@ def _poei_cannes_candidate_email(demande):
     prenom = html_module.escape(demande.get("prenom", "") or "")
     plain = (
         f"Bonjour {demande.get('prenom', '')},\n\n"
-        "Nous avons bien reçu votre candidature pour la formation POEI Agent de sécurité + SSIAP 1 à Cannes.\n"
+        "Nous avons bien reçu votre candidature pour la formation POEI Agent de sécurité + SSIAP 1.\n"
         "Notre équipe va l'étudier avec attention et reviendra vers vous très prochainement.\n\n"
         "À très vite,\n"
         "L'équipe Intégrale Academy"
@@ -2103,7 +2104,7 @@ def _poei_cannes_candidate_email(demande):
     <div style="background:linear-gradient(135deg,#0f172a,#14532d);border-radius:22px;padding:28px 24px;color:#fff;text-align:center;box-shadow:0 18px 38px rgba(15,23,42,.18);">
       <div style="font-size:42px;line-height:1;margin-bottom:12px;">✅</div>
       <h1 style="margin:0;font-size:26px;line-height:1.2;color:#fff;">Nous avons bien reçu votre candidature</h1>
-      <p style="margin:14px 0 0;font-size:16px;line-height:1.6;color:#dcfce7;">Formation POEI Agent de sécurité + SSIAP 1 — Cannes</p>
+      <p style="margin:14px 0 0;font-size:16px;line-height:1.6;color:#dcfce7;">Formation POEI Agent de sécurité + SSIAP 1</p>
     </div>
     <div style="padding:24px 4px 4px;">
       <p style="font-size:16px;margin:0 0 14px;">Bonjour <strong>{prenom}</strong>,</p>
@@ -2111,7 +2112,7 @@ def _poei_cannes_candidate_email(demande):
       <p style="font-size:16px;margin:0 0 18px;">Nous allons l'étudier avec attention et nous reviendrons vers vous <strong>très prochainement</strong> pour les prochaines étapes.</p>
       <div style="border:1px solid #d1fae5;background:#f0fdf4;border-radius:16px;padding:16px 18px;margin:20px 0;">
         <p style="margin:0;color:#14532d;font-weight:800;">Votre parcours en bref</p>
-        <p style="margin:8px 0 0;color:#166534;">Formation financée du 23 septembre au 22 décembre 2026, puis opportunité d'emploi à Cannes si votre candidature est retenue.</p>
+        <p style="margin:8px 0 0;color:#166534;">Formation financée du 23 septembre au 22 décembre 2026, puis opportunité d'emploi si votre candidature est retenue.</p>
       </div>
       <p style="margin:18px 0 0;">À très vite,<br><strong>L'équipe Intégrale Academy</strong></p>
     </div>
