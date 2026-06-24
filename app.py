@@ -156,6 +156,7 @@ def creer_piste_salesforce(form):
         "VTC": "CHAUFFEUR VTC",
         "BTS": "BTS",
         "SSIAP": "SSIAP",
+        "POEI": "POEI",
     }
     formation_sf = formation_map.get(form.get("formation", ""), "")
 
@@ -2043,7 +2044,7 @@ def _payload_salesforce_poei_cannes(demande, details):
         "prenom": demande.get("prenom", ""),
         "mail": demande.get("mail", ""),
         "telephone": demande.get("telephone", ""),
-        "formation": "SSIAP",
+        "formation": "POEI",
         "type_formation": "POEI Agent de sécurité privée + SSIAP 1",
         "source_formulaire": "poei-agent-securite-cannes",
         "origine": "POEI",
