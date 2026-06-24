@@ -69,6 +69,18 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         self.assertIn("1234567A".encode("utf-8"), response.data)
         self.assertNotIn(b"Ignore", response.data)
 
+    def test_poei_success_page_shows_modern_confirmation(self):
+        self.write_data([])
+
+        with patch.object(application, "DATA_FILE", self.data_file):
+            response = self.client.get("/poei-agent-securite-cannes?success=1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Nous avons bien reçu votre candidature".encode("utf-8"), response.data)
+        self.assertIn(b"confirmation-card", response.data)
+        self.assertIn("revenir vers vous très prochainement".encode("utf-8"), response.data)
+        self.assertNotIn(b'<form class="form"', response.data)
+
     def test_poei_submission_sends_admin_email_to_aurelie(self):
         self.write_data([])
         form_data = {
