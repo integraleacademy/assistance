@@ -67,6 +67,12 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         self.assertIn("Nadia Martin".encode("utf-8"), response.data)
         self.assertIn(b"nadia@example.com", response.data)
         self.assertIn("1234567A".encode("utf-8"), response.data)
+        self.assertIn("Fiche HTML".encode("utf-8"), response.data)
+        self.assertIn(b'data-open-fiche="fiche-poei-1"', response.data)
+        self.assertIn("Fiche candidature POEI".encode("utf-8"), response.data)
+        self.assertIn("Imprimer la fiche".encode("utf-8"), response.data)
+        self.assertIn("Toutes les informations saisies".encode("utf-8"), response.data)
+        self.assertIn(b"window.print()", response.data)
         self.assertNotIn(b"Ignore", response.data)
 
     def test_poei_success_page_shows_modern_confirmation(self):
@@ -114,8 +120,9 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         creer_piste_salesforce.assert_called_once()
         salesforce_payload = creer_piste_salesforce.call_args.args[0]
         self.assertEqual(salesforce_payload["source_formulaire"], "poei-agent-securite-cannes")
-        self.assertEqual(salesforce_payload["formation"], "SSIAP")
+        self.assertEqual(salesforce_payload["formation"], "POEI")
         self.assertEqual(salesforce_payload["centre"], "cote_azur")
+        self.assertEqual(salesforce_payload["origine"], "POEI")
         self.assertEqual(salesforce_payload["france_travail"], "OUI")
         self.assertIn("CANDIDATURE POEI SÉCURITÉ CANNES", salesforce_payload["infos_complementaires"])
         self.assertIn("Très motivée", salesforce_payload["infos_complementaires"])

@@ -156,6 +156,7 @@ def creer_piste_salesforce(form):
         "VTC": "CHAUFFEUR VTC",
         "BTS": "BTS",
         "SSIAP": "SSIAP",
+        "POEI": "POEI",
     }
     formation_sf = formation_map.get(form.get("formation", ""), "")
 
@@ -164,6 +165,11 @@ def creer_piste_salesforce(form):
     france_travail_sf = oui_non_map.get(form.get("france_travail", ""), "")
 
     choix_dirigeant_desp = _choix_dirigeant_desp_salesforce(form)
+    origine_salesforce = (
+        form.get(SALESFORCE_ORIGINE_FIELD)
+        or form.get("origine")
+        or SALESFORCE_LEAD_SOURCE_VALUE
+    )
 
     data = {
         "oid": SALESFORCE_OID,
@@ -175,9 +181,8 @@ def creer_piste_salesforce(form):
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
         # Origine personnalisée Salesforce
-        "00NSa00000KPDmX": "Google",
+        SALESFORCE_ORIGINE_FIELD: origine_salesforce,
         "industry": "Education",
-        SALESFORCE_ORIGINE_FIELD: SALESFORCE_LEAD_SOURCE_VALUE,
         "00NSa00000G2PxB": formation_sf,
         "00NSa00000KDPOT": lieu,
         "00NSa00000GcJMz": cpf_sf,
@@ -2039,9 +2044,10 @@ def _payload_salesforce_poei_cannes(demande, details):
         "prenom": demande.get("prenom", ""),
         "mail": demande.get("mail", ""),
         "telephone": demande.get("telephone", ""),
-        "formation": "SSIAP",
+        "formation": "POEI",
         "type_formation": "POEI Agent de sécurité privée + SSIAP 1",
         "source_formulaire": "poei-agent-securite-cannes",
+        "origine": "POEI",
         "centre": "cote_azur",
         "dates": "23 septembre au 22 décembre 2026",
         "france_travail": (
@@ -3249,6 +3255,27 @@ def admin_devis():
 
 
 
+def _poei_candidature_details(demande):
+    details = demande.get("details_data")
+    if not isinstance(details, dict):
+        try:
+            details = json.loads(demande.get("details", "{}"))
+        except Exception:
+            details = {}
+    return details
+
+
+def _poei_find_candidature(data, candidature_id):
+    for demande in data.get("demandes", []):
+        if demande.get("id") == candidature_id and demande.get("source") == "poei_agent_securite_cannes":
+            return demande
+    return None
+
+
+def _poei_now():
+    return datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+
+
 @app.route("/admin-devis/poei")
 @login_required
 def admin_devis_poei():
@@ -3257,26 +3284,69 @@ def admin_devis_poei():
     for demande in data.get("demandes", []):
         if demande.get("source") != "poei_agent_securite_cannes":
             continue
-        details = demande.get("details_data")
-        if not isinstance(details, dict):
-            try:
-                details = json.loads(demande.get("details", "{}"))
-            except Exception:
-                details = {}
         item = dict(demande)
-        item["details"] = details
+        item["details"] = _poei_candidature_details(demande)
         candidatures.append(item)
 
     candidatures.reverse()
     stats = {
         "total": len(candidatures),
         "non_traites": sum(1 for c in candidatures if (c.get("statut") or "Non traité") == "Non traité"),
-        "mails_confirmes": sum(1 for c in candidatures if c.get("mail_confirme")),
+        "appeles": sum(1 for c in candidatures if c.get("appel_effectue")),
     }
     return render_template("admin_devis_poei.html", candidatures=candidatures, stats=stats)
 
 
+@app.route("/admin-devis/poei/<candidature_id>", methods=["PATCH", "POST"])
+@login_required
+def admin_devis_poei_update(candidature_id):
+    data = load_data()
+    candidature = _poei_find_candidature(data, candidature_id)
+    if candidature is None:
+        abort(404)
 
+    form_data = request.form or (request.get_json(silent=True) or {})
+    previous_appel = bool(candidature.get("appel_effectue"))
+    appel_value = form_data.get("appel_effectue")
+
+    if "statut" in form_data:
+        candidature["statut"] = (form_data.get("statut") or "Non traité").strip() or "Non traité"
+    if "commentaire_suivi" in form_data:
+        candidature["commentaire_suivi"] = (form_data.get("commentaire_suivi") or "").strip()
+    if "prochaine_action" in form_data:
+        candidature["prochaine_action"] = (form_data.get("prochaine_action") or "").strip()
+    if "rappel_date" in form_data:
+        candidature["rappel_date"] = (form_data.get("rappel_date") or "").strip()
+    if appel_value is not None:
+        candidature["appel_effectue"] = str(appel_value).lower() in {"1", "true", "on", "oui", "yes"}
+        if candidature["appel_effectue"] and not previous_appel:
+            candidature["date_appel"] = _poei_now()
+        elif not candidature["appel_effectue"]:
+            candidature["date_appel"] = ""
+
+    candidature["suivi_modifie"] = _poei_now()
+    save_data(data)
+    return jsonify({
+        "ok": True,
+        "date_appel": candidature.get("date_appel", ""),
+        "suivi_modifie": candidature.get("suivi_modifie", ""),
+    })
+
+
+@app.route("/admin-devis/poei/<candidature_id>/supprimer", methods=["POST", "DELETE"])
+@login_required
+def admin_devis_poei_delete(candidature_id):
+    data = load_data()
+    demandes = data.get("demandes", [])
+    candidature = _poei_find_candidature(data, candidature_id)
+    if candidature is None:
+        abort(404)
+    data["demandes"] = [d for d in demandes if d.get("id") != candidature_id]
+    supprimer_fichiers_demande(candidature)
+    save_data(data)
+    if request.method == "DELETE" or request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"ok": True})
+    return redirect(url_for("admin_devis_poei"))
 
 
 @app.route("/formulaire-a-rappeler", methods=["GET", "POST"])
