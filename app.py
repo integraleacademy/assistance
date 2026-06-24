@@ -164,6 +164,11 @@ def creer_piste_salesforce(form):
     france_travail_sf = oui_non_map.get(form.get("france_travail", ""), "")
 
     choix_dirigeant_desp = _choix_dirigeant_desp_salesforce(form)
+    origine_salesforce = (
+        form.get(SALESFORCE_ORIGINE_FIELD)
+        or form.get("origine")
+        or SALESFORCE_LEAD_SOURCE_VALUE
+    )
 
     data = {
         "oid": SALESFORCE_OID,
@@ -175,9 +180,8 @@ def creer_piste_salesforce(form):
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
         # Origine personnalisée Salesforce
-        "00NSa00000KPDmX": "Google",
+        SALESFORCE_ORIGINE_FIELD: origine_salesforce,
         "industry": "Education",
-        SALESFORCE_ORIGINE_FIELD: SALESFORCE_LEAD_SOURCE_VALUE,
         "00NSa00000G2PxB": formation_sf,
         "00NSa00000KDPOT": lieu,
         "00NSa00000GcJMz": cpf_sf,
@@ -2042,6 +2046,7 @@ def _payload_salesforce_poei_cannes(demande, details):
         "formation": "SSIAP",
         "type_formation": "POEI Agent de sécurité privée + SSIAP 1",
         "source_formulaire": "poei-agent-securite-cannes",
+        "origine": "POEI",
         "centre": "cote_azur",
         "dates": "23 septembre au 22 décembre 2026",
         "france_travail": (
