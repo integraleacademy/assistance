@@ -118,10 +118,15 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         self.assertIn("CANDIDATURE POEI SÉCURITÉ CANNES", salesforce_payload["infos_complementaires"])
         self.assertIn("Très motivée", salesforce_payload["infos_complementaires"])
         self.assertIn("1234567A", salesforce_payload["infos_complementaires"])
-        send_email_html.assert_called_once()
-        self.assertEqual(send_email_html.call_args.args[0], "aurelie@integraleacademy.com")
-        self.assertIn("Très motivée", send_email_html.call_args.args[2])
-        self.assertIn("1234567A", send_email_html.call_args.args[3])
+        self.assertEqual(send_email_html.call_count, 2)
+        admin_call, candidate_call = send_email_html.call_args_list
+        self.assertEqual(admin_call.args[0], "aurelie@integraleacademy.com")
+        self.assertIn("Très motivée", admin_call.args[2])
+        self.assertIn("1234567A", admin_call.args[3])
+        self.assertEqual(candidate_call.args[0], "nadia@example.com")
+        self.assertIn("Nous avons bien reçu votre candidature", candidate_call.args[1])
+        self.assertIn("Nous avons bien reçu votre candidature", candidate_call.args[3])
+        self.assertIn("très prochainement", candidate_call.args[3])
 
 
 if __name__ == "__main__":

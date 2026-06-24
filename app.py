@@ -2082,6 +2082,44 @@ def _poei_cannes_admin_email(demande):
     return send_email_html("aurelie@integraleacademy.com", "Nouvelle candidature POEI Sécurité Cannes", plain, html_body)
 
 
+def _poei_cannes_candidate_email(demande):
+    prenom = html_module.escape(demande.get("prenom", "") or "")
+    plain = (
+        f"Bonjour {demande.get('prenom', '')},\n\n"
+        "Nous avons bien reçu votre candidature pour la formation POEI Agent de sécurité + SSIAP 1 à Cannes.\n"
+        "Notre équipe va l'étudier avec attention et reviendra vers vous très prochainement.\n\n"
+        "À très vite,\n"
+        "L'équipe Intégrale Academy"
+    )
+    html_body = f"""
+    <div style="text-align:center;padding:8px 0 18px;">
+      <span style="display:inline-block;padding:8px 14px;border-radius:999px;background:#ecfdf5;color:#047857;font-weight:800;font-size:13px;letter-spacing:.02em;">Candidature reçue</span>
+    </div>
+    <div style="background:linear-gradient(135deg,#0f172a,#14532d);border-radius:22px;padding:28px 24px;color:#fff;text-align:center;box-shadow:0 18px 38px rgba(15,23,42,.18);">
+      <div style="font-size:42px;line-height:1;margin-bottom:12px;">✅</div>
+      <h1 style="margin:0;font-size:26px;line-height:1.2;color:#fff;">Nous avons bien reçu votre candidature</h1>
+      <p style="margin:14px 0 0;font-size:16px;line-height:1.6;color:#dcfce7;">Formation POEI Agent de sécurité + SSIAP 1 — Cannes</p>
+    </div>
+    <div style="padding:24px 4px 4px;">
+      <p style="font-size:16px;margin:0 0 14px;">Bonjour <strong>{prenom}</strong>,</p>
+      <p style="font-size:16px;margin:0 0 14px;">Merci pour votre candidature. Elle a bien été transmise à notre équipe.</p>
+      <p style="font-size:16px;margin:0 0 18px;">Nous allons l'étudier avec attention et nous reviendrons vers vous <strong>très prochainement</strong> pour les prochaines étapes.</p>
+      <div style="border:1px solid #d1fae5;background:#f0fdf4;border-radius:16px;padding:16px 18px;margin:20px 0;">
+        <p style="margin:0;color:#14532d;font-weight:800;">Votre parcours en bref</p>
+        <p style="margin:8px 0 0;color:#166534;">Formation financée du 23 septembre au 22 décembre 2026, puis opportunité d'emploi à Cannes si votre candidature est retenue.</p>
+      </div>
+      <p style="margin:18px 0 0;">À très vite,<br><strong>L'équipe Intégrale Academy</strong></p>
+    </div>
+    """
+    html = _wrap_html("", html_body)
+    return send_email_html(
+        demande.get("mail", ""),
+        "✅ Nous avons bien reçu votre candidature — Intégrale Academy",
+        plain,
+        html,
+    )
+
+
 @app.route("/poei-agent-securite-cannes", methods=["GET", "POST"])
 def poei_agent_securite_cannes():
     success = request.args.get("success") == "1"
@@ -2136,6 +2174,8 @@ def poei_agent_securite_cannes():
             "mail_erreur": "",
             "mail_contenu": "",
             "mail_html": "",
+            "candidat_mail_confirme": "",
+            "candidat_mail_erreur": "",
             "pieces_jointes": [],
             "reponses": [],
             "is_doublon": False,
@@ -2153,11 +2193,23 @@ def poei_agent_securite_cannes():
             else:
                 demande["mail_erreur"] = "Variables SMTP/Brevo manquantes ou envoi impossible : SMTP_USER/SMTP_PASS ou BREVO_API_KEY/BREVO_SENDER_EMAIL."
         except Exception as e:
-            demande["mail_erreur"] = f"Erreur envoi email : {e}"
+            demande["mail_erreur"] = f"Erreur envoi email admin : {e}"
+        try:
+            if _poei_cannes_candidate_email(demande):
+                demande["candidat_mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")
+            else:
+                demande["candidat_mail_erreur"] = "Variables SMTP/Brevo manquantes ou envoi impossible : SMTP_USER/SMTP_PASS ou BREVO_API_KEY/BREVO_SENDER_EMAIL."
+        except Exception as e:
+            demande["candidat_mail_erreur"] = f"Erreur envoi email candidat : {e}"
         data = load_data()
         for entry in data.get("demandes", []):
             if entry.get("id") == demande["id"]:
-                entry.update({"mail_confirme": demande["mail_confirme"], "mail_erreur": demande["mail_erreur"]})
+                entry.update({
+                    "mail_confirme": demande["mail_confirme"],
+                    "mail_erreur": demande["mail_erreur"],
+                    "candidat_mail_confirme": demande["candidat_mail_confirme"],
+                    "candidat_mail_erreur": demande["candidat_mail_erreur"],
+                })
                 break
         save_data(data)
         return redirect(url_for("poei_agent_securite_cannes", success="1") + "#candidature")
