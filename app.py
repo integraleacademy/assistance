@@ -156,6 +156,7 @@ def creer_piste_salesforce(form):
         "VTC": "CHAUFFEUR VTC",
         "BTS": "BTS",
         "SSIAP": "SSIAP",
+        "POEI": "POEI",
     }
     formation_sf = formation_map.get(form.get("formation", ""), "")
 
@@ -164,6 +165,11 @@ def creer_piste_salesforce(form):
     france_travail_sf = oui_non_map.get(form.get("france_travail", ""), "")
 
     choix_dirigeant_desp = _choix_dirigeant_desp_salesforce(form)
+    origine_salesforce = (
+        form.get(SALESFORCE_ORIGINE_FIELD)
+        or form.get("origine")
+        or SALESFORCE_LEAD_SOURCE_VALUE
+    )
 
     data = {
         "oid": SALESFORCE_OID,
@@ -175,9 +181,8 @@ def creer_piste_salesforce(form):
         "mobile": form.get("telephone", ""),
         "company": "Particulier",
         # Origine personnalisée Salesforce
-        "00NSa00000KPDmX": "Google",
+        SALESFORCE_ORIGINE_FIELD: origine_salesforce,
         "industry": "Education",
-        SALESFORCE_ORIGINE_FIELD: SALESFORCE_LEAD_SOURCE_VALUE,
         "00NSa00000G2PxB": formation_sf,
         "00NSa00000KDPOT": lieu,
         "00NSa00000GcJMz": cpf_sf,
@@ -2017,6 +2022,46 @@ def envoyer_mail_attribution_mohamed(demande):
 
 
 
+
+def _payload_salesforce_poei_cannes(demande, details):
+    infos_complementaires = (
+        "CANDIDATURE POEI SÉCURITÉ CANNES\n"
+        "Formation : POEI Agent de sécurité privée + Agent de sécurité incendie SSIAP 1\n"
+        "Dates : 23 septembre au 22 décembre 2026\n"
+        "Lieu de formation : Intégrale Academy, Puget-sur-Argens\n"
+        "Poste visé : Agent de sécurité / Agent de sécurité incendie à Cannes\n"
+        "Contrat prévu : CDD minimum 6 mois\n"
+        f"Ville de résidence : {details.get('Ville de résidence', '')}\n"
+        f"Permis B : {details.get('Permis B', '')}\n"
+        f"Disponible formation : {details.get('Disponible formation', '')}\n"
+        f"Mobilité Cannes : {details.get('Mobilité Cannes', '')}\n"
+        f"Inscrit France Travail : {details.get('Inscrit France Travail', '')}\n"
+        f"Identifiant France Travail : {details.get('Identifiant France Travail', '')}\n"
+        f"Message / motivation : {details.get('Message / motivation', '')}"
+    )
+    return {
+        "nom": demande.get("nom", ""),
+        "prenom": demande.get("prenom", ""),
+        "mail": demande.get("mail", ""),
+        "telephone": demande.get("telephone", ""),
+        "formation": "POEI",
+        "type_formation": "POEI Agent de sécurité privée + SSIAP 1",
+        "source_formulaire": "poei-agent-securite-cannes",
+        "origine": "POEI",
+        "centre": "cote_azur",
+        "dates": "23 septembre au 22 décembre 2026",
+        "france_travail": (
+            "OUI"
+            if details.get("Inscrit France Travail") == "Oui"
+            else details.get("Inscrit France Travail", "")
+        ),
+        "ville": details.get("Ville de résidence", ""),
+        "permis_b": details.get("Permis B", ""),
+        "mobilite_cannes": details.get("Mobilité Cannes", ""),
+        "identifiant_france_travail": details.get("Identifiant France Travail", ""),
+        "infos_complementaires": infos_complementaires,
+    }
+
 def _poei_cannes_admin_email(demande):
     details = demande.get("details_data", {})
     rows = "".join(
@@ -2107,6 +2152,7 @@ def poei_agent_securite_cannes():
         data = load_data()
         data.setdefault("demandes", []).append(demande)
         save_data(data)
+        creer_piste_salesforce(_payload_salesforce_poei_cannes(demande, details_data))
         try:
             if _poei_cannes_admin_email(demande):
                 demande["mail_confirme"] = datetime.datetime.now(paris_tz).strftime("%d/%m/%Y %H:%M")

@@ -92,14 +92,42 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         with (
             patch.object(application, "DATA_FILE", self.data_file),
             patch.object(application, "send_email_html", return_value=True) as send_email_html,
+            patch.object(application, "creer_piste_salesforce") as creer_piste_salesforce,
         ):
             response = self.client.post("/poei-agent-securite-cannes", data=form_data)
 
         self.assertEqual(response.status_code, 302)
+        creer_piste_salesforce.assert_called_once()
+        salesforce_payload = creer_piste_salesforce.call_args.args[0]
+        self.assertEqual(salesforce_payload["source_formulaire"], "poei-agent-securite-cannes")
+        self.assertEqual(salesforce_payload["formation"], "POEI")
+        self.assertEqual(salesforce_payload["centre"], "cote_azur")
+        self.assertEqual(salesforce_payload["origine"], "POEI")
+        self.assertEqual(salesforce_payload["france_travail"], "OUI")
+        self.assertIn("CANDIDATURE POEI SÉCURITÉ CANNES", salesforce_payload["infos_complementaires"])
+        self.assertIn("Très motivée", salesforce_payload["infos_complementaires"])
+        self.assertIn("1234567A", salesforce_payload["infos_complementaires"])
         send_email_html.assert_called_once()
         self.assertEqual(send_email_html.call_args.args[0], "aurelie@integraleacademy.com")
         self.assertIn("Très motivée", send_email_html.call_args.args[2])
         self.assertIn("1234567A", send_email_html.call_args.args[3])
+
+    def test_salesforce_origin_and_training_type_are_poei(self):
+        with patch.object(application.requests, "post") as post:
+            application.creer_piste_salesforce({
+                "nom": "Martin",
+                "prenom": "Nadia",
+                "mail": "nadia@example.com",
+                "telephone": "0612345678",
+                "formation": "POEI",
+                "origine": "POEI",
+            })
+
+        post.assert_called_once()
+        salesforce_data = post.call_args.kwargs["data"]
+        self.assertEqual(salesforce_data[application.SALESFORCE_ORIGINE_FIELD], "POEI")
+        self.assertEqual(salesforce_data["00NSa00000G2PxB"], "POEI")
+
 
 
 if __name__ == "__main__":
