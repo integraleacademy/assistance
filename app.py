@@ -3254,6 +3254,41 @@ def admin_devis():
 
 
 
+POEI_DETAIL_QUESTIONS = [
+    ("Formation", "Formation demandée"),
+    ("Dates", "Quelles sont les dates de la formation ?"),
+    ("Lieu de formation", "Où se déroule la formation ?"),
+    ("Poste visé", "Quel est le poste visé à l’issue de la formation ?"),
+    ("Contrat prévu", "Quel contrat est prévu après la formation ?"),
+    ("Ville de résidence", "Quelle est votre ville de résidence ?"),
+    ("Permis B", "Avez-vous le permis B ?"),
+    ("Disponible formation", "Êtes-vous disponible du 23/09 au 22/12/2026 ?"),
+    ("Mobilité Cannes", "Pouvez-vous travailler à Cannes ensuite ?"),
+    ("Inscrit France Travail", "Êtes-vous inscrit à France Travail ?"),
+    ("Identifiant France Travail", "Quel est votre identifiant France Travail ?"),
+    (
+        "Confirmation CNAPS",
+        "Confirmez-vous ne pas avoir d’antécédents judiciaires incompatibles avec le métier d’agent de sécurité ?",
+    ),
+    (
+        "Consentement recontact",
+        "Confirmez-vous être inscrit à France Travail et accepter d’être recontacté dans le cadre de votre candidature ?",
+    ),
+    ("Message / motivation", "Quel est votre message / votre motivation ?"),
+]
+
+
+def _poei_detail_question_rows(details):
+    rows = []
+    used_keys = set()
+    for key, question in POEI_DETAIL_QUESTIONS:
+        rows.append({"question": question, "value": details.get(key, "—") or "—"})
+        used_keys.add(key)
+    for key in sorted(k for k in details if k not in used_keys):
+        rows.append({"question": key, "value": details.get(key, "—") or "—"})
+    return rows
+
+
 def _poei_candidature_details(demande):
     details = demande.get("details_data")
     if not isinstance(details, dict):
@@ -3285,6 +3320,7 @@ def admin_devis_poei():
             continue
         item = dict(demande)
         item["details"] = _poei_candidature_details(demande)
+        item["detail_questions"] = _poei_detail_question_rows(item["details"])
         candidatures.append(item)
 
     candidatures.reverse()
