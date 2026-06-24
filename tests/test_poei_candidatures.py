@@ -79,6 +79,8 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         self.assertIn("Nous avons bien reçu votre candidature".encode("utf-8"), response.data)
         self.assertIn(b"confirmation-card", response.data)
         self.assertIn("revenir vers vous très prochainement".encode("utf-8"), response.data)
+        self.assertNotIn("à Cannes".encode("utf-8"), response.data)
+        self.assertNotIn("Formation + emploi Cannes".encode("utf-8"), response.data)
         self.assertNotIn(b'<form class="form"', response.data)
 
     def test_poei_submission_sends_admin_email_to_aurelie(self):
