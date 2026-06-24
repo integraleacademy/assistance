@@ -142,6 +142,59 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         )
 
 
+    def test_poei_follow_up_autosaves_status_call_and_comments(self):
+        self.write_data([
+            {
+                "id": "poei-1",
+                "source": "poei_agent_securite_cannes",
+                "date": "23/06/2026 09:15",
+                "nom": "Martin",
+                "prenom": "Nadia",
+                "mail": "nadia@example.com",
+                "telephone": "0612345678",
+                "statut": "Non traité",
+                "details": "{}",
+            }
+        ])
+
+        with patch.object(application, "DATA_FILE", self.data_file):
+            response = self.client.post(
+                "/admin-devis/poei/poei-1",
+                data={
+                    "statut": "À rappeler",
+                    "appel_effectue": "1",
+                    "commentaire_suivi": "A appelé, attend documents",
+                    "prochaine_action": "Relance dossier",
+                    "rappel_date": "2026-06-25T10:30",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        with open(self.data_file, encoding="utf-8") as data_file:
+            saved = json.load(data_file)["demandes"][0]
+        self.assertEqual(saved["statut"], "À rappeler")
+        self.assertTrue(saved["appel_effectue"])
+        self.assertEqual(saved["commentaire_suivi"], "A appelé, attend documents")
+        self.assertEqual(saved["prochaine_action"], "Relance dossier")
+        self.assertEqual(saved["rappel_date"], "2026-06-25T10:30")
+        self.assertTrue(saved["date_appel"])
+
+    def test_poei_candidature_can_be_deleted(self):
+        self.write_data([
+            {"id": "poei-1", "source": "poei_agent_securite_cannes", "details": "{}"},
+            {"id": "other", "motif": "Demande de devis détaillé"},
+        ])
+
+        with patch.object(application, "DATA_FILE", self.data_file):
+            response = self.client.post("/admin-devis/poei/poei-1/supprimer")
+
+        self.assertEqual(response.status_code, 302)
+        with open(self.data_file, encoding="utf-8") as data_file:
+            demandes = json.load(data_file)["demandes"]
+        self.assertEqual([demande["id"] for demande in demandes], ["other"])
+
 
 if __name__ == "__main__":
     unittest.main()
