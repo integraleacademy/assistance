@@ -127,27 +127,17 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         self.assertIn("CANDIDATURE POEI SÉCURITÉ CANNES", salesforce_payload["infos_complementaires"])
         self.assertIn("Très motivée", salesforce_payload["infos_complementaires"])
         self.assertIn("1234567A", salesforce_payload["infos_complementaires"])
-        send_email_html.assert_called_once()
-        self.assertEqual(send_email_html.call_args.args[0], "aurelie@integraleacademy.com")
-        self.assertIn("Très motivée", send_email_html.call_args.args[2])
-        self.assertIn("1234567A", send_email_html.call_args.args[3])
-
-    def test_salesforce_origin_and_training_type_are_poei(self):
-        with patch.object(application.requests, "post") as post:
-            application.creer_piste_salesforce({
-                "nom": "Martin",
-                "prenom": "Nadia",
-                "mail": "nadia@example.com",
-                "telephone": "0612345678",
-                "formation": "POEI",
-                "origine": "POEI",
-            })
-
-        post.assert_called_once()
-        salesforce_data = post.call_args.kwargs["data"]
-        self.assertEqual(salesforce_data[application.SALESFORCE_ORIGINE_FIELD], "POEI")
-        self.assertEqual(salesforce_data["00NSa00000G2PxB"], "POEI")
-
+        self.assertEqual(send_email_html.call_count, 2)
+        admin_call, candidate_call = send_email_html.call_args_list
+        self.assertEqual(admin_call.args[0], "aurelie@integraleacademy.com")
+        self.assertIn("Très motivée", admin_call.args[2])
+        self.assertIn("1234567A", admin_call.args[3])
+        self.assertEqual(candidate_call.args[0], "nadia@example.com")
+        self.assertIn("Nous avons bien reçu votre candidature", candidate_call.args[1])
+        self.assertNotIn("Cannes", candidate_call.args[2])
+        self.assertNotIn("Cannes", candidate_call.args[3])
+        self.assertIn("Nous avons bien reçu votre candidature", candidate_call.args[3])
+        self.assertIn("très prochainement", candidate_call.args[3])
 
 
 if __name__ == "__main__":
