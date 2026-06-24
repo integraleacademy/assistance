@@ -41,16 +41,24 @@
               <td class="message">{{ c.details.get('Message / motivation', '') }}</td>
               <td>{% if c.mail_confirme %}<span class="pill">Envoyé {{ c.mail_confirme }}</span>{% elif c.mail_erreur %}<span class="pill error" title="{{ c.mail_erreur }}">Erreur</span>{% else %}<span class="pill error">Non envoyé</span>{% endif %}</td>
               <td>
-                <form class="follow" data-autosave-url="{{ url_for('admin_devis_poei_update', candidature_id=c.id) }}">
-                  <div class="follow-row">
+                <details class="follow-accordion">
+                  <summary>
+                    <span class="follow-summary">
+                      <span data-follow-status>{{ c.statut or 'Non traité' }}{% if c.appel_effectue %} · Appelé{% endif %}</span>
+                      <small data-follow-action>{{ c.prochaine_action or 'Suivi à compléter' }}</small>
+                    </span>
+                  </summary>
+                  <form class="follow" data-autosave-url="{{ url_for('admin_devis_poei_update', candidature_id=c.id) }}">
+                    <div class="follow-row">
                     <div class="field"><label>Statut</label><select name="statut"><option {% if (c.statut or 'Non traité') == 'Non traité' %}selected{% endif %}>Non traité</option><option {% if c.statut == 'À rappeler' %}selected{% endif %}>À rappeler</option><option {% if c.statut == 'Appelé' %}selected{% endif %}>Appelé</option><option {% if c.statut == 'Inscrit' %}selected{% endif %}>Inscrit</option><option {% if c.statut == 'Non retenu' %}selected{% endif %}>Non retenu</option><option {% if c.statut == 'Traité' %}selected{% endif %}>Traité</option></select></div>
                     <label class="called"><input type="checkbox" name="appel_effectue" value="1" {% if c.appel_effectue %}checked{% endif %}> Appelé</label>
                   </div>
                   <div class="follow-row"><div class="field"><label>Rappel prévu</label><input type="datetime-local" name="rappel_date" value="{{ c.rappel_date or '' }}"></div><div class="field"><label>Prochaine action</label><input name="prochaine_action" value="{{ c.prochaine_action or '' }}" placeholder="Relancer, envoyer dossier…"></div></div>
                   <div class="field"><label>Commentaires</label><textarea name="commentaire_suivi" placeholder="Notes d'appel, objections, documents à demander…">{{ c.commentaire_suivi or '' }}</textarea></div>
                   <div class="details"><span>Dernier appel : <strong data-call-date>{{ c.date_appel or '—' }}</strong></span><span>Dernière sauvegarde : <strong>{{ c.suivi_modifie or '—' }}</strong></span></div>
-                  <div class="save-state" role="status" aria-live="polite">Enregistré automatiquement</div>
-                </form>
+                    <div class="save-state" role="status" aria-live="polite">Enregistré automatiquement</div>
+                  </form>
+                </details>
               </td>
               <td><form class="delete-form" method="post" action="{{ url_for('admin_devis_poei_delete', candidature_id=c.id) }}"><button class="delete-btn" type="submit">Supprimer</button></form></td>
             </tr>
@@ -132,6 +140,17 @@
       let timer;
       const state = form.querySelector('.save-state');
       const callDate = form.querySelector('[data-call-date]');
+      const accordion = form.closest('.follow-accordion');
+      const summaryStatus = accordion?.querySelector('[data-follow-status]');
+      const summaryAction = accordion?.querySelector('[data-follow-action]');
+      const updateSummary = () => {
+        if (!summaryStatus || !summaryAction) return;
+        const status = form.querySelector('[name="statut"]').value || 'Non traité';
+        const called = form.querySelector('[name="appel_effectue"]').checked;
+        const action = form.querySelector('[name="prochaine_action"]').value.trim();
+        summaryStatus.textContent = `${status}${called ? ' · Appelé' : ''}`;
+        summaryAction.textContent = action || 'Suivi à compléter';
+      };
       const save = () => {
         state.textContent = 'Sauvegarde…'; state.className = 'save-state';
         const payload = new FormData(form);
@@ -141,8 +160,8 @@
           .then((data) => { state.textContent = 'Enregistré'; state.className = 'save-state saved'; if (callDate) callDate.textContent = data.date_appel || '—'; })
           .catch(() => { state.textContent = 'Erreur de sauvegarde'; state.className = 'save-state error'; });
       };
-      form.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(save, 500); });
-      form.addEventListener('change', save);
+      form.addEventListener('input', () => { updateSummary(); clearTimeout(timer); timer = setTimeout(save, 500); });
+      form.addEventListener('change', () => { updateSummary(); save(); });
     });
     document.querySelectorAll('.delete-form').forEach((form) => {
       form.addEventListener('submit', (event) => {

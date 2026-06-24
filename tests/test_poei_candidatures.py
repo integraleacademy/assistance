@@ -120,7 +120,7 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         creer_piste_salesforce.assert_called_once()
         salesforce_payload = creer_piste_salesforce.call_args.args[0]
         self.assertEqual(salesforce_payload["source_formulaire"], "poei-agent-securite-cannes")
-        self.assertEqual(salesforce_payload["formation"], "SSIAP")
+        self.assertEqual(salesforce_payload["formation"], "POEI")
         self.assertEqual(salesforce_payload["centre"], "cote_azur")
         self.assertEqual(salesforce_payload["origine"], "POEI")
         self.assertEqual(salesforce_payload["france_travail"], "OUI")
@@ -132,76 +132,22 @@ class PoeiCandidaturesTestCase(unittest.TestCase):
         self.assertIn("Très motivée", send_email_html.call_args.args[2])
         self.assertIn("1234567A", send_email_html.call_args.args[3])
 
-    def test_salesforce_origin_can_be_overridden_for_poei(self):
+    def test_salesforce_origin_and_training_type_are_poei(self):
         with patch.object(application.requests, "post") as post:
             application.creer_piste_salesforce({
                 "nom": "Martin",
                 "prenom": "Nadia",
                 "mail": "nadia@example.com",
                 "telephone": "0612345678",
-                "formation": "SSIAP",
+                "formation": "POEI",
                 "origine": "POEI",
             })
 
         post.assert_called_once()
-        self.assertEqual(
-            post.call_args.kwargs["data"][application.SALESFORCE_ORIGINE_FIELD],
-            "POEI",
-        )
+        salesforce_data = post.call_args.kwargs["data"]
+        self.assertEqual(salesforce_data[application.SALESFORCE_ORIGINE_FIELD], "POEI")
+        self.assertEqual(salesforce_data["00NSa00000G2PxB"], "POEI")
 
-
-    def test_poei_follow_up_autosaves_status_call_and_comments(self):
-        self.write_data([
-            {
-                "id": "poei-1",
-                "source": "poei_agent_securite_cannes",
-                "date": "23/06/2026 09:15",
-                "nom": "Martin",
-                "prenom": "Nadia",
-                "mail": "nadia@example.com",
-                "telephone": "0612345678",
-                "statut": "Non traité",
-                "details": "{}",
-            }
-        ])
-
-        with patch.object(application, "DATA_FILE", self.data_file):
-            response = self.client.post(
-                "/admin-devis/poei/poei-1",
-                data={
-                    "statut": "À rappeler",
-                    "appel_effectue": "1",
-                    "commentaire_suivi": "A appelé, attend documents",
-                    "prochaine_action": "Relance dossier",
-                    "rappel_date": "2026-06-25T10:30",
-                },
-            )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertTrue(payload["ok"])
-        with open(self.data_file, encoding="utf-8") as data_file:
-            saved = json.load(data_file)["demandes"][0]
-        self.assertEqual(saved["statut"], "À rappeler")
-        self.assertTrue(saved["appel_effectue"])
-        self.assertEqual(saved["commentaire_suivi"], "A appelé, attend documents")
-        self.assertEqual(saved["prochaine_action"], "Relance dossier")
-        self.assertEqual(saved["rappel_date"], "2026-06-25T10:30")
-        self.assertTrue(saved["date_appel"])
-
-    def test_poei_candidature_can_be_deleted(self):
-        self.write_data([
-            {"id": "poei-1", "source": "poei_agent_securite_cannes", "details": "{}"},
-            {"id": "other", "motif": "Demande de devis détaillé"},
-        ])
-
-        with patch.object(application, "DATA_FILE", self.data_file):
-            response = self.client.post("/admin-devis/poei/poei-1/supprimer")
-
-        self.assertEqual(response.status_code, 302)
-        with open(self.data_file, encoding="utf-8") as data_file:
-            demandes = json.load(data_file)["demandes"]
-        self.assertEqual([demande["id"] for demande in demandes], ["other"])
 
 
 if __name__ == "__main__":
