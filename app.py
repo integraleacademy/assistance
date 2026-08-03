@@ -808,6 +808,9 @@ DEFAULT_DATA = {
     "formation_sessions": {},
     "plans_simulation": {},
     "secretariat_demandes": [],
+    "crm_contacts": [],
+    "crm_email_templates": [],
+    "crm_sms_templates": [],
 }
 
 # -------------------------------------------------------------------
@@ -854,13 +857,8 @@ def load_data():
             except OSError:
                 pass
     return {
-        "demandes": [],
-        "archives": [],
-        "compteur_traitees": 0,
-        "hebergements": [],
-        "formation_sessions": {},
-        "plans_simulation": {},
-        "secretariat_demandes": [],
+        key: value.copy() if isinstance(value, (list, dict)) else value
+        for key, value in DEFAULT_DATA.items()
     }
 
 def save_data(data):
@@ -6049,6 +6047,160 @@ def lookup_hebergement():
 
         
 
+
+
+CRM_STATUSES = [
+    "Nouveaux", "Blocage", "POEI", "Session FT", "Def MOB", "RDV programmé",
+    "Prochain RDV inscription", "Financement FT en cours", "Financement FT refusé",
+    "A relancer", "Disqualifié", "Converti",
+]
+
+
+def _crm_now():
+    return datetime.datetime.now(pytz.timezone("Europe/Paris")).isoformat(timespec="seconds")
+
+
+def _crm_contact(data, contact_id):
+    return next((c for c in data["crm_contacts"] if c.get("id") == contact_id), None)
+
+
+def _crm_activity(contact, kind, title, detail="", preview=""):
+    contact.setdefault("activities", []).insert(0, {
+        "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
+        "title": title, "detail": detail, "preview": preview,
+        "author": (current_user() or {}).get("name", "Équipe Intégrale"),
+    })
+
+
+@app.route("/CRM", defaults={"section": "accueil"})
+@app.route("/CRM/<section>")
+@login_required
+def crm(section):
+    if section not in {"accueil", "contacts", "pistes", "relances", "inscrits", "modeles"}:
+        abort(404)
+    return render_template("crm.html", section=section, statuses=CRM_STATUSES, user=current_user())
+
+
+@app.route("/api/crm/contacts", methods=["GET", "POST"])
+@login_required
+def crm_contacts():
+    data = load_data()
+    if request.method == "GET":
+        return jsonify(data["crm_contacts"])
+    payload = request.get_json(silent=True) or {}
+    now = _crm_now()
+    contact = {
+        "id": str(uuid.uuid4()), "prenom": str(payload.get("prenom", "")).strip(),
+        "nom": str(payload.get("nom", "")).strip(), "telephone": "", "mail": "",
+        "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
+        "statut": "Nouveaux", "dates_formation": "", "cpf": "", "carte_pro": "",
+        "antecedents": "", "desp_type": "", "identite_creation": "",
+        "identite_ok": "", "financement_ft": "", "refus_ft_perso": "",
+        "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "",
+        "created_at": now, "updated_at": now, "activities": [],
+    }
+    _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
+    data["crm_contacts"].insert(0, contact)
+    save_data(data)
+    return jsonify(contact), 201
+
+
+@app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
+@login_required
+def crm_contact(contact_id):
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    if request.method == "GET":
+        return jsonify(contact)
+    if request.method == "DELETE":
+        data["crm_contacts"].remove(contact)
+        save_data(data)
+        return "", 204
+    payload = request.get_json(silent=True) or {}
+    allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
+               "antecedents", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
+               "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires",
+               "statut", "relance_date"}
+    old_status = contact.get("statut")
+    for key, value in payload.items():
+        if key in allowed:
+            contact[key] = str(value or "")
+    if contact.get("statut") not in CRM_STATUSES:
+        contact["statut"] = old_status or "Nouveaux"
+    if contact.get("statut") != old_status:
+        _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
+    contact["updated_at"] = _crm_now()
+    save_data(data)
+    return jsonify(contact)
+
+
+@app.route("/api/crm/contacts/<contact_id>/appel", methods=["POST"])
+@login_required
+def crm_log_call(contact_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    if not contact: return jsonify({"error": "Contact introuvable"}), 404
+    note = str((request.get_json(silent=True) or {}).get("commentaire", "")).strip()
+    if not note: return jsonify({"error": "Un commentaire est requis"}), 400
+    _crm_activity(contact, "appel", "Appel consigné", note)
+    contact["updated_at"] = _crm_now(); save_data(data)
+    return jsonify(contact)
+
+
+@app.route("/api/crm/reformuler", methods=["POST"])
+@login_required
+def crm_rephrase():
+    text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
+    if not text: return jsonify({"error": "Texte vide"}), 400
+    if not os.getenv("OPENAI_API_KEY"):
+        return jsonify({"error": "OPENAI_API_KEY non configurée"}), 503
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        response = client.responses.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            instructions="Reformule cette note CRM en français professionnel, clair et factuel. Ne rajoute aucune information.",
+            input=text,
+        )
+        return jsonify({"texte": response.output_text.strip()})
+    except Exception as exc:
+        print("Erreur reformulation CRM:", exc)
+        return jsonify({"error": "La reformulation est momentanément indisponible"}), 502
+
+
+@app.route("/api/crm/templates", methods=["GET", "POST"])
+@login_required
+def crm_templates():
+    data = load_data()
+    if request.method == "GET":
+        return jsonify({"email": data["crm_email_templates"], "sms": data["crm_sms_templates"]})
+    payload = request.get_json(silent=True) or {}; kind = payload.get("type")
+    if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
+    item = {"id": str(uuid.uuid4()), "nom": str(payload.get("nom", "Sans titre")).strip(),
+            "sujet": str(payload.get("sujet", "")).strip(), "contenu": str(payload.get("contenu", "")),
+            "created_at": _crm_now()}
+    data[f"crm_{kind}_templates"].append(item); save_data(data)
+    return jsonify(item), 201
+
+
+@app.route("/api/crm/contacts/<contact_id>/message", methods=["POST"])
+@login_required
+def crm_send_message(contact_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    if not contact: return jsonify({"error": "Contact introuvable"}), 404
+    payload = request.get_json(silent=True) or {}; kind = payload.get("type")
+    body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
+    if kind == "email":
+        branded = render_template("crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body)
+        ok = send_email_html(contact.get("mail"), subject, body, branded)
+        preview = branded
+    elif kind == "sms":
+        ok = send_sms(contact.get("telephone"), body); preview = body
+    else: return jsonify({"error": "Type invalide"}), 400
+    if not ok: return jsonify({"error": "L’envoi a échoué. Vérifiez la configuration et les coordonnées."}), 502
+    _crm_activity(contact, kind, "E-mail envoyé" if kind == "email" else "SMS envoyé", subject if kind == "email" else body, preview)
+    contact["updated_at"] = _crm_now(); save_data(data)
+    return jsonify(contact)
 
 
 if __name__ == "__main__":
