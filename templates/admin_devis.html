@@ -251,6 +251,7 @@ h1{
 .btn-callback{ background:linear-gradient(135deg,#1d4ed8,#38bdf8); }
 .btn-rappels{ background:linear-gradient(135deg,#0f172a,#475569); }
 .btn-vae{ background:linear-gradient(135deg,#0ea5e9,#4f46e5); }
+.btn-crm{ background:linear-gradient(135deg,#be123c,#e11d48); }
 .section-header{
     display:flex;
     align-items:flex-end;
@@ -510,6 +511,7 @@ tbody tr:hover{background:#eff6ff;}
                 <input type="text" id="search" placeholder="Rechercher un nom, prénom, formation…">
             </div>
             <div class="tool-group actions-group" aria-label="Actions rapides">
+                <a class="tool-link btn-crm" href="{{ url_for('crm') }}">👥 Accéder au CRM</a>
                 <a class="tool-link btn-simulate" href="{{ url_for('simulateur_plan_financement') }}" target="_blank">⚡ Simuler un plan</a>
                 <a class="tool-link btn-form-new" href="{{ url_for('demande_informations_formations') }}" target="_blank">✨ Ouvrir le formulaire</a>
                 <a class="tool-link btn-dates" href="{{ url_for('admin_formation_sessions') }}">🗓️ Gérer les dates</a>
