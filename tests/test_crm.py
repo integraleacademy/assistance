@@ -57,6 +57,7 @@ def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path
             "financement_perso": "OUI", "identite_numerique": "OUI",
             "cnaps_ok": "OUI", "garde_vue": "NON", "titre_sejour": "OUI",
             "ssiap_secourisme_valide": "OUI", "souhaite_devis": "OUI",
+            "commentaires_secretariat": "Ne doit pas être copié dans la fiche CRM.",
         })
 
     assert response.status_code == 302
@@ -71,6 +72,8 @@ def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path
     assert contact["dates_formation"] == "Du 12 au 27 octobre 2026"
     assert contact["cpf"] == "OUI"
     assert contact["financement_ft"] == "NON"
+    assert contact["origine"] == "Site internet"
+    assert contact["commentaires"] == ""
     assert contact["formulaire"]["cpf_montant"] == "1200"
     assert contact["source_demande_id"]
     assert contact["source_devis_id"]
