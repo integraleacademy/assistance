@@ -36,3 +36,58 @@
 .section-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:16px}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
 @media(max-width:650px){.section-fields{grid-template-columns:1fr}.contact-actions{width:auto;margin-left:auto}.actions-menu{right:0}.timeline button{min-width:110px}}
+/* Calendly dans la fiche CRM */
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.calendly-action{border-color:#b9ddff;background:#edf7ff;color:#075d9e}
+.calendly-card{margin:0 0 18px;overflow:hidden}
+.calendly-card .card-head small{display:block;margin-top:4px;color:var(--muted);font-size:11px}
+.appointment-list{padding:0 20px}
+.appointment-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:14px;padding:15px 0;border-bottom:1px solid var(--line)}
+.appointment-row:last-child{border-bottom:0}
+.appointment-row.is-canceled{opacity:.68}
+.appointment-date{display:grid;place-items:center;align-content:center;width:50px;height:54px;border-radius:12px;background:#edf3ff;color:var(--blue);text-transform:uppercase}
+.appointment-date span{font:800 20px Manrope;line-height:1}
+.appointment-date small{font-size:10px;font-weight:800;margin-top:4px}
+.appointment-main{min-width:0}
+.appointment-main>div{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.appointment-main b{font:700 14px Manrope}
+.appointment-main p{margin:6px 0 0;color:#66758b;font-size:12px;line-height:1.5}
+.appointment-status{padding:4px 8px;border-radius:20px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.appointment-status.upcoming{background:#e7f8f2;color:#087a5d}
+.appointment-status.past{background:#eef1f5;color:#69788c}
+.appointment-status.canceled{background:#fdecef;color:#bd3546}
+.appointment-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.appointment-actions .btn{font-size:11px;text-decoration:none;padding:7px 9px}
+.danger-light{color:#bd3546!important;border-color:#f2c8ce!important;background:#fff8f9!important}
+.integration-banner{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:12px 20px 18px;padding:13px 15px;border:1px solid #cfe0ff;border-radius:12px;background:#f4f8ff}
+.integration-banner>div{min-width:0}
+.integration-banner b,.integration-banner span{display:block}
+.integration-banner b{font-size:12px}
+.integration-banner span{margin-top:3px;color:#687991;font-size:11px;line-height:1.4}
+.integration-banner.success{border-color:#bee9da;background:#f0fbf7}
+.integration-banner.warning{border-color:#f4d9a4;background:#fff9eb}
+.error-text{color:#ba3446}
+.calendly-modal{width:min(980px,100%)}
+.calendly-modal .modal-body{padding:0}
+.calendly-booking-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.8fr);min-height:520px}
+.calendly-booking-grid>section{padding:22px;border-right:1px solid var(--line)}
+.calendly-booking-grid>aside{padding:22px;background:#fafbfd}
+.booking-person{display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:17px;border-bottom:1px solid var(--line)}
+.booking-person b,.booking-person small{display:block}
+.booking-person small{margin-top:3px;color:var(--muted);font-size:11px}
+.type-summary{margin:8px 0 17px;color:var(--muted);font-size:12px}
+.location-summary{padding:11px 12px;border-radius:9px;background:#fff;border:1px solid var(--line);color:#5e6d82;font-size:12px}
+.availability-nav{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin:18px 0 12px}
+.availability-nav b{text-align:center;font-size:12px;text-transform:capitalize}
+.availability-nav .btn{font-size:11px;padding:7px 9px}
+.cal-slots{max-height:420px;overflow:auto;padding-right:4px}
+.slot-day{padding:11px 0;border-bottom:1px solid var(--line)}
+.slot-day h4{margin:0 0 9px;font:700 12px Manrope;text-transform:capitalize}
+.slot-day>div{display:flex;flex-wrap:wrap;gap:7px}
+.slot{border:1px solid #cfdcf1;border-radius:8px;background:#fff;color:#315277;padding:8px 10px;font-weight:700;cursor:pointer}
+.slot:hover,.slot.selected{border-color:var(--blue);background:#edf3ff;color:#174cae;box-shadow:0 0 0 2px #356ae617}
+.calendly-questions{grid-template-columns:1fr;margin-top:17px}
+.calendly-questions .field.full{grid-column:auto}
+.field-help{display:block;margin-top:5px;color:var(--muted);font-size:10px}
+@media(max-width:1150px){.contact-actions{flex-wrap:wrap;justify-content:flex-end}.calendly-booking-grid{grid-template-columns:1fr}.calendly-booking-grid>section{border-right:0;border-bottom:1px solid var(--line)}}
+@media(max-width:700px){.appointment-row{grid-template-columns:45px 1fr}.appointment-actions{grid-column:1/-1;justify-content:flex-start;padding-left:59px}.integration-banner{align-items:flex-start;flex-direction:column}.calendly-modal .modal-foot{position:sticky;bottom:0;background:#fff}.availability-nav{grid-template-columns:1fr 1fr}.availability-nav b{grid-column:1/-1;grid-row:1}.cal-slots{max-height:none}}
