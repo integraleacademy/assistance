@@ -6471,6 +6471,18 @@ def _crm_activity(contact, kind, title, detail="", preview=""):
     })
 
 
+def _gestion_stagiaires_payload(contact):
+    """Contrat JSON envoyé à l'application Gestion stagiaires."""
+    return {
+        "source": "integrale-connect-crm", "crm_contact_id": contact["id"],
+        "prenom": contact.get("prenom", ""), "nom": contact.get("nom", ""),
+        "email": contact.get("mail", ""), "telephone": contact.get("telephone", ""),
+        "formation": contact.get("formation", ""), "parcours": contact.get("desp_type", ""),
+        "centre": contact.get("lieu", ""), "session": contact.get("dates_formation", ""),
+        "commentaires": contact.get("commentaires", ""),
+    }
+
+
 @app.route("/crm", defaults={"section": "accueil"})
 @app.route("/crm/<section>")
 @login_required
@@ -6975,6 +6987,43 @@ def crm_log_call(contact_id):
     note = str((request.get_json(silent=True) or {}).get("commentaire", "")).strip()
     if not note: return jsonify({"error": "Un commentaire est requis"}), 400
     _crm_activity(contact, "appel", "Appel consigné", note)
+    contact["updated_at"] = _crm_now(); save_data(data)
+    return jsonify(contact)
+
+
+@app.route("/api/crm/contacts/<contact_id>/convertir", methods=["POST"])
+@login_required
+def crm_convert_contact(contact_id):
+    """Crée le stagiaire à distance, puis seulement ensuite valide la conversion CRM."""
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    if not contact: return jsonify({"error": "Contact introuvable"}), 404
+    if contact.get("gestion_stagiaire_id"): return jsonify(contact)
+    missing = [label for key, label in (("prenom", "prénom"), ("nom", "nom"), ("mail", "e-mail"),
+        ("formation", "formation"), ("lieu", "lieu"), ("dates_formation", "session"))
+        if not str(contact.get(key, "")).strip()]
+    if missing: return jsonify({"error": "Complétez avant l’inscription : " + ", ".join(missing)}), 400
+    api_url = os.getenv("GESTION_STAGIAIRES_API_URL", "").strip()
+    api_token = os.getenv("GESTION_STAGIAIRES_API_TOKEN", "").strip()
+    if not api_url or not api_token:
+        return jsonify({"error": "Connexion Gestion stagiaires non configurée"}), 503
+    try:
+        response = requests.post(api_url, json=_gestion_stagiaires_payload(contact), headers={
+            "Authorization": f"Bearer {api_token}", "Idempotency-Key": f"crm-contact-{contact_id}",
+            "Accept": "application/json"}, timeout=15)
+        remote = response.json() if response.content else {}
+        if response.status_code not in {200, 201}:
+            message = remote.get("error") if isinstance(remote, dict) else None
+            return jsonify({"error": message or "Gestion stagiaires a refusé l’inscription"}), 502
+        if not isinstance(remote, dict) or not remote.get("id"):
+            return jsonify({"error": "Réponse invalide de Gestion stagiaires (identifiant absent)"}), 502
+    except (requests.RequestException, ValueError) as exc:
+        print("Erreur conversion Gestion stagiaires:", exc)
+        return jsonify({"error": "Gestion stagiaires est momentanément indisponible"}), 502
+    contact["gestion_stagiaire_id"] = str(remote["id"])
+    contact["gestion_stagiaire_url"] = str(remote.get("url", ""))
+    old_status = contact.get("statut", "Nouveaux"); contact["statut"] = "Converti"
+    _crm_activity(contact, "conversion", "Inscription créée dans Gestion stagiaires",
+                  f"Ancien statut : {old_status} · Identifiant : {remote['id']}")
     contact["updated_at"] = _crm_now(); save_data(data)
     return jsonify(contact)
 
