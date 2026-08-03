@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3
 import html as html_module
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -6623,6 +6623,347 @@ def _gestion_stagiaires_payload(contact):
         "centre": contact.get("lieu", ""), "session": contact.get("dates_formation", ""),
         "commentaires": contact.get("commentaires", ""),
     }
+
+
+# --------------- WEDOF (cache local en lecture seule) ---------------
+class WedofAPIError(RuntimeError):
+    """Erreur WEDOF dont le message peut être retourné sans divulguer la clé."""
+
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _wedof_db_path():
+    """Place le cache à côté de data.json, sauf surcharge explicite."""
+    return os.getenv("WEDOF_DB_PATH") or os.path.join(
+        os.path.dirname(DATA_FILE) or ".", "wedof.sqlite3"
+    )
+
+
+def _wedof_connect():
+    path = _wedof_db_path()
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    connection = sqlite3.connect(path, timeout=10)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout = 10000")
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.executescript("""
+        CREATE TABLE IF NOT EXISTS wedof_resources (
+            resource_type TEXT NOT NULL,
+            stable_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            remote_date TEXT,
+            synced_at TEXT NOT NULL,
+            PRIMARY KEY (resource_type, stable_id)
+        );
+        CREATE TABLE IF NOT EXISTS wedof_contact_links (
+            contact_id TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            attendee_id TEXT,
+            match_method TEXT NOT NULL,
+            linked_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (resource_type, resource_id),
+            FOREIGN KEY (resource_type, resource_id)
+                REFERENCES wedof_resources(resource_type, stable_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_wedof_links_contact
+            ON wedof_contact_links(contact_id);
+        CREATE TABLE IF NOT EXISTS wedof_sync_state (
+            sync_key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+    """)
+    connection.commit()
+    return connection
+
+
+def _wedof_now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def _wedof_clean(value):
+    """Retire la clé de tout message provenant du réseau ou d'une exception."""
+    text = str(value or "")
+    secret = os.getenv("WEDOF_API_KEY", "")
+    if secret:
+        text = text.replace(secret, "[REDACTED]")
+    text = re.sub(r"(?i)(x-api-key\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]", text)
+    return text[:500]
+
+
+def _wedof_request(path, *, params=None):
+    key = os.getenv("WEDOF_API_KEY", "").strip()
+    if not key:
+        raise WedofAPIError("WEDOF_API_KEY non configurée")
+    base_url = os.getenv("WEDOF_BASE_URL", "https://www.wedof.fr").rstrip("/")
+    timeout = float(os.getenv("WEDOF_TIMEOUT", "15"))
+    retries = max(0, min(int(os.getenv("WEDOF_GET_RETRIES", "2")), 5))
+    headers = {"X-Api-Key": key, "Accept": "application/json"}
+    for attempt in range(retries + 1):
+        try:
+            response = requests.get(
+                f"{base_url}/{path.lstrip('/')}", headers=headers,
+                params=params, timeout=timeout,
+            )
+            if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < retries:
+                time.sleep(min(0.25 * (2 ** attempt), 1.0))
+                continue
+            if not 200 <= response.status_code < 300:
+                raise WedofAPIError(
+                    f"WEDOF a répondu avec le statut {response.status_code}.",
+                    response.status_code,
+                )
+            try:
+                return response.json(), response.headers
+            except (ValueError, json.JSONDecodeError):
+                raise WedofAPIError("WEDOF a retourné une réponse JSON invalide.")
+        except WedofAPIError:
+            raise
+        except requests.RequestException as exc:
+            if attempt < retries:
+                time.sleep(min(0.25 * (2 ** attempt), 1.0))
+                continue
+            raise WedofAPIError(f"Connexion à WEDOF impossible : {_wedof_clean(exc)}")
+
+
+def _wedof_items(payload):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("items", "resources", "data", "registrationFolders"):
+            if isinstance(payload.get(key), list):
+                return payload[key]
+    raise WedofAPIError("Format de liste WEDOF inattendu.")
+
+
+def _wedof_attendee_values(folder):
+    attendee = folder.get("attendee") if isinstance(folder.get("attendee"), dict) else {}
+    emails = {
+        _crm_normalize_email(attendee.get(key))
+        for key in ("email", "mail", "emailAddress")
+        if _crm_normalize_email(attendee.get(key))
+    }
+    phones = {
+        _crm_normalize_phone(attendee.get(key))
+        for key in ("phone", "telephone", "mobile", "phoneNumber")
+        if _crm_normalize_phone(attendee.get(key))
+    }
+    attendee_id = attendee.get("externalId") or attendee.get("id")
+    return emails, phones, str(attendee_id or "")
+
+
+def _wedof_match_contact(folder, contacts):
+    emails, phones, _ = _wedof_attendee_values(folder)
+    email_matches = [
+        contact for contact in contacts
+        if _crm_normalize_email(contact.get("mail")) in emails
+    ]
+    if emails and len(email_matches) == 1:
+        return email_matches[0], "email"
+    if len(email_matches) > 1:
+        return None, None
+    phone_matches = [
+        contact for contact in contacts
+        if _crm_normalize_phone(contact.get("telephone")) in phones
+    ]
+    if phones and len(phone_matches) == 1:
+        return phone_matches[0], "phone"
+    return None, None
+
+
+def _wedof_store_page(items, contacts, page, total_count=None):
+    now = _wedof_now()
+    with _wedof_connect() as db:
+        for folder in items:
+            if not isinstance(folder, dict) or not folder.get("externalId"):
+                continue
+            stable_id = str(folder["externalId"])
+            payload_json = json.dumps(folder, ensure_ascii=False, separators=(",", ":"))
+            remote_date = next((str(folder.get(key)) for key in (
+                "updatedAt", "modifiedAt", "dateUpdated", "createdAt"
+            ) if folder.get(key)), None)
+            db.execute("""
+                INSERT INTO wedof_resources
+                    (resource_type, stable_id, payload_json, remote_date, synced_at)
+                VALUES ('registrationFolder', ?, ?, ?, ?)
+                ON CONFLICT(resource_type, stable_id) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    remote_date=excluded.remote_date,
+                    synced_at=excluded.synced_at
+            """, (stable_id, payload_json, remote_date, now))
+            existing = db.execute("""
+                SELECT contact_id FROM wedof_contact_links
+                WHERE resource_type='registrationFolder' AND resource_id=?
+            """, (stable_id,)).fetchone()
+            contact = None
+            method = None
+            if existing:
+                contact = next((c for c in contacts if c.get("id") == existing["contact_id"]), None)
+                method = "stable" if contact else None
+            if not contact:
+                contact, method = _wedof_match_contact(folder, contacts)
+            if contact:
+                _, _, attendee_id = _wedof_attendee_values(folder)
+                db.execute("""
+                    INSERT INTO wedof_contact_links
+                        (contact_id, resource_type, resource_id, attendee_id,
+                         match_method, linked_at, updated_at)
+                    VALUES (?, 'registrationFolder', ?, ?, ?, ?, ?)
+                    ON CONFLICT(resource_type, resource_id) DO UPDATE SET
+                        contact_id=excluded.contact_id,
+                        attendee_id=excluded.attendee_id,
+                        match_method=excluded.match_method,
+                        updated_at=excluded.updated_at
+                """, (contact["id"], stable_id, attendee_id, method, now, now))
+        state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
+        if total_count is not None:
+            state["total_count"] = total_count
+        db.execute("""
+            INSERT INTO wedof_sync_state(sync_key, value_json, updated_at)
+            VALUES ('registrationFolders', ?, ?)
+            ON CONFLICT(sync_key) DO UPDATE SET
+                value_json=excluded.value_json, updated_at=excluded.updated_at
+        """, (json.dumps(state), now))
+
+
+def _wedof_set_state(**state):
+    now = _wedof_now()
+    with _wedof_connect() as db:
+        db.execute("""
+            INSERT INTO wedof_sync_state(sync_key, value_json, updated_at)
+            VALUES ('registrationFolders', ?, ?)
+            ON CONFLICT(sync_key) DO UPDATE SET
+                value_json=excluded.value_json, updated_at=excluded.updated_at
+        """, (json.dumps(state), now))
+
+
+def _wedof_state():
+    with _wedof_connect() as db:
+        row = db.execute("SELECT value_json, updated_at FROM wedof_sync_state WHERE sync_key='registrationFolders'").fetchone()
+    if not row:
+        return {}
+    try:
+        return {**json.loads(row["value_json"]), "updated_at": row["updated_at"]}
+    except (TypeError, ValueError):
+        return {"last_error": "État de synchronisation illisible."}
+
+
+def _wedof_sync():
+    state = _wedof_state()
+    page = int(state.get("next_page") or 1) if state.get("in_progress") else 1
+    max_pages = max(1, min(int(os.getenv("WEDOF_MAX_PAGES", "1000")), 10000))
+    processed = 0
+    contacts = load_data().get("crm_contacts", [])
+    try:
+        for _ in range(max_pages):
+            payload, headers = _wedof_request(
+                "/api/registrationFolders", params={"limit": 100, "page": page}
+            )
+            items = _wedof_items(payload)
+            total = headers.get("x-total-count") or headers.get("X-Total-Count")
+            try:
+                total = int(total) if total is not None else None
+            except (TypeError, ValueError):
+                total = None
+            _wedof_store_page(items, contacts, page, total)
+            processed += len(items)
+            current = headers.get("x-current-page") or headers.get("X-Current-Page") or page
+            per_page = headers.get("x-item-per-page") or headers.get("X-Item-Per-Page") or 100
+            try:
+                complete = total is not None and int(current) * int(per_page) >= total
+            except (TypeError, ValueError):
+                complete = False
+            if complete or len(items) < 100:
+                finished = _wedof_now()
+                _wedof_set_state(next_page=1, in_progress=False, last_error="", last_sync_at=finished)
+                return {"ok": True, "processed": processed, "last_sync_at": finished}
+            page += 1
+        raise WedofAPIError("Limite de pagination WEDOF atteinte ; la reprise reste disponible.")
+    except Exception as exc:
+        message = _wedof_clean(exc)
+        _wedof_set_state(next_page=page, in_progress=True, last_error=message)
+        raise WedofAPIError(message)
+
+
+def _wedof_contact_resources(contact_id):
+    with _wedof_connect() as db:
+        rows = db.execute("""
+            SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
+                   r.synced_at, l.attendee_id, l.match_method
+            FROM wedof_contact_links l JOIN wedof_resources r
+              ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
+            WHERE l.contact_id=? ORDER BY r.synced_at DESC
+        """, (contact_id,)).fetchall()
+    return [{
+        "type": row["resource_type"], "stable_id": row["stable_id"],
+        "payload": json.loads(row["payload_json"]), "remote_date": row["remote_date"],
+        "synced_at": row["synced_at"], "attendee_id": row["attendee_id"],
+        "match_method": row["match_method"],
+    } for row in rows]
+
+
+def _wedof_status_payload(test_connection=True):
+    configured = bool(os.getenv("WEDOF_API_KEY", "").strip())
+    connected = False
+    error = ""
+    if configured and test_connection:
+        try:
+            _wedof_request("/api/organisms/me")
+            connected = True
+        except Exception as exc:
+            error = _wedof_clean(exc)
+    state = _wedof_state()
+    with _wedof_connect() as db:
+        resources = db.execute("SELECT COUNT(*) FROM wedof_resources").fetchone()[0]
+        linked = db.execute("SELECT COUNT(*) FROM wedof_contact_links").fetchone()[0]
+    return {
+        "configured": configured, "connected": connected,
+        "last_sync_at": state.get("last_sync_at") or "",
+        "resource_count": resources, "linked_folder_count": linked,
+        "error": error or _wedof_clean(state.get("last_error", "")),
+    }
+
+
+@app.route("/api/crm/wedof/status")
+@login_required
+def crm_wedof_status():
+    return jsonify(_wedof_status_payload())
+
+
+@app.route("/api/crm/wedof/sync", methods=["POST"])
+@login_required
+def crm_wedof_sync():
+    if (current_user() or {}).get("role") != "admin":
+        return jsonify({"error": "Seul un administrateur peut synchroniser WEDOF."}), 403
+    try:
+        return jsonify(_wedof_sync())
+    except WedofAPIError as exc:
+        return jsonify({"error": _wedof_clean(exc)}), 503
+
+
+@app.route("/api/crm/contacts/<contact_id>/wedof")
+@login_required
+def crm_contact_wedof(contact_id):
+    if not _crm_contact(load_data(), contact_id):
+        return jsonify({"error": "Contact introuvable"}), 404
+    return jsonify({"resources": _wedof_contact_resources(contact_id)})
+
+
+@app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
+@login_required
+def crm_contact_wedof_refresh(contact_id):
+    if not _crm_contact(load_data(), contact_id):
+        return jsonify({"error": "Contact introuvable"}), 404
+    try:
+        sync = _wedof_sync()
+        return jsonify({"sync": sync, "resources": _wedof_contact_resources(contact_id)})
+    except WedofAPIError as exc:
+        return jsonify({"error": _wedof_clean(exc)}), 503
 
 
 @app.route("/crm", defaults={"section": "accueil"})
