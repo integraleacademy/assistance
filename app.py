@@ -429,6 +429,12 @@ SECRETARIAT_FORMATIONS = {
     "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "175 h à distance + 70 h en présentiel", "color": "indigo", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "DESP_VAE": {"short": "VAE DESP", "duration": "Accompagnement individualisé", "price": "3 800 € TTC", "format": "100 % à distance", "color": "green", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 600 € TTC", "format": "Hybride", "color": "cyan", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
+    "BTS_MOS": {"short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "calendly": "https://calendly.com/integraleacademy/formation"},
+    "BTS_MCO": {"short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "calendly": "https://calendly.com/integraleacademy/formation"},
+    "BTS_CI": {"short": "BTS CI", "label": "BTS Commerce International (CI)", "calendly": "https://calendly.com/integraleacademy/formation"},
+    "BTS_NDRC": {"short": "BTS NDRC", "label": "BTS Négociation et Digitalisation de la Relation Client (NDRC)", "calendly": "https://calendly.com/integraleacademy/formation"},
+    "BTS_PI": {"short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "calendly": "https://calendly.com/integraleacademy/formation"},
+    "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "calendly": "https://calendly.com/integraleacademy/formation"},
 }
 
 PLAN_DATES = {
@@ -2745,7 +2751,7 @@ def secretariat():
             rows = sessions.get(centre_code, {}).get(code, [])
             if rows:
                 centres.append({"code": centre_code, "label": centre_label, "sessions": rows})
-        formations.append({"code": code, "label": PLAN_FORMATIONS[code], "centres": centres, **details})
+        formations.append({"code": code, "label": details.get("label", PLAN_FORMATIONS.get(code, code)), "centres": centres, **details})
     journal = sorted(
         data_store.get("secretariat_demandes", []),
         key=lambda row: row.get("created_at", ""),
@@ -2768,7 +2774,9 @@ def api_secretariat_demandes():
         "telephone": str(payload.get("telephone", "")).strip(),
         "email": str(payload.get("email", "")).strip(),
         "notes": str(payload.get("notes", "")).strip(),
+        "devis": str(payload.get("devis", "")).strip(),
         "rdv": str(payload.get("rdv", "")).strip(),
+        "calendly_url": str(payload.get("calendly_url", "")).strip(),
         "statut": payload.get("statut", "Traité"),
         "created_at": now.isoformat(),
         "date": now.strftime("%d/%m/%Y %H:%M"),
