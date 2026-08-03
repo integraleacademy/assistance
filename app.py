@@ -422,6 +422,15 @@ FORMATION_CENTRES = {
     "paris": "Intégrale Academy Paris",
 }
 
+SECRETARIAT_FORMATIONS = {
+    "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "color": "violet", "calendly": "https://calendly.com/integraleacademy/apr"},
+    "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "color": "blue", "calendly": "https://calendly.com/integraleacademy/aps"},
+    "SSIAP": {"short": "SSIAP 1", "duration": "Formation + examen", "price": "980 € TTC · 1 200 € avec SST", "format": "Présentiel", "color": "orange", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
+    "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "175 h à distance + 70 h en présentiel", "color": "indigo", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
+    "DESP_VAE": {"short": "VAE DESP", "duration": "Accompagnement individualisé", "price": "3 800 € TTC", "format": "100 % à distance", "color": "green", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
+    "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 600 € TTC", "format": "Hybride", "color": "cyan", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
+}
+
 PLAN_DATES = {
     "A3P": [
         "30 juin au 2 septembre 2026 – examen le 3 septembre 2026",
@@ -792,6 +801,7 @@ DEFAULT_DATA = {
     "hebergements": [],
     "formation_sessions": {},
     "plans_simulation": {},
+    "secretariat_demandes": [],
 }
 
 # -------------------------------------------------------------------
@@ -844,6 +854,7 @@ def load_data():
         "hebergements": [],
         "formation_sessions": {},
         "plans_simulation": {},
+        "secretariat_demandes": [],
     }
 
 def save_data(data):
@@ -2723,6 +2734,65 @@ def _supprimer_brouillon_formulaire_soumis(data, form_data):
     data["formulaires_abandonnes"] = abandons_filtres
     return True
 
+@app.route("/secretariat")
+def secretariat():
+    data_store = load_data()
+    formations = []
+    sessions = get_formation_sessions(data_store)
+    for code, details in SECRETARIAT_FORMATIONS.items():
+        centres = []
+        for centre_code, centre_label in FORMATION_CENTRES.items():
+            rows = sessions.get(centre_code, {}).get(code, [])
+            if rows:
+                centres.append({"code": centre_code, "label": centre_label, "sessions": rows})
+        formations.append({"code": code, "label": PLAN_FORMATIONS[code], "centres": centres, **details})
+    journal = sorted(
+        data_store.get("secretariat_demandes", []),
+        key=lambda row: row.get("created_at", ""),
+        reverse=True,
+    )
+    return render_template("secretariat.html", formations=formations, journal=journal)
+
+
+@app.route("/api/secretariat/demandes", methods=["POST"])
+def api_secretariat_demandes():
+    payload = request.get_json(silent=True) or {}
+    if payload.get("type") not in {"formation", "autre"}:
+        return jsonify({"ok": False, "error": "Type de demande invalide"}), 400
+    now = datetime.datetime.now(pytz.timezone("Europe/Paris"))
+    entry = {
+        "id": str(uuid.uuid4()),
+        "type": payload.get("type"),
+        "formation": payload.get("formation", ""),
+        "nom": str(payload.get("nom", "")).strip(),
+        "telephone": str(payload.get("telephone", "")).strip(),
+        "email": str(payload.get("email", "")).strip(),
+        "notes": str(payload.get("notes", "")).strip(),
+        "rdv": str(payload.get("rdv", "")).strip(),
+        "statut": payload.get("statut", "Traité"),
+        "created_at": now.isoformat(),
+        "date": now.strftime("%d/%m/%Y %H:%M"),
+    }
+    data_store = load_data()
+    entries = data_store.setdefault("secretariat_demandes", [])
+    # Le formulaire formation crée déjà une ligne « RDV à prendre ». La dernière
+    # étape du parcours l'enrichit au lieu de créer un doublon dans le journal.
+    existing = next((row for row in reversed(entries)
+                     if payload.get("type") == "formation"
+                     and row.get("statut") == "RDV à prendre"
+                     and row.get("formation") == entry["formation"]
+                     and row.get("telephone") == entry["telephone"]), None)
+    if existing:
+        created_at, date_label, entry_id = existing.get("created_at"), existing.get("date"), existing.get("id")
+        existing.update(entry)
+        existing.update({"created_at": created_at, "date": date_label, "id": entry_id})
+        entry = existing
+    else:
+        entries.append(entry)
+    save_data(data_store)
+    return jsonify({"ok": True, "demande": entry}), 201
+
+
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
 def demande_informations_formations():
     data_store = load_data()
@@ -2767,6 +2837,18 @@ def demande_informations_formations():
             "source": "demande_infos_formations"
         }
         data_store.setdefault("demandes", []).append(demande_entry)
+        if form_data.get("source_secretariat") == "1":
+            now_secretariat = datetime.datetime.now(pytz.timezone("Europe/Paris"))
+            data_store.setdefault("secretariat_demandes", []).append({
+                "id": str(uuid.uuid4()), "type": "formation",
+                "formation": form_data.get("formation", ""),
+                "nom": " ".join(filter(None, [demande_entry["prenom"], demande_entry["nom"]])),
+                "telephone": demande_entry["telephone"], "email": demande_entry["mail"],
+                "notes": "Formulaire de demande d’informations complété par le secrétariat.",
+                "rdv": "", "statut": "RDV à prendre",
+                "created_at": now_secretariat.isoformat(),
+                "date": now_secretariat.strftime("%d/%m/%Y %H:%M"),
+            })
         _supprimer_brouillon_formulaire_soumis(data_store, form_data)
 
         if form_data.get("souhaite_devis") != "OUI":
