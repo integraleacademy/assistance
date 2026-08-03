@@ -25,19 +25,30 @@ def test_secretariat_flow_includes_bts_default_quote_and_optional_calendly(clien
     assert response.status_code == 200
     assert b"BTS Management Op\xc3\xa9rationnel de la S\xc3\xa9curit\xc3\xa9" in response.data
     assert b'name="devis" value="OUI" checked' in response.data
-    assert b"calendly-inline-widget" in response.data
+    assert b'id="calendlyLink"' in response.data
     assert b"ne souhaite pas de rendez-vous" in response.data
 
 
-def test_secretariat_waits_for_calendly_script_before_rendering(client, monkeypatch):
+def test_secretariat_displays_training_details_before_caller_form(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert b'id="calendlyScript"' in response.data
-    assert b"async function renderCalendly()" in response.data
-    assert b"await waitForCalendly()" in response.data
-    assert b"Calendly ne peut pas \xc3\xaatre affich\xc3\xa9 ici" in response.data
+    assert b"Les informations cl\xc3\xa9s de la formation" in response.data
+    assert b"Financements possibles" in response.data
+    assert b"Prochaines dates" in response.data
+    assert b"protection rapproch" in response.data
+
+
+def test_secretariat_uses_a_direct_calendly_link_instead_of_a_blocked_embed(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b'id="calendlyLink"' in response.data
+    assert b'target="_blank"' in response.data
+    assert b"Voir les cr\xc3\xa9neaux disponibles" in response.data
+    assert b"Calendly ne peut pas \xc3\xaatre affich\xc3\xa9 ici" not in response.data
 
 def test_secretariat_api_records_a_request(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
