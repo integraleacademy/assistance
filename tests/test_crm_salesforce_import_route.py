@@ -1,7 +1,7 @@
 import io
 
 import app as application
-from crm_salesforce_import import parse_salesforce_csv
+from crm_salesforce_import import import_salesforce_rows, parse_salesforce_csv
 
 
 def _admin_client(tmp_path, monkeypatch):
@@ -25,7 +25,10 @@ def test_salesforce_import_route_is_registered_on_default_app_entrypoint():
 
 def test_salesforce_import_dry_run_is_available_from_default_app(tmp_path, monkeypatch):
     client = _admin_client(tmp_path, monkeypatch)
-    csv_file = b"Id,FirstName,LastName,Email\n00Q1,Lina,Martin,lina@example.com\n"
+    csv_file = (
+        b"Id,FirstName,LastName,Email,CreatedDate\n"
+        b"00Q1,Lina,Martin,lina@example.com,2025-06-12T10:00:00Z\n"
+    )
 
     response = client.post(
         "/api/crm/import-salesforce",
@@ -35,6 +38,72 @@ def test_salesforce_import_dry_run_is_available_from_default_app(tmp_path, monke
 
     assert response.status_code == 200
     assert response.get_json()["created"] == 1
+
+
+def test_salesforce_import_only_counts_2025_and_allowed_formations():
+    rows = [
+        {
+            "Id": "allowed",
+            "FirstName": "Lina",
+            "LastName": "Martin",
+            "CreatedDate": "2025-04-03T12:00:00Z",
+            "Type_de_formation__c": "A3P",
+        },
+        {
+            "Id": "old",
+            "FirstName": "Lou",
+            "LastName": "Martin",
+            "CreatedDate": "2024-12-31T23:59:59Z",
+            "Type_de_formation__c": "A3P",
+        },
+        {
+            "Id": "excluded",
+            "FirstName": "Sam",
+            "LastName": "Martin",
+            "CreatedDate": "03/04/2025 12:00",
+            "Type_de_formation__c": "BTS MOS 2025",
+        },
+    ]
+
+    result = import_salesforce_rows([], rows, dry_run=True)
+
+    assert result["csv_rows"] == 3
+    assert result["prepared_rows"] == 1
+    assert result["created"] == 1
+    assert result["formation_counts"] == {"A3P": 1}
+    assert result["skipped_other_year"] == 1
+    assert result["skipped_formation"] == 1
+
+
+def test_salesforce_import_excludes_all_requested_formations():
+    excluded = [
+        "BTS",
+        "BTS CI",
+        "BTS MCO",
+        "BTS MOS",
+        "BTS MOS 2025",
+        "BTS MOS 2026",
+        "AFC",
+        "APS + SSIAP",
+    ]
+    rows = [
+        {
+            "Id": str(index),
+            "FirstName": "Test",
+            "LastName": formation,
+            "CreatedDate": "2025-01-02T08:00:00Z",
+            "Type_de_formation__c": formation,
+        }
+        for index, formation in enumerate(excluded)
+    ]
+
+    result = import_salesforce_rows([], rows, dry_run=True)
+
+    assert result["prepared_rows"] == 0
+    assert result["created"] == 0
+    assert result["formation_counts"] == {}
+    assert result["status_counts"] == {}
+    assert result["skipped_formation"] == len(excluded)
 
 
 def test_parse_salesforce_csv_accepts_excel_semicolon_separator():
