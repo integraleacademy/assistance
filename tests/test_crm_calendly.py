@@ -382,10 +382,40 @@ def test_contact_appointments_are_fetched_directly_by_email(tmp_path, monkeypatc
     }
     assert len(result["appointments"]) == 1
     assert result["appointments"][0]["contact_id"] == contact["id"]
+    updated_contact = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert updated_contact["statut"] == "RDV programmé"
     assert [path for _, path, _ in calls] == [
         "/scheduled_events",
         "/scheduled_events/EVENT1/invitees",
     ]
+
+
+def test_cached_active_appointment_updates_contact_pipeline_status(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    monkeypatch.delenv("CALENDLY_ACCESS_TOKEN")
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Tony", "nom": "Arribas", "formation": "Chauffeur VTC"},
+    ).get_json()
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [
+        {
+            "id": "appointment-1",
+            "contact_id": contact["id"],
+            "status": "active",
+            "start_time": "2026-08-12T08:00:00Z",
+        }
+    ]
+    application.save_data(data)
+
+    response = client.get(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments"
+    )
+
+    assert response.status_code == 200
+    assert len(response.get_json()["appointments"]) == 1
+    updated_contact = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert updated_contact["statut"] == "RDV programmé"
 
 
 def test_webhook_matches_a_contact_by_normalized_phone_question(tmp_path, monkeypatch):

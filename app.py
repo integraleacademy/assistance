@@ -6389,6 +6389,22 @@ def _crm_upsert_calendly_appointment(
         or previous_status != appointment.get("status")
         or previous_start != appointment.get("start_time")
     )
+    status_changed = False
+    if (
+        contact
+        and appointment.get("status") != "canceled"
+        and contact.get("statut") != "RDV programmé"
+    ):
+        old_status = contact.get("statut") or "Nouveaux"
+        contact["statut"] = "RDV programmé"
+        status_changed = True
+        if record_activity:
+            _crm_activity(
+                contact,
+                "statut",
+                "Statut : RDV programmé",
+                f"Ancien statut : {old_status}",
+            )
     if contact and record_activity and changed:
         if appointment.get("status") == "canceled":
             title = "Rendez-vous Calendly annulé"
@@ -6401,12 +6417,23 @@ def _crm_upsert_calendly_appointment(
             f"{_crm_calendly_datetime_label(appointment.get('start_time'))}"
         )
         _crm_activity(contact, "calendly", title, detail)
-        if appointment.get("status") != "canceled" and contact.get("statut") != "RDV programmé":
-            old_status = contact.get("statut") or "Nouveaux"
-            contact["statut"] = "RDV programmé"
-            _crm_activity(contact, "statut", "Statut : RDV programmé", f"Ancien statut : {old_status}")
+    if contact and (status_changed or (record_activity and changed)):
         contact["updated_at"] = now
     return appointment, contact
+
+
+def _crm_sync_contact_calendly_status(data, contact):
+    """Keep the pipeline aligned with active Calendly appointments already cached."""
+    has_active_appointment = any(
+        item.get("contact_id") == contact.get("id")
+        and item.get("status") != "canceled"
+        for item in data.get("crm_calendly_appointments", [])
+    )
+    if not has_active_appointment or contact.get("statut") == "RDV programmé":
+        return False
+    contact["statut"] = "RDV programmé"
+    contact["updated_at"] = _crm_now()
+    return True
 
 
 def _crm_calendly_fetch_contact_appointments(data, contact):
@@ -6862,6 +6889,8 @@ def crm_contact_calendly_appointments(contact_id):
             )
             changed = True
         if _crm_calendly_relink_appointments(latest_data, latest_contact):
+            changed = True
+        if _crm_sync_contact_calendly_status(latest_data, latest_contact):
             changed = True
         if changed:
             save_data(latest_data)
