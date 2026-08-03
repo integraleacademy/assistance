@@ -531,7 +531,10 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "A répondu",
         "Sans réponse",
         "calendarFormationTone",
-        "calendar-training-${calendarFormationTone(c.formation)}",
+        "calendar-training-${calendarFormationTone(a,c)}",
+        "value.includes('DIRIGEANT')",
+        "value.includes('APR')",
+        "value.includes('SECURITE INCENDIE')",
         'id="deleteBtn"',
         "method:'DELETE'",
     ]
