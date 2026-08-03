@@ -27,9 +27,175 @@ function showContact(id){
 }
 function selectHtml(n,l,c){return `<label>${l}</label><div class="binary-choice" role="radiogroup" aria-label="${esc(l)}"><label><input type="radio" name="${n}" value="OUI" ${c[n]==='OUI'?'checked':''}>OUI</label><label><input type="radio" name="${n}" value="NON" ${c[n]==='NON'?'checked':''}>NON</label></div>`}function selectField(n,l,c){return `<div class="field">${selectHtml(n,l,c)}</div>`}function feed(c){return (c.activities||[]).map(a=>`<div class="feed-item"><span class="feed-icon">${a.kind==='appel'?'☎':a.kind==='email'?'✉':a.kind==='sms'?'▣':a.kind==='calendly'?'◷':'◆'}</span><div><b>${esc(a.title)}</b><p>${esc(a.detail)}</p><time>${fmt(a.date)} · ${esc(a.author)}</time>${a.preview?`<br><a class="preview-link" data-preview="${encodeURIComponent(a.preview)}">Prévisualiser</a>`:''}</div></div>`).join('')||'<div class="empty">Aucune activité</div>'}
 function sessionKeys(c){const formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','Chauffeur VTC':'VTC'}[c.formation]||(c.formation==='DESP'?(c.desp_type==='VAE'?'DESP_VAE':'DESP_INIT'):'');return {formation,centre:{'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'}[c.lieu]||''}}
-function bindContact(c){backList.onclick=()=>{history.pushState({},'',`/CRM/contacts`);render()};let timer;const form=document.querySelector('#contactForm');const refreshSessions=()=>{const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','Chauffeur VTC':'VTC'}[form.formation.value]||(form.formation.value==='DESP'?(form.desp_type.value==='VAE'?'DESP_VAE':'DESP_INIT'):'');const available=Object.entries(formationSessions).filter(([,v])=>(v[formation]||[]).length);form.lieu.innerHTML=available.map(([key])=>`<option value="${centreLabels[key]||key}" ${c.lieu===(centreLabels[key]||key)?'selected':''}>${centreLabels[key]||key}</option>`).join('')||'<option value="">Aucun lieu disponible</option>';if(![...form.lieu.options].some(o=>o.selected)&&form.lieu.options.length)form.lieu.options[0].selected=true;const centre={'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'}[form.lieu.value],rows=formationSessions[centre]?.[formation]||[];form.dates_formation.innerHTML=`<option value="">— Sélectionner une session —</option>`+rows.map(r=>`<option value="${esc(r.label)}" ${c.dates_formation===r.label?'selected':''}>${esc(r.label)}${r.badge?' — '+esc(r.badge):''}</option>`).join('');sessionHelp.textContent=rows.length?'Sessions configurées dans l’administration.':'Aucune session disponible pour cette formation et ce lieu.'};const conditional=()=>{const f=form.formation.value,card=form.carte_pro?.value;document.querySelector('[data-show=security]').classList.toggle('hidden',!['APS','A3P'].includes(f));document.querySelector('[data-show=antecedents]').classList.toggle('hidden',!['APS','A3P'].includes(f)||card!=='NON');document.querySelector('[data-show=desp]').classList.toggle('hidden',f!=='DESP')};conditional();refreshSessions();form.oninput=e=>{conditional();if(['formation','desp_type'].includes(e.target.name)){c.formation=form.formation.value;c.desp_type=form.desp_type.value;refreshSessions()}if(e.target.name==='lieu'){c.lieu=form.lieu.value;refreshSessions()}saveState.textContent='Enregistrement…';clearTimeout(timer);timer=setTimeout(async()=>{try{const updated=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(form)))});Object.assign(c,updated);saveState.textContent='✓ Enregistré'}catch(e){saveState.textContent='Erreur';toast(e.message,true)}},550)};document.querySelectorAll('[data-step]').forEach(b=>b.onclick=async()=>{if(b.dataset.step==='A relancer')return relaunchModal(c);if(b.dataset.step==='Converti')return conversionModal(c);try{Object.assign(c,await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut:b.dataset.step})}));showContact(c.id);toast('Statut mis à jour')}catch(e){toast(e.message,true)}});actionsBtn.onclick=e=>{e.stopPropagation();actionsMenu.classList.toggle('open');actionsBtn.setAttribute('aria-expanded',actionsMenu.classList.contains('open'))};document.onclick=e=>{if(!e.target.closest('.contact-actions'))actionsMenu.classList.remove('open')};callBtn.onclick=()=>callModal(c);mailBtn.onclick=()=>messageModal(c,'email');smsBtn.onclick=()=>messageModal(c,'sms');reminderBtn.onclick=()=>relaunchModal(c);document.querySelectorAll('[data-preview]').forEach(a=>a.onclick=()=>previewModal(decodeURIComponent(a.dataset.preview)))}
+function bindContact(c){
+  backList.onclick=()=>{history.pushState({},'',`/CRM/contacts`);render()};
+  let timer;
+  const form=document.querySelector('#contactForm');
+  const refreshSessions=()=>{const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','Chauffeur VTC':'VTC'}[form.formation.value]||(form.formation.value==='DESP'?(form.desp_type.value==='VAE'?'DESP_VAE':'DESP_INIT'):'');const available=Object.entries(formationSessions).filter(([,v])=>(v[formation]||[]).length);form.lieu.innerHTML=available.map(([key])=>`<option value="${centreLabels[key]||key}" ${c.lieu===(centreLabels[key]||key)?'selected':''}>${centreLabels[key]||key}</option>`).join('')||'<option value="">Aucun lieu disponible</option>';if(![...form.lieu.options].some(o=>o.selected)&&form.lieu.options.length)form.lieu.options[0].selected=true;const centre={'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'}[form.lieu.value],rows=formationSessions[centre]?.[formation]||[];form.dates_formation.innerHTML=`<option value="">— Sélectionner une session —</option>`+rows.map(r=>`<option value="${esc(r.label)}" ${c.dates_formation===r.label?'selected':''}>${esc(r.label)}${r.badge?' — '+esc(r.badge):''}</option>`).join('');sessionHelp.textContent=rows.length?'Sessions configurées dans l’administration.':'Aucune session disponible pour cette formation et ce lieu.'};
+  const conditional=()=>{const f=form.formation.value,card=form.carte_pro?.value;document.querySelector('[data-show=security]').classList.toggle('hidden',!['APS','A3P'].includes(f));document.querySelector('[data-show=antecedents]').classList.toggle('hidden',!['APS','A3P'].includes(f)||card!=='NON');document.querySelector('[data-show=desp]').classList.toggle('hidden',f!=='DESP')};
+  conditional();
+  refreshSessions();
+  form.oninput=e=>{conditional();if(['formation','desp_type'].includes(e.target.name)){c.formation=form.formation.value;c.desp_type=form.desp_type.value;refreshSessions()}if(e.target.name==='lieu'){c.lieu=form.lieu.value;refreshSessions()}saveState.textContent='Enregistrement…';clearTimeout(timer);timer=setTimeout(async()=>{try{const updated=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(form)))});Object.assign(c,updated);saveState.textContent='✓ Enregistré'}catch(e){saveState.textContent='Erreur';toast(e.message,true)}},550)};
+  document.querySelectorAll('[data-step]').forEach(b=>b.onclick=async()=>{if(b.dataset.step==='A relancer')return relaunchModal(c);if(b.dataset.step==='Converti')return conversionModal(c);try{Object.assign(c,await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut:b.dataset.step})}));showContact(c.id);toast('Statut mis à jour')}catch(e){toast(e.message,true)}});
+  actionsBtn.onclick=e=>{e.stopPropagation();actionsMenu.classList.toggle('open');actionsBtn.setAttribute('aria-expanded',actionsMenu.classList.contains('open'))};
+  document.onclick=e=>{if(!e.target.closest('.contact-actions'))actionsMenu.classList.remove('open')};
+  calendarBtn.onclick=()=>calendlyModal(c);
+  callBtn.onclick=()=>callModal(c);
+  mailBtn.onclick=()=>messageModal(c,'email');
+  smsBtn.onclick=()=>messageModal(c,'sms');
+  reminderBtn.onclick=()=>relaunchModal(c);
+  syncCalendlyBtn.onclick=()=>syncCalendlyAll(c,true);
+  document.querySelectorAll('[data-preview]').forEach(a=>a.onclick=()=>previewModal(decodeURIComponent(a.dataset.preview)));
+  loadCalendlyAppointments(c);
+}
 function modal(title,body,foot='',className=''){modalRoot.innerHTML=`<div class="modal-bg"><div class="modal ${className}"><div class="modal-head"><h2>${title}</h2><button class="close">×</button></div><div class="modal-body">${body}</div>${foot?`<div class="modal-foot">${foot}</div>`:''}</div></div>`;document.querySelector('.close').onclick=closeModal;document.querySelector('.modal-bg').onclick=e=>{if(e.target===e.currentTarget)closeModal()}}function closeModal(){modalRoot.innerHTML=''}
 function relaunchModal(c){const tomorrow=new Date(Date.now()+86400000).toISOString().slice(0,10);modal('Planifier une relance',`<p class="relaunch-intro">Choisissez la date à laquelle <strong>${esc(c.prenom)} ${esc(c.nom)}</strong> devra être recontacté(e).</p><label class="field"><span style="display:block;margin-bottom:7px">Date de la prochaine relance</span><div class="relaunch-date"><span>◫</span><input id="relaunchDate" type="date" min="${new Date().toISOString().slice(0,10)}" value="${c.relance_date||tomorrow}" required></div></label>`,`<button class="btn" id="cancelRelaunch">Annuler</button><button class="btn blue" id="saveRelaunch">Planifier la relance</button>`,'relaunch-modal');cancelRelaunch.onclick=closeModal;saveRelaunch.onclick=async()=>{if(!relaunchDate.value)return toast('Choisissez une date',true);saveRelaunch.disabled=true;try{Object.assign(c,await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut:'A relancer',relance_date:relaunchDate.value})}));closeModal();showContact(c.id);toast('Relance planifiée')}catch(e){toast(e.message,true);saveRelaunch.disabled=false}}}
+const calendlyDate=d=>d?new Intl.DateTimeFormat('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(d)):'Date non renseignée';
+function calendlyLocationLabel(location){
+  if(!location)return'';
+  if(typeof location==='string')return location;
+  const kind=location.type||location.kind||'';
+  const labels={outbound_call:'Appel sortant',inbound_call:'Appel entrant',zoom:'Zoom',zoom_conference:'Zoom',google_conference:'Google Meet',microsoft_teams_conference:'Microsoft Teams',physical:'Sur place',custom:'Lieu personnalisé',ask_invitee:'Lieu indiqué par la personne'};
+  return [labels[kind]||kind,location.location||location.join_url||''].filter(Boolean).join(' · ');
+}
+function sortedAppointments(items){
+  const now=Date.now();
+  return [...items].sort((a,b)=>{
+    const at=new Date(a.start_time||0).getTime(),bt=new Date(b.start_time||0).getTime();
+    const ag=a.status!=='canceled'&&at>=now?0:a.status!=='canceled'?1:2;
+    const bg=b.status!=='canceled'&&bt>=now?0:b.status!=='canceled'?1:2;
+    return ag!==bg?ag-bg:ag===0?at-bt:bt-at;
+  });
+}
+function renderCalendlyAppointments(c,items,integration){
+  const list=document.querySelector('#appointmentList'),box=document.querySelector('#calendlyIntegration');
+  if(!list||!box)return;
+  const now=Date.now();
+  list.innerHTML=items.length?sortedAppointments(items).map(a=>{
+    const start=new Date(a.start_time||0).getTime();
+    const canceled=a.status==='canceled';
+    const state=canceled?'Annulé':start>=now?'À venir':'Terminé';
+    const location=calendlyLocationLabel(a.location);
+    return `<article class="appointment-row ${canceled?'is-canceled':''}"><div class="appointment-date"><span>${new Intl.DateTimeFormat('fr-FR',{day:'2-digit'}).format(new Date(a.start_time))}</span><small>${new Intl.DateTimeFormat('fr-FR',{month:'short'}).format(new Date(a.start_time))}</small></div><div class="appointment-main"><div><span class="appointment-status ${canceled?'canceled':start>=now?'upcoming':'past'}">${state}</span><b>${esc(a.name||'Rendez-vous Calendly')}</b></div><p>${calendlyDate(a.start_time)}${a.host_name?` · Avec ${esc(a.host_name)}`:''}${location?`<br>${esc(location)}`:''}</p></div><div class="appointment-actions">${!canceled&&a.reschedule_url?`<a class="btn" href="${esc(a.reschedule_url)}" target="_blank" rel="noopener">Reprogrammer</a>`:''}${!canceled&&a.cancel_url?`<a class="btn danger-light" href="${esc(a.cancel_url)}" target="_blank" rel="noopener">Annuler</a>`:''}</div></article>`;
+  }).join(''):'<div class="activity-empty">Aucun rendez-vous Calendly rattaché à cette piste.</div>';
+  if(!integration.configured){
+    box.innerHTML=`<div class="integration-banner warning"><div><b>Jeton Calendly non configuré</b><span>Ajoutez CALENDLY_ACCESS_TOKEN dans Render pour activer l’intégration.</span></div></div>`;
+  }else if(!integration.signing_key_configured){
+    box.innerHTML=`<div class="integration-banner warning"><div><b>Clé de signature manquante</b><span>Ajoutez CALENDLY_WEBHOOK_SIGNING_KEY dans Render.</span></div></div>`;
+  }else if(!integration.connected){
+    box.innerHTML=`<div class="integration-banner"><div><b>Calendly est prêt à être relié</b><span>Activez l’import de tous les rendez-vous et l’écoute en temps réel.</span></div>${C.is_admin?'<button class="btn blue" id="setupCalendlyBtn">Activer Calendly</button>':''}</div>`;
+  }else{
+    box.innerHTML=`<div class="integration-banner success"><div><b>Synchronisation Calendly active</b><span>${integration.scope==='organization'?'Toute l’organisation':'Compte Calendly du jeton'} · Tous les types${integration.last_full_sync_at?` · Import complet ${fmt(integration.last_full_sync_at)}`:''}</span></div></div>`;
+  }
+  const setup=document.querySelector('#setupCalendlyBtn');
+  if(setup)setup.onclick=()=>setupCalendly(c);
+  const sync=document.querySelector('#syncCalendlyBtn');
+  if(sync)sync.style.display=C.is_admin&&integration.connected?'inline-flex':'none';
+}
+async function loadCalendlyAppointments(c){
+  const timeout=new Promise((_,reject)=>setTimeout(()=>reject(Error('Le chargement Calendly a pris trop de temps. Cliquez sur Synchroniser pour réessayer.')),15000));
+  try{
+    const result=await Promise.race([api(`/api/crm/contacts/${c.id}/calendly/appointments`),timeout]);
+    renderCalendlyAppointments(c,result.appointments||[],result.integration||{});
+  }catch(e){
+    const list=document.querySelector('#appointmentList');
+    if(list)list.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;
+  }
+}
+async function setupCalendly(c){
+  const button=document.querySelector('#setupCalendlyBtn');
+  if(button){button.disabled=true;button.textContent='Activation…'}
+  try{
+    const result=await api('/api/crm/calendly/setup',{method:'POST',body:'{}'});
+    if(result.warning)toast(result.warning);
+    await syncCalendlyAll(c,true);
+  }catch(e){toast(e.message,true);if(button){button.disabled=false;button.textContent='Activer Calendly'}}
+}
+async function syncCalendlyAll(c,restart=false){
+  const button=document.querySelector('#syncCalendlyBtn');
+  const list=document.querySelector('#appointmentList');
+  if(button){button.disabled=true;button.textContent='Synchronisation…'}
+  let first=true,total=0;
+  try{
+    for(let pageNumber=0;pageNumber<250;pageNumber++){
+      const result=await api('/api/crm/calendly/sync',{method:'POST',body:JSON.stringify({restart:restart&&first})});
+      first=false;total+=result.appointments||0;
+      if(list)list.innerHTML=`<div class="activity-empty">Synchronisation Calendly… ${total} rendez-vous traités</div>`;
+      if(result.complete){toast(`Synchronisation terminée · ${total} rendez-vous traités`);break}
+    }
+    await loadCalendlyAppointments(c);
+  }catch(e){toast(e.message,true);await loadCalendlyAppointments(c)}finally{if(button){button.disabled=false;button.textContent='↻ Synchroniser'}}
+}
+function calendlyQuestionHtml(question,c){
+  const required=question.required?' required':'';
+  const marker=question.required?' *':'';
+  const value=question.type==='phone_number'?esc(c.telephone||''):'';
+  if(question.type==='single_select')return `<div class="field full"><label>${esc(question.name)}${marker}</label><select data-question-position="${question.position}"${required}><option value="">— Choisir —</option>${(question.answer_choices||[]).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select></div>`;
+  if(question.type==='multi_select')return `<div class="field full"><label>${esc(question.name)}${marker}</label><select multiple size="${Math.min(5,Math.max(2,(question.answer_choices||[]).length))}" data-question-position="${question.position}"${required}>${(question.answer_choices||[]).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select><small class="field-help">Maintenez Ctrl ou ⌘ pour choisir plusieurs réponses.</small></div>`;
+  if(question.type==='text')return `<div class="field full"><label>${esc(question.name)}${marker}</label><textarea data-question-position="${question.position}"${required}></textarea></div>`;
+  return `<div class="field full"><label>${esc(question.name)}${marker}</label><input type="${question.type==='phone_number'?'tel':'text'}" value="${value}" data-question-position="${question.position}"${required}></div>`;
+}
+async function calendlyModal(c){
+  if(!c.mail)return toast('Ajoutez d’abord l’adresse e-mail de la personne.',true);
+  modal('Planifier un rendez-vous',`<div class="activity-empty">Chargement de tous les types Calendly…</div>`,`<button class="btn" id="calCancel">Annuler</button><button class="btn blue" id="calBook" disabled>Confirmer le rendez-vous</button>`,'calendly-modal');
+  calCancel.onclick=closeModal;
+  const bookButton=document.querySelector('#calBook');
+  try{
+    const types=await api('/api/crm/calendly/event-types');
+    if(!types.length)throw Error('Aucun type de rendez-vous Calendly actif.');
+    let rangeStart=new Date(),selectedStart='',selectedType=types[0];
+    rangeStart.setHours(0,0,0,0);
+    document.querySelector('.modal-body').innerHTML=`<div class="calendly-booking-grid"><section><div class="field"><label>Type de rendez-vous</label><select id="calEventType">${types.map((t,i)=>`<option value="${i}">${esc(t.name)}${t.duration?` · ${t.duration} min`:''}${t.profile?.name?` · ${esc(t.profile.name)}`:''}</option>`).join('')}</select></div><div id="calTypeInfo"></div><div class="availability-nav"><button class="btn" id="calPrev">← 14 jours</button><b id="calRange"></b><button class="btn" id="calNext">14 jours →</button></div><div id="calSlots" class="cal-slots"><div class="activity-empty">Chargement des disponibilités…</div></div></section><aside><div class="booking-person"><span class="avatar">${initials(c)}</span><div><b>${esc(c.prenom)} ${esc(c.nom)}</b><small>${esc(c.mail)}${c.telephone?` · ${esc(c.telephone)}`:''}</small></div></div><div id="calLocationFields"></div><div class="fields calendly-questions" id="calQuestions"></div></aside></div>`;
+    const typeSelect=document.querySelector('#calEventType'),slots=document.querySelector('#calSlots'),rangeLabel=document.querySelector('#calRange');
+    const renderLocationFields=()=>{
+      const root=document.querySelector('#calLocationFields'),locations=selectedType.locations||[];
+      if(selectedType.pooling_type==='round_robin'||!locations.length){root.innerHTML='';return}
+      const options=locations.map((location,i)=>`<option value="${i}">${esc({outbound_call:'Appel sortant',inbound_call:'Appel entrant',zoom_conference:'Zoom',google_conference:'Google Meet',microsoft_teams_conference:'Microsoft Teams',physical:'Sur place',custom:'Lieu personnalisé',ask_invitee:'Lieu choisi'}[location.kind]||location.kind)}</option>`).join('');
+      root.innerHTML=`<div class="field"><label>Mode du rendez-vous</label><select id="calLocationKind">${options}</select></div><div id="calLocationValue"></div>`;
+      const renderValue=()=>{const location=locations[Number(document.querySelector('#calLocationKind').value)]||locations[0],target=document.querySelector('#calLocationValue');if(location.kind==='outbound_call')target.innerHTML=`<div class="field"><label>Numéro à appeler</label><input id="calLocationText" type="tel" value="${esc(c.telephone||'')}"></div>`;else if(location.kind==='ask_invitee')target.innerHTML='<div class="field"><label>Lieu ou moyen de contact</label><input id="calLocationText" placeholder="Adresse, téléphone ou lien…"></div>';else target.innerHTML=location.location?`<p class="location-summary">${esc(location.location)}</p>`:''};
+      document.querySelector('#calLocationKind').onchange=renderValue;renderValue();
+    };
+    const renderType=()=>{
+      selectedType=types[Number(typeSelect.value)]||types[0];selectedStart='';bookButton.disabled=true;
+      const unavailable=selectedType.is_paid||selectedType.booking_method==='poll';
+      document.querySelector('#calPrev').disabled=unavailable;
+      document.querySelector('#calNext').disabled=unavailable;
+      document.querySelector('#calTypeInfo').innerHTML=unavailable?`<div class="integration-banner warning"><div><b>Réservation directe indisponible</b><span>${selectedType.is_paid?'Ce type demande un paiement Calendly.':'Ce type est un sondage de dates.'}</span></div>${selectedType.scheduling_url?`<a class="btn" target="_blank" rel="noopener" href="${esc(selectedType.scheduling_url)}">Ouvrir Calendly</a>`:''}</div>`:`<p class="type-summary">${selectedType.duration?`${selectedType.duration} minutes · `:''}${selectedType.kind==='group'?'Rendez-vous collectif':'Rendez-vous individuel'}</p>`;
+      document.querySelector('#calQuestions').innerHTML=(selectedType.custom_questions||[]).filter(q=>q.enabled).map(q=>calendlyQuestionHtml(q,c)).join('');
+      renderLocationFields();
+      if(unavailable){slots.innerHTML='<div class="activity-empty">Utilisez le lien Calendly de ce type de rendez-vous.</div>';return}
+      loadSlots();
+    };
+    const loadSlots=async()=>{
+      selectedStart='';bookButton.disabled=true;slots.innerHTML='<div class="activity-empty">Chargement des disponibilités…</div>';
+      const today=new Date();today.setHours(0,0,0,0);document.querySelector('#calPrev').disabled=rangeStart<=today;
+      const end=new Date(rangeStart);end.setDate(end.getDate()+14);
+      const actualStart=rangeStart<=today?new Date():rangeStart;
+      rangeLabel.textContent=`${rangeStart.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} – ${new Date(end.getTime()-86400000).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}`;
+      try{
+        const times=await api(`/api/crm/calendly/availability?event_type=${encodeURIComponent(selectedType.uri)}&start_time=${encodeURIComponent(actualStart.toISOString())}&end_time=${encodeURIComponent(end.toISOString())}`);
+        const groups={};times.forEach(slot=>{const day=new Date(slot.start_time).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});(groups[day]??=[]).push(slot)});
+        slots.innerHTML=times.length?Object.entries(groups).map(([day,daySlots])=>`<section class="slot-day"><h4>${esc(day)}</h4><div>${daySlots.map(slot=>`<button type="button" class="slot" data-slot="${esc(slot.start_time)}">${new Date(slot.start_time).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</button>`).join('')}</div></section>`).join(''):'<div class="activity-empty">Aucun créneau disponible sur cette période.</div>';
+        document.querySelectorAll('[data-slot]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-slot]').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');selectedStart=button.dataset.slot;bookButton.disabled=false});
+      }catch(e){slots.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`}
+    };
+    typeSelect.onchange=renderType;
+    document.querySelector('#calPrev').onclick=()=>{rangeStart.setDate(rangeStart.getDate()-14);const today=new Date();today.setHours(0,0,0,0);if(rangeStart<today)rangeStart=today;loadSlots()};
+    document.querySelector('#calNext').onclick=()=>{rangeStart.setDate(rangeStart.getDate()+14);loadSlots()};
+    bookButton.onclick=async()=>{
+      if(!selectedStart)return toast('Choisissez un horaire.',true);
+      const answers={};document.querySelectorAll('[data-question-position]').forEach(field=>{answers[field.dataset.questionPosition]=field.multiple?[...field.selectedOptions].map(x=>x.value):field.value});
+      const locations=selectedType.locations||[],locationSelect=document.querySelector('#calLocationKind'),selectedLocation=selectedType.pooling_type==='round_robin'?null:(locations[Number(locationSelect?.value||0)]||locations[0]||null);
+      const location=selectedLocation?{kind:selectedLocation.kind,location:document.querySelector('#calLocationText')?.value||selectedLocation.location||''}:null;
+      bookButton.disabled=true;bookButton.textContent='Création du rendez-vous…';
+      try{
+        const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments`,{method:'POST',body:JSON.stringify({event_type:selectedType.uri,start_time:selectedStart,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',location,answers})});
+        Object.assign(c,result.contact||{});closeModal();showContact(c.id);toast('Rendez-vous Calendly planifié');
+      }catch(e){toast(e.message,true);bookButton.disabled=false;bookButton.textContent='Confirmer le rendez-vous'}
+    };
+    renderType();
+  }catch(e){document.querySelector('.modal-body').innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;bookButton.style.display='none'}
+}
 function conversionModal(c){modal('Inscrire dans Gestion stagiaires',`<p class="relaunch-intro">Vérifiez les informations qui seront transmises avant de créer le dossier stagiaire.</p><div class="conversion-summary"><div><small>Stagiaire</small><b>${esc(c.prenom)} ${esc(c.nom)}</b><span>${esc(c.mail)} · ${esc(c.telephone||'Téléphone non renseigné')}</span></div><div><small>Formation</small><b>${esc(c.formation)}${c.desp_type?' — '+esc(c.desp_type):''}</b><span>${esc(c.lieu)} · ${esc(c.dates_formation||'Session non renseignée')}</span></div></div><p class="conversion-note">Le statut « Converti » ne sera appliqué que si Gestion stagiaires confirme la création.</p>`,`<button class="btn" id="cancelConversion">Annuler</button><button class="btn blue" id="confirmConversion">Créer l’inscription</button>`,'conversion-modal');cancelConversion.onclick=closeModal;confirmConversion.onclick=async()=>{confirmConversion.disabled=true;confirmConversion.textContent='Création…';try{Object.assign(c,await api(`/api/crm/contacts/${c.id}/convertir`,{method:'POST'}));closeModal();showContact(c.id);toast('Stagiaire inscrit avec succès')}catch(e){toast(e.message,true);confirmConversion.disabled=false;confirmConversion.textContent='Créer l’inscription'}}}
 function callModal(c){modal('Consigner un appel',`<div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div><div class="field"><label>Compte-rendu</label><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…"></textarea></div>`,`<button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button>`);aiBtn.onclick=async()=>{if(!callNote.value.trim())return toast('Saisissez d’abord une note',true);aiBtn.disabled=true;aiBtn.textContent='Reformulation…';try{callNote.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:callNote.value})})).texte}catch(e){toast(e.message,true)}finally{aiBtn.disabled=false;aiBtn.textContent='✦ Reformuler avec l’IA'}};logCall.onclick=async()=>{try{Object.assign(c,await api(`/api/crm/contacts/${c.id}/appel`,{method:'POST',body:JSON.stringify({commentaire:callNote.value})}));closeModal();showContact(c.id);toast('Appel consigné')}catch(e){toast(e.message,true)}}}
 function messageModal(c,type){const isMail=type==='email',list=templates[type];modal(isMail?'Envoyer un e-mail':'Envoyer un SMS',`<div class="field"><label>Destinataire</label><input value="${esc(isMail?c.mail:c.telephone)}" disabled></div><div class="field"><label>Utiliser un modèle</label><select id="tpl"><option value="">Message libre</option>${list.map(x=>`<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></div>${isMail?'<div class="field"><label>Objet</label><input id="subject" value="Intégrale Academy — Votre formation"></div>':''}<div class="field"><label>Message ${isMail?'(HTML accepté)':''}</label><textarea id="msg" placeholder="Votre message…"></textarea></div>`,`<button class="btn" id="messagePreview">Prévisualiser</button><button class="btn blue" id="sendMessage">Envoyer</button>`);tpl.onchange=()=>{const t=list.find(x=>x.id===tpl.value);if(t){msg.value=t.contenu;if(isMail)subject.value=t.sujet}};messagePreview.onclick=()=>previewModal(isMail?`<div style="padding:25px"><h3>${esc(subject.value)}</h3>${msg.value}</div>`:`<div style="padding:25px;white-space:pre-wrap">${esc(msg.value)}</div>`);sendMessage.onclick=async()=>{sendMessage.disabled=true;try{Object.assign(c,await api(`/api/crm/contacts/${c.id}/message`,{method:'POST',body:JSON.stringify({type,contenu:msg.value,sujet:isMail?subject.value:''})}));closeModal();showContact(c.id);toast(`${isMail?'E-mail':'SMS'} envoyé`)}catch(e){toast(e.message,true);sendMessage.disabled=false}}}
