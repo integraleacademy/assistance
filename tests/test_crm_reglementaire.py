@@ -66,7 +66,7 @@ def test_reglementaire_handles_configuration_and_remote_errors(tmp_path, monkeyp
     assert "indisponible" in unavailable.get_json()["error"]
 
 
-def test_cnaps_frontend_is_read_only_and_loads_for_converted_contacts():
+def test_cnaps_frontend_is_read_only_and_loads_for_all_contacts():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         javascript = source.read()
     assert "Suivi CNAPS — Gestion stagiaires" in javascript
@@ -75,6 +75,8 @@ def test_cnaps_frontend_is_read_only_and_loads_for_converted_contacts():
     assert "title.expires_before_training===true" in javascript
     assert "<strong>${esc(name)}</strong>" in javascript
     assert "${esc(state)}" in javascript
-    assert "if(c.statut==='Converti')loadReglementaire(c)" in javascript
+    assert "Chargement du suivi CNAPS…" in javascript
+    assert "if(c.statut==='Converti')loadReglementaire(c)" not in javascript
+    assert "  loadReglementaire(c);" in javascript
     assert "/reglementaire`))" in javascript
     assert "GESTION_STAGIAIRES_API_TOKEN" not in javascript
