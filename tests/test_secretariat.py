@@ -28,6 +28,17 @@ def test_secretariat_flow_includes_bts_default_quote_and_optional_calendly(clien
     assert b"calendly-inline-widget" in response.data
     assert b"ne souhaite pas de rendez-vous" in response.data
 
+
+def test_secretariat_waits_for_calendly_script_before_rendering(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b'id="calendlyScript"' in response.data
+    assert b"async function renderCalendly()" in response.data
+    assert b"await waitForCalendly()" in response.data
+    assert b"Calendly ne peut pas \xc3\xaatre affich\xc3\xa9 ici" in response.data
+
 def test_secretariat_api_records_a_request(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
     data["secretariat_demandes"] = []
