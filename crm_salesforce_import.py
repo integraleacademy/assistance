@@ -21,6 +21,19 @@ import pytz
 
 MAX_CSV_BYTES = 20 * 1024 * 1024
 REQUIRED_COLUMNS = {"Id", "FirstName", "LastName"}
+HEADER_ALIASES = {
+    "id": "Id",
+    "lead id": "Id",
+    "record id": "Id",
+    "identifiant de la piste": "Id",
+    "identifiant piste": "Id",
+    "firstname": "FirstName",
+    "first name": "FirstName",
+    "prenom": "FirstName",
+    "lastname": "LastName",
+    "last name": "LastName",
+    "nom": "LastName",
+}
 
 
 def _text(value: Any) -> str:
@@ -230,13 +243,28 @@ def parse_salesforce_csv(raw: bytes) -> list[dict[str, str]]:
     if len(raw) > MAX_CSV_BYTES:
         raise ValueError("Le fichier dépasse la limite de 20 Mo.")
     text = _decode_csv(raw)
-    reader = csv.DictReader(io.StringIO(text, newline=""))
-    columns = set(reader.fieldnames or [])
+    try:
+        dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(io.StringIO(text, newline=""), dialect=dialect)
+    original_columns = reader.fieldnames or []
+    column_names = {
+        column: HEADER_ALIASES.get(_fold(column), _text(column))
+        for column in original_columns
+        if column is not None
+    }
+    columns = set(column_names.values())
     missing = sorted(REQUIRED_COLUMNS - columns)
     if missing:
-        raise ValueError("Colonnes Salesforce manquantes : " + ", ".join(missing))
+        raise ValueError(
+            "Colonnes Salesforce manquantes : "
+            + ", ".join(missing)
+            + ". Vérifiez que le fichier est un export CSV de pistes Salesforce "
+            "(séparateur virgule, point-virgule ou tabulation)."
+        )
     return [
-        {str(key or ""): _text(value) for key, value in row.items()}
+        {column_names.get(key, _text(key)): _text(value) for key, value in row.items()}
         for row in reader
         if isinstance(row, dict) and any(_text(value) for value in row.values())
     ]

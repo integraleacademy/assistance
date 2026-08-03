@@ -1,6 +1,7 @@
 import io
 
 import app as application
+from crm_salesforce_import import parse_salesforce_csv
 
 
 def _admin_client(tmp_path, monkeypatch):
@@ -34,3 +35,28 @@ def test_salesforce_import_dry_run_is_available_from_default_app(tmp_path, monke
 
     assert response.status_code == 200
     assert response.get_json()["created"] == 1
+
+
+def test_parse_salesforce_csv_accepts_excel_semicolon_separator():
+    rows = parse_salesforce_csv(
+        "Id;FirstName;LastName;Email\n00Q1;Léa;Martin;lea@example.com\n".encode("cp1252")
+    )
+
+    assert rows == [
+        {
+            "Id": "00Q1",
+            "FirstName": "Léa",
+            "LastName": "Martin",
+            "Email": "lea@example.com",
+        }
+    ]
+
+
+def test_parse_salesforce_csv_accepts_report_labels_and_tabs():
+    rows = parse_salesforce_csv(
+        b"Lead ID\tFirst Name\tLast Name\tEmail\n00Q2\tLina\tMartin\tlina@example.com\n"
+    )
+
+    assert rows[0]["Id"] == "00Q2"
+    assert rows[0]["FirstName"] == "Lina"
+    assert rows[0]["LastName"] == "Martin"
