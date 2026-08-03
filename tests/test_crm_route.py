@@ -12,7 +12,7 @@ def _authenticated_client():
 def test_crm_url_opens_crm():
     client = _authenticated_client()
 
-    response = client.get("/CRM")
+    response = client.get("/CRM", follow_redirects=True)
 
     assert response.status_code == 200
     assert b'Int\xc3\xa9grale Connect' in response.data
