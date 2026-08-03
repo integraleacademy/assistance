@@ -85,6 +85,14 @@ def test_salesforce_import_excludes_all_requested_formations():
         "BTS MOS 2026",
         "AFC",
         "APS + SSIAP",
+        "BTS NDRC",
+        "BTS PI",
+        "BTS PI A DISTANCE 2026",
+        "CAP AEPE",
+        "CAP BOULANGERIE",
+        "CAP COIFFURE",
+        "CAP CUISINE",
+        "CAP PATISSERIE",
     ]
     rows = [
         {
@@ -104,6 +112,44 @@ def test_salesforce_import_excludes_all_requested_formations():
     assert result["formation_counts"] == {}
     assert result["status_counts"] == {}
     assert result["skipped_formation"] == len(excluded)
+
+
+def test_salesforce_import_explains_which_source_statuses_become_new():
+    rows = [
+        {
+            "Id": "blank-status",
+            "LastName": "Sans statut",
+            "CreatedDate": "2025-02-01T08:00:00Z",
+            "Status": "",
+        },
+        {
+            "Id": "known-new-status",
+            "LastName": "Pas contacté",
+            "CreatedDate": "2025-02-02T08:00:00Z",
+            "Status": "Open - Not Contacted",
+        },
+        {
+            "Id": "unexpected-status",
+            "LastName": "Statut inattendu",
+            "CreatedDate": "2025-02-03T08:00:00Z",
+            "Status": "À qualifier dans Salesforce",
+        },
+        {
+            "Id": "converted",
+            "LastName": "Converti",
+            "CreatedDate": "2025-02-04T08:00:00Z",
+            "Status": "Qualified",
+        },
+    ]
+
+    result = import_salesforce_rows([], rows, dry_run=True)
+
+    assert result["status_counts"] == {"Nouveaux": 3, "Converti": 1}
+    assert result["new_status_source_counts"] == {
+        "Non renseigné": 1,
+        "Open - Not Contacted": 1,
+        "À qualifier dans Salesforce": 1,
+    }
 
 
 def test_parse_salesforce_csv_accepts_excel_semicolon_separator():
