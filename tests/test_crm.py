@@ -86,15 +86,15 @@ def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
     assert "<h3>${crmIcon('wallet')}<span>Financement</span></h3>" in crm_js
 
 
-def test_contact_follow_up_is_displayed_below_activity_log():
+def test_contact_follow_up_is_displayed_with_main_information_sections():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    activity_log = crm_js.index("<h2>Journal d’activité</h2>")
+    financing = crm_js.index("<h3>${crmIcon('wallet')}<span>Financement</span></h3>")
     follow_up = crm_js.index("<h3>${crmIcon('activity')}<span>Suivi</span></h3>")
-    side_column_end = crm_js.index("</aside></form>", activity_log)
+    side_column = crm_js.index('<aside class="contact-side-column">', financing)
 
-    assert activity_log < follow_up < side_column_end
+    assert financing < follow_up < side_column
 
 
 def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
