@@ -1,5 +1,6 @@
 import app as application
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 def client(tmp_path, monkeypatch):
@@ -36,6 +37,50 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     call = c.post(f"/api/crm/contacts/{contact['id']}/appel", json={"commentaire": "Échange financement."})
     assert call.status_code == 200
     assert call.get_json()["activities"][0]["kind"] == "appel"
+
+
+def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
+    application.app.config.update(TESTING=True, SERVER_NAME="localhost")
+    public_client = application.app.test_client()
+
+    with (
+        patch.object(application, "creer_piste_salesforce"),
+        patch.object(application, "send_email_html", return_value=True),
+        patch.object(application, "envoyer_sms_demande_infos_formation", return_value=True),
+    ):
+        response = public_client.post("/demande-informations-formations", data={
+            "nom": "Martin", "prenom": "Lina", "mail": "lina@example.com",
+            "telephone": "0612345678", "formation": "SSIAP", "centre": "cote_azur",
+            "dates": "Du 12 au 27 octobre 2026", "cpf_consulte": "OUI",
+            "cpf_montant": "1200", "france_travail": "NON",
+            "financement_perso": "OUI", "identite_numerique": "OUI",
+            "cnaps_ok": "OUI", "garde_vue": "NON", "titre_sejour": "OUI",
+            "ssiap_secourisme_valide": "OUI", "souhaite_devis": "OUI",
+        })
+
+    assert response.status_code == 302
+    contact = application.load_data()["crm_contacts"][0]
+    assert contact["statut"] == "Nouveaux"
+    assert contact["prenom"] == "Lina"
+    assert contact["nom"] == "MARTIN"
+    assert contact["mail"] == "lina@example.com"
+    assert contact["telephone"] == "0612345678"
+    assert contact["formation"] == "SSIAP 1"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["dates_formation"] == "Du 12 au 27 octobre 2026"
+    assert contact["cpf"] == "OUI"
+    assert contact["financement_ft"] == "NON"
+    assert contact["formulaire"]["cpf_montant"] == "1200"
+    assert contact["source_demande_id"]
+    assert contact["source_devis_id"]
+    activities = {activity["title"]: activity for activity in contact["activities"]}
+    assert "Formulaire de demande d’informations complété" in activities
+    assert "Devis détaillé créé" in activities
+    assert "Ouvrir le devis" in activities["Devis détaillé créé"]["preview"]
+    assert "E-mail automatique envoyé" in activities
+    assert "SMS automatique envoyé" in activities
+    assert activities["E-mail automatique envoyé"]["preview"]
 
 
 def test_crm_pages_and_templates(tmp_path, monkeypatch):
