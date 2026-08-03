@@ -7772,7 +7772,9 @@ def crm_contacts():
         "nom": _crm_format_last_name(payload.get("nom")), "telephone": "", "mail": "",
         "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
         "statut": "Nouveaux", "dates_formation": "", "cpf": "", "carte_pro": "",
-        "antecedents": "", "desp_type": "", "identite_creation": "",
+        "antecedents": "", "titre_sejour": "", "compte_cnaps": "",
+        "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
+        "desp_type": "", "identite_creation": "",
         "identite_ok": "", "financement_ft": "", "refus_ft_perso": "",
         "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "",
         "created_at": now, "updated_at": now, "activities": [],
@@ -7802,7 +7804,8 @@ def crm_contact(contact_id):
         return "", 204
     payload = request.get_json(silent=True) or {}
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
-               "antecedents", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
+               "antecedents", "titre_sejour", "compte_cnaps", "cnaps_username", "cnaps_password",
+               "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires",
                "statut", "relance_date"}
     old_status = contact.get("statut")

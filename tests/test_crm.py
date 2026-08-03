@@ -301,3 +301,22 @@ def test_crm_conversion_javascript_opens_and_closes_registration_tab():
     assert crm_js.index(open_tab) < crm_js.index(backend_call)
     assert "registrationTab.location.href=result.url" in crm_js
     assert "catch(e){registrationTab.close();toast(e.message,true)}" in crm_js
+
+
+def test_crm_persists_reglementaire_answers(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    contact = test_client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"}).get_json()
+    answers = {
+        "carte_pro": "NON",
+        "antecedents": "NON",
+        "titre_sejour": "OUI",
+        "compte_cnaps": "OUI",
+        "cnaps_username": "lina.cnaps",
+        "cnaps_password": "secret",
+        "integration_dracar": "OUI",
+    }
+
+    response = test_client.patch(f"/api/crm/contacts/{contact['id']}", json=answers)
+
+    assert response.status_code == 200
+    assert all(response.get_json()[key] == value for key, value in answers.items())

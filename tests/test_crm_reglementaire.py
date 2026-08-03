@@ -66,17 +66,26 @@ def test_reglementaire_handles_configuration_and_remote_errors(tmp_path, monkeyp
     assert "indisponible" in unavailable.get_json()["error"]
 
 
-def test_cnaps_frontend_is_read_only_and_loads_for_all_contacts():
+def test_reglementaire_frontend_is_limited_to_aps_a3p_and_has_conditional_fields():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         javascript = source.read()
     assert "Suivi CNAPS — Gestion stagiaires" in javascript
-    assert "Carte professionnelle déclarée par le prospect" in javascript
+    assert "La personne a-t-elle la carte professionnelle ?" in javascript
+    assert "Antécédents judiciaires ?" in javascript
+    assert "Titulaire d’un titre de séjour ?" in javascript
+    assert "Compte CNAPS créé ?" in javascript
+    assert "Nom d’utilisateur" in javascript
+    assert "Mot de passe" in javascript
+    assert "Intégration DRACAR ?" in javascript
+    assert 'data-show="reglementaire"' in javascript
+    assert "isSecurity=['APS','A3P'].includes(f)" in javascript
+    assert "if(isSecurity&&!reglementaireLoaded)" in javascript
     assert "AP SH" not in javascript  # Le titre affiché vient bien de l'API.
     assert "title.expires_before_training===true" in javascript
     assert "<strong>${esc(name)}</strong>" in javascript
     assert "${esc(state)}" in javascript
     assert "Chargement du suivi CNAPS…" in javascript
     assert "if(c.statut==='Converti')loadReglementaire(c)" not in javascript
-    assert "  loadReglementaire(c);" in javascript
+    assert "  loadReglementaire(c);" not in javascript
     assert "/reglementaire`))" in javascript
     assert "GESTION_STAGIAIRES_API_TOKEN" not in javascript
