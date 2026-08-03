@@ -12,19 +12,61 @@
   importButton.style.border = '1px solid #cad8f5';
   document.querySelector('#newContact')?.before(importButton);
 
+  function responseFailure(response, payload, responseText) {
+    if (payload?.error) return payload.error;
+
+    const statusReasons = {
+      400: 'Le serveur a refusé le fichier. Vérifiez qu’il s’agit bien d’un export CSV de l’objet Lead.',
+      401: 'Votre session a expiré. Rechargez la page, reconnectez-vous, puis réessayez.',
+      403: 'Votre compte n’est pas autorisé à importer des pistes Salesforce.',
+      404: 'Le service d’import Salesforce est introuvable sur le serveur.',
+      413: 'Le fichier envoyé est trop volumineux. La taille maximale autorisée est de 20 Mo.',
+      429: 'Trop de demandes ont été envoyées. Patientez quelques instants avant de réessayer.',
+      500: 'Le serveur a rencontré une erreur pendant l’analyse du fichier. Consultez les journaux du serveur ou contactez le support.',
+      502: 'Le serveur est temporairement indisponible. Réessayez dans quelques instants.',
+      503: 'Le service d’import est temporairement indisponible. Réessayez dans quelques instants.',
+      504: 'Le serveur a mis trop de temps à traiter le fichier. Réessayez ou utilisez un fichier plus petit.',
+    };
+    const plainText = (responseText || '').trim();
+    const serverDetail = plainText && !/<(?:!doctype|html|body)\b/i.test(plainText)
+      ? ` Réponse du serveur : ${plainText.slice(0, 300)}`
+      : '';
+    const reason = statusReasons[response.status]
+      || `Le serveur a renvoyé une réponse inattendue (HTTP ${response.status || 'inconnu'}).`;
+    return `${reason}${serverDetail}`;
+  }
+
   async function sendFile(file, options, dryRun) {
     const body = new FormData();
     body.append('file', file, file.name);
     body.append('include_converted', options.includeConverted ? '1' : '0');
     body.append('deduplicate', options.deduplicate ? '1' : '0');
     body.append('dry_run', dryRun ? '1' : '0');
-    const response = await fetch('/api/crm/import-salesforce', {
-      method: 'POST',
-      body,
-      credentials: 'same-origin',
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "L'import Salesforce a échoué.");
+    let response;
+    try {
+      response = await fetch('/api/crm/import-salesforce', {
+        method: 'POST',
+        body,
+        credentials: 'same-origin',
+      });
+    } catch (_error) {
+      throw new Error('Impossible de joindre le serveur. Vérifiez votre connexion internet, puis réessayez.');
+    }
+
+    const responseText = await response.text();
+    let payload = null;
+    try {
+      payload = responseText ? JSON.parse(responseText) : null;
+    } catch (_error) {
+      // Une page HTML de proxy ou de connexion ne doit pas masquer la vraie erreur HTTP.
+    }
+    if (response.redirected && /\/login(?:[/?#]|$)/.test(response.url)) {
+      throw new Error('Votre session a expiré. Rechargez la page, reconnectez-vous, puis réessayez.');
+    }
+    if (!response.ok) throw new Error(responseFailure(response, payload, responseText));
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Le serveur n’a pas renvoyé un résultat exploitable. Rechargez la page puis réessayez.');
+    }
     return payload;
   }
 
