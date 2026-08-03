@@ -418,7 +418,7 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "Rendez-vous passés",
         "Rendez-vous annulés",
         "tone==='upcoming'?calendlyActions(a):''",
-        "if(b.dataset.step==='Converti')return conversionModal(c)",
+        "if(b.dataset.step==='Converti')return openRegistrationDraft(c)",
     ]
     for marker in required_markers:
         assert marker in crm_js
