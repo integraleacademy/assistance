@@ -6608,6 +6608,31 @@ def _crm_activity(contact, kind, title, detail="", preview=""):
     })
 
 
+def _crm_no_answer_message(contact):
+    """Build the shared e-mail/SMS follow-up sent after an unanswered call."""
+    formation = str(contact.get("formation") or "votre formation").strip()
+    desp_type = str(contact.get("desp_type") or "").strip().upper()
+    formation_key = {
+        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP": "SSIAP",
+        "Chauffeur VTC": "VTC", "VTC": "VTC",
+    }.get(formation)
+    if formation == "DESP":
+        formation_key = "DESP_VAE" if desp_type == "VAE" else "DESP_INIT"
+    config = SECRETARIAT_FORMATIONS.get(formation_key, {})
+    full_name = PLAN_FORMATIONS.get(formation_key) or config.get("label") or config.get("short") or formation
+    calendly_url = config.get("calendly") or "https://calendly.com/integraleacademy/formation"
+    return (
+        "Bonjour,\n\n"
+        f"J’ai tenté de vous joindre concernant notre formation {full_name}, mais je n’ai malheureusement pas réussi à vous joindre.\n\n"
+        "Vous pouvez nous rappeler au 04 22 47 07 68 afin que nous puissions vous présenter notre formation en détails et répondre à toutes vos questions. "
+        "Vous pouvez également me contacter sur mon portable au 07 43 58 22 64.\n\n"
+        "Vous pouvez également réserver directement un créneau téléphonique avec notre équipe en cliquant sur le lien suivant : "
+        f"{calendly_url}\n\n"
+        "Nous restons à votre disposition et vous remercions par avance pour votre retour.\n\n"
+        "Bien cordialement,\n\nCassandre MENARD\nResponsable commerciale Intégrale Academy"
+    )
+
+
 def _crm_ai(system_prompt, user_prompt, max_tokens=500):
     """Single, testable entry point for the CRM writing assistants."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -7101,12 +7126,42 @@ def crm_calendly_update_appointment(appointment_id):
     if not appointment:
         return jsonify({"error": "Rendez-vous introuvable"}), 404
 
+    previous_status = appointment.get("response_status") or ""
     now = _crm_now()
     appointment["response_status"] = response_status
     appointment["response_status_updated_at"] = now
     appointment["updated_at"] = now
+    delivery = None
+    if response_status == "no_answer" and previous_status != "no_answer":
+        contact = _crm_contact(data, appointment.get("contact_id"))
+        if contact:
+            contact["statut"] = "A relancer"
+            paris_today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
+            contact["relance_date"] = (paris_today + datetime.timedelta(days=2)).isoformat()
+            contact["updated_at"] = now
+            message = _crm_no_answer_message(contact)
+            sms_sent = send_sms(contact.get("telephone"), message)
+            email_html = "".join(
+                f"<p>{html_module.escape(paragraph).replace(chr(10), '<br>')}</p>"
+                for paragraph in message.split("\n\n")
+            )
+            email_sent = send_email_html(
+                contact.get("mail"),
+                f"Intégrale Academy — Votre formation {contact.get('formation') or ''}".strip(),
+                message,
+                email_html,
+            )
+            _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+2")
+            if sms_sent:
+                _crm_activity(contact, "sms", "SMS de relance automatique envoyé", message, message)
+            if email_sent:
+                _crm_activity(contact, "email", "E-mail de relance automatique envoyé", "Sans réponse au rendez-vous", email_html)
+            delivery = {"sms": sms_sent, "email": email_sent}
     save_data(data)
-    return jsonify(appointment)
+    result = dict(appointment)
+    if delivery is not None:
+        result["delivery"] = delivery
+    return jsonify(result)
 
 
 @app.route("/api/crm/calendly/setup", methods=["POST"])
@@ -7567,6 +7622,10 @@ def crm_contact(contact_id):
         return jsonify(contact)
     if request.method == "DELETE":
         data["crm_contacts"].remove(contact)
+        data["crm_calendly_appointments"] = [
+            item for item in data.get("crm_calendly_appointments", [])
+            if item.get("contact_id") != contact_id
+        ]
         save_data(data)
         return "", 204
     payload = request.get_json(silent=True) or {}

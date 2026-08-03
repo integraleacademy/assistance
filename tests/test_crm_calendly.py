@@ -106,7 +106,11 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
 
 def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
+    deliveries = {"sms": [], "email": []}
+    monkeypatch.setattr(application, "send_sms", lambda phone, body: deliveries["sms"].append((phone, body)) or True)
+    monkeypatch.setattr(application, "send_email_html", lambda mail, subject, plain, html: deliveries["email"].append((mail, subject, plain, html)) or True)
     created = signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
+    client.patch(f"/api/crm/contacts/{created.get_json()['contact_id']}", json={"formation": "APS"})
     appointment_id = client.get(
         "/api/crm/calendly/appointments"
     ).get_json()["appointments"][0]["id"]
@@ -118,6 +122,16 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
 
     assert response.status_code == 200
     assert response.get_json()["response_status"] == "no_answer"
+    assert response.get_json()["delivery"] == {"sms": True, "email": True}
+    updated_contact = client.get(f"/api/crm/contacts/{created.get_json()['contact_id']}").get_json()
+    assert updated_contact["statut"] == "A relancer"
+    expected_date = (application.datetime.datetime.now(application.pytz.timezone("Europe/Paris")).date()
+                     + application.datetime.timedelta(days=2)).isoformat()
+    assert updated_contact["relance_date"] == expected_date
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
+    assert "APS – Agent de Prévention et de Sécurité" in deliveries["sms"][0][1]
+    assert "https://calendly.com/integraleacademy/aps" in deliveries["email"][0][2]
+    assert "Cassandre MENARD" in deliveries["email"][0][2]
     calendar_appointment = client.get(
         "/api/crm/calendly/appointments"
     ).get_json()["appointments"][0]
@@ -126,6 +140,15 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
         f"/api/crm/contacts/{created.get_json()['contact_id']}/calendly/appointments"
     ).get_json()["appointments"][0]
     assert contact_appointment["response_status"] == "no_answer"
+
+    # Recording the same result again must not send duplicate follow-ups.
+    duplicate = client.patch(
+        f"/api/crm/calendly/appointments/{appointment_id}",
+        json={"response_status": "no_answer"},
+    )
+    assert duplicate.status_code == 200
+    assert "delivery" not in duplicate.get_json()
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
 
     invalid = client.patch(
         f"/api/crm/calendly/appointments/{appointment_id}",
@@ -507,6 +530,10 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "bindAppointmentResponseControls(items,()=>loadCalendar())",
         "A répondu",
         "Sans réponse",
+        "calendarFormationTone",
+        "calendar-training-${calendarFormationTone(c.formation)}",
+        'id="deleteBtn"',
+        "method:'DELETE'",
     ]
     for marker in required_markers:
         assert marker in crm_js
@@ -521,5 +548,10 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         ".calendar-date-picker label{",
         ".calendar-empty{",
         ".appointment-response{",
+        ".calendar-training-desp{",
+        ".calendar-training-aps{",
+        ".calendar-training-a3p{",
+        ".calendar-training-vtc{",
+        ".calendar-training-ssiap{",
     ]:
         assert marker in crm_css
