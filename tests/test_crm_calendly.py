@@ -467,6 +467,11 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "Rendez-vous annulés",
         "tone==='upcoming'?calendlyActions(a):''",
         "if(b.dataset.step==='Converti')return openRegistrationDraft(c)",
+        "calendarSelectedDate=calendarDateKey(new Date())",
+        'id="calendarDate" type="date"',
+        "calendarDateKey(new Date(a.start_time))===calendarSelectedDate",
+        "changeCalendarDate(-1)",
+        "changeCalendarDate(1)",
     ]
     for marker in required_markers:
         assert marker in crm_js
@@ -478,5 +483,7 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         ".appointment-grid{",
         ".appointment-status.canceled{",
         ".calendly-modal{",
+        ".calendar-date-picker label{",
+        ".calendar-empty{",
     ]:
         assert marker in crm_css
