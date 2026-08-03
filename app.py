@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time
 import html as html_module
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -811,6 +811,8 @@ DEFAULT_DATA = {
     "crm_contacts": [],
     "crm_email_templates": [],
     "crm_sms_templates": [],
+    "crm_calendly_appointments": [],
+    "crm_calendly": {},
 }
 
 # -------------------------------------------------------------------
@@ -6048,6 +6050,410 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 
+CALENDLY_API_BASE = "https://api.calendly.com"
+CALENDLY_WEBHOOK_EVENTS = ("invitee.created", "invitee.canceled")
+
+
+class CalendlyAPIError(RuntimeError):
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self.payload = payload if isinstance(payload, dict) else {}
+        title = str(self.payload.get("title") or "Erreur Calendly").strip()
+        message = str(self.payload.get("message") or "La requête Calendly a échoué.").strip()
+        required = self.payload.get("required_scopes") or []
+        if required:
+            message = f"{message} Permissions requises : {', '.join(required)}."
+        super().__init__(f"{title} : {message}")
+
+    @property
+    def insufficient_scope(self):
+        return str(self.payload.get("title") or "").lower() == "insufficient scope"
+
+
+def _calendly_token():
+    return (
+        os.getenv("CALENDLY_ACCESS_TOKEN")
+        or os.getenv("CALENDLY_API_TOKEN")
+        or os.getenv("CALENDLY_TOKEN")
+        or ""
+    ).strip()
+
+
+def _calendly_signing_key():
+    return (os.getenv("CALENDLY_WEBHOOK_SIGNING_KEY") or "").strip()
+
+
+def _calendly_request(method, path, *, params=None, json_body=None, timeout=25):
+    token = _calendly_token()
+    if not token:
+        raise RuntimeError("CALENDLY_ACCESS_TOKEN n'est pas configuré dans Render.")
+    response = requests.request(
+        method,
+        f"{CALENDLY_API_BASE}{path}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        params=params,
+        json=json_body,
+        timeout=timeout,
+    )
+    if response.status_code >= 400:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"message": response.text[:500] or "Réponse Calendly invalide."}
+        raise CalendlyAPIError(response.status_code, payload)
+    if response.status_code == 204 or not response.content:
+        return {}
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise RuntimeError("Calendly a renvoyé une réponse illisible.") from exc
+
+
+def _calendly_paginated_collection(path, params=None, max_pages=100):
+    params = dict(params or {})
+    collection = []
+    for _ in range(max_pages):
+        page = _calendly_request("GET", path, params=params)
+        collection.extend(page.get("collection") or [])
+        token = (page.get("pagination") or {}).get("next_page_token")
+        if not token:
+            break
+        params["page_token"] = token
+    return collection
+
+
+def _calendly_resource_uuid(uri, resource):
+    value = str(uri or "").strip()
+    match = re.fullmatch(
+        rf"https://api\.calendly\.com/{re.escape(resource)}/([A-Za-z0-9_-]+)",
+        value,
+    )
+    return match.group(1) if match else ""
+
+
+def _calendly_callback_url():
+    explicit = (os.getenv("CALENDLY_WEBHOOK_URL") or "").strip()
+    if explicit:
+        return explicit
+    base_url = (
+        os.getenv("PUBLIC_BASE_URL")
+        or os.getenv("RENDER_EXTERNAL_URL")
+        or request.url_root
+    ).rstrip("/")
+    if request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip() == "https":
+        base_url = re.sub(r"^http://", "https://", base_url, count=1)
+    return f"{base_url}/api/crm/calendly/webhook"
+
+
+def _calendly_user_context():
+    resource = (_calendly_request("GET", "/users/me").get("resource") or {})
+    user_uri = resource.get("uri")
+    organization_uri = resource.get("current_organization")
+    if not user_uri or not organization_uri:
+        raise RuntimeError("Calendly n'a pas renvoyé l'utilisateur ou l'organisation associée au jeton.")
+    return {
+        "user": user_uri,
+        "organization": organization_uri,
+        "account_name": resource.get("name") or "",
+        "account_email": resource.get("email") or "",
+    }
+
+
+def _calendly_context_from_data(data):
+    state = data.get("crm_calendly") or {}
+    if state.get("user") and state.get("organization"):
+        return {
+            "user": state["user"],
+            "organization": state["organization"],
+            "scope": state.get("scope") or "organization",
+        }
+    context = _calendly_user_context()
+    context["scope"] = "organization"
+    return context
+
+
+def _calendly_route_error(exc):
+    if isinstance(exc, RuntimeError) and not isinstance(exc, CalendlyAPIError):
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"error": str(exc)}), 502
+
+
+def _crm_normalize_email(value):
+    return str(value or "").strip().casefold()
+
+
+def _crm_calendly_contact_by_email(data, email):
+    email = _crm_normalize_email(email)
+    if not email:
+        return None
+    return next(
+        (contact for contact in data.get("crm_contacts", [])
+         if _crm_normalize_email(contact.get("mail")) == email),
+        None,
+    )
+
+
+def _crm_calendly_new_contact(data, payload):
+    first_name = str(payload.get("first_name") or "").strip()
+    last_name = str(payload.get("last_name") or "").strip()
+    full_name = str(payload.get("name") or "").strip()
+    if not first_name and full_name:
+        parts = full_name.split(maxsplit=1)
+        first_name = parts[0]
+        last_name = last_name or (parts[1] if len(parts) > 1 else "")
+    now = _crm_now()
+    contact = {
+        "id": str(uuid.uuid4()), "prenom": first_name, "nom": last_name,
+        "telephone": str(payload.get("text_reminder_number") or "").strip(),
+        "mail": str(payload.get("email") or "").strip(), "formation": "",
+        "lieu": "", "statut": "RDV programmé", "dates_formation": "",
+        "cpf": "", "carte_pro": "", "antecedents": "", "desp_type": "",
+        "identite_creation": "", "identite_ok": "", "financement_ft": "",
+        "refus_ft_perso": "", "origine": "Calendly", "inscrit_ft": "",
+        "commentaires": "Piste créée automatiquement depuis un rendez-vous Calendly.",
+        "relance_date": "", "created_at": now, "updated_at": now,
+        "activities": [],
+    }
+    _crm_activity(contact, "creation", "Piste créée depuis Calendly", "Rendez-vous Calendly reçu")
+    data.setdefault("crm_contacts", []).insert(0, contact)
+    return contact
+
+
+def _crm_calendly_relink_appointments(data, contact):
+    email = _crm_normalize_email(contact.get("mail"))
+    if not email:
+        return False
+    changed = False
+    for appointment in data.get("crm_calendly_appointments", []):
+        assigned_contact = _crm_contact(data, appointment.get("contact_id"))
+        if (
+            _crm_normalize_email(appointment.get("invitee_email")) == email
+            and not assigned_contact
+        ):
+            appointment["contact_id"] = contact.get("id")
+            appointment["updated_at"] = _crm_now()
+            changed = True
+    return changed
+
+
+def _crm_calendly_datetime_label(value):
+    try:
+        parsed = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = pytz.UTC.localize(parsed)
+        local = parsed.astimezone(pytz.timezone("Europe/Paris"))
+        return local.strftime("%d/%m/%Y à %H:%M")
+    except (TypeError, ValueError):
+        return str(value or "Date non renseignée")
+
+
+def _crm_upsert_calendly_appointment(
+    data,
+    payload,
+    *,
+    webhook_event="",
+    source="webhook",
+    contact_id=None,
+    create_contact=False,
+    record_activity=True,
+):
+    scheduled_event = payload.get("scheduled_event") or {}
+    invitee_uri = str(payload.get("uri") or "").strip()
+    event_uri = str(payload.get("event") or scheduled_event.get("uri") or "").strip()
+    email = str(payload.get("email") or "").strip()
+    appointments = data.setdefault("crm_calendly_appointments", [])
+    existing = next(
+        (
+            item for item in appointments
+            if invitee_uri and item.get("invitee_uri") == invitee_uri
+        ),
+        None,
+    )
+    if not existing and event_uri and email:
+        existing = next(
+            (
+                item for item in appointments
+                if item.get("event_uri") == event_uri
+                and _crm_normalize_email(item.get("invitee_email")) == _crm_normalize_email(email)
+            ),
+            None,
+        )
+
+    previous_status = existing.get("status") if existing else None
+    previous_start = existing.get("start_time") if existing else None
+    status = str(payload.get("status") or scheduled_event.get("status") or "active")
+    if webhook_event == "invitee.canceled" or scheduled_event.get("status") == "canceled":
+        status = "canceled"
+    memberships = scheduled_event.get("event_memberships") or []
+    host = memberships[0] if memberships else {}
+    now = _crm_now()
+    appointment = existing or {
+        "id": str(uuid.uuid4()),
+        "created_at": now,
+    }
+    appointment.update({
+        "invitee_uri": invitee_uri,
+        "event_uri": event_uri,
+        "event_type_uri": scheduled_event.get("event_type") or appointment.get("event_type_uri") or "",
+        "name": scheduled_event.get("name") or appointment.get("name") or "Rendez-vous Calendly",
+        "start_time": scheduled_event.get("start_time") or appointment.get("start_time") or "",
+        "end_time": scheduled_event.get("end_time") or appointment.get("end_time") or "",
+        "status": status,
+        "invitee_name": payload.get("name") or appointment.get("invitee_name") or "",
+        "invitee_email": email or appointment.get("invitee_email") or "",
+        "invitee_phone": payload.get("text_reminder_number") or appointment.get("invitee_phone") or "",
+        "invitee_timezone": payload.get("timezone") or appointment.get("invitee_timezone") or "",
+        "host_name": host.get("user_name") or appointment.get("host_name") or "",
+        "host_email": host.get("user_email") or appointment.get("host_email") or "",
+        "location": scheduled_event.get("location") or appointment.get("location"),
+        "cancel_url": payload.get("cancel_url") or appointment.get("cancel_url") or "",
+        "reschedule_url": payload.get("reschedule_url") or appointment.get("reschedule_url") or "",
+        "rescheduled": bool(payload.get("rescheduled")),
+        "old_invitee": payload.get("old_invitee"),
+        "new_invitee": payload.get("new_invitee"),
+        "cancellation": payload.get("cancellation"),
+        "calendly_created_at": payload.get("created_at") or appointment.get("calendly_created_at") or "",
+        "calendly_updated_at": payload.get("updated_at") or appointment.get("calendly_updated_at") or "",
+        "source": source,
+        "updated_at": now,
+    })
+
+    contact = _crm_contact(data, contact_id) if contact_id else None
+    if not contact and appointment.get("contact_id"):
+        contact = _crm_contact(data, appointment.get("contact_id"))
+    if not contact:
+        contact = _crm_calendly_contact_by_email(data, appointment.get("invitee_email"))
+    if not contact and create_contact:
+        contact = _crm_calendly_new_contact(data, payload)
+        _crm_calendly_relink_appointments(data, contact)
+    appointment["contact_id"] = contact.get("id") if contact else None
+
+    if not existing:
+        appointments.append(appointment)
+
+    changed = (
+        not existing
+        or previous_status != appointment.get("status")
+        or previous_start != appointment.get("start_time")
+    )
+    if contact and record_activity and changed:
+        if appointment.get("status") == "canceled":
+            title = "Rendez-vous Calendly annulé"
+        elif appointment.get("rescheduled") or appointment.get("old_invitee"):
+            title = "Rendez-vous Calendly reprogrammé"
+        else:
+            title = "Rendez-vous Calendly planifié"
+        detail = (
+            f"{appointment.get('name') or 'Rendez-vous'} — "
+            f"{_crm_calendly_datetime_label(appointment.get('start_time'))}"
+        )
+        _crm_activity(contact, "calendly", title, detail)
+        contact["updated_at"] = now
+    return appointment, contact
+
+
+def _calendly_phone_number(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    digits = re.sub(r"\D", "", raw)
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) == 10 and digits.startswith("0"):
+        return f"+33{digits[1:]}"
+    if digits.startswith("33"):
+        return f"+{digits}"
+    if raw.startswith("+") and 8 <= len(digits) <= 15:
+        return f"+{digits}"
+    return raw
+
+
+def _calendly_booking_location(event_type, requested_location, contact):
+    if event_type.get("pooling_type") == "round_robin":
+        return None
+    locations = event_type.get("locations") or []
+    if not locations:
+        return None
+    requested_location = requested_location if isinstance(requested_location, dict) else {}
+    requested_kind = str(requested_location.get("kind") or "").strip()
+    selected = next(
+        (location for location in locations if location.get("kind") == requested_kind),
+        locations[0],
+    )
+    kind = selected.get("kind")
+    if not kind:
+        return None
+    if kind == "outbound_call":
+        phone = _calendly_phone_number(
+            requested_location.get("location") or contact.get("telephone")
+        )
+        if not phone:
+            raise ValueError("Le numéro de téléphone est requis pour ce type de rendez-vous.")
+        return {"kind": kind, "location": phone}
+    if kind == "ask_invitee":
+        location_value = str(requested_location.get("location") or "").strip()
+        if not location_value:
+            raise ValueError("Renseignez le lieu ou le moyen de contact du rendez-vous.")
+        return {"kind": kind, "location": location_value}
+    if kind in {"physical", "custom"}:
+        location_value = str(selected.get("location") or requested_location.get("location") or "").strip()
+        if not location_value:
+            raise ValueError("Ce type de rendez-vous ne contient aucun lieu utilisable.")
+        return {"kind": kind, "location": location_value}
+    return {"kind": kind}
+
+
+def _calendly_question_answers(event_type, submitted_answers):
+    submitted_answers = submitted_answers if isinstance(submitted_answers, dict) else {}
+    answers = []
+    for question in event_type.get("custom_questions") or []:
+        if not question.get("enabled"):
+            continue
+        position = question.get("position")
+        value = submitted_answers.get(str(position), submitted_answers.get(position, ""))
+        if isinstance(value, list):
+            value = "\n".join(str(item).strip() for item in value if str(item).strip())
+        value = str(value or "").strip()
+        if question.get("required") and not value:
+            raise ValueError(f"Répondez à la question obligatoire : {question.get('name')}.")
+        if value:
+            answers.append({
+                "question": question.get("name"),
+                "answer": value,
+                "position": position,
+            })
+    return answers
+
+
+def _calendly_signature_is_valid(raw_body, signature_header):
+    signing_key = _calendly_signing_key()
+    if not signing_key or not signature_header:
+        return False
+    parts = {}
+    for item in signature_header.split(","):
+        key, separator, value = item.strip().partition("=")
+        if separator:
+            parts[key] = value
+    timestamp = parts.get("t")
+    signature = parts.get("v1")
+    if not timestamp or not signature:
+        return False
+    try:
+        if abs(time.time() - int(timestamp)) > 300:
+            return False
+    except ValueError:
+        return False
+    signed_payload = timestamp.encode("utf-8") + b"." + raw_body
+    expected = hmac.new(
+        signing_key.encode("utf-8"),
+        signed_payload,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
 
 def _crm_now():
     return datetime.datetime.now(pytz.timezone("Europe/Paris")).isoformat(timespec="seconds")
@@ -6092,6 +6498,429 @@ def crm(section):
 def crm_uppercase(section):
     """Préserve les liens historiques qui utilisent le chemin CRM en majuscules."""
     return crm(section)
+
+
+def _crm_calendly_status_payload(data):
+    state = data.get("crm_calendly") or {}
+    return {
+        "configured": bool(_calendly_token()),
+        "signing_key_configured": bool(_calendly_signing_key()),
+        "connected": bool(state.get("webhook_uri")),
+        "scope": state.get("scope") or "",
+        "account_name": state.get("account_name") or "",
+        "account_email": state.get("account_email") or "",
+        "last_sync_at": state.get("last_sync_at") or "",
+        "last_full_sync_at": state.get("last_full_sync_at") or "",
+        "sync_complete": bool(state.get("sync_complete")),
+        "sync_in_progress": bool(state.get("sync_cursor")) and not state.get("sync_complete"),
+    }
+
+
+def _calendly_create_or_reuse_webhook(context, scope, callback_url):
+    params = {
+        "organization": context["organization"],
+        "scope": scope,
+        "count": 100,
+    }
+    if scope == "user":
+        params["user"] = context["user"]
+    subscriptions = _calendly_paginated_collection(
+        "/webhook_subscriptions",
+        params=params,
+        max_pages=10,
+    )
+    expected_events = set(CALENDLY_WEBHOOK_EVENTS)
+    for subscription in subscriptions:
+        if subscription.get("callback_url") != callback_url:
+            continue
+        if subscription.get("state") == "active" and expected_events.issubset(
+            set(subscription.get("events") or [])
+        ):
+            return subscription
+        raise RuntimeError(
+            "Un ancien webhook Calendly utilise déjà cette adresse mais n'est pas actif ou incomplet. "
+            "Supprimez-le dans Calendly avant de relancer la configuration."
+        )
+
+    body = {
+        "url": callback_url,
+        "events": list(CALENDLY_WEBHOOK_EVENTS),
+        "organization": context["organization"],
+        "scope": scope,
+        "signing_key": _calendly_signing_key(),
+    }
+    if scope == "user":
+        body["user"] = context["user"]
+    return (_calendly_request(
+        "POST",
+        "/webhook_subscriptions",
+        json_body=body,
+    ).get("resource") or {})
+
+
+@app.route("/api/crm/calendly/status")
+@login_required
+def crm_calendly_status():
+    return jsonify(_crm_calendly_status_payload(load_data()))
+
+
+@app.route("/api/crm/calendly/setup", methods=["POST"])
+@login_required
+def crm_calendly_setup():
+    user = current_user() or {}
+    if user.get("role") != "admin":
+        return jsonify({"error": "Seul un administrateur peut configurer Calendly."}), 403
+    if not _calendly_token():
+        return jsonify({"error": "Ajoutez CALENDLY_ACCESS_TOKEN dans les variables Render."}), 503
+    if not _calendly_signing_key():
+        return jsonify({"error": "Ajoutez CALENDLY_WEBHOOK_SIGNING_KEY dans les variables Render."}), 503
+    try:
+        context = _calendly_user_context()
+        callback_url = _calendly_callback_url()
+        scope = "organization"
+        try:
+            subscription = _calendly_create_or_reuse_webhook(context, scope, callback_url)
+        except CalendlyAPIError as exc:
+            if exc.status_code != 403 or exc.insufficient_scope:
+                raise
+            scope = "user"
+            subscription = _calendly_create_or_reuse_webhook(context, scope, callback_url)
+
+        data = load_data()
+        data["crm_calendly"] = {
+            **(data.get("crm_calendly") or {}),
+            **context,
+            "scope": scope,
+            "webhook_uri": subscription.get("uri") or "",
+            "webhook_url": callback_url,
+            "webhook_state": subscription.get("state") or "active",
+            "account_name": context.get("account_name") or "",
+            "account_email": context.get("account_email") or "",
+            "sync_cursor": None,
+            "sync_complete": False,
+            "configured_at": _crm_now(),
+        }
+        save_data(data)
+        response = _crm_calendly_status_payload(data)
+        if scope == "user":
+            response["warning"] = (
+                "Le jeton n'a pas les droits administrateur de l'organisation. "
+                "La synchronisation couvre tous les rendez-vous du compte Calendly lié au jeton."
+            )
+        return jsonify(response)
+    except (CalendlyAPIError, RuntimeError) as exc:
+        return _calendly_route_error(exc)
+
+
+def _calendly_event_types_for_context(data):
+    context = _calendly_context_from_data(data)
+    params = {"active": "true", "count": 100, "sort": "name:asc"}
+    if context.get("scope") == "user":
+        params["user"] = context["user"]
+    else:
+        params["organization"] = context["organization"]
+    try:
+        event_types = _calendly_paginated_collection("/event_types", params=params)
+    except CalendlyAPIError as exc:
+        if context.get("scope") != "organization" or exc.status_code != 403 or exc.insufficient_scope:
+            raise
+        params.pop("organization", None)
+        params["user"] = context["user"]
+        event_types = _calendly_paginated_collection("/event_types", params=params)
+    unique = {}
+    for event_type in event_types:
+        uri = event_type.get("uri")
+        if uri:
+            unique[uri] = event_type
+    return sorted(
+        unique.values(),
+        key=lambda item: str(item.get("name") or "").casefold(),
+    )
+
+
+@app.route("/api/crm/calendly/event-types")
+@login_required
+def crm_calendly_event_types():
+    if not _calendly_token():
+        return jsonify({"error": "CALENDLY_ACCESS_TOKEN n'est pas configuré dans Render."}), 503
+    try:
+        event_types = _calendly_event_types_for_context(load_data())
+        return jsonify([
+            {
+                "uri": item.get("uri"),
+                "name": item.get("name") or "Rendez-vous Calendly",
+                "duration": item.get("duration"),
+                "active": item.get("active"),
+                "kind": item.get("kind"),
+                "pooling_type": item.get("pooling_type"),
+                "booking_method": item.get("booking_method"),
+                "is_paid": bool(item.get("is_paid")),
+                "scheduling_url": item.get("scheduling_url") or "",
+                "locations": item.get("locations") or [],
+                "custom_questions": item.get("custom_questions") or [],
+                "profile": item.get("profile") or {},
+            }
+            for item in event_types
+        ])
+    except (CalendlyAPIError, RuntimeError) as exc:
+        return _calendly_route_error(exc)
+
+
+@app.route("/api/crm/calendly/availability")
+@login_required
+def crm_calendly_availability():
+    event_type = str(request.args.get("event_type") or "").strip()
+    start_time = str(request.args.get("start_time") or "").strip()
+    end_time = str(request.args.get("end_time") or "").strip()
+    if not _calendly_resource_uuid(event_type, "event_types"):
+        return jsonify({"error": "Type de rendez-vous Calendly invalide."}), 400
+    if not start_time or not end_time:
+        return jsonify({"error": "La période de disponibilité est incomplète."}), 400
+    try:
+        response = _calendly_request(
+            "GET",
+            "/event_type_available_times",
+            params={
+                "event_type": event_type,
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+        )
+        return jsonify(response.get("collection") or [])
+    except (CalendlyAPIError, RuntimeError) as exc:
+        return _calendly_route_error(exc)
+
+
+@app.route("/api/crm/contacts/<contact_id>/calendly/appointments", methods=["GET", "POST"])
+@login_required
+def crm_contact_calendly_appointments(contact_id):
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+
+    if request.method == "GET":
+        if _crm_calendly_relink_appointments(data, contact):
+            save_data(data)
+        appointments = [
+            item for item in data.get("crm_calendly_appointments", [])
+            if item.get("contact_id") == contact_id
+        ]
+        appointments.sort(key=lambda item: item.get("start_time") or "", reverse=True)
+        return jsonify({
+            "appointments": appointments,
+            "integration": _crm_calendly_status_payload(data),
+        })
+
+    payload = request.get_json(silent=True) or {}
+    event_type_uri = str(payload.get("event_type") or "").strip()
+    event_type_uuid = _calendly_resource_uuid(event_type_uri, "event_types")
+    start_time = str(payload.get("start_time") or "").strip()
+    if not event_type_uuid or not start_time:
+        return jsonify({"error": "Choisissez un type de rendez-vous et un horaire."}), 400
+    if not _crm_normalize_email(contact.get("mail")):
+        return jsonify({"error": "Ajoutez l'adresse e-mail de la personne avant de planifier le rendez-vous."}), 400
+
+    try:
+        event_type = (
+            _calendly_request("GET", f"/event_types/{event_type_uuid}").get("resource") or {}
+        )
+        if not event_type.get("active"):
+            return jsonify({"error": "Ce type de rendez-vous Calendly n'est plus actif."}), 400
+        if event_type.get("is_paid"):
+            return jsonify({
+                "error": "Calendly impose une page de paiement pour ce type de rendez-vous. Utilisez son lien Calendly.",
+                "scheduling_url": event_type.get("scheduling_url") or "",
+            }), 400
+        if event_type.get("booking_method") == "poll":
+            return jsonify({
+                "error": "Ce type Calendly est un sondage de dates et ne peut pas être réservé directement par l'API.",
+                "scheduling_url": event_type.get("scheduling_url") or "",
+            }), 400
+
+        booking_location = _calendly_booking_location(
+            event_type,
+            payload.get("location"),
+            contact,
+        )
+        answers = _calendly_question_answers(event_type, payload.get("answers"))
+        invitee = {
+            "name": " ".join(
+                part for part in [contact.get("prenom"), contact.get("nom")] if str(part or "").strip()
+            ).strip() or contact.get("mail"),
+            "email": contact.get("mail"),
+            "timezone": str(payload.get("timezone") or "Europe/Paris"),
+        }
+        phone = _calendly_phone_number(contact.get("telephone"))
+        if phone.startswith("+"):
+            invitee["text_reminder_number"] = phone
+        booking_body = {
+            "event_type": event_type_uri,
+            "start_time": start_time,
+            "invitee": invitee,
+            "tracking": {
+                "utm_source": "integrale_connect",
+                "utm_medium": "crm",
+                "utm_campaign": "rendez_vous",
+                "utm_content": contact_id,
+            },
+        }
+        if booking_location:
+            booking_body["location"] = booking_location
+        if answers:
+            booking_body["questions_and_answers"] = answers
+
+        invitee_resource = (
+            _calendly_request("POST", "/invitees", json_body=booking_body).get("resource") or {}
+        )
+        event_uri = invitee_resource.get("event") or ""
+        event_uuid = _calendly_resource_uuid(event_uri, "scheduled_events")
+        scheduled_event = {}
+        if event_uuid:
+            try:
+                scheduled_event = (
+                    _calendly_request("GET", f"/scheduled_events/{event_uuid}").get("resource") or {}
+                )
+            except (CalendlyAPIError, RuntimeError):
+                scheduled_event = {}
+        if not scheduled_event:
+            try:
+                parsed_start = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                end_time = parsed_start + datetime.timedelta(minutes=int(event_type.get("duration") or 0))
+                calculated_end = end_time.isoformat().replace("+00:00", "Z")
+            except (TypeError, ValueError):
+                calculated_end = ""
+            scheduled_event = {
+                "uri": event_uri,
+                "name": event_type.get("name") or "Rendez-vous Calendly",
+                "status": "active",
+                "start_time": start_time,
+                "end_time": calculated_end,
+                "event_type": event_type_uri,
+                "location": booking_location,
+                "event_memberships": [],
+            }
+        appointment_payload = {**invitee_resource, "scheduled_event": scheduled_event}
+        latest_data = load_data()
+        latest_contact = _crm_contact(latest_data, contact_id)
+        if not latest_contact:
+            return jsonify({"error": "Le rendez-vous a été créé mais la piste n'existe plus."}), 409
+        appointment, latest_contact = _crm_upsert_calendly_appointment(
+            latest_data,
+            appointment_payload,
+            source="crm",
+            contact_id=contact_id,
+            create_contact=False,
+            record_activity=True,
+        )
+        save_data(latest_data)
+        return jsonify({"appointment": appointment, "contact": latest_contact}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except (CalendlyAPIError, RuntimeError) as exc:
+        return _calendly_route_error(exc)
+
+
+@app.route("/api/crm/calendly/sync", methods=["POST"])
+@login_required
+def crm_calendly_sync():
+    user = current_user() or {}
+    if user.get("role") != "admin":
+        return jsonify({"error": "Seul un administrateur peut lancer la synchronisation Calendly."}), 403
+    body = request.get_json(silent=True) or {}
+    data = load_data()
+    state = data.get("crm_calendly") or {}
+    if not state.get("webhook_uri"):
+        return jsonify({"error": "Activez d'abord la synchronisation Calendly."}), 409
+    cursor = None if body.get("restart") else state.get("sync_cursor")
+    if state.get("sync_complete") and not body.get("restart"):
+        return jsonify({"complete": True, "processed_events": 0, "appointments": 0})
+
+    batch_size = max(1, min(int(os.getenv("CALENDLY_SYNC_BATCH_SIZE", "20")), 100))
+    params = {"count": batch_size, "sort": "start_time:desc"}
+    if state.get("scope") == "user":
+        params["user"] = state.get("user")
+    else:
+        params["organization"] = state.get("organization")
+    if cursor:
+        params["page_token"] = cursor
+
+    try:
+        event_page = _calendly_request("GET", "/scheduled_events", params=params, timeout=35)
+        imported_payloads = []
+        for scheduled_event in event_page.get("collection") or []:
+            event_uuid = _calendly_resource_uuid(scheduled_event.get("uri"), "scheduled_events")
+            if not event_uuid:
+                continue
+            invitees = _calendly_paginated_collection(
+                f"/scheduled_events/{event_uuid}/invitees",
+                params={"count": 100},
+                max_pages=100,
+            )
+            for invitee in invitees:
+                imported_payloads.append({**invitee, "scheduled_event": scheduled_event})
+
+        latest_data = load_data()
+        before_count = len(latest_data.get("crm_calendly_appointments", []))
+        matched = 0
+        for imported_payload in imported_payloads:
+            _, contact = _crm_upsert_calendly_appointment(
+                latest_data,
+                imported_payload,
+                source="sync",
+                create_contact=False,
+                record_activity=False,
+            )
+            if contact:
+                matched += 1
+        next_cursor = (event_page.get("pagination") or {}).get("next_page_token")
+        integration_state = latest_data.setdefault("crm_calendly", {})
+        integration_state["sync_cursor"] = next_cursor
+        integration_state["sync_complete"] = not bool(next_cursor)
+        integration_state["last_sync_at"] = _crm_now()
+        if not next_cursor:
+            integration_state["last_full_sync_at"] = integration_state["last_sync_at"]
+        save_data(latest_data)
+        after_count = len(latest_data.get("crm_calendly_appointments", []))
+        return jsonify({
+            "complete": not bool(next_cursor),
+            "processed_events": len(event_page.get("collection") or []),
+            "appointments": len(imported_payloads),
+            "new_appointments": after_count - before_count,
+            "matched": matched,
+        })
+    except (CalendlyAPIError, RuntimeError) as exc:
+        return _calendly_route_error(exc)
+
+
+@app.route("/api/crm/calendly/webhook", methods=["POST"])
+def crm_calendly_webhook():
+    raw_body = request.get_data(cache=True)
+    signature = request.headers.get("Calendly-Webhook-Signature", "")
+    if not _calendly_signature_is_valid(raw_body, signature):
+        return jsonify({"error": "Signature Calendly invalide."}), 401
+    webhook = request.get_json(silent=True) or {}
+    event_name = str(webhook.get("event") or "")
+    if event_name not in CALENDLY_WEBHOOK_EVENTS:
+        return jsonify({"ok": True, "ignored": True})
+    payload = webhook.get("payload") or {}
+    if not isinstance(payload, dict) or not payload.get("uri"):
+        return jsonify({"error": "Payload Calendly invalide."}), 400
+    data = load_data()
+    appointment, contact = _crm_upsert_calendly_appointment(
+        data,
+        payload,
+        webhook_event=event_name,
+        source="webhook",
+        create_contact=(event_name == "invitee.created"),
+        record_activity=True,
+    )
+    save_data(data)
+    return jsonify({
+        "ok": True,
+        "appointment_id": appointment.get("id"),
+        "contact_id": contact.get("id") if contact else None,
+    })
 
 
 @app.route("/api/crm/contacts", methods=["GET", "POST"])
@@ -6144,6 +6973,7 @@ def crm_contact(contact_id):
         contact["statut"] = old_status or "Nouveaux"
     if contact.get("statut") != old_status:
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
+    _crm_calendly_relink_appointments(data, contact)
     contact["updated_at"] = _crm_now()
     save_data(data)
     return jsonify(contact)
