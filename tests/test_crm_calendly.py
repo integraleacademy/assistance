@@ -307,3 +307,21 @@ def test_full_sync_imports_every_event_and_keeps_unmatched_appointments(tmp_path
     assert matched["contact_id"] == contact["id"]
     assert unmatched["contact_id"] is None
 
+
+def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
+    javascript = application.app.root_path + "/static/crm.js"
+    with open(javascript, encoding="utf-8") as source:
+        crm_js = source.read()
+
+    required_markers = [
+        "function renderCalendlyAppointments",
+        "async function loadCalendlyAppointments",
+        "async function syncCalendlyAll",
+        "async function calendlyModal",
+        "calendarBtn.onclick=()=>calendlyModal(c)",
+        "syncCalendlyBtn.onclick=()=>syncCalendlyAll(c,true)",
+        "loadCalendlyAppointments(c)",
+        "if(b.dataset.step==='Converti')return conversionModal(c)",
+    ]
+    for marker in required_markers:
+        assert marker in crm_js
