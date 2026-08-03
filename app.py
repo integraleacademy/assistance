@@ -521,6 +521,63 @@ def get_formation_sessions(data_store=None):
     return copy.deepcopy(DEFAULT_FORMATION_SESSIONS)
 
 
+_FRENCH_MONTH_NUMBERS = {
+    "janvier": 1, "fevrier": 2, "mars": 3, "avril": 4,
+    "mai": 5, "juin": 6, "juillet": 7, "aout": 8,
+    "septembre": 9, "octobre": 10, "novembre": 11, "decembre": 12,
+}
+
+
+def _session_start_date(label):
+    """Extract a session's first day from the French label used by the admin."""
+    normalized = (
+        unicodedata.normalize("NFKD", str(label or ""))
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+    start = re.match(
+        r"^\s*(?:du\s+)?(?P<day>\d{1,2})(?:er)?"
+        r"(?:\s+(?P<month>[a-z]+))?(?:\s+(?P<year>\d{4}))?\s+au\s+",
+        normalized,
+    )
+    if not start:
+        return None
+
+    day = int(start.group("day"))
+    month_name = start.group("month")
+    year = start.group("year")
+    remainder = normalized[start.end():]
+    end = re.match(r"(?:\d{1,2})(?:er)?\s+([a-z]+)(?:\s+(\d{4}))?", remainder)
+    if not month_name and end:
+        month_name = end.group(1)
+    month = _FRENCH_MONTH_NUMBERS.get(month_name or "")
+    end_month = _FRENCH_MONTH_NUMBERS.get(end.group(1)) if end else None
+    if not year:
+        year = end.group(2) if end else None
+        if year and month and end_month and month > end_month:
+            year = str(int(year) - 1)
+    if not month or not year:
+        return None
+    try:
+        return datetime.date(int(year), month, day)
+    except ValueError:
+        return None
+
+
+def get_upcoming_formation_sessions(data_store=None, today=None):
+    """Return form sessions whose start date has not passed yet."""
+    today = today or datetime.date.today()
+    sessions = get_formation_sessions(data_store)
+    for formations in sessions.values():
+        for formation_code, rows in formations.items():
+            formations[formation_code] = [
+                row for row in rows
+                if (start := _session_start_date(row.get("label"))) is None or start >= today
+            ]
+    return sessions
+
+
 def get_simulator_dates_options(data_store=None):
     sessions = get_formation_sessions(data_store)
     options = {}
@@ -2834,7 +2891,7 @@ def api_secretariat_demandes():
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
 def demande_informations_formations():
     data_store = load_data()
-    sessions = get_formation_sessions(data_store)
+    sessions = get_upcoming_formation_sessions(data_store)
 
     if request.method == "POST":
         form_data = request.form.to_dict()
@@ -2976,6 +3033,9 @@ def demande_informations_formations():
             "pdf_path": ""
         })
         devis_url = url_for("plan_public", token=token_plan, _external=True)
+        crm_contact = _crm_create_contact_from_information_request(
+            data_store, form_data, demande_id, devis_id, devis_url
+        )
         extra_devis = f"""
         <p style="margin-top:16px;">Vous pouvez télécharger votre devis détaillé en cliquant ici :</p>
         <p style="text-align:center;"><a href="{devis_url}" style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Je télécharge mon devis détaillé</a></p>
@@ -3156,11 +3216,27 @@ def demande_informations_formations():
         else:
             demande_entry["mail_erreur"] = "❌ Erreur lors de l'envoi automatique du mail"
 
+        _crm_activity(
+            crm_contact,
+            "email" if email_sent else "erreur",
+            "E-mail automatique envoyé" if email_sent else "Échec de l’e-mail automatique",
+            email_subject,
+            html,
+        )
+
         try:
-            envoyer_sms_demande_infos_formation(demande_entry, form_data)
+            sms_sent = envoyer_sms_demande_infos_formation(demande_entry, form_data)
+            _crm_activity(
+                crm_contact,
+                "sms" if sms_sent else "erreur",
+                "SMS automatique envoyé" if sms_sent else "Échec du SMS automatique",
+                build_training_information_sms_text(form_data.get("formation")),
+            )
         except Exception as e:
             print("❌ Erreur envoi SMS demande informations formations :", e)
             demande_entry["sms_error"] = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+            _crm_activity(crm_contact, "erreur", "Échec du SMS automatique", str(e))
+        crm_contact["updated_at"] = _crm_now()
         save_data(data_store)
 
         if prospect_chaud:
@@ -6636,6 +6712,72 @@ def _crm_activity(contact, kind, title, detail="", preview=""):
         "title": title, "detail": detail, "preview": preview,
         "author": (current_user() or {}).get("name", "Équipe Intégrale"),
     })
+
+
+def _crm_create_contact_from_information_request(data, fields, demande_id, devis_id, devis_url):
+    """Crée la fiche CRM complète et son journal lors d'une demande d'informations."""
+    now = _crm_now()
+    formation_key = str(fields.get("formation") or "").strip()
+    formation = {
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
+        "VTC": "Chauffeur VTC",
+    }.get(formation_key, formation_key)
+    lieu = {
+        "paris": "Paris", "cote_azur": "Côte d’Azur", "auvergne": "Auvergne",
+    }.get(str(fields.get("centre") or "").strip(), str(fields.get("centre") or "").strip())
+    answers = [
+        ("CPF consulté", fields.get("cpf_consulte")),
+        ("Montant CPF", fields.get("cpf_montant")),
+        ("Inscrit France Travail", fields.get("france_travail")),
+        ("Financement personnel", fields.get("financement_perso")),
+        ("Identité numérique", fields.get("identite_numerique")),
+        ("Autorisation CNAPS", fields.get("cnaps_ok")),
+        ("Antécédent garde à vue", fields.get("garde_vue")),
+        ("Titre de séjour", fields.get("titre_sejour")),
+        ("Certificat SST/PSC1 valide", fields.get("ssiap_secourisme_valide")),
+        ("Devis souhaité", fields.get("souhaite_devis")),
+    ]
+    comments = "\n".join(f"{label} : {value}" for label, value in answers if str(value or "").strip())
+    if str(fields.get("commentaires_secretariat") or "").strip():
+        comments += ("\n" if comments else "") + "Commentaire secrétariat : " + str(fields["commentaires_secretariat"]).strip()
+    contact = {
+        "id": str(uuid.uuid4()),
+        "prenom": _crm_format_first_name(fields.get("prenom")),
+        "nom": _crm_format_last_name(fields.get("nom")),
+        "telephone": str(fields.get("telephone") or "").strip(),
+        "mail": str(fields.get("mail") or "").strip(),
+        "formation": formation,
+        "lieu": lieu,
+        "statut": "Nouveaux",
+        "dates_formation": str(fields.get("dates") or "").strip(),
+        "cpf": str(fields.get("cpf_consulte") or "").strip(),
+        "carte_pro": str(fields.get("cnaps_ok") or "").strip(),
+        "antecedents": str(fields.get("garde_vue") or "").strip(),
+        "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
+        "identite_creation": str(fields.get("identite_numerique") or "").strip(),
+        "identite_ok": str(fields.get("identite_numerique") or "").strip(),
+        "financement_ft": str(fields.get("france_travail") or "").strip(),
+        "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
+        "origine": "Google" if str(fields.get("gclid") or "").strip() else "Autre",
+        "inscrit_ft": str(fields.get("france_travail") or "").strip(),
+        "commentaires": comments,
+        "relance_date": "",
+        "created_at": now,
+        "updated_at": now,
+        "activities": [],
+        "source": "demande_infos_formations",
+        "source_demande_id": demande_id,
+        "source_devis_id": devis_id,
+        "formulaire": dict(fields),
+    }
+    _crm_activity(contact, "creation", "Formulaire de demande d’informations complété", "Fiche créée automatiquement avec le statut Nouveau")
+    quote_preview = (
+        f'<div style="padding:24px"><h2>Devis détaillé</h2><p>{formation or "Formation"}</p>'
+        f'<p><a href="{devis_url}" target="_blank">Ouvrir le devis</a></p></div>'
+    )
+    _crm_activity(contact, "devis", "Devis détaillé créé", f"Devis n° {devis_id}", quote_preview)
+    data.setdefault("crm_contacts", []).insert(0, contact)
+    return contact
 
 
 def _crm_no_answer_message(contact):
