@@ -308,6 +308,97 @@ def test_full_sync_imports_every_event_and_keeps_unmatched_appointments(tmp_path
     assert unmatched["contact_id"] is None
 
 
+def test_contact_appointments_are_fetched_directly_by_email(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Tony", "nom": "Arribas", "formation": "Chauffeur VTC"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "TonyArribasFT@icloud.com", "telephone": "06 41 57 92 65"},
+    )
+    data = application.load_data()
+    data["crm_calendly"] = {
+        "webhook_uri": "https://api.calendly.com/webhook_subscriptions/HOOK1",
+        "scope": "organization",
+        "organization": "https://api.calendly.com/organizations/ORG1",
+        "user": "https://api.calendly.com/users/USER1",
+    }
+    application.save_data(data)
+    calls = []
+
+    def fake_calendly(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        if path == "/scheduled_events":
+            params = kwargs["params"]
+            assert params["invitee_email"] == "tonyarribasft@icloud.com"
+            assert params["organization"].endswith("/ORG1")
+            assert params["count"] == 100
+            assert "event_type" not in params
+            return {
+                "collection": [calendly_payload()["scheduled_event"]],
+                "pagination": {"next_page_token": None},
+            }
+        if path == "/scheduled_events/EVENT1/invitees":
+            assert kwargs["params"]["email"] == "tonyarribasft@icloud.com"
+            invitee = calendly_payload(email="tonyarribasft@icloud.com")
+            return {
+                "collection": [invitee],
+                "pagination": {"next_page_token": None},
+            }
+        raise AssertionError(f"Unexpected Calendly call: {method} {path}")
+
+    monkeypatch.setattr(application, "_calendly_request", fake_calendly)
+
+    response = client.get(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments"
+    )
+
+    assert response.status_code == 200
+    result = response.get_json()
+    assert result["lookup"] == {
+        "method": "email",
+        "processed_events": 1,
+        "matched_appointments": 1,
+    }
+    assert len(result["appointments"]) == 1
+    assert result["appointments"][0]["contact_id"] == contact["id"]
+    assert [path for _, path, _ in calls] == [
+        "/scheduled_events",
+        "/scheduled_events/EVENT1/invitees",
+    ]
+
+
+def test_webhook_matches_a_contact_by_normalized_phone_question(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Tony", "nom": "Arribas", "formation": "Chauffeur VTC"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"telephone": "06 41 57 92 65"},
+    )
+    payload = calendly_payload(email="")
+    payload["text_reminder_number"] = ""
+    payload["questions_and_answers"] = [{
+        "question": "Numéro de téléphone",
+        "answer": "+33 6 41 57 92 65",
+    }]
+
+    response = signed_webhook(client, monkeypatch, "invitee.created", payload)
+
+    assert response.status_code == 200
+    assert response.get_json()["contact_id"] == contact["id"]
+    assert len(client.get("/api/crm/contacts").get_json()) == 1
+    appointments = client.get(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments"
+    ).get_json()["appointments"]
+    assert len(appointments) == 1
+    assert appointments[0]["invitee_phone"] == "+33 6 41 57 92 65"
+
+
 def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
     javascript = application.app.root_path + "/static/crm.js"
     with open(javascript, encoding="utf-8") as source:
@@ -316,12 +407,13 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
     required_markers = [
         "function renderCalendlyAppointments",
         "async function loadCalendlyAppointments",
-        "async function syncCalendlyAll",
         "async function calendlyModal",
         "calendarBtn.onclick=()=>calendlyModal(c)",
-        "syncCalendlyBtn.onclick=()=>syncCalendlyAll(c,true)",
+        "syncCalendlyBtn.onclick=()=>loadCalendlyAppointments(c,true)",
         "loadCalendlyAppointments(c)",
+        "Recherche directe par e-mail ou téléphone",
         "if(b.dataset.step==='Converti')return conversionModal(c)",
     ]
     for marker in required_markers:
         assert marker in crm_js
+    assert "rendez-vous traités" not in crm_js
