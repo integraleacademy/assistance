@@ -30,6 +30,14 @@ EXCLUDED_SALESFORCE_FORMATIONS = {
     "bts mos",
     "bts mos 2025",
     "bts mos 2026",
+    "bts ndrc",
+    "bts pi",
+    "bts pi a distance 2026",
+    "cap aepe",
+    "cap boulangerie",
+    "cap coiffure",
+    "cap cuisine",
+    "cap patisserie",
 }
 REQUIRED_COLUMNS = {"Id", "FirstName", "LastName"}
 HEADER_ALIASES = {
@@ -486,9 +494,17 @@ def import_salesforce_rows(
     created = updated = unchanged = matched_email = matched_phone = matched_sf = 0
     statuses: Counter[str] = Counter()
     formations: Counter[str] = Counter()
+    new_status_sources: Counter[str] = Counter()
 
     for incoming in prepared:
-        statuses[_text(incoming.get("statut")) or "Nouveaux"] += 1
+        status = _text(incoming.get("statut")) or "Nouveaux"
+        statuses[status] += 1
+        if status == "Nouveaux":
+            # Le CRM classe par défaut les statuts Salesforce vides ou inconnus
+            # dans « Nouveaux ». Exposer leur libellé source permet d'expliquer
+            # le total de l'aperçu avant que l'import soit lancé.
+            source_status = _text(incoming.get("salesforce_status")) or "Non renseigné"
+            new_status_sources[source_status] += 1
         formations[_text(incoming.get("formation")) or "Non renseignée"] += 1
         incoming_ids = list(incoming.get("salesforce_ids") or [])
         sfid = _text(incoming.get("salesforce_id"))
@@ -585,6 +601,7 @@ def import_salesforce_rows(
         "skipped_other_year": skipped_other_year,
         "skipped_formation": skipped_formation,
         "status_counts": dict(statuses.most_common()),
+        "new_status_source_counts": dict(new_status_sources.most_common()),
         "formation_counts": dict(formations.most_common()),
     }
 

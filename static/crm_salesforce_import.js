@@ -77,6 +77,12 @@
     const formationRows = Object.entries(result.formation_counts || {}).slice(0, 10)
       .map(([label, count]) => `<span><b>${normalizeNumber(count)}</b> ${esc(label)}</span>`)
       .join('');
+    const newStatusSources = Object.entries(result.new_status_source_counts || {})
+      .map(([label, count]) => `<span><b>${normalizeNumber(count)}</b> ${esc(label)}</span>`)
+      .join('');
+    const newStatusDetails = newStatusSources
+      ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid #dfe6f2;display:grid;gap:6px"><small><b>Détail des « Nouveaux » (statut Salesforce d’origine)</b></small>${newStatusSources}</div>`
+      : '';
     return `
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:4px 0 18px">
         <div class="stat" style="min-height:auto"><small>${final ? 'Créées' : 'À créer'}</small><strong>${normalizeNumber(result.created)}</strong></div>
@@ -85,7 +91,7 @@
       </div>
       <div class="integration-banner success"><div><b>${normalizeNumber(result.prepared_rows)} pistes 2025 prêtes</b><span>${normalizeNumber(result.csv_rows)} lignes lues · ${normalizeNumber(result.duplicates_in_file)} doublons internes regroupés${result.skipped_other_year ? ` · ${normalizeNumber(result.skipped_other_year)} hors 2025 exclues` : ''}${result.skipped_formation ? ` · ${normalizeNumber(result.skipped_formation)} formations exclues` : ''}${result.skipped_converted ? ` · ${normalizeNumber(result.skipped_converted)} converties exclues` : ''}</span></div></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
-        <section class="card" style="box-shadow:none"><div class="card-head"><h3>Statuts</h3></div><div class="template-list" style="padding:12px;display:grid;gap:8px">${statusRows || '<span>Aucun statut</span>'}</div></section>
+        <section class="card" style="box-shadow:none"><div class="card-head"><h3>Statuts</h3></div><div class="template-list" style="padding:12px;display:grid;gap:8px">${statusRows || '<span>Aucun statut</span>'}${newStatusDetails}</div></section>
         <section class="card" style="box-shadow:none"><div class="card-head"><h3>Formations</h3></div><div class="template-list" style="padding:12px;display:grid;gap:8px">${formationRows || '<span>Non renseignées</span>'}</div></section>
       </div>`;
   }
