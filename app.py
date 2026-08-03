@@ -14,7 +14,6 @@ from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 
 from functools import wraps
-from werkzeug.security import check_password_hash, generate_password_hash
 from flask import session, flash
 
 import calendar
@@ -709,15 +708,15 @@ def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_
 # ---------- USERS (chargés depuis les variables d'environnement) ----------
 # Si tu as mis les variables dans Render / .env : on les lit ici.
 _CRM_ACCOUNTS = (
-    ("clement@integraleacademy.com", "Clément VAILLANT", "admin", "CRM_CLEMENT_PASSWORD_HASH"),
-    ("cassandre@integraleacademy.com", "Cassandre MENARD", "user", "CRM_CASSANDRE_PASSWORD_HASH"),
-    ("aurelie@integraleacademy.com", "Aurélie CHAUSSEZ", "user", "CRM_AURELIE_PASSWORD_HASH"),
-    ("elsa@integraleacademy.com", "Elsa DUQUESNE", "user", "CRM_ELSA_PASSWORD_HASH"),
+    ("clement@integraleacademy.com", "Clément VAILLANT", "admin", "CRM_CLEMENT_PASSWORD"),
+    ("cassandre@integraleacademy.com", "Cassandre MENARD", "user", "CRM_CASSANDRE_PASSWORD"),
+    ("aurelie@integraleacademy.com", "Aurélie CHAUSSEZ", "user", "CRM_AURELIE_PASSWORD"),
+    ("elsa@integraleacademy.com", "Elsa DUQUESNE", "user", "CRM_ELSA_PASSWORD"),
 )
 
 USERS = {
-    email: {"email": email, "name": name, "role": role, "password_hash_env": hash_env}
-    for email, name, role, hash_env in _CRM_ACCOUNTS
+    email: {"email": email, "name": name, "role": role, "password_env": password_env}
+    for email, name, role, password_env in _CRM_ACCOUNTS
 }
 
 
@@ -2375,11 +2374,11 @@ def login():
             flash("Trop de tentatives. Veuillez patienter quelques minutes.", "error")
             return render_template("login.html"), 429
 
-        password_hash = os.environ.get(user["password_hash_env"]) if user else None
-        if user and not password_hash:
-            app.logger.warning("Compte CRM désactivé : variable %s absente", user["password_hash_env"])
+        configured_password = os.environ.get(user["password_env"]) if user else None
+        if user and not configured_password:
+            app.logger.warning("Compte CRM désactivé : variable %s absente", user["password_env"])
 
-        if user and password_hash and check_password_hash(password_hash, password):
+        if user and configured_password and hmac.compare_digest(configured_password, password):
             _clear_login_attempts(client_ip)
             session.clear()  # renouvelle les données et l'identité de la session
             session["user_email"] = email

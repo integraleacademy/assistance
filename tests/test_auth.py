@@ -1,7 +1,4 @@
 import app as application
-from werkzeug.security import generate_password_hash
-
-
 def setup_function():
     application._LOGIN_ATTEMPTS.clear()
     application.app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
@@ -23,18 +20,26 @@ def test_uppercase_crm_redirects_to_lowercase_when_authenticated():
 
 
 def test_configured_user_can_login(monkeypatch):
-    monkeypatch.setenv('CRM_CLEMENT_PASSWORD_HASH', generate_password_hash('correct-password'))
+    monkeypatch.setenv('CRM_CLEMENT_PASSWORD', 'correct-password')
     response = application.app.test_client().post('/login', data={'email': 'clement@integraleacademy.com', 'password': 'correct-password'})
     assert response.status_code == 302
     assert response.location.endswith('/crm')
 
 
-def test_wrong_password_and_missing_hash_are_refused(monkeypatch):
-    monkeypatch.setenv('CRM_CASSANDRE_PASSWORD_HASH', generate_password_hash('correct-password'))
+def test_wrong_password_and_missing_password_are_refused(monkeypatch):
+    monkeypatch.setenv('CRM_CASSANDRE_PASSWORD', 'correct-password')
     client = application.app.test_client()
     assert client.post('/login', data={'email': 'cassandre@integraleacademy.com', 'password': 'wrong'}).status_code == 401
-    monkeypatch.delenv('CRM_AURELIE_PASSWORD_HASH', raising=False)
+    monkeypatch.delenv('CRM_AURELIE_PASSWORD', raising=False)
     assert client.post('/login', data={'email': 'aurelie@integraleacademy.com', 'password': 'anything'}).status_code == 401
+
+
+def test_empty_password_variable_does_not_enable_account(monkeypatch):
+    monkeypatch.setenv('CRM_AURELIE_PASSWORD', '')
+    response = application.app.test_client().post(
+        '/login', data={'email': 'aurelie@integraleacademy.com', 'password': ''}
+    )
+    assert response.status_code == 401
 
 
 def test_accounts_and_roles_are_exact():
@@ -45,7 +50,7 @@ def test_accounts_and_roles_are_exact():
 
 
 def test_external_next_is_ignored(monkeypatch):
-    monkeypatch.setenv('CRM_ELSA_PASSWORD_HASH', generate_password_hash('correct-password'))
+    monkeypatch.setenv('CRM_ELSA_PASSWORD', 'correct-password')
     response = application.app.test_client().post('/login?next=https://evil.example', data={'email': 'elsa@integraleacademy.com', 'password': 'correct-password'})
     assert response.location.endswith('/crm')
 
