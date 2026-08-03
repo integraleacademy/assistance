@@ -522,6 +522,63 @@ def get_formation_sessions(data_store=None):
     return copy.deepcopy(DEFAULT_FORMATION_SESSIONS)
 
 
+_FRENCH_MONTH_NUMBERS = {
+    "janvier": 1, "fevrier": 2, "mars": 3, "avril": 4,
+    "mai": 5, "juin": 6, "juillet": 7, "aout": 8,
+    "septembre": 9, "octobre": 10, "novembre": 11, "decembre": 12,
+}
+
+
+def _session_start_date(label):
+    """Extract a session's first day from the French label used by the admin."""
+    normalized = (
+        unicodedata.normalize("NFKD", str(label or ""))
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+    start = re.match(
+        r"^\s*(?:du\s+)?(?P<day>\d{1,2})(?:er)?"
+        r"(?:\s+(?P<month>[a-z]+))?(?:\s+(?P<year>\d{4}))?\s+au\s+",
+        normalized,
+    )
+    if not start:
+        return None
+
+    day = int(start.group("day"))
+    month_name = start.group("month")
+    year = start.group("year")
+    remainder = normalized[start.end():]
+    end = re.match(r"(?:\d{1,2})(?:er)?\s+([a-z]+)(?:\s+(\d{4}))?", remainder)
+    if not month_name and end:
+        month_name = end.group(1)
+    month = _FRENCH_MONTH_NUMBERS.get(month_name or "")
+    end_month = _FRENCH_MONTH_NUMBERS.get(end.group(1)) if end else None
+    if not year:
+        year = end.group(2) if end else None
+        if year and month and end_month and month > end_month:
+            year = str(int(year) - 1)
+    if not month or not year:
+        return None
+    try:
+        return datetime.date(int(year), month, day)
+    except ValueError:
+        return None
+
+
+def get_upcoming_formation_sessions(data_store=None, today=None):
+    """Return form sessions whose start date has not passed yet."""
+    today = today or datetime.date.today()
+    sessions = get_formation_sessions(data_store)
+    for formations in sessions.values():
+        for formation_code, rows in formations.items():
+            formations[formation_code] = [
+                row for row in rows
+                if (start := _session_start_date(row.get("label"))) is None or start >= today
+            ]
+    return sessions
+
+
 def get_simulator_dates_options(data_store=None):
     sessions = get_formation_sessions(data_store)
     options = {}
@@ -2804,7 +2861,7 @@ def api_secretariat_demandes():
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
 def demande_informations_formations():
     data_store = load_data()
-    sessions = get_formation_sessions(data_store)
+    sessions = get_upcoming_formation_sessions(data_store)
 
     if request.method == "POST":
         form_data = request.form.to_dict()
