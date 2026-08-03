@@ -49,6 +49,22 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
 
 
+def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+
+    page = c.get("/CRM/relances")
+    assert page.status_code == 200
+
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    assert "function remindersPage()" in crm_js
+    assert 'id="reminderDate" type="date"' in crm_js
+    assert "c.relance_date===reminderSelectedDate" in crm_js
+    assert "changeReminderDate(-1)" in crm_js
+    assert "changeReminderDate(1)" in crm_js
+    assert "Aucune relance ce jour-là" in crm_js
+
+
 def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     data = application.load_data()
