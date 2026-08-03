@@ -40,10 +40,34 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
 
 def test_crm_pages_and_templates(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    assert c.get("/CRM/pistes").status_code == 200
+    page = c.get("/CRM/pistes")
+    assert page.status_code == 200
+    assert b"iaconnectcrm.png" in page.data
+    assert b"favicon_32x32.png" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
+
+
+def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["formation_sessions"] = {
+        "paris": {"APS": [{"label": "Du 1 au 5 septembre 2026", "badge": "", "date_examen": "2026-09-05"}]}
+    }
+    application.save_data(data)
+
+    sessions = c.get("/api/formation-sessions").get_json()
+    assert sessions["paris"]["APS"][0]["label"] == "Du 1 au 5 septembre 2026"
+
+    javascript = (application.app.root_path + "/static/crm.js")
+    with open(javascript, encoding="utf-8") as source:
+        crm_js = source.read()
+    assert "Programmer un rappel" in crm_js
+    assert "api('/api/formation-sessions')" in crm_js
+    assert '<h3>Formation</h3>' in crm_js
+    assert '<h3>Réglementaire</h3>' in crm_js
+    assert '<h3>Financement</h3>' in crm_js
 
 
 def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
