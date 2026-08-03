@@ -85,6 +85,31 @@ def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
     assert response.get_json() == {"texte": "Compte-rendu reformulé."}
 
 
+def test_crm_ai_summary_and_message_generation(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={
+        "prenom": "Lina", "nom": "Martin", "formation": "APS"
+    }).get_json()
+    prompts = []
+
+    def fake_ai(system, user, max_tokens=500):
+        prompts.append((system, user, max_tokens))
+        return "Texte généré."
+
+    monkeypatch.setattr(application, "_crm_ai", fake_ai)
+
+    summary = c.post(f"/api/crm/contacts/{contact['id']}/synthese", json={})
+    message = c.post(f"/api/crm/contacts/{contact['id']}/generer-message", json={
+        "type": "sms", "instructions": "Confirmer le prochain rendez-vous"
+    })
+
+    assert summary.get_json() == {"texte": "Texte généré."}
+    assert message.get_json() == {"texte": "Texte généré."}
+    assert "3 à 5 phrases" in prompts[0][0]
+    assert "320 caractères maximum" in prompts[1][0]
+    assert "Confirmer le prochain rendez-vous" in prompts[1][1]
+
+
 def test_crm_email_has_branding_and_legal_footer(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()

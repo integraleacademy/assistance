@@ -6401,6 +6401,10 @@ def _crm_upsert_calendly_appointment(
             f"{_crm_calendly_datetime_label(appointment.get('start_time'))}"
         )
         _crm_activity(contact, "calendly", title, detail)
+        if appointment.get("status") != "canceled" and contact.get("statut") != "RDV programmé":
+            old_status = contact.get("statut") or "Nouveaux"
+            contact["statut"] = "RDV programmé"
+            _crm_activity(contact, "statut", "Statut : RDV programmé", f"Ancien statut : {old_status}")
         contact["updated_at"] = now
     return appointment, contact
 
@@ -6563,6 +6567,23 @@ def _crm_activity(contact, kind, title, detail="", preview=""):
         "title": title, "detail": detail, "preview": preview,
         "author": (current_user() or {}).get("name", "Équipe Intégrale"),
     })
+
+
+def _crm_ai(system_prompt, user_prompt, max_tokens=500):
+    """Single, testable entry point for the CRM writing assistants."""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY non configurée")
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=20)
+    response = client.chat.completions.create(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        messages=[{"role": "system", "content": system_prompt},
+                  {"role": "user", "content": user_prompt}],
+        temperature=0.2, max_tokens=max_tokens,
+    )
+    result = (response.choices[0].message.content or "").strip()
+    if not result:
+        raise ValueError("Réponse vide du service IA")
+    return result
 
 
 def _gestion_stagiaires_payload(contact):
@@ -6739,6 +6760,18 @@ def crm_calendly_event_types():
         return jsonify({"error": "CALENDLY_ACCESS_TOKEN n'est pas configuré dans Render."}), 503
     try:
         event_types = _calendly_event_types_for_context(load_data())
+        formation = str(request.args.get("formation") or "").strip()
+        if formation:
+            normalized = unicodedata.normalize("NFKD", formation).encode("ascii", "ignore").decode().lower()
+            expected = {
+                "aps": ("agent de securite", " aps"), "a3p": ("a3p", "protection physique"),
+                "desp": ("desp", "dirigeant"), "ssiap 1": ("ssiap",),
+                "chauffeur vtc": ("vtc", "chauffeur"),
+            }.get(normalized, (normalized,))
+            event_types = [item for item in event_types if any(
+                token in " " + unicodedata.normalize("NFKD", str(item.get("name") or "")).encode("ascii", "ignore").decode().lower()
+                for token in expected
+            )]
         return jsonify([
             {
                 "uri": item.get("uri"),
@@ -7167,26 +7200,46 @@ def crm_rephrase():
     if not os.getenv("OPENAI_API_KEY"):
         return jsonify({"error": "OPENAI_API_KEY non configurée"}), 503
     try:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=20)
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Reformule la note CRM en français professionnel, clair et factuel. Ne rajoute aucune information.",
-                },
-                {"role": "user", "content": text},
-            ],
-            temperature=0.2,
-            max_tokens=500,
-        )
-        reformulation = response.choices[0].message.content.strip()
-        if not reformulation:
-            raise ValueError("Réponse vide du service de reformulation")
+        reformulation = _crm_ai("Reformule la note CRM en français professionnel, clair et factuel. Ne rajoute aucune information.", text)
         return jsonify({"texte": reformulation})
     except Exception as exc:
         print("Erreur reformulation CRM:", exc)
         return jsonify({"error": "La reformulation est momentanément indisponible"}), 502
+
+
+@app.route("/api/crm/contacts/<contact_id>/synthese", methods=["POST"])
+@login_required
+def crm_contact_summary(contact_id):
+    contact = _crm_contact(load_data(), contact_id)
+    if not contact: return jsonify({"error": "Contact introuvable"}), 404
+    dossier = {key: contact.get(key, "") for key in (
+        "prenom", "nom", "formation", "lieu", "dates_formation", "statut", "cpf",
+        "financement_ft", "carte_pro", "antecedents", "commentaires")}
+    dossier["dernieres_activites"] = (contact.get("activities") or [])[:5]
+    try:
+        texte = _crm_ai("Rédige une synthèse CRM très concise (3 à 5 phrases) en français. Souligne l'état du dossier, les points utiles et la prochaine action. N'invente rien.", json.dumps(dossier, ensure_ascii=False), 300)
+        return jsonify({"texte": texte})
+    except Exception as exc:
+        print("Erreur synthèse CRM:", exc)
+        return jsonify({"error": "La synthèse est momentanément indisponible"}), 502
+
+
+@app.route("/api/crm/contacts/<contact_id>/generer-message", methods=["POST"])
+@login_required
+def crm_generate_message(contact_id):
+    contact = _crm_contact(load_data(), contact_id)
+    if not contact: return jsonify({"error": "Contact introuvable"}), 404
+    payload = request.get_json(silent=True) or {}; kind = payload.get("type")
+    if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
+    context = str(payload.get("instructions") or "Proposer un suivi adapté au dossier.").strip()
+    facts = {k: contact.get(k, "") for k in ("prenom", "formation", "lieu", "statut", "commentaires")}
+    constraint = "Rédige uniquement le corps d'un e-mail professionnel" if kind == "email" else "Rédige un SMS professionnel de 320 caractères maximum"
+    try:
+        texte = _crm_ai(f"{constraint}, chaleureux et directement utilisable. N'invente aucune information.", f"Dossier: {json.dumps(facts, ensure_ascii=False)}\nObjectif: {context}")
+        return jsonify({"texte": texte})
+    except Exception as exc:
+        print("Erreur génération message CRM:", exc)
+        return jsonify({"error": "La génération est momentanément indisponible"}), 502
 
 
 @app.route("/api/crm/templates", methods=["GET", "POST"])
