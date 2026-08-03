@@ -195,3 +195,12 @@
   .availability-nav{grid-template-columns:1fr 1fr}
   .availability-nav b{grid-column:1/-1;grid-row:1}
 }
+
+/* Fiche CRM compacte, assistants IA et recherche instantanée. */
+.dossier-summary{margin-bottom:16px;border-color:#d9e3f7;background:linear-gradient(135deg,#fff,#f6f9ff)}
+.dossier-summary .card-head{border:0;padding-bottom:10px}.dossier-summary small{display:block;margin-top:4px;color:var(--muted)}
+.summary-text{padding:0 20px 18px;color:#485973;font-size:13px;line-height:1.6;white-space:pre-wrap}
+.appointment-list{padding-top:14px}.next-appointment{margin-bottom:12px;padding:15px 18px}.next-appointment-label{margin-bottom:10px}.next-date{width:62px;height:64px}.next-date span{font-size:24px}
+.appointment-history{border-top:1px solid #e1e7f0}.appointment-history>summary{display:flex;align-items:center;gap:8px;padding:13px 2px 0;color:#356ae6;font-size:12px;font-weight:750;cursor:pointer;list-style:none}.appointment-history>summary:after{content:'⌄';margin-left:auto}.appointment-history[open]>summary:after{transform:rotate(180deg)}.appointment-history>summary span{display:grid;place-items:center;min-width:22px;height:20px;border-radius:99px;background:#e8effc;color:#49658f;font-size:10px}.appointment-history .appointment-sections{padding-top:16px}
+.feed-more{display:block;margin:16px auto 2px}.field-label-row{display:flex;align-items:center;justify-content:space-between}.ai-link{border:0;background:none;color:#356ae6;font-size:11px;font-weight:700;cursor:pointer}.ai-button{margin-right:auto;color:#356ae6;border-color:#bfcff2;background:#f5f8ff}
+.search{position:relative}.global-results{display:none;position:absolute;top:calc(100% + 10px);left:0;width:min(560px,75vw);padding:7px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 18px 45px #1720332b;z-index:30}.global-results.open{display:block}.global-results button{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;border-radius:8px;background:#fff;text-align:left;cursor:pointer}.global-results button:hover{background:#f3f7ff}.global-results button>span:last-child{min-width:0}.global-results b,.global-results small{display:block}.global-results small{margin-top:3px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.global-results p{margin:10px;color:var(--muted);font-size:12px}

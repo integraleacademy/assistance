@@ -86,6 +86,9 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     assert len(appointments) == 1
     assert appointments[0]["name"] == "Appel découverte"
     assert appointments[0]["status"] == "active"
+    scheduled_contact = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert scheduled_contact["statut"] == "RDV programmé"
+    assert any(activity["title"] == "Statut : RDV programmé" for activity in scheduled_contact["activities"])
 
     canceled_payload = calendly_payload(status="canceled")
     canceled_payload["cancellation"] = {"reason": "Indisponible"}
@@ -176,6 +179,21 @@ def test_event_types_endpoint_returns_every_active_calendly_type(tmp_path, monke
     event_call = next(call for call in calls if call[1] == "/event_types")
     assert event_call[2]["params"]["organization"].endswith("/ORG1")
     assert event_call[2]["params"]["active"] == "true"
+
+
+def test_event_types_are_filtered_for_aps_formation(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "_calendly_event_types_for_context", lambda data: [
+        {"uri": "type-aps", "name": "RDV téléphonique agent de sécurité", "active": True},
+        {"uri": "type-vtc", "name": "RDV téléphonique formation Chauffeur VTC", "active": True},
+    ])
+
+    response = client.get("/api/crm/calendly/event-types?formation=APS")
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.get_json()] == [
+        "RDV téléphonique agent de sécurité"
+    ]
 
 
 def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_path, monkeypatch):
