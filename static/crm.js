@@ -16,7 +16,7 @@ function showContact(id){
   if(!c)return;
   history.pushState({},'',`/CRM/contacts?fiche=${id}`);
   page.innerHTML=`<button class="btn" id="backList">← Retour</button><div class="contact-head"><span class="avatar">${initials(c)}</span><div><h1>${esc(c.prenom)} ${esc(c.nom)}</h1><p>${c.statut==='Converti'?'Inscrit':'Piste'} · Créé le ${new Date(c.created_at).toLocaleDateString('fr-FR')}</p></div><div class="contact-actions"><button class="btn blue" id="actionsBtn" aria-expanded="false">Actions ▾</button><div class="actions-menu" id="actionsMenu"><button id="calendarBtn">◷ Planifier un rendez-vous</button><button id="mailBtn">✉ Envoyer un mail</button><button id="smsBtn">▣ Envoyer un SMS</button><button id="callBtn">☎ Consigner un appel</button><button id="reminderBtn">◫ Programmer un rappel</button></div></div></div><div class="timeline">${S.map((s,i)=>`<button data-step="${s}" class="${s===c.statut?'current':i<S.indexOf(c.statut)?'done':''}">${s}</button>`).join('')}</div>
-  <section class="card calendly-card" id="calendlyCard"><div class="card-head"><div><h2>Rendez-vous Calendly</h2><small>Recherche directe par e-mail ou téléphone</small></div><button class="btn" id="syncCalendlyBtn">↻ Actualiser</button></div><div class="appointment-list" id="appointmentList"><div class="activity-empty">Recherche des rendez-vous de cette personne…</div></div><div id="calendlyIntegration"></div></section>
+  <section class="card calendly-card" id="calendlyCard"><div class="card-head calendly-card-head"><div class="calendly-title"><span class="calendly-title-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4.5 9.5h15M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></svg></span><div><h2>Rendez-vous Calendly</h2><small>Prochains rendez-vous et historique complet</small></div></div><button class="btn calendly-refresh" id="syncCalendlyBtn"><span aria-hidden="true">↻</span> Actualiser</button></div><div class="appointment-list" id="appointmentList"><div class="activity-empty">Recherche des rendez-vous de cette personne…</div></div><div id="calendlyIntegration"></div></section>
   <div class="detail-grid"><section class="card form-card"><div class="card-head form-main-head"><h2>Informations du contact</h2><span class="save-state" id="saveState">✓ Enregistré</span></div><form class="fields" id="contactForm">
   <div class="form-section"><h3>Contact</h3><div class="section-fields">${[['prenom','Prénom','text'],['nom','Nom','text'],['telephone','Téléphone','tel'],['mail','E-mail','email']].map(f=>`<div class="field"><label>${f[1]}</label><input name="${f[0]}" type="${f[2]}" value="${esc(c[f[0]])}"></div>`).join('')}</div></div>
   <div class="form-section"><h3>Formation</h3><div class="section-fields"><div class="field"><label>Formation souhaitée</label><select name="formation">${['APS','A3P','DESP','SSIAP 1','Chauffeur VTC'].map(x=>`<option ${c.formation===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Lieu</label><select name="lieu"></select></div><div class="field full"><label>Dates souhaitées</label><select name="dates_formation"></select><small class="field-help" id="sessionHelp"></small></div><div class="field conditional" data-show="desp"><label>Parcours DESP</label><select name="desp_type"><option></option><option ${c.desp_type==='INITIAL'?'selected':''}>INITIAL</option><option ${c.desp_type==='VAE'?'selected':''}>VAE</option></select></div></div></div>
@@ -67,17 +67,56 @@ function sortedAppointments(items){
     return ag!==bg?ag-bg:ag===0?at-bt:bt-at;
   });
 }
+function calendlyDateParts(value){
+  const date=value?new Date(value):new Date(NaN);
+  if(Number.isNaN(date.getTime()))return{day:'—',month:'',time:'',short:'Date non renseignée'};
+  return{
+    day:new Intl.DateTimeFormat('fr-FR',{day:'2-digit'}).format(date),
+    month:new Intl.DateTimeFormat('fr-FR',{month:'short'}).format(date).replace('.',''),
+    time:new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit'}).format(date),
+    short:new Intl.DateTimeFormat('fr-FR',{weekday:'short',day:'numeric',month:'short',year:'numeric'}).format(date),
+  };
+}
+function calendlyRelativeLabel(value){
+  const date=value?new Date(value):new Date(NaN),today=new Date();
+  if(Number.isNaN(date.getTime()))return'Date à confirmer';
+  const target=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+  const current=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  const days=Math.round((target-current)/86400000);
+  if(days===0)return`Aujourd’hui · ${calendlyDateParts(value).time}`;
+  if(days===1)return`Demain · ${calendlyDateParts(value).time}`;
+  return days>1?`Dans ${days} jours`:'Date passée';
+}
+function calendlyMeta(a){
+  const location=calendlyLocationLabel(a.location);
+  return `<div class="calendly-meta">${a.host_name?`<span><i aria-hidden="true">●</i> Avec ${esc(a.host_name)}</span>`:''}${location?`<span><i aria-hidden="true">⌖</i> ${esc(location)}</span>`:''}</div>`;
+}
+function calendlyActions(a,primary=false){
+  return `<div class="appointment-actions">${a.reschedule_url?`<a class="btn ${primary?'blue':''}" href="${esc(a.reschedule_url)}" target="_blank" rel="noopener">Reprogrammer</a>`:''}${a.cancel_url?`<a class="btn danger-light" href="${esc(a.cancel_url)}" target="_blank" rel="noopener">Annuler</a>`:''}</div>`;
+}
+function calendlyAppointmentCard(a,tone){
+  const date=calendlyDateParts(a.start_time);
+  const labels={upcoming:'À venir',past:'Passé',canceled:'Annulé'};
+  return `<article class="appointment-item ${tone}"><div class="appointment-date"><span>${date.day}</span><small>${esc(date.month)}</small><em>${date.time}</em></div><div class="appointment-main"><div class="appointment-item-top"><span class="appointment-status ${tone}">${labels[tone]}</span><time>${esc(date.short)}</time></div><b>${esc(a.name||'Rendez-vous Calendly')}</b>${calendlyMeta(a)}</div>${tone==='upcoming'?calendlyActions(a):''}</article>`;
+}
+function calendlyAppointmentSection(title,items,tone){
+  if(!items.length)return'';
+  const icons={upcoming:'↗',past:'✓',canceled:'×'};
+  return `<section class="appointment-section ${tone}"><div class="appointment-section-head"><div><span class="section-icon" aria-hidden="true">${icons[tone]}</span><h3>${title}</h3></div><span class="section-count">${items.length}</span></div><div class="appointment-grid">${items.map(a=>calendlyAppointmentCard(a,tone)).join('')}</div></section>`;
+}
 function renderCalendlyAppointments(c,items,integration){
   const list=document.querySelector('#appointmentList'),box=document.querySelector('#calendlyIntegration');
   if(!list||!box)return;
   const now=Date.now();
-  list.innerHTML=items.length?sortedAppointments(items).map(a=>{
-    const start=new Date(a.start_time||0).getTime();
-    const canceled=a.status==='canceled';
-    const state=canceled?'Annulé':start>=now?'À venir':'Terminé';
-    const location=calendlyLocationLabel(a.location);
-    return `<article class="appointment-row ${canceled?'is-canceled':''}"><div class="appointment-date"><span>${new Intl.DateTimeFormat('fr-FR',{day:'2-digit'}).format(new Date(a.start_time))}</span><small>${new Intl.DateTimeFormat('fr-FR',{month:'short'}).format(new Date(a.start_time))}</small></div><div class="appointment-main"><div><span class="appointment-status ${canceled?'canceled':start>=now?'upcoming':'past'}">${state}</span><b>${esc(a.name||'Rendez-vous Calendly')}</b></div><p>${calendlyDate(a.start_time)}${a.host_name?` · Avec ${esc(a.host_name)}`:''}${location?`<br>${esc(location)}`:''}</p></div><div class="appointment-actions">${!canceled&&a.reschedule_url?`<a class="btn" href="${esc(a.reschedule_url)}" target="_blank" rel="noopener">Reprogrammer</a>`:''}${!canceled&&a.cancel_url?`<a class="btn danger-light" href="${esc(a.cancel_url)}" target="_blank" rel="noopener">Annuler</a>`:''}</div></article>`;
-  }).join(''):'<div class="activity-empty">Aucun rendez-vous Calendly rattaché à cette piste.</div>';
+  const ordered=sortedAppointments(items);
+  const upcoming=ordered.filter(a=>a.status!=='canceled'&&new Date(a.start_time||0).getTime()>=now);
+  const past=ordered.filter(a=>a.status!=='canceled'&&new Date(a.start_time||0).getTime()<now);
+  const canceled=ordered.filter(a=>a.status==='canceled');
+  const next=upcoming[0];
+  const summary=`<div class="calendly-summary"><div class="calendly-summary-item upcoming"><span class="summary-icon">↗</span><div><strong>${upcoming.length}</strong><small>À venir</small></div></div><div class="calendly-summary-item past"><span class="summary-icon">✓</span><div><strong>${past.length}</strong><small>Passés</small></div></div><div class="calendly-summary-item canceled"><span class="summary-icon">×</span><div><strong>${canceled.length}</strong><small>Annulés</small></div></div></div>`;
+  const nextCard=next?`<section class="next-appointment"><div class="next-appointment-label"><span></span> Prochain rendez-vous</div><div class="next-appointment-content"><div class="next-date"><span>${calendlyDateParts(next.start_time).day}</span><small>${esc(calendlyDateParts(next.start_time).month)}</small></div><div class="next-main"><div class="next-relative">${calendlyRelativeLabel(next.start_time)}</div><h3>${esc(next.name||'Rendez-vous Calendly')}</h3><p>${calendlyDate(next.start_time)}</p>${calendlyMeta(next)}</div>${calendlyActions(next,true)}</div></section>`:`<section class="next-appointment-empty"><span class="empty-calendar" aria-hidden="true">◷</span><div><b>Aucun prochain rendez-vous</b><small>Planifiez un nouveau créneau directement depuis cette fiche.</small></div><button class="btn blue" id="emptyCalendlyBook">Planifier un rendez-vous</button></section>`;
+  const sections=`<div class="appointment-sections">${calendlyAppointmentSection('Autres rendez-vous à venir',upcoming.slice(1),'upcoming')}${calendlyAppointmentSection('Rendez-vous passés',past,'past')}${calendlyAppointmentSection('Rendez-vous annulés',canceled,'canceled')}</div>`;
+  list.innerHTML=summary+nextCard+sections;
   if(!integration.configured){
     box.innerHTML=`<div class="integration-banner warning"><div><b>Jeton Calendly non configuré</b><span>Ajoutez CALENDLY_ACCESS_TOKEN dans Render pour activer l’intégration.</span></div></div>`;
   }else if(!integration.signing_key_configured){
@@ -92,6 +131,8 @@ function renderCalendlyAppointments(c,items,integration){
   if(setup)setup.onclick=()=>setupCalendly(c);
   const sync=document.querySelector('#syncCalendlyBtn');
   if(sync)sync.style.display=C.is_admin&&integration.connected?'inline-flex':'none';
+  const emptyBook=document.querySelector('#emptyCalendlyBook');
+  if(emptyBook)emptyBook.onclick=()=>calendlyModal(c);
 }
 async function loadCalendlyAppointments(c,manual=false){
   const button=document.querySelector('#syncCalendlyBtn'),list=document.querySelector('#appointmentList');

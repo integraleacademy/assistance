@@ -401,8 +401,11 @@ def test_webhook_matches_a_contact_by_normalized_phone_question(tmp_path, monkey
 
 def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
     javascript = application.app.root_path + "/static/crm.js"
+    stylesheet = application.app.root_path + "/static/crm.css"
     with open(javascript, encoding="utf-8") as source:
         crm_js = source.read()
+    with open(stylesheet, encoding="utf-8") as source:
+        crm_css = source.read()
 
     required_markers = [
         "function renderCalendlyAppointments",
@@ -411,9 +414,21 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "calendarBtn.onclick=()=>calendlyModal(c)",
         "syncCalendlyBtn.onclick=()=>loadCalendlyAppointments(c,true)",
         "loadCalendlyAppointments(c)",
-        "Recherche directe par e-mail ou téléphone",
+        "Prochain rendez-vous",
+        "Rendez-vous passés",
+        "Rendez-vous annulés",
+        "tone==='upcoming'?calendlyActions(a):''",
         "if(b.dataset.step==='Converti')return conversionModal(c)",
     ]
     for marker in required_markers:
         assert marker in crm_js
     assert "rendez-vous traités" not in crm_js
+    assert "appointment-row" not in crm_js
+    for marker in [
+        ".calendly-card{",
+        ".next-appointment{",
+        ".appointment-grid{",
+        ".appointment-status.canceled{",
+        ".calendly-modal{",
+    ]:
+        assert marker in crm_css
