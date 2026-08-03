@@ -65,9 +65,9 @@ def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
         crm_js = source.read()
     assert "Programmer un rappel" in crm_js
     assert "api('/api/formation-sessions')" in crm_js
-    assert '<h3>Formation</h3>' in crm_js
-    assert '<h3>Réglementaire</h3>' in crm_js
-    assert '<h3>Financement</h3>' in crm_js
+    assert "<h3>${crmIcon('book')}<span>Formation</span></h3>" in crm_js
+    assert "<h3>${crmIcon('shield')}<span>Réglementaire</span></h3>" in crm_js
+    assert "<h3>${crmIcon('wallet')}<span>Financement</span></h3>" in crm_js
 
 
 def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
