@@ -2345,13 +2345,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.route("/CRM")
-@app.route("/crm")
-def crm():
-    """Conserve l'ancienne adresse du CRM en redirigeant vers l'administration."""
-    return redirect(url_for("admin"))
-    
-
 def update_demande_fields(demande, form_data, data, files=None):
     demande["mail"] = form_data.get("mail") or demande.get("mail")
     if form_data.get("details") is not None:
@@ -6072,13 +6065,21 @@ def _crm_activity(contact, kind, title, detail="", preview=""):
     })
 
 
-@app.route("/CRM", defaults={"section": "accueil"})
-@app.route("/CRM/<section>")
+@app.route("/crm", defaults={"section": "accueil"})
+@app.route("/crm/<section>")
 @login_required
 def crm(section):
     if section not in {"accueil", "contacts", "pistes", "relances", "inscrits", "modeles"}:
         abort(404)
     return render_template("crm.html", section=section, statuses=CRM_STATUSES, user=current_user())
+
+
+@app.route("/CRM", defaults={"section": "accueil"})
+@app.route("/CRM/<section>")
+@login_required
+def crm_uppercase(section):
+    """Préserve les liens historiques qui utilisent le chemin CRM en majuscules."""
+    return crm(section)
 
 
 @app.route("/api/crm/contacts", methods=["GET", "POST"])
