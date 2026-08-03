@@ -6185,6 +6185,35 @@ def _crm_normalize_email(value):
     return str(value or "").strip().casefold()
 
 
+def _crm_normalize_phone(value):
+    digits = re.sub(r"\D", "", str(value or ""))
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) == 10 and digits.startswith("0"):
+        digits = f"33{digits[1:]}"
+    return digits
+
+
+def _crm_calendly_payload_phone(payload):
+    direct = str(payload.get("text_reminder_number") or "").strip()
+    if _crm_normalize_phone(direct):
+        return direct
+    phone_words = ("téléphone", "telephone", "phone", "mobile", "portable")
+    for answer in payload.get("questions_and_answers") or []:
+        if not isinstance(answer, dict):
+            continue
+        question = str(answer.get("question") or "").casefold()
+        if not any(word in question for word in phone_words):
+            continue
+        value = answer.get("answer")
+        values = value if isinstance(value, list) else [value]
+        for candidate in values:
+            candidate = str(candidate or "").strip()
+            if 8 <= len(_crm_normalize_phone(candidate)) <= 15:
+                return candidate
+    return ""
+
+
 def _crm_calendly_contact_by_email(data, email):
     email = _crm_normalize_email(email)
     if not email:
@@ -6192,6 +6221,17 @@ def _crm_calendly_contact_by_email(data, email):
     return next(
         (contact for contact in data.get("crm_contacts", [])
          if _crm_normalize_email(contact.get("mail")) == email),
+        None,
+    )
+
+
+def _crm_calendly_contact_by_phone(data, phone):
+    phone = _crm_normalize_phone(phone)
+    if not phone:
+        return None
+    return next(
+        (contact for contact in data.get("crm_contacts", [])
+         if _crm_normalize_phone(contact.get("telephone")) == phone),
         None,
     )
 
@@ -6207,7 +6247,7 @@ def _crm_calendly_new_contact(data, payload):
     now = _crm_now()
     contact = {
         "id": str(uuid.uuid4()), "prenom": first_name, "nom": last_name,
-        "telephone": str(payload.get("text_reminder_number") or "").strip(),
+        "telephone": _crm_calendly_payload_phone(payload),
         "mail": str(payload.get("email") or "").strip(), "formation": "",
         "lieu": "", "statut": "RDV programmé", "dates_formation": "",
         "cpf": "", "carte_pro": "", "antecedents": "", "desp_type": "",
@@ -6224,13 +6264,20 @@ def _crm_calendly_new_contact(data, payload):
 
 def _crm_calendly_relink_appointments(data, contact):
     email = _crm_normalize_email(contact.get("mail"))
-    if not email:
+    phone = _crm_normalize_phone(contact.get("telephone"))
+    if not email and not phone:
         return False
     changed = False
     for appointment in data.get("crm_calendly_appointments", []):
         assigned_contact = _crm_contact(data, appointment.get("contact_id"))
-        if (
+        same_email = bool(email) and (
             _crm_normalize_email(appointment.get("invitee_email")) == email
+        )
+        same_phone = bool(phone) and (
+            _crm_normalize_phone(appointment.get("invitee_phone")) == phone
+        )
+        if (
+            (same_email or same_phone)
             and not assigned_contact
         ):
             appointment["contact_id"] = contact.get("id")
@@ -6284,6 +6331,7 @@ def _crm_upsert_calendly_appointment(
 
     previous_status = existing.get("status") if existing else None
     previous_start = existing.get("start_time") if existing else None
+    invitee_phone = _crm_calendly_payload_phone(payload)
     status = str(payload.get("status") or scheduled_event.get("status") or "active")
     if webhook_event == "invitee.canceled" or scheduled_event.get("status") == "canceled":
         status = "canceled"
@@ -6304,7 +6352,7 @@ def _crm_upsert_calendly_appointment(
         "status": status,
         "invitee_name": payload.get("name") or appointment.get("invitee_name") or "",
         "invitee_email": email or appointment.get("invitee_email") or "",
-        "invitee_phone": payload.get("text_reminder_number") or appointment.get("invitee_phone") or "",
+        "invitee_phone": invitee_phone or appointment.get("invitee_phone") or "",
         "invitee_timezone": payload.get("timezone") or appointment.get("invitee_timezone") or "",
         "host_name": host.get("user_name") or appointment.get("host_name") or "",
         "host_email": host.get("user_email") or appointment.get("host_email") or "",
@@ -6326,6 +6374,8 @@ def _crm_upsert_calendly_appointment(
         contact = _crm_contact(data, appointment.get("contact_id"))
     if not contact:
         contact = _crm_calendly_contact_by_email(data, appointment.get("invitee_email"))
+    if not contact:
+        contact = _crm_calendly_contact_by_phone(data, appointment.get("invitee_phone"))
     if not contact and create_contact:
         contact = _crm_calendly_new_contact(data, payload)
         _crm_calendly_relink_appointments(data, contact)
@@ -6353,6 +6403,50 @@ def _crm_upsert_calendly_appointment(
         _crm_activity(contact, "calendly", title, detail)
         contact["updated_at"] = now
     return appointment, contact
+
+
+def _crm_calendly_fetch_contact_appointments(data, contact):
+    """Fetch only the events Calendly associates with this contact's email."""
+    email = _crm_normalize_email(contact.get("mail"))
+    if not email:
+        return [], {"method": "phone_cache", "processed_events": 0}
+
+    context = _calendly_context_from_data(data)
+    params = {
+        "count": 100,
+        "sort": "start_time:desc",
+        "invitee_email": email,
+    }
+    if context.get("scope") == "user":
+        params["user"] = context["user"]
+    else:
+        params["organization"] = context["organization"]
+
+    scheduled_events = _calendly_paginated_collection(
+        "/scheduled_events",
+        params=params,
+        max_pages=100,
+    )
+    payloads = []
+    for scheduled_event in scheduled_events:
+        event_uuid = _calendly_resource_uuid(
+            scheduled_event.get("uri"),
+            "scheduled_events",
+        )
+        if not event_uuid:
+            continue
+        invitees = _calendly_paginated_collection(
+            f"/scheduled_events/{event_uuid}/invitees",
+            params={"count": 100, "email": email},
+            max_pages=100,
+        )
+        for invitee in invitees:
+            if _crm_normalize_email(invitee.get("email")) == email:
+                payloads.append({**invitee, "scheduled_event": scheduled_event})
+    return payloads, {
+        "method": "email",
+        "processed_events": len(scheduled_events),
+    }
 
 
 def _calendly_phone_number(value):
@@ -6700,16 +6794,57 @@ def crm_contact_calendly_appointments(contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
 
     if request.method == "GET":
-        if _crm_calendly_relink_appointments(data, contact):
-            save_data(data)
+        lookup = {"method": "local", "processed_events": 0}
+        lookup_warning = ""
+        fetched_payloads = []
+        state = data.get("crm_calendly") or {}
+        can_lookup_by_email = bool(
+            _calendly_token()
+            and state.get("user")
+            and state.get("organization")
+            and _crm_normalize_email(contact.get("mail"))
+        )
+        if can_lookup_by_email:
+            try:
+                fetched_payloads, lookup = _crm_calendly_fetch_contact_appointments(
+                    data,
+                    contact,
+                )
+            except (CalendlyAPIError, RuntimeError) as exc:
+                lookup_warning = str(exc)
+
+        latest_data = load_data()
+        latest_contact = _crm_contact(latest_data, contact_id)
+        if not latest_contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        changed = False
+        for fetched_payload in fetched_payloads:
+            _crm_upsert_calendly_appointment(
+                latest_data,
+                fetched_payload,
+                source="targeted_lookup",
+                contact_id=contact_id,
+                create_contact=False,
+                record_activity=False,
+            )
+            changed = True
+        if _crm_calendly_relink_appointments(latest_data, latest_contact):
+            changed = True
+        if changed:
+            save_data(latest_data)
         appointments = [
-            item for item in data.get("crm_calendly_appointments", [])
+            item for item in latest_data.get("crm_calendly_appointments", [])
             if item.get("contact_id") == contact_id
         ]
         appointments.sort(key=lambda item: item.get("start_time") or "", reverse=True)
+        integration = _crm_calendly_status_payload(latest_data)
+        if lookup_warning:
+            integration["lookup_warning"] = lookup_warning
+        lookup["matched_appointments"] = len(appointments)
         return jsonify({
             "appointments": appointments,
-            "integration": _crm_calendly_status_payload(data),
+            "integration": integration,
+            "lookup": lookup,
         })
 
     payload = request.get_json(silent=True) or {}

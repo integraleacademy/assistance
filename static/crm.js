@@ -16,7 +16,7 @@ function showContact(id){
   if(!c)return;
   history.pushState({},'',`/CRM/contacts?fiche=${id}`);
   page.innerHTML=`<button class="btn" id="backList">← Retour</button><div class="contact-head"><span class="avatar">${initials(c)}</span><div><h1>${esc(c.prenom)} ${esc(c.nom)}</h1><p>${c.statut==='Converti'?'Inscrit':'Piste'} · Créé le ${new Date(c.created_at).toLocaleDateString('fr-FR')}</p></div><div class="contact-actions"><button class="btn blue" id="actionsBtn" aria-expanded="false">Actions ▾</button><div class="actions-menu" id="actionsMenu"><button id="calendarBtn">◷ Planifier un rendez-vous</button><button id="mailBtn">✉ Envoyer un mail</button><button id="smsBtn">▣ Envoyer un SMS</button><button id="callBtn">☎ Consigner un appel</button><button id="reminderBtn">◫ Programmer un rappel</button></div></div></div><div class="timeline">${S.map((s,i)=>`<button data-step="${s}" class="${s===c.statut?'current':i<S.indexOf(c.statut)?'done':''}">${s}</button>`).join('')}</div>
-  <section class="card calendly-card" id="calendlyCard"><div class="card-head"><div><h2>Rendez-vous Calendly</h2><small>Tous les rendez-vous et tous les types Calendly</small></div><button class="btn" id="syncCalendlyBtn">↻ Synchroniser</button></div><div class="appointment-list" id="appointmentList"><div class="activity-empty">Chargement des rendez-vous…</div></div><div id="calendlyIntegration"></div></section>
+  <section class="card calendly-card" id="calendlyCard"><div class="card-head"><div><h2>Rendez-vous Calendly</h2><small>Recherche directe par e-mail ou téléphone</small></div><button class="btn" id="syncCalendlyBtn">↻ Actualiser</button></div><div class="appointment-list" id="appointmentList"><div class="activity-empty">Recherche des rendez-vous de cette personne…</div></div><div id="calendlyIntegration"></div></section>
   <div class="detail-grid"><section class="card form-card"><div class="card-head form-main-head"><h2>Informations du contact</h2><span class="save-state" id="saveState">✓ Enregistré</span></div><form class="fields" id="contactForm">
   <div class="form-section"><h3>Contact</h3><div class="section-fields">${[['prenom','Prénom','text'],['nom','Nom','text'],['telephone','Téléphone','tel'],['mail','E-mail','email']].map(f=>`<div class="field"><label>${f[1]}</label><input name="${f[0]}" type="${f[2]}" value="${esc(c[f[0]])}"></div>`).join('')}</div></div>
   <div class="form-section"><h3>Formation</h3><div class="section-fields"><div class="field"><label>Formation souhaitée</label><select name="formation">${['APS','A3P','DESP','SSIAP 1','Chauffeur VTC'].map(x=>`<option ${c.formation===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Lieu</label><select name="lieu"></select></div><div class="field full"><label>Dates souhaitées</label><select name="dates_formation"></select><small class="field-help" id="sessionHelp"></small></div><div class="field conditional" data-show="desp"><label>Parcours DESP</label><select name="desp_type"><option></option><option ${c.desp_type==='INITIAL'?'selected':''}>INITIAL</option><option ${c.desp_type==='VAE'?'selected':''}>VAE</option></select></div></div></div>
@@ -44,7 +44,7 @@ function bindContact(c){
   mailBtn.onclick=()=>messageModal(c,'email');
   smsBtn.onclick=()=>messageModal(c,'sms');
   reminderBtn.onclick=()=>relaunchModal(c);
-  syncCalendlyBtn.onclick=()=>syncCalendlyAll(c,true);
+  syncCalendlyBtn.onclick=()=>loadCalendlyAppointments(c,true);
   document.querySelectorAll('[data-preview]').forEach(a=>a.onclick=()=>previewModal(decodeURIComponent(a.dataset.preview)));
   loadCalendlyAppointments(c);
 }
@@ -85,22 +85,25 @@ function renderCalendlyAppointments(c,items,integration){
   }else if(!integration.connected){
     box.innerHTML=`<div class="integration-banner"><div><b>Calendly est prêt à être relié</b><span>Activez l’import de tous les rendez-vous et l’écoute en temps réel.</span></div>${C.is_admin?'<button class="btn blue" id="setupCalendlyBtn">Activer Calendly</button>':''}</div>`;
   }else{
-    box.innerHTML=`<div class="integration-banner success"><div><b>Synchronisation Calendly active</b><span>${integration.scope==='organization'?'Toute l’organisation':'Compte Calendly du jeton'} · Tous les types${integration.last_full_sync_at?` · Import complet ${fmt(integration.last_full_sync_at)}`:''}</span></div></div>`;
+    box.innerHTML=`<div class="integration-banner success"><div><b>Calendly connecté</b><span>Recherche immédiate par e-mail · Correspondance automatique par téléphone · Tous les types</span></div></div>`;
   }
+  if(integration.lookup_warning)box.insertAdjacentHTML('beforeend',`<div class="integration-banner warning"><div><b>Recherche Calendly incomplète</b><span>${esc(integration.lookup_warning)}</span></div></div>`);
   const setup=document.querySelector('#setupCalendlyBtn');
   if(setup)setup.onclick=()=>setupCalendly(c);
   const sync=document.querySelector('#syncCalendlyBtn');
   if(sync)sync.style.display=C.is_admin&&integration.connected?'inline-flex':'none';
 }
-async function loadCalendlyAppointments(c){
-  const timeout=new Promise((_,reject)=>setTimeout(()=>reject(Error('Le chargement Calendly a pris trop de temps. Cliquez sur Synchroniser pour réessayer.')),15000));
+async function loadCalendlyAppointments(c,manual=false){
+  const button=document.querySelector('#syncCalendlyBtn'),list=document.querySelector('#appointmentList');
+  if(button&&manual){button.disabled=true;button.textContent='Recherche…'}
+  if(list&&manual)list.innerHTML=`<div class="activity-empty">Recherche des rendez-vous de ${esc(c.prenom||'cette personne')}…</div>`;
+  const timeout=new Promise((_,reject)=>setTimeout(()=>reject(Error('La recherche Calendly a pris trop de temps. Cliquez sur Actualiser pour réessayer.')),15000));
   try{
     const result=await Promise.race([api(`/api/crm/contacts/${c.id}/calendly/appointments`),timeout]);
     renderCalendlyAppointments(c,result.appointments||[],result.integration||{});
   }catch(e){
-    const list=document.querySelector('#appointmentList');
     if(list)list.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;
-  }
+  }finally{if(button){button.disabled=false;button.textContent='↻ Actualiser'}}
 }
 async function setupCalendly(c){
   const button=document.querySelector('#setupCalendlyBtn');
@@ -108,23 +111,9 @@ async function setupCalendly(c){
   try{
     const result=await api('/api/crm/calendly/setup',{method:'POST',body:'{}'});
     if(result.warning)toast(result.warning);
-    await syncCalendlyAll(c,true);
+    await loadCalendlyAppointments(c,true);
+    toast('Calendly activé');
   }catch(e){toast(e.message,true);if(button){button.disabled=false;button.textContent='Activer Calendly'}}
-}
-async function syncCalendlyAll(c,restart=false){
-  const button=document.querySelector('#syncCalendlyBtn');
-  const list=document.querySelector('#appointmentList');
-  if(button){button.disabled=true;button.textContent='Synchronisation…'}
-  let first=true,total=0;
-  try{
-    for(let pageNumber=0;pageNumber<250;pageNumber++){
-      const result=await api('/api/crm/calendly/sync',{method:'POST',body:JSON.stringify({restart:restart&&first})});
-      first=false;total+=result.appointments||0;
-      if(list)list.innerHTML=`<div class="activity-empty">Synchronisation Calendly… ${total} rendez-vous traités</div>`;
-      if(result.complete){toast(`Synchronisation terminée · ${total} rendez-vous traités`);break}
-    }
-    await loadCalendlyAppointments(c);
-  }catch(e){toast(e.message,true);await loadCalendlyAppointments(c)}finally{if(button){button.disabled=false;button.textContent='↻ Synchroniser'}}
 }
 function calendlyQuestionHtml(question,c){
   const required=question.required?' required':'';
