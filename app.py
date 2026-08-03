@@ -6982,7 +6982,7 @@ def crm_contact_wedof_refresh(contact_id):
 @app.route("/crm/<section>")
 @login_required
 def crm(section):
-    if section not in {"accueil", "contacts", "pistes", "relances", "inscrits", "modeles"}:
+    if section not in {"accueil", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "modeles"}:
         abort(404)
     return render_template("crm.html", section=section, statuses=CRM_STATUSES, user=current_user())
 
@@ -7057,6 +7057,30 @@ def _calendly_create_or_reuse_webhook(context, scope, callback_url):
 @login_required
 def crm_calendly_status():
     return jsonify(_crm_calendly_status_payload(load_data()))
+
+
+@app.route("/api/crm/calendly/appointments")
+@login_required
+def crm_calendly_appointments():
+    """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
+    data = load_data()
+    contacts = {item.get("id"): item for item in data.get("crm_contacts", [])}
+    appointments = []
+    for item in data.get("crm_calendly_appointments", []):
+        contact = contacts.get(item.get("contact_id")) or {}
+        appointments.append({
+            **item,
+            "contact": {
+                "id": contact.get("id", ""),
+                "prenom": contact.get("prenom", ""),
+                "nom": contact.get("nom", ""),
+                "formation": contact.get("formation", ""),
+                "telephone": contact.get("telephone", ""),
+                "mail": contact.get("mail", ""),
+            },
+        })
+    appointments.sort(key=lambda item: item.get("start_time") or "")
+    return jsonify({"appointments": appointments, "integration": _crm_calendly_status_payload(data)})
 
 
 @app.route("/api/crm/calendly/setup", methods=["POST"])
