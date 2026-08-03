@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading
 import html as html_module
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -651,38 +651,33 @@ def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_
 
 # ---------- USERS (chargés depuis les variables d'environnement) ----------
 # Si tu as mis les variables dans Render / .env : on les lit ici.
+_CRM_ACCOUNTS = (
+    ("clement@integraleacademy.com", "Clément VAILLANT", "admin", "CRM_CLEMENT_PASSWORD_HASH"),
+    ("cassandre@integraleacademy.com", "Cassandre MENARD", "user", "CRM_CASSANDRE_PASSWORD_HASH"),
+    ("aurelie@integraleacademy.com", "Aurélie CHAUSSEZ", "user", "CRM_AURELIE_PASSWORD_HASH"),
+    ("elsa@integraleacademy.com", "Elsa DUQUESNE", "user", "CRM_ELSA_PASSWORD_HASH"),
+)
+
 USERS = {
-    os.getenv("USER_ELSA_EMAIL", "elsaduq83@gmail.com").lower(): {
-        "name": "Elsa",
-        "role": "user",
-        # si tu veux stocker le mot de passe en clair (pas top), on lit USER_ELSA_PASS
-        # Si tu préfères stocker un hash dans env, remplace par la valeur hashée
-        "pass": os.getenv("USER_ELSA_PASS", "Lv15052021@")
-    },
-    os.getenv("USER_MOHAMED_EMAIL", "accueil@integraleacademy.com").lower(): {
-        "name": "Mohamed",
-        "role": "user",
-        "pass": os.getenv("USER_MOHAMED_PASS", "Lv15052021@")
-    },
-    os.getenv("USER_CLEMENT_EMAIL", "clement@integraleacademy.com").lower(): {
-        "name": "Clément",
-        "role": "admin",   # Clément = super-admin (voit tout)
-        "pass": os.getenv("USER_CLEMENT_PASS", "Lv15052021@")
-    }
+    email: {"email": email, "name": name, "role": role, "password_hash_env": hash_env}
+    for email, name, role, hash_env in _CRM_ACCOUNTS
 }
 
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 from datetime import timedelta
 
-app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_ME_LONG_RANDOM")
+_secret_key = os.environ.get("SECRET_KEY")
+if not _secret_key and (os.environ.get("RENDER") or os.environ.get("FLASK_ENV") == "production"):
+    raise RuntimeError("SECRET_KEY doit être configurée en production")
+app.secret_key = _secret_key or os.urandom(32)
 
 app.config.update(
     SESSION_COOKIE_NAME="integrale_assistance_session",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=True,  # Render = https
-    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
 )
 
 @app.before_request
@@ -1818,13 +1813,11 @@ def current_user():
 
 
 def can_manage_admin_devis_rappels():
-    """Autorise Clément et Mohamed à gérer les rappels Demoiselles du téléphone."""
+    """Réserve la gestion des rappels à l'administrateur."""
     user = current_user()
     if not user:
         return False
-    if user.get("role") == "admin":
-        return True
-    return (user.get("name") or "").strip().lower() == "mohamed"
+    return user.get("role") == "admin"
 
 
 # -------------------------------------------------------------------
@@ -2312,38 +2305,76 @@ def confirmation():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if session.get("user_email"):
+        return redirect(url_for("crm"))
+
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         user = USERS.get(email)
 
-        if not user:
-            flash("Identifiants incorrects", "error")
-            return redirect(url_for("login"))
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+        if not _login_attempt_allowed(client_ip):
+            flash("Trop de tentatives. Veuillez patienter quelques minutes.", "error")
+            return render_template("login.html"), 429
 
-        expected = user.get("pass")
+        password_hash = os.environ.get(user["password_hash_env"]) if user else None
+        if user and not password_hash:
+            app.logger.warning("Compte CRM désactivé : variable %s absente", user["password_hash_env"])
 
-        if expected and password == expected:
+        if user and password_hash and check_password_hash(password_hash, password):
+            _clear_login_attempts(client_ip)
+            session.clear()  # renouvelle les données et l'identité de la session
             session["user_email"] = email
-            session["user_name"] = user.get("name")
-            session["user_role"] = user.get("role")
+            session["user_name"] = user["name"]
+            session["user_role"] = user["role"]
+            session.permanent = True
 
-            session.permanent = True  # ✅ cookie persistant (30 jours)
-
-            next_url = request.args.get("next") or url_for("admin")
+            next_url = _safe_next_url(request.args.get("next")) or url_for("crm")
             return redirect(next_url)
 
+        _record_login_failure(client_ip)
+
         flash("Identifiants incorrects", "error")
-        return redirect(url_for("login"))
+        return render_template("login.html"), 401
 
     return render_template("login.html")
 
 
-@app.route("/logout")
+_LOGIN_ATTEMPTS = {}
+_LOGIN_ATTEMPTS_LOCK = threading.Lock()
+_LOGIN_WINDOW_SECONDS = 5 * 60
+_LOGIN_MAX_ATTEMPTS = 5
+
+
+def _safe_next_url(value):
+    """Accepte uniquement un chemin absolu interne, jamais une URL externe."""
+    if value and value.startswith("/") and not value.startswith("//") and "\\" not in value:
+        return value
+    return None
+
+
+def _login_attempt_allowed(client_ip):
+    now = time.monotonic()
+    with _LOGIN_ATTEMPTS_LOCK:
+        failures = [stamp for stamp in _LOGIN_ATTEMPTS.get(client_ip, []) if now - stamp < _LOGIN_WINDOW_SECONDS]
+        _LOGIN_ATTEMPTS[client_ip] = failures
+        return len(failures) < _LOGIN_MAX_ATTEMPTS
+
+
+def _record_login_failure(client_ip):
+    with _LOGIN_ATTEMPTS_LOCK:
+        _LOGIN_ATTEMPTS.setdefault(client_ip, []).append(time.monotonic())
+
+
+def _clear_login_attempts(client_ip):
+    with _LOGIN_ATTEMPTS_LOCK:
+        _LOGIN_ATTEMPTS.pop(client_ip, None)
+
+
+@app.route("/logout", methods=["GET", "POST"])
 def logout():
-    session.pop("user_email", None)
-    session.pop("user_name", None)
-    session.pop("user_role", None)
+    session.clear()
     return redirect(url_for("login"))
 
 
@@ -7017,7 +7048,7 @@ def crm(section):
 @login_required
 def crm_uppercase(section):
     """Préserve les liens historiques qui utilisent le chemin CRM en majuscules."""
-    return crm(section)
+    return redirect(url_for("crm", section=section))
 
 
 def _crm_calendly_status_payload(data):

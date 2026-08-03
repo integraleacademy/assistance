@@ -40,7 +40,7 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
 
 def test_crm_pages_and_templates(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    page = c.get("/CRM/pistes")
+    page = c.get("/CRM/pistes", follow_redirects=True)
     assert page.status_code == 200
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
@@ -52,7 +52,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
 def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
 
-    page = c.get("/CRM/relances")
+    page = c.get("/CRM/relances", follow_redirects=True)
     assert page.status_code == 200
 
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
