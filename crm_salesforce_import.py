@@ -504,18 +504,34 @@ def import_salesforce_rows(
     }
 
 
-def register_salesforce_import(app) -> None:
+def register_salesforce_import(
+    app,
+    *,
+    current_user_fn=None,
+    load_data_fn=None,
+    login_required_fn=None,
+    save_data_fn=None,
+) -> None:
     """Enregistre la route d'import sur l'application Flask existante."""
     if "crm_import_salesforce" in app.view_functions:
         return
 
     from flask import jsonify, request
-    from app import current_user, load_data, login_required, save_data
+    if any(
+        dependency is None
+        for dependency in (current_user_fn, load_data_fn, login_required_fn, save_data_fn)
+    ):
+        from app import current_user, load_data, login_required, save_data
+
+        current_user_fn = current_user_fn or current_user
+        load_data_fn = load_data_fn or load_data
+        login_required_fn = login_required_fn or login_required
+        save_data_fn = save_data_fn or save_data
 
     @app.route("/api/crm/import-salesforce", methods=["POST"], endpoint="crm_import_salesforce")
-    @login_required
+    @login_required_fn
     def crm_import_salesforce():
-        user = current_user() or {}
+        user = current_user_fn() or {}
         if user.get("role") != "admin":
             return jsonify({"error": "Seul un administrateur peut importer des pistes Salesforce."}), 403
 
@@ -529,7 +545,7 @@ def register_salesforce_import(app) -> None:
 
         try:
             rows = parse_salesforce_csv(upload.read(MAX_CSV_BYTES + 1))
-            data = load_data()
+            data = load_data_fn()
             contacts = data.setdefault("crm_contacts", [])
             result = import_salesforce_rows(
                 contacts,
@@ -547,7 +563,7 @@ def register_salesforce_import(app) -> None:
                         for key in ("csv_rows", "prepared_rows", "created", "updated", "unchanged")
                     },
                 }
-                save_data(data)
+                save_data_fn(data)
             return jsonify(result)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400

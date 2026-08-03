@@ -7719,6 +7719,20 @@ def crm_send_message(contact_id):
     return jsonify(contact)
 
 
+# La plateforme peut charger directement ``app:app`` sans passer par le
+# point d'entrée ``crm_app``. Enregistrer l'extension ici garantit alors que
+# l'API affichée dans le CRM est bien disponible quel que soit le démarrage.
+from crm_salesforce_import import register_salesforce_import
+
+register_salesforce_import(
+    app,
+    current_user_fn=current_user,
+    load_data_fn=load_data,
+    login_required_fn=login_required,
+    save_data_fn=save_data,
+)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False)
