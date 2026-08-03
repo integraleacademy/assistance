@@ -263,3 +263,14 @@
 /* Résultat des rendez-vous, modifiable dans l'agenda et sur la fiche contact. */
 .calendar-event div .calendar-host{display:block;margin-top:5px;color:#405574;font-size:10px;font-weight:700}.calendar-event-side{display:flex;align-items:flex-end;gap:8px;flex-direction:column}.appointment-response{display:flex;align-items:center;gap:6px;color:#66758b;font-size:9px;font-weight:750}.appointment-response select{min-width:112px;padding:5px 22px 5px 7px;border:1px solid #d6deea;border-radius:8px;background:#fff;color:#30425e;font:700 10px Manrope}.appointment-main>.appointment-response{margin-top:9px;width:max-content}.appointment-main>.appointment-response select{min-width:125px}
 @media(max-width:650px){.calendar-event-side{grid-column:3;align-items:flex-start}.calendar-event-side .calendar-duration{display:none}.appointment-response{align-items:flex-start;flex-direction:column}.appointment-response select{min-width:130px}}
+
+/* Code couleur métier du calendrier CRM. */
+.calendar-event[class*="calendar-training-"]{border-left:5px solid var(--calendar-training-color,#94a3b8)}
+.calendar-event[class*="calendar-training-"]>i{background:var(--calendar-training-color,#94a3b8)}
+.calendar-training-desp{--calendar-training-color:#f28c28}
+.calendar-training-aps{--calendar-training-color:#356ae6}
+.calendar-training-a3p{--calendar-training-color:#14a37f}
+.calendar-training-vtc{--calendar-training-color:#7c5ce7}
+.calendar-training-ssiap{--calendar-training-color:#e24b5b}
+.actions-menu .delete-action{margin-top:5px;border-top:1px solid #f2d7da;color:#c43e4d}
+.actions-menu .delete-action:hover{background:#fff1f2;color:#ad2635}
