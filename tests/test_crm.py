@@ -108,34 +108,45 @@ def test_crm_email_has_branding_and_legal_footer(tmp_path, monkeypatch):
     assert "Votre avenir, notre engagement" not in captured["html"]
 
 
-def test_crm_conversion_creates_remote_trainee_before_changing_status(tmp_path, monkeypatch):
+def test_crm_conversion_prefills_remote_registration_before_changing_status(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"}).get_json()
     c.patch(f"/api/crm/contacts/{contact['id']}", json={
         "mail": "lina@example.com", "telephone": "0600000000", "lieu": "Paris",
-        "dates_formation": "Du 1 au 5 septembre 2026",
+        "dates_formation": "Du 1 au 5 septembre 2026", "desp_type": "Initial",
+        "commentaires": "Financement validé.",
     })
-    monkeypatch.setenv("GESTION_STAGIAIRES_API_URL", "https://gestion.example/api/stagiaires")
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_URL", "https://gestion.example/api/preremplissage")
     monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", "secret")
     captured = {}
 
     def fake_post(url, **kwargs):
         captured.update(url=url, **kwargs)
         return SimpleNamespace(status_code=201, content=b'{}', json=lambda: {
-            "id": "stagiaire-42", "url": "https://gestion.example/stagiaires/42",
+            "url": "https://gestion.example/inscriptions/nouveau?jeton=temporary",
         })
 
     monkeypatch.setattr(application.requests, "post", fake_post)
     response = c.post(f"/api/crm/contacts/{contact['id']}/convertir")
 
     assert response.status_code == 200
-    converted = response.get_json()
+    result = response.get_json()
+    converted = result["contact"]
     assert converted["statut"] == "Converti"
-    assert converted["gestion_stagiaire_id"] == "stagiaire-42"
+    assert result["url"] == "https://gestion.example/inscriptions/nouveau?jeton=temporary"
     assert converted["activities"][0]["kind"] == "conversion"
+    assert converted["activities"][0]["title"] == "Dossier d’inscription ouvert dans Gestion stagiaires"
+    assert "gestion_stagiaire_id" not in converted
     assert captured["json"]["email"] == "lina@example.com"
+    assert captured["json"] == {
+        "source": "integrale-connect-crm", "crm_contact_id": contact["id"],
+        "prenom": "Lina", "nom": "Martin", "email": "lina@example.com",
+        "telephone": "0600000000", "formation": "APS", "parcours": "Initial",
+        "centre": "Paris", "session": "Du 1 au 5 septembre 2026",
+        "commentaires": "Financement validé.",
+    }
     assert captured["headers"]["Authorization"] == "Bearer secret"
-    assert captured["headers"]["Idempotency-Key"] == f"crm-contact-{contact['id']}"
+    assert "Idempotency-Key" not in captured["headers"]
 
 
 def test_crm_conversion_does_not_change_status_when_remote_rejects(tmp_path, monkeypatch):
@@ -144,7 +155,7 @@ def test_crm_conversion_does_not_change_status_when_remote_rejects(tmp_path, mon
     c.patch(f"/api/crm/contacts/{contact['id']}", json={
         "mail": "lina@example.com", "lieu": "Paris", "dates_formation": "Septembre 2026",
     })
-    monkeypatch.setenv("GESTION_STAGIAIRES_API_URL", "https://gestion.example/api/stagiaires")
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_URL", "https://gestion.example/api/preremplissage")
     monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", "secret")
     monkeypatch.setattr(application.requests, "post", lambda *args, **kwargs: SimpleNamespace(
         status_code=422, content=b'{}', json=lambda: {"error": "Session inconnue"}))
@@ -154,3 +165,17 @@ def test_crm_conversion_does_not_change_status_when_remote_rejects(tmp_path, mon
     assert response.status_code == 502
     assert response.get_json()["error"] == "Session inconnue"
     assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["statut"] == "Nouveaux"
+
+
+def test_crm_conversion_javascript_opens_and_closes_registration_tab():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "function conversionModal" not in crm_js
+    assert "Inscrire dans Gestion stagiaires" not in crm_js
+    open_tab = "const registrationTab=window.open('','_blank')"
+    backend_call = "await api(`/api/crm/contacts/${c.id}/convertir`"
+    assert open_tab in crm_js
+    assert crm_js.index(open_tab) < crm_js.index(backend_call)
+    assert "registrationTab.location.href=result.url" in crm_js
+    assert "catch(e){registrationTab.close();toast(e.message,true)}" in crm_js

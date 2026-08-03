@@ -36,8 +36,6 @@
 .section-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:16px}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
 @media(max-width:650px){.section-fields{grid-template-columns:1fr}.contact-actions{width:auto;margin-left:auto}.actions-menu{right:0}.timeline button{min-width:110px}}
-.conversion-modal{width:min(560px,100%)}
-.conversion-summary{display:grid;gap:12px}.conversion-summary>div{display:grid;gap:4px;padding:14px 16px;border:1px solid var(--line);border-radius:11px;background:#f8faff}.conversion-summary small{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.conversion-summary b{font:700 14px Manrope}.conversion-summary span{color:#5d6c82;font-size:12px}.conversion-note{margin:16px 0 0;padding:11px 13px;border-radius:9px;background:#eaf8f3;color:#14785f;font-size:12px}
 
 /* Calendly : tableau de rendez-vous et réservation au style SaaS. */
 .calendly-card{margin-bottom:20px;overflow:hidden;border-color:#dce5f2;border-radius:20px;box-shadow:0 10px 34px #1720330b}
