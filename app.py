@@ -7083,6 +7083,32 @@ def crm_calendly_appointments():
     return jsonify({"appointments": appointments, "integration": _crm_calendly_status_payload(data)})
 
 
+@app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
+@login_required
+def crm_calendly_update_appointment(appointment_id):
+    """Enregistre le résultat de la prise de contact associée à un rendez-vous."""
+    payload = request.get_json(silent=True) or {}
+    response_status = str(payload.get("response_status") or "").strip()
+    if response_status not in {"", "answered", "no_answer"}:
+        return jsonify({"error": "Résultat du rendez-vous invalide."}), 400
+
+    data = load_data()
+    appointment = next(
+        (item for item in data.get("crm_calendly_appointments", [])
+         if item.get("id") == appointment_id),
+        None,
+    )
+    if not appointment:
+        return jsonify({"error": "Rendez-vous introuvable"}), 404
+
+    now = _crm_now()
+    appointment["response_status"] = response_status
+    appointment["response_status_updated_at"] = now
+    appointment["updated_at"] = now
+    save_data(data)
+    return jsonify(appointment)
+
+
 @app.route("/api/crm/calendly/setup", methods=["POST"])
 @login_required
 def crm_calendly_setup():

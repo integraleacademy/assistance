@@ -104,6 +104,36 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     assert updated_contact["activities"][0]["title"] == "Rendez-vous Calendly annulé"
 
 
+def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    created = signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
+    appointment_id = client.get(
+        "/api/crm/calendly/appointments"
+    ).get_json()["appointments"][0]["id"]
+
+    response = client.patch(
+        f"/api/crm/calendly/appointments/{appointment_id}",
+        json={"response_status": "no_answer"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["response_status"] == "no_answer"
+    calendar_appointment = client.get(
+        "/api/crm/calendly/appointments"
+    ).get_json()["appointments"][0]
+    assert calendar_appointment["response_status"] == "no_answer"
+    contact_appointment = client.get(
+        f"/api/crm/contacts/{created.get_json()['contact_id']}/calendly/appointments"
+    ).get_json()["appointments"][0]
+    assert contact_appointment["response_status"] == "no_answer"
+
+    invalid = client.patch(
+        f"/api/crm/calendly/appointments/{appointment_id}",
+        json={"response_status": "unknown"},
+    )
+    assert invalid.status_code == 400
+
+
 def test_webhook_creates_a_lead_for_a_new_invitee(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
 
@@ -472,6 +502,11 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "calendarDateKey(new Date(a.start_time))===calendarSelectedDate",
         "changeCalendarDate(-1)",
         "changeCalendarDate(1)",
+        "Interlocuteur :",
+        "appointmentResponseControl(a)",
+        "bindAppointmentResponseControls(items,()=>loadCalendar())",
+        "A répondu",
+        "Sans réponse",
     ]
     for marker in required_markers:
         assert marker in crm_js
@@ -485,5 +520,6 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         ".calendly-modal{",
         ".calendar-date-picker label{",
         ".calendar-empty{",
+        ".appointment-response{",
     ]:
         assert marker in crm_css
