@@ -530,9 +530,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   <div class="wrap form-card">
     <div class="brand">
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy">
-      <h1>✨ Parlez-nous de votre projet de formation</h1>
+      <h1>{% if secretariat %}Assistant de prise d'appel{% else %}✨ Parlez-nous de votre projet de formation{% endif %}</h1>
     </div>
-    <p class="intro">Prenons 2 minutes pour faire connaissance 🤝</p>
+    <p class="intro">{% if secretariat %}Suivez les écrans dans l'ordre avec l'appelant.{% else %}Prenons 2 minutes pour faire connaissance 🤝{% endif %}</p>
     <p class="purpose-note">Toutes ces informations vont nous permettre d'assurer un meilleur traitement et un meilleur suivi de votre demande.</p>
     <div class="form-progress" id="formProgress">
       <div class="progress-pill active" data-pill="1">1. Contact</div>
@@ -540,12 +540,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <div class="progress-pill" data-pill="3">3. Centre</div>
       <div class="progress-pill" data-pill="4">4. Dates</div>
       <div class="progress-pill" data-pill="5">5. Financement</div>
+      {% if secretariat %}<div class="progress-pill" data-pill="6">6. Rendez-vous</div>{% endif %}
     </div>
 
     <div class="form-wrapper">
     <form method="POST" id="infosForm" class="steps-viewport">
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
-      <input type="hidden" name="source_secretariat" id="sourceSecretariat" value="">
+      <input type="hidden" name="source_secretariat" id="sourceSecretariat" value="{{ '1' if secretariat else '' }}">
       <input type="hidden" name="draft_form_id" id="draftFormIdField" value="">
       <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
       <div class="steps-track" id="slides">
@@ -846,6 +847,22 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       </div>
 
       </div>
+      {% if secretariat %}
+      <div class="form-step">
+        <section class="section" id="step6" data-step="6">
+          <h2 class="step-title"><span class="step-num">6</span> Organiser le suivi téléphonique</h2>
+          <p class="purpose-note">Dernière étape : indiquez le rendez-vous convenu avec l'appelant, puis consignez les informations utiles pour l'équipe qui assurera le suivi.</p>
+          <div class="grid">
+            <div class="full"><label for="rdvTelephonique">Date et heure du rendez-vous téléphonique</label><input id="rdvTelephonique" type="datetime-local" name="rdv_telephonique" required></div>
+            <div class="full"><label for="commentairesSecretariat">Commentaires de la secrétaire</label><textarea id="commentairesSecretariat" name="commentaires_secretariat" rows="6" placeholder="Questions posées, situation de l'appelant, disponibilités, points à reprendre…"></textarea></div>
+          </div>
+        </section>
+        <div class="nav-actions form-actions">
+          <button type="button" class="close-btn" data-nav="prev">Retour</button>
+          <button class="submit" data-nav="submit" type="submit">Enregistrer et terminer</button>
+        </div>
+      </div>
+      {% endif %}
       </div>
     </form>
     </div>
@@ -907,7 +924,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const centreFrameOverlay = document.getElementById('centreFrameOverlay');
     const centreFrameMessage = document.getElementById('centreFrameMessage');
     const retryCentreFrame = document.getElementById('retryCentreFrame');
-    const stepElements = [1, 2, 3, 4, 5].map((n) => document.querySelector(`[data-step="${n}"]`));
+    const isSecretariat = {{ secretariat|tojson }};
+    const stepElements = [1, 2, 3, 4, 5, 6].map((n) => document.querySelector(`[data-step="${n}"]`));
     const progressPills = Array.from(document.querySelectorAll('[data-pill]'));
     const slides = Array.from(document.querySelectorAll('.form-step'));
     const slidesWrap = document.getElementById('slides');
@@ -1422,6 +1440,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     }
 
     function shouldShowSubmitOnStep5() {
+      if (isSecretariat) return currentStep === 5;
       return currentStep === 4 && step5ManualIndex === 4;
     }
 
@@ -1459,6 +1478,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         updateStep5Flow();
         updateStep();
         scrollToFormTop();
+      } else if (isSecretariat) {
+        goToSlide(5);
       }
     }
 

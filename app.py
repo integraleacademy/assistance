@@ -2844,8 +2844,9 @@ def demande_informations_formations():
                 "formation": form_data.get("formation", ""),
                 "nom": " ".join(filter(None, [demande_entry["prenom"], demande_entry["nom"]])),
                 "telephone": demande_entry["telephone"], "email": demande_entry["mail"],
-                "notes": "Formulaire de demande d’informations complété par le secrétariat.",
-                "rdv": "", "statut": "RDV à prendre",
+                "notes": form_data.get("commentaires_secretariat", "").strip(),
+                "rdv": form_data.get("rdv_telephonique", "").strip(),
+                "statut": "Traité" if form_data.get("rdv_telephonique") else "RDV à prendre",
                 "created_at": now_secretariat.isoformat(),
                 "date": now_secretariat.strftime("%d/%m/%Y %H:%M"),
             })
@@ -3141,7 +3142,13 @@ def demande_informations_formations():
         return redirect(url_for("confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=form_data.get("formation", "")))
 
     gclid = (request.args.get("gclid") or "").strip()
-    return render_template("demande_informations_formations.html", sessions=sessions, formations=PLAN_FORMATIONS, gclid=gclid)
+    return render_template(
+        "demande_informations_formations.html",
+        sessions=sessions,
+        formations=PLAN_FORMATIONS,
+        gclid=gclid,
+        secretariat=request.args.get("secretariat") == "1",
+    )
 
 
 
