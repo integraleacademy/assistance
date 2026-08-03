@@ -209,6 +209,7 @@
 .wedof-tabs{display:flex;gap:5px;margin:0 0 18px;padding:5px;border:1px solid #dfe6f1;border-radius:14px;background:#f1f4f9;width:max-content;max-width:100%}
 .wedof-tab{min-width:145px;padding:10px 20px;border:0;border-radius:10px;background:transparent;color:#66758b;font:750 13px Manrope;cursor:pointer;transition:.18s ease}
 .wedof-tab:hover{color:#2659c7}.wedof-tab-active{background:#fff;color:#2458c6;box-shadow:0 3px 10px #192b4d16}.wedof-panel[hidden]{display:none}
+.wedof-tab-count{display:inline-grid;place-items:center;min-width:17px;height:17px;margin-left:7px;padding:0 5px;border-radius:999px;background:#356ae6;color:#fff;font-size:9px;font-weight:850;line-height:1}.wedof-tab-count[hidden]{display:none}
 .wedof-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:16px;padding:22px 24px;border-radius:20px;background:linear-gradient(120deg,#142e68,#2459c8 62%,#577dea);color:#fff;box-shadow:0 14px 35px #1d4ca829}
 .wedof-header h2{margin:3px 0;font:800 23px Manrope}.wedof-header p{margin:0;color:#dbe6ff;font-size:12px}.wedof-kicker{color:#aecdff;font-size:9px;font-weight:850;letter-spacing:.14em}
 .wedof-refresh{flex:none;padding:10px 14px;border:1px solid #ffffff52;border-radius:10px;background:#fff;color:#2458c5;font:750 11px Manrope;cursor:pointer;box-shadow:0 5px 16px #0b235b24}.wedof-refresh:disabled{opacity:.65;cursor:wait}
