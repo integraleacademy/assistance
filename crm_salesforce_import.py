@@ -20,6 +20,17 @@ from typing import Any, Iterable
 import pytz
 
 MAX_CSV_BYTES = 20 * 1024 * 1024
+SALESFORCE_IMPORT_YEAR = 2025
+EXCLUDED_SALESFORCE_FORMATIONS = {
+    "afc",
+    "aps + ssiap",
+    "bts",
+    "bts ci",
+    "bts mco",
+    "bts mos",
+    "bts mos 2025",
+    "bts mos 2026",
+}
 REQUIRED_COLUMNS = {"Id", "FirstName", "LastName"}
 HEADER_ALIASES = {
     "id": "Id",
@@ -144,6 +155,23 @@ def _formation(row: dict[str, str]) -> str:
         "bts pi": "BTS PI",
     }
     return aliases.get(folded, raw)
+
+
+def _salesforce_formation(row: dict[str, str]) -> str:
+    """Retourne le libellé source utilisé pour appliquer les exclusions métier."""
+    return _text(row.get("Type_de_formation__c")) or _text(row.get("Company"))
+
+
+def _is_import_year(value: Any) -> bool:
+    raw = _text(value)
+    if not raw:
+        return False
+    candidate = raw.replace("Z", "+00:00")
+    try:
+        return dt.datetime.fromisoformat(candidate).year == SALESFORCE_IMPORT_YEAR
+    except ValueError:
+        # Certains exports Excel présentent la date au format français.
+        return bool(re.search(rf"(?:^|\D){SALESFORCE_IMPORT_YEAR}(?:\D|$)", raw))
 
 
 def _desp_type(value: Any) -> str:
@@ -312,13 +340,21 @@ def _prepare_rows(
     *,
     include_converted: bool,
     deduplicate: bool,
-) -> tuple[list[dict[str, Any]], int, int, int]:
+) -> tuple[list[dict[str, Any]], int, int, int, int, int]:
     mapped_rows: list[dict[str, Any]] = []
     skipped_deleted = 0
     skipped_converted = 0
+    skipped_other_year = 0
+    skipped_formation = 0
     for row in rows:
         if _text(row.get("IsDeleted")) == "1":
             skipped_deleted += 1
+            continue
+        if not _is_import_year(row.get("CreatedDate")):
+            skipped_other_year += 1
+            continue
+        if _fold(_salesforce_formation(row)) in EXCLUDED_SALESFORCE_FORMATIONS:
+            skipped_formation += 1
             continue
         mapped = map_salesforce_row(row)
         if not include_converted and mapped.get("statut") == "Converti":
@@ -330,7 +366,14 @@ def _prepare_rows(
         for mapped in mapped_rows:
             sfid = _text(mapped.get("salesforce_id"))
             mapped["salesforce_ids"] = [sfid] if sfid else []
-        return mapped_rows, skipped_deleted, skipped_converted, 0
+        return (
+            mapped_rows,
+            skipped_deleted,
+            skipped_converted,
+            skipped_other_year,
+            skipped_formation,
+            0,
+        )
 
     parent = list(range(len(mapped_rows)))
 
@@ -384,7 +427,14 @@ def _prepare_rows(
         winner["salesforce_ids"] = salesforce_ids
         prepared.append(winner)
 
-    return prepared, skipped_deleted, skipped_converted, len(mapped_rows) - len(prepared)
+    return (
+        prepared,
+        skipped_deleted,
+        skipped_converted,
+        skipped_other_year,
+        skipped_formation,
+        len(mapped_rows) - len(prepared),
+    )
 
 
 def _indexes(contacts: list[dict[str, Any]]) -> tuple[
@@ -423,9 +473,14 @@ def import_salesforce_rows(
     now = dt.datetime.now(pytz.timezone("Europe/Paris")).isoformat()
     if dry_run:
         contacts = copy.deepcopy(contacts)
-    prepared, skipped_deleted, skipped_converted, duplicates_in_file = _prepare_rows(
-        rows, include_converted=include_converted, deduplicate=deduplicate
-    )
+    (
+        prepared,
+        skipped_deleted,
+        skipped_converted,
+        skipped_other_year,
+        skipped_formation,
+        duplicates_in_file,
+    ) = _prepare_rows(rows, include_converted=include_converted, deduplicate=deduplicate)
     by_sf, by_email, by_phone = _indexes(contacts)
     created_contacts: list[dict[str, Any]] = []
     created = updated = unchanged = matched_email = matched_phone = matched_sf = 0
@@ -527,6 +582,8 @@ def import_salesforce_rows(
         "duplicates_in_file": duplicates_in_file,
         "skipped_deleted": skipped_deleted,
         "skipped_converted": skipped_converted,
+        "skipped_other_year": skipped_other_year,
+        "skipped_formation": skipped_formation,
         "status_counts": dict(statuses.most_common()),
         "formation_counts": dict(formations.most_common()),
     }
