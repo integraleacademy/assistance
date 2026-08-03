@@ -6725,21 +6725,6 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
     lieu = {
         "paris": "Paris", "cote_azur": "Côte d’Azur", "auvergne": "Auvergne",
     }.get(str(fields.get("centre") or "").strip(), str(fields.get("centre") or "").strip())
-    answers = [
-        ("CPF consulté", fields.get("cpf_consulte")),
-        ("Montant CPF", fields.get("cpf_montant")),
-        ("Inscrit France Travail", fields.get("france_travail")),
-        ("Financement personnel", fields.get("financement_perso")),
-        ("Identité numérique", fields.get("identite_numerique")),
-        ("Autorisation CNAPS", fields.get("cnaps_ok")),
-        ("Antécédent garde à vue", fields.get("garde_vue")),
-        ("Titre de séjour", fields.get("titre_sejour")),
-        ("Certificat SST/PSC1 valide", fields.get("ssiap_secourisme_valide")),
-        ("Devis souhaité", fields.get("souhaite_devis")),
-    ]
-    comments = "\n".join(f"{label} : {value}" for label, value in answers if str(value or "").strip())
-    if str(fields.get("commentaires_secretariat") or "").strip():
-        comments += ("\n" if comments else "") + "Commentaire secrétariat : " + str(fields["commentaires_secretariat"]).strip()
     contact = {
         "id": str(uuid.uuid4()),
         "prenom": _crm_format_first_name(fields.get("prenom")),
@@ -6758,9 +6743,9 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "identite_ok": str(fields.get("identite_numerique") or "").strip(),
         "financement_ft": str(fields.get("france_travail") or "").strip(),
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
-        "origine": "Google" if str(fields.get("gclid") or "").strip() else "Autre",
+        "origine": "Site internet",
         "inscrit_ft": str(fields.get("france_travail") or "").strip(),
-        "commentaires": comments,
+        "commentaires": "",
         "relance_date": "",
         "created_at": now,
         "updated_at": now,
