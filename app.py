@@ -7562,6 +7562,45 @@ def crm_convert_contact(contact_id):
     return jsonify({"contact": contact, "url": str(remote["url"])})
 
 
+@app.route("/api/crm/contacts/<contact_id>/reglementaire")
+@login_required
+def crm_contact_reglementaire(contact_id):
+    """Expose les données CNAPS sans jamais transmettre le secret d'intégration."""
+    if not _crm_contact(load_data(), contact_id):
+        return jsonify({"error": "Contact introuvable"}), 404
+    api_url = os.getenv("GESTION_STAGIAIRES_API_URL", "").strip()
+    api_token = os.getenv("GESTION_STAGIAIRES_API_TOKEN", "").strip()
+    if not api_url or not api_token:
+        return jsonify({"error": "Connexion Gestion stagiaires non configurée"}), 503
+    try:
+        response = requests.get(api_url, params={"crm_contact_id": contact_id}, headers={
+            "Authorization": f"Bearer {api_token}", "Accept": "application/json"}, timeout=15)
+        if response.status_code == 404:
+            return jsonify({
+                "linked": False,
+                "message": "L’inscription n’a pas encore été enregistrée dans Gestion stagiaires.",
+            })
+        remote = response.json() if response.content else {}
+        if response.status_code != 200:
+            message = remote.get("error") if isinstance(remote, dict) else None
+            return jsonify({"error": message or "Gestion stagiaires est momentanément indisponible"}), 502
+        if not isinstance(remote, dict):
+            return jsonify({"error": "Réponse invalide de Gestion stagiaires"}), 502
+        # Le payload métier distant est relayé, mais les éventuels champs secrets
+        # sont supprimés en défense supplémentaire avant toute réponse navigateur.
+        def public_payload(value):
+            if isinstance(value, dict):
+                return {key: public_payload(item) for key, item in value.items()
+                        if str(key).lower() not in {"token", "api_token", "authorization"}}
+            if isinstance(value, list):
+                return [public_payload(item) for item in value]
+            return value
+        return jsonify(public_payload(remote))
+    except (requests.RequestException, ValueError) as exc:
+        print("Erreur suivi CNAPS Gestion stagiaires:", exc)
+        return jsonify({"error": "Gestion stagiaires est momentanément indisponible"}), 502
+
+
 @app.route("/api/crm/reformuler", methods=["POST"])
 @login_required
 def crm_rephrase():
