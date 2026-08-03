@@ -545,6 +545,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <div class="form-wrapper">
     <form method="POST" id="infosForm" class="steps-viewport">
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
+      <input type="hidden" name="source_secretariat" id="sourceSecretariat" value="">
       <input type="hidden" name="draft_form_id" id="draftFormIdField" value="">
       <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
       <div class="steps-track" id="slides">
@@ -1690,6 +1691,15 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     });
 
     setupYesNoButtons();
+
+    const secretariatParams = new URLSearchParams(window.location.search);
+    if (secretariatParams.get('secretariat') === '1') {
+      document.getElementById('sourceSecretariat').value = '1';
+      const preselectedFormation = secretariatParams.get('formation');
+      if (preselectedFormation && Array.from(formation.options).some((option) => option.value === preselectedFormation)) {
+        formation.value = preselectedFormation;
+      }
+    }
 
     cpfConsulte.dispatchEvent(new Event('change'));
     identiteNumerique.dispatchEvent(new Event('change'));
