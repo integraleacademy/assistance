@@ -6584,6 +6584,18 @@ def _crm_now():
     return datetime.datetime.now(pytz.timezone("Europe/Paris")).isoformat(timespec="seconds")
 
 
+def _crm_format_first_name(value):
+    """Normalise un prénom tout en conservant les séparateurs composés."""
+    text = str(value or "").strip().lower()
+    return re.sub(r"(^|[\s'-])([a-zà-öø-ÿ])",
+                  lambda match: match.group(1) + match.group(2).upper(), text)
+
+
+def _crm_format_last_name(value):
+    """Affiche systématiquement les noms de famille en capitales."""
+    return str(value or "").strip().upper()
+
+
 def _crm_contact(data, contact_id):
     return next((c for c in data["crm_contacts"] if c.get("id") == contact_id), None)
 
@@ -7466,12 +7478,21 @@ def crm_calendly_webhook():
 def crm_contacts():
     data = load_data()
     if request.method == "GET":
+        changed = False
+        for existing in data["crm_contacts"]:
+            prenom = _crm_format_first_name(existing.get("prenom"))
+            nom = _crm_format_last_name(existing.get("nom"))
+            if (prenom, nom) != (existing.get("prenom", ""), existing.get("nom", "")):
+                existing["prenom"], existing["nom"] = prenom, nom
+                changed = True
+        if changed:
+            save_data(data)
         return jsonify(data["crm_contacts"])
     payload = request.get_json(silent=True) or {}
     now = _crm_now()
     contact = {
-        "id": str(uuid.uuid4()), "prenom": str(payload.get("prenom", "")).strip(),
-        "nom": str(payload.get("nom", "")).strip(), "telephone": "", "mail": "",
+        "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
+        "nom": _crm_format_last_name(payload.get("nom")), "telephone": "", "mail": "",
         "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
         "statut": "Nouveaux", "dates_formation": "", "cpf": "", "carte_pro": "",
         "antecedents": "", "desp_type": "", "identite_creation": "",
@@ -7507,6 +7528,8 @@ def crm_contact(contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    contact["prenom"] = _crm_format_first_name(contact.get("prenom"))
+    contact["nom"] = _crm_format_last_name(contact.get("nom"))
     if contact.get("statut") not in CRM_STATUSES:
         contact["statut"] = old_status or "Nouveaux"
     if contact.get("statut") != old_status:
@@ -7619,14 +7642,24 @@ def crm_rephrase():
 @app.route("/api/crm/contacts/<contact_id>/synthese", methods=["POST"])
 @login_required
 def crm_contact_summary(contact_id):
-    contact = _crm_contact(load_data(), contact_id)
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
     if not contact: return jsonify({"error": "Contact introuvable"}), 404
     dossier = {key: contact.get(key, "") for key in (
         "prenom", "nom", "formation", "lieu", "dates_formation", "statut", "cpf",
         "financement_ft", "carte_pro", "antecedents", "commentaires")}
-    dossier["dernieres_activites"] = (contact.get("activities") or [])[:5]
+    dossier["dernieres_activites"] = (contact.get("activities") or [])[:10]
+    appointments = [item for item in data.get("crm_calendly_appointments", [])
+                    if item.get("contact_id") == contact_id]
+    dossier["rendez_vous_calendly"] = sorted(appointments,
+        key=lambda item: item.get("start_time") or "", reverse=True)[:10]
     try:
-        texte = _crm_ai("Rédige une synthèse CRM très concise (3 à 5 phrases) en français. Souligne l'état du dossier, les points utiles et la prochaine action. N'invente rien.", json.dumps(dossier, ensure_ascii=False), 300)
+        texte = _crm_ai("Rédige une synthèse CRM détaillée et structurée en français (6 à 10 phrases). "
+            "Indique explicitement le prochain rendez-vous prévu (date, heure et objet) ou qu'aucun rendez-vous n'est prévu. "
+            "Qualifie le sérieux et la maturité du prospect uniquement à partir de signaux factuels (échanges, statut, financement, rendez-vous, complétude), "
+            "présente les points forts, les blocages ou informations manquantes et termine par les prochaines actions concrètes. "
+            "N'invente aucune information et signale clairement ce qui n'est pas renseigné.",
+            json.dumps(dossier, ensure_ascii=False), 600)
         return jsonify({"texte": texte})
     except Exception as exc:
         print("Erreur synthèse CRM:", exc)

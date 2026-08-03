@@ -105,9 +105,34 @@ def test_crm_ai_summary_and_message_generation(tmp_path, monkeypatch):
 
     assert summary.get_json() == {"texte": "Texte généré."}
     assert message.get_json() == {"texte": "Texte généré."}
-    assert "3 à 5 phrases" in prompts[0][0]
+    assert "6 à 10 phrases" in prompts[0][0]
+    assert "prochain rendez-vous prévu" in prompts[0][0]
+    assert "sérieux" in prompts[0][0]
     assert "320 caractères maximum" in prompts[1][0]
     assert "Confirmer le prochain rendez-vous" in prompts[1][1]
+
+
+def test_crm_normalizes_contact_names_on_create_update_and_existing_data(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={
+        "prenom": "  jEAN-pIERRE ", "nom": " de la tour "
+    }).get_json()
+    assert contact["prenom"] == "Jean-Pierre"
+    assert contact["nom"] == "DE LA TOUR"
+
+    updated = c.patch(f"/api/crm/contacts/{contact['id']}", json={
+        "prenom": "mARIE cLAIRE", "nom": "d'angelo"
+    }).get_json()
+    assert updated["prenom"] == "Marie Claire"
+    assert updated["nom"] == "D'ANGELO"
+
+    data = application.load_data()
+    data["crm_contacts"][0]["prenom"] = "lINA"
+    data["crm_contacts"][0]["nom"] = "martin"
+    application.save_data(data)
+    existing = c.get("/api/crm/contacts").get_json()[0]
+    assert existing["prenom"] == "Lina"
+    assert existing["nom"] == "MARTIN"
 
 
 def test_crm_email_has_branding_and_legal_footer(tmp_path, monkeypatch):
@@ -165,7 +190,7 @@ def test_crm_conversion_prefills_remote_registration_before_changing_status(tmp_
     assert captured["json"]["email"] == "lina@example.com"
     assert captured["json"] == {
         "source": "integrale-connect-crm", "crm_contact_id": contact["id"],
-        "prenom": "Lina", "nom": "Martin", "email": "lina@example.com",
+        "prenom": "Lina", "nom": "MARTIN", "email": "lina@example.com",
         "telephone": "0600000000", "formation": "APS", "parcours": "Initial",
         "centre": "Paris", "session": "Du 1 au 5 septembre 2026",
         "commentaires": "Financement validé.",
