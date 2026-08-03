@@ -2345,6 +2345,13 @@ def logout():
     session.pop("user_name", None)
     session.pop("user_role", None)
     return redirect(url_for("login"))
+
+
+@app.route("/CRM")
+@app.route("/crm")
+def crm():
+    """Conserve l'ancienne adresse du CRM en redirigeant vers l'administration."""
+    return redirect(url_for("admin"))
     
 
 def update_demande_fields(demande, form_data, data, files=None):
