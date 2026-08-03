@@ -6157,13 +6157,23 @@ def crm_rephrase():
     if not os.getenv("OPENAI_API_KEY"):
         return jsonify({"error": "OPENAI_API_KEY non configurée"}), 503
     try:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.responses.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
-            instructions="Reformule cette note CRM en français professionnel, clair et factuel. Ne rajoute aucune information.",
-            input=text,
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=20)
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Reformule la note CRM en français professionnel, clair et factuel. Ne rajoute aucune information.",
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0.2,
+            max_tokens=500,
         )
-        return jsonify({"texte": response.output_text.strip()})
+        reformulation = response.choices[0].message.content.strip()
+        if not reformulation:
+            raise ValueError("Réponse vide du service de reformulation")
+        return jsonify({"texte": reformulation})
     except Exception as exc:
         print("Erreur reformulation CRM:", exc)
         return jsonify({"error": "La reformulation est momentanément indisponible"}), 502

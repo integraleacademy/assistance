@@ -1,4 +1,5 @@
 import app as application
+from types import SimpleNamespace
 
 
 def client(tmp_path, monkeypatch):
@@ -43,3 +44,41 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
+
+
+def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    create = lambda **kwargs: SimpleNamespace(choices=[SimpleNamespace(
+        message=SimpleNamespace(content="Compte-rendu reformulé."),
+    )])
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(application, "OpenAI", lambda **kwargs: fake_client)
+
+    response = c.post("/api/crm/reformuler", json={"texte": "note brute"})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"texte": "Compte-rendu reformulé."}
+
+
+def test_crm_email_has_branding_and_legal_footer(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
+    c.patch(f"/api/crm/contacts/{created['id']}", json={"mail": "lina@example.com"})
+    captured = {}
+
+    def fake_send(recipient, subject, plain_text, html_body):
+        captured["html"] = html_body
+        return True
+
+    monkeypatch.setattr(application, "send_email_html", fake_send)
+    response = c.post(
+        f"/api/crm/contacts/{created['id']}/message",
+        json={"type": "email", "sujet": "Bienvenue", "contenu": "<p>Message</p>"},
+    )
+
+    assert response.status_code == 200
+    assert "Logo_Integrale_Academy_officielpdf" in captured["html"]
+    assert "Faites le premier pas vers votre futur métier" in captured["html"]
+    assert "SIREN 840 899 884" in captured["html"]
+    assert "Votre avenir, notre engagement" not in captured["html"]
