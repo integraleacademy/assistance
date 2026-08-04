@@ -122,6 +122,26 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
 
 
+def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+
+    added = c.post("/api/crm/statuses", json={"label": "Dossier incomplet"})
+    assert added.status_code == 201
+    assert "Dossier incomplet" in added.get_json()
+
+    renamed = c.patch("/api/crm/statuses/Nouveaux", json={"label": "À qualifier"})
+    assert renamed.status_code == 200
+    assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["statut"] == "À qualifier"
+
+    deleted = c.delete("/api/crm/statuses/%C3%80%20qualifier")
+    assert deleted.status_code == 200
+    assert "À qualifier" not in deleted.get_json()["statuses"]
+    assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["statut"] == "Blocage"
+
+    assert c.patch("/api/crm/statuses/Converti", json={"label": "Gagné"}).status_code == 400
+
+
 def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
 
