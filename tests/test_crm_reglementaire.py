@@ -77,7 +77,7 @@ def test_production_entrypoint_installs_same_proxy(tmp_path, monkeypatch):
     assert captured["params"] == {"crm_contact_id": lead["id"]}
 
 
-def test_desp_vae_404_links_once_and_uses_post_payload_directly(tmp_path, monkeypatch):
+def test_tracked_contact_404_links_once_and_uses_post_payload_directly(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch, production.app)
     lead = vae_contact(test_client)
     configure(monkeypatch)
@@ -119,21 +119,23 @@ def test_direct_get_on_next_consultation_never_posts(tmp_path, monkeypatch):
     assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 200
 
 
-def test_linking_is_limited_to_desp_vae_with_sufficient_identity(tmp_path, monkeypatch):
+def test_linking_covers_cnaps_and_vae_contacts_with_sufficient_identity(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
     configure(monkeypatch)
     monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(404, {}))
     posts = []
     monkeypatch.setattr(crm_cnaps_tracking.requests, "post", lambda *args, **kwargs:
                         (posts.append(kwargs) or response(200, {"vae": {}})))
-    for formation, desp_type in (("DESP", "INITIAL"), ("APS", "VAE"), ("A3P", "VAE")):
+    for formation, desp_type in (("APS", ""), ("A3P", ""), ("DESP", "VAE")):
         lead = vae_contact(test_client, formation=formation, desp_type=desp_type)
-        assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 404
+        assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 200
+    lead = vae_contact(test_client, formation="DESP", desp_type="INITIAL")
+    assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 404
     lead = vae_contact(test_client, mail="", telephone="")
     result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
     assert result.status_code == 422
     assert result.get_json()["reason"] == "insufficient_identity"
-    assert posts == []
+    assert len(posts) == 3
 
 
 def test_linking_reasons_are_preserved_without_remote_details(tmp_path, monkeypatch):
@@ -171,6 +173,8 @@ def test_linking_auth_timeout_and_invalid_json_are_safe(tmp_path, monkeypatch):
 def test_remote_business_statuses_are_preserved(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
     lead = contact(test_client)
+    lead = test_client.patch(f"/api/crm/contacts/{lead['id']}",
+                             json={"formation": "Chauffeur VTC"}).get_json()
     configure(monkeypatch)
     for status in (400, 401, 404, 409):
         monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, _status=status, **kwargs: response(_status, {"error": "remote technical detail", "token": "leak"}))

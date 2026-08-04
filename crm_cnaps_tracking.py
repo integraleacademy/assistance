@@ -67,7 +67,7 @@ def public_payload(value: Any) -> Any:
 
 
 def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=None):
-    """Recherche le stagiaire puis tente au besoin un unique rattachement VAE."""
+    """Recherche le stagiaire puis tente au besoin de rattacher le suivi demandé."""
     api_url = gestion_stagiaires_api_url()
     api_token = str(os.getenv("GESTION_STAGIAIRES_API_TOKEN") or "").strip()
     if not api_url or not api_token:
@@ -93,9 +93,11 @@ def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=N
         return jsonify({"error": "Réponse invalide de Gestion Stagiaires"}), 502
     if response.status_code == 200:
         return jsonify(public_payload(remote))
-    is_desp_vae = (str(contact.get("formation") or "").strip().upper() == "DESP"
-                   and str(contact.get("desp_type") or "").strip().upper() == "VAE")
-    if response.status_code == 404 and is_desp_vae:
+    formation = str(contact.get("formation") or "").strip().upper()
+    needs_tracking = (formation in {"APS", "A3P"}
+                      or (formation == "DESP"
+                          and str(contact.get("desp_type") or "").strip().upper() == "VAE"))
+    if response.status_code == 404 and needs_tracking:
         identity = crm_contact_identity(contact)
         if not identity["prenom"] or not identity["nom"] or not (identity["email"] or identity["telephone"]):
             return jsonify({"error": "Le rattachement automatique nécessite le nom, le prénom et au moins une adresse e-mail ou un téléphone.",
