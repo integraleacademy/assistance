@@ -1,5 +1,7 @@
 import json
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -7,13 +9,15 @@ import app as application
 from candidate_ai_analysis import (
     AI_CANDIDATE_SYSTEM_PROMPT, CANDIDATE_AI_RESPONSE_SCHEMA, CandidateAIResponseError,
     build_candidate_ai_context,
+    build_calendly_ai_summary, classify_calendly_appointment, detect_calendly_channel,
+    finalize_candidate_ai_analysis, parse_calendly_datetime,
     compute_candidate_ai_source_hash, validate_candidate_ai_analysis,
 )
 
 
 def valid_result(**changes):
     value = {"schema_version": 1, "priority": "medium", "priority_label": "ignored",
-        "priority_reason": "D’après les informations enregistrées.", "summary": "Dossier à compléter.",
+        "priority_reason": "D’après les informations enregistrées.", "general_summary": "Dossier à compléter.",
         "next_action": {"type": "call", "label": "Appeler", "reason": "Confirmer les éléments.", "timing": "today"},
         "strengths": [], "vigilance_points": [], "missing_information": [],
         "inconsistencies": [], "questions_to_ask": [], "data_quality": "partial"}
@@ -218,3 +222,81 @@ def test_plain_crm_ai_does_not_request_json(monkeypatch):
     calls = mock_openai(monkeypatch, [sdk_response("Texte reformulé")])
     assert application._crm_ai("system", "user") == "Texte reformulé"
     assert "response_format" not in calls[0]
+
+
+PARIS_NOW = datetime(2026, 8, 4, 9, 7, tzinfo=ZoneInfo("Europe/Paris"))
+
+
+def appointment(start=None, **changes):
+    value = {"start_time": start, "status": "active", "response_status": "",
+        "name": "RDV téléphonique formation", "location": {}}
+    value.update(changes)
+    return value
+
+
+def test_production_calendly_timeline_is_deterministic():
+    items = [appointment("2026-05-12T16:15:00+02:00"),
+        appointment("2026-05-22T16:15:00+02:00"), appointment("2026-06-02T16:15:00+02:00")]
+    summary = build_calendly_ai_summary(items, PARIS_NOW)
+    assert {key: summary[key] for key in ("total_count", "past_count", "upcoming_count", "canceled_count", "phone_count")} == {
+        "total_count": 3, "past_count": 3, "upcoming_count": 0, "canceled_count": 0, "phone_count": 3}
+    assert summary["past_outcomes"]["unknown_count"] == 3
+    assert summary["next_appointment"] is None and summary["has_upcoming"] is False
+    assert summary["deterministic_narrative"] == (
+        "3 rendez-vous téléphoniques sont passés, les 12 mai, 22 mai et 2 juin 2026. "
+        "Leur résultat n’est pas renseigné. Aucun prochain rendez-vous n’est programmé.")
+
+
+def test_temporal_categories_outcomes_and_mixed_counts():
+    items = [appointment("2026-08-04T10:00:00+02:00"),
+        appointment("2026-08-04T08:30:00+02:00", end_time="2026-08-04T09:30:00+02:00"),
+        appointment("2026-08-01T10:00:00+02:00", response_status="answered"),
+        appointment("2026-08-02T10:00:00+02:00", response_status="no_answer"),
+        appointment("2026-08-05T10:00:00+02:00", status="canceled"), appointment(None)]
+    summary = build_calendly_ai_summary(items, PARIS_NOW)
+    assert (summary["upcoming_count"], summary["in_progress_count"], summary["past_count"],
+        summary["canceled_count"], summary["undated_count"]) == (1, 1, 2, 1, 1)
+    assert summary["past_outcomes"] == {"answered_count": 1, "no_answer_count": 1, "unknown_count": 0}
+    assert "prochain rendez-vous" in summary["deterministic_narrative"]
+    assert classify_calendly_appointment(items[4], PARIS_NOW) == "canceled"
+
+
+@pytest.mark.parametrize(("response", "expected"), [
+    ("answered", "le candidat a été joint"), ("no_answer", "sans réponse du candidat"),
+    ("", "résultat n’est pas renseigné"),
+])
+def test_past_outcome_wording_is_exact(response, expected):
+    narrative = build_calendly_ai_summary(
+        [appointment("2026-06-02T16:15:00+02:00", response_status=response)], PARIS_NOW)["deterministic_narrative"]
+    assert expected in narrative
+    if not response:
+        assert "réalisé" not in narrative and "honoré" not in narrative
+
+
+def test_timezone_and_channel_detection():
+    parsed = parse_calendly_datetime("2026-08-12T08:00:00Z")
+    assert parsed.isoformat() == "2026-08-12T10:00:00+02:00"
+    assert detect_calendly_channel(appointment(location={"type": "outbound_call"})) == "phone"
+    assert detect_calendly_channel(appointment(name="Zoom", location={})) == "video"
+    assert detect_calendly_channel(appointment(name="Accueil", location={"kind": "physical"})) == "in_person"
+    assert detect_calendly_channel(appointment(name="Entretien", location={"type": "custom"})) == "unknown"
+
+
+def test_context_hash_changes_only_when_temporal_business_state_changes():
+    contact = {"id": "lead", "formation": "DESP"}
+    data = {"crm_calendly_appointments": [{"contact_id": "lead", **appointment("2026-08-04T10:00:00+02:00", end_time="2026-08-04T10:30:00+02:00")}]}
+    before_a = build_candidate_ai_context(contact, data, now=datetime(2026, 8, 4, 9, 0, tzinfo=ZoneInfo("Europe/Paris")))
+    before_b = build_candidate_ai_context(contact, data, now=datetime(2026, 8, 4, 9, 5, tzinfo=ZoneInfo("Europe/Paris")))
+    after = build_candidate_ai_context(contact, data, now=datetime(2026, 8, 4, 10, 5, tzinfo=ZoneInfo("Europe/Paris")))
+    assert compute_candidate_ai_source_hash(before_a) == compute_candidate_ai_source_hash(before_b)
+    assert compute_candidate_ai_source_hash(before_a) != compute_candidate_ai_source_hash(after)
+
+
+def test_final_summary_forces_backend_facts_and_drops_model_falsehood():
+    context = {"appointments": build_calendly_ai_summary(
+        [appointment("2026-06-02T16:15:00+02:00")], PARIS_NOW)}
+    result = valid_result(general_summary="Dossier fragile. Des rendez-vous sont programmés.")
+    final = finalize_candidate_ai_analysis(result, context)
+    assert final["general_summary"] == "Dossier fragile."
+    assert final["appointment_summary"] in final["summary"]
+    assert "Des rendez-vous sont programmés" not in final["summary"]

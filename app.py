@@ -29,7 +29,8 @@ from candidate_ai_analysis import (
     AI_CANDIDATE_ANALYSIS_VERSION, AI_CANDIDATE_PROMPT_VERSION,
     AI_CANDIDATE_SYSTEM_PROMPT, CANDIDATE_AI_RESPONSE_SCHEMA, CandidateAIResponseError,
     build_candidate_ai_context as _build_candidate_ai_context,
-    compute_candidate_ai_source_hash, validate_candidate_ai_analysis,
+    classify_calendly_appointment, compute_candidate_ai_source_hash,
+    finalize_candidate_ai_analysis, validate_candidate_ai_analysis,
 )
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
@@ -6532,7 +6533,7 @@ def _crm_upsert_calendly_appointment(
     status_changed = False
     if (
         contact
-        and appointment.get("status") != "canceled"
+        and classify_calendly_appointment(appointment, datetime.datetime.now(pytz.timezone("Europe/Paris"))) in {"upcoming", "in_progress"}
         and contact.get("statut") != "RDV programmé"
     ):
         old_status = contact.get("statut") or "Nouveaux"
@@ -6564,9 +6565,10 @@ def _crm_upsert_calendly_appointment(
 
 def _crm_sync_contact_calendly_status(data, contact):
     """Keep the pipeline aligned with active Calendly appointments already cached."""
+    now = datetime.datetime.now(pytz.timezone("Europe/Paris"))
     has_active_appointment = any(
         item.get("contact_id") == contact.get("id")
-        and item.get("status") != "canceled"
+        and classify_calendly_appointment(item, now) in {"upcoming", "in_progress"}
         for item in data.get("crm_calendly_appointments", [])
     )
     if not has_active_appointment or contact.get("statut") == "RDV programmé":
@@ -6911,7 +6913,7 @@ _CRM_AI_ANALYSIS_LOCKS = {}
 _CRM_AI_ANALYSIS_LOCKS_GUARD = threading.Lock()
 
 
-def build_candidate_ai_context(contact_id, data=None):
+def build_candidate_ai_context(contact_id, data=None, now=None):
     data = data or load_data()
     contact = _crm_contact(data, contact_id)
     if not contact:
@@ -6921,13 +6923,14 @@ def build_candidate_ai_context(contact_id, data=None):
     except Exception:
         wedof = []
     return _build_candidate_ai_context(
-        contact, data, calculate_candidate_integration_score(contact), wedof)
+        contact, data, calculate_candidate_integration_score(contact), wedof, now)
 
 
 def generate_candidate_ai_analysis(context):
     """Génère une sortie structurée puis conserve la validation métier locale."""
     user_message = json.dumps({"candidate_context": context}, ensure_ascii=False)
-    return _crm_ai_structured(AI_CANDIDATE_SYSTEM_PROMPT, user_message)
+    model_result = _crm_ai_structured(AI_CANDIDATE_SYSTEM_PROMPT, user_message)
+    return finalize_candidate_ai_analysis(model_result, context)
 
 
 def get_candidate_ai_analysis_state(contact_id, data=None):
@@ -8179,13 +8182,16 @@ def crm_candidate_ai_analysis(contact_id):
     with lock:
         data = load_data()
         context = build_candidate_ai_context(contact_id, data)
-        meaningful = any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
-            "recent_notes_untrusted", "recent_activities_untrusted", "appointments", "wedof"))
+        meaningful = (any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
+            "recent_notes_untrusted", "recent_activities_untrusted", "wedof"))
+            or bool(context.get("appointments", {}).get("total_count")))
         if not meaningful:
             return jsonify({"status": "insufficient_data", "message": "Les informations de la piste sont insuffisantes pour générer une analyse utile."}), 422
         source_hash = compute_candidate_ai_source_hash(context)
         stored = data.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
-        if stored and stored.get("source_hash") == source_hash and not force:
+        if (stored and stored.get("source_hash") == source_hash
+                and stored.get("analysis_version") == AI_CANDIDATE_ANALYSIS_VERSION
+                and stored.get("prompt_version") == AI_CANDIDATE_PROMPT_VERSION and not force):
             response = get_candidate_ai_analysis_state(contact_id, data)
             response["cached"] = True
             return jsonify(response)
