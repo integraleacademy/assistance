@@ -7330,12 +7330,18 @@ def crm_contact_wedof_refresh(contact_id):
 def crm(section):
     if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "notifications", "modeles"}:
         abort(404)
+    user = current_user()
+    # A browser session can outlive the account configuration that created it.
+    # Avoid passing None to the template, where user attributes become Jinja
+    # Undefined objects that the CRM_CONFIG JSON serializer cannot encode.
+    if not user:
+        session.pop("user_email", None)
+        return redirect(url_for("login", next=request.path))
     return render_template(
         "crm.html",
         section=section,
         statuses=_crm_statuses(load_data()),
-        user=current_user(),
-        crm_team=[{"name": member["name"], "first_name": member["first_name"], "email": member["email"]} for member in USERS.values()],
+        user=user,
         asset_version=CRM_ASSET_VERSION,
     )
 

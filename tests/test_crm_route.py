@@ -29,6 +29,19 @@ def test_crm_legacy_url_is_case_tolerant():
     assert b'Int\xc3\xa9grale Connect' in response.data
 
 
+def test_crm_redirects_a_stale_user_session_instead_of_rendering_an_undefined_user():
+    client = application.app.test_client()
+    with client.session_transaction() as session:
+        session["user_email"] = "ancien-compte@integraleacademy.com"
+
+    response = client.get("/crm")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login?next=/crm")
+    with client.session_transaction() as session:
+        assert "user_email" not in session
+
+
 @pytest.mark.parametrize(
     ("email", "first_name"),
     [
