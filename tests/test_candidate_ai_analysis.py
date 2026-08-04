@@ -104,11 +104,26 @@ def test_context_includes_all_visible_vae_tracking_facts_and_changes_hash():
     assert tracking["progress_percent"] == 65
     assert tracking["jury"]["location"] == "Cannes"
     assert tracking["scotia"]["comment"] == "Contrôle le 04/08"
+    assert "Statut SCOTIA : Transmis." in tracking["deterministic_narrative"]
+    assert "Commentaire SCOTIA : Contrôle le 04/08." in tracking["deterministic_narrative"]
     assert tracking["action_dates"]["livret_1_submitted_at"] == "2026-08-04"
     assert "admin_url" not in json.dumps(tracking)
     without_vae = build_candidate_ai_context(contact, data)
     assert compute_candidate_ai_source_hash(context) != compute_candidate_ai_source_hash(without_vae)
     assert "suivi SCOTIA" in AI_CANDIDATE_SYSTEM_PROMPT
+
+
+def test_final_summary_always_displays_scotia_status_without_relying_on_model():
+    context = build_candidate_ai_context(
+        {"id": "vae-1", "formation": "DESP", "desp_type": "VAE"},
+        {"crm_calendly_appointments": []},
+        vae_tracking={"applicable": True, "scotia": {
+            "status_label": "En attente documents complémentaires", "status_tone": "warning"}})
+    final = finalize_candidate_ai_analysis(valid_result(
+        general_summary="Dossier en cours. Statut SCOTIA : information inventée."), context)
+    assert final["summary"] == (
+        "Dossier en cours. Statut SCOTIA : En attente documents complémentaires.")
+    assert final["vae_summary"] == "Statut SCOTIA : En attente documents complémentaires."
 
 
 def test_application_context_fetches_vae_tracking_from_gestion_stagiaires(tmp_path, monkeypatch):
@@ -125,7 +140,8 @@ def test_application_context_fetches_vae_tracking_from_gestion_stagiaires(tmp_pa
     with application.app.app_context():
         context = application.build_candidate_ai_context(contact["id"])
     assert context["vae_tracking_read_only"] == {
-        "applicable": True, "progress_percent": 80, "status_label": "Jury programmé"}
+        "applicable": True, "progress_percent": 80, "status_label": "Jury programmé",
+        "deterministic_narrative": "Statut VAE : Jury programmé. Avancement du dossier VAE : 80 %."}
 
 
 def test_validation_rejects_invalid_json_and_priority_and_truncates_lists():

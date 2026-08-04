@@ -7,8 +7,8 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-AI_CANDIDATE_ANALYSIS_VERSION = 3
-AI_CANDIDATE_PROMPT_VERSION = 3
+AI_CANDIDATE_ANALYSIS_VERSION = 4
+AI_CANDIDATE_PROMPT_VERSION = 4
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 
@@ -52,7 +52,7 @@ Le score d’intégration est calculé par le CRM : explique-le sans le recalcul
 Les informations contenues dans `authoritative_facts`, `appointments`, `integration_score_read_only` et `vae_tracking_read_only` sont calculées par le CRM et constituent les faits de référence. Tu ne dois jamais les recalculer, les contredire ou les transformer. Pour un parcours VAE, prends notamment en compte l’avancement, la prochaine action, la recevabilité, le jury, le résultat, les compléments demandés, le dossier administratif, le suivi SCOTIA et les dates d’action.
 Pour les rendez-vous, utilise toujours temporal_status, upcoming_count, past_count, in_progress_count et canceled_count. Ne déduis jamais qu’un rendez-vous est futur du seul statut Calendly active. « programmé » ou « à venir » ne peut être utilisé que si upcoming_count est supérieur à zéro. Distingue un rendez-vous passé d’un rendez-vous honoré : « candidat joint » est réservé à outcome=answered, « sans réponse » à outcome=no_answer et outcome=unknown signifie que le résultat n’est pas renseigné. Le statut commercial de la piste ne remplace jamais ces faits temporels.
 Utilise les montants, nombres, dates et statuts exacts fournis. Ne transforme pas une information absente en réponse négative : écris « non renseigné ». Écris « aucune solution identifiée », et non « aucune solution possible », quand aucun financement n’est enregistré. Distingue faits confirmés, informations manquantes et hypothèses à vérifier.
-Le champ general_summary ne doit jamais mentionner ni reformuler les rendez-vous : le CRM ajoutera lui-même leur narration factuelle.
+Le champ general_summary ne doit jamais mentionner ni reformuler les rendez-vous ou le suivi VAE : le CRM ajoutera lui-même leur narration factuelle.
 Identifie la priorité commerciale, une synthèse, les forces, vigilances, informations manquantes, incohérences, la meilleure prochaine action et jusqu’à trois questions.
 Ne conclus jamais à une éligibilité CPF, France Travail ou CNAPS. N’utilise jamais l’âge, le sexe, le nom, l’origine supposée, la nationalité, la religion, la santé, le handicap, la situation familiale, l’adresse ou la manière d’écrire pour établir la priorité. Ne fournis aucune probabilité numérique de conversion.
 Si les informations sont insuffisantes, utilise unknown. Retourne uniquement un objet JSON conforme au schéma demandé, sans Markdown, commentaire, HTML ni texte autour."""
@@ -231,6 +231,52 @@ def build_calendly_ai_summary(appointments, now=None):
     return result
 
 
+def build_vae_deterministic_narrative(vae):
+    """Restitue sans interprétation les faits VAE importants dans la synthèse affichée."""
+    if not vae or vae.get("applicable") is False:
+        return ""
+    parts = []
+    if vae.get("status_label"):
+        parts.append(f"Statut VAE : {vae['status_label']}.")
+    if vae.get("progress_percent") is not None:
+        parts.append(f"Avancement du dossier VAE : {vae['progress_percent']} %.")
+    scotia = vae.get("scotia") or {}
+    if scotia.get("status_label"):
+        parts.append(f"Statut SCOTIA : {scotia['status_label']}.")
+    if scotia.get("comment"):
+        parts.append(f"Commentaire SCOTIA : {scotia['comment']}.")
+    if (vae.get("next_action") or {}).get("label"):
+        parts.append(f"Prochaine action VAE : {vae['next_action']['label']}.")
+    if (vae.get("recevabilite") or {}).get("status_label"):
+        recevabilite = vae["recevabilite"]
+        attestation = " Attestation disponible." if recevabilite.get("attestation_available") is True else ""
+        parts.append(f"Recevabilité : {recevabilite['status_label']}.{attestation}")
+    jury = vae.get("jury") or {}
+    if jury.get("scheduled") is True:
+        detail = f" le {jury['date']}" if jury.get("date") else ""
+        detail += f" à {jury['location']}" if jury.get("location") else ""
+        parts.append(f"Jury programmé{detail}.")
+    result = vae.get("final_result") or {}
+    if result.get("label"):
+        detail = f" le {result['diploma_obtained_at']}" if result.get("diploma_obtained_at") else ""
+        parts.append(f"Résultat VAE : {result['label']}{detail}.")
+    if (vae.get("complements") or {}).get("requested") is True:
+        parts.append("Des compléments sont demandés.")
+    dossier = vae.get("dossier") or {}
+    if dossier.get("found") is False:
+        parts.append("Aucun dossier VAE administratif n’a encore été créé.")
+    elif dossier.get("status_label"):
+        updated = f" (mis à jour {dossier['updated_at']})" if dossier.get("updated_at") else ""
+        parts.append(f"Dossier VAE administratif : {dossier['status_label']}{updated}.")
+    if dossier.get("multiple_dossiers") is True:
+        count = f" ({dossier['dossier_count']})" if dossier.get("dossier_count") else ""
+        parts.append(f"Plusieurs dossiers VAE sont liés{count}.")
+    if vae.get("action_dates"):
+        dates = ", ".join(f"{key} : {value}" for key, value in vae["action_dates"].items())
+        parts.append(f"Dates de suivi VAE : {dates}.")
+    return " ".join(parts)
+
+
 def _project_vae_tracking(vae):
     """Projette les données VAE visibles sur la fiche, sans liens d'administration."""
     if not isinstance(vae, dict):
@@ -258,6 +304,7 @@ def _project_vae_tracking(vae):
     if isinstance(vae.get("action_dates"), dict):
         projected["action_dates"] = {str(key): value for key, value in vae["action_dates"].items()
             if value not in (None, "", [], {})}
+    projected["deterministic_narrative"] = build_vae_deterministic_narrative(projected)
     return projected
 
 
@@ -394,11 +441,16 @@ def finalize_candidate_ai_analysis(result, context):
     # Défense en profondeur contre une sortie fournisseur qui ignorerait le contrat.
     sentences = re.split(r"(?<=[.!?])\s+", general)
     general = " ".join(sentence for sentence in sentences
-        if not re.search(r"(?i)\b(rendez[- ]?vous|rdv|calendly)\b", sentence)).strip()
+        if not re.search(r"(?i)\b(rendez[- ]?vous|rdv|calendly|vae|scotia|recevabilit\w*|livret)\b",
+                         sentence)).strip()
     appointment = context.get("appointments") or {}
     appointment_summary = appointment.get("deterministic_narrative", "")
+    vae = context.get("vae_tracking_read_only") or {}
+    vae_summary = vae.get("deterministic_narrative", "")
     checked["general_summary"] = general
     checked["appointment_summary"] = appointment_summary
     checked["appointment_facts"] = appointment
-    checked["summary"] = " ".join(filter(None, (general, appointment_summary))).strip()
+    checked["vae_summary"] = vae_summary
+    checked["vae_facts"] = vae
+    checked["summary"] = " ".join(filter(None, (general, appointment_summary, vae_summary))).strip()
     return checked
