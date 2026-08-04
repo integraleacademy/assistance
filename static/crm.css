@@ -357,3 +357,11 @@ body.sidebar-collapsed main{margin-left:76px}
 @media(max-width:1200px){.contact-head{grid-template-columns:auto 1fr}.contact-quick-actions{grid-column:1/-1;justify-content:flex-start}.next-action{grid-column:1/-1}.contact-subnav{top:290px}}
 @media(max-width:1000px){.sidebar-collapse{display:none}.contact-head{position:relative;top:auto}.contact-subnav{position:relative;top:auto}.contact-side-column{position:static}}
 @media(max-width:650px){.contact-head{grid-template-columns:1fr}.contact-head>.avatar{display:none}.contact-quick-actions{grid-column:auto}.contact-title-line h1 small{display:block;margin-top:3px}.admin-tools{margin-left:auto}.icon-btn{display:none}}
+
+/* Actions principales de la fiche : boutons lisibles, cohérents et tactiles. */
+.contact-quick-actions>.quick-action{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 12px;border-color:#d5deeb;background:#fff;color:#34465f;box-shadow:0 1px 2px #1720330a;transition:border-color .15s,background .15s,color .15s,transform .15s,box-shadow .15s}
+.contact-quick-actions>.quick-action .crm-icon{width:16px;height:16px;stroke-width:1.9}
+.contact-quick-actions>.quick-action:hover{border-color:#9db6e7;background:#f4f7fd;color:#245ac5;box-shadow:0 4px 12px #356ae619;transform:translateY(-1px)}
+.contact-quick-actions>.convert-action,.contact-quick-actions>.convert-action:hover{border-color:var(--blue);background:var(--blue);color:#fff}
+.timeline button:disabled{cursor:wait;opacity:.82}
+@media(max-width:650px){.contact-quick-actions>.quick-action{flex:1 1 calc(50% - 7px)}.contact-quick-actions>.quick-action span{white-space:nowrap}}
