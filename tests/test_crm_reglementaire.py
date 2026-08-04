@@ -198,6 +198,8 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     assert "needsCnaps(c)&&!isDespVae(c)" in javascript
     assert javascript.count("/reglementaire`") == 1
     assert "actionDates=vae.action_dates||{}" in javascript
+    assert "scotia=vae.scotia||{}" in javascript
+    assert "button.onclick=()=>loadReglementaire(c,true)" in javascript
     assert "dossier.multiple_dossiers===true" in javascript
     assert "result.code||vae.status_code" in javascript
     assert "renderVaeDisplayError(c)" in javascript
@@ -207,6 +209,7 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     assert "target=\"_blank\" rel=\"noopener noreferrer\"" in javascript
     assert "dossier.admin_url:vae.trainee_admin_url" in javascript
     assert "GESTION_STAGIAIRES_API_TOKEN" not in javascript
+    assert "loadScotia" not in javascript
     assert "loadVae" not in javascript
     assert "error.reason=payload.reason" in javascript
     assert "renderGestionError(c,error.status,error.reason)" in javascript
@@ -242,6 +245,8 @@ def test_vae_javascript_renders_french_and_iso_dates_without_second_request():
         "dossier": {"found": True, "status_label": "Soumis", "updated_at": "04/08/2026 à 09h32",
                     "dossier_count": 2, "multiple_dossiers": True,
                     "admin_url": "https://gestionstagiaires-r5no.onrender.com/admin/vae/test"},
+        "scotia": {"status_label": "En attente <documents>", "status_tone": "warning",
+                   "comment": '<script>alert("xss")</script>\nDeuxième ligne'},
         "trainee_admin_url": "https://gestionstagiaires-r5no.onrender.com/admin/sessions/test/stagiaires/test",
     }
     node_script = f"""
@@ -254,9 +259,17 @@ function bindSharedRefresh(_){{}}
 const payload={json.dumps(payload, ensure_ascii=False)};
 renderVaeTracking({{}},payload);
 const valid=panel.innerHTML;
+payload.dossier.multiple_dossiers=false;
+payload.scotia.status_tone='classe-inconnue';
+renderVaeTracking({{}},payload);
+const unknownTone=panel.innerHTML;
+delete payload.scotia;
+delete payload.dossier;
+renderVaeTracking({{}},payload);
+const missing=panel.innerHTML;
 payload.updated_at='valeur-invalide';
 renderVaeTracking({{}},payload);
-process.stdout.write(JSON.stringify({{valid,invalid:panel.innerHTML}}));
+process.stdout.write(JSON.stringify({{valid,unknownTone,missing,invalid:panel.innerHTML}}));
 """
     completed = subprocess.run(["node", "-e", node_script], check=True, capture_output=True, text=True)
     rendered = json.loads(completed.stdout)
@@ -266,5 +279,15 @@ process.stdout.write(JSON.stringify({{valid,invalid:panel.innerHTML}}));
         assert expected in rendered["valid"]
     for forbidden in ("undefined", "null", "Invalid Date", "Gestion Stagiaires est momentanément indisponible"):
         assert forbidden not in rendered["valid"]
+    assert "Statut SCOTIA" in rendered["valid"]
+    assert "En attente &lt;documents&gt;" in rendered["valid"]
+    assert "vae-scotia-tone-warning" in rendered["valid"]
+    assert "Commentaire SCOTIA" in rendered["valid"]
+    assert '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;\nDeuxième ligne' in rendered["valid"]
+    assert '<script>alert("xss")</script>' not in rendered["valid"]
+    assert "Plusieurs dossiers VAE" not in rendered["unknownTone"]
+    assert "vae-scotia-tone-neutral" in rendered["unknownTone"]
+    assert rendered["missing"].count("—") >= 2
+    assert "Statut SCOTIA" in rendered["missing"] and "Commentaire SCOTIA" in rendered["missing"]
     assert "Date non disponible" in rendered["invalid"]
     assert javascript.count("/reglementaire`") == 1
