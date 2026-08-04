@@ -10,7 +10,12 @@
   importButton.style.background = '#eef3ff';
   importButton.style.color = '#153565';
   importButton.style.border = '1px solid #cad8f5';
-  document.querySelector('#newContact')?.before(importButton);
+  const adminMenu = document.querySelector('#adminToolsMenu');
+  if (adminMenu) {
+    importButton.className = '';
+    importButton.style.cssText = '';
+    adminMenu.append(importButton);
+  }
 
   function responseFailure(response, payload, responseText) {
     if (payload?.error) return payload.error;
