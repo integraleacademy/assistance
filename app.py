@@ -7759,7 +7759,7 @@ def crm_contacts():
         "statut": "Nouveaux", "dates_formation": "", "cpf": "", "carte_pro": "",
         "antecedents": "", "titre_sejour": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
-        "desp_type": "", "identite_creation": "",
+        "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "refus_ft_perso": "",
         "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "",
         "created_at": now, "updated_at": now, "activities": [],
@@ -7791,7 +7791,7 @@ def crm_contact(contact_id):
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "titre_sejour", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
-               "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires",
+               "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "relance_date"}
     old_status = contact.get("statut")
     for key, value in payload.items():
@@ -7819,6 +7819,26 @@ def crm_log_call(contact_id):
     _crm_activity(contact, "appel", "Appel consigné", note)
     contact["updated_at"] = _crm_now(); save_data(data)
     return jsonify(contact)
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications", methods=["POST"])
+@login_required
+def crm_publish_contact_update(contact_id):
+    """Publie une note horodatée et signée dans le fil d'actualité de la piste."""
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
+    if not text:
+        return jsonify({"error": "Le texte de la publication est requis"}), 400
+    publication = {
+        "id": str(uuid.uuid4()), "date": _crm_now(), "texte": text,
+        "author": (current_user() or {}).get("name", "Équipe Intégrale"),
+    }
+    contact.setdefault("publications", []).insert(0, publication)
+    contact["updated_at"] = _crm_now()
+    save_data(data)
+    return jsonify({"publication": publication, "contact": contact}), 201
 
 
 @app.route("/api/crm/contacts/<contact_id>/convertir", methods=["POST"])

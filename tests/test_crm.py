@@ -39,6 +39,31 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     assert call.get_json()["activities"][0]["kind"] == "appel"
 
 
+def test_contact_publication_is_signed_and_persisted(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
+
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/publications",
+        json={"texte": "Reviens vers nous prochainement"},
+    )
+
+    assert response.status_code == 201
+    publication = response.get_json()["publication"]
+    assert publication["texte"] == "Reviens vers nous prochainement"
+    assert publication["author"] == "Clément VAILLANT"
+    assert publication["date"]
+    saved = c.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert saved["publications"] == [publication]
+
+
+def test_empty_contact_publication_is_rejected(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    response = c.post(f"/api/crm/contacts/{contact['id']}/publications", json={"texte": "  "})
+    assert response.status_code == 400
+
+
 def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     application.app.config.update(TESTING=True, SERVER_NAME="localhost")
