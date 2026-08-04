@@ -7,8 +7,8 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-AI_CANDIDATE_ANALYSIS_VERSION = 4
-AI_CANDIDATE_PROMPT_VERSION = 4
+AI_CANDIDATE_ANALYSIS_VERSION = 5
+AI_CANDIDATE_PROMPT_VERSION = 5
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 
@@ -321,6 +321,8 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
     score = integration_score or {}
     if score:
         score = _pick(score, {"score": "score", "level": "level", "operational_status": "operational_status",
+            "financial_score": "financial_score", "regulatory_score": "regulatory_score",
+            "regulatory_status": "regulatory_status", "normalized_cnaps_status": "normalized_cnaps_status",
             "criteria": "breakdown", "remaining_to_finance": "remaining_to_finance_eur", "blockers": "blockers",
             "warnings": "warnings", "recommended_actions": "next_actions"})
         funding.update(_pick(integration_score, {"coverage_percent": "cpf_coverage_percent",
@@ -365,6 +367,19 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
     if score and score.get("score") is not None:
         authoritative["integration_score"] = {"score": score["score"], "level": score.get("level"),
             "fact": f"Le score d’intégration est de {score['score']} sur 100" + (f" et le profil financier est {score.get('level')}." if score.get("level") else ".")}
+    if integration_score and integration_score.get("regulatory_applicable"):
+        facts = {"accepted": "Le suivi CNAPS indique une autorisation acceptée.",
+                 "transmitted": "La demande CNAPS est transmise mais n’est pas encore acceptée.",
+                 "in_review": "La demande CNAPS est en cours d’instruction.",
+                 "registered": "La demande CNAPS doit encore être finalisée.",
+                 "refused": "Le suivi CNAPS indique un refus qui exige une vérification humaine.",
+                 "no_result": "Aucun résultat CNAPS exploitable n’est disponible.",
+                 "unknown": "La situation CNAPS doit être vérifiée."}
+        normalized = integration_score.get("normalized_cnaps_status", "unknown")
+        authoritative["regulatory_readiness"] = {
+            "applicable": True, "score": integration_score.get("regulatory_score"),
+            "status": integration_score.get("regulatory_status"),
+            "fact": facts.get(normalized, facts["unknown"])}
     context = {"formation": formation, "funding": funding, "authoritative_facts": authoritative,
         "commercial": commercial, "appointments": appointment_summary, "recent_notes_untrusted": notes,
         "recent_activities_untrusted": activities}
@@ -375,9 +390,6 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
     if wedof: context["wedof"] = wedof
     vae = _project_vae_tracking(vae_tracking)
     if vae: context["vae_tracking_read_only"] = vae
-    cnaps = _pick(contact, {"authorization_status": "cnaps_status", "sent_at": "cnaps_sent_at",
-        "professional_card_follow_up": "carte_pro", "ap_sh_active": "integration_dracar", "updated_at": "cnaps_updated_at"})
-    if cnaps: context["cnaps_recorded_status_only"] = cnaps
     return context
 
 
