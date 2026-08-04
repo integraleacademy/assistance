@@ -7164,7 +7164,7 @@ def crm_contact_wedof_refresh(contact_id):
 @app.route("/crm/<section>")
 @login_required
 def crm(section):
-    if section not in {"accueil", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "modeles"}:
+    if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "modeles"}:
         abort(404)
     return render_template("crm.html", section=section, statuses=CRM_STATUSES, user=current_user())
 
@@ -7834,11 +7834,72 @@ def crm_publish_contact_update(contact_id):
     publication = {
         "id": str(uuid.uuid4()), "date": _crm_now(), "texte": text,
         "author": (current_user() or {}).get("name", "Équipe Intégrale"),
+        "author_email": (current_user() or {}).get("email", ""),
+        "likes": [], "comments": [],
     }
     contact.setdefault("publications", []).insert(0, publication)
     contact["updated_at"] = _crm_now()
     save_data(data)
     return jsonify({"publication": publication, "contact": contact}), 201
+
+
+def _crm_publication(contact, publication_id):
+    return next((item for item in contact.get("publications", []) if item.get("id") == publication_id), None)
+
+
+def _crm_owns_content(item):
+    user = current_user() or {}
+    return item.get("author_email") == user.get("email") or (not item.get("author_email") and item.get("author") == user.get("name"))
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>", methods=["DELETE"])
+@login_required
+def crm_delete_publication(contact_id, publication_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    if not publication: return jsonify({"error": "Publication introuvable"}), 404
+    if not _crm_owns_content(publication): return jsonify({"error": "Vous ne pouvez supprimer que vos publications"}), 403
+    contact["publications"].remove(publication); contact["updated_at"] = _crm_now(); save_data(data)
+    return "", 204
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/like", methods=["POST"])
+@login_required
+def crm_like_publication(contact_id, publication_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    if not publication: return jsonify({"error": "Publication introuvable"}), 404
+    email = (current_user() or {}).get("email", "")
+    likes = publication.setdefault("likes", [])
+    likes.remove(email) if email in likes else likes.append(email)
+    save_data(data)
+    return jsonify({"publication": publication, "contact": contact})
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/comments", methods=["POST"])
+@login_required
+def crm_comment_publication(contact_id, publication_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    if not publication: return jsonify({"error": "Publication introuvable"}), 404
+    text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
+    if not text: return jsonify({"error": "Le commentaire est requis"}), 400
+    user = current_user() or {}
+    comment = {"id": str(uuid.uuid4()), "date": _crm_now(), "texte": text, "author": user.get("name", "Équipe Intégrale"), "author_email": user.get("email", "")}
+    publication.setdefault("comments", []).append(comment); contact["updated_at"] = _crm_now(); save_data(data)
+    return jsonify({"comment": comment, "contact": contact}), 201
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/comments/<comment_id>", methods=["DELETE"])
+@login_required
+def crm_delete_publication_comment(contact_id, publication_id, comment_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    comment = next((item for item in publication.get("comments", []) if item.get("id") == comment_id), None) if publication else None
+    if not comment: return jsonify({"error": "Commentaire introuvable"}), 404
+    if not _crm_owns_content(comment): return jsonify({"error": "Vous ne pouvez supprimer que vos commentaires"}), 403
+    publication["comments"].remove(comment); contact["updated_at"] = _crm_now(); save_data(data)
+    return "", 204
 
 
 @app.route("/api/crm/contacts/<contact_id>/convertir", methods=["POST"])
