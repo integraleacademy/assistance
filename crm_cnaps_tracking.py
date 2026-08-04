@@ -97,10 +97,23 @@ def _remote_titles(remote):
     return titles
 
 
+def extract_cnaps_raw_status(remote):
+    """Extrait uniquement le statut principal, sans confondre un statut annexe."""
+    remote = remote if isinstance(remote, dict) else {}
+    cnaps = remote.get("cnaps") if isinstance(remote.get("cnaps"), dict) else {}
+    for owner in (cnaps, remote):
+        for key in ("cnaps_status", "statut_cnaps", "status", "statut"):
+            if owner.get(key) not in (None, ""):
+                return owner[key]
+    return ""
+
+
 def scoring_snapshot_from_remote(remote, http_status=200, now=None):
     """Projette une réponse distante vers le cache minimal autorisé du score."""
     remote = remote if isinstance(remote, dict) else {}
-    status = normalize_cnaps_tracking_status({**remote, "http_status": http_status})
+    raw = extract_cnaps_raw_status(remote)
+    status = normalize_cnaps_tracking_status({"raw_status": raw, "found": remote.get("found"),
+                                              "http_status": http_status, "reason": remote.get("reason")})
     current = now or datetime.now(timezone.utc)
     if isinstance(current, str):
         try: current = datetime.fromisoformat(current.replace("Z", "+00:00"))
@@ -123,9 +136,6 @@ def scoring_snapshot_from_remote(remote, http_status=200, now=None):
         if is_professional and not is_expired and state not in {"refuse", "rejete", "inactif", "inactive"}:
             active = True
             active_expiry = str(expiry) if expiry else None
-    raw = next((value for owner in (remote, remote.get("cnaps") or {}) if isinstance(owner, dict)
-                for key in ("cnaps_status", "statut_cnaps", "status", "statut")
-                for value in [owner.get(key)] if value not in (None, "")), "")
     return {"found": False if status == "no_result" else remote.get("found", True),
             "normalized_status": status, "raw_status": str(raw)[:80],
             "has_active_professional_title": active,
@@ -235,6 +245,12 @@ def register_cnaps_tracking_proxy(
 ) -> None:
     """Installe le proxy partagé sur la route réglementaire historique."""
 
+    # L'application principale possède la route enrichie (snapshot, cache et score).
+    # Ne jamais la remplacer par le proxy minimal au chargement de l'entrypoint Gunicorn.
+    endpoint = "crm_contact_reglementaire"
+    if endpoint in app.view_functions:
+        return
+
     @login_required
     def crm_contact_reglementaire(contact_id):
         contact = find_contact(load_data(), contact_id)
@@ -242,10 +258,6 @@ def register_cnaps_tracking_proxy(
             return jsonify({"error": "Contact introuvable"}), 404
         return proxy_reglementaire(app, contact, http_get=http_get)
 
-    endpoint = "crm_contact_reglementaire"
-    if endpoint in app.view_functions:
-        app.view_functions[endpoint] = crm_contact_reglementaire
-        return
     app.add_url_rule(
         "/api/crm/contacts/<contact_id>/reglementaire",
         endpoint=endpoint,
