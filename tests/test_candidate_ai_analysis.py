@@ -122,6 +122,28 @@ def test_get_never_calls_ai_and_authentication_is_required(tmp_path, monkeypatch
     assert anonymous.post(f"/api/crm/contacts/{contact['id']}/ai-analysis", json={}).status_code == 302
 
 
+def test_contact_page_replaces_summary_and_starts_candidate_analysis_automatically():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "Synthèse du dossier" not in crm_js
+    assert crm_js.count('id="candidateAiCard"') == 1
+    assert "async function loadCandidateAi(c)" in crm_js
+    automatic_call = (
+        "api(`/api/crm/contacts/${c.id}/ai-analysis`,"
+        "{method:'POST',body:JSON.stringify({force:false})})"
+    )
+    assert automatic_call in crm_js
+    assert "loadCandidateAi(c);" in crm_js
+
+    contact_sidebar = crm_js.split('<aside class="contact-side-column">', 1)[1].split(
+        "</aside>", 1
+    )[0]
+    assert contact_sidebar.index('id="calendlyCard"') < contact_sidebar.index(
+        'id="integrationScoreCard"'
+    )
+
+
 def test_real_sdk_shape_uses_strict_schema_and_persists_once(tmp_path, monkeypatch):
     client = logged_client(tmp_path, monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "fake")
