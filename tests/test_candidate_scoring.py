@@ -3,6 +3,16 @@ import pytest
 from candidate_scoring import calculate_candidate_integration_score, normalize_cpf_amount
 
 
+def test_candidate_score_styles_are_bundled():
+    with open("static/crm.css", encoding="utf-8") as source:
+        css = source.read()
+
+    assert ".integration-score-card{padding:18px" in css
+    assert ".score-main strong{font:850 32px Manrope}" in css
+    assert ".score-progress i,.cpf-coverage i" in css
+    assert ".score-money{display:grid" in css
+
+
 def contact(**updates):
     base = {"formation": "APS", "cpf": "OUI", "cpf_montant": "1650",
             "identite_creation": "OUI", "identite_ok": "OUI",
