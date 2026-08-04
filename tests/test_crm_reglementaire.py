@@ -21,6 +21,13 @@ def contact(client):
     return client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
 
 
+def vae_contact(client, **overrides):
+    lead = contact(client)
+    values = {"formation": "DESP", "desp_type": "VAE", "mail": "lina@example.com",
+              "telephone": "0600000000", **overrides}
+    return client.patch(f"/api/crm/contacts/{lead['id']}", json=values).get_json()
+
+
 def response(status, payload):
     return SimpleNamespace(status_code=status, content=b"{}", json=lambda: payload)
 
@@ -68,6 +75,97 @@ def test_production_entrypoint_installs_same_proxy(tmp_path, monkeypatch):
     assert captured["params"] == {"crm_contact_id": lead["id"]}
 
 
+def test_desp_vae_404_links_once_and_uses_post_payload_directly(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch, production.app)
+    lead = vae_contact(test_client)
+    configure(monkeypatch)
+    calls = {"get": 0, "post": 0}
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs:
+                        (calls.__setitem__("get", calls["get"] + 1) or response(404, {})))
+    linked = {"ok": True, "linked": True, "trainee": {"token": "remove"},
+              "cnaps": {"status": "ACTIF"}, "card_pro": {"titles": []},
+              "vae": {"applicable": True, "progress_percent": 50}}
+    captured = {}
+    def fake_post(url, **kwargs):
+        calls["post"] += 1
+        captured.update(url=url, **kwargs)
+        return response(200, linked)
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "post", fake_post)
+
+    result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
+
+    assert result.status_code == 200
+    assert calls == {"get": 1, "post": 1}
+    assert captured["url"] == "https://gestion.example/api/integrations/crm/stagiaires/link-existing"
+    assert captured["json"] == {"crm_contact_id": lead["id"], "prenom": "Lina", "nom": "MARTIN",
+                                "email": "lina@example.com", "telephone": "0600000000",
+                                "source": "integrale_connect"}
+    assert captured["headers"] == {"Authorization": "Bearer top-secret", "Accept": "application/json",
+                                    "Content-Type": "application/json"}
+    assert result.get_json()["vae"]["progress_percent"] == 50
+    assert b"token" not in result.data and b"top-secret" not in result.data
+
+
+def test_direct_get_on_next_consultation_never_posts(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    lead = vae_contact(test_client)
+    configure(monkeypatch)
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs:
+                        response(200, {"trainee": {}, "cnaps": {}, "card_pro": {}, "vae": {"applicable": True}}))
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "post", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(AssertionError("POST inattendu")))
+    assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 200
+
+
+def test_linking_is_limited_to_desp_vae_with_sufficient_identity(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    configure(monkeypatch)
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(404, {}))
+    posts = []
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "post", lambda *args, **kwargs:
+                        (posts.append(kwargs) or response(200, {"vae": {}})))
+    for formation, desp_type in (("DESP", "INITIAL"), ("APS", "VAE"), ("A3P", "VAE")):
+        lead = vae_contact(test_client, formation=formation, desp_type=desp_type)
+        assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 404
+    lead = vae_contact(test_client, mail="", telephone="")
+    result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
+    assert result.status_code == 422
+    assert result.get_json()["reason"] == "insufficient_identity"
+    assert posts == []
+
+
+def test_linking_reasons_are_preserved_without_remote_details(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    lead = vae_contact(test_client)
+    configure(monkeypatch)
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(404, {}))
+    reasons = ("trainee_not_found", "conflicting_matches", "ambiguous_match", "identity_mismatch",
+               "crm_contact_id_already_used", "trainee_already_linked")
+    for reason in reasons:
+        monkeypatch.setattr(crm_cnaps_tracking.requests, "post", lambda *args, _reason=reason, **kwargs:
+                            response(409, {"reason": _reason, "error": "technical", "api_token": "leak"}))
+        result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
+        assert result.status_code == 409
+        assert result.get_json() == {"error": "Le rattachement automatique du stagiaire a échoué.", "reason": reason}
+
+
+def test_linking_auth_timeout_and_invalid_json_are_safe(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    lead = vae_contact(test_client)
+    configure(monkeypatch)
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(404, {}))
+    cases = [
+        (lambda *a, **k: response(401, {"error": "raw"}), 401, "L’intégration Gestion Stagiaires n’est pas correctement configurée."),
+        (lambda *a, **k: (_ for _ in ()).throw(requests.Timeout()), 502, "Gestion Stagiaires est momentanément indisponible"),
+        (lambda *a, **k: response(200, []), 502, "Réponse invalide de Gestion Stagiaires"),
+    ]
+    for post, status, message in cases:
+        monkeypatch.setattr(crm_cnaps_tracking.requests, "post", post)
+        result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
+        assert result.status_code == status
+        assert result.get_json()["error"] == message
+
+
 def test_remote_business_statuses_are_preserved(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
     lead = contact(test_client)
@@ -105,3 +203,18 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     assert "dossier.admin_url:vae.trainee_admin_url" in javascript
     assert "GESTION_STAGIAIRES_API_TOKEN" not in javascript
     assert "loadVae" not in javascript
+    assert "error.reason=payload.reason" in javascript
+    assert "renderGestionError(c,error.status,error.reason)" in javascript
+    for reason in ("trainee_not_found", "conflicting_matches", "ambiguous_match", "identity_mismatch",
+                   "crm_contact_id_already_used", "trainee_already_linked", "insufficient_identity"):
+        assert reason in javascript
+    for message in (
+        "Aucun stagiaire correspondant exactement à cette piste n’a été trouvé",
+        "L’adresse e-mail et le téléphone correspondent à deux stagiaires différents",
+        "Plusieurs stagiaires correspondent à cette piste",
+        "le nom ou le prénom ne correspond pas",
+        "déjà rattachée à un autre stagiaire",
+        "déjà rattaché à une autre piste CRM",
+        "nécessite le nom, le prénom et au moins une adresse e-mail ou un téléphone",
+    ):
+        assert message in javascript

@@ -11,6 +11,7 @@ from flask import jsonify
 
 
 REMOTE_PATH = "/api/integrations/crm/stagiaires"
+LINK_EXISTING_PATH = f"{REMOTE_PATH}/link-existing"
 _SECRET_KEYS = {
     "token", "public_token", "trainee_token", "api_token", "authorization",
     "x-api-key",
@@ -31,6 +32,27 @@ def gestion_stagiaires_api_url() -> str:
     return ""
 
 
+def gestion_stagiaires_link_existing_url() -> str:
+    """Construit l'endpoint de rattachement depuis la même origine publique."""
+    api_url = gestion_stagiaires_api_url()
+    if not api_url:
+        return ""
+    parsed = urlsplit(api_url)
+    return urlunsplit((parsed.scheme, parsed.netloc, LINK_EXISTING_PATH, "", ""))
+
+
+def crm_contact_identity(contact: Dict[str, Any]) -> Dict[str, str]:
+    """Normalise les champs d'identité partagés avec la conversion CRM."""
+    def clean(key: str) -> str:
+        value = contact.get(key)
+        if value is None or str(value).strip().lower() in {"null", "undefined"}:
+            return ""
+        return str(value).strip()
+
+    return {"prenom": clean("prenom"), "nom": clean("nom"),
+            "email": clean("mail"), "telephone": clean("telephone")}
+
+
 def public_payload(value: Any) -> Any:
     """Supprime récursivement les secrets éventuels d'une réponse distante."""
     if isinstance(value, dict):
@@ -44,8 +66,8 @@ def public_payload(value: Any) -> Any:
     return value
 
 
-def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None):
-    """Effectue l'unique appel distant et relaie son payload métier complet."""
+def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=None):
+    """Recherche le stagiaire puis tente au besoin un unique rattachement VAE."""
     api_url = gestion_stagiaires_api_url()
     api_token = str(os.getenv("GESTION_STAGIAIRES_API_TOKEN") or "").strip()
     if not api_url or not api_token:
@@ -69,9 +91,40 @@ def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None):
 
     if not isinstance(remote, dict):
         return jsonify({"error": "Réponse invalide de Gestion Stagiaires"}), 502
-    cleaned = public_payload(remote)
     if response.status_code == 200:
-        return jsonify(cleaned)
+        return jsonify(public_payload(remote))
+    is_desp_vae = (str(contact.get("formation") or "").strip().upper() == "DESP"
+                   and str(contact.get("desp_type") or "").strip().upper() == "VAE")
+    if response.status_code == 404 and is_desp_vae:
+        identity = crm_contact_identity(contact)
+        if not identity["prenom"] or not identity["nom"] or not (identity["email"] or identity["telephone"]):
+            return jsonify({"error": "Le rattachement automatique nécessite le nom, le prénom et au moins une adresse e-mail ou un téléphone.",
+                            "reason": "insufficient_identity"}), 422
+        payload = {"crm_contact_id": str(contact["id"]), **identity, "source": "integrale_connect"}
+        try:
+            linked_response = (http_post or requests.post)(
+                gestion_stagiaires_link_existing_url(), json=payload,
+                headers={"Authorization": f"Bearer {api_token}", "Accept": "application/json",
+                         "Content-Type": "application/json"},
+                timeout=float(os.getenv("GESTION_STAGIAIRES_CNAPS_TIMEOUT", "30")))
+            linked = linked_response.json() if getattr(linked_response, "content", b"") else {}
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            app.logger.warning("Gestion Stagiaires indisponible (%s)", type(exc).__name__)
+            return jsonify({"error": "Gestion Stagiaires est momentanément indisponible"}), 502
+        if not isinstance(linked, dict):
+            return jsonify({"error": "Réponse invalide de Gestion Stagiaires"}), 502
+        if linked_response.status_code == 200:
+            return jsonify(public_payload(linked))
+        if linked_response.status_code == 401:
+            return jsonify({"error": "L’intégration Gestion Stagiaires n’est pas correctement configurée."}), 401
+        reason = linked.get("reason")
+        allowed_reasons = {"trainee_not_found", "conflicting_matches", "ambiguous_match",
+                           "identity_mismatch", "crm_contact_id_already_used", "trainee_already_linked"}
+        safe = {"error": "Le rattachement automatique du stagiaire a échoué."}
+        if reason in allowed_reasons:
+            safe["reason"] = reason
+        status = linked_response.status_code if linked_response.status_code in {400, 404, 409, 422} else 502
+        return jsonify(safe), status
     if response.status_code in {400, 401, 404, 409}:
         # Le statut suffit au frontend pour présenter un message sûr et stable.
         safe_messages = {
