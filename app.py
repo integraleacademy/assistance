@@ -7983,57 +7983,6 @@ def crm_candidate_score_preview():
 
 
 
-@app.route("/api/crm/statuses", methods=["GET", "POST"])
-@login_required
-def crm_statuses():
-    data = load_data()
-    if request.method == "GET":
-        return jsonify(_crm_statuses(data))
-    label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
-    statuses = _crm_statuses(data)
-    if not label:
-        return jsonify({"error": "L’intitulé est obligatoire"}), 400
-    if label in statuses:
-        return jsonify({"error": "Cet intitulé existe déjà"}), 409
-    statuses.insert(len(statuses) - len(CRM_RESERVED_STATUSES), label)
-    data["crm_statuses"] = statuses
-    save_data(data)
-    return jsonify(statuses), 201
-
-
-@app.route("/api/crm/statuses/<path:old_label>", methods=["PATCH", "DELETE"])
-@login_required
-def crm_status(old_label):
-    data = load_data()
-    statuses = _crm_statuses(data)
-    if old_label not in statuses:
-        return jsonify({"error": "Statut introuvable"}), 404
-    if old_label in CRM_RESERVED_STATUSES:
-        return jsonify({"error": "Ce statut système ne peut pas être modifié"}), 400
-    if request.method == "PATCH":
-        label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
-        if not label:
-            return jsonify({"error": "L’intitulé est obligatoire"}), 400
-        if label != old_label and label in statuses:
-            return jsonify({"error": "Cet intitulé existe déjà"}), 409
-        statuses[statuses.index(old_label)] = label
-        replacement = label
-    else:
-        editable = [status for status in statuses if status not in CRM_RESERVED_STATUSES and status != old_label]
-        if not editable:
-            return jsonify({"error": "Le pipeline doit conserver au moins un statut"}), 400
-        statuses.remove(old_label)
-        replacement = editable[0]
-    for contact in data.get("crm_contacts", []):
-        if contact.get("statut") == old_label:
-            contact["statut"] = replacement
-            contact["updated_at"] = _crm_now()
-            _crm_activity(contact, "statut", f"Statut : {replacement}", f"Ancien statut : {old_label}")
-    data["crm_statuses"] = statuses
-    save_data(data)
-    return jsonify({"statuses": statuses, "replacement": replacement})
-
-
 @app.route("/api/crm/contacts/<contact_id>/appel", methods=["POST"])
 @login_required
 def crm_log_call(contact_id):
@@ -8163,40 +8112,12 @@ def crm_convert_contact(contact_id):
 @app.route("/api/crm/contacts/<contact_id>/reglementaire")
 @login_required
 def crm_contact_reglementaire(contact_id):
-    """Expose les données CNAPS sans jamais transmettre le secret d'intégration."""
-    if not _crm_contact(load_data(), contact_id):
+    """Expose le suivi réglementaire partagé sans transmettre le secret."""
+    contact = _crm_contact(load_data(), contact_id)
+    if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
-    api_url = os.getenv("GESTION_STAGIAIRES_API_URL", "").strip()
-    api_token = os.getenv("GESTION_STAGIAIRES_API_TOKEN", "").strip()
-    if not api_url or not api_token:
-        return jsonify({"error": "Connexion Gestion stagiaires non configurée"}), 503
-    try:
-        response = requests.get(api_url, params={"crm_contact_id": contact_id}, headers={
-            "Authorization": f"Bearer {api_token}", "Accept": "application/json"}, timeout=15)
-        if response.status_code == 404:
-            return jsonify({
-                "linked": False,
-                "message": "L’inscription n’a pas encore été enregistrée dans Gestion stagiaires.",
-            })
-        remote = response.json() if response.content else {}
-        if response.status_code != 200:
-            message = remote.get("error") if isinstance(remote, dict) else None
-            return jsonify({"error": message or "Gestion stagiaires est momentanément indisponible"}), 502
-        if not isinstance(remote, dict):
-            return jsonify({"error": "Réponse invalide de Gestion stagiaires"}), 502
-        # Le payload métier distant est relayé, mais les éventuels champs secrets
-        # sont supprimés en défense supplémentaire avant toute réponse navigateur.
-        def public_payload(value):
-            if isinstance(value, dict):
-                return {key: public_payload(item) for key, item in value.items()
-                        if str(key).lower() not in {"token", "api_token", "authorization"}}
-            if isinstance(value, list):
-                return [public_payload(item) for item in value]
-            return value
-        return jsonify(public_payload(remote))
-    except (requests.RequestException, ValueError) as exc:
-        print("Erreur suivi CNAPS Gestion stagiaires:", exc)
-        return jsonify({"error": "Gestion stagiaires est momentanément indisponible"}), 502
+    from crm_cnaps_tracking import proxy_reglementaire
+    return proxy_reglementaire(app, contact, http_get=requests.get)
 
 
 @app.route("/api/crm/reformuler", methods=["POST"])
