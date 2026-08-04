@@ -7335,6 +7335,7 @@ def crm(section):
         section=section,
         statuses=_crm_statuses(load_data()),
         user=current_user(),
+        crm_team=[{"name": member["name"], "first_name": member["first_name"], "email": member["email"]} for member in USERS.values()],
         asset_version=CRM_ASSET_VERSION,
     )
 
