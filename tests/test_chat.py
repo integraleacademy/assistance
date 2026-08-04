@@ -4,7 +4,7 @@ import uuid
 import pytest
 
 import app as application
-from chat import Message, Participant, TEAM_ID, select
+from chat import Message, Participant, PresenceConnection, TEAM_ID, select
 
 
 def web_client(email=None):
@@ -26,6 +26,7 @@ def reset_chat():
     application.chat.rate.clear()
     with application.chat.Session.begin() as db:
         db.query(Message).delete()
+        db.query(PresenceConnection).delete()
         db.query(Participant).filter(Participant.conversation_id != TEAM_ID).delete()
         from chat import Conversation
         db.query(Conversation).filter(Conversation.id != TEAM_ID).delete()
@@ -43,22 +44,21 @@ def test_socket_refuses_anonymous_and_accepts_authenticated_presence():
     user.disconnect(namespace="/chat")
 
 
-def test_multiple_tabs_stay_online_until_last_disconnect():
-    one, _ = socket_client("cassandre@integraleacademy.com")
-    two, _ = socket_client("cassandre@integraleacademy.com")
-    one.disconnect(namespace="/chat")
-    application.socketio.sleep(.03)
+def test_multiple_tabs_use_shared_presence_rows():
+    client = web_client("cassandre@integraleacademy.com")
+    assert client.post("/api/chat/presence", json={"tab_id": "tab-one"}).status_code == 200
+    assert client.post("/api/chat/presence", json={"tab_id": "tab-two"}).status_code == 200
+    with application.chat.Session() as db:
+        assert db.query(PresenceConnection).filter_by(user_id="cassandre@integraleacademy.com").count() == 2
+    client.post("/api/chat/presence/close", json={"tab_id": "tab-one"})
     assert application.chat.presence.online("cassandre@integraleacademy.com")
-    two.disconnect(namespace="/chat")
-    application.socketio.sleep(.03)
-    assert not application.chat.presence.online("cassandre@integraleacademy.com")
 
 
 def test_http_presence_fallback_marks_an_open_crm_online():
     client = web_client("elsa@integraleacademy.com")
-    assert client.post("/api/chat/presence").get_json() == {"ok": True}
+    assert client.post("/api/chat/presence", json={"tab_id": "elsa-tab"}).get_json()["ok"]
     assert application.chat.presence.online("elsa@integraleacademy.com")
-    assert web_client().post("/api/chat/presence").status_code == 401
+    assert web_client().post("/api/chat/presence", json={"tab_id": "anonymous"}).status_code == 401
 
 
 def test_team_send_persists_broadcasts_deduplicates_and_unread():
@@ -113,3 +113,29 @@ def test_rate_limit_ten_messages_per_ten_seconds():
     sender, _ = socket_client("clement@integraleacademy.com")
     replies = [sender.emit("chat:send", {"conversation_id": 1, "client_message_id": str(uuid.uuid4()), "body": "test"}, namespace="/chat", callback=True) for _ in range(11)]
     assert all(x["ok"] for x in replies[:10]) and not replies[10]["ok"]
+
+
+def test_http_direct_and_message_routes_are_idempotent():
+    sender = web_client("clement@integraleacademy.com")
+    first = sender.post("/api/chat/direct", json={"peer_user_id": "elsa@integraleacademy.com"})
+    second = sender.post("/api/chat/direct", json={"peer_user_id": "elsa@integraleacademy.com"})
+    assert first.status_code == second.status_code == 200
+    assert first.get_json()["conversation"]["id"] == second.get_json()["conversation"]["id"]
+    cid = first.get_json()["conversation"]["id"]
+    token = str(uuid.uuid4())
+    payload = {"client_message_id": token, "body": "Message HTTP"}
+    sent = sender.post(f"/api/chat/conversations/{cid}/messages", json=payload)
+    duplicate = sender.post(f"/api/chat/conversations/{cid}/messages", json=payload)
+    assert sent.status_code == 201 and duplicate.status_code == 200
+    assert sent.get_json()["message"]["id"] == duplicate.get_json()["message"]["id"]
+
+
+def test_diagnostics_is_admin_only_and_contains_no_urls():
+    forbidden = web_client("elsa@integraleacademy.com").get("/api/chat/diagnostics")
+    assert forbidden.status_code == 403
+    admin_email = next(email for email, user in application.USERS.items() if user["role"] == "admin")
+    response = web_client(admin_email).get("/api/chat/diagnostics")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["presence_backend"] in {"sql", "redis"}
+    assert all("url" not in key for key in data)
