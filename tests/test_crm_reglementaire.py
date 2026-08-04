@@ -4,6 +4,7 @@ import subprocess
 from types import SimpleNamespace
 
 import requests
+import pytest
 
 import app as application
 import crm_app as production
@@ -41,7 +42,7 @@ def configure(monkeypatch):
 
 def test_app_entrypoint_calls_stagiaires_by_permanent_crm_id(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
-    lead = contact(test_client)
+    lead = vae_contact(test_client)
     configure(monkeypatch)
     captured = {}
     payload = {
@@ -67,7 +68,7 @@ def test_app_entrypoint_calls_stagiaires_by_permanent_crm_id(tmp_path, monkeypat
 
 def test_production_entrypoint_installs_same_proxy(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch, production.app)
-    lead = contact(test_client)
+    lead = vae_contact(test_client)
     configure(monkeypatch)
     captured = {}
     monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda url, **kwargs: (captured.update(url=url, **kwargs) or response(200, {"vae": {"applicable": True}})))
@@ -119,23 +120,73 @@ def test_direct_get_on_next_consultation_never_posts(tmp_path, monkeypatch):
     assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 200
 
 
-def test_linking_covers_cnaps_and_vae_contacts_with_sufficient_identity(tmp_path, monkeypatch):
+@pytest.mark.parametrize("formation", ["APS", "A3P"])
+def test_cnaps_training_uses_name_tracking_without_linking(tmp_path, monkeypatch, formation):
+    test_client = client(tmp_path, monkeypatch)
+    configure(monkeypatch)
+    lead = vae_contact(test_client, formation=formation, nom="  Dùpré   Martin ",
+                       prenom=" ÉLise  ", mail="", telephone="")
+    captured = {}
+    payload = {
+        "found": True,
+        "cnaps": {"status": "Aucun titre CNAPS trouvé"},
+        "nub": "7654321",
+        "inscription": "Non inscrite",
+        "trainee": {"nom": "DUPRE MARTIN", "prenom": "Élise"},
+        "source_url": "https://gestion.example/admin/sessions/suivi-cnaps",
+    }
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda url, **kwargs:
+                        (captured.update(url=url, **kwargs) or response(200, payload)))
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "post", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(AssertionError("POST /link-existing inattendu")))
+
+    result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
+
+    assert result.status_code == 200
+    assert captured["url"] == "https://gestion.example/api/integrations/crm/cnaps-tracking"
+    assert captured["params"] == {"nom": "dupre martin", "prenom": "elise"}
+    assert captured["headers"]["Authorization"] == "Bearer top-secret"
+    assert result.get_json() == payload
+
+
+def test_only_desp_vae_404_is_linked(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
     configure(monkeypatch)
     monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(404, {}))
     posts = []
     monkeypatch.setattr(crm_cnaps_tracking.requests, "post", lambda *args, **kwargs:
                         (posts.append(kwargs) or response(200, {"vae": {}})))
-    for formation, desp_type in (("APS", ""), ("A3P", ""), ("DESP", "VAE")):
-        lead = vae_contact(test_client, formation=formation, desp_type=desp_type)
-        assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 200
+    lead = vae_contact(test_client, formation="DESP", desp_type="VAE")
+    assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 200
     lead = vae_contact(test_client, formation="DESP", desp_type="INITIAL")
     assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 404
     lead = vae_contact(test_client, mail="", telephone="")
     result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
     assert result.status_code == 422
     assert result.get_json()["reason"] == "insufficient_identity"
-    assert len(posts) == 3
+    assert len(posts) == 1
+
+
+def test_cnaps_not_found_has_dedicated_message(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    configure(monkeypatch)
+    lead = vae_contact(test_client, formation="APS")
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(404, {}))
+    result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
+    assert result.status_code == 404
+    assert result.get_json() == {
+        "error": "Aucun dossier CNAPS correspondant à ce nom et ce prénom n’a été trouvé dans le suivi CNAPS.",
+        "reason": "cnaps_not_found",
+    }
+
+
+def test_cnaps_fix_contains_no_contact_specific_data():
+    sources = "\n".join(
+        (Path(application.app.root_path) / filename).read_text(encoding="utf-8")
+        for filename in ("crm_cnaps_tracking.py", "static/crm.js")
+    ).casefold()
+    for specific_value in ("ronan", "godal", "1084892", "0686122220", "ronan.godal@icloud.com"):
+        assert specific_value not in sources
 
 
 def test_linking_reasons_are_preserved_without_remote_details(tmp_path, monkeypatch):
@@ -217,6 +268,9 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     assert "loadVae" not in javascript
     assert "error.reason=payload.reason" in javascript
     assert "renderGestionError(c,error.status,error.reason)" in javascript
+    assert "Aucun dossier CNAPS correspondant à ce nom et ce prénom" in javascript
+    assert "<span>NUB</span>" in javascript
+    assert "<span>Inscription</span>" in javascript
     for reason in ("trainee_not_found", "conflicting_matches", "ambiguous_match", "identity_mismatch",
                    "crm_contact_id_already_used", "trainee_already_linked", "insufficient_identity"):
         assert reason in javascript

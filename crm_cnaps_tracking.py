@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import unicodedata
 from typing import Any, Callable, Dict
 from urllib.parse import urlsplit, urlunsplit
 
@@ -11,6 +12,7 @@ from flask import jsonify
 
 
 REMOTE_PATH = "/api/integrations/crm/stagiaires"
+CNAPS_TRACKING_PATH = "/api/integrations/crm/cnaps-tracking"
 LINK_EXISTING_PATH = f"{REMOTE_PATH}/link-existing"
 _SECRET_KEYS = {
     "token", "public_token", "trainee_token", "api_token", "authorization",
@@ -39,6 +41,24 @@ def gestion_stagiaires_link_existing_url() -> str:
         return ""
     parsed = urlsplit(api_url)
     return urlunsplit((parsed.scheme, parsed.netloc, LINK_EXISTING_PATH, "", ""))
+
+
+def gestion_stagiaires_cnaps_tracking_api_url() -> str:
+    """Construit l'endpoint du suivi CNAPS depuis l'origine configurée."""
+    api_url = gestion_stagiaires_api_url()
+    if not api_url:
+        return ""
+    parsed = urlsplit(api_url)
+    return urlunsplit((parsed.scheme, parsed.netloc, CNAPS_TRACKING_PATH, "", ""))
+
+
+def normalized_name(value: Any) -> str:
+    """Normalise un nom pour une recherche indépendante de sa présentation."""
+    text = " ".join(str(value or "").strip().split()).casefold()
+    return "".join(
+        character for character in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(character)
+    )
 
 
 def crm_contact_identity(contact: Dict[str, Any]) -> Dict[str, str]:
@@ -73,10 +93,24 @@ def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=N
     if not api_url or not api_token:
         return jsonify({"error": "Connexion Gestion Stagiaires non configurée"}), 503
 
+    formation = str(contact.get("formation") or "").strip().upper()
+    is_cnaps_training = formation in {"APS", "A3P"}
+    identity = crm_contact_identity(contact)
+    if is_cnaps_training:
+        api_url = gestion_stagiaires_cnaps_tracking_api_url()
+        params = {
+            "nom": normalized_name(identity["nom"]),
+            "prenom": normalized_name(identity["prenom"]),
+        }
+        if not params["nom"] or not params["prenom"]:
+            return jsonify({"error": "Le suivi CNAPS nécessite le nom et le prénom du contact."}), 422
+    else:
+        params = {"crm_contact_id": contact["id"]}
+
     try:
         response = (http_get or requests.get)(
             api_url,
-            params={"crm_contact_id": contact["id"]},
+            params=params,
             headers={
                 "Authorization": f"Bearer {api_token}",
                 "Accept": "application/json",
@@ -93,10 +127,13 @@ def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=N
         return jsonify({"error": "Réponse invalide de Gestion Stagiaires"}), 502
     if response.status_code == 200:
         return jsonify(public_payload(remote))
-    formation = str(contact.get("formation") or "").strip().upper()
-    needs_tracking = (formation in {"APS", "A3P"}
-                      or (formation == "DESP"
-                          and str(contact.get("desp_type") or "").strip().upper() == "VAE"))
+    if is_cnaps_training and response.status_code == 404:
+        return jsonify({
+            "error": "Aucun dossier CNAPS correspondant à ce nom et ce prénom n’a été trouvé dans le suivi CNAPS.",
+            "reason": "cnaps_not_found",
+        }), 404
+    needs_tracking = (formation == "DESP"
+                      and str(contact.get("desp_type") or "").strip().upper() == "VAE")
     if response.status_code == 404 and needs_tracking:
         identity = crm_contact_identity(contact)
         if not identity["prenom"] or not identity["nom"] or not (identity["email"] or identity["telephone"]):
