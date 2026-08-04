@@ -720,7 +720,13 @@ _CRM_ACCOUNTS = (
 )
 
 USERS = {
-    email: {"email": email, "name": name, "role": role, "password_env": password_env}
+    email: {
+        "email": email,
+        "name": name,
+        "first_name": name.split(maxsplit=1)[0],
+        "role": role,
+        "password_env": password_env,
+    }
     for email, name, role, password_env in _CRM_ACCOUNTS
 }
 
@@ -6160,6 +6166,21 @@ CRM_STATUSES = [
     "Prochain RDV inscription", "Financement FT en cours", "Financement FT refusé",
     "A relancer", "Disqualifié", "Converti",
 ]
+CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
+
+
+def _crm_statuses(data=None):
+    """Retourne le pipeline personnalisable, complété des statuts système."""
+    configured = (data or {}).get("crm_statuses")
+    if not isinstance(configured, list):
+        return list(CRM_STATUSES)
+    clean = []
+    for value in configured:
+        label = str(value or "").strip()
+        if label and label not in clean and label not in CRM_RESERVED_STATUSES:
+            clean.append(label)
+    clean.extend(status for status in CRM_STATUSES if status in CRM_RESERVED_STATUSES)
+    return clean
 
 CALENDLY_API_BASE = "https://api.calendly.com"
 CALENDLY_WEBHOOK_EVENTS = ("invitee.created", "invitee.canceled")
@@ -7177,7 +7198,7 @@ def crm_contact_wedof_refresh(contact_id):
 def crm(section):
     if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "modeles"}:
         abort(404)
-    return render_template("crm.html", section=section, statuses=CRM_STATUSES, user=current_user())
+    return render_template("crm.html", section=section, statuses=_crm_statuses(load_data()), user=current_user())
 
 
 @app.route("/CRM", defaults={"section": "accueil"})
@@ -7767,7 +7788,7 @@ def crm_contacts():
         "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
         "nom": _crm_format_last_name(payload.get("nom")), "telephone": "", "mail": "",
         "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
-        "statut": "Nouveaux", "dates_formation": "", "cpf": "", "carte_pro": "",
+        "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
         "antecedents": "", "titre_sejour": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
@@ -7816,8 +7837,9 @@ def crm_contact(contact_id):
             contact[key] = str(value or "")
     contact["prenom"] = _crm_format_first_name(contact.get("prenom"))
     contact["nom"] = _crm_format_last_name(contact.get("nom"))
-    if contact.get("statut") not in CRM_STATUSES:
-        contact["statut"] = old_status or "Nouveaux"
+    statuses = _crm_statuses(data)
+    if contact.get("statut") not in statuses:
+        contact["statut"] = old_status if old_status in statuses else statuses[0]
     if contact.get("statut") != old_status:
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
     new_score = calculate_candidate_integration_score(contact)
@@ -7844,6 +7866,57 @@ def crm_candidate_score_preview():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
     return jsonify(calculate_candidate_integration_score(payload))
+
+
+@app.route("/api/crm/statuses", methods=["GET", "POST"])
+@login_required
+def crm_statuses():
+    data = load_data()
+    if request.method == "GET":
+        return jsonify(_crm_statuses(data))
+    label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
+    statuses = _crm_statuses(data)
+    if not label:
+        return jsonify({"error": "L’intitulé est obligatoire"}), 400
+    if label in statuses:
+        return jsonify({"error": "Cet intitulé existe déjà"}), 409
+    statuses.insert(len(statuses) - len(CRM_RESERVED_STATUSES), label)
+    data["crm_statuses"] = statuses
+    save_data(data)
+    return jsonify(statuses), 201
+
+
+@app.route("/api/crm/statuses/<path:old_label>", methods=["PATCH", "DELETE"])
+@login_required
+def crm_status(old_label):
+    data = load_data()
+    statuses = _crm_statuses(data)
+    if old_label not in statuses:
+        return jsonify({"error": "Statut introuvable"}), 404
+    if old_label in CRM_RESERVED_STATUSES:
+        return jsonify({"error": "Ce statut système ne peut pas être modifié"}), 400
+    if request.method == "PATCH":
+        label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
+        if not label:
+            return jsonify({"error": "L’intitulé est obligatoire"}), 400
+        if label != old_label and label in statuses:
+            return jsonify({"error": "Cet intitulé existe déjà"}), 409
+        statuses[statuses.index(old_label)] = label
+        replacement = label
+    else:
+        editable = [status for status in statuses if status not in CRM_RESERVED_STATUSES and status != old_label]
+        if not editable:
+            return jsonify({"error": "Le pipeline doit conserver au moins un statut"}), 400
+        statuses.remove(old_label)
+        replacement = editable[0]
+    for contact in data.get("crm_contacts", []):
+        if contact.get("statut") == old_label:
+            contact["statut"] = replacement
+            contact["updated_at"] = _crm_now()
+            _crm_activity(contact, "statut", f"Statut : {replacement}", f"Ancien statut : {old_label}")
+    data["crm_statuses"] = statuses
+    save_data(data)
+    return jsonify({"statuses": statuses, "replacement": replacement})
 
 
 @app.route("/api/crm/contacts/<contact_id>/appel", methods=["POST"])
