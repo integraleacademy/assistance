@@ -29,6 +29,7 @@ from candidate_ai_analysis import (
     AI_CANDIDATE_ANALYSIS_VERSION, AI_CANDIDATE_PROMPT_VERSION,
     AI_CANDIDATE_SYSTEM_PROMPT, CANDIDATE_AI_RESPONSE_SCHEMA, CandidateAIResponseError,
     build_candidate_ai_context as _build_candidate_ai_context,
+    build_candidate_ai_fallback,
     classify_calendly_appointment, compute_candidate_ai_source_hash,
     finalize_candidate_ai_analysis, validate_candidate_ai_analysis,
 )
@@ -6394,7 +6395,7 @@ def _crm_calendly_new_contact(data, payload):
         "mail": str(payload.get("email") or "").strip(), "formation": "",
         "lieu": "", "statut": "RDV programmé", "dates_formation": "",
         "cpf": "", "carte_pro": "", "antecedents": "", "desp_type": "",
-        "identite_creation": "", "identite_ok": "", "financement_ft": "",
+        "identite_creation": "", "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
         "refus_ft_perso": "", "reste_a_charge_perso": "", "origine": "Calendly", "inscrit_ft": "",
         "commentaires": "Piste créée automatiquement depuis un rendez-vous Calendly.",
         "relance_date": "", "created_at": now, "updated_at": now,
@@ -6789,12 +6790,14 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "antecedents": str(fields.get("garde_vue") or "").strip(),
         "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
         "identite_creation": str(fields.get("identite_numerique") or "").strip(),
-        "identite_ok": str(fields.get("identite_numerique") or "").strip(),
+        # Le formulaire public confirme uniquement la démarche de création ; son
+        # fonctionnement et l'inscription FT sont des faits distincts à vérifier.
+        "identite_ok": "",
         "financement_ft": str(fields.get("france_travail") or "").strip(),
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": "",
         "origine": "Site internet",
-        "inscrit_ft": str(fields.get("france_travail") or "").strip(),
+        "inscrit_ft": "",
         "commentaires": "",
         "relance_date": "",
         "created_at": now,
@@ -7949,7 +7952,7 @@ def crm_contacts():
         "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
-        "identite_ok": "", "financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
+        "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
         "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
@@ -8014,7 +8017,7 @@ def crm_contact(contact_id):
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
-               "financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
+               "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "relance_date"}
     old_status = contact.get("statut")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
@@ -8029,7 +8032,7 @@ def crm_contact(contact_id):
             contact[key] = str(value or "")
     # Une confirmation porte sur un montant exact : toute modification de ses
     # déterminants l'invalide afin qu'elle ne soit jamais réutilisée pour un autre montant.
-    determinants = {"formation", "desp_type", "cpf", "cpf_montant", "financement_ft"}
+    determinants = {"formation", "desp_type", "cpf", "cpf_montant", "financement_ft", "statut_demande_financement_ft"}
     provisional_score = calculate_candidate_integration_score(contact, snapshot)
     old_amount = old_score.get("personal_remainder_amount_eur")
     new_amount = provisional_score.get("personal_remainder_amount_eur")
@@ -8326,9 +8329,6 @@ def crm_candidate_ai_analysis(contact_id):
     if request.method == "GET":
         return jsonify(get_candidate_ai_analysis_state(contact_id, data))
     force = bool((request.get_json(silent=True) or {}).get("force", False))
-    if not os.getenv("OPENAI_API_KEY"):
-        return jsonify({"error": "Analyse IA indisponible : la configuration du service IA est manquante.",
-            "error_code": "missing_configuration", "previous_analysis_available": False}), 503
     with _CRM_AI_ANALYSIS_LOCKS_GUARD:
         lock = _CRM_AI_ANALYSIS_LOCKS.setdefault(contact_id, threading.Lock())
     with lock:
@@ -8350,7 +8350,8 @@ def crm_candidate_ai_analysis(contact_id):
         try:
             result = generate_candidate_ai_analysis(context)
         except Exception as exc:
-            # Ne journaliser ni contexte ni prompt ; préserver la dernière analyse réussie.
+            # Ne journaliser ni contexte ni prompt. Une analyse locale déterministe
+            # remplace la sortie fournisseur afin de ne jamais réafficher un contenu périmé.
             status_code = getattr(exc, "status_code", None)
             reason = getattr(exc, "code", None) if isinstance(exc, CandidateAIResponseError) else None
             request_id = getattr(exc, "request_id", None)
@@ -8359,24 +8360,7 @@ def crm_candidate_ai_analysis(contact_id):
                 "candidate_ai_analysis contact=%s error=%s reason=%s provider_status=%s request_id=%s model=%s format=json_schema",
                 contact_id, type(exc).__name__, reason or "provider_error", status_code or "none",
                 request_id or "none", model)
-            latest = load_data()
-            old = latest.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
-            message = "La réponse du service IA n’a pas pu être interprétée. Aucune donnée n’a été modifiée."
-            error_code = reason or "provider_error"
-            http_status = 502
-            if isinstance(exc, CandidateAIResponseError):
-                message = exc.user_message
-            elif status_code == 429:
-                message = "Le service IA est temporairement indisponible en raison d’une limite d’utilisation. Réessayez ultérieurement."
-                error_code, http_status = "rate_limit", 429
-            elif isinstance(exc, (TimeoutError, requests.Timeout)) or "timeout" in type(exc).__name__.lower():
-                message = "L’analyse n’a pas pu être générée pour le moment. Réessayez dans quelques instants."
-                error_code, http_status = "timeout", 504
-            if old:
-                old["last_error"] = "L’actualisation a échoué. La dernière analyse disponible est toujours affichée."
-                save_data(latest)
-            return jsonify({"error": message, "error_code": error_code,
-                "previous_analysis_available": bool(old)}), http_status
+            result = build_candidate_ai_fallback(context)
         latest = load_data()
         contact = _crm_contact(latest, contact_id)
         if not contact:
@@ -8386,7 +8370,9 @@ def crm_candidate_ai_analysis(contact_id):
             "analysis_version": AI_CANDIDATE_ANALYSIS_VERSION, "prompt_version": AI_CANDIDATE_PROMPT_VERSION,
             "source_hash": source_hash, "generated_at": _crm_now(),
             "generated_by_user_id": user.get("email", ""), "generated_by_name": user.get("name", "Équipe Intégrale"),
-            "provider": "openai", "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "result": result}
+            "provider": "local_fallback" if result.get("fallback") else "openai",
+            "model": "deterministic" if result.get("fallback") else os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            "result": result}
         _crm_activity(contact, "ai_analysis", "Analyse IA du candidat actualisée",
             f"Priorité proposée : {result['priority_label']}")
         save_data(latest)

@@ -9,10 +9,37 @@ import app as application
 from candidate_ai_analysis import (
     AI_CANDIDATE_SYSTEM_PROMPT, CANDIDATE_AI_RESPONSE_SCHEMA, CandidateAIResponseError,
     build_candidate_ai_context,
+    build_funding_analysis,
     build_calendly_ai_summary, classify_calendly_appointment, detect_calendly_channel,
     finalize_candidate_ai_analysis, parse_calendly_datetime,
     compute_candidate_ai_source_hash, validate_candidate_ai_analysis,
 )
+
+
+def test_funding_business_dictionary_mandatory_cases():
+    to_prepare = build_funding_analysis({"wants_france_travail": "OUI", "registered_france_travail": "OUI"})
+    assert "La demande reste à préparer et aucune transmission n’est actuellement enregistrée" in to_prepare["france_travail"]
+    assert "en attente de validation" not in to_prepare["france_travail"]
+
+    transmitted = build_funding_analysis({"wants_france_travail": "OUI", "france_travail_request_status": "transmise"})
+    assert "La demande de financement a été transmise à France Travail" in transmitted["france_travail"]
+
+    identity = build_funding_analysis({"digital_identity_created": "OUI", "digital_identity_working": "NON"})
+    assert "installée, mais l’identité numérique n’est pas encore fonctionnelle" in identity["cpf_identity"]
+
+    amounts = build_funding_analysis({"cpf_amount": "900", "reference_price": "1650",
+        "wants_france_travail": "OUI", "personal_funding_fallback": "OUI"})
+    assert amounts["remaining_to_finance_eur"] == 750
+    assert "reste à financer est donc de 750 €" in amounts["cpf_identity"]
+    assert "aucune transmission" in amounts["france_travail"]
+    assert "prendre personnellement en charge" in amounts["additional_funding"]
+
+    no_request = build_funding_analysis({"registered_france_travail": "OUI", "wants_france_travail": "NON"})
+    assert no_request["france_travail"] == "Le candidat est inscrit à France Travail."
+
+    missing = build_funding_analysis({"cpf_amount": ""})
+    assert "Le montant disponible sur le CPF n’est pas renseigné" in missing["cpf_identity"]
+    assert "0 €" not in missing["cpf_identity"]
 
 
 def valid_result(**changes):
@@ -239,18 +266,18 @@ def test_json_object_fallback_strips_fences_and_only_retries_once(monkeypatch):
     (sdk_response(json.dumps(valid_result()), finish_reason="length"), "truncated_response"),
     (sdk_response(None, refusal="Je refuse"), "model_refusal"),
 ])
-def test_bad_provider_response_is_not_saved(tmp_path, monkeypatch, response, error_code):
+def test_bad_provider_response_uses_and_saves_safe_fallback(tmp_path, monkeypatch, response, error_code):
     client = logged_client(tmp_path, monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "fake")
     mock_openai(monkeypatch, [response])
     contact = client.post("/api/crm/contacts", json={"formation": "APS"}).get_json()
     result = client.post(f"/api/crm/contacts/{contact['id']}/ai-analysis", json={})
-    assert result.status_code == 502 and result.get_json()["error_code"] == error_code
+    assert result.status_code == 200 and result.get_json()["result"]["fallback"] is True
     activities = client.get(f"/api/crm/contacts/{contact['id']}").get_json().get("activities", [])
-    assert not [item for item in activities if item["kind"] == "ai_analysis"]
+    assert len([item for item in activities if item["kind"] == "ai_analysis"]) == 1
 
 
-def test_truncation_preserves_previous_analysis(tmp_path, monkeypatch):
+def test_truncation_replaces_stale_analysis_with_current_fallback(tmp_path, monkeypatch):
     client = logged_client(tmp_path, monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "fake")
     calls = mock_openai(monkeypatch, [sdk_response(json.dumps(valid_result())),
@@ -258,18 +285,19 @@ def test_truncation_preserves_previous_analysis(tmp_path, monkeypatch):
     contact = client.post("/api/crm/contacts", json={"formation": "APS"}).get_json()
     url = f"/api/crm/contacts/{contact['id']}/ai-analysis"
     assert client.post(url, json={}).status_code == 200
-    failed = client.post(url, json={"force": True})
-    assert failed.get_json()["previous_analysis_available"] is True and len(calls) == 2
-    assert client.get(url).get_json()["result"]["priority"] == "medium"
+    fallback = client.post(url, json={"force": True})
+    assert fallback.status_code == 200 and fallback.get_json()["result"]["fallback"] is True
+    assert len(calls) == 2
+    assert client.get(url).get_json()["result"]["priority"] == "unknown"
 
 
-def test_rate_limit_has_no_fallback_and_safe_logs(tmp_path, monkeypatch, caplog):
+def test_rate_limit_has_safe_fallback_and_safe_logs(tmp_path, monkeypatch, caplog):
     client = logged_client(tmp_path, monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "fake")
     calls = mock_openai(monkeypatch, [ProviderError(429, "quota; leaked@example.com 0612345678 private note")])
     contact = client.post("/api/crm/contacts", json={"formation": "APS", "commentaires": "private note"}).get_json()
     response = client.post(f"/api/crm/contacts/{contact['id']}/ai-analysis", json={})
-    assert response.status_code == 429 and response.get_json()["error_code"] == "rate_limit"
+    assert response.status_code == 200 and response.get_json()["result"]["fallback"] is True
     assert len(calls) == 1
     logs = caplog.text
     assert "provider_status=429" in logs and "req-test" in logs
