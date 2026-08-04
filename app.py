@@ -6922,8 +6922,22 @@ def build_candidate_ai_context(contact_id, data=None, now=None):
         wedof = _wedof_contact_resources(contact_id)
     except Exception:
         wedof = []
+    vae_tracking = None
+    if (str(contact.get("formation") or "").strip().upper() == "DESP"
+            and str(contact.get("desp_type") or "").strip().upper() == "VAE"):
+        try:
+            from crm_cnaps_tracking import proxy_reglementaire
+            remote = proxy_reglementaire(app, contact, http_get=requests.get, http_post=requests.post)
+            response = remote[0] if isinstance(remote, tuple) else remote
+            status = remote[1] if isinstance(remote, tuple) else response.status_code
+            payload = response.get_json(silent=True) if status == 200 else None
+            vae_tracking = payload.get("vae") if isinstance(payload, dict) else None
+        except Exception as exc:
+            # L'indisponibilité du SI stagiaires ne doit pas bloquer toute l'analyse.
+            app.logger.warning("Suivi VAE indisponible pour l'analyse IA (%s)", type(exc).__name__)
+            vae_tracking = None
     return _build_candidate_ai_context(
-        contact, data, calculate_candidate_integration_score(contact), wedof, now)
+        contact, data, calculate_candidate_integration_score(contact), wedof, now, vae_tracking)
 
 
 def generate_candidate_ai_analysis(context):
@@ -8183,7 +8197,7 @@ def crm_candidate_ai_analysis(contact_id):
         data = load_data()
         context = build_candidate_ai_context(contact_id, data)
         meaningful = (any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
-            "recent_notes_untrusted", "recent_activities_untrusted", "wedof"))
+            "recent_notes_untrusted", "recent_activities_untrusted", "wedof", "vae_tracking_read_only"))
             or bool(context.get("appointments", {}).get("total_count")))
         if not meaningful:
             return jsonify({"status": "insufficient_data", "message": "Les informations de la piste sont insuffisantes pour générer une analyse utile."}), 422

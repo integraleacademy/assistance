@@ -85,6 +85,49 @@ def test_hash_changes_for_business_data_not_visual_data():
     assert first != compute_candidate_ai_source_hash(build_candidate_ai_context({**base, "formation": "A3P"}, data))
 
 
+def test_context_includes_all_visible_vae_tracking_facts_and_changes_hash():
+    contact = {"id": "vae-1", "formation": "DESP", "desp_type": "VAE"}
+    data = {"crm_calendly_appointments": []}
+    vae = {"applicable": True, "progress_percent": 65, "status_label": "Livret 2 en cours",
+        "next_action": {"label": "Déposer le livret 2", "internal": "ignored"},
+        "recevabilite": {"status_label": "Recevable", "attestation_available": True},
+        "jury": {"scheduled": True, "date": "2026-09-15", "location": "Cannes"},
+        "final_result": {"code": "pending", "label": "En attente"},
+        "complements": {"requested": True},
+        "dossier": {"found": True, "status_label": "Complet", "multiple_dossiers": True,
+                    "dossier_count": 2, "admin_url": "https://private.example/admin"},
+        "scotia": {"status_label": "Transmis", "status_tone": "success",
+                   "comment": "<b>Contrôle</b> le 04/08"},
+        "action_dates": {"livret_1_submitted_at": "2026-08-04"}, "updated_at": "2026-08-04T08:00:00Z"}
+    context = build_candidate_ai_context(contact, data, vae_tracking=vae)
+    tracking = context["vae_tracking_read_only"]
+    assert tracking["progress_percent"] == 65
+    assert tracking["jury"]["location"] == "Cannes"
+    assert tracking["scotia"]["comment"] == "Contrôle le 04/08"
+    assert tracking["action_dates"]["livret_1_submitted_at"] == "2026-08-04"
+    assert "admin_url" not in json.dumps(tracking)
+    without_vae = build_candidate_ai_context(contact, data)
+    assert compute_candidate_ai_source_hash(context) != compute_candidate_ai_source_hash(without_vae)
+    assert "suivi SCOTIA" in AI_CANDIDATE_SYSTEM_PROMPT
+
+
+def test_application_context_fetches_vae_tracking_from_gestion_stagiaires(tmp_path, monkeypatch):
+    client = logged_client(tmp_path, monkeypatch)
+    contact = client.post("/api/crm/contacts", json={"formation": "DESP"}).get_json()
+    contact = client.patch(f"/api/crm/contacts/{contact['id']}",
+                           json={"formation": "DESP", "desp_type": "VAE"}).get_json()
+    assert contact["formation"] == "DESP" and contact["desp_type"] == "VAE"
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_URL", "https://gestion.example")
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", "secret")
+    response = SimpleNamespace(status_code=200, content=b"{}", json=lambda: {
+        "vae": {"applicable": True, "progress_percent": 80, "status_label": "Jury programmé"}})
+    monkeypatch.setattr(application.requests, "get", lambda *args, **kwargs: response)
+    with application.app.app_context():
+        context = application.build_candidate_ai_context(contact["id"])
+    assert context["vae_tracking_read_only"] == {
+        "applicable": True, "progress_percent": 80, "status_label": "Jury programmé"}
+
+
 def test_validation_rejects_invalid_json_and_priority_and_truncates_lists():
     with pytest.raises(CandidateAIResponseError, match="invalid_json"): validate_candidate_ai_analysis("not json")
     with pytest.raises(CandidateAIResponseError, match="invalid_priority"): validate_candidate_ai_analysis(valid_result(priority="urgent"))
