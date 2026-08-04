@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import threading
 import time
 from collections import defaultdict, deque
@@ -50,68 +51,96 @@ class Message(Base):
                       Index("ix_chat_message_conversation_created", "conversation_id", "created_at", "id"))
 
 
-class Presence:
-    """Presence par socket, avec grace anti-clignotement lors d'une navigation."""
-    def __init__(self, socketio, grace=15, activity_timeout=50):
-        self.socketio, self.grace, self.activity_timeout = socketio, grace, activity_timeout
-        self.sockets, self.sid_user, self.heartbeats, self.last_seen = defaultdict(set), {}, {}, {}
-        self.activity = {}
-        self.lock = threading.RLock()
+class PresenceConnection(Base):
+    """Une ligne partagée par onglet; aucun état de présence ne vit en mémoire."""
+    __tablename__ = "chat_presence_connections"
+    user_id = Column(String(320), primary_key=True)
+    tab_id = Column(String(64), primary_key=True)
+    last_heartbeat_at = Column(DateTime(timezone=True), nullable=False)
+    connected_at = Column(DateTime(timezone=True), nullable=False)
+    last_seen_at = Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (Index("ix_chat_presence_heartbeat", "last_heartbeat_at"),)
 
-    def connect(self, user_id, sid):
-        with self.lock:
-            was_offline = not self._online_locked(user_id)
-            self.sockets[user_id].add(sid); self.sid_user[sid] = user_id
-            self.heartbeats[sid] = time.monotonic()
-        if was_offline:
-            self._broadcast(user_id, True)
 
-    def heartbeat(self, sid):
-        with self.lock:
-            if sid in self.sid_user: self.heartbeats[sid] = time.monotonic()
+class SharedPresence:
+    """Présence Redis (TTL natif) ou SQL, utilisable par plusieurs processus."""
+    ttl = 60
 
-    def touch(self, user_id):
-        """Maintient la présence même lorsque WebSocket est filtré par un proxy."""
-        with self.lock:
-            was_offline = not self._online_locked(user_id)
-            stamp = time.monotonic()
-            self.activity[user_id] = stamp
-        if was_offline: self._broadcast(user_id, True)
-        self.socketio.start_background_task(self._expire_activity, user_id, stamp)
+    def __init__(self, service, redis_url=None):
+        self.service = service
+        self.redis = None
+        if redis_url:
+            try:
+                import redis
+                self.redis = redis.Redis.from_url(redis_url, decode_responses=True)
+                self.redis.ping()
+            except Exception:
+                logging.exception("Redis présence indisponible, bascule SQL")
+                self.redis = None
+        self.backend = "redis" if self.redis else "sql"
 
-    def _expire_activity(self, user_id, stamp):
-        self.socketio.sleep(self.activity_timeout)
-        with self.lock:
-            if self.activity.get(user_id) != stamp or self.sockets[user_id]: return
-            self.activity.pop(user_id, None)
-            self.last_seen[user_id] = datetime.now(timezone.utc)
-        self._broadcast(user_id, False)
+    @staticmethod
+    def _tab(tab_id):
+        value = str(tab_id or "").strip()[:64]
+        return value if value and all(c.isalnum() or c in "-_" for c in value) else None
 
-    def disconnect(self, sid):
-        with self.lock:
-            user_id = self.sid_user.pop(sid, None)
-            self.heartbeats.pop(sid, None)
-            if not user_id: return
-            self.sockets[user_id].discard(sid)
-        self.socketio.start_background_task(self._offline_after_grace, user_id)
+    def heartbeat(self, user_id, tab_id):
+        tab_id = self._tab(tab_id)
+        if not tab_id: return False
+        was_online = self.online(user_id)
+        now = datetime.now(timezone.utc)
+        if self.redis:
+            self.redis.setex(f"chat:presence:{user_id}:{tab_id}", self.ttl, now.isoformat())
+            self.redis.set(f"chat:last_seen:{user_id}", now.isoformat())
+        else:
+            with self.service.Session.begin() as db:
+                row = db.get(PresenceConnection, (user_id, tab_id))
+                if row:
+                    row.last_heartbeat_at = row.last_seen_at = now
+                else:
+                    db.add(PresenceConnection(user_id=user_id, tab_id=tab_id,
+                        connected_at=now, last_heartbeat_at=now, last_seen_at=now))
+                self._cleanup(db, now)
+        if not was_online: self.broadcast(user_id, True)
+        return True
 
-    def _offline_after_grace(self, user_id):
-        self.socketio.sleep(self.grace)
-        with self.lock:
-            if self._online_locked(user_id): return
-            self.last_seen[user_id] = datetime.now(timezone.utc)
-        self._broadcast(user_id, False)
+    def close(self, user_id, tab_id):
+        tab_id = self._tab(tab_id)
+        if not tab_id: return
+        # Grace de navigation: la ligne/clé expire naturellement; un nouveau document
+        # renouvelle le même tab_id immédiatement.
+        if self.redis:
+            key = f"chat:presence:{user_id}:{tab_id}"
+            if self.redis.exists(key): self.redis.expire(key, int(self.service.presence_grace))
+        else:
+            cutoff = datetime.now(timezone.utc).timestamp() - self.ttl + self.service.presence_grace
+            with self.service.Session.begin() as db:
+                row = db.get(PresenceConnection, (user_id, tab_id))
+                if row: row.last_heartbeat_at = datetime.fromtimestamp(cutoff, timezone.utc)
 
-    def _broadcast(self, user_id, online):
-        stamp = None if online else self.last_seen.get(user_id, datetime.now(timezone.utc)).isoformat()
-        self.socketio.emit("presence:changed", {"user_id": user_id, "online": online, "last_seen_at": stamp}, namespace=NAMESPACE)
+    def _cleanup(self, db, now=None):
+        cutoff = datetime.fromtimestamp((now or datetime.now(timezone.utc)).timestamp() - self.ttl, timezone.utc)
+        db.query(PresenceConnection).filter(PresenceConnection.last_heartbeat_at < cutoff).delete(synchronize_session=False)
 
     def online(self, user_id):
-        with self.lock: return self._online_locked(user_id)
+        if self.redis:
+            return bool(next(self.redis.scan_iter(match=f"chat:presence:{user_id}:*", count=1), None))
+        cutoff = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - self.ttl, timezone.utc)
+        with self.service.Session() as db:
+            return bool(db.scalar(select(func.count()).select_from(PresenceConnection).where(
+                PresenceConnection.user_id == user_id, PresenceConnection.last_heartbeat_at >= cutoff)))
 
-    def _online_locked(self, user_id):
-        active = self.activity.get(user_id)
-        return bool(self.sockets[user_id]) or bool(active and time.monotonic() - active < self.activity_timeout)
+    def last_seen(self, user_id):
+        if self.redis:
+            return self.redis.get(f"chat:last_seen:{user_id}")
+        with self.service.Session() as db:
+            value = db.scalar(select(func.max(PresenceConnection.last_seen_at)).where(PresenceConnection.user_id == user_id))
+            return value.isoformat() if value else None
+
+    def broadcast(self, user_id, online=None):
+        online = self.online(user_id) if online is None else online
+        self.service.socketio.emit("presence:changed", {"user_id": user_id, "online": online,
+            "last_seen_at": None if online else self.last_seen(user_id)}, namespace=NAMESPACE)
 
 
 class ChatService:
@@ -137,7 +166,8 @@ class ChatService:
         redis_url = os.getenv("REDIS_URL")
         self.socketio = SocketIO(app, async_mode="threading", message_queue=redis_url or None,
                                  ping_interval=20, ping_timeout=45, cors_allowed_origins=[])
-        self.presence = Presence(self.socketio, float(app.config.get("CHAT_PRESENCE_GRACE", 15)))
+        self.presence_grace = float(app.config.get("CHAT_PRESENCE_GRACE", 15))
+        self.presence = SharedPresence(self, redis_url)
         self.rate = defaultdict(deque); self.rate_lock = threading.Lock()
         self._routes(); self._events()
 
@@ -185,7 +215,6 @@ class ChatService:
         def bootstrap():
             uid = self._uid()
             if not uid: abort(401)
-            self.presence.touch(uid)
             self._ensure_team()
             with self.Session() as db:
                 ids = db.scalars(select(Participant.conversation_id).where(Participant.user_id == uid)).all()
@@ -193,17 +222,39 @@ class ChatService:
                 unread = self._unreads(db, uid)
                 conversation_data = [self._conversation_json(db, c, uid) for c in conversations]
             colleagues = [{"id": u["email"], "name": u["name"], "online": self.presence.online(u["email"]),
-                           "last_seen_at": self.presence.last_seen.get(u["email"]).isoformat() if self.presence.last_seen.get(u["email"]) else None}
+                           "last_seen_at": self.presence.last_seen(u["email"])}
                           for u in self.users.values() if u["email"] != uid]
             return jsonify({"current_user_id": uid, "conversations": conversation_data,
-                            "colleagues": colleagues, "unread": unread})
+                            "colleagues": colleagues, "unread": unread,
+                            "online_users_count": sum(self.presence.online(x) for x in self.users)})
 
         @self.app.post("/api/chat/presence")
         def presence_heartbeat():
             uid = self._uid()
             if not uid: abort(401)
-            self.presence.touch(uid)
+            payload = request.get_json(silent=True) or {}
+            tab_id = payload.get("tab_id") or request.form.get("tab_id")
+            if not self.presence.heartbeat(uid, tab_id):
+                return jsonify({"ok": False, "error": "Identifiant d’onglet invalide"}), 400
+            return jsonify({"ok": True, "online_users_count": sum(self.presence.online(x) for x in self.users)})
+
+        @self.app.post("/api/chat/presence/close")
+        def presence_close():
+            uid = self._uid()
+            if not uid: abort(401)
+            payload = request.get_json(silent=True) or request.form
+            self.presence.close(uid, payload.get("tab_id"))
             return jsonify({"ok": True})
+
+        @self.app.post("/api/chat/direct")
+        def direct_http():
+            uid = self._uid()
+            if not uid: abort(401)
+            peer = str((request.get_json(silent=True) or {}).get("peer_user_id", "")).lower()
+            data, error = self._open_direct(uid, peer)
+            if error: return jsonify({"ok": False, "error": error}), 400
+            self.socketio.emit("chat:conversation_created", data, room=f"user:{peer}", namespace=NAMESPACE)
+            return jsonify({"ok": True, "conversation": data})
 
         @self.app.get("/api/chat/conversations/<int:conversation_id>/messages")
         def history(conversation_id):
@@ -222,6 +273,28 @@ class ChatService:
                 if not after: rows.reverse()
                 return jsonify({"messages": [self._message_json(m) for m in rows], "has_more": len(rows) == limit})
 
+        @self.app.post("/api/chat/conversations/<int:conversation_id>/messages")
+        def send_http(conversation_id):
+            uid = self._uid()
+            if not uid: abort(401)
+            data, status = self._save_message(uid, conversation_id, request.get_json(silent=True) or {})
+            return jsonify(data), status
+
+        @self.app.get("/api/chat/diagnostics")
+        def diagnostics():
+            user = self.current_user()
+            if not user: abort(401)
+            if user.get("role") != "admin": abort(403)
+            git_commit = os.getenv("RENDER_GIT_COMMIT", "local")
+            asset_version = self.app.config.get("CHAT_ASSET_VERSION", git_commit)
+            backend = "postgresql" if self.engine.url.drivername.startswith("postgresql") else "sqlite"
+            return jsonify({"ok": True, "git_commit": git_commit, "asset_version": asset_version,
+                "socketio_async_mode": self.socketio.async_mode, "presence_backend": self.presence.backend,
+                "redis_configured": bool(os.getenv("REDIS_URL")), "database_backend": backend,
+                "process_id": os.getpid(), "render_instance_id": os.getenv("RENDER_INSTANCE_ID", ""),
+                "current_user_id": user["email"], "current_tab_online": self.presence.online(user["email"]),
+                "online_users_count": sum(self.presence.online(x) for x in self.users)})
+
     def _allowed_rate(self, uid):
         now = time.monotonic()
         with self.rate_lock:
@@ -229,6 +302,37 @@ class ChatService:
             while q and now - q[0] > 60: q.popleft()
             if len(q) >= 60 or sum(now - t <= 10 for t in q) >= 10: return False
             q.append(now); return True
+
+    def _open_direct(self, uid, peer):
+        if peer not in self.users or peer == uid: return None, "Collègue invalide"
+        key = "|".join(sorted((uid, peer)))
+        with self.Session.begin() as db:
+            conv = db.scalar(select(Conversation).where(Conversation.direct_key == key))
+            if not conv:
+                conv = Conversation(type="direct", title="Discussion privée", direct_key=key, created_by_user_id=uid)
+                db.add(conv); db.flush()
+                db.add_all([Participant(conversation_id=conv.id, user_id=uid),
+                            Participant(conversation_id=conv.id, user_id=peer)])
+            return self._conversation_json(db, conv, uid), None
+
+    def _save_message(self, uid, cid, payload):
+        body = str(payload.get("body", "")).strip()
+        client_id = str(payload.get("client_message_id", ""))[:64]
+        if not body: return {"ok": False, "error": "Le message est vide"}, 400
+        if len(body) > 2000: return {"ok": False, "error": "Le message dépasse 2 000 caractères"}, 400
+        if not client_id: return {"ok": False, "error": "Identifiant de message manquant"}, 400
+        with self.Session.begin() as db:
+            if not self._member(db, cid, uid): return {"ok": False, "error": "Accès refusé"}, 403
+            existing = db.scalar(select(Message).where(Message.sender_user_id == uid, Message.client_message_id == client_id))
+            if existing: return {"ok": True, "message": self._message_json(existing), "deduplicated": True}, 200
+            if not self._allowed_rate(uid): return {"ok": False, "error": "Trop de messages, patientez quelques secondes"}, 429
+            message = Message(conversation_id=cid, sender_user_id=uid, client_message_id=client_id, body=body)
+            db.add(message); db.flush(); data = self._message_json(message)
+        with self.Session() as db:
+            recipients = db.scalars(select(Participant.user_id).where(Participant.conversation_id == cid)).all()
+        for recipient in recipients:
+            self.socketio.emit("chat:new_message", data, room=f"user:{recipient}", namespace=NAMESPACE)
+        return {"ok": True, "message": data}, 201
 
     def _events(self):
         @self.socketio.on("connect", namespace=NAMESPACE)
@@ -239,54 +343,33 @@ class ChatService:
             with self.Session() as db:
                 for cid in db.scalars(select(Participant.conversation_id).where(Participant.user_id == uid)):
                     join_room(f"conversation:{cid}")
-            self.presence.connect(uid, request.sid)
+            self.presence.heartbeat(uid, str((auth or {}).get("tab_id") or f"socket-{request.sid}"))
             return True
 
         @self.socketio.on("disconnect", namespace=NAMESPACE)
-        def disconnect(): self.presence.disconnect(request.sid)
+        def disconnect(): pass  # présence conservée pendant le délai TTL
 
         @self.socketio.on("presence:heartbeat", namespace=NAMESPACE)
-        def heartbeat(_payload=None): self.presence.heartbeat(request.sid); return {"ok": True}
+        def heartbeat(payload=None): return {"ok": self.presence.heartbeat(self._uid(), (payload or {}).get("tab_id"))}
 
         @self.socketio.on("chat:open_direct", namespace=NAMESPACE)
         def open_direct(payload):
             uid, peer = self._uid(), str((payload or {}).get("user_id", "")).lower()
-            if not uid or peer not in self.users or peer == uid: return {"ok": False, "error": "Collègue invalide"}
-            key = "|".join(sorted((uid, peer)))
-            with self.Session.begin() as db:
-                conv = db.scalar(select(Conversation).where(Conversation.direct_key == key))
-                if not conv:
-                    conv = Conversation(type="direct", title="Discussion privée", direct_key=key, created_by_user_id=uid); db.add(conv); db.flush()
-                    db.add_all([Participant(conversation_id=conv.id, user_id=uid), Participant(conversation_id=conv.id, user_id=peer)])
-                data = self._conversation_json(db, conv, uid)
-            join_room(f"conversation:{conv.id}")
+            if not uid: return {"ok": False, "error": "Authentification requise"}
+            data, error = self._open_direct(uid, peer)
+            if error: return {"ok": False, "error": error}
+            join_room(f"conversation:{data['id']}")
             self.socketio.emit("chat:conversation_created", data, room=f"user:{peer}", namespace=NAMESPACE)
             return {"ok": True, "conversation": data}
 
         @self.socketio.on("chat:send", namespace=NAMESPACE)
         def send(payload):
-            uid = self._uid(); payload = payload or {}
+            uid, payload = self._uid(), payload or {}
             if not uid: return {"ok": False, "error": "Authentification requise"}
-            body = str(payload.get("body", "")).strip(); client_id = str(payload.get("client_message_id", ""))[:64]
             try: cid = int(payload.get("conversation_id"))
             except (TypeError, ValueError): return {"ok": False, "error": "Conversation invalide"}
-            if not body: return {"ok": False, "error": "Le message est vide"}
-            if len(body) > 2000: return {"ok": False, "error": "Le message dépasse 2 000 caractères"}
-            if not client_id: return {"ok": False, "error": "Identifiant de message manquant"}
-            with self.Session.begin() as db:
-                if not self._member(db, cid, uid): return {"ok": False, "error": "Accès refusé"}
-                existing = db.scalar(select(Message).where(Message.sender_user_id == uid, Message.client_message_id == client_id))
-                if existing: return {"ok": True, "message": self._message_json(existing), "deduplicated": True}
-                if not self._allowed_rate(uid): return {"ok": False, "error": "Trop de messages, patientez quelques secondes"}
-                message = Message(conversation_id=cid, sender_user_id=uid, client_message_id=client_id, body=body); db.add(message); db.flush()
-                data = self._message_json(message)
-            # Les rooms personnelles couvrent aussi une conversation privée créée
-            # après la connexion du destinataire (sans attendre sa reconnexion).
-            with self.Session() as db:
-                recipients = db.scalars(select(Participant.user_id).where(Participant.conversation_id == cid)).all()
-            for recipient in recipients:
-                self.socketio.emit("chat:new_message", data, room=f"user:{recipient}", namespace=NAMESPACE)
-            return {"ok": True, "message": data}
+            data, _status = self._save_message(uid, cid, payload)
+            return data
 
         @self.socketio.on("chat:read", namespace=NAMESPACE)
         def read(payload):

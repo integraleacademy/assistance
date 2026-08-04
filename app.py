@@ -8454,6 +8454,33 @@ chat = init_chat(app, USERS, current_user)
 socketio = chat.socketio
 
 
+def _chat_asset_version():
+    """Change à chaque déploiement, même hors Render lors du développement."""
+    configured = os.getenv("RENDER_GIT_COMMIT") or os.getenv("ASSET_VERSION")
+    if configured:
+        return configured
+    paths = [os.path.join(app.static_folder, name) for name in
+             ("chat.js", "chat.css", "vendor/socket.io.min.js")]
+    return str(max(int(os.path.getmtime(path)) for path in paths if os.path.exists(path)))
+
+
+CHAT_ASSET_VERSION = _chat_asset_version()
+app.config["CHAT_ASSET_VERSION"] = CHAT_ASSET_VERSION
+
+
+@app.context_processor
+def inject_chat_asset_version():
+    return {"chat_asset_version": CHAT_ASSET_VERSION}
+
+
+_database_backend = "postgresql" if chat.engine.url.drivername.startswith("postgresql") else "sqlite"
+app.logger.info(
+    "chat startup pid=%s socketio=%s presence=%s redis_configured=%s database=%s git=%s assets=%s",
+    os.getpid(), socketio.async_mode, chat.presence.backend, bool(os.getenv("REDIS_URL")),
+    _database_backend, os.getenv("RENDER_GIT_COMMIT", "local"), CHAT_ASSET_VERSION,
+)
+
+
 @app.after_request
 def inject_authenticated_chat_widget(response):
     """Ajoute le widget à toute page HTML authentifiée, jamais aux pages publiques."""

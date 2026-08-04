@@ -1,26 +1,224 @@
-(()=>{'use strict';if(window.__integraleChat)return;window.__integraleChat=true;
-const root=document.querySelector('#integrale-chat');if(!root||typeof io==='undefined')return;
-const $=s=>root.querySelector(s), home=$('.ic-home'),conv=$('.ic-conversation'),messages=$('.ic-messages'),draft=$('textarea');
-let state={me:null,conversations:[],colleagues:[],unread:{},current:null,seen:new Set(),oldest:null,typingTimer:null};
-const originalTitle=document.title,soundKey='ic-chat-sound',soundOn=()=>localStorage.getItem(soundKey)!=='off';let audio;
-function audioReady(){try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume().catch(()=>{})}catch(_){}}
-document.addEventListener('pointerdown',audioReady,{once:true});document.addEventListener('keydown',audioReady,{once:true});
-function beep(){if(!soundOn())return;try{audioReady();const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=620;g.gain.setValueAtTime(.035,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.12);o.connect(g).connect(audio.destination);o.start();o.stop(audio.currentTime+.12)}catch(_){}}
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function total(){return Object.values(state.unread).reduce((a,b)=>a+Number(b||0),0)}
-function badges(){const n=total(),el=$('.ic-total');el.textContent=n;el.hidden=!n;document.title=n?`(${n}) ${originalTitle}`:originalTitle;root.querySelectorAll('[data-cid]').forEach(e=>{const b=e.querySelector('.ic-badge'),v=state.unread[e.dataset.cid]||0;if(b){b.textContent=v;b.hidden=!v}});$('.ic-team .ic-badge').textContent=state.unread['1']||0;$('.ic-team .ic-badge').hidden=!(state.unread['1']||0)}
-function row(c){return `<button class="ic-row" data-cid="${c.id}"><span class="ic-avatar">${esc(c.title.trim()[0]||'?')}</span><span><strong>${esc(c.title)}</strong><small>${c.type==='team'?'Salon général':'Discussion privée'}</small></span><b class="ic-badge" hidden>0</b></button>`}
-function render(){const directs=state.conversations.filter(c=>c.type==='direct');$('.ic-directs').innerHTML=directs.map(row).join('')||'<small>Aucune discussion privée</small>';state.colleagues.sort((a,b)=>Number(b.online)-Number(a.online)||a.name.localeCompare(b.name,'fr')).forEach(()=>{});$('.ic-colleagues').innerHTML=state.colleagues.map(u=>`<button class="ic-row" data-user="${esc(u.id)}"><span class="ic-avatar">${esc(u.name[0])}</span><span><strong>${esc(u.name)}</strong><small><i class="ic-dot ${u.online?'online':''}"></i>${u.online?'En ligne':'Hors ligne'}</small></span></button>`).join('');$('.ic-online').textContent=`${state.colleagues.filter(x=>x.online).length+1} en ligne`;badges()}
-async function bootstrap(){const r=await fetch('/api/chat/bootstrap');if(!r.ok)return;const d=await r.json();Object.assign(state,{me:d.current_user_id,conversations:d.conversations,colleagues:d.colleagues,unread:d.unread});render();const saved=sessionStorage.getItem('ic-chat-current');if(saved&&state.conversations.some(c=>String(c.id)===saved))openConversation(Number(saved),false)}
-function formatDate(v){return new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit'}).format(new Date(v))}
-function append(m,notify=false){if(state.seen.has(m.id))return;state.seen.add(m.id);const el=document.createElement('article');el.className='ic-msg '+(m.sender_user_id===state.me?'mine':'');el.dataset.id=m.id;el.innerHTML=`${m.sender_user_id!==state.me?`<small>${esc(m.sender_name)}</small>`:''}<span></span><time>${formatDate(m.created_at)}</time>`;el.querySelector('span').textContent=m.body;messages.appendChild(el);if(notify&&m.sender_user_id!==state.me){const visible=root.dataset.state==='open'&&state.current===m.conversation_id&&!document.hidden;if(!visible)beep();root.querySelector('.ic-launcher').classList.add('notify');setTimeout(()=>root.querySelector('.ic-launcher').classList.remove('notify'),800)}messages.scrollTop=messages.scrollHeight}
-async function load(before){const url=`/api/chat/conversations/${state.current}/messages?limit=50${before?`&before_id=${before}`:''}`;const r=await fetch(url),d=await r.json();if(!before){messages.querySelectorAll('.ic-msg').forEach(x=>x.remove());state.seen.clear()}const fragment=document.createDocumentFragment();const old=[];d.messages.forEach(m=>old.push(m));if(before){const anchor=messages.querySelector('.ic-msg');old.forEach(m=>{if(state.seen.has(m.id))return;state.seen.add(m.id);const el=document.createElement('article');el.className='ic-msg '+(m.sender_user_id===state.me?'mine':'');el.dataset.id=m.id;el.innerHTML=`<span></span><time>${formatDate(m.created_at)}</time>`;el.querySelector('span').textContent=m.body;fragment.appendChild(el)});messages.insertBefore(fragment,anchor)}else old.forEach(m=>append(m));state.oldest=old[0]?.id;$('.ic-older').hidden=!d.has_more;markRead()}
-function openConversation(id,save=true){state.current=id;const c=state.conversations.find(x=>x.id===id);if(!c)return;home.hidden=true;conv.hidden=false;$('.ic-conv-title').textContent=c.title;$('.ic-conv-status').textContent=c.type==='team'?'Salon général':(state.colleagues.find(x=>x.id===c.peer_user_id)?.online?'En ligne':'Hors ligne');draft.value=localStorage.getItem(`ic-draft-${id}`)||'';if(save)sessionStorage.setItem('ic-chat-current',id);load()}
-function markRead(){if(root.dataset.state!=='open'||document.hidden||!state.current)return;const last=messages.querySelector('.ic-msg:last-of-type');if(last)socket.emit('chat:read',{conversation_id:state.current,message_id:Number(last.dataset.id)},ack=>{if(ack?.ok){state.unread[String(state.current)]=0;badges()}})}
-const socket=io('/chat',{transports:['websocket','polling'],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:10000,randomizationFactor:.5});
-socket.on('connect',()=>{$('.ic-connection').classList.remove('show');bootstrap()});socket.on('disconnect',()=>{$('.ic-connection').textContent='Déconnecté — reconnexion en cours…';$('.ic-connection').classList.add('show')});setInterval(()=>socket.connected&&socket.emit('presence:heartbeat'),20000);
-socket.on('presence:changed',p=>{const u=state.colleagues.find(x=>x.id===p.user_id);if(u){u.online=p.online;u.last_seen_at=p.last_seen_at;render()}});socket.on('chat:conversation_created',()=>bootstrap());socket.on('chat:unread_changed',d=>{state.unread=d.unread;badges()});socket.on('chat:new_message',m=>{if(m.sender_user_id!==state.me){state.unread[String(m.conversation_id)]=(state.unread[String(m.conversation_id)]||0)+1;badges()}if(state.current===m.conversation_id)append(m,true);else if(m.sender_user_id!==state.me){beep();$('.ic-launcher').classList.add('notify')}markRead()});socket.on('chat:typing_changed',p=>{if(p.user_id!==state.me&&p.conversation_id===state.current){$('.ic-typing').textContent=p.typing?`${p.name} écrit…`:'';clearTimeout(state.typingTimer);state.typingTimer=setTimeout(()=>$('.ic-typing').textContent='',3200)}});
-function setOpen(open){root.dataset.state=open?'open':'closed';$('.ic-panel').setAttribute('aria-hidden',String(!open));$('.ic-launcher').setAttribute('aria-expanded',String(open));$('.ic-launcher').setAttribute('aria-label',open?'Fermer le chat interne':'Ouvrir le chat interne');localStorage.setItem('ic-chat-open',open?'1':'0');if(open)markRead()}
-$('.ic-launcher').onclick=()=>setOpen(root.dataset.state!=='open');$('.ic-close').onclick=()=>setOpen(false);$('.ic-back').onclick=()=>{conv.hidden=true;home.hidden=false;state.current=null;sessionStorage.removeItem('ic-chat-current')};$('.ic-team').onclick=()=>openConversation(1);$('.ic-new').onclick=()=>{const list=$('.ic-colleagues');list.classList.add('pick');list.scrollIntoView({behavior:'smooth',block:'start'});const first=list.querySelector('[data-user]');if(first)first.focus();setTimeout(()=>list.classList.remove('pick'),1600)};root.addEventListener('click',e=>{const c=e.target.closest('[data-cid]'),u=e.target.closest('[data-user]');if(c)openConversation(Number(c.dataset.cid));if(u)socket.emit('chat:open_direct',{user_id:u.dataset.user},ack=>{if(ack?.ok){if(!state.conversations.some(x=>x.id===ack.conversation.id))state.conversations.push(ack.conversation);render();openConversation(ack.conversation.id)}})});$('.ic-sound').onclick=()=>{localStorage.setItem(soundKey,soundOn()?'off':'on');$('.ic-sound').textContent=soundOn()?'🔔':'🔕'};$('.ic-older').onclick=()=>load(state.oldest);
-draft.addEventListener('input',()=>{if(!state.current)return;localStorage.setItem(`ic-draft-${state.current}`,draft.value);socket.emit('chat:typing',{conversation_id:state.current,typing:true});clearTimeout(draft._timer);draft._timer=setTimeout(()=>socket.emit('chat:typing',{conversation_id:state.current,typing:false}),3000)});draft.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('.ic-compose').requestSubmit()}});$('.ic-compose').onsubmit=e=>{e.preventDefault();const body=draft.value.trim();if(!body||!state.current)return;const client=crypto.randomUUID();const pending=document.createElement('article');pending.className='ic-msg mine pending';pending.textContent=body+' — Envoi…';messages.appendChild(pending);socket.timeout(8000).emit('chat:send',{conversation_id:state.current,client_message_id:client,body},(err,ack)=>{if(err||!ack?.ok){pending.classList.add('failed');pending.textContent=body+' — Échec — réessayer';return}pending.remove();append(ack.message);draft.value='';localStorage.removeItem(`ic-draft-${state.current}`)})};document.addEventListener('visibilitychange',markRead);document.addEventListener('keydown',e=>{if(e.key==='Escape')setOpen(false)});setInterval(()=>fetch('/api/chat/presence',{method:'POST',credentials:'same-origin'}).catch(()=>{}),20000);if(localStorage.getItem('ic-chat-open')==='1')setOpen(true);bootstrap();
+(() => {
+  "use strict";
+  if (window.__integraleChat) return;
+
+  const root = document.querySelector("#integrale-chat");
+  if (!root) return;
+  const $ = (selector) => root.querySelector(selector);
+  const state = { me: null, conversations: [], colleagues: [], unread: {}, current: null,
+    seen: new Set(), oldest: null, socket: null, lastAction: null };
+  const home = $(".ic-home");
+  const conversation = $(".ic-conversation");
+  const messages = $(".ic-messages");
+  const draft = $("textarea");
+  const originalTitle = document.title;
+  const tabId = sessionStorage.getItem("chat_tab_id") || crypto.randomUUID();
+  sessionStorage.setItem("chat_tab_id", tabId);
+
+  function setOpen(open) {
+    root.dataset.state = open ? "open" : "closed";
+    $(".ic-panel").setAttribute("aria-hidden", String(!open));
+    $(".ic-launcher").setAttribute("aria-expanded", String(open));
+    $(".ic-launcher").setAttribute("aria-label", open ? "Fermer le chat interne" : "Ouvrir le chat interne");
+    localStorage.setItem("ic-chat-open", open ? "1" : "0");
+    if (open) markRead();
+  }
+
+  function connection(text, connected = false) {
+    const element = $(".ic-connection");
+    element.textContent = text;
+    element.classList.add("show");
+    element.classList.toggle("connected", connected);
+  }
+
+  function notice(text, retry) {
+    const element = $(".ic-notice");
+    element.querySelector("span").textContent = text;
+    element.hidden = false;
+    $(".ic-retry").hidden = !retry;
+    state.lastAction = retry || null;
+  }
+
+  function clearNotice() { $(".ic-notice").hidden = true; state.lastAction = null; }
+  function initials(name) { return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase(); }
+  function totalUnread() { return Object.values(state.unread).reduce((sum, value) => sum + Number(value || 0), 0); }
+
+  function updateBadges() {
+    const count = totalUnread();
+    $(".ic-total").textContent = count; $(".ic-total").hidden = !count;
+    document.title = count ? `(${count}) ${originalTitle}` : originalTitle;
+    root.querySelectorAll("[data-cid]").forEach((row) => {
+      const badge = row.querySelector(".ic-badge");
+      if (!badge) return;
+      const value = state.unread[row.dataset.cid] || 0;
+      badge.textContent = value; badge.hidden = !value;
+    });
+  }
+
+  function userRow(user, picker = false) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "ic-row"; button.dataset.user = user.id;
+    button.innerHTML = `<span class="ic-avatar"></span><span><strong></strong><small><i class="ic-dot"></i></small></span>`;
+    button.querySelector(".ic-avatar").textContent = initials(user.name);
+    button.querySelector("strong").textContent = user.name;
+    button.querySelector("small").append(user.online ? "En ligne" : "Hors ligne");
+    button.querySelector(".ic-dot").classList.toggle("online", user.online);
+    if (picker) button.classList.add("ic-picker-row");
+    return button;
+  }
+
+  function renderPicker() {
+    const query = $(".ic-search").value.trim().toLocaleLowerCase("fr");
+    const users = state.colleagues.filter((user) => `${user.name} ${user.id}`.toLocaleLowerCase("fr").includes(query));
+    $(".ic-picker").replaceChildren(...users.map((user) => userRow(user, true)));
+    $(".ic-empty").hidden = users.length !== 0;
+  }
+
+  function render() {
+    state.colleagues.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name, "fr"));
+    $(".ic-colleagues").replaceChildren(...state.colleagues.map((user) => userRow(user)));
+    const directs = state.conversations.filter((item) => item.type === "direct");
+    const directRows = directs.map((item) => {
+      const row = document.createElement("button"); row.type = "button"; row.className = "ic-row"; row.dataset.cid = item.id;
+      row.innerHTML = '<span class="ic-avatar"></span><span><strong></strong><small>Discussion privée</small></span><b class="ic-badge" hidden>0</b>';
+      row.querySelector(".ic-avatar").textContent = initials(item.title); row.querySelector("strong").textContent = item.title; return row;
+    });
+    if (!directRows.length) { const empty = document.createElement("small"); empty.textContent = "Aucune discussion privée"; directRows.push(empty); }
+    $(".ic-directs").replaceChildren(...directRows);
+    $(".ic-online").textContent = `${state.onlineCount || 0} en ligne`;
+    renderPicker(); updateBadges();
+  }
+
+  async function request(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(url, { credentials: "same-origin", ...options, signal: controller.signal,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+      let data = {}; try { data = await response.json(); } catch (_) { /* réponse sans JSON */ }
+      if (!response.ok || data.ok === false) throw new Error(data.error || `Erreur HTTP ${response.status}`);
+      return data;
+    } finally { clearTimeout(timer); }
+  }
+
+  async function bootstrap() {
+    try {
+      const data = await request("/api/chat/bootstrap");
+      Object.assign(state, { me: data.current_user_id, conversations: data.conversations,
+        colleagues: data.colleagues, unread: data.unread, onlineCount: data.online_users_count });
+      render(); clearNotice();
+      const saved = Number(sessionStorage.getItem("ic-chat-current"));
+      if (saved && state.conversations.some((item) => item.id === saved)) openConversation(saved, false);
+    } catch (error) { notice(`Connexion au chat impossible : ${error.message}`, bootstrap); }
+  }
+
+  function appendMessage(message) {
+    if (state.seen.has(message.id)) return;
+    state.seen.add(message.id);
+    const element = document.createElement("article");
+    element.className = `ic-msg ${message.sender_user_id === state.me ? "mine" : ""}`; element.dataset.id = message.id;
+    const body = document.createElement("span"); body.textContent = message.body;
+    const time = document.createElement("time"); time.textContent = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(message.created_at));
+    if (message.sender_user_id !== state.me) { const sender = document.createElement("small"); sender.textContent = message.sender_name; element.append(sender); }
+    element.append(body, time); messages.append(element); messages.scrollTop = messages.scrollHeight;
+  }
+
+  async function loadMessages(before) {
+    const id = state.current;
+    try {
+      const data = await request(`/api/chat/conversations/${id}/messages?limit=50${before ? `&before_id=${before}` : ""}`);
+      if (id !== state.current) return;
+      if (!before) { messages.querySelectorAll(".ic-msg").forEach((item) => item.remove()); state.seen.clear(); }
+      data.messages.forEach(appendMessage); state.oldest = data.messages[0]?.id; $(".ic-older").hidden = !data.has_more;
+      markRead(); clearNotice();
+    } catch (error) { notice(`Impossible de charger les messages : ${error.message}`, () => loadMessages(before)); }
+  }
+
+  function openConversation(id, save = true) {
+    const item = state.conversations.find((candidate) => candidate.id === Number(id));
+    if (!item) return notice("Impossible d’ouvrir cette discussion", bootstrap);
+    state.current = item.id; home.hidden = true; conversation.hidden = false;
+    $(".ic-conv-title").textContent = item.title;
+    const peer = state.colleagues.find((user) => user.id === item.peer_user_id);
+    $(".ic-conv-status").textContent = item.type === "team" ? "Salon général" : (peer?.online ? "En ligne" : "Hors ligne");
+    draft.value = localStorage.getItem(`ic-draft-${item.id}`) || "";
+    if (save) sessionStorage.setItem("ic-chat-current", item.id);
+    loadMessages(); setTimeout(() => draft.focus(), 0);
+  }
+
+  async function openDirect(userId) {
+    notice("Ouverture de la discussion…");
+    try {
+      const data = await request("/api/chat/direct", { method: "POST", body: JSON.stringify({ peer_user_id: userId }) });
+      const existing = state.conversations.findIndex((item) => item.id === data.conversation.id);
+      if (existing < 0) state.conversations.push(data.conversation); else state.conversations[existing] = data.conversation;
+      $(".ic-modal").hidden = true; render(); clearNotice(); openConversation(data.conversation.id);
+    } catch (error) { notice(`Impossible d’ouvrir cette discussion : ${error.message}`, () => openDirect(userId)); }
+  }
+
+  function markRead() {
+    if (!state.socket?.connected || root.dataset.state !== "open" || document.hidden || !state.current) return;
+    const last = messages.querySelector(".ic-msg:last-of-type"); if (!last) return;
+    state.socket.timeout(8000).emit("chat:read", { conversation_id: state.current, message_id: Number(last.dataset.id) }, (error, ack) => {
+      if (!error && ack?.ok) { state.unread[String(state.current)] = 0; updateBadges(); }
+    });
+  }
+
+  async function heartbeat() {
+    try { const data = await request("/api/chat/presence", { method: "POST", body: JSON.stringify({ tab_id: tabId }) }); state.onlineCount = data.online_users_count; $(".ic-online").textContent = `${state.onlineCount} en ligne`; await bootstrap(); }
+    catch (error) { notice(`Présence indisponible : ${error.message}`, heartbeat); }
+  }
+
+  function initSocket() {
+    if (state.socket) return;
+    if (typeof window.io !== "function") {
+      connection("Temps réel indisponible — reconnexion en cours"); setTimeout(initSocket, 1500); return;
+    }
+    try {
+      const socket = window.io("/chat", { auth: { tab_id: tabId }, transports: ["websocket", "polling"], reconnection: true }); state.socket = socket;
+      socket.on("connect", () => { connection("Temps réel connecté", true); heartbeat(); bootstrap(); });
+      socket.on("disconnect", () => connection("Déconnecté — reconnexion en cours…"));
+      socket.on("connect_error", (error) => connection(`Déconnecté — reconnexion en cours… (${error.message})`));
+      socket.on("error", (error) => notice(`Erreur temps réel : ${error?.message || error}`));
+      socket.io.on("reconnect_attempt", () => connection("Déconnecté — reconnexion en cours…"));
+      socket.io.on("reconnect", () => connection("Temps réel connecté", true));
+      socket.on("presence:changed", (payload) => { const user = state.colleagues.find((item) => item.id === payload.user_id); if (user) { user.online = payload.online; user.last_seen_at = payload.last_seen_at; bootstrap(); } });
+      socket.on("chat:conversation_created", bootstrap);
+      socket.on("chat:unread_changed", (data) => { state.unread = data.unread; updateBadges(); });
+      socket.on("chat:new_message", (message) => {
+        if (message.sender_user_id !== state.me && state.current !== message.conversation_id) state.unread[String(message.conversation_id)] = (state.unread[String(message.conversation_id)] || 0) + 1;
+        if (state.current === message.conversation_id) appendMessage(message); updateBadges(); markRead();
+      });
+      socket.on("chat:typing_changed", (payload) => { if (payload.conversation_id === state.current && payload.user_id !== state.me) $(".ic-typing").textContent = payload.typing ? `${payload.name} écrit…` : ""; });
+    } catch (error) { connection(`Temps réel indisponible — reconnexion en cours (${error.message})`); state.socket = null; setTimeout(initSocket, 1500); }
+  }
+
+  // Les interactions sont installées avant tout accès HTTP ou Socket.IO.
+  $(".ic-launcher").addEventListener("click", () => setOpen(root.dataset.state !== "open"));
+  $(".ic-close").addEventListener("click", () => setOpen(false));
+  $(".ic-back").addEventListener("click", () => { conversation.hidden = true; home.hidden = false; state.current = null; sessionStorage.removeItem("ic-chat-current"); });
+  $(".ic-team").addEventListener("click", () => openConversation(1));
+  $(".ic-new").addEventListener("click", () => { $(".ic-modal").hidden = false; $(".ic-search").value = ""; renderPicker(); $(".ic-search").focus(); });
+  $(".ic-modal-close").addEventListener("click", () => { $(".ic-modal").hidden = true; });
+  $(".ic-search").addEventListener("input", renderPicker);
+  $(".ic-sound").addEventListener("click", () => { const on = localStorage.getItem("ic-chat-sound") !== "off"; localStorage.setItem("ic-chat-sound", on ? "off" : "on"); $(".ic-sound").textContent = on ? "🔕" : "🔔"; });
+  $(".ic-retry").addEventListener("click", () => state.lastAction?.());
+  $(".ic-older").addEventListener("click", () => loadMessages(state.oldest));
+  root.addEventListener("click", (event) => { const user = event.target.closest("[data-user]"); const item = event.target.closest("[data-cid]"); if (user) openDirect(user.dataset.user); else if (item) openConversation(item.dataset.cid); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") { if (!$(".ic-modal").hidden) $(".ic-modal").hidden = true; else setOpen(false); } });
+  draft.addEventListener("input", () => { if (!state.current) return; localStorage.setItem(`ic-draft-${state.current}`, draft.value); if (state.socket?.connected) state.socket.emit("chat:typing", { conversation_id: state.current, typing: true }); });
+  draft.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $(".ic-compose").requestSubmit(); } });
+  $(".ic-compose").addEventListener("submit", async (event) => {
+    event.preventDefault(); const body = draft.value.trim(); if (!body || !state.current) return;
+    const payload = { client_message_id: crypto.randomUUID(), body }; notice("Envoi du message…");
+    try { const data = await request(`/api/chat/conversations/${state.current}/messages`, { method: "POST", body: JSON.stringify(payload) }); appendMessage(data.message); draft.value = ""; localStorage.removeItem(`ic-draft-${state.current}`); clearNotice(); }
+    catch (error) { notice(`Impossible d’envoyer le message : ${error.message}`, () => $(".ic-compose").requestSubmit()); }
+  });
+  document.addEventListener("visibilitychange", markRead);
+  window.addEventListener("pagehide", () => navigator.sendBeacon("/api/chat/presence/close", new Blob([JSON.stringify({ tab_id: tabId })], { type: "application/json" })));
+
+  if (localStorage.getItem("ic-chat-open") === "1") setOpen(true);
+  heartbeat(); setInterval(heartbeat, 20000);
+  bootstrap().finally(initSocket);
+  window.__integraleChat = true;
 })();
