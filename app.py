@@ -25,6 +25,11 @@ from candidate_scoring import (
     calculate_candidate_integration_score,
     normalize_cpf_amount,
 )
+from candidate_ai_analysis import (
+    AI_CANDIDATE_ANALYSIS_VERSION, AI_CANDIDATE_PROMPT_VERSION,
+    AI_CANDIDATE_SYSTEM_PROMPT, build_candidate_ai_context as _build_candidate_ai_context,
+    compute_candidate_ai_source_hash, validate_candidate_ai_analysis,
+)
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
@@ -875,6 +880,7 @@ DEFAULT_DATA = {
     "crm_sms_templates": [],
     "crm_calendly_appointments": [],
     "crm_calendly": {},
+    "crm_ai_candidate_analyses": {},
 }
 
 # -------------------------------------------------------------------
@@ -6839,6 +6845,53 @@ def _crm_ai(system_prompt, user_prompt, max_tokens=500):
     return result
 
 
+_CRM_AI_ANALYSIS_LOCKS = {}
+_CRM_AI_ANALYSIS_LOCKS_GUARD = threading.Lock()
+
+
+def build_candidate_ai_context(contact_id, data=None):
+    data = data or load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        raise KeyError(contact_id)
+    try:
+        wedof = _wedof_contact_resources(contact_id)
+    except Exception:
+        wedof = []
+    return _build_candidate_ai_context(
+        contact, data, calculate_candidate_integration_score(contact), wedof)
+
+
+def generate_candidate_ai_analysis(context):
+    """Réutilise exclusivement le point d'entrée IA et le modèle CRM existants."""
+    schema = {"schema_version": 1, "priority": "high|medium|low|unknown",
+        "priority_label": "libellé correspondant", "priority_reason": "texte",
+        "summary": "texte", "next_action": {"type": "valeur autorisée", "label": "texte", "reason": "texte", "timing": "valeur autorisée"},
+        "strengths": [{"label": "texte", "evidence": "fait du contexte"}],
+        "vigilance_points": [{"severity": "low|medium|high", "label": "texte", "evidence": "fait du contexte"}],
+        "missing_information": ["texte"], "inconsistencies": [{"label": "texte", "evidence": "fait", "verification": "texte"}],
+        "questions_to_ask": ["texte"], "data_quality": "good|partial|insufficient"}
+    user_message = json.dumps({"output_schema": schema, "candidate_context": context}, ensure_ascii=False)
+    return validate_candidate_ai_analysis(_crm_ai(AI_CANDIDATE_SYSTEM_PROMPT, user_message, 1000))
+
+
+def get_candidate_ai_analysis_state(contact_id, data=None):
+    data = data or load_data()
+    stored = data.get("crm_ai_candidate_analyses", {}).get(contact_id)
+    enabled = bool(os.getenv("OPENAI_API_KEY"))
+    if not stored:
+        return {"enabled": enabled, "status": "never_generated" if enabled else "unavailable",
+            "stale": False, "result": None,
+            "message": None if enabled else "Analyse IA indisponible : la configuration du service IA est manquante."}
+    stale = (stored.get("source_hash") != compute_candidate_ai_source_hash(build_candidate_ai_context(contact_id, data))
+             or stored.get("analysis_version") != AI_CANDIDATE_ANALYSIS_VERSION
+             or stored.get("prompt_version") != AI_CANDIDATE_PROMPT_VERSION)
+    return {"enabled": enabled, "status": "stale" if stale else "fresh", "stale": stale,
+        "generated_at": stored.get("generated_at"), "generated_by": stored.get("generated_by_name"),
+        "analysis_version": stored.get("analysis_version"), "prompt_version": stored.get("prompt_version"),
+        "result": stored.get("result"), "message": stored.get("last_error")}
+
+
 def _gestion_stagiaires_payload(contact):
     """Contrat JSON envoyé à l'application Gestion stagiaires."""
     return {
@@ -8124,6 +8177,67 @@ def crm_contact_summary(contact_id):
     except Exception as exc:
         print("Erreur synthèse CRM:", exc)
         return jsonify({"error": "La synthèse est momentanément indisponible"}), 502
+
+
+@app.route("/api/crm/contacts/<contact_id>/ai-analysis", methods=["GET", "POST"])
+@login_required
+def crm_candidate_ai_analysis(contact_id):
+    data = load_data()
+    if not _crm_contact(data, contact_id):
+        return jsonify({"error": "Contact introuvable"}), 404
+    if request.method == "GET":
+        return jsonify(get_candidate_ai_analysis_state(contact_id, data))
+    force = bool((request.get_json(silent=True) or {}).get("force", False))
+    if not os.getenv("OPENAI_API_KEY"):
+        return jsonify({"error": "Analyse IA indisponible : la configuration du service IA est manquante."}), 503
+    with _CRM_AI_ANALYSIS_LOCKS_GUARD:
+        lock = _CRM_AI_ANALYSIS_LOCKS.setdefault(contact_id, threading.Lock())
+    with lock:
+        data = load_data()
+        context = build_candidate_ai_context(contact_id, data)
+        meaningful = any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
+            "recent_notes_untrusted", "recent_activities_untrusted", "appointments", "wedof"))
+        if not meaningful:
+            return jsonify({"status": "insufficient_data", "message": "Les informations de la piste sont insuffisantes pour générer une analyse utile."}), 422
+        source_hash = compute_candidate_ai_source_hash(context)
+        stored = data.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
+        if stored and stored.get("source_hash") == source_hash and not force:
+            response = get_candidate_ai_analysis_state(contact_id, data)
+            response["cached"] = True
+            return jsonify(response)
+        try:
+            result = generate_candidate_ai_analysis(context)
+        except Exception as exc:
+            # Ne journaliser ni contexte ni prompt ; préserver la dernière analyse réussie.
+            app.logger.warning("candidate_ai_analysis contact=%s error=%s", contact_id, type(exc).__name__)
+            latest = load_data()
+            old = latest.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
+            message = "La réponse du service IA n’a pas pu être interprétée. Aucune donnée n’a été modifiée."
+            status_code = getattr(exc, "status_code", None)
+            if status_code == 429 or "429" in str(exc):
+                message = "Le service IA est temporairement indisponible en raison d’une limite d’utilisation. Réessayez ultérieurement."
+            elif isinstance(exc, (TimeoutError, requests.Timeout)) or "timeout" in type(exc).__name__.lower():
+                message = "L’analyse n’a pas pu être générée pour le moment. Réessayez dans quelques instants."
+            if old:
+                old["last_error"] = "L’actualisation a échoué. La dernière analyse disponible est toujours affichée."
+                save_data(latest)
+            return jsonify({"error": message, "previous_analysis_available": bool(old)}), 502
+        latest = load_data()
+        contact = _crm_contact(latest, contact_id)
+        if not contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        user = current_user() or {}
+        latest.setdefault("crm_ai_candidate_analyses", {})[contact_id] = {
+            "analysis_version": AI_CANDIDATE_ANALYSIS_VERSION, "prompt_version": AI_CANDIDATE_PROMPT_VERSION,
+            "source_hash": source_hash, "generated_at": _crm_now(),
+            "generated_by_user_id": user.get("email", ""), "generated_by_name": user.get("name", "Équipe Intégrale"),
+            "provider": "openai", "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "result": result}
+        _crm_activity(contact, "ai_analysis", "Analyse IA du candidat actualisée",
+            f"Priorité proposée : {result['priority_label']}")
+        save_data(latest)
+        response = get_candidate_ai_analysis_state(contact_id, latest)
+        response["cached"] = False
+        return jsonify(response)
 
 
 @app.route("/api/crm/contacts/<contact_id>/generer-message", methods=["POST"])
