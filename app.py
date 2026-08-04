@@ -6949,10 +6949,10 @@ def get_candidate_ai_analysis_state(contact_id, data=None):
 
 def _gestion_stagiaires_payload(contact):
     """Contrat JSON envoyé à l'application Gestion stagiaires."""
+    from crm_cnaps_tracking import crm_contact_identity
     return {
         "source": "integrale-connect-crm", "crm_contact_id": contact["id"],
-        "prenom": contact.get("prenom", ""), "nom": contact.get("nom", ""),
-        "email": contact.get("mail", ""), "telephone": contact.get("telephone", ""),
+        **crm_contact_identity(contact),
         "formation": contact.get("formation", ""), "parcours": contact.get("desp_type", ""),
         "centre": contact.get("lieu", ""), "session": contact.get("dates_formation", ""),
         "commentaires": contact.get("commentaires", ""),
