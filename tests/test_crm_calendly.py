@@ -542,6 +542,7 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         assert marker in crm_js
     assert "rendez-vous traités" not in crm_js
     assert "appointment-row" not in crm_js
+    assert "grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))" in crm_css
     for marker in [
         ".calendly-card{",
         ".next-appointment{",
