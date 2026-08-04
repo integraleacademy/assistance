@@ -317,6 +317,7 @@ details.form-section>summary>h3{display:flex;align-items:center;gap:9px;margin:0
 .ai-content{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);gap:25px;padding:24px 25px 22px}
 .ai-summary-block{padding:2px 4px}.ai-section-label{display:block;margin-bottom:10px;color:#718096;font-size:9px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
 .ai-summary{max-width:900px;margin:0;color:#34445c;font-size:14px;line-height:1.75}
+.ai-appointment-facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.ai-appointment-facts span{padding:4px 8px;border:1px solid #d9e2f2;border-radius:999px;background:#f5f8fd;color:#53657e;font-size:10px;font-weight:750}
 .ai-insights{display:grid;align-content:start;gap:10px}
 .ai-next,.ai-vigilance{display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;padding:13px 14px;border:1px solid #dbe5f8;border-radius:13px;background:#f6f9ff}
 .ai-vigilance{border-color:#f0dfbb;background:#fffaf1}
