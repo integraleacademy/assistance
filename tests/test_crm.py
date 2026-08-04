@@ -129,10 +129,12 @@ def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path
     assert contact["lieu"] == "Côte d’Azur"
     assert contact["dates_formation"] == "Du 12 au 27 octobre 2026"
     assert contact["cpf"] == "OUI"
+    assert contact["cpf_montant"] == "1200.00"
     assert contact["financement_ft"] == "NON"
     assert contact["origine"] == "Site internet"
     assert contact["commentaires"] == ""
     assert contact["formulaire"]["cpf_montant"] == "1200"
+    assert application._crm_contact_response(contact)["integration_score"]["cpf_amount_eur"] == 1200
     assert contact["source_demande_id"]
     assert contact["source_devis_id"]
     activities = {activity["title"]: activity for activity in contact["activities"]}
