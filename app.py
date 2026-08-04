@@ -715,7 +715,13 @@ _CRM_ACCOUNTS = (
 )
 
 USERS = {
-    email: {"email": email, "name": name, "role": role, "password_env": password_env}
+    email: {
+        "email": email,
+        "name": name,
+        "first_name": name.split(maxsplit=1)[0],
+        "role": role,
+        "password_env": password_env,
+    }
     for email, name, role, password_env in _CRM_ACCOUNTS
 }
 
