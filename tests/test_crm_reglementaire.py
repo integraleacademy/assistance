@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import subprocess
 from types import SimpleNamespace
 
 import requests
@@ -195,7 +197,10 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     assert "['APS','A3P']" in javascript
     assert "needsCnaps(c)&&!isDespVae(c)" in javascript
     assert javascript.count("/reglementaire`") == 1
-    assert "renderReglementaire(c,data);renderVaeTracking(c,data.vae)" in javascript
+    assert "actionDates=vae.action_dates||{}" in javascript
+    assert "dossier.multiple_dossiers===true" in javascript
+    assert "result.code||vae.status_code" in javascript
+    assert "renderVaeDisplayError(c)" in javascript
     for text in ("Suivi du dossier VAE", "Récupération du suivi VAE…", "Aucun dossier VAE administratif", "Plusieurs dossiers VAE", "Des compléments sont demandés", "Diplôme obtenu"):
         assert text in javascript
     assert "vae.applicable===false" in javascript
@@ -218,3 +223,48 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
         "nécessite le nom, le prénom et au moins une adresse e-mail ou un téléphone",
     ):
         assert message in javascript
+
+
+def test_vae_javascript_renders_french_and_iso_dates_without_second_request():
+    javascript = (Path(application.app.root_path) / "static/crm.js").read_text(encoding="utf-8")
+    vae_code = javascript[javascript.index("const vaeDates="):javascript.index("function renderGestionError")]
+    payload = {
+        "applicable": True, "status_code": "livret_2_analysis", "status_label": "Réception livret 2",
+        "progress_percent": 65, "is_terminal": False, "is_success": False, "is_blocked": False,
+        "next_action": {"code": "analyse_livret_2", "label": "Analyser le Livret 2"},
+        "updated_at": "20/09/2026",
+        "action_dates": {"livret_1_received_at": "27/07/2026", "livret_1_validated_at": "28/07/2026 à 16h30",
+                         "livret_1_transmitted_scotia_at": None, "livret_2_received_at": "2026-08-04T09:32:00+02:00",
+                         "livret_2_validated_at": None, "livret_2_transmitted_scotia_at": None, "diploma_obtained_at": None},
+        "recevabilite": {"status_code": "recevable", "status_label": "Recevable", "attestation_available": False},
+        "jury": {"scheduled": True, "date": "15/09/2026", "location": None},
+        "final_result": {"code": None, "label": None, "diploma_obtained_at": None},
+        "dossier": {"found": True, "status_label": "Soumis", "updated_at": "04/08/2026 à 09h32",
+                    "dossier_count": 2, "multiple_dossiers": True,
+                    "admin_url": "https://gestionstagiaires-r5no.onrender.com/admin/vae/test"},
+        "trainee_admin_url": "https://gestionstagiaires-r5no.onrender.com/admin/sessions/test/stagiaires/test",
+    }
+    node_script = f"""
+const panel={{innerHTML:'',className:''}};
+const document={{querySelector:(selector)=>selector==='#vaeTrackingPanel'?panel:null,querySelectorAll:()=>[]}};
+const esc=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+function safeAdminUrl(value){{try{{const url=new URL(String(value||''));return ['http:','https:'].includes(url.protocol)?url.href:''}}catch(_){{return''}}}}
+function bindSharedRefresh(_){{}}
+{vae_code}
+const payload={json.dumps(payload, ensure_ascii=False)};
+renderVaeTracking({{}},payload);
+const valid=panel.innerHTML;
+payload.updated_at='valeur-invalide';
+renderVaeTracking({{}},payload);
+process.stdout.write(JSON.stringify({{valid,invalid:panel.innerHTML}}));
+"""
+    completed = subprocess.run(["node", "-e", node_script], check=True, capture_output=True, text=True)
+    rendered = json.loads(completed.stdout)
+
+    for expected in ("Réception livret 2", "65 %", "27 juil. 2026", "28 juil. 2026, 16:30",
+                     "4 août 2026, 07:32", "15 sept. 2026", "Plusieurs dossiers VAE sont liés (2)"):
+        assert expected in rendered["valid"]
+    for forbidden in ("undefined", "null", "Invalid Date", "Gestion Stagiaires est momentanément indisponible"):
+        assert forbidden not in rendered["valid"]
+    assert "Date non disponible" in rendered["invalid"]
+    assert javascript.count("/reglementaire`") == 1
