@@ -47,3 +47,12 @@ def test_crm_exposes_connected_users_first_name(email, first_name):
 
     assert response.status_code == 200
     assert f'"first_name": {json.dumps(first_name)}'.encode() in response.data
+
+
+def test_crm_initialization_does_not_depend_on_admin_only_dom_globals():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        script = source.read()
+
+    assert "document.querySelector('#adminToolsBtn')" in script
+    assert "document.querySelector('#adminToolsMenu')" in script
+    assert "adminToolsBtn?.addEventListener" not in script
