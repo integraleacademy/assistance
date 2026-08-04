@@ -27,7 +27,8 @@ from candidate_scoring import (
 )
 from candidate_ai_analysis import (
     AI_CANDIDATE_ANALYSIS_VERSION, AI_CANDIDATE_PROMPT_VERSION,
-    AI_CANDIDATE_SYSTEM_PROMPT, build_candidate_ai_context as _build_candidate_ai_context,
+    AI_CANDIDATE_SYSTEM_PROMPT, CANDIDATE_AI_RESPONSE_SCHEMA, CandidateAIResponseError,
+    build_candidate_ai_context as _build_candidate_ai_context,
     compute_candidate_ai_source_hash, validate_candidate_ai_analysis,
 )
 
@@ -6845,6 +6846,66 @@ def _crm_ai(system_prompt, user_prompt, max_tokens=500):
     return result
 
 
+def _candidate_ai_content(response, allow_markdown=False):
+    choices = getattr(response, "choices", None)
+    if not choices:
+        raise CandidateAIResponseError("empty_response")
+    choice = choices[0]
+    if getattr(choice, "finish_reason", None) == "length":
+        raise CandidateAIResponseError("truncated_response", "L’analyse générée était incomplète. Veuillez réessayer.")
+    message = getattr(choice, "message", None)
+    if message is None:
+        raise CandidateAIResponseError("empty_response")
+    if getattr(message, "refusal", None):
+        raise CandidateAIResponseError("model_refusal")
+    content = (getattr(message, "content", None) or "").strip()
+    if not content:
+        raise CandidateAIResponseError("empty_response")
+    if allow_markdown:
+        content = re.sub(r"^\s*```(?:json)?\s*", "", content, count=1, flags=re.I)
+        content = re.sub(r"\s*```\s*$", "", content, count=1).strip()
+        start, end = content.find("{"), content.rfind("}")
+        if start < 0 or end < start:
+            raise CandidateAIResponseError("invalid_json")
+        content = content[start:end + 1]
+    return content
+
+
+def _json_schema_unsupported(exc):
+    """N'autorise le repli que pour le 400 explicite du fournisseur."""
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    provider_text = " ".join(str(value) for value in (
+        getattr(exc, "message", ""), getattr(exc, "body", ""), exc))
+    lowered = provider_text.lower()
+    return "json_schema" in lowered and any(marker in lowered for marker in (
+        "not supported", "does not support", "unsupported", "n'est pas pris en charge"))
+
+
+def _crm_ai_structured(system_prompt, user_prompt):
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY non configurée")
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=20)
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    common = {"model": model, "messages": [{"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}], "temperature": 0.2, "max_tokens": 1600}
+    structured_format = {"type": "json_schema", "json_schema": {
+        "name": "candidate_ai_analysis", "strict": True, "schema": CANDIDATE_AI_RESPONSE_SCHEMA}}
+    try:
+        response = client.chat.completions.create(**common, response_format=structured_format)
+        content = _candidate_ai_content(response)
+    except Exception as exc:
+        if not _json_schema_unsupported(exc):
+            raise
+        response = client.chat.completions.create(**common, response_format={"type": "json_object"})
+        content = _candidate_ai_content(response, allow_markdown=True)
+    try:
+        decoded = json.loads(content)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise CandidateAIResponseError("invalid_json") from exc
+    return validate_candidate_ai_analysis(decoded)
+
+
 _CRM_AI_ANALYSIS_LOCKS = {}
 _CRM_AI_ANALYSIS_LOCKS_GUARD = threading.Lock()
 
@@ -6863,16 +6924,9 @@ def build_candidate_ai_context(contact_id, data=None):
 
 
 def generate_candidate_ai_analysis(context):
-    """Réutilise exclusivement le point d'entrée IA et le modèle CRM existants."""
-    schema = {"schema_version": 1, "priority": "high|medium|low|unknown",
-        "priority_label": "libellé correspondant", "priority_reason": "texte",
-        "summary": "texte", "next_action": {"type": "valeur autorisée", "label": "texte", "reason": "texte", "timing": "valeur autorisée"},
-        "strengths": [{"label": "texte", "evidence": "fait du contexte"}],
-        "vigilance_points": [{"severity": "low|medium|high", "label": "texte", "evidence": "fait du contexte"}],
-        "missing_information": ["texte"], "inconsistencies": [{"label": "texte", "evidence": "fait", "verification": "texte"}],
-        "questions_to_ask": ["texte"], "data_quality": "good|partial|insufficient"}
-    user_message = json.dumps({"output_schema": schema, "candidate_context": context}, ensure_ascii=False)
-    return validate_candidate_ai_analysis(_crm_ai(AI_CANDIDATE_SYSTEM_PROMPT, user_message, 1000))
+    """Génère une sortie structurée puis conserve la validation métier locale."""
+    user_message = json.dumps({"candidate_context": context}, ensure_ascii=False)
+    return _crm_ai_structured(AI_CANDIDATE_SYSTEM_PROMPT, user_message)
 
 
 def get_candidate_ai_analysis_state(contact_id, data=None):
@@ -8189,7 +8243,8 @@ def crm_candidate_ai_analysis(contact_id):
         return jsonify(get_candidate_ai_analysis_state(contact_id, data))
     force = bool((request.get_json(silent=True) or {}).get("force", False))
     if not os.getenv("OPENAI_API_KEY"):
-        return jsonify({"error": "Analyse IA indisponible : la configuration du service IA est manquante."}), 503
+        return jsonify({"error": "Analyse IA indisponible : la configuration du service IA est manquante.",
+            "error_code": "missing_configuration", "previous_analysis_available": False}), 503
     with _CRM_AI_ANALYSIS_LOCKS_GUARD:
         lock = _CRM_AI_ANALYSIS_LOCKS.setdefault(contact_id, threading.Lock())
     with lock:
@@ -8209,19 +8264,32 @@ def crm_candidate_ai_analysis(contact_id):
             result = generate_candidate_ai_analysis(context)
         except Exception as exc:
             # Ne journaliser ni contexte ni prompt ; préserver la dernière analyse réussie.
-            app.logger.warning("candidate_ai_analysis contact=%s error=%s", contact_id, type(exc).__name__)
+            status_code = getattr(exc, "status_code", None)
+            reason = getattr(exc, "code", None) if isinstance(exc, CandidateAIResponseError) else None
+            request_id = getattr(exc, "request_id", None)
+            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            app.logger.warning(
+                "candidate_ai_analysis contact=%s error=%s reason=%s provider_status=%s request_id=%s model=%s format=json_schema",
+                contact_id, type(exc).__name__, reason or "provider_error", status_code or "none",
+                request_id or "none", model)
             latest = load_data()
             old = latest.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
             message = "La réponse du service IA n’a pas pu être interprétée. Aucune donnée n’a été modifiée."
-            status_code = getattr(exc, "status_code", None)
-            if status_code == 429 or "429" in str(exc):
+            error_code = reason or "provider_error"
+            http_status = 502
+            if isinstance(exc, CandidateAIResponseError):
+                message = exc.user_message
+            elif status_code == 429:
                 message = "Le service IA est temporairement indisponible en raison d’une limite d’utilisation. Réessayez ultérieurement."
+                error_code, http_status = "rate_limit", 429
             elif isinstance(exc, (TimeoutError, requests.Timeout)) or "timeout" in type(exc).__name__.lower():
                 message = "L’analyse n’a pas pu être générée pour le moment. Réessayez dans quelques instants."
+                error_code, http_status = "timeout", 504
             if old:
                 old["last_error"] = "L’actualisation a échoué. La dernière analyse disponible est toujours affichée."
                 save_data(latest)
-            return jsonify({"error": message, "previous_analysis_available": bool(old)}), 502
+            return jsonify({"error": message, "error_code": error_code,
+                "previous_analysis_available": bool(old)}), http_status
         latest = load_data()
         contact = _crm_contact(latest, contact_id)
         if not contact:
