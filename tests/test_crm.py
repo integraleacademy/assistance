@@ -214,15 +214,21 @@ def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
     assert "<h3>${crmIcon('wallet')}<span>Financement</span></h3>" in crm_js
 
 
-def test_contact_follow_up_is_displayed_below_activity_log():
+def test_contact_activity_log_and_vae_tracking_are_displayed_in_tabs():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    activity_log = crm_js.index("<h2>Journal d’activité</h2>")
-    follow_up = crm_js.index("<h3>${crmIcon('activity')}<span>Suivi</span></h3>")
-    side_column_end = crm_js.index("</aside></form>", activity_log)
+    tabs = crm_js.index('role="tablist" aria-label="Sections de la fiche"')
+    information = crm_js.index('id="contactInfoTab"', tabs)
+    wedof = crm_js.index('id="contactWedofTab"', tabs)
+    vae = crm_js.index('id="contactVaeTab"', tabs)
+    activity = crm_js.index('id="contactActivityTab"', tabs)
 
-    assert activity_log < follow_up < side_column_end
+    assert information < wedof < vae < activity
+    assert 'id="contactVaePanel" role="tabpanel" aria-labelledby="contactVaeTab" hidden' in crm_js
+    assert 'id="contactActivityPanel" role="tabpanel" aria-labelledby="contactActivityTab" hidden' in crm_js
+    assert crm_js.index('id="vaeTrackingPanel"') > crm_js.index('id="contactVaePanel"')
+    assert crm_js.index('id="activityFeed"') > crm_js.index('id="contactActivityPanel"')
 
 
 def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
