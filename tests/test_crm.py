@@ -64,6 +64,39 @@ def test_empty_contact_publication_is_rejected(tmp_path, monkeypatch):
     assert response.status_code == 400
 
 
+def test_publication_social_actions_and_owner_deletion(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    publication = c.post(
+        f"/api/crm/contacts/{contact['id']}/publications", json={"texte": "Une actualité"}
+    ).get_json()["publication"]
+
+    liked = c.post(f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}/like")
+    assert liked.status_code == 200
+    assert liked.get_json()["publication"]["likes"] == ["clement@integraleacademy.com"]
+
+    commented = c.post(
+        f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}/comments",
+        json={"texte": "Merci pour l'information"},
+    )
+    assert commented.status_code == 201
+    comment = commented.get_json()["comment"]
+    assert comment["author"] == "Clément VAILLANT"
+    assert c.delete(
+        f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}/comments/{comment['id']}"
+    ).status_code == 204
+    assert c.delete(
+        f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}"
+    ).status_code == 204
+    assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["publications"] == []
+
+
+def test_news_feed_page_is_available(tmp_path, monkeypatch):
+    response = client(tmp_path, monkeypatch).get("/crm/fil-actu")
+    assert response.status_code == 200
+    assert b"Fil actu" in response.data
+
+
 def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     application.app.config.update(TESTING=True, SERVER_NAME="localhost")
@@ -120,6 +153,26 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
+
+
+def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+
+    added = c.post("/api/crm/statuses", json={"label": "Dossier incomplet"})
+    assert added.status_code == 201
+    assert "Dossier incomplet" in added.get_json()
+
+    renamed = c.patch("/api/crm/statuses/Nouveaux", json={"label": "À qualifier"})
+    assert renamed.status_code == 200
+    assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["statut"] == "À qualifier"
+
+    deleted = c.delete("/api/crm/statuses/%C3%80%20qualifier")
+    assert deleted.status_code == 200
+    assert "À qualifier" not in deleted.get_json()["statuses"]
+    assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["statut"] == "Blocage"
+
+    assert c.patch("/api/crm/statuses/Converti", json={"label": "Gagné"}).status_code == 400
 
 
 def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
