@@ -20,6 +20,11 @@ import calendar
 from datetime import date as _date
 import requests
 from openai import OpenAI
+from candidate_scoring import (
+    TRAINING_PRICES_CENTS,
+    calculate_candidate_integration_score,
+    normalize_cpf_amount,
+)
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
@@ -407,12 +412,12 @@ PLAN_FORMATIONS = {
 }
 
 PLAN_TARIFS = {
-    "A3P": 4200,
-    "APS": 1650,
-    "VTC": 1600,
-    "DESP_INIT": 4300,
-    "DESP_VAE": 3800,
-    "SSIAP": 980
+    "A3P": TRAINING_PRICES_CENTS["A3P"] // 100,
+    "APS": TRAINING_PRICES_CENTS["APS"] // 100,
+    "VTC": TRAINING_PRICES_CENTS["VTC"] // 100,
+    "DESP_INIT": TRAINING_PRICES_CENTS["DESP_INITIAL"] // 100,
+    "DESP_VAE": TRAINING_PRICES_CENTS["DESP_VAE"] // 100,
+    "SSIAP": TRAINING_PRICES_CENTS["SSIAP_1"] // 100,
 }
 
 FORMATION_CENTRES = {
@@ -6706,6 +6711,12 @@ def _crm_contact(data, contact_id):
     return next((c for c in data["crm_contacts"] if c.get("id") == contact_id), None)
 
 
+def _crm_contact_response(contact):
+    response = dict(contact)
+    response["integration_score"] = calculate_candidate_integration_score(contact)
+    return response
+
+
 def _crm_activity(contact, kind, title, detail="", preview=""):
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
@@ -7749,7 +7760,7 @@ def crm_contacts():
                 changed = True
         if changed:
             save_data(data)
-        return jsonify(data["crm_contacts"])
+        return jsonify([_crm_contact_response(contact) for contact in data["crm_contacts"]])
     payload = request.get_json(silent=True) or {}
     now = _crm_now()
     contact = {
@@ -7767,7 +7778,7 @@ def crm_contacts():
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
     data["crm_contacts"].insert(0, contact)
     save_data(data)
-    return jsonify(contact), 201
+    return jsonify(_crm_contact_response(contact)), 201
 
 
 @app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
@@ -7778,7 +7789,7 @@ def crm_contact(contact_id):
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
-        return jsonify(contact)
+        return jsonify(_crm_contact_response(contact))
     if request.method == "DELETE":
         data["crm_contacts"].remove(contact)
         data["crm_calendly_appointments"] = [
@@ -7794,6 +7805,12 @@ def crm_contact(contact_id):
                "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "relance_date"}
     old_status = contact.get("statut")
+    old_score = calculate_candidate_integration_score(contact)
+    if "cpf_montant" in payload:
+        try:
+            payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
@@ -7803,10 +7820,30 @@ def crm_contact(contact_id):
         contact["statut"] = old_status or "Nouveaux"
     if contact.get("statut") != old_status:
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
+    new_score = calculate_candidate_integration_score(contact)
+    if old_score.get("level") and new_score.get("level") != old_score.get("level"):
+        _crm_activity(contact, "score", f"Score d’intégration passé de {old_score['score']} à {new_score['score']} : {new_score['label']}")
+    if old_score.get("operational_status") != new_score.get("operational_status"):
+        if new_score.get("operational_status") == "blocked":
+            _crm_activity(contact, "score", "Le dossier présente maintenant un blocage de financement")
+        elif old_score.get("operational_status") == "blocked" and new_score.get("operational_status") == "ready":
+            _crm_activity(contact, "score", "Le blocage de financement a été levé")
     _crm_calendly_relink_appointments(data, contact)
     contact["updated_at"] = _crm_now()
     save_data(data)
-    return jsonify(contact)
+    return jsonify(_crm_contact_response(contact))
+
+
+@app.post("/api/crm/candidate-score/preview")
+@login_required
+def crm_candidate_score_preview():
+    payload = request.get_json(silent=True) or {}
+    if "cpf_montant" in payload:
+        try:
+            payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    return jsonify(calculate_candidate_integration_score(payload))
 
 
 @app.route("/api/crm/contacts/<contact_id>/appel", methods=["POST"])
