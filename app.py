@@ -6175,7 +6175,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260804-pipeline-statuses"
+CRM_ASSET_VERSION = "20260804-dashboard-notifications"
 
 
 def _crm_statuses(data=None):
@@ -7322,7 +7322,7 @@ def crm_contact_wedof_refresh(contact_id):
 @app.route("/crm/<section>")
 @login_required
 def crm(section):
-    if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "modeles"}:
+    if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "notifications", "modeles"}:
         abort(404)
     return render_template(
         "crm.html",
@@ -7338,7 +7338,8 @@ def crm(section):
 @login_required
 def crm_uppercase(section):
     """Préserve les liens historiques qui utilisent le chemin CRM en majuscules."""
-    return redirect(url_for("crm", section=section))
+    target = url_for("crm", section=section)
+    return redirect(f"{target}?{request.query_string.decode()}" if request.query_string else target)
 
 
 def _crm_calendly_status_payload(data):
@@ -7921,7 +7922,7 @@ def crm_contacts():
         "nom": _crm_format_last_name(payload.get("nom")), "telephone": "", "mail": "",
         "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
         "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
-        "antecedents": "", "titre_sejour": "", "compte_cnaps": "",
+        "antecedents": "", "garde_vue": "", "titre_sejour": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "refus_ft_perso": "",
@@ -7932,6 +7933,40 @@ def crm_contacts():
     data["crm_contacts"].insert(0, contact)
     save_data(data)
     return jsonify(_crm_contact_response(contact)), 201
+
+
+@app.post("/api/crm/statuses")
+@login_required
+def crm_add_status():
+    data = load_data(); label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
+    statuses = _crm_statuses(data)
+    if not label or label in statuses:
+        return jsonify({"error": "Cette étape est vide ou existe déjà"}), 400
+    data["crm_statuses"] = [*statuses[:-3], label, *statuses[-3:]]
+    save_data(data); return jsonify(data["crm_statuses"]), 201
+
+
+@app.route("/api/crm/statuses/<path:old_label>", methods=["PATCH", "DELETE"])
+@login_required
+def crm_change_status(old_label):
+    data = load_data(); statuses = _crm_statuses(data)
+    if old_label not in statuses:
+        return jsonify({"error": "Étape introuvable"}), 404
+    if old_label in CRM_RESERVED_STATUSES:
+        return jsonify({"error": "Cette étape système ne peut pas être modifiée"}), 400
+    if request.method == "PATCH":
+        replacement = str((request.get_json(silent=True) or {}).get("label") or "").strip()
+        if not replacement or (replacement in statuses and replacement != old_label):
+            return jsonify({"error": "Intitulé invalide"}), 400
+    else:
+        replacement = next((value for value in statuses if value != old_label and value not in CRM_RESERVED_STATUSES), "Nouveaux")
+    next_statuses = [replacement if value == old_label else value for value in statuses] if request.method == "PATCH" else [value for value in statuses if value != old_label]
+    data["crm_statuses"] = next_statuses
+    for contact in data.get("crm_contacts", []):
+        if contact.get("statut") == old_label:
+            contact["statut"] = replacement
+    save_data(data)
+    return jsonify({"statuses": next_statuses, "replacement": replacement})
 
 
 @app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
@@ -7953,7 +7988,7 @@ def crm_contact(contact_id):
         return "", 204
     payload = request.get_json(silent=True) or {}
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
-               "antecedents", "titre_sejour", "compte_cnaps", "cnaps_username", "cnaps_password",
+               "antecedents", "garde_vue", "titre_sejour", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "relance_date"}
@@ -8030,6 +8065,7 @@ def crm_publish_contact_update(contact_id):
         "likes": [], "comments": [],
     }
     contact.setdefault("publications", []).insert(0, publication)
+    _crm_add_mention_notifications(data, text, contact, publication)
     contact["updated_at"] = _crm_now()
     save_data(data)
     return jsonify({"publication": publication, "contact": contact}), 201
@@ -8042,6 +8078,40 @@ def _crm_publication(contact, publication_id):
 def _crm_owns_content(item):
     user = current_user() or {}
     return item.get("author_email") == user.get("email") or (not item.get("author_email") and item.get("author") == user.get("name"))
+
+
+def _crm_add_mention_notifications(data, text, contact, publication, *, kind="mention"):
+    """Crée une notification privée pour chaque @prénom connu."""
+    author = current_user() or {}
+    normalize = lambda value: "".join(char for char in unicodedata.normalize("NFD", value.casefold()) if not unicodedata.combining(char))
+    aliases = {normalize(user["first_name"]): user for user in USERS.values()}
+    mentioned = {normalize(value) for value in re.findall(r"@([\wÀ-ÿ'-]+)", text or "", re.UNICODE)}
+    for alias in mentioned:
+        recipient = aliases.get(alias)
+        if not recipient or recipient["email"] == author.get("email"):
+            continue
+        data.setdefault("crm_notifications", []).insert(0, {
+            "id": str(uuid.uuid4()), "recipient_email": recipient["email"],
+            "author": author.get("name", "Équipe Intégrale"), "date": _crm_now(),
+            "kind": kind, "text": str(text), "read": False,
+            "contact_id": contact["id"],
+            "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
+            "publication_id": publication["id"],
+        })
+
+
+@app.route("/api/crm/notifications", methods=["GET", "PATCH"])
+@login_required
+def crm_notifications():
+    data = load_data(); email = (current_user() or {}).get("email", "")
+    items = [item for item in data.get("crm_notifications", []) if item.get("recipient_email") == email]
+    if request.method == "PATCH":
+        notification_id = str((request.get_json(silent=True) or {}).get("id") or "")
+        for item in items:
+            if not notification_id or item.get("id") == notification_id:
+                item["read"] = True
+        save_data(data)
+    return jsonify(items)
 
 
 @app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>", methods=["DELETE"])
@@ -8078,7 +8148,11 @@ def crm_comment_publication(contact_id, publication_id):
     if not text: return jsonify({"error": "Le commentaire est requis"}), 400
     user = current_user() or {}
     comment = {"id": str(uuid.uuid4()), "date": _crm_now(), "texte": text, "author": user.get("name", "Équipe Intégrale"), "author_email": user.get("email", "")}
-    publication.setdefault("comments", []).append(comment); contact["updated_at"] = _crm_now(); save_data(data)
+    publication.setdefault("comments", []).append(comment)
+    _crm_add_mention_notifications(data, text, contact, publication, kind="reply")
+    if publication.get("author_email") and publication.get("author_email") != user.get("email"):
+        data.setdefault("crm_notifications", []).insert(0, {"id": str(uuid.uuid4()), "recipient_email": publication["author_email"], "author": user.get("name", "Équipe Intégrale"), "date": _crm_now(), "kind": "reply", "text": text, "read": False, "contact_id": contact["id"], "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(), "publication_id": publication["id"]})
+    contact["updated_at"] = _crm_now(); save_data(data)
     return jsonify({"comment": comment, "contact": contact}), 201
 
 
