@@ -6,3 +6,8 @@ python-dateutil
 WeasyPrint==62.3
 requests
 openai
+Flask-SocketIO==5.5.1
+simple-websocket==1.1.0
+SQLAlchemy==2.0.41
+psycopg[binary]==3.2.9
+redis==6.2.0
