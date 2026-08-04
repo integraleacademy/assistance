@@ -7,8 +7,8 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-AI_CANDIDATE_ANALYSIS_VERSION = 5
-AI_CANDIDATE_PROMPT_VERSION = 5
+AI_CANDIDATE_ANALYSIS_VERSION = 6
+AI_CANDIDATE_PROMPT_VERSION = 6
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 

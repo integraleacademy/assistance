@@ -51,8 +51,11 @@ def test_cnaps_status_normalization(raw, expected):
 def test_transmitted_weighting_and_no_title_precedence():
     lead = contact(carte_pro="NON", compte_cnaps="OUI", antecedents="NON", titre_sejour_cnaps="CONFORME")
     result = calculate_candidate_integration_score(lead, {"found": True, "raw_status": "TRANSMIS", "has_active_professional_title": False})
-    assert (result["regulatory_score"], result["regulatory_contribution"], result["score"]) == (70, 28, 88)
+    assert (result["regulatory_score"], result["regulatory_contribution"], result["score"]) == (45, 18, 78)
     assert result["normalized_cnaps_status"] == "transmitted"
+    tracking = next(row for row in result["regulatory_breakdown"] if row["key"] == "cnaps_tracking")
+    assert (tracking["points"], tracking["max_points"], tracking["detail"]) == (15, 30, "Demande CNAPS transmise")
+    assert not any("Aucun résultat CNAPS exploitable" in warning for warning in result["warnings"])
     assert result["operational_status"] == "action_required"
 
 
@@ -73,7 +76,33 @@ def test_declarative_safeguards_and_stay_status():
     assert not any("juridiquement refus" in text.lower() for text in risk["warnings"])
     assert any("titre de séjour" in text for text in risk["warnings"])
     blocked = calculate_candidate_integration_score({**base, "titre_sejour_cnaps": "NON_CONFORME"}, {"raw_status": "TRANSMIS"})
-    assert blocked["regulatory_score"] <= 10 and blocked["operational_status"] == "blocked"
+    assert blocked["regulatory_score"] == 25 and blocked["operational_status"] == "blocked"
+
+
+def test_raw_status_wins_over_stale_unknown_snapshot():
+    assert normalize_cnaps_tracking_status({"normalized_status": "unknown", "raw_status": "TRANSMIS"}) == "transmitted"
+
+
+def test_production_capture_weighting_is_61():
+    lead = contact(formation="A3P", cpf_montant="1995", carte_pro="NON", compte_cnaps="NON",
+                   antecedents="NON", titre_sejour_cnaps="NON_CONCERNE")
+    result = calculate_candidate_integration_score(
+        lead, {"found": True, "raw_status": "TRANSMIS", "has_active_professional_title": False})
+    assert result["financial_score"] == 79
+    assert (result["regulatory_score"], result["regulatory_contribution"], result["score"]) == (35, 14, 61)
+    assert result["normalized_cnaps_status"] == "transmitted"
+
+
+def test_no_result_accepted_without_title_and_refused_rules():
+    lead = contact(carte_pro="NON", compte_cnaps="NON", antecedents="NON", titre_sejour_cnaps="NON_CONCERNE")
+    missing = calculate_candidate_integration_score(lead, {"found": False})
+    tracking = next(row for row in missing["regulatory_breakdown"] if row["key"] == "cnaps_tracking")
+    assert missing["normalized_cnaps_status"] == "no_result" and tracking["points"] == 0 and tracking["max_points"] == 30
+    assert any("Aucun résultat CNAPS exploitable" in warning for warning in missing["warnings"])
+    accepted = calculate_candidate_integration_score(lead, {"raw_status": "ACCEPTÉ", "has_active_professional_title": False})
+    assert accepted["regulatory_score"] == 100 and accepted["regulatory_status"] == "ready"
+    refused = calculate_candidate_integration_score(lead, {"raw_status": "REFUSÉ"})
+    assert refused["regulatory_score"] == 0 and refused["operational_status"] == "blocked"
 
 
 def test_half_covered_cpf():

@@ -6176,7 +6176,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260804-dashboard-notifications"
+CRM_ASSET_VERSION = "20260804-cnaps-scoring-fix"
 
 
 def _crm_statuses(data=None):
@@ -7342,6 +7342,8 @@ def crm(section):
         section=section,
         statuses=_crm_statuses(load_data()),
         user=user,
+        crm_team=[{"email": member["email"], "name": member["name"],
+                   "first_name": member["first_name"]} for member in USERS.values()],
         asset_version=CRM_ASSET_VERSION,
     )
 
