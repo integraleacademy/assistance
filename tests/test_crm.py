@@ -95,6 +95,8 @@ def test_news_feed_page_is_available(tmp_path, monkeypatch):
     response = client(tmp_path, monkeypatch).get("/crm/fil-actu")
     assert response.status_code == 200
     assert b"Fil actu" in response.data
+    assert b'"team"' in response.data
+    assert b'Elsa DUQUESNE' in response.data
 
 
 def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path, monkeypatch):
