@@ -153,7 +153,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260804-pipeline-statuses" in page.data
+    assert b"20260804-dashboard-notifications" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
@@ -411,3 +411,33 @@ def test_crm_persists_reglementaire_answers(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert all(response.get_json()[key] == value for key, value in answers.items())
+
+
+def test_crm_mentions_are_private_and_replyable(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post('/api/crm/contacts', json={'prenom': 'Lina'}).get_json()
+    publication = c.post(f"/api/crm/contacts/{contact['id']}/publications", json={'texte': '@aurelie peux-tu vérifier ?'}).get_json()['publication']
+    assert c.get('/api/crm/notifications').get_json() == []
+    with c.session_transaction() as session:
+        session['user_email'] = 'aurelie@integraleacademy.com'
+    notifications = c.get('/api/crm/notifications').get_json()
+    assert len(notifications) == 1
+    assert notifications[0]['publication_id'] == publication['id']
+    assert c.post(f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}/comments", json={'texte': 'Oui, je regarde.'}).status_code == 201
+    assert c.patch('/api/crm/notifications', json={'id': notifications[0]['id']}).get_json()[0]['read'] is True
+
+
+def test_crm_uppercase_refresh_preserves_contact_query(tmp_path, monkeypatch):
+    response = client(tmp_path, monkeypatch).get('/CRM/contacts?fiche=contact-123')
+    assert response.status_code == 302
+    assert response.location.endswith('/crm/contacts?fiche=contact-123')
+
+
+def test_crm_regulatory_and_funding_dependencies_are_present():
+    with open(application.app.root_path + '/static/crm.js', encoding='utf-8') as source:
+        script = source.read()
+    assert "selectHtml('garde_vue','Garde à vue ou prise d’empreintes ?'" in script
+    assert 'data-show="cpf-yes"' in script
+    assert 'data-show="identity-created"' in script
+    assert 'data-show="ft-yes"' in script
+    assert 'wedofLoaded=true;loadWedof(c)' in script
