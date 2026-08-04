@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='chat.css', v='20260804') }}">
 <div id="integrale-chat" class="ic-chat" data-state="closed">
   <button class="ic-launcher" type="button" aria-label="Ouvrir le chat interne" aria-expanded="false">💬<span class="ic-total" hidden>0</span></button>
   <section class="ic-panel" aria-label="Chat interne" aria-hidden="true">
@@ -18,4 +18,4 @@
   </section>
 </div>
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script>
-<script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+<script src="{{ url_for('static', filename='chat.js', v='20260804') }}" defer></script>

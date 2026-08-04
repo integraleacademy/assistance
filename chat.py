@@ -52,14 +52,15 @@ class Message(Base):
 
 class Presence:
     """Presence par socket, avec grace anti-clignotement lors d'une navigation."""
-    def __init__(self, socketio, grace=15):
-        self.socketio, self.grace = socketio, grace
+    def __init__(self, socketio, grace=15, activity_timeout=50):
+        self.socketio, self.grace, self.activity_timeout = socketio, grace, activity_timeout
         self.sockets, self.sid_user, self.heartbeats, self.last_seen = defaultdict(set), {}, {}, {}
+        self.activity = {}
         self.lock = threading.RLock()
 
     def connect(self, user_id, sid):
         with self.lock:
-            was_offline = not self.sockets[user_id]
+            was_offline = not self._online_locked(user_id)
             self.sockets[user_id].add(sid); self.sid_user[sid] = user_id
             self.heartbeats[sid] = time.monotonic()
         if was_offline:
@@ -68,6 +69,23 @@ class Presence:
     def heartbeat(self, sid):
         with self.lock:
             if sid in self.sid_user: self.heartbeats[sid] = time.monotonic()
+
+    def touch(self, user_id):
+        """Maintient la présence même lorsque WebSocket est filtré par un proxy."""
+        with self.lock:
+            was_offline = not self._online_locked(user_id)
+            stamp = time.monotonic()
+            self.activity[user_id] = stamp
+        if was_offline: self._broadcast(user_id, True)
+        self.socketio.start_background_task(self._expire_activity, user_id, stamp)
+
+    def _expire_activity(self, user_id, stamp):
+        self.socketio.sleep(self.activity_timeout)
+        with self.lock:
+            if self.activity.get(user_id) != stamp or self.sockets[user_id]: return
+            self.activity.pop(user_id, None)
+            self.last_seen[user_id] = datetime.now(timezone.utc)
+        self._broadcast(user_id, False)
 
     def disconnect(self, sid):
         with self.lock:
@@ -80,7 +98,7 @@ class Presence:
     def _offline_after_grace(self, user_id):
         self.socketio.sleep(self.grace)
         with self.lock:
-            if self.sockets[user_id]: return
+            if self._online_locked(user_id): return
             self.last_seen[user_id] = datetime.now(timezone.utc)
         self._broadcast(user_id, False)
 
@@ -89,7 +107,11 @@ class Presence:
         self.socketio.emit("presence:changed", {"user_id": user_id, "online": online, "last_seen_at": stamp}, namespace=NAMESPACE)
 
     def online(self, user_id):
-        with self.lock: return bool(self.sockets[user_id])
+        with self.lock: return self._online_locked(user_id)
+
+    def _online_locked(self, user_id):
+        active = self.activity.get(user_id)
+        return bool(self.sockets[user_id]) or bool(active and time.monotonic() - active < self.activity_timeout)
 
 
 class ChatService:
@@ -163,6 +185,7 @@ class ChatService:
         def bootstrap():
             uid = self._uid()
             if not uid: abort(401)
+            self.presence.touch(uid)
             self._ensure_team()
             with self.Session() as db:
                 ids = db.scalars(select(Participant.conversation_id).where(Participant.user_id == uid)).all()
@@ -174,6 +197,13 @@ class ChatService:
                           for u in self.users.values() if u["email"] != uid]
             return jsonify({"current_user_id": uid, "conversations": conversation_data,
                             "colleagues": colleagues, "unread": unread})
+
+        @self.app.post("/api/chat/presence")
+        def presence_heartbeat():
+            uid = self._uid()
+            if not uid: abort(401)
+            self.presence.touch(uid)
+            return jsonify({"ok": True})
 
         @self.app.get("/api/chat/conversations/<int:conversation_id>/messages")
         def history(conversation_id):
