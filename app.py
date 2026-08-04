@@ -20,6 +20,17 @@ import calendar
 from datetime import date as _date
 import requests
 from openai import OpenAI
+from candidate_scoring import (
+    TRAINING_PRICES_CENTS,
+    calculate_candidate_integration_score,
+    normalize_cpf_amount,
+)
+from candidate_ai_analysis import (
+    AI_CANDIDATE_ANALYSIS_VERSION, AI_CANDIDATE_PROMPT_VERSION,
+    AI_CANDIDATE_SYSTEM_PROMPT, CANDIDATE_AI_RESPONSE_SCHEMA, CandidateAIResponseError,
+    build_candidate_ai_context as _build_candidate_ai_context,
+    compute_candidate_ai_source_hash, validate_candidate_ai_analysis,
+)
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
 SALESFORCE_OID = "00DJ9000000PT9F"
@@ -407,12 +418,12 @@ PLAN_FORMATIONS = {
 }
 
 PLAN_TARIFS = {
-    "A3P": 4200,
-    "APS": 1650,
-    "VTC": 1600,
-    "DESP_INIT": 4300,
-    "DESP_VAE": 3800,
-    "SSIAP": 980
+    "A3P": TRAINING_PRICES_CENTS["A3P"] // 100,
+    "APS": TRAINING_PRICES_CENTS["APS"] // 100,
+    "VTC": TRAINING_PRICES_CENTS["VTC"] // 100,
+    "DESP_INIT": TRAINING_PRICES_CENTS["DESP_INITIAL"] // 100,
+    "DESP_VAE": TRAINING_PRICES_CENTS["DESP_VAE"] // 100,
+    "SSIAP": TRAINING_PRICES_CENTS["SSIAP_1"] // 100,
 }
 
 FORMATION_CENTRES = {
@@ -715,7 +726,13 @@ _CRM_ACCOUNTS = (
 )
 
 USERS = {
-    email: {"email": email, "name": name, "role": role, "password_env": password_env}
+    email: {
+        "email": email,
+        "name": name,
+        "first_name": name.split(maxsplit=1)[0],
+        "role": role,
+        "password_env": password_env,
+    }
     for email, name, role, password_env in _CRM_ACCOUNTS
 }
 
@@ -864,6 +881,7 @@ DEFAULT_DATA = {
     "crm_sms_templates": [],
     "crm_calendly_appointments": [],
     "crm_calendly": {},
+    "crm_ai_candidate_analyses": {},
 }
 
 # -------------------------------------------------------------------
@@ -6722,6 +6740,12 @@ def _crm_contact(data, contact_id):
     return next((c for c in data["crm_contacts"] if c.get("id") == contact_id), None)
 
 
+def _crm_contact_response(contact):
+    response = dict(contact)
+    response["integration_score"] = calculate_candidate_integration_score(contact)
+    return response
+
+
 def _crm_activity(contact, kind, title, detail="", preview=""):
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
@@ -6821,6 +6845,106 @@ def _crm_ai(system_prompt, user_prompt, max_tokens=500):
     if not result:
         raise ValueError("Réponse vide du service IA")
     return result
+
+
+def _candidate_ai_content(response, allow_markdown=False):
+    choices = getattr(response, "choices", None)
+    if not choices:
+        raise CandidateAIResponseError("empty_response")
+    choice = choices[0]
+    if getattr(choice, "finish_reason", None) == "length":
+        raise CandidateAIResponseError("truncated_response", "L’analyse générée était incomplète. Veuillez réessayer.")
+    message = getattr(choice, "message", None)
+    if message is None:
+        raise CandidateAIResponseError("empty_response")
+    if getattr(message, "refusal", None):
+        raise CandidateAIResponseError("model_refusal")
+    content = (getattr(message, "content", None) or "").strip()
+    if not content:
+        raise CandidateAIResponseError("empty_response")
+    if allow_markdown:
+        content = re.sub(r"^\s*```(?:json)?\s*", "", content, count=1, flags=re.I)
+        content = re.sub(r"\s*```\s*$", "", content, count=1).strip()
+        start, end = content.find("{"), content.rfind("}")
+        if start < 0 or end < start:
+            raise CandidateAIResponseError("invalid_json")
+        content = content[start:end + 1]
+    return content
+
+
+def _json_schema_unsupported(exc):
+    """N'autorise le repli que pour le 400 explicite du fournisseur."""
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    provider_text = " ".join(str(value) for value in (
+        getattr(exc, "message", ""), getattr(exc, "body", ""), exc))
+    lowered = provider_text.lower()
+    return "json_schema" in lowered and any(marker in lowered for marker in (
+        "not supported", "does not support", "unsupported", "n'est pas pris en charge"))
+
+
+def _crm_ai_structured(system_prompt, user_prompt):
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY non configurée")
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=20)
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    common = {"model": model, "messages": [{"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}], "temperature": 0.2, "max_tokens": 1600}
+    structured_format = {"type": "json_schema", "json_schema": {
+        "name": "candidate_ai_analysis", "strict": True, "schema": CANDIDATE_AI_RESPONSE_SCHEMA}}
+    try:
+        response = client.chat.completions.create(**common, response_format=structured_format)
+        content = _candidate_ai_content(response)
+    except Exception as exc:
+        if not _json_schema_unsupported(exc):
+            raise
+        response = client.chat.completions.create(**common, response_format={"type": "json_object"})
+        content = _candidate_ai_content(response, allow_markdown=True)
+    try:
+        decoded = json.loads(content)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise CandidateAIResponseError("invalid_json") from exc
+    return validate_candidate_ai_analysis(decoded)
+
+
+_CRM_AI_ANALYSIS_LOCKS = {}
+_CRM_AI_ANALYSIS_LOCKS_GUARD = threading.Lock()
+
+
+def build_candidate_ai_context(contact_id, data=None):
+    data = data or load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        raise KeyError(contact_id)
+    try:
+        wedof = _wedof_contact_resources(contact_id)
+    except Exception:
+        wedof = []
+    return _build_candidate_ai_context(
+        contact, data, calculate_candidate_integration_score(contact), wedof)
+
+
+def generate_candidate_ai_analysis(context):
+    """Génère une sortie structurée puis conserve la validation métier locale."""
+    user_message = json.dumps({"candidate_context": context}, ensure_ascii=False)
+    return _crm_ai_structured(AI_CANDIDATE_SYSTEM_PROMPT, user_message)
+
+
+def get_candidate_ai_analysis_state(contact_id, data=None):
+    data = data or load_data()
+    stored = data.get("crm_ai_candidate_analyses", {}).get(contact_id)
+    enabled = bool(os.getenv("OPENAI_API_KEY"))
+    if not stored:
+        return {"enabled": enabled, "status": "never_generated" if enabled else "unavailable",
+            "stale": False, "result": None,
+            "message": None if enabled else "Analyse IA indisponible : la configuration du service IA est manquante."}
+    stale = (stored.get("source_hash") != compute_candidate_ai_source_hash(build_candidate_ai_context(contact_id, data))
+             or stored.get("analysis_version") != AI_CANDIDATE_ANALYSIS_VERSION
+             or stored.get("prompt_version") != AI_CANDIDATE_PROMPT_VERSION)
+    return {"enabled": enabled, "status": "stale" if stale else "fresh", "stale": stale,
+        "generated_at": stored.get("generated_at"), "generated_by": stored.get("generated_by_name"),
+        "analysis_version": stored.get("analysis_version"), "prompt_version": stored.get("prompt_version"),
+        "result": stored.get("result"), "message": stored.get("last_error")}
 
 
 def _gestion_stagiaires_payload(contact):
@@ -7180,7 +7304,7 @@ def crm_contact_wedof_refresh(contact_id):
 @app.route("/crm/<section>")
 @login_required
 def crm(section):
-    if section not in {"accueil", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "modeles"}:
+    if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "modeles"}:
         abort(404)
     return render_template(
         "crm.html",
@@ -7771,7 +7895,7 @@ def crm_contacts():
                 changed = True
         if changed:
             save_data(data)
-        return jsonify(data["crm_contacts"])
+        return jsonify([_crm_contact_response(contact) for contact in data["crm_contacts"]])
     payload = request.get_json(silent=True) or {}
     now = _crm_now()
     contact = {
@@ -7789,7 +7913,7 @@ def crm_contacts():
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
     data["crm_contacts"].insert(0, contact)
     save_data(data)
-    return jsonify(contact), 201
+    return jsonify(_crm_contact_response(contact)), 201
 
 
 @app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
@@ -7800,7 +7924,7 @@ def crm_contact(contact_id):
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
-        return jsonify(contact)
+        return jsonify(_crm_contact_response(contact))
     if request.method == "DELETE":
         data["crm_contacts"].remove(contact)
         data["crm_calendly_appointments"] = [
@@ -7816,6 +7940,12 @@ def crm_contact(contact_id):
                "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "relance_date"}
     old_status = contact.get("statut")
+    old_score = calculate_candidate_integration_score(contact)
+    if "cpf_montant" in payload:
+        try:
+            payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
@@ -7826,10 +7956,81 @@ def crm_contact(contact_id):
         contact["statut"] = old_status if old_status in statuses else statuses[0]
     if contact.get("statut") != old_status:
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
+    new_score = calculate_candidate_integration_score(contact)
+    if old_score.get("level") and new_score.get("level") != old_score.get("level"):
+        _crm_activity(contact, "score", f"Score d’intégration passé de {old_score['score']} à {new_score['score']} : {new_score['label']}")
+    if old_score.get("operational_status") != new_score.get("operational_status"):
+        if new_score.get("operational_status") == "blocked":
+            _crm_activity(contact, "score", "Le dossier présente maintenant un blocage de financement")
+        elif old_score.get("operational_status") == "blocked" and new_score.get("operational_status") == "ready":
+            _crm_activity(contact, "score", "Le blocage de financement a été levé")
     _crm_calendly_relink_appointments(data, contact)
     contact["updated_at"] = _crm_now()
     save_data(data)
-    return jsonify(contact)
+    return jsonify(_crm_contact_response(contact))
+
+
+@app.post("/api/crm/candidate-score/preview")
+@login_required
+def crm_candidate_score_preview():
+    payload = request.get_json(silent=True) or {}
+    if "cpf_montant" in payload:
+        try:
+            payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    return jsonify(calculate_candidate_integration_score(payload))
+
+
+@app.route("/api/crm/statuses", methods=["GET", "POST"])
+@login_required
+def crm_statuses():
+    data = load_data()
+    if request.method == "GET":
+        return jsonify(_crm_statuses(data))
+    label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
+    statuses = _crm_statuses(data)
+    if not label:
+        return jsonify({"error": "L’intitulé est obligatoire"}), 400
+    if label in statuses:
+        return jsonify({"error": "Cet intitulé existe déjà"}), 409
+    statuses.insert(len(statuses) - len(CRM_RESERVED_STATUSES), label)
+    data["crm_statuses"] = statuses
+    save_data(data)
+    return jsonify(statuses), 201
+
+
+@app.route("/api/crm/statuses/<path:old_label>", methods=["PATCH", "DELETE"])
+@login_required
+def crm_status(old_label):
+    data = load_data()
+    statuses = _crm_statuses(data)
+    if old_label not in statuses:
+        return jsonify({"error": "Statut introuvable"}), 404
+    if old_label in CRM_RESERVED_STATUSES:
+        return jsonify({"error": "Ce statut système ne peut pas être modifié"}), 400
+    if request.method == "PATCH":
+        label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
+        if not label:
+            return jsonify({"error": "L’intitulé est obligatoire"}), 400
+        if label != old_label and label in statuses:
+            return jsonify({"error": "Cet intitulé existe déjà"}), 409
+        statuses[statuses.index(old_label)] = label
+        replacement = label
+    else:
+        editable = [status for status in statuses if status not in CRM_RESERVED_STATUSES and status != old_label]
+        if not editable:
+            return jsonify({"error": "Le pipeline doit conserver au moins un statut"}), 400
+        statuses.remove(old_label)
+        replacement = editable[0]
+    for contact in data.get("crm_contacts", []):
+        if contact.get("statut") == old_label:
+            contact["statut"] = replacement
+            contact["updated_at"] = _crm_now()
+            _crm_activity(contact, "statut", f"Statut : {replacement}", f"Ancien statut : {old_label}")
+    data["crm_statuses"] = statuses
+    save_data(data)
+    return jsonify({"statuses": statuses, "replacement": replacement})
 
 
 @app.route("/api/crm/statuses", methods=["GET", "POST"])
@@ -7908,11 +8109,72 @@ def crm_publish_contact_update(contact_id):
     publication = {
         "id": str(uuid.uuid4()), "date": _crm_now(), "texte": text,
         "author": (current_user() or {}).get("name", "Équipe Intégrale"),
+        "author_email": (current_user() or {}).get("email", ""),
+        "likes": [], "comments": [],
     }
     contact.setdefault("publications", []).insert(0, publication)
     contact["updated_at"] = _crm_now()
     save_data(data)
     return jsonify({"publication": publication, "contact": contact}), 201
+
+
+def _crm_publication(contact, publication_id):
+    return next((item for item in contact.get("publications", []) if item.get("id") == publication_id), None)
+
+
+def _crm_owns_content(item):
+    user = current_user() or {}
+    return item.get("author_email") == user.get("email") or (not item.get("author_email") and item.get("author") == user.get("name"))
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>", methods=["DELETE"])
+@login_required
+def crm_delete_publication(contact_id, publication_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    if not publication: return jsonify({"error": "Publication introuvable"}), 404
+    if not _crm_owns_content(publication): return jsonify({"error": "Vous ne pouvez supprimer que vos publications"}), 403
+    contact["publications"].remove(publication); contact["updated_at"] = _crm_now(); save_data(data)
+    return "", 204
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/like", methods=["POST"])
+@login_required
+def crm_like_publication(contact_id, publication_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    if not publication: return jsonify({"error": "Publication introuvable"}), 404
+    email = (current_user() or {}).get("email", "")
+    likes = publication.setdefault("likes", [])
+    likes.remove(email) if email in likes else likes.append(email)
+    save_data(data)
+    return jsonify({"publication": publication, "contact": contact})
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/comments", methods=["POST"])
+@login_required
+def crm_comment_publication(contact_id, publication_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    if not publication: return jsonify({"error": "Publication introuvable"}), 404
+    text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
+    if not text: return jsonify({"error": "Le commentaire est requis"}), 400
+    user = current_user() or {}
+    comment = {"id": str(uuid.uuid4()), "date": _crm_now(), "texte": text, "author": user.get("name", "Équipe Intégrale"), "author_email": user.get("email", "")}
+    publication.setdefault("comments", []).append(comment); contact["updated_at"] = _crm_now(); save_data(data)
+    return jsonify({"comment": comment, "contact": contact}), 201
+
+
+@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/comments/<comment_id>", methods=["DELETE"])
+@login_required
+def crm_delete_publication_comment(contact_id, publication_id, comment_id):
+    data = load_data(); contact = _crm_contact(data, contact_id)
+    publication = _crm_publication(contact, publication_id) if contact else None
+    comment = next((item for item in publication.get("comments", []) if item.get("id") == comment_id), None) if publication else None
+    if not comment: return jsonify({"error": "Commentaire introuvable"}), 404
+    if not _crm_owns_content(comment): return jsonify({"error": "Vous ne pouvez supprimer que vos commentaires"}), 403
+    publication["comments"].remove(comment); contact["updated_at"] = _crm_now(); save_data(data)
+    return "", 204
 
 
 @app.route("/api/crm/contacts/<contact_id>/convertir", methods=["POST"])
@@ -8027,6 +8289,81 @@ def crm_contact_summary(contact_id):
     except Exception as exc:
         print("Erreur synthèse CRM:", exc)
         return jsonify({"error": "La synthèse est momentanément indisponible"}), 502
+
+
+@app.route("/api/crm/contacts/<contact_id>/ai-analysis", methods=["GET", "POST"])
+@login_required
+def crm_candidate_ai_analysis(contact_id):
+    data = load_data()
+    if not _crm_contact(data, contact_id):
+        return jsonify({"error": "Contact introuvable"}), 404
+    if request.method == "GET":
+        return jsonify(get_candidate_ai_analysis_state(contact_id, data))
+    force = bool((request.get_json(silent=True) or {}).get("force", False))
+    if not os.getenv("OPENAI_API_KEY"):
+        return jsonify({"error": "Analyse IA indisponible : la configuration du service IA est manquante.",
+            "error_code": "missing_configuration", "previous_analysis_available": False}), 503
+    with _CRM_AI_ANALYSIS_LOCKS_GUARD:
+        lock = _CRM_AI_ANALYSIS_LOCKS.setdefault(contact_id, threading.Lock())
+    with lock:
+        data = load_data()
+        context = build_candidate_ai_context(contact_id, data)
+        meaningful = any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
+            "recent_notes_untrusted", "recent_activities_untrusted", "appointments", "wedof"))
+        if not meaningful:
+            return jsonify({"status": "insufficient_data", "message": "Les informations de la piste sont insuffisantes pour générer une analyse utile."}), 422
+        source_hash = compute_candidate_ai_source_hash(context)
+        stored = data.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
+        if stored and stored.get("source_hash") == source_hash and not force:
+            response = get_candidate_ai_analysis_state(contact_id, data)
+            response["cached"] = True
+            return jsonify(response)
+        try:
+            result = generate_candidate_ai_analysis(context)
+        except Exception as exc:
+            # Ne journaliser ni contexte ni prompt ; préserver la dernière analyse réussie.
+            status_code = getattr(exc, "status_code", None)
+            reason = getattr(exc, "code", None) if isinstance(exc, CandidateAIResponseError) else None
+            request_id = getattr(exc, "request_id", None)
+            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            app.logger.warning(
+                "candidate_ai_analysis contact=%s error=%s reason=%s provider_status=%s request_id=%s model=%s format=json_schema",
+                contact_id, type(exc).__name__, reason or "provider_error", status_code or "none",
+                request_id or "none", model)
+            latest = load_data()
+            old = latest.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
+            message = "La réponse du service IA n’a pas pu être interprétée. Aucune donnée n’a été modifiée."
+            error_code = reason or "provider_error"
+            http_status = 502
+            if isinstance(exc, CandidateAIResponseError):
+                message = exc.user_message
+            elif status_code == 429:
+                message = "Le service IA est temporairement indisponible en raison d’une limite d’utilisation. Réessayez ultérieurement."
+                error_code, http_status = "rate_limit", 429
+            elif isinstance(exc, (TimeoutError, requests.Timeout)) or "timeout" in type(exc).__name__.lower():
+                message = "L’analyse n’a pas pu être générée pour le moment. Réessayez dans quelques instants."
+                error_code, http_status = "timeout", 504
+            if old:
+                old["last_error"] = "L’actualisation a échoué. La dernière analyse disponible est toujours affichée."
+                save_data(latest)
+            return jsonify({"error": message, "error_code": error_code,
+                "previous_analysis_available": bool(old)}), http_status
+        latest = load_data()
+        contact = _crm_contact(latest, contact_id)
+        if not contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        user = current_user() or {}
+        latest.setdefault("crm_ai_candidate_analyses", {})[contact_id] = {
+            "analysis_version": AI_CANDIDATE_ANALYSIS_VERSION, "prompt_version": AI_CANDIDATE_PROMPT_VERSION,
+            "source_hash": source_hash, "generated_at": _crm_now(),
+            "generated_by_user_id": user.get("email", ""), "generated_by_name": user.get("name", "Équipe Intégrale"),
+            "provider": "openai", "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "result": result}
+        _crm_activity(contact, "ai_analysis", "Analyse IA du candidat actualisée",
+            f"Priorité proposée : {result['priority_label']}")
+        save_data(latest)
+        response = get_candidate_ai_analysis_state(contact_id, latest)
+        response["cached"] = False
+        return jsonify(response)
 
 
 @app.route("/api/crm/contacts/<contact_id>/generer-message", methods=["POST"])
