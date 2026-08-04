@@ -1,6 +1,7 @@
 import pytest
 
-from candidate_scoring import calculate_candidate_integration_score, normalize_cpf_amount
+from candidate_scoring import (calculate_candidate_integration_score,
+    calculate_security_regulatory_score, normalize_cnaps_tracking_status, normalize_cpf_amount)
 
 
 def test_candidate_score_styles_are_bundled():
@@ -26,12 +27,53 @@ def points(result, key):
 
 
 def test_ideal_aps_profile():
-    result = calculate_candidate_integration_score(contact())
-    assert (result["score"], result["level"], result["label"]) == (100, "excellent", "Très bon profil")
+    result = calculate_candidate_integration_score(contact(carte_pro="OUI"))
+    assert (result["score"], result["level"], result["label"]) == (100, "excellent", "Dossier très avancé")
     assert result["cpf_coverage_percent"] == 100
     assert result["remaining_to_finance_eur"] == 0
     assert result["blockers"] == []
     assert result["operational_status"] == "ready"
+
+
+def test_non_security_training_keeps_financial_score():
+    result = calculate_candidate_integration_score(contact(formation="SSIAP 1", cpf_montant="980"))
+    assert result["score"] == result["financial_score"]
+    assert result["regulatory_applicable"] is False
+
+
+@pytest.mark.parametrize("raw,expected", [("ACCEPTÉ", "accepted"), ("ACCEPTE", "accepted"),
+    ("TRANSMIS", "transmitted"), ("EN INSTRUCTION", "in_review"),
+    ("ENREGISTRÉ", "registered"), ("REFUSÉ", "refused"), ("AUCUN RÉSULTAT", "no_result")])
+def test_cnaps_status_normalization(raw, expected):
+    assert normalize_cnaps_tracking_status({"cnaps": {"cnaps_status": raw, "titles": []}}) == expected
+
+
+def test_transmitted_weighting_and_no_title_precedence():
+    lead = contact(carte_pro="NON", compte_cnaps="OUI", antecedents="NON", titre_sejour_cnaps="CONFORME")
+    result = calculate_candidate_integration_score(lead, {"found": True, "raw_status": "TRANSMIS", "has_active_professional_title": False})
+    assert (result["regulatory_score"], result["regulatory_contribution"], result["score"]) == (70, 28, 88)
+    assert result["normalized_cnaps_status"] == "transmitted"
+    assert result["operational_status"] == "action_required"
+
+
+def test_no_result_refusal_and_accepted_priority():
+    lead = contact(carte_pro="NON", compte_cnaps="OUI", antecedents="NON", titre_sejour_cnaps="CONFORME")
+    missing = calculate_candidate_integration_score(lead, {"found": False})
+    assert (missing["regulatory_score"], missing["score"], missing["level"]) == (30, 72, "qualify")
+    refused = calculate_candidate_integration_score(lead, {"raw_status": "REFUSÉ"})
+    assert refused["regulatory_score"] == 0 and refused["operational_status"] == "blocked"
+    accepted = calculate_candidate_integration_score({**lead, "formation": "A3P", "cpf_montant": "4200", "antecedents": "OUI"}, {"raw_status": "ACCEPTÉ"})
+    assert accepted["regulatory_score"] == 100 and accepted["score"] == 100
+
+
+def test_declarative_safeguards_and_stay_status():
+    base = contact(carte_pro="NON", compte_cnaps="OUI", antecedents="OUI", titre_sejour="OUI")
+    risk = calculate_security_regulatory_score(base, {"raw_status": "TRANSMIS"})
+    assert risk["score"] <= 25 and risk["status"] == "high_risk"
+    assert not any("juridiquement refus" in text.lower() for text in risk["warnings"])
+    assert any("titre de séjour" in text for text in risk["warnings"])
+    blocked = calculate_candidate_integration_score({**base, "titre_sejour_cnaps": "NON_CONFORME"}, {"raw_status": "TRANSMIS"})
+    assert blocked["regulatory_score"] <= 10 and blocked["operational_status"] == "blocked"
 
 
 def test_half_covered_cpf():

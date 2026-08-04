@@ -1,10 +1,10 @@
-"""Scoring déterministe de la maturité financière des pistes CRM."""
+"""Moteur déterministe du score d'intégration (sans réseau ni IA)."""
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 1
+CANDIDATE_SCORING_VERSION = 2
 
 # Source de vérité des tarifs utilisés par le score (en centimes).
 TRAINING_PRICES_CENTS = {
@@ -76,7 +76,7 @@ def _money(cents):
     return f"{int(amount):,}".replace(",", " ") + decimals + " €"
 
 
-def calculate_candidate_integration_score(contact):
+def calculate_financial_readiness_score(contact):
     """Retourne le score complet sans effet de bord ni dépendance externe."""
     cpf, created, functional = (_boolean(contact.get(k)) for k in ("cpf", "identite_creation", "identite_ok"))
     wants_ft, personal, registered = (_boolean(contact.get(k)) for k in ("financement_ft", "refus_ft_perso", "inscrit_ft"))
@@ -140,10 +140,10 @@ def calculate_candidate_integration_score(contact):
         ("france_travail_strategy", "Sécurisation France Travail", ft_points, 15),
     ]
     score = min(100, sum(row[2] for row in breakdown))
-    if score >= 90: level, label, indication = "excellent", "Très bon profil", "Priorité haute"
-    elif score >= 75: level, label, indication = "good", "Bon profil", "À contacter rapidement"
-    elif score >= 55: level, label, indication = "qualify", "Profil à qualifier", "Des éléments restent à sécuriser"
-    else: level, label, indication = "fragile", "Profil fragile", "Financement ou démarches insuffisamment sécurisés"
+    if score >= 90: level, label, indication = "excellent", "Dossier très avancé", "Priorité haute"
+    elif score >= 75: level, label, indication = "good", "Bon dossier", "À contacter rapidement"
+    elif score >= 55: level, label, indication = "qualify", "Dossier à qualifier", "Des éléments restent à sécuriser"
+    else: level, label, indication = "fragile", "Dossier fragile", "Financement ou démarches insuffisamment sécurisés"
 
     if remaining and personal is False and wants_ft is False:
         blockers.append("Le reste à financer n’est couvert ni personnellement ni par France Travail.")
@@ -165,3 +165,162 @@ def calculate_candidate_integration_score(contact):
             "breakdown": [{"key": k, "label": l, "points": p, "max_points": m} for k, l, p, m in breakdown],
             "blockers": list(dict.fromkeys(blockers)), "warnings": list(dict.fromkeys(warnings)),
             "next_actions": list(dict.fromkeys(actions))}
+
+
+def _normalized_text(value):
+    text = " ".join(str(value or "").strip().split()).upper()
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+
+
+def normalize_cnaps_tracking_status(snapshot):
+    """Normalise toutes les variantes historiques du statut CNAPS."""
+    if not isinstance(snapshot, dict):
+        snapshot = {"raw_status": snapshot}
+    normalized = snapshot.get("normalized_status")
+    if normalized in {"accepted", "transmitted", "in_review", "registered", "refused", "no_result", "unknown"}:
+        return normalized
+    values = []
+    cnaps = snapshot.get("cnaps") if isinstance(snapshot.get("cnaps"), dict) else {}
+    for source in (snapshot, cnaps):
+        for key in ("raw_status", "cnaps_status", "statut_cnaps", "status", "statut"):
+            if source.get(key) not in (None, ""):
+                values.append(_normalized_text(source[key]))
+    # Un statut principal explicite est prioritaire sur l'absence de titres.
+    mappings = {
+        "accepted": {"ACCEPTE", "VALIDE", "AUTORISE"},
+        "transmitted": {"TRANSMIS", "DEPOSE"},
+        "in_review": {"EN INSTRUCTION", "EN COURS", "EN COURS DE TRAITEMENT"},
+        "registered": {"ENREGISTRE", "BROUILLON", "CREE"},
+        "refused": {"REFUSE", "REJETE"},
+        "no_result": {"AUCUN RESULTAT", "DOSSIER NON TROUVE"},
+    }
+    for value in values:
+        for status, variants in mappings.items():
+            if value in variants:
+                return status
+    if snapshot.get("found") is False or (snapshot.get("http_status") == 404 and snapshot.get("reason") == "cnaps_not_found"):
+        return "no_result"
+    return "unknown"
+
+
+def _unique(values):
+    return list(dict.fromkeys(values))
+
+
+def calculate_security_regulatory_score(contact, cnaps_snapshot=None):
+    """Calcule la faisabilité APS/A3P à partir de faits locaux uniquement."""
+    snapshot = cnaps_snapshot if isinstance(cnaps_snapshot, dict) else {}
+    if resolve_training_code(contact) not in {"APS", "A3P"}:
+        return {"applicable": False, "score": None, "max_score": 100, "status": "unknown",
+                "label": "Non applicable", "source": "not_applicable", "breakdown": [],
+                "blockers": [], "warnings": [], "next_actions": [], "normalized_cnaps_status": "unknown"}
+    cnaps_status = normalize_cnaps_tracking_status(snapshot)
+    card = _boolean(contact.get("carte_pro"))
+    active_title = snapshot.get("has_active_professional_title") is True
+    warnings, blockers, actions, breakdown = [], [], [], []
+    if snapshot.get("has_expired_professional_title") or snapshot.get("title_expires_before_training"):
+        warnings.append("Un titre professionnel CNAPS est expiré ou expire avant le début de la formation.")
+        actions.append("Vérifier le renouvellement du titre professionnel CNAPS")
+    if active_title or card is True or cnaps_status == "accepted":
+        source = "verified_cnaps_title" if active_title else ("cnaps_tracking" if cnaps_status == "accepted" else "candidate_declaration")
+        label = "Carte professionnelle vérifiée" if active_title else ("Autorisation CNAPS acceptée" if cnaps_status == "accepted" else "Carte professionnelle déclarée")
+        if card is True and not active_title and cnaps_status != "accepted":
+            warnings.append("La carte professionnelle est déclarée par le candidat mais n’a pas encore été vérifiée dans le suivi CNAPS.")
+        return {"applicable": True, "score": 100, "max_score": 100, "status": "ready", "label": label,
+                "source": source, "breakdown": [{"key": "official_readiness", "label": label, "points": 100, "max_points": 100}],
+                "blockers": [], "warnings": _unique(warnings), "next_actions": _unique(actions),
+                "normalized_cnaps_status": cnaps_status}
+    config = {
+        "transmitted": (50, 70, "in_progress", "Démarche CNAPS en cours"),
+        "in_review": (50, 70, "in_progress", "Démarche CNAPS en cours"),
+        "registered": (30, 50, "to_secure", "Demande CNAPS à finaliser"),
+        "no_result": (0, 30, "high_risk", "Situation CNAPS non sécurisée"),
+        "unknown": (0, 30, "high_risk", "Situation CNAPS non sécurisée"),
+    }
+    if cnaps_status == "refused":
+        blockers.append("Le suivi CNAPS indique un refus. Vérification humaine obligatoire avant toute poursuite de l’inscription.")
+        actions.append("Vérifier le motif et la situation du dossier CNAPS")
+        base, ceiling, status, label = 0, 0, "blocked", "Dossier CNAPS refusé"
+    else:
+        base, ceiling, status, label = config[cnaps_status]
+    breakdown.append({"key": "cnaps_tracking", "label": "Avancement CNAPS", "points": base, "max_points": ceiling})
+    score = base
+    account = _boolean(contact.get("compte_cnaps"))
+    if account is True:
+        score += 10; breakdown.append({"key": "cnaps_account", "label": "Compte CNAPS créé", "points": 10, "max_points": 10})
+    else:
+        if account is None: warnings.append("La création du compte CNAPS n’est pas renseignée.")
+        actions.append("Accompagner le candidat dans la création de son compte CNAPS")
+    antecedents = _boolean(contact.get("antecedents"))
+    if antecedents is False:
+        score += 10; breakdown.append({"key": "declarative_check", "label": "Vérification déclarative", "points": 10, "max_points": 10})
+    elif antecedents is True:
+        ceiling = min(ceiling, 25); status = "high_risk" if status != "blocked" else status
+        warnings.append("Des antécédents sont déclarés. Seul le CNAPS peut apprécier leur compatibilité avec l’autorisation sollicitée.")
+        actions.append("Vérifier l’avancement de l’instruction CNAPS avec le candidat")
+    else:
+        warnings.append("Une vérification réglementaire déclarative reste à compléter.")
+    stay = _normalized_text(contact.get("titre_sejour_cnaps"))
+    if stay in {"NON_CONCERNE", "CONFORME"}:
+        score += 10; breakdown.append({"key": "residence_administration", "label": "Situation administrative renseignée", "points": 10, "max_points": 10})
+    elif stay == "NON_CONFORME":
+        ceiling = min(ceiling, 10); status = "blocked"
+        blockers.append("Une condition administrative liée au titre de séjour est indiquée comme non remplie. Vérification humaine obligatoire.")
+    else:
+        warnings.append("La conformité du titre de séjour aux conditions CNAPS reste à vérifier.")
+        actions.append("Vérifier les justificatifs liés au titre de séjour")
+    if cnaps_status in {"no_result", "unknown"}:
+        warnings.append("Aucun résultat CNAPS exploitable n’est disponible.")
+        actions.append("Retrouver ou déposer la demande d’autorisation CNAPS")
+    score = min(score, ceiling)
+    return {"applicable": True, "score": max(0, score), "max_score": 100, "status": status, "label": label,
+            "source": "cnaps_tracking", "breakdown": breakdown, "blockers": _unique(blockers),
+            "warnings": _unique(warnings), "next_actions": _unique(actions), "normalized_cnaps_status": cnaps_status}
+
+
+def _score_level(score):
+    if score >= 90: return "excellent", "Dossier très avancé", "Priorité haute"
+    if score >= 75: return "good", "Bon dossier", "À contacter rapidement"
+    if score >= 55: return "qualify", "Dossier à qualifier", "Des éléments restent à sécuriser"
+    return "fragile", "Dossier fragile", "Financement ou démarches insuffisamment sécurisés"
+
+
+def calculate_candidate_integration_score(contact, cnaps_snapshot=None):
+    """Assemble les sous-scores; cette fonction pure n'effectue aucun appel externe."""
+    financial = calculate_financial_readiness_score(contact)
+    regulatory = calculate_security_regulatory_score(contact, cnaps_snapshot)
+    result = dict(financial)
+    result["version"] = CANDIDATE_SCORING_VERSION
+    financial_score = financial.get("score")
+    applicable = regulatory["applicable"]
+    if financial_score is None:
+        global_score = None
+    elif applicable:
+        global_score = max(0, min(100, int((Decimal(financial_score) * Decimal("0.60") + Decimal(regulatory["score"]) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))))
+    else:
+        global_score = financial_score
+    result.update({
+        "score": global_score, "financial_score": financial_score,
+        "financial_weight": 60 if applicable else 100,
+        "financial_contribution": None if financial_score is None else int((Decimal(financial_score) * Decimal("0.60" if applicable else "1")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
+        "financial_breakdown": financial.get("breakdown", []),
+        "regulatory_applicable": applicable, "regulatory_score": regulatory["score"],
+        "regulatory_weight": 40 if applicable else 0,
+        "regulatory_contribution": int((Decimal(regulatory["score"] or 0) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if applicable else 0,
+        "regulatory_status": regulatory["status"], "regulatory_label": regulatory["label"],
+        "regulatory_breakdown": regulatory["breakdown"], "normalized_cnaps_status": regulatory["normalized_cnaps_status"],
+        "blockers": _unique(financial.get("blockers", []) + regulatory["blockers"]),
+        "warnings": _unique(financial.get("warnings", []) + regulatory["warnings"]),
+        "next_actions": _unique(financial.get("next_actions", []) + regulatory["next_actions"]),
+    })
+    if global_score is not None:
+        result["level"], result["label"], result["indication"] = _score_level(global_score)
+    if result["blockers"]:
+        result["operational_status"] = "blocked"
+    elif applicable and regulatory["status"] != "ready":
+        result["operational_status"] = "action_required"
+    elif financial.get("operational_status") != "ready":
+        result["operational_status"] = financial.get("operational_status", "action_required")
+    else:
+        result["operational_status"] = "ready"
+    return result

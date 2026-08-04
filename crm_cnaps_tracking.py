@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import os
 import unicodedata
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 from flask import jsonify
+
+from candidate_scoring import normalize_cnaps_tracking_status
 
 
 REMOTE_PATH = "/api/integrations/crm/stagiaires"
@@ -84,6 +87,52 @@ def public_payload(value: Any) -> Any:
     if isinstance(value, list):
         return [public_payload(item) for item in value]
     return value
+
+
+def _remote_titles(remote):
+    titles = []
+    for owner in (remote.get("card_pro"), remote.get("cnaps")):
+        if isinstance(owner, dict) and isinstance(owner.get("titles"), list):
+            titles.extend(item for item in owner["titles"] if isinstance(item, dict))
+    return titles
+
+
+def scoring_snapshot_from_remote(remote, http_status=200, now=None):
+    """Projette une réponse distante vers le cache minimal autorisé du score."""
+    remote = remote if isinstance(remote, dict) else {}
+    status = normalize_cnaps_tracking_status({**remote, "http_status": http_status})
+    current = now or datetime.now(timezone.utc)
+    if isinstance(current, str):
+        try: current = datetime.fromisoformat(current.replace("Z", "+00:00"))
+        except ValueError: current = datetime.now(timezone.utc)
+    active, expired, active_expiry = False, False, None
+    for title in _remote_titles(remote):
+        state = normalized_name(title.get("state") or title.get("status") or title.get("etat"))
+        kind = normalized_name(title.get("type") or title.get("title") or title.get("titre") or title.get("name"))
+        expiry = title.get("expires_at") or title.get("expiration_date") or title.get("date_expiration") or title.get("valid_until")
+        expiry_date = None
+        if expiry:
+            try:
+                expiry_date = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
+                if expiry_date.tzinfo is None:
+                    expiry_date = expiry_date.replace(tzinfo=timezone.utc)
+            except ValueError: pass
+        is_professional = not kind or any(word in kind for word in ("profession", "carte"))
+        is_expired = "expire" in state or (expiry_date is not None and expiry_date <= current)
+        if is_professional and is_expired: expired = True
+        if is_professional and not is_expired and state not in {"refuse", "rejete", "inactif", "inactive"}:
+            active = True
+            active_expiry = str(expiry) if expiry else None
+    raw = next((value for owner in (remote, remote.get("cnaps") or {}) if isinstance(owner, dict)
+                for key in ("cnaps_status", "statut_cnaps", "status", "statut")
+                for value in [owner.get(key)] if value not in (None, "")), "")
+    return {"found": False if status == "no_result" else remote.get("found", True),
+            "normalized_status": status, "raw_status": str(raw)[:80],
+            "has_active_professional_title": active,
+            "has_expired_professional_title": expired,
+            "active_title_expires_at": active_expiry,
+            "last_checked_at": remote.get("last_checked_at"),
+            "synced_at": current.isoformat()}
 
 
 def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=None):

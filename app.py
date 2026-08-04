@@ -883,6 +883,7 @@ DEFAULT_DATA = {
     "crm_calendly_appointments": [],
     "crm_calendly": {},
     "crm_ai_candidate_analyses": {},
+    "crm_cnaps_scoring_snapshots": {},
 }
 
 # -------------------------------------------------------------------
@@ -6742,9 +6743,12 @@ def _crm_contact(data, contact_id):
     return next((c for c in data["crm_contacts"] if c.get("id") == contact_id), None)
 
 
-def _crm_contact_response(contact):
+def _crm_contact_response(contact, data=None, regulatory_snapshot=None):
     response = dict(contact)
-    response["integration_score"] = calculate_candidate_integration_score(contact)
+    snapshot = regulatory_snapshot
+    if snapshot is None and data is not None:
+        snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact.get("id")))
+    response["integration_score"] = calculate_candidate_integration_score(contact, snapshot)
     return response
 
 
@@ -6938,7 +6942,9 @@ def build_candidate_ai_context(contact_id, data=None, now=None):
             app.logger.warning("Suivi VAE indisponible pour l'analyse IA (%s)", type(exc).__name__)
             vae_tracking = None
     return _build_candidate_ai_context(
-        contact, data, calculate_candidate_integration_score(contact), wedof, now, vae_tracking)
+        contact, data, calculate_candidate_integration_score(
+            contact, data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))),
+        wedof, now, vae_tracking)
 
 
 def generate_candidate_ai_analysis(context):
@@ -7914,7 +7920,7 @@ def crm_contacts():
                 changed = True
         if changed:
             save_data(data)
-        return jsonify([_crm_contact_response(contact) for contact in data["crm_contacts"]])
+        return jsonify([_crm_contact_response(contact, data) for contact in data["crm_contacts"]])
     payload = request.get_json(silent=True) or {}
     now = _crm_now()
     contact = {
@@ -7922,7 +7928,7 @@ def crm_contacts():
         "nom": _crm_format_last_name(payload.get("nom")), "telephone": "", "mail": "",
         "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
         "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
-        "antecedents": "", "garde_vue": "", "titre_sejour": "", "compte_cnaps": "",
+        "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "refus_ft_perso": "",
@@ -7932,7 +7938,7 @@ def crm_contacts():
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
     data["crm_contacts"].insert(0, contact)
     save_data(data)
-    return jsonify(_crm_contact_response(contact)), 201
+    return jsonify(_crm_contact_response(contact, data)), 201
 
 
 @app.post("/api/crm/statuses")
@@ -7977,7 +7983,7 @@ def crm_contact(contact_id):
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
-        return jsonify(_crm_contact_response(contact))
+        return jsonify(_crm_contact_response(contact, data))
     if request.method == "DELETE":
         data["crm_contacts"].remove(contact)
         data["crm_calendly_appointments"] = [
@@ -7988,12 +7994,13 @@ def crm_contact(contact_id):
         return "", 204
     payload = request.get_json(silent=True) or {}
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
-               "antecedents", "garde_vue", "titre_sejour", "compte_cnaps", "cnaps_username", "cnaps_password",
+               "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "relance_date"}
     old_status = contact.get("statut")
-    old_score = calculate_candidate_integration_score(contact)
+    snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
+    old_score = calculate_candidate_integration_score(contact, snapshot)
     if "cpf_montant" in payload:
         try:
             payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
@@ -8009,7 +8016,7 @@ def crm_contact(contact_id):
         contact["statut"] = old_status if old_status in statuses else statuses[0]
     if contact.get("statut") != old_status:
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
-    new_score = calculate_candidate_integration_score(contact)
+    new_score = calculate_candidate_integration_score(contact, snapshot)
     if old_score.get("level") and new_score.get("level") != old_score.get("level"):
         _crm_activity(contact, "score", f"Score d’intégration passé de {old_score['score']} à {new_score['score']} : {new_score['label']}")
     if old_score.get("operational_status") != new_score.get("operational_status"):
@@ -8020,7 +8027,7 @@ def crm_contact(contact_id):
     _crm_calendly_relink_appointments(data, contact)
     contact["updated_at"] = _crm_now()
     save_data(data)
-    return jsonify(_crm_contact_response(contact))
+    return jsonify(_crm_contact_response(contact, data))
 
 
 @app.post("/api/crm/candidate-score/preview")
@@ -8205,11 +8212,40 @@ def crm_convert_contact(contact_id):
 @login_required
 def crm_contact_reglementaire(contact_id):
     """Expose le suivi réglementaire partagé sans transmettre le secret."""
-    contact = _crm_contact(load_data(), contact_id)
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
-    from crm_cnaps_tracking import proxy_reglementaire
-    return proxy_reglementaire(app, contact, http_get=requests.get)
+    from crm_cnaps_tracking import proxy_reglementaire, scoring_snapshot_from_remote
+    remote = proxy_reglementaire(app, contact, http_get=requests.get)
+    response = remote[0] if isinstance(remote, tuple) else remote
+    status_code = remote[1] if isinstance(remote, tuple) else response.status_code
+    payload = response.get_json(silent=True) or {}
+    snapshots = data.setdefault("crm_cnaps_scoring_snapshots", {})
+    previous = snapshots.get(str(contact_id))
+    if status_code == 200 or (status_code == 404 and payload.get("reason") == "cnaps_not_found"):
+        snapshot = scoring_snapshot_from_remote(payload, http_status=status_code)
+        old_score = calculate_candidate_integration_score(contact, previous)
+        snapshots[str(contact_id)] = snapshot
+        new_score = calculate_candidate_integration_score(contact, snapshot)
+        if not previous or previous.get("normalized_status") != snapshot.get("normalized_status"):
+            labels = {"accepted": "Accepté", "transmitted": "Transmis", "in_review": "En instruction", "registered": "Enregistré", "refused": "Refusé", "no_result": "Aucun résultat", "unknown": "Inconnu"}
+            if snapshot["normalized_status"] == "accepted":
+                title = "Autorisation CNAPS acceptée"
+            else:
+                title = f"Suivi CNAPS passé de {labels.get((previous or {}).get('normalized_status'), 'Inconnu')} à {labels[snapshot['normalized_status']]}"
+            _crm_activity(contact, "score", title)
+        if old_score.get("level") != new_score.get("level"):
+            _crm_activity(contact, "score", f"Score d’intégration passé de {old_score.get('score')} à {new_score.get('score')} : {new_score.get('label')}")
+        save_data(data)
+        payload["integration_score"] = new_score
+        payload["scoring_snapshot"] = snapshot
+        return jsonify(payload), status_code
+    # Une panne distante ne détruit jamais le dernier fait réussi.
+    if previous:
+        payload["integration_score"] = calculate_candidate_integration_score(contact, previous)
+        payload["scoring_snapshot"] = {**previous, "refresh_failed": True}
+    return jsonify(payload), status_code
 
 
 @app.route("/api/crm/reformuler", methods=["POST"])
