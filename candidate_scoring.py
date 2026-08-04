@@ -4,7 +4,18 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 2
+CANDIDATE_SCORING_VERSION = 3
+
+CNAPS_PROGRESS_POINTS = {
+    "unknown": 0, "no_result": 0, "registered": 5, "transmitted": 15,
+    "in_review": 20, "accepted": 30, "refused": 0,
+}
+CNAPS_PROGRESS_LABELS = {
+    "unknown": "Situation CNAPS inconnue", "no_result": "Aucun résultat CNAPS",
+    "registered": "Demande CNAPS créée", "transmitted": "Demande CNAPS transmise",
+    "in_review": "Demande CNAPS en instruction", "accepted": "Demande CNAPS acceptée",
+    "refused": "Demande CNAPS refusée",
+}
 
 # Source de vérité des tarifs utilisés par le score (en centimes).
 TRAINING_PRICES_CENTS = {
@@ -176,13 +187,13 @@ def normalize_cnaps_tracking_status(snapshot):
     """Normalise toutes les variantes historiques du statut CNAPS."""
     if not isinstance(snapshot, dict):
         snapshot = {"raw_status": snapshot}
-    normalized = snapshot.get("normalized_status")
-    if normalized in {"accepted", "transmitted", "in_review", "registered", "refused", "no_result", "unknown"}:
-        return normalized
     values = []
     cnaps = snapshot.get("cnaps") if isinstance(snapshot.get("cnaps"), dict) else {}
-    for source in (snapshot, cnaps):
-        for key in ("raw_status", "cnaps_status", "statut_cnaps", "status", "statut"):
+    # Le statut brut est un fait plus récent et plus précis qu'un ancien cache normalisé.
+    for source, keys in ((snapshot, ("raw_status",)),
+                         (cnaps, ("cnaps_status", "statut_cnaps", "status", "statut")),
+                         (snapshot, ("cnaps_status", "statut_cnaps", "status", "statut"))):
+        for key in keys:
             if source.get(key) not in (None, ""):
                 values.append(_normalized_text(source[key]))
     # Un statut principal explicite est prioritaire sur l'absence de titres.
@@ -200,6 +211,9 @@ def normalize_cnaps_tracking_status(snapshot):
                 return status
     if snapshot.get("found") is False or (snapshot.get("http_status") == 404 and snapshot.get("reason") == "cnaps_not_found"):
         return "no_result"
+    normalized = snapshot.get("normalized_status")
+    if normalized in CNAPS_PROGRESS_POINTS and normalized != "unknown":
+        return normalized
     return "unknown"
 
 
@@ -227,52 +241,54 @@ def calculate_security_regulatory_score(contact, cnaps_snapshot=None):
         if card is True and not active_title and cnaps_status != "accepted":
             warnings.append("La carte professionnelle est déclarée par le candidat mais n’a pas encore été vérifiée dans le suivi CNAPS.")
         return {"applicable": True, "score": 100, "max_score": 100, "status": "ready", "label": label,
-                "source": source, "breakdown": [{"key": "official_readiness", "label": label, "points": 100, "max_points": 100}],
+                "source": source, "breakdown": [{"key": "official_readiness", "label": "Situation réglementaire validée", "points": 100, "max_points": 100}],
                 "blockers": [], "warnings": _unique(warnings), "next_actions": _unique(actions),
                 "normalized_cnaps_status": cnaps_status}
-    config = {
-        "transmitted": (50, 70, "in_progress", "Démarche CNAPS en cours"),
-        "in_review": (50, 70, "in_progress", "Démarche CNAPS en cours"),
-        "registered": (30, 50, "to_secure", "Demande CNAPS à finaliser"),
-        "no_result": (0, 30, "high_risk", "Situation CNAPS non sécurisée"),
-        "unknown": (0, 30, "high_risk", "Situation CNAPS non sécurisée"),
-    }
+    progress = CNAPS_PROGRESS_POINTS[cnaps_status]
+    status = "in_progress" if cnaps_status in {"registered", "transmitted", "in_review"} else "high_risk"
+    label = CNAPS_PROGRESS_LABELS[cnaps_status]
     if cnaps_status == "refused":
         blockers.append("Le suivi CNAPS indique un refus. Vérification humaine obligatoire avant toute poursuite de l’inscription.")
         actions.append("Vérifier le motif et la situation du dossier CNAPS")
-        base, ceiling, status, label = 0, 0, "blocked", "Dossier CNAPS refusé"
-    else:
-        base, ceiling, status, label = config[cnaps_status]
-    breakdown.append({"key": "cnaps_tracking", "label": "Avancement CNAPS", "points": base, "max_points": ceiling})
-    score = base
+        status, label = "blocked", "Dossier CNAPS refusé"
+    breakdown.extend([
+        {"key": "official_readiness", "label": "Validation réglementaire définitive", "points": 0, "max_points": 40},
+        {"key": "cnaps_tracking", "label": "Avancement CNAPS", "detail": CNAPS_PROGRESS_LABELS[cnaps_status],
+         "points": progress, "max_points": 30},
+    ])
+    score = progress
     account = _boolean(contact.get("compte_cnaps"))
     if account is True:
-        score += 10; breakdown.append({"key": "cnaps_account", "label": "Compte CNAPS créé", "points": 10, "max_points": 10})
+        score += 10
     else:
         if account is None: warnings.append("La création du compte CNAPS n’est pas renseignée.")
         actions.append("Accompagner le candidat dans la création de son compte CNAPS")
+    breakdown.append({"key": "cnaps_account", "label": "Compte CNAPS créé", "points": 10 if account is True else 0, "max_points": 10})
     antecedents = _boolean(contact.get("antecedents"))
     if antecedents is False:
-        score += 10; breakdown.append({"key": "declarative_check", "label": "Vérification déclarative", "points": 10, "max_points": 10})
+        score += 10
     elif antecedents is True:
-        ceiling = min(ceiling, 25); status = "high_risk" if status != "blocked" else status
+        status = "high_risk" if status != "blocked" else status
         warnings.append("Des antécédents sont déclarés. Seul le CNAPS peut apprécier leur compatibilité avec l’autorisation sollicitée.")
         actions.append("Vérifier l’avancement de l’instruction CNAPS avec le candidat")
     else:
         warnings.append("Une vérification réglementaire déclarative reste à compléter.")
+    breakdown.append({"key": "declarative_check", "label": "Vérification déclarative", "points": 10 if antecedents is False else 0, "max_points": 10})
     stay = _normalized_text(contact.get("titre_sejour_cnaps"))
     if stay in {"NON_CONCERNE", "CONFORME"}:
-        score += 10; breakdown.append({"key": "residence_administration", "label": "Situation administrative renseignée", "points": 10, "max_points": 10})
+        score += 10
     elif stay == "NON_CONFORME":
-        ceiling = min(ceiling, 10); status = "blocked"
+        status = "blocked"
         blockers.append("Une condition administrative liée au titre de séjour est indiquée comme non remplie. Vérification humaine obligatoire.")
     else:
         warnings.append("La conformité du titre de séjour aux conditions CNAPS reste à vérifier.")
         actions.append("Vérifier les justificatifs liés au titre de séjour")
+    breakdown.append({"key": "residence_administration", "label": "Situation administrative", "points": 10 if stay in {"NON_CONCERNE", "CONFORME"} else 0, "max_points": 10})
     if cnaps_status in {"no_result", "unknown"}:
         warnings.append("Aucun résultat CNAPS exploitable n’est disponible.")
         actions.append("Retrouver ou déposer la demande d’autorisation CNAPS")
-    score = min(score, ceiling)
+    if cnaps_status == "refused":
+        score = 0
     return {"applicable": True, "score": max(0, score), "max_score": 100, "status": status, "label": label,
             "source": "cnaps_tracking", "breakdown": breakdown, "blockers": _unique(blockers),
             "warnings": _unique(warnings), "next_actions": _unique(actions), "normalized_cnaps_status": cnaps_status}

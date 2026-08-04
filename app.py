@@ -6176,7 +6176,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260804-dashboard-notifications"
+CRM_ASSET_VERSION = "20260804-cnaps-scoring-fix"
 
 
 def _crm_statuses(data=None):

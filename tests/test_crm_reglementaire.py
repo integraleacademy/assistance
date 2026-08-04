@@ -61,7 +61,7 @@ def test_app_entrypoint_calls_stagiaires_by_permanent_crm_id(tmp_path, monkeypat
     assert "nom" not in captured["params"] and "prenom" not in captured["params"]
     assert captured["headers"] == {"Authorization": "Bearer top-secret", "Accept": "application/json"}
     body = result.get_json()
-    assert set(body) == {"trainee", "cnaps", "card_pro", "vae"}
+    assert {"trainee", "cnaps", "card_pro", "vae", "scoring_snapshot", "integration_score"} <= set(body)
     assert body["vae"]["nested"] == [{"ok": True}]
     assert all(secret not in result.data for secret in (b"top-secret", b"public_token", b"trainee_token", b"api_token", b"authorization"))
 
@@ -146,7 +146,33 @@ def test_cnaps_training_uses_name_tracking_without_linking(tmp_path, monkeypatch
     assert captured["url"] == "https://gestion.example/api/integrations/crm/cnaps-tracking"
     assert captured["params"] == {"nom": "dupre martin", "prenom": "elise"}
     assert captured["headers"]["Authorization"] == "Bearer top-secret"
-    assert result.get_json() == payload
+    assert payload.items() <= result.get_json().items()
+    assert {"scoring_snapshot", "integration_score"} <= result.get_json().keys()
+
+
+def test_cnaps_route_projects_production_status_into_integration_score(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    configure(monkeypatch)
+    lead = vae_contact(test_client, formation="A3P", cpf="OUI", cpf_montant="1995",
+                       identite_creation="OUI", identite_ok="OUI", financement_ft="NON",
+                       refus_ft_perso="OUI", inscrit_ft="NON", carte_pro="NON",
+                       compte_cnaps="NON", antecedents="NON", titre_sejour_cnaps="NON_CONCERNE")
+    payload = {
+        "found": True,
+        "linked": True,
+        "cnaps": {"cnaps_status": "TRANSMIS", "nub": "1084892", "titles": []},
+    }
+    monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(200, payload))
+
+    result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
+
+    assert result.status_code == 200
+    body = result.get_json()
+    assert body["scoring_snapshot"]["normalized_status"] == "transmitted"
+    assert body["scoring_snapshot"]["raw_status"] == "TRANSMIS"
+    assert body["integration_score"]["normalized_cnaps_status"] == "transmitted"
+    assert body["integration_score"]["regulatory_score"] == 35
+    assert body["integration_score"]["score"] == 61
 
 
 def test_only_desp_vae_404_is_linked(tmp_path, monkeypatch):
@@ -174,10 +200,11 @@ def test_cnaps_not_found_has_dedicated_message(tmp_path, monkeypatch):
     monkeypatch.setattr(crm_cnaps_tracking.requests, "get", lambda *args, **kwargs: response(404, {}))
     result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
     assert result.status_code == 404
-    assert result.get_json() == {
-        "error": "Aucun dossier CNAPS correspondant à ce nom et ce prénom n’a été trouvé dans le suivi CNAPS.",
-        "reason": "cnaps_not_found",
-    }
+    body = result.get_json()
+    assert body["error"] == "Aucun dossier CNAPS correspondant à ce nom et ce prénom n’a été trouvé dans le suivi CNAPS."
+    assert body["reason"] == "cnaps_not_found"
+    assert body["scoring_snapshot"]["normalized_status"] == "no_result"
+    assert "integration_score" in body
 
 
 def test_cnaps_fix_contains_no_contact_specific_data():
@@ -268,6 +295,11 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     assert "loadVae" not in javascript
     assert "error.reason=payload.reason" in javascript
     assert "renderGestionError(c,error.status,error.reason)" in javascript
+    assert "c.integration_score=data.integration_score" in javascript
+    assert "contacts.find(item=>item.id===c.id)" in javascript
+    assert "storedContact.integration_score=data.integration_score" in javascript
+    assert "renderIntegrationScore(c)" in javascript
+    assert "transmitted:'Transmis'" in javascript
     assert "Aucun dossier CNAPS correspondant à ce nom et ce prénom" in javascript
     assert "<span>NUB</span>" in javascript
     assert "<span>Inscription</span>" in javascript
