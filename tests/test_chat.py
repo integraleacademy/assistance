@@ -54,6 +54,13 @@ def test_multiple_tabs_stay_online_until_last_disconnect():
     assert not application.chat.presence.online("cassandre@integraleacademy.com")
 
 
+def test_http_presence_fallback_marks_an_open_crm_online():
+    client = web_client("elsa@integraleacademy.com")
+    assert client.post("/api/chat/presence").get_json() == {"ok": True}
+    assert application.chat.presence.online("elsa@integraleacademy.com")
+    assert web_client().post("/api/chat/presence").status_code == 401
+
+
 def test_team_send_persists_broadcasts_deduplicates_and_unread():
     sender, _ = socket_client("clement@integraleacademy.com")
     recipient, recipient_http = socket_client("aurelie@integraleacademy.com")
