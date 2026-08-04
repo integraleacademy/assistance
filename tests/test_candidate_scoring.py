@@ -17,7 +17,7 @@ def test_candidate_score_styles_are_bundled():
 def contact(**updates):
     base = {"formation": "APS", "cpf": "OUI", "cpf_montant": "1650",
             "identite_creation": "OUI", "identite_ok": "OUI",
-            "financement_ft": "NON", "refus_ft_perso": "OUI", "inscrit_ft": "NON"}
+            "financement_ft": "NON", "refus_ft_perso": "OUI", "reste_a_charge_perso": "OUI", "inscrit_ft": "NON"}
     base.update(updates)
     return base
 
@@ -152,9 +152,9 @@ def test_unknown_training_is_not_calculable():
 
 def test_no_funding_is_blocked():
     result = calculate_candidate_integration_score(contact(
-        cpf="NON", cpf_montant="", financement_ft="NON", refus_ft_perso="NON"))
+        cpf="NON", cpf_montant="", financement_ft="NON", refus_ft_perso="NON", reste_a_charge_perso="NON"))
     assert result["operational_status"] == "blocked"
-    assert any("Aucune solution" in blocker for blocker in result["blockers"])
+    assert any("ne financera pas personnellement" in blocker for blocker in result["blockers"])
 
 
 def test_inconsistent_identity_warns_without_error():
@@ -178,3 +178,54 @@ def test_amount_validation_is_decimal_exact_and_rejects_invalid_values():
         normalize_cpf_amount("-1")
     with pytest.raises(ValueError):
         normalize_cpf_amount("12.345")
+
+
+def test_personal_remainder_confirmed_a3p():
+    result = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", reste_a_charge_perso="OUI"))
+    assert result["financial_score"] == 79
+    assert result["personal_remainder_applicable"] is True
+    assert result["personal_remainder_amount_eur"] == 2200
+    assert result["personal_remainder_status"] == "confirmed"
+    assert result["funding_solution_status"] == "secured_personal"
+    assert result["unsecured_amount_eur"] == 0
+    assert points(result, "personal_funding") == points(result, "france_travail_strategy") == 15
+    assert not result["blockers"]
+    assert not any("Sécuriser le financement" in action for action in result["next_actions"])
+
+
+def test_personal_remainder_refused_and_unknown():
+    refused = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", reste_a_charge_perso="NON"))
+    assert refused["financial_score"] == 49
+    assert refused["personal_remainder_status"] == "refused"
+    assert refused["funding_solution_status"] == "unsecured"
+    assert refused["unsecured_amount_eur"] == 2200
+    assert refused["operational_status"] == "blocked"
+    unknown = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", reste_a_charge_perso=""))
+    assert unknown["financial_score"] == 49 and not unknown["blockers"]
+    assert unknown["operational_status"] == "action_required"
+    assert any("n’est pas renseignée" in warning for warning in unknown["warnings"])
+    assert any("Confirmer si" in action for action in unknown["next_actions"])
+
+
+def test_ft_fallback_is_distinct_from_personal_remainder():
+    legacy = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", refus_ft_perso="OUI", reste_a_charge_perso=""))
+    assert legacy["personal_remainder_status"] == "unknown"
+    assert points(legacy, "personal_funding") == 0
+    ft = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", financement_ft="OUI", refus_ft_perso="OUI", reste_a_charge_perso="NON", inscrit_ft="OUI"))
+    assert ft["personal_remainder_applicable"] is False
+    assert ft["funding_solution_status"] == "secured_personal_fallback"
+    assert points(ft, "personal_funding") == 15
+
+
+def test_cpf_missing_is_not_reliable_for_personal_question():
+    result = calculate_candidate_integration_score(contact(cpf="OUI", cpf_montant="", reste_a_charge_perso="OUI"))
+    assert result["personal_remainder_applicable"] is False
+    assert result["personal_remainder_status"] == "not_applicable"
+
+
+def test_frontend_uses_backend_remainder_without_training_price_table():
+    source = open("static/crm.js", encoding="utf-8").read()
+    assert "personal_remainder_applicable" in source
+    assert "personal_remainder_amount_eur" in source
+    assert "Le candidat financera-t-il personnellement le reste à charge de" in source
+    assert "TRAINING_PRICES" not in source and "4200" not in source and "1650" not in source

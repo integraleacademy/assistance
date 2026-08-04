@@ -359,3 +359,19 @@ def test_final_summary_forces_backend_facts_and_drops_model_falsehood():
     assert final["general_summary"] == "Dossier fragile."
     assert final["appointment_summary"] in final["summary"]
     assert "Des rendez-vous sont programmés" not in final["summary"]
+
+
+def test_context_contains_authoritative_personal_remainder_fact():
+    score = {"score": 79, "personal_remainder_applicable": True,
+        "personal_remainder_amount_eur": 2200, "personal_remainder_status": "confirmed",
+        "remaining_to_finance_eur": 2200, "funding_solution_status": "secured_personal",
+        "unsecured_amount_eur": 0}
+    context = build_candidate_ai_context(
+        {"id": "lead-remainder", "formation": "A3P", "financement_ft": "NON",
+         "reste_a_charge_perso": "OUI"},
+        {"crm_calendly_appointments": []}, score)
+    assert context["funding"]["funding_solution_status"] == "secured_personal"
+    assert context["funding"]["unsecured_amount"] == 0
+    assert context["authoritative_facts"]["remaining_charge"] == {
+        "amount_eur": 2200, "status": "confirmed",
+        "fact": "Le candidat a confirmé qu’il financera personnellement le reste à charge de 2 200 €."}

@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 3
+CANDIDATE_SCORING_VERSION = 4
 
 CNAPS_PROGRESS_POINTS = {
     "unknown": 0, "no_result": 0, "registered": 5, "transmitted": 15,
@@ -90,7 +90,8 @@ def _money(cents):
 def calculate_financial_readiness_score(contact):
     """Retourne le score complet sans effet de bord ni dépendance externe."""
     cpf, created, functional = (_boolean(contact.get(k)) for k in ("cpf", "identite_creation", "identite_ok"))
-    wants_ft, personal, registered = (_boolean(contact.get(k)) for k in ("financement_ft", "refus_ft_perso", "inscrit_ft"))
+    wants_ft, fallback, registered = (_boolean(contact.get(k)) for k in ("financement_ft", "refus_ft_perso", "inscrit_ft"))
+    personal_remainder = _boolean(contact.get("reste_a_charge_perso"))
     declared_cents = _amount_cents(contact.get("cpf_montant"))
     useful_cents = declared_cents if cpf is True else 0
     code = resolve_training_code(contact)
@@ -113,14 +114,11 @@ def calculate_financial_readiness_score(contact):
         actions.append("Demander au candidat de s’inscrire à France Travail")
     unknown = [name for name, value in (("compte CPF", cpf), ("création de l’identité numérique", created),
                ("fonctionnement de l’identité numérique", functional), ("financement France Travail", wants_ft),
-               ("financement personnel", personal)) if value is None]
+               ) if value is None]
     if wants_ft is True and registered is None:
         unknown.append("inscription France Travail")
     if unknown:
         warnings.append("Réponses nécessaires au calcul inconnues : " + ", ".join(unknown) + ".")
-    if personal is not True:
-        actions.append("Confirmer la possibilité d’un financement personnel")
-
     if price_cents is None:
         warnings.append(f"Tarif non configuré pour la formation « {contact.get('formation') or 'inconnue'} » (code résolu : {code or 'aucun'}).")
         actions.append("Configurer le tarif de cette formation")
@@ -129,26 +127,61 @@ def calculate_financial_readiness_score(contact):
                 "indication": "Tarif de référence requis", "operational_status": "action_required",
                 "training_code": code, "training_price_eur": None,
                 "cpf_amount_eur": _euros(declared_cents), "cpf_coverage_percent": None,
-                "remaining_to_finance_eur": None, "breakdown": [], "blockers": blockers,
+                "remaining_to_finance_eur": None, "personal_remainder_applicable": False,
+                "personal_remainder_amount_eur": None, "personal_remainder_status": "not_applicable",
+                "funding_solution_status": "unknown", "unsecured_amount_eur": None,
+                "breakdown": [], "blockers": blockers,
                 "warnings": warnings, "next_actions": list(dict.fromkeys(actions))}
 
     remaining = max(price_cents - useful_cents, 0)
+    reliable = cpf is False or (cpf is True and bool(str(contact.get("cpf_montant") or "").strip()))
+    personal_applicable = reliable and remaining > 0 and wants_ft is False
+    if not remaining:
+        personal_status = "not_applicable"
+    elif personal_applicable:
+        personal_status = "confirmed" if personal_remainder is True else "refused" if personal_remainder is False else "unknown"
+    else:
+        personal_status = "not_applicable"
     coverage = min(100, int((Decimal(useful_cents * 100) / price_cents).quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
     coverage_points = int((Decimal(useful_cents * 40) / price_cents).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     coverage_points = min(40, coverage_points)
-    if 0 < useful_cents < price_cents:
-        warnings.append("Le CPF ne couvre qu’une partie du prix de la formation.")
-        actions.append(f"Sécuriser le financement du reste à charge de {_money(remaining)}")
-
-    ft_points = 15 if wants_ft is False else (10 if registered is True and personal is True else
-        6 if registered is True and personal is False else 4 if registered is False and personal is True else 0)
+    if not remaining:
+        personal_points, personal_label = 15, "Aucun reste à charge"
+        strategy_points = 15 if wants_ft is False else (10 if registered is True and fallback is True else 6 if registered is True and fallback is False else 4 if registered is False and fallback is True else 0)
+        funding_status, unsecured = "fully_covered_by_cpf", 0
+    elif wants_ft is False:
+        personal_points = 15 if personal_status == "confirmed" else 0
+        strategy_points = 15 if personal_status == "confirmed" else 0
+        personal_label = "Reste à charge financé personnellement" if personal_status == "confirmed" else "Sécurisation du reste à charge"
+        if personal_status == "confirmed":
+            funding_status, unsecured = "secured_personal", 0
+        elif personal_status == "refused":
+            funding_status, unsecured = "unsecured", remaining
+            blockers.append(f"Le candidat ne souhaite pas de financement France Travail et ne financera pas personnellement le reste à charge de {_money(remaining)}.")
+            actions.append(f"Identifier une autre solution de financement pour le reste à charge de {_money(remaining)}")
+        else:
+            funding_status, unsecured = "unknown", remaining
+            warnings.append(f"La prise en charge personnelle du reste à charge de {_money(remaining)} n’est pas renseignée.")
+            actions.append(f"Confirmer si le candidat financera personnellement le reste à charge de {_money(remaining)}")
+    elif wants_ft is True:
+        personal_points = 15 if fallback is True else 0
+        personal_label = "Financement personnel si refus France Travail"
+        strategy_points = (10 if registered is True and fallback is True else 6 if registered is True and fallback is False else 4 if registered is False and fallback is True else 0)
+        funding_status = "secured_personal_fallback" if fallback is True else "pending_france_travail"
+        unsecured = 0 if fallback is True else remaining
+        if 0 < useful_cents < price_cents:
+            warnings.append("Le CPF ne couvre qu’une partie du prix de la formation.")
+            actions.append(f"Sécuriser le financement du reste à charge de {_money(remaining)}")
+    else:
+        personal_points, strategy_points = 0, 0
+        personal_label, funding_status, unsecured = "Sécurisation du reste à charge", "unknown", remaining
     breakdown = [
         ("cpf_account", "Compte CPF actif", 5 if cpf is True else 0, 5),
         ("cpf_coverage", "Couverture du coût par le CPF", coverage_points, 40),
         ("digital_identity_created", "Identité numérique créée", 10 if created is True else 0, 10),
         ("digital_identity_functional", "Identité numérique fonctionnelle", 15 if functional is True else 0, 15),
-        ("personal_funding", "Financement personnel possible", 15 if personal is True else 0, 15),
-        ("france_travail_strategy", "Sécurisation France Travail", ft_points, 15),
+        ("personal_funding", personal_label, personal_points, 15),
+        ("france_travail_strategy", "Stratégie de financement", strategy_points, 15),
     ]
     score = min(100, sum(row[2] for row in breakdown))
     if score >= 90: level, label, indication = "excellent", "Dossier très avancé", "Priorité haute"
@@ -156,14 +189,10 @@ def calculate_financial_readiness_score(contact):
     elif score >= 55: level, label, indication = "qualify", "Dossier à qualifier", "Des éléments restent à sécuriser"
     else: level, label, indication = "fragile", "Dossier fragile", "Financement ou démarches insuffisamment sécurisés"
 
-    if remaining and personal is False and wants_ft is False:
-        blockers.append("Le reste à financer n’est couvert ni personnellement ni par France Travail.")
-    if remaining and wants_ft is True and registered is False and personal is False:
+    if remaining and wants_ft is True and registered is False and fallback is False:
         blockers.append("Le financement France Travail est nécessaire, mais le candidat n’est pas inscrit et ne peut financer le reste.")
-    if useful_cents and not remaining and personal is not True and wants_ft is not True and functional is not True:
+    if useful_cents and not remaining and wants_ft is not True and functional is not True:
         blockers.append("Le CPF est la seule solution déclarée, mais l’identité numérique La Poste n’est pas fonctionnelle.")
-    if not useful_cents and personal is not True and wants_ft is not True:
-        blockers.append("Aucune solution de financement n’est identifiée.")
     status = "blocked" if blockers else ("action_required" if warnings or actions else "ready")
     # Un dossier entièrement financé et documenté est prêt, même si des actions génériques ont été écartées.
     if not blockers and not warnings and score == 100:
@@ -173,6 +202,10 @@ def calculate_financial_readiness_score(contact):
             "training_code": code, "training_price_eur": _euros(price_cents),
             "cpf_amount_eur": _euros(declared_cents), "cpf_coverage_percent": coverage,
             "remaining_to_finance_eur": _euros(remaining),
+            "personal_remainder_applicable": personal_applicable,
+            "personal_remainder_amount_eur": _euros(remaining) if personal_applicable else None,
+            "personal_remainder_status": personal_status,
+            "funding_solution_status": funding_status, "unsecured_amount_eur": _euros(unsecured),
             "breakdown": [{"key": k, "label": l, "points": p, "max_points": m} for k, l, p, m in breakdown],
             "blockers": list(dict.fromkeys(blockers)), "warnings": list(dict.fromkeys(warnings)),
             "next_actions": list(dict.fromkeys(actions))}

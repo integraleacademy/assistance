@@ -7,8 +7,8 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-AI_CANDIDATE_ANALYSIS_VERSION = 6
-AI_CANDIDATE_PROMPT_VERSION = 6
+AI_CANDIDATE_ANALYSIS_VERSION = 7
+AI_CANDIDATE_PROMPT_VERSION = 7
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 
@@ -317,7 +317,8 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
     funding = _pick(contact, {"cpf_account": "cpf", "cpf_amount": "cpf_montant",
         "digital_identity_created": "identite_creation", "digital_identity_working": "identite_ok",
         "wants_france_travail": "financement_ft", "registered_france_travail": "inscrit_ft",
-        "personal_funding": "refus_ft_perso", "other": "financement_autre"})
+        "personal_funding_fallback": "refus_ft_perso", "personal_remainder": "reste_a_charge_perso",
+        "other": "financement_autre"})
     score = integration_score or {}
     if score:
         score = _pick(score, {"score": "score", "level": "level", "operational_status": "operational_status",
@@ -326,7 +327,9 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
             "criteria": "breakdown", "remaining_to_finance": "remaining_to_finance_eur", "blockers": "blockers",
             "warnings": "warnings", "recommended_actions": "next_actions"})
         funding.update(_pick(integration_score, {"coverage_percent": "cpf_coverage_percent",
-            "remaining_to_finance": "remaining_to_finance_eur", "reference_price": "training_price_eur"}))
+            "remaining_to_finance": "remaining_to_finance_eur", "reference_price": "training_price_eur",
+            "personal_remainder_status": "personal_remainder_status",
+            "funding_solution_status": "funding_solution_status", "unsecured_amount": "unsecured_amount_eur"}))
     commercial = _pick(contact, {"status": "statut", "source": "origine", "created_at": "created_at",
         "updated_at": "updated_at", "last_contact": "last_contact_at", "last_candidate_response": "last_response_at",
         "follow_up_count": "relance_count", "owner": "conseiller", "next_follow_up": "relance_date",
@@ -357,13 +360,25 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
     training_fact = (f"Le candidat souhaite suivre le parcours {training_label} par la {pathway}."
         if training_label and pathway else f"Le candidat souhaite suivre la formation {training_label}." if training_label else "Formation non renseignée.")
     financing_identified = any(value not in (None, "", False, "NON", "Non", "non", 0, "0") for value in (
-        funding.get("cpf_amount"), funding.get("wants_france_travail"), funding.get("personal_funding"), funding.get("other")))
+        funding.get("cpf_amount"), funding.get("wants_france_travail"), funding.get("personal_funding_fallback"),
+        funding.get("personal_remainder"), funding.get("other")))
     authoritative = {
         "training": {"label": training_label, "pathway": pathway, "fact": training_fact},
         "session": {"selected": bool(formation.get("desired_session")), "fact": "Une session de formation est sélectionnée." if formation.get("desired_session") else "Aucune session de formation n’est sélectionnée."},
         "financing": {"status": "identified" if financing_identified else "unidentified", "fact": "Une solution de financement est renseignée." if financing_identified else "Aucune solution de financement n’est actuellement identifiée."},
         "appointments": {"fact": appointment_summary["deterministic_narrative"]},
     }
+    if integration_score and integration_score.get("personal_remainder_applicable"):
+        amount = integration_score.get("personal_remainder_amount_eur")
+        status = integration_score.get("personal_remainder_status", "unknown")
+        formatted = f"{int(amount):,}".replace(",", " ") + " €"
+        facts = {
+            "confirmed": f"Le candidat a confirmé qu’il financera personnellement le reste à charge de {formatted}.",
+            "refused": f"Le candidat a indiqué qu’il ne financera pas personnellement le reste à charge de {formatted} et ne souhaite pas de financement France Travail.",
+            "unknown": f"La prise en charge du reste à charge de {formatted} n’est pas renseignée.",
+        }
+        authoritative["remaining_charge"] = {"amount_eur": amount, "status": status,
+            "fact": facts.get(status, facts["unknown"])}
     if score and score.get("score") is not None:
         authoritative["integration_score"] = {"score": score["score"], "level": score.get("level"),
             "fact": f"Le score d’intégration est de {score['score']} sur 100" + (f" et le profil financier est {score.get('level')}." if score.get("level") else ".")}
