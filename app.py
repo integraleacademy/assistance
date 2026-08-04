@@ -6778,6 +6778,7 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "statut": "Nouveaux",
         "dates_formation": str(fields.get("dates") or "").strip(),
         "cpf": str(fields.get("cpf_consulte") or "").strip(),
+        "cpf_montant": normalize_cpf_amount(fields.get("cpf_montant")),
         "carte_pro": str(fields.get("cnaps_ok") or "").strip(),
         "antecedents": str(fields.get("garde_vue") or "").strip(),
         "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
