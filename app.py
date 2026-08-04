@@ -6177,7 +6177,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260804-cnaps-scoring-fix"
+CRM_ASSET_VERSION = "20260804-personal-remainder-funding"
 
 
 def _crm_statuses(data=None):
@@ -6395,7 +6395,7 @@ def _crm_calendly_new_contact(data, payload):
         "lieu": "", "statut": "RDV programmé", "dates_formation": "",
         "cpf": "", "carte_pro": "", "antecedents": "", "desp_type": "",
         "identite_creation": "", "identite_ok": "", "financement_ft": "",
-        "refus_ft_perso": "", "origine": "Calendly", "inscrit_ft": "",
+        "refus_ft_perso": "", "reste_a_charge_perso": "", "origine": "Calendly", "inscrit_ft": "",
         "commentaires": "Piste créée automatiquement depuis un rendez-vous Calendly.",
         "relance_date": "", "created_at": now, "updated_at": now,
         "activities": [],
@@ -6746,6 +6746,7 @@ def _crm_contact(data, contact_id):
 
 def _crm_contact_response(contact, data=None, regulatory_snapshot=None):
     response = dict(contact)
+    response.setdefault("reste_a_charge_perso", "")
     snapshot = regulatory_snapshot
     if snapshot is None and data is not None:
         snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact.get("id")))
@@ -6791,6 +6792,7 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "identite_ok": str(fields.get("identite_numerique") or "").strip(),
         "financement_ft": str(fields.get("france_travail") or "").strip(),
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
+        "reste_a_charge_perso": "",
         "origine": "Site internet",
         "inscrit_ft": str(fields.get("france_travail") or "").strip(),
         "commentaires": "",
@@ -7947,7 +7949,7 @@ def crm_contacts():
         "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
-        "identite_ok": "", "financement_ft": "", "refus_ft_perso": "",
+        "identite_ok": "", "financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
         "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
@@ -8012,7 +8014,7 @@ def crm_contact(contact_id):
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
-               "financement_ft", "refus_ft_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
+               "financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "relance_date"}
     old_status = contact.get("statut")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
@@ -8025,6 +8027,15 @@ def crm_contact(contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    # Une confirmation porte sur un montant exact : toute modification de ses
+    # déterminants l'invalide afin qu'elle ne soit jamais réutilisée pour un autre montant.
+    determinants = {"formation", "desp_type", "cpf", "cpf_montant", "financement_ft"}
+    provisional_score = calculate_candidate_integration_score(contact, snapshot)
+    old_amount = old_score.get("personal_remainder_amount_eur")
+    new_amount = provisional_score.get("personal_remainder_amount_eur")
+    if (determinants.intersection(payload)
+            and (old_amount != new_amount or provisional_score.get("personal_remainder_applicable") is not True)):
+        contact["reste_a_charge_perso"] = ""
     contact["prenom"] = _crm_format_first_name(contact.get("prenom"))
     contact["nom"] = _crm_format_last_name(contact.get("nom"))
     statuses = _crm_statuses(data)
