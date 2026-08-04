@@ -1878,6 +1878,7 @@ def login_required(f):
         if not session.get("user_email"):
             return redirect(url_for("login", next=request.path))
         return f(*args, **kwargs)
+    wrapper._login_required = True
     return wrapper
 
 def current_user():
@@ -8449,7 +8450,29 @@ register_salesforce_import(
     save_data_fn=save_data,
 )
 
+# Chat interne : base SQL séparée, WebSocket authentifié par la session existante.
+from chat import init_chat
+
+chat = init_chat(app, USERS, current_user)
+socketio = chat.socketio
+
+
+@app.after_request
+def inject_authenticated_chat_widget(response):
+    """Ajoute le widget à toute page HTML authentifiée, jamais aux pages publiques."""
+    view = app.view_functions.get(request.endpoint)
+    is_private = bool(getattr(view, "_login_required", False))
+    if (session.get("user_email") and is_private and response.status_code == 200
+            and response.mimetype == "text/html" and request.endpoint != "login"):
+        body = response.get_data(as_text=True)
+        marker = "</body>"
+        if marker in body and 'id="integrale-chat"' not in body:
+            widget = render_template("_chat_widget.html")
+            response.set_data(body.replace(marker, widget + marker, 1))
+            response.headers["Content-Length"] = len(response.get_data())
+    return response
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)
