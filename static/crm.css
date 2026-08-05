@@ -376,3 +376,7 @@ body.sidebar-collapsed main{margin-left:76px}
 .regulatory-badge,.score-shield{display:inline-flex;padding:3px 6px;border-radius:999px;font-style:normal;font-weight:800}.regulatory-badge.ready,.score-shield.ready{background:#e5f7f0;color:#13775f}.regulatory-badge.in_progress,.score-shield.in_progress{background:#e8f0ff;color:#2858c7}.regulatory-badge.to_secure,.score-shield.to_secure{background:#fff3db;color:#96650c}.regulatory-badge.high_risk,.regulatory-badge.blocked,.score-shield.high_risk,.score-shield.blocked{background:#ffeaed;color:#bd3949}.regulatory-badge.unknown,.score-shield.unknown{background:#edf0f5;color:#63728a}.score-shield{margin-left:5px}.score-details h4{margin:14px 0 4px;font-size:11px}.score-details{max-width:100%;overflow-wrap:anywhere}
 @media(max-width:650px){.integration-score-card,.score-dimensions{min-width:0;max-width:100%}.score-dimensions>div{grid-template-columns:minmax(0,1fr) auto}}
 .remainder-state{display:inline-flex!important;width:max-content;margin-top:5px;padding:3px 7px!important;border-radius:999px;font-size:8px!important;font-weight:800}.remainder-state.green{background:#e5f7f0;color:#13775f}.remainder-state.red{background:#ffeaed;color:#bd3949}.remainder-state.orange{background:#fff3db;color:#96650c}
+
+/* Ajustement demandé : les fiches piste démarrent visuellement à 90 % pour respirer. */
+.contact-head,.timeline,.contact-subnav,.contact-grid,.wedof-panel{zoom:.9}
+.page-avatar{background:#eef3ff;color:#2457d6}

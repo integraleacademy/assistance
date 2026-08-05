@@ -280,6 +280,21 @@ class ChatService:
             data, status = self._save_message(uid, conversation_id, request.get_json(silent=True) or {})
             return jsonify(data), status
 
+
+        @self.app.delete("/api/chat/conversations/<int:conversation_id>/messages/<int:message_id>")
+        def delete_message_http(conversation_id, message_id):
+            uid = self._uid()
+            if not uid: abort(401)
+            data, status = self._delete_message(uid, conversation_id, message_id)
+            return jsonify(data), status
+
+        @self.app.delete("/api/chat/conversations/<int:conversation_id>/messages")
+        def clear_history_http(conversation_id):
+            uid = self._uid()
+            if not uid: abort(401)
+            data, status = self._clear_history(uid, conversation_id)
+            return jsonify(data), status
+
         @self.app.post("/api/chat/conversations/<int:conversation_id>/read")
         def read_http(conversation_id):
             uid = self._uid()
@@ -346,6 +361,35 @@ class ChatService:
         for recipient in recipients:
             self.socketio.emit("chat:new_message", data, room=f"user:{recipient}", namespace=NAMESPACE)
         return {"ok": True, "message": data}, 201
+
+
+    def _delete_message(self, uid, cid, mid):
+        with self.Session.begin() as db:
+            if not self._member(db, cid, uid): return {"ok": False, "error": "Accès refusé"}, 403
+            message = db.get(Message, mid)
+            if not message or message.conversation_id != cid:
+                return {"ok": False, "error": "Message introuvable"}, 404
+            db.delete(message)
+        with self.Session() as db:
+            recipients = db.scalars(select(Participant.user_id).where(Participant.conversation_id == cid)).all()
+        data = {"ok": True, "conversation_id": cid, "message_id": mid}
+        for recipient in recipients:
+            self.socketio.emit("chat:message_deleted", data, room=f"user:{recipient}", namespace=NAMESPACE)
+        return data, 200
+
+    def _clear_history(self, uid, cid):
+        with self.Session.begin() as db:
+            if not self._member(db, cid, uid): return {"ok": False, "error": "Accès refusé"}, 403
+            db.query(Message).filter(Message.conversation_id == cid).delete(synchronize_session=False)
+            db.query(Participant).filter(Participant.conversation_id == cid).update({
+                Participant.last_read_message_id: None, Participant.last_read_at: datetime.now(timezone.utc)
+            }, synchronize_session=False)
+        with self.Session() as db:
+            recipients = db.scalars(select(Participant.user_id).where(Participant.conversation_id == cid)).all()
+        data = {"ok": True, "conversation_id": cid}
+        for recipient in recipients:
+            self.socketio.emit("chat:history_cleared", data, room=f"user:{recipient}", namespace=NAMESPACE)
+        return data, 200
 
     def _mark_conversation_read(self, uid, cid, mid):
         """Marque une conversation lue, indépendamment du transport utilisé."""
