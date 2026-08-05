@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from flask import abort, jsonify, request, session
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO, join_room
 from sqlalchemy import (Column, DateTime, ForeignKey, Index, Integer, String, Text,
                         UniqueConstraint, create_engine, event, func, select)
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -280,6 +280,19 @@ class ChatService:
             data, status = self._save_message(uid, conversation_id, request.get_json(silent=True) or {})
             return jsonify(data), status
 
+        @self.app.post("/api/chat/conversations/<int:conversation_id>/read")
+        def read_http(conversation_id):
+            uid = self._uid()
+            if not uid: abort(401)
+            payload = request.get_json(silent=True) or {}
+            try:
+                message_id = int(payload.get("message_id"))
+                if message_id <= 0: raise ValueError
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "Identifiant de message invalide"}), 400
+            data, status = self._mark_conversation_read(uid, conversation_id, message_id)
+            return jsonify(data), status
+
         @self.app.get("/api/chat/diagnostics")
         def diagnostics():
             user = self.current_user()
@@ -334,6 +347,32 @@ class ChatService:
             self.socketio.emit("chat:new_message", data, room=f"user:{recipient}", namespace=NAMESPACE)
         return {"ok": True, "message": data}, 201
 
+    def _mark_conversation_read(self, uid, cid, mid):
+        """Marque une conversation lue, indépendamment du transport utilisé."""
+        with self.Session.begin() as db:
+            part = db.get(Participant, (cid, uid)) if uid else None
+            if not part:
+                return {"ok": False, "error": "Accès refusé"}, 403
+            msg = db.get(Message, mid)
+            if not msg:
+                return {"ok": False, "error": "Message introuvable"}, 404
+            if msg.conversation_id != cid:
+                return {"ok": False, "error": "Le message n’appartient pas à cette conversation"}, 400
+            part.last_read_message_id = max(part.last_read_message_id or 0, mid)
+            part.last_read_at = datetime.now(timezone.utc)
+            unread = self._unreads(db, uid)
+
+        data = {"conversation_id": cid, "user_id": uid, "message_id": mid}
+        with self.Session() as db:
+            recipients = db.scalars(select(Participant.user_id).where(
+                Participant.conversation_id == cid)).all()
+        for recipient in recipients:
+            self.socketio.emit("chat:read_changed", data, room=f"user:{recipient}", namespace=NAMESPACE)
+        self.socketio.emit("chat:unread_changed", {"unread": unread},
+                           room=f"user:{uid}", namespace=NAMESPACE)
+        return {"ok": True, **data, "unread": unread,
+                "total_unread": sum(unread.values())}, 200
+
     def _events(self):
         @self.socketio.on("connect", namespace=NAMESPACE)
         def connect(auth=None):
@@ -376,19 +415,8 @@ class ChatService:
             uid = self._uid(); payload = payload or {}
             try: cid, mid = int(payload.get("conversation_id")), int(payload.get("message_id"))
             except (TypeError, ValueError): return {"ok": False, "error": "Lecture invalide"}
-            with self.Session.begin() as db:
-                part = db.get(Participant, (cid, uid)) if uid else None
-                msg = db.get(Message, mid)
-                if not part or not msg or msg.conversation_id != cid: return {"ok": False, "error": "Accès refusé"}
-                part.last_read_message_id = max(part.last_read_message_id or 0, mid); part.last_read_at = datetime.now(timezone.utc)
-                unread = self._unreads(db, uid)
-            data = {"conversation_id": cid, "user_id": uid, "message_id": mid}
-            with self.Session() as db:
-                recipients = db.scalars(select(Participant.user_id).where(Participant.conversation_id == cid)).all()
-            for recipient in recipients:
-                self.socketio.emit("chat:read_changed", data, room=f"user:{recipient}", namespace=NAMESPACE)
-            emit("chat:unread_changed", {"unread": unread})
-            return {"ok": True, **data}
+            data, _status = self._mark_conversation_read(uid, cid, mid)
+            return data
 
         @self.socketio.on("chat:typing", namespace=NAMESPACE)
         def typing(payload):

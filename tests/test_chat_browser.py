@@ -81,3 +81,45 @@ def test_network_error_is_visible(chat_page):
     page.click(".ic-launcher"); page.click('.ic-colleagues [data-user="elsa@integraleacademy.com"]')
     assert "Impossible d’ouvrir" in page.locator(".ic-notice").inner_text()
     assert page.locator(".ic-retry").is_visible()
+
+
+def test_read_badges_are_cleared_by_http_when_realtime_is_unavailable(chat_page):
+    page, errors = chat_page
+    direct = {"id": 12, "type": "direct", "title": "Elsa DUQUESNE",
+              "peer_user_id": "elsa@integraleacademy.com"}
+
+    def unread_api(route):
+        url = route.request.url
+        if url.endswith("/bootstrap"):
+            route.fulfill(json={"current_user_id": "clement@integraleacademy.com",
+                "conversations": [direct], "colleagues": [], "unread": {"12": 2},
+                "online_users_count": 1})
+        elif url.endswith("/presence"):
+            route.fulfill(json={"ok": True, "online_users_count": 1})
+        elif url.endswith("/read"):
+            route.fulfill(json={"ok": True, "conversation_id": 12, "message_id": 42,
+                "unread": {"12": 0}, "total_unread": 0})
+        elif "/messages" in url:
+            route.fulfill(json={"messages": [{"id": 42, "conversation_id": 12,
+                "sender_user_id": "elsa@integraleacademy.com", "sender_name": "Elsa DUQUESNE",
+                "body": "Bonjour", "created_at": "2026-08-04T12:00:00+00:00"}], "has_more": False})
+        else:
+            route.fulfill(json={"ok": True})
+
+    page.route("**/api/chat/**", unread_api)
+    page.reload()
+    page.wait_for_selector('[data-cid="12"]')
+    assert page.locator(".ic-total").inner_text() == "2"
+    assert page.title().startswith("(2)")
+    page.click(".ic-launcher")
+    page.click('[data-cid="12"]')
+    page.wait_for_selector(".ic-total[hidden]")
+    assert page.locator('[data-cid="12"] .ic-badge').is_hidden()
+    assert page.title() == "CRM"
+    assert errors == []
+
+
+def test_connection_never_stays_connecting_forever(chat_page):
+    page, _ = chat_page
+    page.wait_for_timeout(10500)
+    assert page.locator(".ic-connection").inner_text() == "Temps réel indisponible — le chat reste accessible"

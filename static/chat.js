@@ -6,13 +6,19 @@
   if (!root) return;
   const $ = (selector) => root.querySelector(selector);
   const state = { me: null, conversations: [], colleagues: [], unread: {}, current: null,
-    seen: new Set(), oldest: null, socket: null, lastAction: null };
+    seen: new Set(), oldest: null, socket: null, lastAction: null,
+    readConfirmedByConversation: {}, readInFlightByConversation: {}, readPendingByConversation: {} };
   const home = $(".ic-home");
   const conversation = $(".ic-conversation");
   const messages = $(".ic-messages");
   const draft = $("textarea");
   const originalTitle = document.title;
   const tabId = sessionStorage.getItem("chat_tab_id") || crypto.randomUUID();
+  let bootstrapSequence = 0;
+  let unreadRevision = 0;
+  let connectionHideTimer;
+  let connectionDegradedTimer;
+  let initialConnectionExpired = false;
   sessionStorage.setItem("chat_tab_id", tabId);
 
   function setOpen(open) {
@@ -24,11 +30,17 @@
     if (open) markRead();
   }
 
-  function connection(text, connected = false) {
+  function connection(status, text) {
     const element = $(".ic-connection");
     element.textContent = text;
     element.classList.add("show");
-    element.classList.toggle("connected", connected);
+    element.classList.toggle("connected", status === "connected");
+    element.dataset.status = status;
+    clearTimeout(connectionHideTimer);
+    if (status === "connected") {
+      clearTimeout(connectionDegradedTimer);
+      connectionHideTimer = setTimeout(() => element.classList.remove("show"), 800);
+    }
   }
 
   function notice(text, retry) {
@@ -102,13 +114,18 @@
   }
 
   async function bootstrap() {
+    const sequence = ++bootstrapSequence;
+    const revision = unreadRevision;
     try {
       const data = await request("/api/chat/bootstrap");
+      if (sequence !== bootstrapSequence) return;
       Object.assign(state, { me: data.current_user_id, conversations: data.conversations,
-        colleagues: data.colleagues, unread: data.unread, onlineCount: data.online_users_count });
+        colleagues: data.colleagues, onlineCount: data.online_users_count });
+      if (revision === unreadRevision) state.unread = data.unread;
       render(); clearNotice();
       const saved = Number(sessionStorage.getItem("ic-chat-current"));
       if (saved && state.conversations.some((item) => item.id === saved)) openConversation(saved, false);
+      else markRead();
     } catch (error) { notice(`Connexion au chat impossible : ${error.message}`, bootstrap); }
   }
 
@@ -156,12 +173,49 @@
     } catch (error) { notice(`Impossible d’ouvrir cette discussion : ${error.message}`, () => openDirect(userId)); }
   }
 
+  function isConversationActuallyVisible(conversationId) {
+    return root.dataset.state === "open" && state.current === Number(conversationId) &&
+      document.visibilityState === "visible" && !conversation.hidden;
+  }
+
+  async function sendPendingRead(conversationId) {
+    if (state.readInFlightByConversation[conversationId]) return;
+    const messageId = Number(state.readPendingByConversation[conversationId] || 0);
+    if (!messageId || messageId <= Number(state.readConfirmedByConversation[conversationId] || 0)) return;
+    state.readPendingByConversation[conversationId] = 0;
+    state.readInFlightByConversation[conversationId] = messageId;
+    console.info("[CRM CHAT] marquage comme lu demandé", { conversationId, messageId });
+    try {
+      const data = await request(`/api/chat/conversations/${conversationId}/read`, {
+        method: "POST", body: JSON.stringify({ message_id: messageId })
+      });
+      state.readConfirmedByConversation[conversationId] = Math.max(
+        Number(state.readConfirmedByConversation[conversationId] || 0), Number(data.message_id));
+      unreadRevision += 1;
+      state.unread = data.unread;
+      updateBadges();
+      console.info("[CRM CHAT] marquage comme lu confirmé", { conversationId, messageId: data.message_id });
+    } catch (error) {
+      state.readPendingByConversation[conversationId] = Math.max(
+        Number(state.readPendingByConversation[conversationId] || 0), messageId);
+      console.warn("[CRM CHAT] échec du marquage comme lu", { conversationId, message: error.message });
+    } finally {
+      delete state.readInFlightByConversation[conversationId];
+      if (Number(state.readPendingByConversation[conversationId] || 0) >
+          Number(state.readConfirmedByConversation[conversationId] || 0)) sendPendingRead(conversationId);
+    }
+  }
+
   function markRead() {
-    if (!state.socket?.connected || root.dataset.state !== "open" || document.hidden || !state.current) return;
-    const last = messages.querySelector(".ic-msg:last-of-type"); if (!last) return;
-    state.socket.timeout(8000).emit("chat:read", { conversation_id: state.current, message_id: Number(last.dataset.id) }, (error, ack) => {
-      if (!error && ack?.ok) { state.unread[String(state.current)] = 0; updateBadges(); }
-    });
+    if (!state.current || !isConversationActuallyVisible(state.current)) return;
+    const last = messages.querySelector(".ic-msg:last-of-type");
+    if (!last || !messages.contains(last)) return;
+    const conversationId = state.current;
+    const messageId = Number(last.dataset.id);
+    if (!messageId || messageId <= Number(state.readConfirmedByConversation[conversationId] || 0)) return;
+    state.readPendingByConversation[conversationId] = Math.max(
+      Number(state.readPendingByConversation[conversationId] || 0), messageId);
+    sendPendingRead(conversationId);
   }
 
   async function heartbeat() {
@@ -172,25 +226,72 @@
   function initSocket() {
     if (state.socket) return;
     if (typeof window.io !== "function") {
-      connection("Temps réel indisponible — reconnexion en cours"); setTimeout(initSocket, 1500); return;
+      connection("reconnecting", "Temps réel indisponible — nouvelle tentative…"); setTimeout(initSocket, 1500); return;
     }
     try {
-      const socket = window.io("/chat", { auth: { tab_id: tabId }, transports: ["websocket", "polling"], reconnection: true }); state.socket = socket;
-      socket.on("connect", () => { connection("Temps réel connecté", true); heartbeat(); bootstrap(); });
-      socket.on("disconnect", () => connection("Déconnecté — reconnexion en cours…"));
-      socket.on("connect_error", (error) => connection(`Déconnecté — reconnexion en cours… (${error.message})`));
+      console.info("[CRM CHAT] démarrage du client", { version: "4.8.1", protocol: window.io.protocol, namespace: "/chat" });
+      connection("connecting", "Connexion au chat…");
+      connectionDegradedTimer = setTimeout(() => {
+        if (!state.socket?.connected) {
+          initialConnectionExpired = true;
+          connection("degraded", "Temps réel indisponible — le chat reste accessible");
+        }
+      }, 10000);
+      const socket = window.io("/chat", {
+        path: "/socket.io", auth: { tab_id: tabId }, withCredentials: true,
+        transports: ["polling", "websocket"], upgrade: true, reconnection: true,
+        reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 10000,
+        randomizationFactor: 0.5, timeout: 10000
+      });
+      state.socket = socket;
+      console.info("[CRM CHAT] tentative de connexion", { transport: socket.io.engine?.transport?.name || "polling" });
+      socket.io.engine?.on("upgrade", (transport) => console.info("[CRM CHAT] transport upgraded", transport.name));
+      socket.on("connect", () => {
+        initialConnectionExpired = false;
+        console.info("[CRM CHAT] connecté", { socketId: socket.id, transport: socket.io.engine.transport.name });
+        connection("connected", "Chat connecté"); heartbeat(); bootstrap().then(markRead);
+      });
+      socket.on("disconnect", (reason) => {
+        console.info("[CRM CHAT] déconnexion", { reason });
+        connection("disconnected", "Déconnecté — reconnexion en cours…");
+      });
+      socket.on("connect_error", (error) => {
+        console.warn("[CRM CHAT] erreur de connexion", { message: error?.message, type: error?.type,
+          description: error?.description, context: error?.context });
+        connection(initialConnectionExpired ? "degraded" : "reconnecting", initialConnectionExpired ?
+          "Temps réel indisponible — le chat reste accessible" : "Temps réel indisponible — nouvelle tentative…");
+      });
       socket.on("error", (error) => notice(`Erreur temps réel : ${error?.message || error}`));
-      socket.io.on("reconnect_attempt", () => connection("Déconnecté — reconnexion en cours…"));
-      socket.io.on("reconnect", () => connection("Temps réel connecté", true));
+      socket.io.on("reconnect_attempt", () => {
+        if (!initialConnectionExpired) connection("reconnecting", "Déconnecté — reconnexion en cours…");
+      });
+      socket.io.on("reconnect", () => connection("connected", "Chat connecté"));
       socket.on("presence:changed", (payload) => { const user = state.colleagues.find((item) => item.id === payload.user_id); if (user) { user.online = payload.online; user.last_seen_at = payload.last_seen_at; bootstrap(); } });
       socket.on("chat:conversation_created", bootstrap);
-      socket.on("chat:unread_changed", (data) => { state.unread = data.unread; updateBadges(); });
+      socket.on("chat:unread_changed", (data) => {
+        unreadRevision += 1;
+        state.unread = data.unread;
+        if (state.current && isConversationActuallyVisible(state.current) &&
+            state.readConfirmedByConversation[state.current]) state.unread[String(state.current)] = 0;
+        updateBadges();
+      });
       socket.on("chat:new_message", (message) => {
-        if (message.sender_user_id !== state.me && state.current !== message.conversation_id) state.unread[String(message.conversation_id)] = (state.unread[String(message.conversation_id)] || 0) + 1;
-        if (state.current === message.conversation_id) appendMessage(message); updateBadges(); markRead();
+        const alreadySeen = state.seen.has(message.id);
+        const visible = isConversationActuallyVisible(message.conversation_id);
+        if (state.current === message.conversation_id) appendMessage(message);
+        if (message.sender_user_id !== state.me && !visible && !alreadySeen) {
+          unreadRevision += 1;
+          state.unread[String(message.conversation_id)] = Number(state.unread[String(message.conversation_id)] || 0) + 1;
+        }
+        updateBadges();
+        if (message.sender_user_id !== state.me && visible) markRead();
       });
       socket.on("chat:typing_changed", (payload) => { if (payload.conversation_id === state.current && payload.user_id !== state.me) $(".ic-typing").textContent = payload.typing ? `${payload.name} écrit…` : ""; });
-    } catch (error) { connection(`Temps réel indisponible — reconnexion en cours (${error.message})`); state.socket = null; setTimeout(initSocket, 1500); }
+    } catch (error) {
+      console.warn("[CRM CHAT] erreur de connexion", { message: error.message, type: error.name });
+      connection("reconnecting", "Temps réel indisponible — nouvelle tentative…");
+      state.socket = null; setTimeout(initSocket, 1500);
+    }
   }
 
   // Les interactions sont installées avant tout accès HTTP ou Socket.IO.
@@ -215,9 +316,13 @@
     catch (error) { notice(`Impossible d’envoyer le message : ${error.message}`, () => $(".ic-compose").requestSubmit()); }
   });
   document.addEventListener("visibilitychange", markRead);
+  messages.addEventListener("scroll", () => {
+    if (messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24) markRead();
+  });
   window.addEventListener("pagehide", () => navigator.sendBeacon("/api/chat/presence/close", new Blob([JSON.stringify({ tab_id: tabId })], { type: "application/json" })));
 
   if (localStorage.getItem("ic-chat-open") === "1") setOpen(true);
+  connection("connecting", "Connexion au chat…");
   heartbeat(); setInterval(heartbeat, 20000);
   bootstrap().finally(initSocket);
   window.__integraleChat = true;

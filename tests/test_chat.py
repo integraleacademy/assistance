@@ -32,6 +32,7 @@ def reset_chat():
         db.query(Conversation).filter(Conversation.id != TEAM_ID).delete()
         for part in db.query(Participant):
             part.last_read_message_id = None
+            part.last_read_at = None
     yield
 
 
@@ -139,3 +140,58 @@ def test_diagnostics_is_admin_only_and_contains_no_urls():
     data = response.get_json()
     assert data["presence_backend"] in {"sql", "redis"}
     assert all("url" not in key for key in data)
+
+
+def test_http_read_works_without_socketio_and_is_idempotent():
+    sender = web_client("clement@integraleacademy.com")
+    recipient = web_client("elsa@integraleacademy.com")
+    sent = sender.post("/api/chat/conversations/1/messages", json={
+        "client_message_id": str(uuid.uuid4()), "body": "À lire"}).get_json()["message"]
+
+    first = recipient.post("/api/chat/conversations/1/read", json={"message_id": sent["id"]})
+    second = recipient.post("/api/chat/conversations/1/read", json={"message_id": sent["id"]})
+
+    assert first.status_code == second.status_code == 200
+    assert first.get_json()["unread"]["1"] == first.get_json()["total_unread"] == 0
+    assert second.get_json()["unread"]["1"] == 0
+    with application.chat.Session() as db:
+        participant = db.get(Participant, (1, "elsa@integraleacademy.com"))
+        assert participant.last_read_message_id == sent["id"]
+        assert participant.last_read_at is not None
+    assert recipient.get("/api/chat/bootstrap").get_json()["unread"]["1"] == 0
+
+
+def test_http_read_security_and_validation():
+    sender = web_client("clement@integraleacademy.com")
+    recipient = web_client("elsa@integraleacademy.com")
+    outsider = web_client("aurelie@integraleacademy.com")
+    message = sender.post("/api/chat/conversations/1/messages", json={
+        "client_message_id": str(uuid.uuid4()), "body": "Équipe"}).get_json()["message"]
+    direct = sender.post("/api/chat/direct", json={"peer_user_id": "elsa@integraleacademy.com"}).get_json()["conversation"]
+    other_message = sender.post(f"/api/chat/conversations/{direct['id']}/messages", json={
+        "client_message_id": str(uuid.uuid4()), "body": "Privé"}).get_json()["message"]
+
+    assert web_client().post("/api/chat/conversations/1/read", json={"message_id": message["id"]}).status_code == 401
+    assert outsider.post(f"/api/chat/conversations/{direct['id']}/read", json={"message_id": other_message["id"]}).status_code == 403
+    assert recipient.post("/api/chat/conversations/1/read", json={"message_id": other_message["id"]}).status_code == 400
+    assert recipient.post("/api/chat/conversations/1/read", json={"message_id": 999999}).status_code == 404
+    for invalid in (None, "abc", 0, -1):
+        assert recipient.post("/api/chat/conversations/1/read", json={"message_id": invalid}).status_code == 400
+
+
+def test_http_read_notifies_every_socket_for_the_same_user():
+    sender = web_client("clement@integraleacademy.com")
+    first_socket, recipient = socket_client("elsa@integraleacademy.com")
+    second_socket, _ = socket_client("elsa@integraleacademy.com")
+    first_socket.get_received("/chat"); second_socket.get_received("/chat")
+    message = sender.post("/api/chat/conversations/1/messages", json={
+        "client_message_id": str(uuid.uuid4()), "body": "Deux onglets"}).get_json()["message"]
+    first_socket.get_received("/chat"); second_socket.get_received("/chat")
+
+    response = recipient.post("/api/chat/conversations/1/read", json={"message_id": message["id"]})
+
+    assert response.status_code == 200
+    for socket in (first_socket, second_socket):
+        events = socket.get_received("/chat")
+        unread = [event["args"][0]["unread"] for event in events if event["name"] == "chat:unread_changed"]
+        assert unread and unread[-1]["1"] == 0
