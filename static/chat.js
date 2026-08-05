@@ -135,9 +135,10 @@
     const element = document.createElement("article");
     element.className = `ic-msg ${message.sender_user_id === state.me ? "mine" : ""}`; element.dataset.id = message.id;
     const body = document.createElement("span"); body.textContent = message.body;
+    const del = document.createElement("button"); del.type = "button"; del.className = "ic-delete"; del.textContent = "×"; del.title = "Supprimer ce message"; del.setAttribute("aria-label", "Supprimer ce message");
     const time = document.createElement("time"); time.textContent = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(message.created_at));
     if (message.sender_user_id !== state.me) { const sender = document.createElement("small"); sender.textContent = message.sender_name; element.append(sender); }
-    element.append(body, time); messages.append(element); messages.scrollTop = messages.scrollHeight;
+    element.append(body, del, time); messages.append(element); messages.scrollTop = messages.scrollHeight;
   }
 
   async function loadMessages(before) {
@@ -286,6 +287,8 @@
         updateBadges();
         if (message.sender_user_id !== state.me && visible) markRead();
       });
+      socket.on("chat:message_deleted", (payload) => { messages.querySelector(`[data-id="${payload.message_id}"]`)?.remove(); state.seen.delete(payload.message_id); });
+      socket.on("chat:history_cleared", (payload) => { if (payload.conversation_id === state.current) { messages.querySelectorAll(".ic-msg").forEach((item) => item.remove()); state.seen.clear(); } bootstrap(); });
       socket.on("chat:typing_changed", (payload) => { if (payload.conversation_id === state.current && payload.user_id !== state.me) $(".ic-typing").textContent = payload.typing ? `${payload.name} écrit…` : ""; });
     } catch (error) {
       console.warn("[CRM CHAT] erreur de connexion", { message: error.message, type: error.name });
@@ -305,7 +308,8 @@
   $(".ic-sound").addEventListener("click", () => { const on = localStorage.getItem("ic-chat-sound") !== "off"; localStorage.setItem("ic-chat-sound", on ? "off" : "on"); $(".ic-sound").textContent = on ? "🔕" : "🔔"; });
   $(".ic-retry").addEventListener("click", () => state.lastAction?.());
   $(".ic-older").addEventListener("click", () => loadMessages(state.oldest));
-  root.addEventListener("click", (event) => { const user = event.target.closest("[data-user]"); const item = event.target.closest("[data-cid]"); if (user) openDirect(user.dataset.user); else if (item) openConversation(item.dataset.cid); });
+  $(".ic-clear").addEventListener("click", async () => { if (!state.current || !confirm("Supprimer tout l’historique de cette conversation ?")) return; try { await request(`/api/chat/conversations/${state.current}/messages`, { method: "DELETE" }); messages.querySelectorAll(".ic-msg").forEach((item) => item.remove()); state.seen.clear(); clearNotice(); } catch (error) { notice(`Impossible de supprimer l’historique : ${error.message}`); } });
+  root.addEventListener("click", async (event) => { const del = event.target.closest(".ic-delete"); if (del) { event.stopPropagation(); const item = del.closest(".ic-msg"); if (!state.current || !item || !confirm("Supprimer ce message ?")) return; try { await request(`/api/chat/conversations/${state.current}/messages/${item.dataset.id}`, { method: "DELETE" }); item.remove(); state.seen.delete(Number(item.dataset.id)); clearNotice(); } catch (error) { notice(`Impossible de supprimer le message : ${error.message}`); } return; } const user = event.target.closest("[data-user]"); const item = event.target.closest("[data-cid]"); if (user) openDirect(user.dataset.user); else if (item) openConversation(item.dataset.cid); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") { if (!$(".ic-modal").hidden) $(".ic-modal").hidden = true; else setOpen(false); } });
   draft.addEventListener("input", () => { if (!state.current) return; localStorage.setItem(`ic-draft-${state.current}`, draft.value); if (state.socket?.connected) state.socket.emit("chat:typing", { conversation_id: state.current, typing: true }); });
   draft.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $(".ic-compose").requestSubmit(); } });
