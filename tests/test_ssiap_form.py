@@ -9,6 +9,26 @@ class SsiapInformationFormTestCase(unittest.TestCase):
     def setUp(self):
         self.client = application.app.test_client()
 
+    @patch.dict(os.environ, {"BREVO_API_KEY": "test-key", "BREVO_SMS_SENDER": "ACADEMY"})
+    @patch("app.requests.post")
+    def test_sms_enables_brevo_unicode_encoding_for_emojis(self, post):
+        post.return_value = Mock(status_code=201, text='{"messageId":"test"}')
+
+        self.assertTrue(application.send_sms("06 12 34 56 78", "Bonjour 👨‍🎓 👉"))
+
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["content"], "Bonjour 👨‍🎓 👉")
+        self.assertIs(payload["unicode"], True)
+
+    @patch.dict(os.environ, {"BREVO_API_KEY": "test-key", "BREVO_SMS_SENDER": "ACADEMY"})
+    @patch("app.requests.post")
+    def test_sms_keeps_gsm_encoding_for_compatible_text(self, post):
+        post.return_value = Mock(status_code=201, text='{"messageId":"test"}')
+
+        self.assertTrue(application.send_sms("0612345678", "Bonjour, a bientot !"))
+
+        self.assertIs(post.call_args.kwargs["json"]["unicode"], False)
+
     def test_form_uses_the_same_step_order_as_aps_for_ssiap(self):
         response = self.client.get("/demande-informations-formations")
 
