@@ -6421,7 +6421,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260806-email-preview"
+CRM_ASSET_VERSION = "20260806-dynamic-training-dates"
 
 
 def _crm_statuses(data=None):
@@ -8735,6 +8735,46 @@ def crm_templates():
     return jsonify(item), 201
 
 
+CRM_UPCOMING_DATES_VARIABLE = "{{prochaines_dates}}"
+
+
+def _crm_formation_code(contact):
+    """Translate the CRM's human labels to the session administration codes."""
+    formation = str(contact.get("formation") or "").strip().lower()
+    if formation == "desp":
+        return "DESP_VAE" if str(contact.get("desp_type") or "").strip().upper() == "VAE" else "DESP_INIT"
+    return {
+        "aps": "APS", "a3p": "A3P", "ssiap": "SSIAP", "ssiap 1": "SSIAP",
+        "chauffeur vtc": "VTC", "vtc": "VTC",
+    }.get(formation, str(contact.get("formation") or "").strip().upper())
+
+
+def _crm_upcoming_dates(contact, html=False, data_store=None):
+    centre = _normalize_centre_code(contact.get("lieu"))
+    formation = _crm_formation_code(contact)
+    rows = get_upcoming_formation_sessions(data_store).get(centre, {}).get(formation, [])
+    labels = [
+        str(row.get("label") or "").strip().replace(" - examen le ", " — examen le ")
+        for row in rows if isinstance(row, dict) and str(row.get("label") or "").strip()
+    ]
+    if not labels:
+        return "Dates à venir prochainement (contactez-nous pour les connaître)."
+    if not html:
+        return "\n".join(f"• {label}" for label in labels)
+    return '<ul style="margin:8px 0 8px 20px;padding:0;">' + "".join(
+        f'<li style="margin:0 0 6px 0;"><strong>{html_module.escape(label)}</strong></li>'
+        for label in labels
+    ) + "</ul>"
+
+
+def _crm_resolve_message_variables(content, contact, html=False, data_store=None):
+    """Resolve CRM template variables at preview/send time, never when saving."""
+    return str(content or "").replace(
+        CRM_UPCOMING_DATES_VARIABLE,
+        _crm_upcoming_dates(contact, html=html, data_store=data_store),
+    )
+
+
 @app.route("/api/crm/contacts/<contact_id>/message", methods=["POST"])
 @login_required
 def crm_send_message(contact_id):
@@ -8743,10 +8783,12 @@ def crm_send_message(contact_id):
     payload = request.get_json(silent=True) or {}; kind = payload.get("type")
     body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     if kind == "email":
+        body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
         branded = render_template("crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body)
         ok = send_email_html(contact.get("mail"), subject, body, branded)
         preview = branded
     elif kind == "sms":
+        body = _crm_resolve_message_variables(body, contact, data_store=data)
         ok = send_sms(contact.get("telephone"), body); preview = body
     else: return jsonify({"error": "Type invalide"}), 400
     if not ok: return jsonify({"error": "L’envoi a échoué. Vérifiez la configuration et les coordonnées."}), 502
@@ -8763,7 +8805,9 @@ def crm_message_preview(contact_id):
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     payload = request.get_json(silent=True) or {}
-    body = str(payload.get("contenu", ""))
+    body = _crm_resolve_message_variables(
+        payload.get("contenu", ""), contact, html=True
+    )
     html = render_template(
         "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
     )
