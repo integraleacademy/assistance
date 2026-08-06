@@ -20,6 +20,14 @@ def test_crm_is_private(tmp_path, monkeypatch):
     assert "/login" in response.location
 
 
+def test_global_search_closes_when_clicking_outside():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "document.addEventListener('click'" in crm_js
+    assert "if(!searchBox.contains(e.target))globalResults.classList.remove('open')" in crm_js
+
+
 def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"})
