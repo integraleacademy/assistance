@@ -173,6 +173,7 @@
 .slot.selected{border-color:#356ae6;background:#356ae6;color:#fff;box-shadow:0 5px 12px #356ae62b}
 .calendly-questions{grid-template-columns:1fr;gap:12px}
 .calendly-modal .integration-banner{margin:10px 0}
+.template-variable-tools{display:flex;align-items:center;gap:10px;margin:0 0 8px;flex-wrap:wrap}.template-variable-tools small{flex:1;min-width:220px;color:#738198;font-size:10px;line-height:1.45}.dynamic-dates-badge{display:inline-block;margin-left:8px;padding:3px 7px;border-radius:999px;background:#e9f7ef;color:#23804b;font:700 8px Manrope;text-transform:uppercase;vertical-align:middle}
 
 /* La carte vit dans une colonne latérale étroite, même sur un grand écran.
    Une container query évite donc de se fier uniquement à la largeur du viewport. */
