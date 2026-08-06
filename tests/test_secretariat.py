@@ -66,6 +66,19 @@ def test_secretariat_displays_training_details_before_caller_form(client, monkey
     assert b"Demander \xc3\xa0 l\xe2\x80\x99assistant IA" in response.data
 
 
+def test_secretariat_form_collects_funding_and_regulatory_information(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    for field in (
+        b"cpf_consulte", b"cpf_montant", b"france_travail", b"ft_refus_ok",
+        b"financement_perso", b"identite_numerique", b"cnaps_ok", b"garde_vue",
+        b"titre_sejour",
+    ):
+        assert b'name="' + field + b'"' in response.data
+
+
 def test_secretariat_uses_a_direct_calendly_link_instead_of_a_blocked_embed(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
@@ -94,6 +107,10 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
         "statut": "Traité",
         "devis": "OUI",
         "calendly_url": "https://calendly.com/integraleacademy/aps",
+        "cpf_consulte": "OUI", "cpf_montant": "1250",
+        "france_travail": "OUI", "ft_refus_ok": "NON",
+        "financement_perso": "OUI", "identite_numerique": "OUI",
+        "cnaps_ok": "NON", "garde_vue": "NON", "titre_sejour": "OUI",
     })
 
     assert response.status_code == 201
@@ -112,6 +129,17 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
     assert contact["formation"] == "APS"
     assert contact["statut"] == "Nouveaux"
     assert contact["origine"] == "Secrétariat"
+    assert contact["cpf"] == "OUI"
+    assert contact["cpf_montant"] == "1250.00"
+    assert contact["financement_ft"] == "OUI"
+    assert contact["refus_ft_perso"] == "NON"
+    assert contact["reste_a_charge_perso"] == "OUI"
+    assert contact["identite_creation"] == "OUI"
+    assert contact["carte_pro"] == "NON"
+    assert contact["garde_vue"] == "NON"
+    assert contact["titre_sejour"] == "OUI"
+    assert crm_calls[0]["origine"] == "Secrétariat"
+    assert crm_calls[0]["cpf_montant"] == "1250"
     assert contact["source_secretariat_id"] == data["secretariat_demandes"][0]["id"]
     assert contact["activities"][0]["title"] == "Piste créée depuis le secrétariat"
 
