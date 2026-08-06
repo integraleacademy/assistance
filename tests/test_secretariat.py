@@ -192,6 +192,65 @@ def test_secretariat_api_does_not_duplicate_crm_contact_when_completing_request(
     assert crm_calls == []
 
 
+def test_secretariat_sends_matching_crm_email_and_sms_templates(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
+    data["crm_email_templates"] = [
+        {"id": "mail-aps", "nom": "Informations APS", "sujet": "Votre APS", "contenu": "<p>Contenu APS</p>"},
+        {"id": "mail-vtc", "nom": "Informations VTC", "sujet": "Votre VTC", "contenu": "Autre"},
+    ]
+    data["crm_sms_templates"] = [
+        {"id": "sms-aps", "nom": "informations aps", "sujet": "", "contenu": "SMS APS"},
+    ]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    emails, sms = [], []
+    monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "APS", "prenom": "Camille",
+        "nom": "Camille Martin", "email": "camille@example.com", "telephone": "0600000000",
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["messages"] == {"email": "sent", "sms": "sent"}
+    assert emails[0][0:3] == ("camille@example.com", "Votre APS", "<p>Contenu APS</p>")
+    assert sms == [("0600000000", "SMS APS")]
+    entry = data["secretariat_demandes"][0]
+    assert entry["information_email_template_id"] == "mail-aps"
+    assert entry["information_sms_template_id"] == "sms-aps"
+    assert [activity["kind"] for activity in data["crm_contacts"][0]["activities"][:2]] == ["sms", "email"]
+
+
+def test_secretariat_does_not_resend_templates_when_request_is_completed_twice(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = [{
+        "id": "secretariat-1", "type": "formation", "formation": "APS",
+        "nom": "Camille Martin", "telephone": "0600000000", "email": "camille@example.com",
+        "statut": "RDV à prendre", "created_at": "2026-08-06T10:00:00+02:00", "date": "06/08/2026 10:00",
+        "information_email_template_id": "mail-aps", "information_sms_template_id": "sms-aps",
+    }]
+    data["crm_contacts"] = [{"id": "crm-1", "source_secretariat_id": "secretariat-1", "activities": []}]
+    data["crm_email_templates"] = [{"id": "mail-aps", "nom": "Informations APS", "sujet": "APS", "contenu": "Mail"}]
+    data["crm_sms_templates"] = [{"id": "sms-aps", "nom": "Informations APS", "contenu": "SMS"}]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    monkeypatch.setattr(application, "send_email_html", lambda *args: pytest.fail("email resent"))
+    monkeypatch.setattr(application, "send_sms", lambda *args: pytest.fail("SMS resent"))
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "APS", "nom": "Camille Martin",
+        "email": "camille@example.com", "telephone": "0600000000", "statut": "Traité",
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["messages"] == {"email": "already_sent", "sms": "already_sent"}
+
+
 def test_secretariat_api_rejects_unknown_request_type(client):
     response = client.post("/api/secretariat/demandes", json={"type": "inconnu"})
 

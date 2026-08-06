@@ -3001,13 +3001,20 @@ def api_secretariat_demandes():
     crm_contact = None
     if creates_new_lead:
         crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
+    else:
+        crm_contact = next((contact for contact in data_store.get("crm_contacts", [])
+                            if contact.get("source_secretariat_id") == entry.get("id")), None)
+    message_results = {}
+    if entry["type"] == "formation" and crm_contact:
+        message_results = _send_secretariat_information_messages(data_store, entry, crm_contact)
     save_data(data_store)
     if creates_new_lead:
         creer_piste_salesforce(crm_payload)
     return jsonify({
         "ok": True,
         "demande": entry,
-        "crm_contact_id": crm_contact.get("id") if crm_contact else None,
+        "crm_contact_id": crm_contact.get("id") if creates_new_lead and crm_contact else None,
+        "messages": message_results,
     }), 201
 
 
@@ -7137,6 +7144,65 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
     _crm_activity(contact, "creation", "Piste créée depuis le secrétariat", detail)
     data.setdefault("crm_contacts", []).insert(0, contact)
     return contact
+
+
+def _secretariat_information_template(data, kind, formation_code):
+    """Return the CRM ``Informations <formation>`` template for a call."""
+    formation = SECRETARIAT_FORMATIONS.get(str(formation_code or "").strip(), {})
+    names = {
+        f"informations {formation_code}",
+        f"informations {formation.get('short', '')}",
+        f"informations {formation.get('label', '')}",
+    }
+
+    def normalise(value):
+        value = unicodedata.normalize("NFKD", str(value or ""))
+        value = "".join(char for char in value if not unicodedata.combining(char))
+        return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+    expected = {normalise(name) for name in names if normalise(name) != "informations"}
+    return next((template for template in data.get(f"crm_{kind}_templates", [])
+                 if normalise(template.get("nom")) in expected), None)
+
+
+def _send_secretariat_information_messages(data, entry, contact):
+    """Send the CRM mail and SMS templates associated with the selected training.
+
+    A missing template or recipient does not prevent the secretary from saving the
+    call. Successful sends are recorded both on the request and in CRM activity.
+    """
+    results = {}
+    formation_code = entry.get("formation", "")
+    for kind, recipient_key in (("email", "email"), ("sms", "telephone")):
+        template = _secretariat_information_template(data, kind, formation_code)
+        if not template:
+            results[kind] = "template_missing"
+            continue
+        if not entry.get(recipient_key):
+            results[kind] = "recipient_missing"
+            continue
+        sent_key = f"information_{kind}_template_id"
+        if entry.get(sent_key) == template.get("id"):
+            results[kind] = "already_sent"
+            continue
+        body = str(template.get("contenu", "")).strip()
+        if kind == "email":
+            subject = str(template.get("sujet") or "Intégrale Academy").strip()
+            branded = render_template("crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body)
+            ok = send_email_html(entry[recipient_key], subject, body, branded)
+            preview, detail, title = branded, subject, "E-mail envoyé"
+        else:
+            ok = send_sms(entry[recipient_key], body)
+            preview, detail, title = body, body, "SMS envoyé"
+        results[kind] = "sent" if ok else "failed"
+        if ok:
+            entry[sent_key] = template.get("id")
+            entry[f"information_{kind}_sent_at"] = _crm_now()
+            _crm_activity(contact, kind, title, detail, preview)
+            contact["updated_at"] = _crm_now()
+        else:
+            entry[f"information_{kind}_error_at"] = _crm_now()
+    return results
 
 
 def _crm_no_answer_message(contact):
