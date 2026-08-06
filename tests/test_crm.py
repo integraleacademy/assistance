@@ -161,6 +161,23 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
 
 
+def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={"contenu": "<p>Mon texte libre</p>"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_json()["html"]
+    assert "Bonjour Lina" in html
+    assert "Mon texte libre" in html
+    assert "Faites le premier pas vers votre futur métier" in html
+    assert "integraleacademy.com" in html
+
+
 def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
