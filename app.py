@@ -8826,7 +8826,8 @@ def crm_templates():
         wrapper_path = os.path.join(app.root_path, "templates", "crm_email_wrapper.html")
         with open(wrapper_path, encoding="utf-8") as wrapper_file:
             email_starter = wrapper_file.read().replace(
-                "{{ contenu|safe }}", "<p>Écrivez ici le contenu de votre e-mail.</p>"
+                "{{ contenu|safe }}",
+                "<!-- EMAIL_CONTENT_START --><p>Écrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
             )
         return jsonify({
             "email": data["crm_email_templates"],

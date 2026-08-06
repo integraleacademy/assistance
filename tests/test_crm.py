@@ -177,6 +177,8 @@ def test_crm_email_starter_exposes_editable_complete_html(tmp_path, monkeypatch)
     assert starter.lower().startswith("<!doctype html>")
     assert "Faites le premier pas vers votre futur métier" in starter
     assert "Écrivez ici le contenu de votre e-mail." in starter
+    assert "<!-- EMAIL_CONTENT_START -->" in starter
+    assert "<!-- EMAIL_CONTENT_END -->" in starter
     assert "{{ contenu|safe }}" not in starter
 
 
@@ -314,6 +316,16 @@ def test_email_template_preview_does_not_render_the_subject_in_the_message_body(
 
     assert "previewModal(t.contenu,true,{sujet:t.sujet,contenu:t.contenu})" in crm_js
     assert '<h3>${esc(t.sujet)}</h3>' not in crm_js
+
+
+def test_starter_email_has_a_simple_content_editor():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert 'for="tplContent">Contenu du mail' in crm_js
+    assert "la mise en page du modèle est conservée automatiquement" in crm_js
+    assert "Modifier le code HTML (avancé)" in crm_js
+    assert "emailContentToHtml(tplContent.value)" in crm_js
 
 
 def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
