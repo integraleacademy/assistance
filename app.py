@@ -7387,10 +7387,11 @@ def _secretariat_email_fallback(entry):
         elif ft_status in {"approved", "accepted", "acceptee", "acceptée"}:
             wished = "Votre demande de financement France Travail est indiquée comme acceptée."
         else:
-            wished = "Vous souhaitez que nous étudiions avec vous la possibilité d’une demande de financement auprès de France Travail."
+            wished = "Vous souhaitez étudier avec notre équipe la possibilité d’une demande de financement auprès de France Travail."
         financing = f"{financing} {wished}".strip()
     cnaps = ""
-    if entry.get("formation") == "APS":
+    formation_code = str(entry.get("formation") or "").strip().upper()
+    if formation_code in {"APS", "A3P"}:
         cnaps_status = str(entry.get("cnaps_status") or "").lower().strip()
         if cnaps_status in {"submitted", "transmitted", "transmise"}:
             cnaps = "Votre demande d’autorisation préalable CNAPS a été transmise. Notre équipe reste disponible pendant son instruction."
@@ -7399,26 +7400,37 @@ def _secretariat_email_fallback(entry):
         elif _yes(entry.get("cnaps_ok")):
             cnaps = "Votre carte professionnelle est valide ; notre équipe vérifiera avec vous les justificatifs nécessaires."
         else:
-            cnaps = "Si vous ne disposez pas encore d’une carte professionnelle, l’étape attendue avant l’entrée en formation APS est l’autorisation préalable CNAPS. Notre équipe vous accompagne dans cette démarche."
+            cnaps = f"Si vous ne disposez pas encore d’une carte professionnelle, l’étape attendue avant l’entrée en formation {formation_code} est l’autorisation préalable CNAPS. Notre équipe vous accompagne dans cette démarche."
     steps = ["Consulter le dossier de présentation et le planning."]
     if session: steps.append("Confirmer avec notre équipe la session souhaitée.")
     if _yes(entry.get("cpf_consulte")): steps.append("Vérifier que votre Identité Numérique La Poste est fonctionnelle avant toute inscription CPF.")
-    if entry.get("formation") == "APS" and not _yes(entry.get("cnaps_ok")): steps.append("Préparer avec notre équipe la démarche d’autorisation préalable CNAPS.")
+    if formation_code in {"APS", "A3P"} and not _yes(entry.get("cnaps_ok")): steps.append("Préparer avec notre équipe la démarche d’autorisation préalable CNAPS.")
     return {"summary_paragraphs": paragraphs, "financing_message": financing,
             "cnaps_message": cnaps, "next_steps": steps[:4]}
 
 
-def _validate_secretariat_ai_content(raw, fallback, entry=None):
+def _validate_secretariat_ai_content(raw, fallback, entry=None, prospect_first_name=""):
     try:
         value = json.loads(raw) if isinstance(raw, str) else raw
         paragraphs = value.get("summary_paragraphs")
         steps = value.get("next_steps")
         if not isinstance(paragraphs, list) or not 2 <= len(paragraphs) <= 4 or not isinstance(steps, list):
             raise ValueError("structure invalide")
-        forbidden = ("<", "bonjour", "cassandre menard")
+        forbidden = ("<", "bonjour", "cassandre menard", "le candidat", "la candidate",
+                     "le prospect", "la personne souhaite", "il souhaite", "elle souhaite",
+                     "il devra", "elle devra")
         clean_paragraphs = [str(p).strip() for p in paragraphs if str(p).strip()]
-        if any(any(token in p.lower() for token in forbidden) for p in clean_paragraphs):
+        if not 2 <= len(clean_paragraphs) <= 4:
+            raise ValueError("nombre de paragraphes invalide")
+        all_content = clean_paragraphs + [str(value.get("financing_message") or "").strip(),
+                                          str(value.get("cnaps_message") or "").strip()]
+        all_content += [str(step).strip() for step in steps]
+        if any(any(token in text.lower() for token in forbidden) for text in all_content):
             raise ValueError("contenu interdit")
+        first_name = str(prospect_first_name or "").strip()
+        if first_name and any(re.search(rf"(?<!\w){re.escape(first_name)}(?!\w)", text, re.I)
+                              for text in all_content):
+            raise ValueError("prénom du destinataire interdit")
         result = {"summary_paragraphs": clean_paragraphs,
                 "financing_message": str(value.get("financing_message") or "").strip(),
                 "cnaps_message": str(value.get("cnaps_message") or "").strip(),
@@ -7426,6 +7438,11 @@ def _validate_secretariat_ai_content(raw, fallback, entry=None):
         ft_status = str((entry or {}).get("france_travail_status") or "").lower().strip()
         if not ft_status and re.search(r"(demande.{0,30}(transmise|déposée|en cours|en attente|validée|acceptée))", result["financing_message"], re.I):
             raise ValueError("statut France Travail non prouvé")
+        formation_code = str((entry or {}).get("formation") or "").strip().upper()
+        if formation_code not in {"APS", "A3P"}:
+            result["cnaps_message"] = ""
+            result["next_steps"] = [step for step in result["next_steps"]
+                                    if not re.search(r"CNAPS|carte professionnelle", step, re.I)]
         return result
     except (ValueError, TypeError, json.JSONDecodeError, AttributeError):
         return fallback
@@ -7446,10 +7463,17 @@ def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-ac
     config = _secretariat_formation_config(entry.get("formation"))
     fallback = _secretariat_email_fallback(entry)
     facts = {key: entry.get(key, "") for key in ("formation_date_souhaitee", "devis", "rdv_status", "rdv_date", "rdv_time", "rdv_mode", "cpf_consulte", "cpf_montant", "france_travail", "france_travail_status", "financement_perso", "identite_numerique", "cnaps_ok", "cnaps_status")}
-    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 à 4 paragraphes, 130 à 220 mots au total), financing_message, cnaps_message et next_steps (2 à 4 éléments). Français naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. N'invente aucune information et ne reproduis aucune note interne. Un souhait France Travail n'est jamais une demande déposée, en cours ou validée. Distingue absence de carte, autorisation préalable, demande transmise, expiration et refus CNAPS. Ne répète pas mot pour mot le tableau factuel."""
-    user = json.dumps({"prospect": contact.get("prenom") or entry.get("nom"), "formation": config["label"], "faits_autorises": facts}, ensure_ascii=False)
+    formation_code = str(entry.get("formation") or "").strip().upper()
+    if formation_code not in {"APS", "A3P"}:
+        facts = {key: value for key, value in facts.items() if key not in {"cnaps_ok", "cnaps_status"}}
+    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 à 4 paragraphes, 130 à 220 mots au total), financing_message, cnaps_message et next_steps (2 à 4 éléments). Français naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. Vous rédigez un message adressé directement au destinataire. Employez exclusivement vous, votre et vos. Ne mentionnez jamais son prénom et ne parlez jamais de lui à la troisième personne. N'invente aucune information et ne reproduis aucune note interne. Un souhait France Travail n'est jamais une demande déposée, en cours ou validée. Sans statut explicite, indiquez : « Vous souhaitez étudier avec notre équipe la possibilité d’une demande de financement auprès de France Travail. » Le CNAPS est applicable uniquement aux formations APS et A3P : pour toute autre formation, renvoie une chaîne vide dans cnaps_message et n'ajoute aucune étape CNAPS ou carte professionnelle. Distingue absence de carte, autorisation préalable, demande transmise, expiration et refus CNAPS. Ne répète pas mot pour mot le tableau factuel."""
+    user = json.dumps({"code_formation": formation_code, "intitule_formation": config["label"],
+                       "faits_autorises": facts}, ensure_ascii=False)
+    first_name = contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0]
     try:
-        content = _validate_secretariat_ai_content(_crm_ai(system, user, max_tokens=900), fallback, entry)
+        content = _validate_secretariat_ai_content(
+            _crm_ai(system, user, max_tokens=900), fallback, entry, first_name
+        )
     except Exception as exc:
         print("Compte rendu IA indisponible, fallback déterministe :", exc)
         content = fallback
@@ -7457,7 +7481,10 @@ def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-ac
     context = dict(prenom=contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0], formation=config, entry=entry,
                    content=content, project_rows=_secretariat_project_rows(entry, config), appointment=_secretariat_rdv(entry),
                    logo_src=logo_src, ai_url=SECRETARIAT_AI_URL)
-    html_body = render_template("emails/email_resume_echange_integrale.html", **context)
+    html_body = render_template(
+        "emails/email_resume_echange_integrale.html",
+        **context
+    )
     plain = render_template("emails/email_resume_echange_integrale.txt", **context)
     return subject, plain, html_body
 
