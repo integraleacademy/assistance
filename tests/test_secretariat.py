@@ -90,6 +90,7 @@ def test_secretariat_form_collects_funding_and_regulatory_information(client, mo
     ):
         assert b'name="' + field + b'"' in response.data
     assert b"Tous les champs sont facultatifs" in response.data
+    assert "laissez les deux boutons décochés".encode() not in response.data
     assert b"Avez-vous d\xc3\xa9j\xc3\xa0 consult\xc3\xa9 votre compte CPF" in response.data
     assert b'<select id="cpf_consulte"' not in response.data
     assert b'data-step="6"' in response.data
