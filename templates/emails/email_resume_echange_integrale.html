@@ -1,27 +1,205 @@
 <!doctype html>
-<html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;background:#eef3fb;font-family:Arial,Helvetica,sans-serif;color:#193052">
-<div style="display:none;max-height:0;overflow:hidden">Votre synthèse personnalisée, les prochaines étapes et le dossier de présentation de la formation {{ formation.short }}.</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#eef3fb"><tr><td align="center" style="padding:24px 10px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;background:#fff;border-collapse:collapse">
-<tr><td style="padding:30px 36px;background:#123b7a;color:#fff">
-  <img src="{{ logo_src }}" alt="Intégrale Academy" width="150" style="width:150px;height:auto;display:block;margin:0 0 16px">
-  <div style="font-size:17px;font-weight:bold">Intégrale Academy</div><h1 style="margin:9px 0 6px;font-size:29px">Le résumé de notre échange</h1>
-  <p style="margin:0 0 10px">Votre projet : {{ formation.label }}</p><p style="margin:0;font-weight:bold;color:#bcd6ff">Faites le premier pas vers votre futur métier</p>
-</td></tr>
-<tr><td style="padding:32px 36px">
-<p style="font-size:18px;margin:0 0 22px">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
-{% for paragraph in content.summary_paragraphs %}<p style="margin:0 0 15px;line-height:1.65;color:#344a68">{{ paragraph }}</p>{% endfor %}
-{% if project_rows %}<h2 style="margin:28px 0 12px;font-size:21px">Votre projet en bref</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f6fc;border:1px solid #dce6f5;border-radius:12px">
-{% for label,value in project_rows %}<tr><td style="padding:10px 14px;vertical-align:top;font-weight:bold;width:34%">{{ label }}</td><td style="padding:10px 14px;line-height:1.45">{{ value }}</td></tr>{% endfor %}</table>{% endif %}
-<h2 style="margin:28px 0 12px;font-size:21px">À retenir sur la formation</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-{% for label,key in [('Durée et rythme','duration'),('Tarif','price'),('Modalité','format'),('Lieu','location'),('Capacité','capacity'),('Certification / objectif','certification'),('Prérequis principal','prerequisites')] %}{% if formation.get(key) %}<tr><td style="padding:7px 0;border-bottom:1px solid #e7edf6"><strong>{{ label }} :</strong> {{ formation[key] }}</td></tr>{% endif %}{% endfor %}</table>
-{% if content.financing_message %}<h2 style="margin:28px 0 10px;font-size:21px">Financement et CPF</h2><p style="line-height:1.65">{{ content.financing_message }}</p>{% if entry is defined and entry.cpf_consulte %}<p><a href="https://lidentitenumerique.laposte.fr/" style="color:#175ac6">Identité Numérique La Poste</a></p>{% endif %}{% endif %}
-{% if content.cnaps_message %}<h2 style="margin:28px 0 10px;font-size:21px">Situation CNAPS</h2><p style="line-height:1.65">{{ content.cnaps_message }}</p>{% endif %}
-{% if appointment %}<h2 style="margin:28px 0 10px;font-size:21px">Votre rendez-vous</h2>{% if appointment.status == 'scheduled' %}<p style="line-height:1.65">Rendez-vous planifié{% if appointment.date %} le {{ appointment.date }}{% endif %}{% if appointment.time %} à {{ appointment.time }}{% endif %} (Europe/Paris){% if appointment.mode %}, en {{ appointment.mode }}{% endif %}.{% if appointment.url %} <a href="{{ appointment.url }}">Accéder au rendez-vous</a>{% endif %}</p>{% else %}<p>Un rendez-vous vous a été proposé. Notre équipe attend votre confirmation du créneau.</p>{% endif %}{% endif %}
-<h2 style="margin:28px 0 10px;font-size:21px">Prochaines étapes</h2><ol style="padding-left:22px;line-height:1.65">{% for step in content.next_steps %}<li style="margin-bottom:7px">{{ step }}</li>{% endfor %}</ol>
-<div style="margin:30px 0;text-align:center"><a href="{{ formation.dossier_url }}" style="display:inline-block;background:#175ac6;color:#fff;text-decoration:none;font-weight:bold;padding:14px 21px;border-radius:8px">Télécharger le dossier de présentation</a><p style="font-size:14px"><a href="{{ formation.planning_url }}" style="color:#175ac6">Consulter le planning</a> · <a href="{{ ai_url }}" style="color:#63738c">Interroger l’IA Intégrale Academy</a></p></div>
-<p style="line-height:1.55;margin-top:28px"><strong>Cassandre MENARD</strong><br>Responsable commerciale – Intégrale Academy<br>04 22 47 07 68<br><a href="mailto:cassandre@integraleacademy.com">cassandre@integraleacademy.com</a><br>54 chemin du Carreou – 83480 Puget-sur-Argens</p>
-</td></tr>
-<tr><td style="padding:22px 30px;background:#102b57;color:#dbe6f7;text-align:center;font-size:11px;line-height:1.55">© Intégrale Academy · Faites le premier pas vers votre futur métier<br>54 chemin du Carreou, 83480 Puget-sur-Argens · 142 rue de Rivoli, 75001 Paris<br>SIREN 840 899 884 · NDA 93830600283 · Certification Qualiopi n°03169 du 21/10/2024<br>UAI Côte d’Azur 0831774C · UAI Paris 0756548K<br>Autorisation d’exercice CNAPS n°FOR-083-2027-02-08-20200755135 · Habilitation INRS SST n°1487614/2020/SST-01/O/07<br><a href="https://integraleacademy.com" style="color:#fff">integraleacademy.com</a><br><span style="color:#afc0dc">La déclaration d’activité ne vaut pas agrément de l’État. Les financements restent soumis aux conditions et à l’accord des organismes concernés.</span></td></tr>
-</table></td></tr></table></body></html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ email_subject }}</title>
+  <style>
+    @media only screen and (max-width: 680px) {
+      .email-shell { width: 100% !important; }
+      .mobile-pad { padding-left: 22px !important; padding-right: 22px !important; }
+      .mobile-stack { display: block !important; width: 100% !important; }
+      .mobile-center { text-align: center !important; }
+      .hero-title { font-size: 28px !important; line-height: 34px !important; }
+      .cta-button { display: block !important; width: auto !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; background:#eef2f7; font-family:Arial, Helvetica, sans-serif; color:#172033;">
+  <!-- Préheader, invisible dans le corps du message -->
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+    {{ preheader_text }}
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#eef2f7;">
+    <tr>
+      <td align="center" style="padding:28px 12px;">
+        <table role="presentation" class="email-shell" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px; max-width:640px; background:#ffffff; border-radius:20px; overflow:hidden; box-shadow:0 12px 36px rgba(20,37,63,.10);">
+
+          <!-- En-tête -->
+          <tr>
+            <td align="center" class="mobile-pad" style="padding:28px 44px 30px; background:#102c5c; background-image:linear-gradient(135deg,#102c5c 0%,#3269da 100%); color:#ffffff;">
+              <img src="{{ logo_src }}" width="148" alt="Intégrale Academy" style="display:block; width:148px; max-width:100%; height:auto; margin:0 auto 20px; border:0; outline:none; text-decoration:none;">
+              <div style="font-size:12px; line-height:16px; font-weight:700; letter-spacing:2.1px; text-transform:uppercase; opacity:.88;">Intégrale Academy</div>
+              <h1 class="hero-title" style="margin:9px 0 8px; font-size:32px; line-height:38px; font-weight:750; letter-spacing:-.6px; color:#ffffff;">Le résumé de notre échange</h1>
+              <div style="font-size:15px; line-height:22px; color:#e9f0ff;">Votre projet&nbsp;: <strong>{{ formation_name }}</strong></div>
+              <div style="width:56px; height:3px; background:#f4c45a; border-radius:3px; margin:20px auto 15px;"></div>
+              <div style="font-size:15px; line-height:21px; font-weight:700; color:#f8d982;">Faites le premier pas vers votre futur métier</div>
+            </td>
+          </tr>
+
+          <!-- Corps -->
+          <tr>
+            <td class="mobile-pad" style="padding:38px 44px 16px;">
+              <p style="margin:0 0 18px; font-size:17px; line-height:27px; color:#172033;">Bonjour <strong>{{ prospect_first_name }}</strong>,</p>
+
+              <p style="margin:0 0 18px; font-size:15px; line-height:25px; color:#40506a;">
+                Merci pour le temps accordé lors de notre échange au sujet de la formation <strong style="color:#172033;">{{ formation_name }}</strong>. Voici la synthèse personnalisée de votre projet et les prochaines étapes utiles.
+              </p>
+
+              <!-- Résumé narratif produit par l'IA : texte uniquement, sans Bonjour, sans signature, sans HTML -->
+              <div style="font-size:15px; line-height:25px; color:#25344d;">
+                {% for paragraph in ai_summary_paragraphs %}
+                <p style="margin:0 0 14px;">{{ paragraph }}</p>
+                {% endfor %}
+              </div>
+
+              <div style="height:1px; background:#e6ebf2; margin:28px 0 26px;"></div>
+
+              <!-- Un seul panneau de synthèse, pas une carte par champ -->
+              <h2 style="margin:0 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Votre projet en bref</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#f5f8fd; border:1px solid #e1e8f2; border-radius:14px; overflow:hidden;">
+                {% for fact in key_facts %}
+                <tr>
+                  <td style="padding:13px 16px; {% if not loop.last %}border-bottom:1px solid #e1e8f2;{% endif %} font-size:14px; line-height:21px; vertical-align:top; color:#5a6980; width:38%;"><strong>{{ fact.label }}</strong></td>
+                  <td style="padding:13px 16px; {% if not loop.last %}border-bottom:1px solid #e1e8f2;{% endif %} font-size:14px; line-height:21px; vertical-align:top; color:#172033;">{{ fact.value }}</td>
+                </tr>
+                {% endfor %}
+              </table>
+
+              <!-- Informations déterministes de la formation -->
+              <h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">À retenir sur la formation</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+                <tr>
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 10px 12px 0;">
+                    <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Durée et rythme</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_duration_and_pace }}</div>
+                  </td>
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 0 12px 10px;">
+                    <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Tarif</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_price }}</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:10px 10px 0 0;">
+                    <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Lieu</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_location }}</div>
+                  </td>
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:10px 0 0 10px;">
+                    <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Certification / objectif</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_certification }}</div>
+                  </td>
+                </tr>
+              </table>
+
+              {% if financing_message %}
+              <div style="margin:28px 0 0; padding:17px 18px; background:#fff9e9; border-left:4px solid #f4c45a; border-radius:10px;">
+                <div style="font-size:14px; line-height:22px; color:#3b4658;"><strong style="color:#172033;">Financement et CPF.</strong> {{ financing_message }}</div>
+              </div>
+              {% endif %}
+
+              {% if cnaps_message %}
+              <div style="margin:14px 0 0; padding:17px 18px; background:#f4f7fb; border-left:4px solid #3269da; border-radius:10px;">
+                <div style="font-size:14px; line-height:22px; color:#3b4658;"><strong style="color:#172033;">Situation CNAPS.</strong> {{ cnaps_message }}</div>
+              </div>
+              {% endif %}
+
+              {% if appointment and appointment.status in ['proposed', 'scheduled'] %}
+              <h2 style="margin:30px 0 13px; font-size:20px; line-height:27px; color:#102c5c;">Votre rendez-vous</h2>
+              <div style="padding:18px 20px; border:1px solid #cddbf3; background:#f7faff; border-radius:13px;">
+                <div style="font-size:15px; line-height:24px; color:#25344d;">{{ appointment.message }}</div>
+                {% if appointment.date_display %}
+                <div style="margin-top:9px; font-size:16px; line-height:24px; color:#102c5c; font-weight:700;">{{ appointment.date_display }}{% if appointment.mode %} · {{ appointment.mode }}{% endif %}</div>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              {% if next_steps %}
+              <h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Vos prochaines étapes</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+                {% for step in next_steps %}
+                <tr>
+                  <td valign="top" width="34" style="width:34px; padding:0 10px 13px 0;">
+                    <div style="width:26px; height:26px; line-height:26px; text-align:center; border-radius:50%; background:#102c5c; color:#ffffff; font-size:13px; font-weight:700;">{{ loop.index }}</div>
+                  </td>
+                  <td valign="top" style="padding:2px 0 13px; font-size:14px; line-height:22px; color:#33435c;">{{ step }}</td>
+                </tr>
+                {% endfor %}
+              </table>
+              {% endif %}
+
+              <!-- Appel à l'action principal -->
+              <div style="margin:24px 0 8px; padding:24px 22px; background:#edf3ff; border-radius:15px; text-align:center;">
+                <div style="font-size:18px; line-height:25px; color:#102c5c; font-weight:700;">Programme, dates, tarifs et modalités</div>
+                <div style="margin-top:6px; font-size:14px; line-height:21px; color:#5b6a80;">Retrouvez toutes les informations utiles dans notre dossier de présentation.</div>
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:18px auto 0;">
+                  <tr>
+                    <td align="center" bgcolor="#3269da" style="border-radius:9px;">
+                      <a class="cta-button" href="{{ dossier_url }}" target="_blank" style="display:inline-block; padding:13px 22px; color:#ffffff; text-decoration:none; font-size:15px; line-height:20px; font-weight:700; border-radius:9px;">Télécharger le dossier de présentation</a>
+                    </td>
+                  </tr>
+                </table>
+                {% if planning_url %}
+                <div style="margin-top:14px; font-size:13px; line-height:19px; color:#5b6a80;">
+                  <a href="{{ planning_url }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Consulter toutes les prochaines sessions</a>
+                </div>
+                {% endif %}
+              </div>
+
+              {% if identity_digital_cta_visible %}
+              <p style="margin:18px 0 0; font-size:13px; line-height:21px; color:#637188; text-align:center;">
+                Pour mobiliser votre CPF, votre Identité Numérique La Poste doit être créée et fonctionnelle.<br>
+                <a href="https://lidentitenumerique.laposte.fr" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Créer ou vérifier votre Identité Numérique La Poste</a>
+              </p>
+              {% endif %}
+
+              {% if ai_assistant_url %}
+              <p style="margin:17px 0 0; font-size:13px; line-height:21px; color:#637188; text-align:center;">
+                Une question après notre échange&nbsp;? <a href="{{ ai_assistant_url }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Interroger l’IA Intégrale Academy</a>
+              </p>
+              {% endif %}
+
+              <!-- Signature -->
+              <div style="height:1px; background:#e6ebf2; margin:30px 0 24px;"></div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+                <tr>
+                  <td valign="top" width="48" style="width:48px; padding-right:13px;">
+                    <div style="width:42px; height:42px; line-height:42px; text-align:center; border-radius:50%; background:#102c5c; color:#ffffff; font-size:14px; font-weight:700;">CM</div>
+                  </td>
+                  <td valign="top" style="font-size:13px; line-height:20px; color:#516078;">
+                    <strong style="font-size:15px; color:#172033;">Cassandre MENARD</strong><br>
+                    Responsable commerciale – Intégrale Academy<br>
+                    <a href="tel:0422470768" style="color:#102c5c; font-weight:700; text-decoration:none;">04 22 47 07 68</a>
+                    &nbsp;·&nbsp;
+                    <a href="mailto:cassandre@integraleacademy.com" style="color:#102c5c; text-decoration:none;">cassandre@integraleacademy.com</a><br>
+                    54 chemin du Carreou – 83480 Puget-sur-Argens
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Pied de page institutionnel -->
+          <tr>
+            <td class="mobile-pad" style="padding:25px 44px 28px; background:#0f1f33; color:#d6deeb; text-align:center;">
+              <div style="font-size:13px; line-height:20px; font-weight:700; color:#f4c45a;">Faites le premier pas vers votre futur métier</div>
+              <div style="margin-top:9px; font-size:11px; line-height:18px; color:#d6deeb;">
+                Intégrale Academy · 54 chemin du Carreou, 83480 Puget-sur-Argens · 142 rue de Rivoli, 75001 Paris<br>
+                SIREN 840 899 884 · NDA 93830600283 · Certification Qualiopi n°03169 du 21/10/2024<br>
+                UAI Côte d’Azur 0831774C · UAI Paris 0756548K<br>
+                Autorisation d’exercice CNAPS n°FOR-083-2027-02-08-20200755135 · Habilitation INRS SST n°1487614/2020/SST-01/O/07
+              </div>
+              <div style="margin-top:12px; font-size:11px; line-height:17px; color:#aeb9ca;">
+                La déclaration d’activité ne vaut pas agrément de l’État. Les financements restent soumis aux conditions et à l’accord des organismes concernés.
+              </div>
+              <div style="margin-top:12px; font-size:11px; line-height:17px;">
+                <a href="https://www.integraleacademy.com" target="_blank" style="color:#ffffff; font-weight:700; text-decoration:none;">integraleacademy.com</a>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
