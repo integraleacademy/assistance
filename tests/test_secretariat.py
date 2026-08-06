@@ -137,3 +137,61 @@ def test_secretariat_ai_rejects_unknown_training(client):
     })
 
     assert response.status_code == 400
+
+
+def test_secretariat_exposes_both_ai_features(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b"Poser une question \xc3\xa0 l\xe2\x80\x99IA sur cette formation" in response.data
+    assert b"G\xc3\xa9n\xc3\xa9rer les informations cl\xc3\xa9s avec l\xe2\x80\x99IA" in response.data
+    assert b"Recherche en cours\xe2\x80\xa6" in response.data
+    assert b"Copier la r\xc3\xa9ponse" in response.data
+    assert b"R\xc3\xa9g\xc3\xa9n\xc3\xa9rer" in response.data
+
+
+def test_secretariat_question_route_uses_a3p_data_and_conversation(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    monkeypatch.setattr(application, "_crm_ai",
+                        lambda system, user, max_tokens: calls.append((system, user)) or "Réponse fiable")
+
+    response = client.post("/api/secretariat/formations/A3P/ai/question", json={
+        "question": "Faut-il une autorisation du CNAPS pour entrer en formation ?",
+        "conversation": [{"question": "Quel tarif ?", "answer": "4 200 € TTC"}],
+    })
+
+    assert response.status_code == 200
+    assert response.get_json()["reply"] == "Réponse fiable"
+    assert "4 200 € TTC" in calls[0][1]
+    assert "328 h" in calls[0][1]
+    assert "Présentiel" in calls[0][1]
+    assert "CNAPS" in calls[0][1]
+    assert "Cette information n’est pas disponible" in calls[0][0]
+
+
+def test_secretariat_key_information_route_uses_server_context(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    monkeypatch.setattr(application, "_crm_ai",
+                        lambda system, user, max_tokens: calls.append(user) or "Synthèse A3P")
+
+    response = client.post("/api/secretariat/formations/A3P/ai/key-information", json={
+        "price": "1 €", "duration": "1 h",
+    })
+
+    assert response.status_code == 200
+    assert response.get_json()["summary"] == "Synthèse A3P"
+    assert "4 200 € TTC" in calls[0]
+    assert '"price": "1 €"' not in calls[0]
+
+
+def test_secretariat_question_route_validates_input(client):
+    too_long = client.post("/api/secretariat/formations/A3P/ai/question",
+                           json={"question": "x" * 501})
+    unknown = client.post("/api/secretariat/formations/UNKNOWN/ai/question",
+                          json={"question": "Tarif ?"})
+
+    assert too_long.status_code == 400
+    assert unknown.status_code == 404

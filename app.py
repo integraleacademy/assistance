@@ -2984,33 +2984,98 @@ def api_secretariat_demandes():
     return jsonify({"ok": True, "demande": entry}), 201
 
 
-@app.route("/api/secretariat/assistant", methods=["POST"])
-def api_secretariat_assistant():
+def _secretariat_ai_context(formation_code):
+    """Build the trusted training context; no training facts come from the browser."""
+    details = SECRETARIAT_FORMATIONS.get(formation_code)
+    if not details:
+        return None
+    sessions = get_formation_sessions(load_data())
+    centres = []
+    for centre_code, centre_label in FORMATION_CENTRES.items():
+        rows = sessions.get(centre_code, {}).get(formation_code, [])
+        if rows:
+            centres.append({"centre": centre_label, "sessions": rows})
+    return {"code": formation_code,
+            "nom": details.get("label", PLAN_FORMATIONS.get(formation_code, formation_code)),
+            **details, "centres_et_sessions": centres}
+
+
+def _call_secretariat_ai(formation_code, task, conversation=None):
+    context = _secretariat_ai_context(formation_code)
+    if context is None:
+        return None
+    started = time.monotonic()
+    system = (
+        "Tu aides le secrétariat d'Intégrale Academy pendant un appel. Réponds en français, "
+        "de façon claire et directement exploitable. Utilise EXCLUSIVEMENT les données de la fiche "
+        "fiable fournie ci-dessous, y compris pour les dates, tarifs et règles. N'invente jamais "
+        "et ne complète pas avec tes connaissances générales. Si la réponse n'est pas explicitement "
+        "présente, réponds exactement : « Cette information n’est pas disponible dans la fiche de la formation. »"
+    )
+    history = conversation or []
+    user = (f"FICHE FIABLE :\n{json.dumps(context, ensure_ascii=False)}\n\n"
+            f"HISTORIQUE SUR CETTE FORMATION :\n{json.dumps(history, ensure_ascii=False)}\n\n"
+            f"TÂCHE :\n{task}")
+    try:
+        return _crm_ai(system, user, max_tokens=900)
+    finally:
+        app.logger.info("Appel IA secrétariat formation=%s durée_ms=%d",
+                        formation_code, round((time.monotonic() - started) * 1000))
+
+
+@app.route("/api/secretariat/formations/<formation_code>/ai/question", methods=["POST"])
+def api_secretariat_ai_question(formation_code):
     payload = request.get_json(silent=True) or {}
-    question = str(payload.get("message", "")).strip()
-    formation_code = str(payload.get("formation", "")).strip()
+    question = str(payload.get("question", "")).strip()
     if not question:
         return jsonify({"ok": False, "error": "Écrivez une question."}), 400
-    if len(question) > 1000:
-        return jsonify({"ok": False, "error": "La question est trop longue."}), 400
-    details = SECRETARIAT_FORMATIONS.get(formation_code)
-    if formation_code and not details:
-        return jsonify({"ok": False, "error": "Formation inconnue."}), 400
-    context = json.dumps({"code": formation_code, **(details or {})}, ensure_ascii=False)
+    if len(question) > 500:
+        return jsonify({"ok": False, "error": "La question est trop longue (500 caractères maximum)."}), 400
+    conversation = payload.get("conversation", [])
+    if not isinstance(conversation, list):
+        return jsonify({"ok": False, "error": "Historique de conversation invalide."}), 400
+    clean_history = []
+    for item in conversation[-8:]:
+        if not isinstance(item, dict):
+            continue
+        clean_history.append({"question": str(item.get("question", ""))[:500],
+                              "answer": str(item.get("answer", ""))[:2000]})
+    if formation_code not in SECRETARIAT_FORMATIONS:
+        return jsonify({"ok": False, "error": "Formation inconnue."}), 404
     try:
-        reply = _crm_ai(
-            "Tu aides le secrétariat d'Intégrale Academy pendant un appel. Réponds en français, "
-            "simplement et en 2 à 5 phrases. Appuie-toi uniquement sur les informations fournies. "
-            "N'invente jamais une date, un tarif, un prérequis ou une garantie de financement. "
-            "Si l'information manque ou nécessite une validation réglementaire, dis-le clairement "
-            "et conseille de faire confirmer par l'équipe admissions.",
-            f"Formation sélectionnée : {context}\nQuestion du secrétariat : {question}",
-            max_tokens=350,
-        )
+        reply = _call_secretariat_ai(formation_code,
+            f"Réponds à cette question en 2 à 5 phrases : {question}", clean_history)
         return jsonify({"ok": True, "reply": reply})
     except Exception:
         app.logger.exception("Assistant IA du secrétariat indisponible")
-        return jsonify({"ok": False, "error": "L’assistant IA est momentanément indisponible."}), 503
+        return jsonify({"ok": False, "error": "L’assistant IA est momentanément indisponible. Réessayez plus tard."}), 503
+
+
+@app.route("/api/secretariat/formations/<formation_code>/ai/key-information", methods=["POST"])
+def api_secretariat_ai_key_information(formation_code):
+    if formation_code not in SECRETARIAT_FORMATIONS:
+        return jsonify({"ok": False, "error": "Formation inconnue."}), 404
+    task = ("Crée une synthèse structurée et facile à lire : nom, objectif, débouchés, public, prérequis, "
+            "conditions CNAPS, tarif, durée, modalité, centres et prochaines dates, financements, déroulement, "
+            "examen, certification et points importants. Termine par « Résumé oral (30 à 45 secondes) » avec "
+            "un texte naturel à lire. Omet les rubriques sans donnée plutôt que de les inventer.")
+    try:
+        return jsonify({"ok": True, "summary": _call_secretariat_ai(formation_code, task)})
+    except Exception:
+        app.logger.exception("Synthèse IA du secrétariat indisponible")
+        return jsonify({"ok": False, "error": "La génération IA est momentanément indisponible. Réessayez plus tard."}), 503
+
+
+@app.route("/api/secretariat/assistant", methods=["POST"])
+def api_secretariat_assistant():
+    """Compatibility endpoint for existing clients."""
+    payload = request.get_json(silent=True) or {}
+    formation_code = str(payload.get("formation", "")).strip()
+    if formation_code not in SECRETARIAT_FORMATIONS:
+        return jsonify({"ok": False, "error": "Formation inconnue."}), 400
+    payload["question"] = payload.get("message", "")
+    with app.test_request_context(json=payload):
+        return api_secretariat_ai_question(formation_code)
 
 
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
