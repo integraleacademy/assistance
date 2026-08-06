@@ -79,6 +79,7 @@ def test_secretariat_uses_a_direct_calendly_link_instead_of_a_blocked_embed(clie
 def test_secretariat_api_records_a_request(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
     data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
     monkeypatch.setattr(application, "load_data", lambda: data)
     monkeypatch.setattr(application, "save_data", lambda payload: None)
     crm_calls = []
@@ -103,6 +104,42 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
     assert crm_calls[0]["nom"] == "Martin"
     assert crm_calls[0]["formation"] == "APS"
     assert crm_calls[0]["source_formulaire"] == "assistant-secretariat"
+    contact = data["crm_contacts"][0]
+    assert response.get_json()["crm_contact_id"] == contact["id"]
+    assert contact["prenom"] == "Camille"
+    assert contact["nom"] == "MARTIN"
+    assert contact["telephone"] == "0600000000"
+    assert contact["formation"] == "APS"
+    assert contact["statut"] == "Nouveaux"
+    assert contact["origine"] == "Secrétariat"
+    assert contact["source_secretariat_id"] == data["secretariat_demandes"][0]["id"]
+    assert contact["activities"][0]["title"] == "Piste créée depuis le secrétariat"
+
+
+def test_secretariat_api_does_not_duplicate_crm_contact_when_completing_request(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = [{
+        "id": "secretariat-1", "type": "formation", "formation": "APS",
+        "nom": "Camille Martin", "telephone": "0600000000", "email": "",
+        "notes": "", "devis": "OUI", "rdv": "", "calendly_url": "",
+        "statut": "RDV à prendre", "created_at": "2026-08-06T10:00:00+02:00",
+        "date": "06/08/2026 10:00",
+    }]
+    data["crm_contacts"] = [{"id": "crm-1", "source_secretariat_id": "secretariat-1"}]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    crm_calls = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", crm_calls.append)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "APS", "nom": "Camille Martin",
+        "telephone": "0600000000", "statut": "Traité", "rdv": "Calendly proposé",
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["crm_contact_id"] is None
+    assert len(data["crm_contacts"]) == 1
+    assert crm_calls == []
 
 
 def test_secretariat_api_rejects_unknown_request_type(client):

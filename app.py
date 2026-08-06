@@ -2958,10 +2958,9 @@ def api_secretariat_demandes():
         entry = existing
     else:
         entries.append(entry)
-    save_data(data_store)
-
     # Chaque appel qualifié doit aussi devenir une piste commerciale. Le journal
-    # du secrétariat reste la trace opérationnelle, Salesforce assure le suivi CRM.
+    # du secrétariat reste la trace opérationnelle, tandis que la piste est suivie
+    # dans Intégrale Connect CRM et envoyée à Salesforce.
     name_parts = entry["nom"].split(None, 1)
     crm_payload = {
         "prenom": str(payload.get("prenom") or (name_parts[0] if name_parts else "")).strip(),
@@ -2979,9 +2978,17 @@ def api_secretariat_demandes():
             f"Devis demandé : {entry['devis']}" if entry["devis"] else "",
         ])),
     }
+    crm_contact = None
+    if creates_new_lead:
+        crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
+    save_data(data_store)
     if creates_new_lead:
         creer_piste_salesforce(crm_payload)
-    return jsonify({"ok": True, "demande": entry}), 201
+    return jsonify({
+        "ok": True,
+        "demande": entry,
+        "crm_contact_id": crm_contact.get("id") if crm_contact else None,
+    }), 201
 
 
 @app.route("/api/secretariat/assistant", methods=["POST"])
@@ -6946,6 +6953,51 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         f'<p><a href="{devis_url}" target="_blank">Ouvrir le devis</a></p></div>'
     )
     _crm_activity(contact, "devis", "Devis détaillé créé", f"Devis n° {devis_id}", quote_preview)
+    data.setdefault("crm_contacts", []).insert(0, contact)
+    return contact
+
+
+def _crm_create_contact_from_secretariat(data, entry, crm_payload):
+    """Crée une piste CRM interne à partir d'un appel saisi au secrétariat."""
+    now = _crm_now()
+    formation_key = str(entry.get("formation") or "").strip()
+    formation = {
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
+        "VTC": "Chauffeur VTC",
+    }.get(formation_key, formation_key)
+    contact = {
+        "id": str(uuid.uuid4()),
+        "prenom": _crm_format_first_name(crm_payload.get("prenom")),
+        "nom": _crm_format_last_name(crm_payload.get("nom")),
+        "telephone": str(entry.get("telephone") or "").strip(),
+        "mail": str(entry.get("email") or "").strip(),
+        "formation": formation,
+        "lieu": "",
+        "statut": "Nouveaux",
+        "dates_formation": "",
+        "cpf": "",
+        "carte_pro": "",
+        "antecedents": "",
+        "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
+        "identite_creation": "",
+        "identite_ok": "",
+        "financement_ft": "",
+        "refus_ft_perso": "",
+        "reste_a_charge_perso": "",
+        "origine": "Secrétariat",
+        "inscrit_ft": "",
+        "commentaires": str(entry.get("notes") or "").strip(),
+        "relance_date": "",
+        "created_at": now,
+        "updated_at": now,
+        "activities": [],
+        "source": "assistant-secretariat",
+        "source_secretariat_id": entry.get("id"),
+    }
+    detail = "Appel enregistré par le secrétariat"
+    if entry.get("rdv"):
+        detail += f" · Rendez-vous : {entry['rdv']}"
+    _crm_activity(contact, "creation", "Piste créée depuis le secrétariat", detail)
     data.setdefault("crm_contacts", []).insert(0, contact)
     return contact
 
