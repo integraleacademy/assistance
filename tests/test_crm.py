@@ -161,6 +161,16 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
 
 
+def test_message_template_picker_prioritizes_the_contact_formation():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "messageTemplateOptions(list,c.formation)" in crm_js
+    assert "includes(needle)" in crm_js
+    assert 'value="__other_templates__">Autres modèles…' in crm_js
+    assert 'label="Autres modèles"' in crm_js
+
+
 def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
