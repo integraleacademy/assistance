@@ -1264,6 +1264,22 @@ def _normaliser_telephone_sms(value: str) -> str:
     return digits
 
 
+_GSM_7_BASIC_CHARACTERS = frozenset(
+    "@\u00a3$\u00a5\u00e8\u00e9\u00f9\u00ec\u00f2\u00c7\n\u00d8\u00f8\r\u00c5\u00e5"
+    "\u0394_\u03a6\u0393\u039b\u03a9\u03a0\u03a8\u03a3\u0398\u039e"
+    "\u00c6\u00e6\u00df\u00c9 !\"#\u00a4%&'()*+,-./"
+    "0123456789:;<=>?\u00a1ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "\u00c4\u00d6\u00d1\u00dc\u00a7\u00bfabcdefghijklmnopqrstuvwxyz\u00e4\u00f6\u00f1\u00fc\u00e0"
+)
+_GSM_7_EXTENSION_CHARACTERS = frozenset("\f^{}\\[~]|\u20ac")
+
+
+def _sms_requires_unicode(body: str) -> bool:
+    """Return whether Brevo must encode the SMS as Unicode rather than GSM-7."""
+    gsm_characters = _GSM_7_BASIC_CHARACTERS | _GSM_7_EXTENSION_CHARACTERS
+    return any(character not in gsm_characters for character in str(body or ""))
+
+
 def send_sms(to_phone: str, body: str) -> bool:
     recipient = _normaliser_telephone_sms(to_phone)
     if not recipient:
@@ -1283,6 +1299,9 @@ def send_sms(to_phone: str, body: str) -> bool:
         "content": body,
         "type": "transactional",
         "tag": "demande-informations-formations",
+        # Brevo otherwise replaces characters outside GSM-7 (notably emojis)
+        # with question marks instead of switching encodings automatically.
+        "unicode": _sms_requires_unicode(body),
     }
     headers = {
         "accept": "application/json",
