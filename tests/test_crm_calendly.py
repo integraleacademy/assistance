@@ -175,6 +175,37 @@ def test_webhook_creates_a_lead_for_a_new_invitee(tmp_path, monkeypatch):
     assert contacts[0]["statut"] == "RDV programmé"
 
 
+def test_webhook_infers_dirigeant_formation_from_event_name(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    payload = calendly_payload(email="dirigeant@example.com")
+    payload["scheduled_event"]["name"] = "Dirigeant d'entreprise de sécurité privée"
+
+    response = signed_webhook(client, monkeypatch, "invitee.created", payload)
+
+    assert response.status_code == 200
+    contact = client.get(f"/api/crm/contacts/{response.get_json()['contact_id']}").get_json()
+    assert contact["formation"] == "DESP"
+    assert contact["desp_type"] == "INITIAL"
+
+
+def test_webhook_fills_missing_formation_on_an_existing_contact(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": ""},
+    ).get_json()
+    client.patch(f"/api/crm/contacts/{contact['id']}", json={"mail": "lina@example.com"})
+    payload = calendly_payload()
+    payload["scheduled_event"]["name"] = "Accompagnement VAE Dirigeant DESP"
+
+    response = signed_webhook(client, monkeypatch, "invitee.created", payload)
+
+    assert response.status_code == 200
+    updated = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert updated["formation"] == "DESP"
+    assert updated["desp_type"] == "VAE"
+
+
 def test_webhook_rejects_an_invalid_signature(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
 
