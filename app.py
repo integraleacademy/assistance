@@ -6428,7 +6428,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260806-dynamic-training-dates"
+CRM_ASSET_VERSION = "20260806-sms-preview"
 
 
 def _crm_statuses(data=None):
@@ -8910,6 +8910,22 @@ def crm_send_test_email():
     if not send_email_html(recipient, subject or "Intégrale Academy", plain, body):
         return jsonify({"error": "L’envoi du mail de test a échoué."}), 502
     return jsonify({"message": "E-mail de test envoyé"})
+
+
+@app.route("/api/crm/test-sms", methods=["POST"])
+@login_required
+def crm_send_test_sms():
+    """Send an SMS template preview without creating a contact activity."""
+    payload = request.get_json(silent=True) or {}
+    recipient = str(payload.get("destinataire", "")).strip()
+    body = str(payload.get("contenu", "")).strip()
+    if not _normaliser_telephone_sms(recipient):
+        return jsonify({"error": "Renseignez un numéro de téléphone valide."}), 400
+    if not body:
+        return jsonify({"error": "Le contenu du SMS est vide."}), 400
+    if not send_sms(recipient, body):
+        return jsonify({"error": "L’envoi du SMS de test a échoué."}), 502
+    return jsonify({"message": "SMS de test envoyé"})
 
 
 # La plateforme peut charger directement ``app:app`` sans passer par le

@@ -218,6 +218,26 @@ def test_crm_can_send_a_template_test_email(tmp_path, monkeypatch):
     assert c.post("/api/crm/test-email", json={"destinataire": "invalide", "contenu": "test"}).status_code == 400
 
 
+def test_crm_can_send_a_template_test_sms(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    sent = {}
+    monkeypatch.setattr(
+        application,
+        "send_sms",
+        lambda to, body: sent.update(to=to, body=body) or True,
+    )
+
+    response = c.post("/api/crm/test-sms", json={
+        "destinataire": "06 12 34 56 78",
+        "contenu": "Bonjour, voici votre confirmation.",
+    })
+
+    assert response.status_code == 200
+    assert sent == {"to": "06 12 34 56 78", "body": "Bonjour, voici votre confirmation."}
+    assert c.post("/api/crm/test-sms", json={"destinataire": "123", "contenu": "test"}).status_code == 400
+    assert c.post("/api/crm/test-sms", json={"destinataire": "0612345678", "contenu": "  "}).status_code == 400
+
+
 def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()

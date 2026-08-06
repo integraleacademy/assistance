@@ -391,3 +391,6 @@ body.sidebar-collapsed main{margin-left:76px}
 /* Ajustement demandé : les fiches piste démarrent visuellement à 90 % pour respirer. */
 .contact-head,.timeline,.contact-subnav,.contact-grid,.wedof-panel{zoom:.9}
 .page-avatar{background:#eef3ff;color:#2457d6}
+
+/* Aperçu d'un modèle SMS dans une bulle proche d'une messagerie mobile. */
+.sms-preview{box-sizing:border-box;min-height:100vh;padding:48px 24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033}.sms-preview-label{margin:0 auto 12px;max-width:420px;color:#718096;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.sms-preview-bubble{max-width:420px;margin:auto;padding:16px 18px;border-radius:20px 20px 5px 20px;background:#356ae6;color:#fff;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;box-shadow:0 8px 24px #356ae633}.sms-preview small{display:block;max-width:420px;margin:10px auto;color:#718096;text-align:right}
