@@ -449,6 +449,57 @@ SECRETARIAT_FORMATIONS = {
     "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
 }
 
+# Repères volontairement rédigés pour une personne qui ne connaît pas encore les
+# formations. Les conditions définitives restent validées par l'équipe admissions.
+_SECURITY_TRAINING_GUIDANCE = {
+    "A3P": {
+        "audience": "Personnes souhaitant travailler dans la protection rapprochée.",
+        "prerequisites": "Projet compatible avec les conditions d'accès aux métiers de la sécurité privée ; l'équipe vérifie la situation et les démarches CNAPS.",
+        "certification": "Titre A3P reconnu par l'État (niveau 4) et préparation aux démarches de carte professionnelle CNAPS.",
+        "topics": ["Cadre légal de la sécurité privée", "Préparation et sécurisation des déplacements", "Gestion des risques et situations sensibles", "Posture, discrétion et communication professionnelles"],
+    },
+    "APS": {
+        "audience": "Personnes souhaitant devenir agent de sécurité privée.",
+        "prerequisites": "Projet compatible avec les conditions d'accès à la sécurité privée ; l'équipe accompagne la vérification des démarches CNAPS.",
+        "certification": "Formation réglementée préparant à l'exercice du métier et aux démarches de carte professionnelle CNAPS.",
+        "topics": ["Surveillance et prévention", "Accueil, filtrage et contrôle d'accès", "Gestion des conflits", "Incendie et secours à personne"],
+    },
+    "SSIAP": {
+        "audience": "Personnes visant un poste d'agent de sécurité incendie en ERP ou IGH.",
+        "prerequisites": "Des prérequis réglementaires s'appliquent, notamment en secourisme et aptitude médicale ; faire valider le dossier par l'équipe.",
+        "certification": "Préparation au diplôme SSIAP 1, sous réserve de réussite aux épreuves.",
+        "topics": ["Prévention incendie", "Installations techniques", "Rôles et missions de l'agent", "Mises en situation et préparation à l'examen"],
+    },
+    "DESP_INIT": {
+        "audience": "Créateurs, repreneurs ou futurs dirigeants d'une entreprise de sécurité privée.",
+        "prerequisites": "Le projet et les conditions réglementaires d'accès à la direction d'une activité de sécurité privée doivent être vérifiés.",
+        "certification": "Préparation à l'aptitude professionnelle de dirigeant d'entreprise de sécurité privée.",
+        "topics": ["Cadre juridique et réglementaire", "Gestion administrative et financière", "Management et ressources humaines", "Développement commercial"],
+    },
+    "DESP_VAE": {
+        "audience": "Professionnels expérimentés souhaitant faire reconnaître leur expérience de direction en sécurité privée.",
+        "prerequisites": "L'expérience doit correspondre aux compétences de la certification ; un entretien permet de confirmer la recevabilité du projet.",
+        "certification": "Accompagnement à la VAE du titre de dirigeant d'entreprise de sécurité privée.",
+        "topics": ["Diagnostic de l'expérience", "Constitution du dossier", "Explicitation des compétences", "Préparation au jury"],
+    },
+    "VTC": {
+        "audience": "Personnes ayant un projet de chauffeur VTC salarié ou indépendant.",
+        "prerequisites": "Le candidat doit faire vérifier les conditions réglementaires applicables à l'examen et à la carte professionnelle VTC.",
+        "certification": "Préparation à l'examen VTC et aux démarches nécessaires au lancement de l'activité.",
+        "topics": ["Réglementation VTC", "Gestion et développement commercial", "Sécurité routière", "Préparation théorique et pratique à l'examen"],
+    },
+}
+for _code, _details in SECRETARIAT_FORMATIONS.items():
+    if _code.startswith("BTS_"):
+        _details.update({
+            "audience": "Candidats souhaitant préparer un diplôme Bac+2 en alternance.",
+            "prerequisites": "Être titulaire du baccalauréat ou d'un titre équivalent et faire valider sa candidature.",
+            "certification": "Diplôme d'État de niveau 5 (Bac+2), sous réserve de réussite à l'examen.",
+            "topics": ["Enseignements professionnels du BTS", "Culture générale et langues", "Mise en pratique en entreprise", "Préparation aux épreuves nationales"],
+        })
+    else:
+        _details.update(_SECURITY_TRAINING_GUIDANCE.get(_code, {}))
+
 PLAN_DATES = {
     "A3P": [
         "30 juin au 2 septembre 2026 – examen le 3 septembre 2026",
@@ -2899,6 +2950,7 @@ def api_secretariat_demandes():
                      and row.get("statut") == "RDV à prendre"
                      and row.get("formation") == entry["formation"]
                      and row.get("telephone") == entry["telephone"]), None)
+    creates_new_lead = existing is None
     if existing:
         created_at, date_label, entry_id = existing.get("created_at"), existing.get("date"), existing.get("id")
         existing.update(entry)
@@ -2907,7 +2959,58 @@ def api_secretariat_demandes():
     else:
         entries.append(entry)
     save_data(data_store)
+
+    # Chaque appel qualifié doit aussi devenir une piste commerciale. Le journal
+    # du secrétariat reste la trace opérationnelle, Salesforce assure le suivi CRM.
+    name_parts = entry["nom"].split(None, 1)
+    crm_payload = {
+        "prenom": str(payload.get("prenom") or (name_parts[0] if name_parts else "")).strip(),
+        "nom": str(payload.get("nom_famille") or (name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Sans nom"))).strip(),
+        "mail": entry["email"],
+        "telephone": entry["telephone"],
+        "formation": entry["formation"],
+        "source_formulaire": "assistant-secretariat",
+        "origine": "Secrétariat",
+        "infos_complementaires": "\n".join(filter(None, [
+            "Appel traité par le secrétariat",
+            f"Type de demande : {entry['type']}",
+            f"Notes : {entry['notes']}" if entry["notes"] else "",
+            f"Rendez-vous : {entry['rdv']}" if entry["rdv"] else "",
+            f"Devis demandé : {entry['devis']}" if entry["devis"] else "",
+        ])),
+    }
+    if creates_new_lead:
+        creer_piste_salesforce(crm_payload)
     return jsonify({"ok": True, "demande": entry}), 201
+
+
+@app.route("/api/secretariat/assistant", methods=["POST"])
+def api_secretariat_assistant():
+    payload = request.get_json(silent=True) or {}
+    question = str(payload.get("message", "")).strip()
+    formation_code = str(payload.get("formation", "")).strip()
+    if not question:
+        return jsonify({"ok": False, "error": "Écrivez une question."}), 400
+    if len(question) > 1000:
+        return jsonify({"ok": False, "error": "La question est trop longue."}), 400
+    details = SECRETARIAT_FORMATIONS.get(formation_code)
+    if formation_code and not details:
+        return jsonify({"ok": False, "error": "Formation inconnue."}), 400
+    context = json.dumps({"code": formation_code, **(details or {})}, ensure_ascii=False)
+    try:
+        reply = _crm_ai(
+            "Tu aides le secrétariat d'Intégrale Academy pendant un appel. Réponds en français, "
+            "simplement et en 2 à 5 phrases. Appuie-toi uniquement sur les informations fournies. "
+            "N'invente jamais une date, un tarif, un prérequis ou une garantie de financement. "
+            "Si l'information manque ou nécessite une validation réglementaire, dis-le clairement "
+            "et conseille de faire confirmer par l'équipe admissions.",
+            f"Formation sélectionnée : {context}\nQuestion du secrétariat : {question}",
+            max_tokens=350,
+        )
+        return jsonify({"ok": True, "reply": reply})
+    except Exception:
+        app.logger.exception("Assistant IA du secrétariat indisponible")
+        return jsonify({"ok": False, "error": "L’assistant IA est momentanément indisponible."}), 503
 
 
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
