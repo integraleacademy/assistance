@@ -7156,7 +7156,7 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "financement_ft": str(fields.get("france_travail") or "").strip(),
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": "",
-        "origine": "Site internet",
+        "origine": "Secrétariat" if str(fields.get("source_secretariat") or "") == "1" else "Site internet",
         "inscrit_ft": "",
         "commentaires": "",
         "relance_date": "",
