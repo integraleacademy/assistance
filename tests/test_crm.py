@@ -178,6 +178,30 @@ def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
     assert "integraleacademy.com" in html
 
 
+def test_crm_email_dynamic_dates_come_from_upcoming_admin_sessions(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["formation_sessions"] = {"cote_azur": {"APS": [
+        {"label": "Du 1 janvier au 2 janvier 2020", "badge": ""},
+        {"label": "Du 3 septembre au 30 septembre 2099 - examen le 1 octobre 2099", "badge": ""},
+    ]}}
+    application.save_data(data)
+    contact = c.post("/api/crm/contacts", json={
+        "prenom": "Lina", "formation": "APS", "lieu": "Côte d’Azur",
+    }).get_json()
+
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={"contenu": "<p>Nos prochaines dates :</p>{{prochaines_dates}}"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_json()["html"]
+    assert "3 septembre au 30 septembre 2099" in html
+    assert "1 janvier au 2 janvier 2020" not in html
+    assert "{{prochaines_dates}}" not in html
+
+
 def test_crm_can_send_a_template_test_email(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     sent = {}
