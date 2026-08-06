@@ -29,6 +29,17 @@ def test_secretariat_flow_includes_bts_default_quote_and_optional_calendly(clien
     assert b"ne souhaite pas de rendez-vous" in response.data
 
 
+def test_secretariat_displays_formations_as_modern_buttons(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b'class="formation-choices"' in response.data
+    assert b'class="formation-choice"' in response.data
+    assert b'data-formation-code="APS"' in response.data
+    assert b'<select id="formation"' not in response.data
+
+
 def test_secretariat_displays_training_details_before_caller_form(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
