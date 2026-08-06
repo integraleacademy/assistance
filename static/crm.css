@@ -51,7 +51,7 @@
 @media(max-width:650px){.calendar-toolbar{align-items:flex-start;gap:10px;padding:14px;flex-wrap:wrap}.calendar-toolbar>div{gap:6px;flex-wrap:wrap}.calendar-date-picker label span,.calendar-live{display:none}.calendar-date-picker label{padding:6px 8px}.calendar-date-picker #calendarToday{order:5}.calendar-days{padding:5px 13px 22px}.calendar-events{margin-left:0;padding-left:12px}.calendar-event{grid-template-columns:48px 6px minmax(0,1fr)}.calendar-duration{display:none}.contact-subnav{align-items:flex-start;flex-direction:column}.funding-badges{justify-content:flex-start}}
 
 /* Calendly : tableau de rendez-vous et réservation au style SaaS. */
-.calendly-card{margin-bottom:20px;overflow:hidden;border-color:#dce5f2;border-radius:20px;box-shadow:0 10px 34px #1720330b}
+.calendly-card{container-type:inline-size;margin-bottom:20px;overflow:hidden;border-color:#dce5f2;border-radius:20px;box-shadow:0 10px 34px #1720330b}
 .calendly-card-head{padding:18px 22px;background:linear-gradient(135deg,#fff 0%,#f7faff 100%)}
 .calendly-title{display:flex;align-items:center;gap:13px}
 .calendly-title-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,#356ae6,#5b7bef);color:#fff;box-shadow:0 8px 18px #356ae633}
@@ -173,6 +173,16 @@
 .slot.selected{border-color:#356ae6;background:#356ae6;color:#fff;box-shadow:0 5px 12px #356ae62b}
 .calendly-questions{grid-template-columns:1fr;gap:12px}
 .calendly-modal .integration-banner{margin:10px 0}
+
+/* La carte vit dans une colonne latérale étroite, même sur un grand écran.
+   Une container query évite donc de se fier uniquement à la largeur du viewport. */
+@container (max-width:620px){
+  .next-appointment-content{grid-template-columns:62px minmax(0,1fr);gap:12px}
+  .next-date{width:62px;height:68px}
+  .next-main h3{font-size:16px;line-height:1.35;overflow-wrap:anywhere}
+  .next-appointment .appointment-actions{grid-column:1/-1;width:100%;max-width:none;justify-content:stretch}
+  .next-appointment .appointment-actions .btn{flex:1;text-align:center}
+}
 
 @media(max-width:900px){
   .appointment-grid{grid-template-columns:1fr}
