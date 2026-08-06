@@ -6428,7 +6428,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260806-sms-preview"
+CRM_ASSET_VERSION = "20260806-email-preview-subject"
 
 
 def _crm_statuses(data=None):

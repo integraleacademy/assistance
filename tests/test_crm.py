@@ -163,7 +163,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260804-cnaps-scoring-fix" in page.data
+    assert b"20260806-email-preview-subject" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
@@ -279,6 +279,14 @@ def test_sms_templates_can_be_previewed_and_sent_as_tests_from_the_library():
     assert 'id="sendTestSms"' in crm_js
     assert "api('/api/crm/test-sms'" in crm_js
     assert "À quel numéro envoyer ce SMS de test ?" in crm_js
+
+
+def test_email_template_preview_does_not_render_the_subject_in_the_message_body():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "previewModal(t.contenu,true,{sujet:t.sujet,contenu:t.contenu})" in crm_js
+    assert '<h3>${esc(t.sujet)}</h3>' not in crm_js
 
 
 def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
