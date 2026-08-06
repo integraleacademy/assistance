@@ -248,6 +248,17 @@ def test_crm_can_send_a_template_test_sms(tmp_path, monkeypatch):
     assert c.post("/api/crm/test-sms", json={"destinataire": "0612345678", "contenu": "  "}).status_code == 400
 
 
+def test_sms_templates_can_be_previewed_and_sent_as_tests_from_the_library():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert 'data-preview-type="${type}"' in crm_js
+    assert "if(type==='sms')previewModal(smsPreviewHtml(t.contenu)" in crm_js
+    assert 'id="sendTestSms"' in crm_js
+    assert "api('/api/crm/test-sms'" in crm_js
+    assert "À quel numéro envoyer ce SMS de test ?" in crm_js
+
+
 def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
