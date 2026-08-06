@@ -8770,6 +8770,25 @@ def crm_message_preview(contact_id):
     return jsonify({"html": html})
 
 
+@app.route("/api/crm/test-email", methods=["POST"])
+@login_required
+def crm_send_test_email():
+    """Send a template preview without creating an activity on a contact."""
+    payload = request.get_json(silent=True) or {}
+    recipient = str(payload.get("destinataire", "")).strip()
+    subject = str(payload.get("sujet", "Intégrale Academy")).strip()
+    body = str(payload.get("contenu", ""))
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
+        return jsonify({"error": "Renseignez une adresse e-mail valide."}), 400
+    if not body.strip():
+        return jsonify({"error": "Le contenu de l’e-mail est vide."}), 400
+    plain = re.sub(r"<[^>]+>", " ", body)
+    plain = html_module.unescape(re.sub(r"\s+", " ", plain)).strip()
+    if not send_email_html(recipient, subject or "Intégrale Academy", plain, body):
+        return jsonify({"error": "L’envoi du mail de test a échoué."}), 502
+    return jsonify({"message": "E-mail de test envoyé"})
+
+
 # La plateforme peut charger directement ``app:app`` sans passer par le
 # point d'entrée ``crm_app``. Enregistrer l'extension ici garantit alors que
 # l'API affichée dans le CRM est bien disponible quel que soit le démarrage.
