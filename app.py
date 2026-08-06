@@ -3091,6 +3091,53 @@ def api_secretariat_ai_key_information(formation_code):
         return jsonify({"ok": False, "error": "La génération IA est momentanément indisponible. Réessayez plus tard."}), 503
 
 
+@app.route("/api/secretariat/ai/request-summary", methods=["POST"])
+def api_secretariat_ai_request_summary():
+    """Turn the optional call qualification fields into a CRM-ready note."""
+    payload = request.get_json(silent=True) or {}
+    formation_code = str(payload.get("formation", "")).strip()
+    if formation_code and formation_code not in SECRETARIAT_FORMATIONS:
+        return jsonify({"ok": False, "error": "Formation inconnue."}), 400
+
+    allowed_fields = {
+        "type": "Type de demande", "nom": "Appelant", "telephone": "Téléphone",
+        "email": "E-mail", "rdv": "Rendez-vous téléphonique",
+        "cpf_consulte": "Compte CPF consulté", "cpf_montant": "Montant CPF disponible",
+        "france_travail": "Financement France Travail souhaité",
+        "ft_refus_ok": "Financement personnel en cas de refus France Travail",
+        "financement_perso": "Financement personnel ou reste à charge possible",
+        "identite_numerique": "Identité Numérique La Poste créée",
+        "cnaps_ok": "Carte professionnelle CNAPS valide",
+        "garde_vue": "Garde à vue ou prise d’empreintes",
+        "titre_sejour": "Titre de séjour", "devis": "Devis détaillé",
+    }
+    facts = {label: str(payload.get(key, "")).strip()[:1000]
+             for key, label in allowed_fields.items() if str(payload.get(key, "")).strip()}
+    precision = str(payload.get("precision", "")).strip()[:4000]
+    current_summary = str(payload.get("summary", "")).strip()[:6000]
+    context = _secretariat_ai_context(formation_code) if formation_code else None
+    system = (
+        "Tu rédiges la note transmise au CRM d'Intégrale Academy après un appel téléphonique. "
+        "Écris en français professionnel, clair, concis et factuel. N'invente aucune information. "
+        "Mentionne la formation souhaitée, les prochaines dates disponibles, le financement, les "
+        "conditions réglementaires et le rendez-vous uniquement lorsque ces éléments sont fournis. "
+        "Omet toute donnée non renseignée."
+    )
+    user = (
+        f"DONNÉES DE L'APPEL :\n{json.dumps(facts, ensure_ascii=False)}\n\n"
+        f"FICHE FIABLE DE LA FORMATION :\n{json.dumps(context, ensure_ascii=False)}\n\n"
+        f"RÉSUMÉ DÉJÀ PROPOSÉ :\n{current_summary}\n\n"
+        f"PRÉCISIONS LIBRES DE LA SECRÉTAIRE :\n{precision}\n\n"
+        "Rédige le résumé final à envoyer au CRM en un court paragraphe structuré."
+    )
+    try:
+        summary = _crm_ai(system, user, max_tokens=700)
+        return jsonify({"ok": True, "summary": summary})
+    except Exception:
+        app.logger.exception("Résumé IA de la demande du secrétariat indisponible")
+        return jsonify({"ok": False, "error": "La reformulation IA est momentanément indisponible. Réessayez plus tard."}), 503
+
+
 @app.route("/api/secretariat/assistant", methods=["POST"])
 def api_secretariat_assistant():
     """Compatibility endpoint for existing clients."""

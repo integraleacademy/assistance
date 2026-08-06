@@ -19,12 +19,13 @@ def test_secretariat_page_starts_with_the_two_request_types(client, monkeypatch)
     assert b'data-request="autre"' in response.data
 
 
-def test_secretariat_flow_includes_bts_default_quote_and_optional_calendly(client, monkeypatch):
+def test_secretariat_flow_includes_bts_optional_quote_and_calendly(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
     assert response.status_code == 200
     assert b"BTS Management Op\xc3\xa9rationnel de la S\xc3\xa9curit\xc3\xa9" in response.data
-    assert b'name="devis" value="OUI" checked' in response.data
+    assert b'name="devis" value="OUI"' in response.data
+    assert b'name="devis" value="OUI" checked' not in response.data
     assert b'id="calendlyLink"' in response.data
     assert b"ne souhaite pas de rendez-vous" in response.data
 
@@ -77,6 +78,13 @@ def test_secretariat_form_collects_funding_and_regulatory_information(client, mo
         b"titre_sejour",
     ):
         assert b'name="' + field + b'"' in response.data
+    assert b"Tous les champs sont facultatifs" in response.data
+    assert b"Avez-vous d\xc3\xa9j\xc3\xa0 consult\xc3\xa9 votre compte CPF" in response.data
+    assert b'<select id="cpf_consulte"' not in response.data
+    assert b'data-step="6"' in response.data
+    assert response.data.index(b"Proposer un rendez-vous") < response.data.index(
+        b"Objet et pr\xc3\xa9cisions sur la demande"
+    )
 
 
 def test_secretariat_uses_a_direct_calendly_link_instead_of_a_blocked_embed(client, monkeypatch):
@@ -250,6 +258,43 @@ def test_secretariat_key_information_route_uses_server_context(client, monkeypat
     assert response.get_json()["summary"] == "Synthèse A3P"
     assert "4 200 € TTC" in calls[0]
     assert '"price": "1 €"' not in calls[0]
+
+
+def test_secretariat_request_summary_reformulates_details_with_training_context(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    monkeypatch.setattr(
+        application, "_crm_ai",
+        lambda system, user, max_tokens: calls.append((system, user, max_tokens)) or "Résumé CRM final",
+    )
+
+    response = client.post("/api/secretariat/ai/request-summary", json={
+        "type": "formation", "formation": "A3P", "nom": "Camille Martin",
+        "cpf_consulte": "OUI", "rdv": "Calendly proposé",
+        "summary": "Premier résumé", "precision": "veut commencer vite",
+        "unexpected": "ne doit pas être transmis",
+    })
+
+    assert response.status_code == 200
+    assert response.get_json()["summary"] == "Résumé CRM final"
+    assert "Camille Martin" in calls[0][1]
+    assert "Premier résumé" in calls[0][1]
+    assert "veut commencer vite" in calls[0][1]
+    assert "4 200 € TTC" in calls[0][1]
+    assert "ne doit pas être transmis" not in calls[0][1]
+    assert "N'invente aucune information" in calls[0][0]
+    assert calls[0][2] == 700
+
+
+def test_secretariat_request_summary_accepts_other_request_without_training(client, monkeypatch):
+    monkeypatch.setattr(application, "_crm_ai", lambda system, user, max_tokens: "Demande administrative")
+
+    response = client.post("/api/secretariat/ai/request-summary", json={
+        "type": "autre", "rdv": "Non souhaité", "precision": "duplicata de facture",
+    })
+
+    assert response.status_code == 200
+    assert response.get_json()["summary"] == "Demande administrative"
 
 
 def test_secretariat_question_route_validates_input(client):
