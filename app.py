@@ -1338,7 +1338,7 @@ def send_sms(to_phone: str, body: str) -> bool:
         "tag": "demande-informations-formations",
         # Brevo otherwise replaces characters outside GSM-7 (notably emojis)
         # with question marks instead of switching encodings automatically.
-        "unicode": _sms_requires_unicode(body),
+        "unicodeEnabled": _sms_requires_unicode(body),
     }
     headers = {
         "accept": "application/json",

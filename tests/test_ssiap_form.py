@@ -18,7 +18,8 @@ class SsiapInformationFormTestCase(unittest.TestCase):
 
         payload = post.call_args.kwargs["json"]
         self.assertEqual(payload["content"], "Bonjour 👨‍🎓 👉")
-        self.assertIs(payload["unicode"], True)
+        self.assertIs(payload["unicodeEnabled"], True)
+        self.assertNotIn("unicode", payload)
 
     @patch.dict(os.environ, {"BREVO_API_KEY": "test-key", "BREVO_SMS_SENDER": "ACADEMY"})
     @patch("app.requests.post")
@@ -27,7 +28,7 @@ class SsiapInformationFormTestCase(unittest.TestCase):
 
         self.assertTrue(application.send_sms("0612345678", "Bonjour, a bientot !"))
 
-        self.assertIs(post.call_args.kwargs["json"]["unicode"], False)
+        self.assertIs(post.call_args.kwargs["json"]["unicodeEnabled"], False)
 
     def test_form_uses_the_same_step_order_as_aps_for_ssiap(self):
         response = self.client.get("/demande-informations-formations")
