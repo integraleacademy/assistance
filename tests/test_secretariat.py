@@ -78,6 +78,23 @@ def test_secretariat_requires_asking_for_the_preferred_training_session(client, 
     assert b"formation_date_souhaitee:requestType" in response.data
 
 
+def test_secretariat_only_exposes_sessions_whose_start_date_has_not_passed(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    monkeypatch.setattr(
+        application,
+        "get_upcoming_formation_sessions",
+        lambda store, get_sessions=application.get_upcoming_formation_sessions: get_sessions(
+            store, today=application.datetime.date(2026, 5, 1)
+        ),
+    )
+
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b"Du 29 avril au 9 juin 2026" not in response.data
+    assert b"Du 26 mai au 29 juin 2026" in response.data
+
+
 def test_secretariat_form_collects_funding_and_regulatory_information(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
@@ -93,6 +110,10 @@ def test_secretariat_form_collects_funding_and_regulatory_information(client, mo
     assert "laissez les deux boutons décochés".encode() not in response.data
     assert b"Avez-vous d\xc3\xa9j\xc3\xa0 consult\xc3\xa9 votre compte CPF" in response.data
     assert b'<select id="cpf_consulte"' not in response.data
+    assert response.data.index(b'name="cpf_consulte"') < response.data.index(b'id="cpfMontantField"')
+    assert b"function updateCallerQuestions()" in response.data
+    assert b"['APS','A3P'].includes(formation.value)" in response.data
+    assert b"isCnapsFormation&&!cnapsYes" in response.data
     assert b'data-step="6"' in response.data
     assert response.data.index(b"Proposer un rendez-vous") < response.data.index(
         b"Objet et pr\xc3\xa9cisions sur la demande"

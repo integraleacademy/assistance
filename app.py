@@ -2960,7 +2960,7 @@ def _supprimer_brouillon_formulaire_soumis(data, form_data):
 def secretariat():
     data_store = load_data()
     formations = []
-    sessions = get_formation_sessions(data_store)
+    sessions = get_upcoming_formation_sessions(data_store)
     for code, details in SECRETARIAT_FORMATIONS.items():
         centres = []
         for centre_code, centre_label in FORMATION_CENTRES.items():
