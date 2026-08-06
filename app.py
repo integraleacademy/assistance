@@ -6178,7 +6178,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260804-personal-remainder-funding"
+CRM_ASSET_VERSION = "20260806-email-preview"
 
 
 def _crm_statuses(data=None):
@@ -8461,6 +8461,21 @@ def crm_send_message(contact_id):
     _crm_activity(contact, kind, "E-mail envoyé" if kind == "email" else "SMS envoyé", subject if kind == "email" else body, preview)
     contact["updated_at"] = _crm_now(); save_data(data)
     return jsonify(contact)
+
+
+@app.route("/api/crm/contacts/<contact_id>/message-preview", methods=["POST"])
+@login_required
+def crm_message_preview(contact_id):
+    """Render the exact branded HTML used when an e-mail is sent."""
+    contact = _crm_contact(load_data(), contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    payload = request.get_json(silent=True) or {}
+    body = str(payload.get("contenu", ""))
+    html = render_template(
+        "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
+    )
+    return jsonify({"html": html})
 
 
 # La plateforme peut charger directement ``app:app`` sans passer par le
