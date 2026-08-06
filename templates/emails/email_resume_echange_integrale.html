@@ -1,9 +1,10 @@
 <!doctype html>
+<!-- MODÈLE VALIDÉ : conserver intégralement le design et la structure HTML. -->
 <html lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ email_subject }}</title>
+  <title>Votre projet {{ formation.get('short') or formation.get('label') }} – le résumé de notre échange</title>
   <style>
     @media only screen and (max-width: 680px) {
       .email-shell { width: 100% !important; }
@@ -18,7 +19,7 @@
 <body style="margin:0; padding:0; background:#eef2f7; font-family:Arial, Helvetica, sans-serif; color:#172033;">
   <!-- Préheader, invisible dans le corps du message -->
   <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
-    {{ preheader_text }}
+    Votre synthèse personnalisée, les informations essentielles et les prochaines étapes concernant la formation {{ formation.get('short') or formation.get('label') }}.
   </div>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#eef2f7;">
@@ -29,10 +30,10 @@
           <!-- En-tête -->
           <tr>
             <td align="center" class="mobile-pad" style="padding:28px 44px 30px; background:#102c5c; background-image:linear-gradient(135deg,#102c5c 0%,#3269da 100%); color:#ffffff;">
-              <img src="{{ logo_src }}" width="148" alt="Intégrale Academy" style="display:block; width:148px; max-width:100%; height:auto; margin:0 auto 20px; border:0; outline:none; text-decoration:none;">
+              <img src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" width="148" alt="Intégrale Academy" style="display:block; width:148px; max-width:100%; height:auto; margin:0 auto 20px; border:0; outline:none; text-decoration:none;">
               <div style="font-size:12px; line-height:16px; font-weight:700; letter-spacing:2.1px; text-transform:uppercase; opacity:.88;">Intégrale Academy</div>
               <h1 class="hero-title" style="margin:9px 0 8px; font-size:32px; line-height:38px; font-weight:750; letter-spacing:-.6px; color:#ffffff;">Le résumé de notre échange</h1>
-              <div style="font-size:15px; line-height:22px; color:#e9f0ff;">Votre projet&nbsp;: <strong>{{ formation_name }}</strong></div>
+              <div style="font-size:15px; line-height:22px; color:#e9f0ff;">Votre projet&nbsp;: <strong>{{ formation.get('label') }}</strong></div>
               <div style="width:56px; height:3px; background:#f4c45a; border-radius:3px; margin:20px auto 15px;"></div>
               <div style="font-size:15px; line-height:21px; font-weight:700; color:#f8d982;">Faites le premier pas vers votre futur métier</div>
             </td>
@@ -41,15 +42,15 @@
           <!-- Corps -->
           <tr>
             <td class="mobile-pad" style="padding:38px 44px 16px;">
-              <p style="margin:0 0 18px; font-size:17px; line-height:27px; color:#172033;">Bonjour <strong>{{ prospect_first_name }}</strong>,</p>
+              <p style="margin:0 0 18px; font-size:17px; line-height:27px; color:#172033;">Bonjour <strong>{{ prenom }}</strong>,</p>
 
               <p style="margin:0 0 18px; font-size:15px; line-height:25px; color:#40506a;">
-                Merci pour le temps accordé lors de notre échange au sujet de la formation <strong style="color:#172033;">{{ formation_name }}</strong>. Voici la synthèse personnalisée de votre projet et les prochaines étapes utiles.
+                Merci pour le temps accordé lors de notre échange au sujet de la formation <strong style="color:#172033;">{{ formation.get('label') }}</strong>. Voici la synthèse personnalisée de votre projet et les prochaines étapes utiles.
               </p>
 
               <!-- Résumé narratif produit par l'IA : texte uniquement, sans Bonjour, sans signature, sans HTML -->
               <div style="font-size:15px; line-height:25px; color:#25344d;">
-                {% for paragraph in ai_summary_paragraphs %}
+                {% for paragraph in content.get('summary_paragraphs', []) %}
                 <p style="margin:0 0 14px;">{{ paragraph }}</p>
                 {% endfor %}
               </div>
@@ -59,10 +60,10 @@
               <!-- Un seul panneau de synthèse, pas une carte par champ -->
               <h2 style="margin:0 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Votre projet en bref</h2>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#f5f8fd; border:1px solid #e1e8f2; border-radius:14px; overflow:hidden;">
-                {% for fact in key_facts %}
+                {% for label, value in project_rows %}
                 <tr>
-                  <td style="padding:13px 16px; {% if not loop.last %}border-bottom:1px solid #e1e8f2;{% endif %} font-size:14px; line-height:21px; vertical-align:top; color:#5a6980; width:38%;"><strong>{{ fact.label }}</strong></td>
-                  <td style="padding:13px 16px; {% if not loop.last %}border-bottom:1px solid #e1e8f2;{% endif %} font-size:14px; line-height:21px; vertical-align:top; color:#172033;">{{ fact.value }}</td>
+                  <td style="padding:13px 16px; {% if not loop.last %}border-bottom:1px solid #e1e8f2;{% endif %} font-size:14px; line-height:21px; vertical-align:top; color:#5a6980; width:38%;"><strong>{{ label }}</strong></td>
+                  <td style="padding:13px 16px; {% if not loop.last %}border-bottom:1px solid #e1e8f2;{% endif %} font-size:14px; line-height:21px; vertical-align:top; color:#172033;">{{ value }}</td>
                 </tr>
                 {% endfor %}
               </table>
@@ -73,51 +74,51 @@
                 <tr>
                   <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 10px 12px 0;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Durée et rythme</div>
-                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_duration_and_pace }}</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('duration', '') }}{% if formation.get('format') %} · {{ formation.get('format') }}{% endif %}</div>
                   </td>
                   <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 0 12px 10px;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Tarif</div>
-                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_price }}</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('price', '') }}</div>
                   </td>
                 </tr>
                 <tr>
                   <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:10px 10px 0 0;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Lieu</div>
-                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_location }}</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{% if formation.get('location') %}{{ formation.get('location') }}{% elif entry.get('formation_date_souhaitee') %}{{ entry.get('formation_date_souhaitee') }}{% else %}Lieu communiqué avec la session choisie{% endif %}</div>
                   </td>
                   <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:10px 0 0 10px;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Certification / objectif</div>
-                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation_certification }}</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('certification') or formation.get('purpose', '') }}</div>
                   </td>
                 </tr>
               </table>
 
-              {% if financing_message %}
+              {% if content.get('financing_message') %}
               <div style="margin:28px 0 0; padding:17px 18px; background:#fff9e9; border-left:4px solid #f4c45a; border-radius:10px;">
-                <div style="font-size:14px; line-height:22px; color:#3b4658;"><strong style="color:#172033;">Financement et CPF.</strong> {{ financing_message }}</div>
+                <div style="font-size:14px; line-height:22px; color:#3b4658;"><strong style="color:#172033;">Financement et CPF.</strong> {{ content.get('financing_message') }}</div>
               </div>
               {% endif %}
 
-              {% if cnaps_message %}
+              {% if content.get('cnaps_message') and entry.get('formation') in ['APS', 'A3P'] %}
               <div style="margin:14px 0 0; padding:17px 18px; background:#f4f7fb; border-left:4px solid #3269da; border-radius:10px;">
-                <div style="font-size:14px; line-height:22px; color:#3b4658;"><strong style="color:#172033;">Situation CNAPS.</strong> {{ cnaps_message }}</div>
+                <div style="font-size:14px; line-height:22px; color:#3b4658;"><strong style="color:#172033;">Situation CNAPS.</strong> {{ content.get('cnaps_message') }}</div>
               </div>
               {% endif %}
 
               {% if appointment and appointment.status in ['proposed', 'scheduled'] %}
               <h2 style="margin:30px 0 13px; font-size:20px; line-height:27px; color:#102c5c;">Votre rendez-vous</h2>
               <div style="padding:18px 20px; border:1px solid #cddbf3; background:#f7faff; border-radius:13px;">
-                <div style="font-size:15px; line-height:24px; color:#25344d;">{{ appointment.message }}</div>
-                {% if appointment.date_display %}
-                <div style="margin-top:9px; font-size:16px; line-height:24px; color:#102c5c; font-weight:700;">{{ appointment.date_display }}{% if appointment.mode %} · {{ appointment.mode }}{% endif %}</div>
+                <div style="font-size:15px; line-height:24px; color:#25344d;">{% if appointment.get('status') == 'scheduled' %}Votre rendez-vous a bien été planifié avec notre équipe.{% else %}Un rendez-vous vous a été proposé. Notre équipe attend votre confirmation du créneau.{% endif %}</div>
+                {% if appointment.get('status') == 'scheduled' and (appointment.get('date') or appointment.get('time') or appointment.get('mode') or appointment.get('url')) %}
+                <div style="margin-top:9px; font-size:16px; line-height:24px; color:#102c5c; font-weight:700;">{% if appointment.get('date') %}{{ appointment.get('date') }}{% endif %}{% if appointment.get('time') %}{% if appointment.get('date') %} à {% endif %}{{ appointment.get('time') }}{% endif %}{% if appointment.get('mode') %} · {{ appointment.get('mode') }}{% endif %}{% if appointment.get('url') %}<br><a href="{{ appointment.get('url') }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Accéder au rendez-vous</a>{% endif %}</div>
                 {% endif %}
               </div>
               {% endif %}
 
-              {% if next_steps %}
+              {% if content.get('next_steps') %}
               <h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Vos prochaines étapes</h2>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-                {% for step in next_steps %}
+                {% for step in content.get('next_steps', []) %}
                 <tr>
                   <td valign="top" width="34" style="width:34px; padding:0 10px 13px 0;">
                     <div style="width:26px; height:26px; line-height:26px; text-align:center; border-radius:50%; background:#102c5c; color:#ffffff; font-size:13px; font-weight:700;">{{ loop.index }}</div>
@@ -135,27 +136,27 @@
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:18px auto 0;">
                   <tr>
                     <td align="center" bgcolor="#3269da" style="border-radius:9px;">
-                      <a class="cta-button" href="{{ dossier_url }}" target="_blank" style="display:inline-block; padding:13px 22px; color:#ffffff; text-decoration:none; font-size:15px; line-height:20px; font-weight:700; border-radius:9px;">Télécharger le dossier de présentation</a>
+                      <a class="cta-button" href="{{ formation.get('dossier_url') }}" target="_blank" style="display:inline-block; padding:13px 22px; color:#ffffff; text-decoration:none; font-size:15px; line-height:20px; font-weight:700; border-radius:9px;">Télécharger le dossier de présentation</a>
                     </td>
                   </tr>
                 </table>
-                {% if planning_url %}
+                {% if formation.get('planning_url') %}
                 <div style="margin-top:14px; font-size:13px; line-height:19px; color:#5b6a80;">
-                  <a href="{{ planning_url }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Consulter toutes les prochaines sessions</a>
+                  <a href="{{ formation.get('planning_url') }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Consulter toutes les prochaines sessions</a>
                 </div>
                 {% endif %}
               </div>
 
-              {% if identity_digital_cta_visible %}
+              {% if entry.get('cpf_consulte', '')|upper == 'OUI' or entry.get('cpf_montant') %}
               <p style="margin:18px 0 0; font-size:13px; line-height:21px; color:#637188; text-align:center;">
                 Pour mobiliser votre CPF, votre Identité Numérique La Poste doit être créée et fonctionnelle.<br>
                 <a href="https://lidentitenumerique.laposte.fr" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Créer ou vérifier votre Identité Numérique La Poste</a>
               </p>
               {% endif %}
 
-              {% if ai_assistant_url %}
+              {% if ai_url %}
               <p style="margin:17px 0 0; font-size:13px; line-height:21px; color:#637188; text-align:center;">
-                Une question après notre échange&nbsp;? <a href="{{ ai_assistant_url }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Interroger l’IA Intégrale Academy</a>
+                Une question après notre échange&nbsp;? <a href="{{ ai_url }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Interroger l’IA Intégrale Academy</a>
               </p>
               {% endif %}
 
