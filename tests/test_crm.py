@@ -161,6 +161,20 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
 
 
+def test_crm_templates_can_be_edited_and_deleted(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post("/api/crm/templates", json={"type": "sms", "nom": "Rappel", "contenu": "Ancien texte"}).get_json()
+    updated = c.patch(f"/api/crm/templates/{created['id']}", json={"nom": "Rappel rendez-vous", "contenu": "Nouveau texte"})
+    assert updated.status_code == 200
+    assert updated.get_json()["nom"] == "Rappel rendez-vous"
+    assert updated.get_json()["contenu"] == "Nouveau texte"
+    assert updated.get_json()["updated_at"]
+    assert c.patch(f"/api/crm/templates/{created['id']}", json={"nom": " "}).status_code == 400
+    assert c.delete(f"/api/crm/templates/{created['id']}").status_code == 204
+    assert c.get("/api/crm/templates").get_json()["sms"] == []
+    assert c.delete(f"/api/crm/templates/{created['id']}").status_code == 404
+
+
 def test_message_template_picker_prioritizes_the_contact_formation():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()

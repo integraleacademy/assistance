@@ -8814,6 +8814,32 @@ def crm_templates():
     return jsonify(item), 201
 
 
+@app.route("/api/crm/templates/<template_id>", methods=["PATCH", "DELETE"])
+@login_required
+def crm_template(template_id):
+    data = load_data()
+    for kind in ("email", "sms"):
+        items = data[f"crm_{kind}_templates"]
+        item = next((candidate for candidate in items if candidate.get("id") == template_id), None)
+        if not item:
+            continue
+        if request.method == "DELETE":
+            items.remove(item)
+            save_data(data)
+            return "", 204
+        payload = request.get_json(silent=True) or {}
+        name = str(payload.get("nom", item.get("nom", ""))).strip()
+        content = str(payload.get("contenu", item.get("contenu", "")))
+        if not name:
+            return jsonify({"error": "Le nom du modèle est obligatoire"}), 400
+        if not content.strip():
+            return jsonify({"error": "Le contenu du modèle est obligatoire"}), 400
+        item.update({"nom": name, "sujet": str(payload.get("sujet", item.get("sujet", ""))).strip() if kind == "email" else "", "contenu": content, "updated_at": _crm_now()})
+        save_data(data)
+        return jsonify(item)
+    return jsonify({"error": "Modèle introuvable"}), 404
+
+
 CRM_UPCOMING_DATES_VARIABLE = "{{prochaines_dates}}"
 
 
