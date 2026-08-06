@@ -208,7 +208,7 @@ def test_secretariat_sends_ai_call_summary_email_and_commercial_sms(client, monk
     monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
     ai_calls = []
     monkeypatch.setattr(application, "_crm_ai", lambda system, user, max_tokens: ai_calls.append(
-        (system, user, max_tokens)) or "Merci pour cet échange.\n• Rendez-vous : proposé via Calendly")
+        (system, user, max_tokens)) or '''{"summary_paragraphs":["Merci pour cet échange consacré à votre projet APS et à vos objectifs professionnels.","Nous avons identifié ensemble les vérifications utiles avant de confirmer votre entrée en formation."],"financing_message":"","cnaps_message":"Notre équipe vous accompagne pour l’autorisation préalable CNAPS.","next_steps":["Consulter le dossier.","Confirmer la session."]}''')
     emails, sms = [], []
     monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
     monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
@@ -222,7 +222,7 @@ def test_secretariat_sends_ai_call_summary_email_and_commercial_sms(client, monk
     assert response.get_json()["messages"] == {"email": "sent", "sms": "sent"}
     assert emails[0][0] == "camille@example.com"
     assert "Agent de Prévention et de Sécurité" in emails[0][1]
-    assert "Rendez-vous : proposé via Calendly" in emails[0][2]
+    assert "Merci pour cet échange consacré" in emails[0][2]
     assert "Le résumé de notre échange" in emails[0][3]
     assert "Télécharger le dossier de présentation" in emails[0][3]
     assert "N'invente aucune information" in ai_calls[0][0]
@@ -234,6 +234,46 @@ def test_secretariat_sends_ai_call_summary_email_and_commercial_sms(client, monk
     assert entry["information_email_sent_at"]
     assert entry["information_sms_sent_at"]
     assert [activity["kind"] for activity in data["crm_contacts"][0]["activities"][:2]] == ["sms", "email"]
+
+
+def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appointment(monkeypatch):
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
+    entry, contact = application._secretariat_preview_data(False)
+    with application.app.test_request_context():
+        subject, plain, rendered = application._build_secretariat_followup_email(entry, contact)
+
+    assert subject == "Votre projet APS – le résumé de notre échange"
+    assert rendered.count("Bonjour Clément") == 1
+    assert "cid:integrale-academy-logo" in rendered
+    assert "Faites le premier pas vers votre futur métier" in rendered
+    assert "Votre rendez-vous" not in rendered
+    assert "financement en attente" not in rendered.lower()
+    assert "Carte professionnelle CNAPS : Non valide" not in rendered
+    assert "Télécharger le dossier de présentation" in rendered
+    assert "SIREN 840 899 884" in rendered
+    assert "None" not in rendered and "undefined" not in rendered
+    assert len(application._secretariat_email_fallback(entry)["summary_paragraphs"]) >= 2
+
+
+def test_secretariat_scheduled_appointment_and_other_training(monkeypatch):
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "invalid-json")
+    entry, contact = application._secretariat_preview_data(True)
+    entry["formation"] = "VTC"
+    with application.app.test_request_context():
+        subject, _, rendered = application._build_secretariat_followup_email(entry, contact)
+    sms = application._build_secretariat_followup_sms("VTC")
+
+    assert "VTC" in subject and application.SECRETARIAT_FORMATIONS["VTC"]["label"] in rendered
+    assert "Votre rendez-vous" in rendered
+    assert "15 septembre 2026" in rendered and "10:30" in rendered and "visioconférence" in rendered
+    assert application.SECRETARIAT_FORMATIONS["VTC"]["label"] in sms
+
+
+def test_secretariat_france_travail_wish_is_not_described_as_pending():
+    entry, _ = application._secretariat_preview_data(False)
+    fallback = application._secretariat_email_fallback(entry)
+    assert "étudiions avec vous la possibilité" in fallback["financing_message"]
+    assert "en attente" not in fallback["financing_message"]
 
 
 def test_secretariat_does_not_resend_templates_when_request_is_completed_twice(client, monkeypatch):
