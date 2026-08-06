@@ -40,6 +40,18 @@ def test_secretariat_displays_formations_as_modern_buttons(client, monkeypatch):
     assert b'<select id="formation"' not in response.data
 
 
+def test_secretariat_includes_a_training_search(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b'id="formationSearch"' in response.data
+    assert b'placeholder="Rechercher par nom ou sigle' in response.data
+    assert b'id="clearFormationSearch"' in response.data
+    assert b'id="formationEmpty" role="status"' in response.data
+    assert b"function filterFormations()" in response.data
+
+
 def test_secretariat_displays_training_details_before_caller_form(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
