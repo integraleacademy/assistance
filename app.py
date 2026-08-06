@@ -6380,6 +6380,28 @@ def _crm_calendly_contact_by_phone(data, phone):
     )
 
 
+def _crm_calendly_formation(payload):
+    """Infer the CRM formation from the Calendly event's public name."""
+    scheduled_event = payload.get("scheduled_event") or {}
+    event_name = str(scheduled_event.get("name") or "")
+    normalized = unicodedata.normalize("NFKD", event_name).encode("ascii", "ignore").decode().casefold()
+    compact = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+    words = set(compact.split())
+
+    # Match the most specific courses first (notably SSIAP before APS).
+    if "chauffeur" in words and "vtc" in words or "vtc" in words:
+        return "Chauffeur VTC", ""
+    if "ssiap" in words or "incendie" in words:
+        return "SSIAP 1", ""
+    if "dirigeant" in words or "desp" in words:
+        return "DESP", "VAE" if "vae" in words else "INITIAL"
+    if "a3p" in words or "apr" in words or "protection rapprochee" in compact or "garde du corps" in compact:
+        return "A3P", ""
+    if "aps" in words or "agent de securite" in compact or "agent de prevention" in compact:
+        return "APS", ""
+    return "", ""
+
+
 def _crm_calendly_new_contact(data, payload):
     first_name = str(payload.get("first_name") or "").strip()
     last_name = str(payload.get("last_name") or "").strip()
@@ -6389,12 +6411,13 @@ def _crm_calendly_new_contact(data, payload):
         first_name = parts[0]
         last_name = last_name or (parts[1] if len(parts) > 1 else "")
     now = _crm_now()
+    formation, desp_type = _crm_calendly_formation(payload)
     contact = {
         "id": str(uuid.uuid4()), "prenom": first_name, "nom": last_name,
         "telephone": _crm_calendly_payload_phone(payload),
-        "mail": str(payload.get("email") or "").strip(), "formation": "",
+        "mail": str(payload.get("email") or "").strip(), "formation": formation,
         "lieu": "", "statut": "RDV programmé", "dates_formation": "",
-        "cpf": "", "carte_pro": "", "antecedents": "", "desp_type": "",
+        "cpf": "", "carte_pro": "", "antecedents": "", "desp_type": desp_type,
         "identite_creation": "", "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
         "refus_ft_perso": "", "reste_a_charge_perso": "", "origine": "Calendly", "inscrit_ft": "",
         "commentaires": "Piste créée automatiquement depuis un rendez-vous Calendly.",
@@ -6524,6 +6547,12 @@ def _crm_upsert_calendly_appointment(
         contact = _crm_calendly_new_contact(data, payload)
         _crm_calendly_relink_appointments(data, contact)
     appointment["contact_id"] = contact.get("id") if contact else None
+
+    inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
+    if contact and inferred_formation and not str(contact.get("formation") or "").strip():
+        contact["formation"] = inferred_formation
+        if inferred_desp_type:
+            contact["desp_type"] = inferred_desp_type
 
     if not existing:
         appointments.append(appointment)
