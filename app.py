@@ -6380,32 +6380,6 @@ def _crm_calendly_contact_by_phone(data, phone):
     )
 
 
-def _crm_calendly_new_contact(data, payload):
-    first_name = str(payload.get("first_name") or "").strip()
-    last_name = str(payload.get("last_name") or "").strip()
-    full_name = str(payload.get("name") or "").strip()
-    if not first_name and full_name:
-        parts = full_name.split(maxsplit=1)
-        first_name = parts[0]
-        last_name = last_name or (parts[1] if len(parts) > 1 else "")
-    now = _crm_now()
-    contact = {
-        "id": str(uuid.uuid4()), "prenom": first_name, "nom": last_name,
-        "telephone": _crm_calendly_payload_phone(payload),
-        "mail": str(payload.get("email") or "").strip(), "formation": "",
-        "lieu": "", "statut": "RDV programmé", "dates_formation": "",
-        "cpf": "", "carte_pro": "", "antecedents": "", "desp_type": "",
-        "identite_creation": "", "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
-        "refus_ft_perso": "", "reste_a_charge_perso": "", "origine": "Calendly", "inscrit_ft": "",
-        "commentaires": "Piste créée automatiquement depuis un rendez-vous Calendly.",
-        "relance_date": "", "created_at": now, "updated_at": now,
-        "activities": [],
-    }
-    _crm_activity(contact, "creation", "Piste créée depuis Calendly", "Rendez-vous Calendly reçu")
-    data.setdefault("crm_contacts", []).insert(0, contact)
-    return contact
-
-
 def _crm_calendly_relink_appointments(data, contact):
     email = _crm_normalize_email(contact.get("mail"))
     phone = _crm_normalize_phone(contact.get("telephone"))
@@ -6448,7 +6422,6 @@ def _crm_upsert_calendly_appointment(
     webhook_event="",
     source="webhook",
     contact_id=None,
-    create_contact=False,
     record_activity=True,
 ):
     scheduled_event = payload.get("scheduled_event") or {}
@@ -6520,9 +6493,6 @@ def _crm_upsert_calendly_appointment(
         contact = _crm_calendly_contact_by_email(data, appointment.get("invitee_email"))
     if not contact:
         contact = _crm_calendly_contact_by_phone(data, appointment.get("invitee_phone"))
-    if not contact and create_contact:
-        contact = _crm_calendly_new_contact(data, payload)
-        _crm_calendly_relink_appointments(data, contact)
     appointment["contact_id"] = contact.get("id") if contact else None
 
     if not existing:
@@ -7691,7 +7661,6 @@ def crm_contact_calendly_appointments(contact_id):
                 fetched_payload,
                 source="targeted_lookup",
                 contact_id=contact_id,
-                create_contact=False,
                 record_activity=False,
             )
             changed = True
@@ -7814,7 +7783,6 @@ def crm_contact_calendly_appointments(contact_id):
             appointment_payload,
             source="crm",
             contact_id=contact_id,
-            create_contact=False,
             record_activity=True,
         )
         save_data(latest_data)
@@ -7872,7 +7840,6 @@ def crm_calendly_sync():
                 latest_data,
                 imported_payload,
                 source="sync",
-                create_contact=False,
                 record_activity=False,
             )
             if contact:
@@ -7916,7 +7883,6 @@ def crm_calendly_webhook():
         payload,
         webhook_event=event_name,
         source="webhook",
-        create_contact=(event_name == "invitee.created"),
         record_activity=True,
     )
     save_data(data)
