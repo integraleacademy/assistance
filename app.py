@@ -7148,21 +7148,34 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
 
 def _secretariat_information_template(data, kind, formation_code):
     """Return the CRM ``Informations <formation>`` template for a call."""
-    formation = SECRETARIAT_FORMATIONS.get(str(formation_code or "").strip(), {})
-    names = {
+    formation_code = str(formation_code or "").strip()
+    formation = SECRETARIAT_FORMATIONS.get(formation_code, {})
+    # Les codes techniques du secrétariat ne sont pas toujours ceux employés
+    # dans la bibliothèque CRM (par exemple DESP_INIT et DESP_VAE y sont
+    # généralement regroupés sous « Informations DESP »).
+    aliases = {
+        "SSIAP": ["SSIAP 1"],
+        "DESP_INIT": ["DESP initial", "DESP"],
+        "DESP_VAE": ["VAE DESP", "DESP VAE", "DESP"],
+        "VTC": ["Chauffeur VTC"],
+    }.get(formation_code, [])
+    names = [
         f"informations {formation_code}",
         f"informations {formation.get('short', '')}",
         f"informations {formation.get('label', '')}",
-    }
+        *(f"informations {alias}" for alias in aliases),
+    ]
 
     def normalise(value):
         value = unicodedata.normalize("NFKD", str(value or ""))
         value = "".join(char for char in value if not unicodedata.combining(char))
         return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
-    expected = {normalise(name) for name in names if normalise(name) != "informations"}
-    return next((template for template in data.get(f"crm_{kind}_templates", [])
-                 if normalise(template.get("nom")) in expected), None)
+    expected = list(dict.fromkeys(normalise(name) for name in names
+                                  if normalise(name) != "informations"))
+    templates = data.get(f"crm_{kind}_templates", [])
+    return next((template for name in expected for template in templates
+                 if normalise(template.get("nom")) == name), None)
 
 
 def _send_secretariat_information_messages(data, entry, contact):

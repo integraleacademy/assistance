@@ -251,6 +251,22 @@ def test_secretariat_does_not_resend_templates_when_request_is_completed_twice(c
     assert response.get_json()["messages"] == {"email": "already_sent", "sms": "already_sent"}
 
 
+@pytest.mark.parametrize(("formation", "template_name"), [
+    ("APS", "Informations APS"),
+    ("A3P", "Informations A3P"),
+    ("DESP_INIT", "Informations DESP"),
+    ("DESP_VAE", "Informations DESP"),
+    ("SSIAP", "Informations SSIAP"),
+    ("VTC", "Informations VTC"),
+    ("BTS_MOS", "Informations BTS MOS"),
+])
+def test_secretariat_matches_information_template_for_each_training(formation, template_name):
+    expected = {"id": formation, "nom": template_name, "contenu": "Informations"}
+    data = {"crm_email_templates": [expected]}
+
+    assert application._secretariat_information_template(data, "email", formation) == expected
+
+
 def test_secretariat_api_rejects_unknown_request_type(client):
     response = client.post("/api/secretariat/demandes", json={"type": "inconnu"})
 
