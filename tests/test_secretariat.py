@@ -192,7 +192,7 @@ def test_secretariat_api_does_not_duplicate_crm_contact_when_completing_request(
     assert crm_calls == []
 
 
-def test_secretariat_sends_matching_crm_email_and_sms_templates(client, monkeypatch):
+def test_secretariat_sends_ai_call_summary_email_and_commercial_sms(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
     data["secretariat_demandes"] = []
     data["crm_contacts"] = []
@@ -206,6 +206,9 @@ def test_secretariat_sends_matching_crm_email_and_sms_templates(client, monkeypa
     monkeypatch.setattr(application, "load_data", lambda: data)
     monkeypatch.setattr(application, "save_data", lambda payload: None)
     monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    ai_calls = []
+    monkeypatch.setattr(application, "_crm_ai", lambda system, user, max_tokens: ai_calls.append(
+        (system, user, max_tokens)) or "Merci pour cet échange.\n• Rendez-vous : proposé via Calendly")
     emails, sms = [], []
     monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
     monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
@@ -217,11 +220,19 @@ def test_secretariat_sends_matching_crm_email_and_sms_templates(client, monkeypa
 
     assert response.status_code == 201
     assert response.get_json()["messages"] == {"email": "sent", "sms": "sent"}
-    assert emails[0][0:3] == ("camille@example.com", "Votre APS", "<p>Contenu APS</p>")
-    assert sms == [("0600000000", "SMS APS")]
+    assert emails[0][0] == "camille@example.com"
+    assert "Agent de Prévention et de Sécurité" in emails[0][1]
+    assert "Rendez-vous : proposé via Calendly" in emails[0][2]
+    assert "Le résumé de notre échange" in emails[0][3]
+    assert "Télécharger le dossier de présentation" in emails[0][3]
+    assert "N'invente aucune information" in ai_calls[0][0]
+    assert '"formation": "Agent de Prévention et de Sécurité (APS)"' in ai_calls[0][1]
+    assert "Je fais suite à notre échange téléphonique" in sms[0][1]
+    assert "https://www.integralesecuriteformations.com/dossiersfc" in sms[0][1]
+    assert "Cassandre MENARD" in sms[0][1]
     entry = data["secretariat_demandes"][0]
-    assert entry["information_email_template_id"] == "mail-aps"
-    assert entry["information_sms_template_id"] == "sms-aps"
+    assert entry["information_email_sent_at"]
+    assert entry["information_sms_sent_at"]
     assert [activity["kind"] for activity in data["crm_contacts"][0]["activities"][:2]] == ["sms", "email"]
 
 

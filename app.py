@@ -7198,43 +7198,106 @@ def _secretariat_information_template(data, kind, formation_code):
 
 
 def _send_secretariat_information_messages(data, entry, contact):
-    """Send the CRM mail and SMS templates associated with the selected training.
-
-    A missing template or recipient does not prevent the secretary from saving the
-    call. Successful sends are recorded both on the request and in CRM activity.
-    """
+    """Send the personalised post-call e-mail and the commercial follow-up SMS."""
     results = {}
-    formation_code = entry.get("formation", "")
     for kind, recipient_key in (("email", "email"), ("sms", "telephone")):
-        template = _secretariat_information_template(data, kind, formation_code)
-        if not template:
-            results[kind] = "template_missing"
-            continue
         if not entry.get(recipient_key):
             results[kind] = "recipient_missing"
             continue
-        sent_key = f"information_{kind}_template_id"
-        if entry.get(sent_key) == template.get("id"):
+        sent_at_key = f"information_{kind}_sent_at"
+        # The template id is kept as a legacy marker for calls completed before
+        # personalised messages replaced CRM templates.
+        if entry.get(sent_at_key) or entry.get(f"information_{kind}_template_id"):
             results[kind] = "already_sent"
             continue
-        body = str(template.get("contenu", "")).strip()
         if kind == "email":
-            subject = str(template.get("sujet") or "Intégrale Academy").strip()
-            branded = render_template("crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body)
+            subject, body, branded = _build_secretariat_followup_email(entry, contact)
             ok = send_email_html(entry[recipient_key], subject, body, branded)
-            preview, detail, title = branded, subject, "E-mail envoyé"
+            preview, detail, title = branded, subject, "Compte rendu envoyé par e-mail"
         else:
+            body = _build_secretariat_followup_sms(entry.get("formation"))
             ok = send_sms(entry[recipient_key], body)
             preview, detail, title = body, body, "SMS envoyé"
         results[kind] = "sent" if ok else "failed"
         if ok:
-            entry[sent_key] = template.get("id")
-            entry[f"information_{kind}_sent_at"] = _crm_now()
+            entry[sent_at_key] = _crm_now()
+            entry[f"information_{kind}_content"] = body
             _crm_activity(contact, kind, title, detail, preview)
             contact["updated_at"] = _crm_now()
         else:
             entry[f"information_{kind}_error_at"] = _crm_now()
     return results
+
+
+def _secretariat_formation_name(formation_code):
+    details = SECRETARIAT_FORMATIONS.get(str(formation_code or "").strip(), {})
+    return details.get("label") or PLAN_FORMATIONS.get(formation_code) or formation_code or "la formation demandée"
+
+
+def _build_secretariat_followup_sms(formation_code):
+    formation_name = _secretariat_formation_name(formation_code)
+    return (
+        "Je fais suite à notre échange téléphonique au sujet de notre formation "
+        f"{formation_name}. Merci de votre intérêt !\n\n"
+        "▶️ Vous pouvez télécharger dès maintenant notre dossier de présentation "
+        "(programme détaillé, dates, tarifs) en cliquant ici :\n\n"
+        "👉 https://www.integralesecuriteformations.com/dossiersfc\n\n"
+        "ℹ️ Si vous souhaitez financer la formation via votre Compte Personnel de "
+        "Formation (CPF), il vous faudra créer votre Identité Numérique La Poste.\n\n"
+        "N’hésitez pas à me contacter si vous avez la moindre question, je serai ravi d’y répondre 😉\n\n"
+        "Bonne journée,\n\nCassandre MENARD\nResponsable commerciale Intégrale Academy\n04 22 47 07 68"
+    )
+
+
+def _secretariat_email_fallback(entry):
+    """Provide a complete, truthful e-mail when the AI service is unavailable."""
+    labels = [
+        ("Formation", _secretariat_formation_name(entry.get("formation"))),
+        ("Session souhaitée", entry.get("formation_date_souhaitee")),
+        ("Rendez-vous", entry.get("rdv") or "Non renseigné"),
+        ("Devis demandé", entry.get("devis")),
+        ("CPF consulté", entry.get("cpf_consulte")),
+        ("Montant CPF", (f"{entry.get('cpf_montant')} €" if entry.get("cpf_montant") else "")),
+        ("Financement France Travail", entry.get("france_travail")),
+        ("Identité Numérique La Poste", entry.get("identite_numerique")),
+    ]
+    lines = ["Merci pour notre échange téléphonique. Voici le récapitulatif des éléments abordés :", ""]
+    lines.extend(f"• {label} : {value}" for label, value in labels if value)
+    if entry.get("notes"):
+        lines.extend(["", "Résumé de votre demande", str(entry["notes"])])
+    lines.extend(["", "Notre équipe reste à votre disposition pour répondre à vos questions et vous accompagner dans votre projet."])
+    return "\n".join(lines)
+
+
+def _build_secretariat_followup_email(entry, contact):
+    formation_name = _secretariat_formation_name(entry.get("formation"))
+    facts = {key: entry.get(key, "") for key in (
+        "formation_date_souhaitee", "notes", "devis", "rdv", "cpf_consulte",
+        "cpf_montant", "france_travail", "ft_refus_ok", "financement_perso",
+        "identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour",
+    )}
+    system = (
+        "Tu rédiges le compte rendu envoyé à un prospect après un appel avec Intégrale Academy. "
+        "Rédige en français, avec un ton chaleureux, professionnel et concis. Fais un résumé complet, "
+        "mets clairement en évidence les informations clés et indique si un rendez-vous a été proposé ou refusé. "
+        "N'invente aucune information. Retourne uniquement le corps du message en texte brut, avec de courts "
+        "paragraphes et des puces commençant par •. Ne rédige ni objet, ni signature."
+    )
+    user = json.dumps({"prospect": contact.get("prenom") or entry.get("nom"),
+                       "formation": formation_name, "informations_appel": facts}, ensure_ascii=False)
+    try:
+        body = _crm_ai(system, user, max_tokens=800)
+    except Exception as exc:
+        print("⚠️ Compte rendu IA indisponible, utilisation du contenu de secours :", exc)
+        body = _secretariat_email_fallback(entry)
+    subject = f"Votre échange avec Intégrale Academy — {formation_name}"
+    html_body = render_template("emails/secretariat_followup.html",
+                                prenom=contact.get("prenom") or "",
+                                formation=formation_name,
+                                content_lines=body.splitlines())
+    plain = (f"Bonjour {contact.get('prenom') or ''},\n\n{body}\n\nBonne journée,\n\n"
+             "Cassandre MENARD\nResponsable commerciale Intégrale Academy\n04 22 47 07 68")
+    return subject, plain, html_body
 
 
 def _crm_no_answer_message(contact):
