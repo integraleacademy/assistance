@@ -8804,7 +8804,16 @@ def crm_generate_message(contact_id):
 def crm_templates():
     data = load_data()
     if request.method == "GET":
-        return jsonify({"email": data["crm_email_templates"], "sms": data["crm_sms_templates"]})
+        wrapper_path = os.path.join(app.root_path, "templates", "crm_email_wrapper.html")
+        with open(wrapper_path, encoding="utf-8") as wrapper_file:
+            email_starter = wrapper_file.read().replace(
+                "{{ contenu|safe }}", "<p>Écrivez ici le contenu de votre e-mail.</p>"
+            )
+        return jsonify({
+            "email": data["crm_email_templates"],
+            "sms": data["crm_sms_templates"],
+            "email_starter": email_starter,
+        })
     payload = request.get_json(silent=True) or {}; kind = payload.get("type")
     if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
     item = {"id": str(uuid.uuid4()), "nom": str(payload.get("nom", "Sans titre")).strip(),
@@ -8874,9 +8883,23 @@ def _crm_upcoming_dates(contact, html=False, data_store=None):
 
 def _crm_resolve_message_variables(content, contact, html=False, data_store=None):
     """Resolve CRM template variables at preview/send time, never when saving."""
-    return str(content or "").replace(
+    resolved = str(content or "").replace(
         CRM_UPCOMING_DATES_VARIABLE,
         _crm_upcoming_dates(contact, html=html, data_store=data_store),
+    )
+    if html:
+        first_name = html_module.escape(str(contact.get("prenom") or ""))
+        for variable in ("{{ prenom }}", "{{prenom}}"):
+            resolved = resolved.replace(variable, first_name)
+    return resolved
+
+
+def _crm_email_html(body, contact):
+    """Keep complete custom e-mails intact and brand body-only messages."""
+    if re.search(r"<(?:!doctype|html)\b", body, re.IGNORECASE):
+        return body
+    return render_template(
+        "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
     )
 
 
@@ -8889,7 +8912,7 @@ def crm_send_message(contact_id):
     body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     if kind == "email":
         body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
-        branded = render_template("crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body)
+        branded = _crm_email_html(body, contact)
         ok = send_email_html(contact.get("mail"), subject, body, branded)
         preview = branded
     elif kind == "sms":
@@ -8913,9 +8936,7 @@ def crm_message_preview(contact_id):
     body = _crm_resolve_message_variables(
         payload.get("contenu", ""), contact, html=True
     )
-    html = render_template(
-        "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
-    )
+    html = _crm_email_html(body, contact)
     return jsonify({"html": html})
 
 

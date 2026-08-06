@@ -169,6 +169,33 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
 
 
+def test_crm_email_starter_exposes_editable_complete_html(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+
+    starter = c.get("/api/crm/templates").get_json()["email_starter"]
+
+    assert starter.lower().startswith("<!doctype html>")
+    assert "Faites le premier pas vers votre futur métier" in starter
+    assert "Écrivez ici le contenu de votre e-mail." in starter
+    assert "{{ contenu|safe }}" not in starter
+
+
+def test_complete_crm_email_html_is_not_wrapped_twice(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    complete_html = "<!doctype html><html><body><h1>Bonjour {{ prenom }}</h1></body></html>"
+
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={"contenu": complete_html},
+    )
+
+    assert response.status_code == 200
+    html = response.get_json()["html"]
+    assert html == "<!doctype html><html><body><h1>Bonjour Lina</h1></body></html>"
+    assert "Faites le premier pas" not in html
+
+
 def test_crm_templates_can_be_edited_and_deleted(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/templates", json={"type": "sms", "nom": "Rappel", "contenu": "Ancien texte"}).get_json()
