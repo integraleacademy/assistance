@@ -67,6 +67,17 @@ def test_secretariat_displays_training_details_before_caller_form(client, monkey
     assert b"Demander \xc3\xa0 l\xe2\x80\x99assistant IA" in response.data
 
 
+def test_secretariat_requires_asking_for_the_preferred_training_session(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert "Quelles dates de formation souhaitez-vous".encode() in response.data
+    assert b'name="formation_date_souhaitee"' in response.data
+    assert b"if(!selectedSession)" in response.data
+    assert b"formation_date_souhaitee:requestType" in response.data
+
+
 def test_secretariat_form_collects_funding_and_regulatory_information(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
@@ -109,6 +120,7 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
     response = client.post("/api/secretariat/demandes", json={
         "type": "formation",
         "formation": "APS",
+        "formation_date_souhaitee": "Côte d’Azur — 8 juillet au 12 août 2026",
         "nom": "Camille Martin",
         "telephone": "0600000000",
         "rdv": "06/08/2026 10:30",
@@ -123,6 +135,7 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
 
     assert response.status_code == 201
     assert data["secretariat_demandes"][0]["formation"] == "APS"
+    assert data["secretariat_demandes"][0]["formation_date_souhaitee"] == "Côte d’Azur — 8 juillet au 12 août 2026"
     assert data["secretariat_demandes"][0]["nom"] == "Camille Martin"
     assert data["secretariat_demandes"][0]["devis"] == "OUI"
     assert crm_calls[0]["prenom"] == "Camille"

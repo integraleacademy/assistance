@@ -2930,6 +2930,7 @@ def api_secretariat_demandes():
         "id": str(uuid.uuid4()),
         "type": payload.get("type"),
         "formation": payload.get("formation", ""),
+        "formation_date_souhaitee": str(payload.get("formation_date_souhaitee", "")).strip(),
         "nom": str(payload.get("nom", "")).strip(),
         "telephone": str(payload.get("telephone", "")).strip(),
         "email": str(payload.get("email", "")).strip(),
@@ -2991,6 +2992,7 @@ def api_secretariat_demandes():
         "infos_complementaires": "\n".join(filter(None, [
             "Appel traité par le secrétariat",
             f"Type de demande : {entry['type']}",
+            f"Session souhaitée : {entry['formation_date_souhaitee']}" if entry["formation_date_souhaitee"] else "",
             f"Notes : {entry['notes']}" if entry["notes"] else "",
             f"Rendez-vous : {entry['rdv']}" if entry["rdv"] else "",
             f"Devis demandé : {entry['devis']}" if entry["devis"] else "",
@@ -3110,6 +3112,7 @@ def api_secretariat_ai_request_summary():
         "cnaps_ok": "Carte professionnelle CNAPS valide",
         "garde_vue": "Garde à vue ou prise d’empreintes",
         "titre_sejour": "Titre de séjour", "devis": "Devis détaillé",
+        "formation_date_souhaitee": "Session de formation souhaitée",
     }
     facts = {label: str(payload.get(key, "")).strip()[:1000]
              for key, label in allowed_fields.items() if str(payload.get(key, "")).strip()}
