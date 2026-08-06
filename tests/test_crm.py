@@ -178,6 +178,22 @@ def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
     assert "integraleacademy.com" in html
 
 
+def test_crm_can_send_a_template_test_email(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    sent = {}
+    monkeypatch.setattr(application, "send_email_html", lambda to, subject, plain, html: sent.update(to=to, subject=subject, plain=plain, html=html) or True)
+
+    response = c.post("/api/crm/test-email", json={
+        "destinataire": "equipe@example.com",
+        "sujet": "Aperçu formation",
+        "contenu": "<h1>Bonjour</h1><p>Voici le programme.</p>",
+    })
+
+    assert response.status_code == 200
+    assert sent == {"to": "equipe@example.com", "subject": "Aperçu formation", "plain": "Bonjour Voici le programme.", "html": "<h1>Bonjour</h1><p>Voici le programme.</p>"}
+    assert c.post("/api/crm/test-email", json={"destinataire": "invalide", "contenu": "test"}).status_code == 400
+
+
 def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
