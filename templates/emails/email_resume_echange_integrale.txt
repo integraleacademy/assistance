@@ -1,0 +1,24 @@
+Bonjour{% if prenom %} {{ prenom }}{% endif %},
+
+{% for paragraph in content.summary_paragraphs %}{{ paragraph }}
+
+{% endfor %}Votre projet en bref
+{% for label,value in project_rows %}- {{ label }} : {{ value }}
+{% endfor %}
+{% if content.financing_message %}Financement et CPF
+{{ content.financing_message }}
+
+{% endif %}{% if content.cnaps_message %}Situation CNAPS
+{{ content.cnaps_message }}
+
+{% endif %}Prochaines étapes
+{% for step in content.next_steps %}- {{ step }}
+{% endfor %}
+Télécharger le dossier de présentation : {{ formation.dossier_url }}
+Planning : {{ formation.planning_url }}
+
+Cassandre MENARD
+Responsable commerciale – Intégrale Academy
+04 22 47 07 68
+cassandre@integraleacademy.com
+54 chemin du Carreou – 83480 Puget-sur-Argens

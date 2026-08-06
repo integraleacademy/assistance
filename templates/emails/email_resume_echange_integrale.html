@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#eef3fb;font-family:Arial,Helvetica,sans-serif;color:#193052">
+<div style="display:none;max-height:0;overflow:hidden">Votre synthèse personnalisée, les prochaines étapes et le dossier de présentation de la formation {{ formation.short }}.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#eef3fb"><tr><td align="center" style="padding:24px 10px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;background:#fff;border-collapse:collapse">
+<tr><td style="padding:30px 36px;background:#123b7a;color:#fff">
+  <img src="{{ logo_src }}" alt="Intégrale Academy" width="150" style="width:150px;height:auto;display:block;margin:0 0 16px">
+  <div style="font-size:17px;font-weight:bold">Intégrale Academy</div><h1 style="margin:9px 0 6px;font-size:29px">Le résumé de notre échange</h1>
+  <p style="margin:0 0 10px">Votre projet : {{ formation.label }}</p><p style="margin:0;font-weight:bold;color:#bcd6ff">Faites le premier pas vers votre futur métier</p>
+</td></tr>
+<tr><td style="padding:32px 36px">
+<p style="font-size:18px;margin:0 0 22px">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
+{% for paragraph in content.summary_paragraphs %}<p style="margin:0 0 15px;line-height:1.65;color:#344a68">{{ paragraph }}</p>{% endfor %}
+{% if project_rows %}<h2 style="margin:28px 0 12px;font-size:21px">Votre projet en bref</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f6fc;border:1px solid #dce6f5;border-radius:12px">
+{% for label,value in project_rows %}<tr><td style="padding:10px 14px;vertical-align:top;font-weight:bold;width:34%">{{ label }}</td><td style="padding:10px 14px;line-height:1.45">{{ value }}</td></tr>{% endfor %}</table>{% endif %}
+<h2 style="margin:28px 0 12px;font-size:21px">À retenir sur la formation</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+{% for label,key in [('Durée et rythme','duration'),('Tarif','price'),('Modalité','format'),('Lieu','location'),('Capacité','capacity'),('Certification / objectif','certification'),('Prérequis principal','prerequisites')] %}{% if formation.get(key) %}<tr><td style="padding:7px 0;border-bottom:1px solid #e7edf6"><strong>{{ label }} :</strong> {{ formation[key] }}</td></tr>{% endif %}{% endfor %}</table>
+{% if content.financing_message %}<h2 style="margin:28px 0 10px;font-size:21px">Financement et CPF</h2><p style="line-height:1.65">{{ content.financing_message }}</p>{% if entry is defined and entry.cpf_consulte %}<p><a href="https://lidentitenumerique.laposte.fr/" style="color:#175ac6">Identité Numérique La Poste</a></p>{% endif %}{% endif %}
+{% if content.cnaps_message %}<h2 style="margin:28px 0 10px;font-size:21px">Situation CNAPS</h2><p style="line-height:1.65">{{ content.cnaps_message }}</p>{% endif %}
+{% if appointment %}<h2 style="margin:28px 0 10px;font-size:21px">Votre rendez-vous</h2>{% if appointment.status == 'scheduled' %}<p style="line-height:1.65">Rendez-vous planifié{% if appointment.date %} le {{ appointment.date }}{% endif %}{% if appointment.time %} à {{ appointment.time }}{% endif %} (Europe/Paris){% if appointment.mode %}, en {{ appointment.mode }}{% endif %}.{% if appointment.url %} <a href="{{ appointment.url }}">Accéder au rendez-vous</a>{% endif %}</p>{% else %}<p>Un rendez-vous vous a été proposé. Notre équipe attend votre confirmation du créneau.</p>{% endif %}{% endif %}
+<h2 style="margin:28px 0 10px;font-size:21px">Prochaines étapes</h2><ol style="padding-left:22px;line-height:1.65">{% for step in content.next_steps %}<li style="margin-bottom:7px">{{ step }}</li>{% endfor %}</ol>
+<div style="margin:30px 0;text-align:center"><a href="{{ formation.dossier_url }}" style="display:inline-block;background:#175ac6;color:#fff;text-decoration:none;font-weight:bold;padding:14px 21px;border-radius:8px">Télécharger le dossier de présentation</a><p style="font-size:14px"><a href="{{ formation.planning_url }}" style="color:#175ac6">Consulter le planning</a> · <a href="{{ ai_url }}" style="color:#63738c">Interroger l’IA Intégrale Academy</a></p></div>
+<p style="line-height:1.55;margin-top:28px"><strong>Cassandre MENARD</strong><br>Responsable commerciale – Intégrale Academy<br>04 22 47 07 68<br><a href="mailto:cassandre@integraleacademy.com">cassandre@integraleacademy.com</a><br>54 chemin du Carreou – 83480 Puget-sur-Argens</p>
+</td></tr>
+<tr><td style="padding:22px 30px;background:#102b57;color:#dbe6f7;text-align:center;font-size:11px;line-height:1.55">© Intégrale Academy · Faites le premier pas vers votre futur métier<br>54 chemin du Carreou, 83480 Puget-sur-Argens · 142 rue de Rivoli, 75001 Paris<br>SIREN 840 899 884 · NDA 93830600283 · Certification Qualiopi n°03169 du 21/10/2024<br>UAI Côte d’Azur 0831774C · UAI Paris 0756548K<br>Autorisation d’exercice CNAPS n°FOR-083-2027-02-08-20200755135 · Habilitation INRS SST n°1487614/2020/SST-01/O/07<br><a href="https://integraleacademy.com" style="color:#fff">integraleacademy.com</a><br><span style="color:#afc0dc">La déclaration d’activité ne vaut pas agrément de l’État. Les financements restent soumis aux conditions et à l’accord des organismes concernés.</span></td></tr>
+</table></td></tr></table></body></html>

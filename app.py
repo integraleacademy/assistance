@@ -449,6 +449,10 @@ SECRETARIAT_FORMATIONS = {
     "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
 }
 
+SECRETARIAT_DOSSIER_URL = "https://www.integralesecuriteformations.com/dossiersfc"
+SECRETARIAT_PLANNING_URL = "https://www.integralesecuriteformations.com/calendrier-formations"
+SECRETARIAT_AI_URL = "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy"
+
 # Repères volontairement rédigés pour une personne qui ne connaît pas encore les
 # formations. Les conditions définitives restent validées par l'équipe admissions.
 _SECURITY_TRAINING_GUIDANCE = {
@@ -499,6 +503,21 @@ for _code, _details in SECRETARIAT_FORMATIONS.items():
         })
     else:
         _details.update(_SECURITY_TRAINING_GUIDANCE.get(_code, {}))
+    # Source unique des faits affichés dans le compte rendu. Les dates restent
+    # toujours celles de la session choisie et ne figurent donc pas ici.
+    _details.update({
+        "label": _details.get("label") or PLAN_FORMATIONS.get(_code, _details.get("short", _code)),
+        "dossier_url": SECRETARIAT_DOSSIER_URL,
+        "planning_url": SECRETARIAT_PLANNING_URL,
+    })
+
+SECRETARIAT_FORMATIONS["APS"].update({
+    "format": "Du lundi au vendredi, environ 5 semaines",
+    "location": "Puget-sur-Argens, entre Cannes et Saint-Tropez",
+    "capacity": "Groupe limité à 12 personnes",
+    "certification": "TFP APS, puis demande de carte professionnelle CNAPS",
+    "prerequisites": "Autorisation d’entrée en formation CNAPS obligatoire, avec accompagnement de notre équipe.",
+})
 
 PLAN_DATES = {
     "A3P": [
@@ -1157,6 +1176,15 @@ def _send_email_brevo(to_emails, subject, plain_text, html_body, attachments_pat
             })
     if attachments:
         payload["attachment"] = attachments
+    if "cid:integrale-academy-logo" in html_body:
+        logo_path = os.path.join(app.root_path, "static", "logo.png")
+        if os.path.exists(logo_path):
+            with open(logo_path, "rb") as logo_file:
+                payload.setdefault("attachment", []).append({
+                    "name": "integrale-academy-logo.png",
+                    "content": base64.b64encode(logo_file.read()).decode("ascii"),
+                    "contentId": "integrale-academy-logo",
+                })
 
     try:
         response = requests.post(
@@ -1195,6 +1223,15 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
     related.attach(alt)
     alt.attach(MIMEText(plain_text, "plain", "utf-8"))
     alt.attach(MIMEText(html_body, "html", "utf-8"))
+
+    if "cid:integrale-academy-logo" in html_body:
+        logo_path = os.path.join(app.root_path, "static", "logo.png")
+        if os.path.exists(logo_path):
+            with open(logo_path, "rb") as logo_file:
+                logo = MIMEImage(logo_file.read())
+            logo.add_header("Content-ID", "<integrale-academy-logo>")
+            logo.add_header("Content-Disposition", "inline", filename="integrale-academy-logo.png")
+            related.attach(logo)
 
     if attachments_paths:
         for chemin in attachments_paths:
@@ -2939,7 +2976,19 @@ def secretariat():
     return render_template("secretariat.html", formations=formations, journal=journal)
 
 
+_SECRETARIAT_DELIVERY_LOCK = threading.Lock()
+
+
+def _serialize_secretariat_delivery(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        with _SECRETARIAT_DELIVERY_LOCK:
+            return view(*args, **kwargs)
+    return wrapped
+
+
 @app.route("/api/secretariat/demandes", methods=["POST"])
+@_serialize_secretariat_delivery
 def api_secretariat_demandes():
     payload = request.get_json(silent=True) or {}
     if payload.get("type") not in {"formation", "autre"}:
@@ -2956,14 +3005,21 @@ def api_secretariat_demandes():
         "notes": str(payload.get("notes", "")).strip(),
         "devis": str(payload.get("devis", "")).strip(),
         "rdv": str(payload.get("rdv", "")).strip(),
+        "rdv_status": str(payload.get("rdv_status", "")).strip(),
+        "rdv_date": str(payload.get("rdv_date", "")).strip(),
+        "rdv_time": str(payload.get("rdv_time", "")).strip(),
+        "rdv_mode": str(payload.get("rdv_mode", "")).strip(),
+        "rdv_url": str(payload.get("rdv_url", "")).strip(),
         "calendly_url": str(payload.get("calendly_url", "")).strip(),
         "cpf_consulte": str(payload.get("cpf_consulte", "")).strip(),
         "cpf_montant": str(payload.get("cpf_montant", "")).strip(),
         "france_travail": str(payload.get("france_travail", "")).strip(),
+        "france_travail_status": str(payload.get("france_travail_status", "")).strip(),
         "ft_refus_ok": str(payload.get("ft_refus_ok", "")).strip(),
         "financement_perso": str(payload.get("financement_perso", "")).strip(),
         "identite_numerique": str(payload.get("identite_numerique", "")).strip(),
         "cnaps_ok": str(payload.get("cnaps_ok", "")).strip(),
+        "cnaps_status": str(payload.get("cnaps_status", "")).strip(),
         "garde_vue": str(payload.get("garde_vue", "")).strip(),
         "titre_sejour": str(payload.get("titre_sejour", "")).strip(),
         "statut": payload.get("statut", "Traité"),
@@ -2974,11 +3030,17 @@ def api_secretariat_demandes():
     entries = data_store.setdefault("secretariat_demandes", [])
     # Le formulaire formation crée déjà une ligne « RDV à prendre ». La dernière
     # étape du parcours l'enrichit au lieu de créer un doublon dans le journal.
-    existing = next((row for row in reversed(entries)
-                     if payload.get("type") == "formation"
-                     and row.get("statut") == "RDV à prendre"
-                     and row.get("formation") == entry["formation"]
-                     and row.get("telephone") == entry["telephone"]), None)
+    def is_same_recent_submission(row):
+        if payload.get("type") != "formation" or row.get("formation") != entry["formation"] or row.get("telephone") != entry["telephone"]:
+            return False
+        if row.get("statut") == "RDV à prendre":
+            return True
+        try:
+            created = datetime.datetime.fromisoformat(str(row.get("created_at")))
+            return abs((now - created).total_seconds()) < 300 and row.get("email", "") == entry["email"]
+        except (TypeError, ValueError):
+            return False
+    existing = next((row for row in reversed(entries) if is_same_recent_submission(row)), None)
     creates_new_lead = existing is None
     if existing:
         created_at, date_label, entry_id = existing.get("created_at"), existing.get("date"), existing.get("id")
@@ -7197,41 +7259,78 @@ def _secretariat_information_template(data, kind, formation_code):
                  if normalise(template.get("nom")) == name), None)
 
 
+def _mask_delivery_recipient(value, kind):
+    value = str(value or "").strip()
+    if kind == "email" and "@" in value:
+        local, domain = value.split("@", 1)
+        return f"{local[:2]}***@{domain}"
+    digits = re.sub(r"\D", "", value)
+    return f"***{digits[-4:]}" if digits else "absent"
+
+
 def _send_secretariat_information_messages(data, entry, contact):
-    """Send the personalised post-call e-mail and the commercial follow-up SMS."""
+    """Deliver each channel independently and persist an idempotent audit trail."""
     results = {}
-    for kind, recipient_key in (("email", "email"), ("sms", "telephone")):
-        if not entry.get(recipient_key):
-            results[kind] = "recipient_missing"
-            continue
-        sent_at_key = f"information_{kind}_sent_at"
-        # The template id is kept as a legacy marker for calls completed before
-        # personalised messages replaced CRM templates.
-        if entry.get(sent_at_key) or entry.get(f"information_{kind}_template_id"):
+    for kind, recipient_key, provider in (("email", "email", "SMTP/Brevo"), ("sms", "telephone", "Brevo")):
+        recipient = entry.get(recipient_key)
+        status_key = f"{kind}_summary_status"
+        sent_key = f"{kind}_summary_sent_at"
+        error_key = f"{kind}_summary_error"
+        attempted_key = f"{kind}_summary_attempted_at"
+        legacy_sent_key = f"information_{kind}_sent_at"
+        if entry.get(sent_key) or entry.get(legacy_sent_key) or entry.get(f"information_{kind}_template_id"):
             results[kind] = "already_sent"
             continue
-        if kind == "email":
-            subject, body, branded = _build_secretariat_followup_email(entry, contact)
-            ok = send_email_html(entry[recipient_key], subject, body, branded)
-            preview, detail, title = branded, subject, "Compte rendu envoyé par e-mail"
-        else:
-            body = _build_secretariat_followup_sms(entry.get("formation"))
-            ok = send_sms(entry[recipient_key], body)
-            preview, detail, title = body, body, "SMS envoyé"
+        if not recipient or (kind == "sms" and not _normaliser_telephone_sms(recipient)):
+            entry[status_key] = "failed"
+            entry[error_key] = "Destinataire absent ou invalide"
+            entry[attempted_key] = _crm_now()
+            results[kind] = "recipient_missing"
+            continue
+
+        entry[status_key] = "sending"
+        entry[error_key] = ""
+        entry[attempted_key] = _crm_now()
+        save_data(data)
+        try:
+            if kind == "email":
+                subject, body, branded = _build_secretariat_followup_email(entry, contact)
+                ok = send_email_html(recipient, subject, body, branded)
+                preview, detail, title = branded, subject, "Compte rendu envoyé par e-mail"
+            else:
+                body = _build_secretariat_followup_sms(entry.get("formation"))
+                ok = send_sms(recipient, body)
+                preview, detail, title = body, body, "SMS envoyé"
+        except Exception as exc:
+            ok = False
+            entry[error_key] = str(exc)[:500]
+        now = _crm_now()
         results[kind] = "sent" if ok else "failed"
         if ok:
-            entry[sent_at_key] = _crm_now()
+            entry[status_key] = "sent"
+            entry[sent_key] = now
+            entry[legacy_sent_key] = now
             entry[f"information_{kind}_content"] = body
             _crm_activity(contact, kind, title, detail, preview)
-            contact["updated_at"] = _crm_now()
+            contact["updated_at"] = now
         else:
-            entry[f"information_{kind}_error_at"] = _crm_now()
+            entry[status_key] = "failed"
+            entry[error_key] = entry.get(error_key) or "Le fournisseur a refusé ou n’a pas confirmé l’envoi"
+        print(f"secretariat_delivery submission={entry.get('id')} recipient={_mask_delivery_recipient(recipient, kind)} provider={provider} status={entry[status_key]} error={entry.get(error_key, '')}")
+        save_data(data)
     return results
 
 
+def _secretariat_formation_config(formation_code):
+    code = str(formation_code or "").strip()
+    return SECRETARIAT_FORMATIONS.get(code) or {
+        "short": "Formation", "label": PLAN_FORMATIONS.get(code) or "Formation Intégrale Academy",
+        "dossier_url": SECRETARIAT_DOSSIER_URL, "planning_url": SECRETARIAT_PLANNING_URL,
+    }
+
+
 def _secretariat_formation_name(formation_code):
-    details = SECRETARIAT_FORMATIONS.get(str(formation_code or "").strip(), {})
-    return details.get("label") or PLAN_FORMATIONS.get(formation_code) or formation_code or "la formation demandée"
+    return _secretariat_formation_config(formation_code)["label"]
 
 
 def _build_secretariat_followup_sms(formation_code):
@@ -7241,7 +7340,7 @@ def _build_secretariat_followup_sms(formation_code):
         f"{formation_name}. Merci de votre intérêt !\n\n"
         "▶️ Vous pouvez télécharger dès maintenant notre dossier de présentation "
         "(programme détaillé, dates, tarifs) en cliquant ici :\n\n"
-        "👉 https://www.integralesecuriteformations.com/dossiersfc\n\n"
+        f"👉 {SECRETARIAT_DOSSIER_URL}\n\n"
         "ℹ️ Si vous souhaitez financer la formation via votre Compte Personnel de "
         "Formation (CPF), il vous faudra créer votre Identité Numérique La Poste.\n\n"
         "N’hésitez pas à me contacter si vous avez la moindre question, je serai ravi d’y répondre 😉\n\n"
@@ -7249,56 +7348,154 @@ def _build_secretariat_followup_sms(formation_code):
     )
 
 
+def _yes(value):
+    return str(value or "").strip().upper() in {"OUI", "YES", "TRUE", "1"}
+
+
+def _secretariat_rdv(entry):
+    status = str(entry.get("rdv_status") or entry.get("appointment_status") or "").lower().strip()
+    if status in {"declined", "not_requested", "none"}:
+        return None
+    if status == "scheduled":
+        return {"status": status, "date": entry.get("rdv_date"), "time": entry.get("rdv_time"),
+                "mode": entry.get("rdv_mode"), "url": entry.get("rdv_url") or entry.get("calendly_url")}
+    if status == "proposed":
+        return {"status": status}
+    return None
+
+
 def _secretariat_email_fallback(entry):
-    """Provide a complete, truthful e-mail when the AI service is unavailable."""
-    labels = [
-        ("Formation", _secretariat_formation_name(entry.get("formation"))),
-        ("Session souhaitée", entry.get("formation_date_souhaitee")),
-        ("Rendez-vous", entry.get("rdv") or "Non renseigné"),
-        ("Devis demandé", entry.get("devis")),
-        ("CPF consulté", entry.get("cpf_consulte")),
-        ("Montant CPF", (f"{entry.get('cpf_montant')} €" if entry.get("cpf_montant") else "")),
-        ("Financement France Travail", entry.get("france_travail")),
-        ("Identité Numérique La Poste", entry.get("identite_numerique")),
+    formation = _secretariat_formation_name(entry.get("formation"))
+    session = str(entry.get("formation_date_souhaitee") or "").strip()
+    paragraphs = [
+        f"Merci pour le temps consacré à notre échange au sujet de la formation {formation}. Nous avons pu préciser votre projet et les éléments utiles pour préparer la suite dans de bonnes conditions.",
+        (f"Vous envisagez la session {session}. Cette session reste à confirmer avec notre équipe, qui vérifiera avec vous les disponibilités et les prérequis applicables."
+         if session else "Notre équipe reviendra avec vous sur la session la plus adaptée et vérifiera les disponibilités ainsi que les prérequis applicables."),
+        "Vous trouverez ci-dessous les repères fiables abordés ensemble et les actions concrètes pour avancer. Notre équipe reste disponible pour vous accompagner sans présumer de l’accord d’un organisme financeur ou administratif.",
     ]
-    lines = ["Merci pour notre échange téléphonique. Voici le récapitulatif des éléments abordés :", ""]
-    lines.extend(f"• {label} : {value}" for label, value in labels if value)
-    if entry.get("notes"):
-        lines.extend(["", "Résumé de votre demande", str(entry["notes"])])
-    lines.extend(["", "Notre équipe reste à votre disposition pour répondre à vos questions et vous accompagner dans votre projet."])
-    return "\n".join(lines)
+    financing = ""
+    cpf = _parse_cpf_value(entry.get("cpf_montant"))
+    price = PLAN_TARIFS.get(entry.get("formation"), 0)
+    if cpf and price and cpf >= price:
+        financing = "Votre solde CPF déclaré semble permettre de couvrir le tarif, sous réserve de vos droits disponibles au moment de l’inscription."
+    if _yes(entry.get("france_travail")):
+        ft_status = str(entry.get("france_travail_status") or "").lower().strip()
+        if ft_status in {"submitted", "transmitted", "transmise", "deposee", "déposée"}:
+            wished = "Votre demande de financement auprès de France Travail a été transmise ; sa décision reste nécessaire."
+        elif ft_status in {"pending", "en_cours", "en attente"}:
+            wished = "Votre demande de financement France Travail est en cours d’instruction par l’organisme."
+        elif ft_status in {"approved", "accepted", "acceptee", "acceptée"}:
+            wished = "Votre demande de financement France Travail est indiquée comme acceptée."
+        else:
+            wished = "Vous souhaitez que nous étudiions avec vous la possibilité d’une demande de financement auprès de France Travail."
+        financing = f"{financing} {wished}".strip()
+    cnaps = ""
+    if entry.get("formation") == "APS":
+        cnaps_status = str(entry.get("cnaps_status") or "").lower().strip()
+        if cnaps_status in {"submitted", "transmitted", "transmise"}:
+            cnaps = "Votre demande d’autorisation préalable CNAPS a été transmise. Notre équipe reste disponible pendant son instruction."
+        elif cnaps_status in {"approved", "accepted", "acceptee", "acceptée"}:
+            cnaps = "Votre autorisation CNAPS est indiquée comme acceptée ; notre équipe vérifiera avec vous le justificatif nécessaire."
+        elif _yes(entry.get("cnaps_ok")):
+            cnaps = "Votre carte professionnelle est valide ; notre équipe vérifiera avec vous les justificatifs nécessaires."
+        else:
+            cnaps = "Si vous ne disposez pas encore d’une carte professionnelle, l’étape attendue avant l’entrée en formation APS est l’autorisation préalable CNAPS. Notre équipe vous accompagne dans cette démarche."
+    steps = ["Consulter le dossier de présentation et le planning."]
+    if session: steps.append("Confirmer avec notre équipe la session souhaitée.")
+    if _yes(entry.get("cpf_consulte")): steps.append("Vérifier que votre Identité Numérique La Poste est fonctionnelle avant toute inscription CPF.")
+    if entry.get("formation") == "APS" and not _yes(entry.get("cnaps_ok")): steps.append("Préparer avec notre équipe la démarche d’autorisation préalable CNAPS.")
+    return {"summary_paragraphs": paragraphs, "financing_message": financing,
+            "cnaps_message": cnaps, "next_steps": steps[:4]}
 
 
-def _build_secretariat_followup_email(entry, contact):
-    formation_name = _secretariat_formation_name(entry.get("formation"))
-    facts = {key: entry.get(key, "") for key in (
-        "formation_date_souhaitee", "notes", "devis", "rdv", "cpf_consulte",
-        "cpf_montant", "france_travail", "ft_refus_ok", "financement_perso",
-        "identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour",
-    )}
-    system = (
-        "Tu rédiges le compte rendu envoyé à un prospect après un appel avec Intégrale Academy. "
-        "Rédige en français, avec un ton chaleureux, professionnel et concis. Fais un résumé complet, "
-        "mets clairement en évidence les informations clés et indique si un rendez-vous a été proposé ou refusé. "
-        "N'invente aucune information. Retourne uniquement le corps du message en texte brut, avec de courts "
-        "paragraphes et des puces commençant par •. Ne rédige ni objet, ni signature."
-    )
-    user = json.dumps({"prospect": contact.get("prenom") or entry.get("nom"),
-                       "formation": formation_name, "informations_appel": facts}, ensure_ascii=False)
+def _validate_secretariat_ai_content(raw, fallback, entry=None):
     try:
-        body = _crm_ai(system, user, max_tokens=800)
+        value = json.loads(raw) if isinstance(raw, str) else raw
+        paragraphs = value.get("summary_paragraphs")
+        steps = value.get("next_steps")
+        if not isinstance(paragraphs, list) or not 2 <= len(paragraphs) <= 4 or not isinstance(steps, list):
+            raise ValueError("structure invalide")
+        forbidden = ("<", "bonjour", "cassandre menard")
+        clean_paragraphs = [str(p).strip() for p in paragraphs if str(p).strip()]
+        if any(any(token in p.lower() for token in forbidden) for p in clean_paragraphs):
+            raise ValueError("contenu interdit")
+        result = {"summary_paragraphs": clean_paragraphs,
+                "financing_message": str(value.get("financing_message") or "").strip(),
+                "cnaps_message": str(value.get("cnaps_message") or "").strip(),
+                "next_steps": [str(step).strip() for step in steps if str(step).strip()][:4]}
+        ft_status = str((entry or {}).get("france_travail_status") or "").lower().strip()
+        if not ft_status and re.search(r"(demande.{0,30}(transmise|déposée|en cours|en attente|validée|acceptée))", result["financing_message"], re.I):
+            raise ValueError("statut France Travail non prouvé")
+        return result
+    except (ValueError, TypeError, json.JSONDecodeError, AttributeError):
+        return fallback
+
+
+def _secretariat_project_rows(entry, config):
+    rows = [("Formation", config["label"]), ("Session et centre", entry.get("formation_date_souhaitee"))]
+    if entry.get("cpf_montant"): rows.append(("Budget CPF déclaré", f"{entry['cpf_montant']} €"))
+    funding = []
+    if _yes(entry.get("france_travail")): funding.append("étude d’une possibilité de financement France Travail souhaitée")
+    if _yes(entry.get("financement_perso")): funding.append("financement personnel possible")
+    if funding: rows.append(("Financement envisagé", " ; ".join(funding)))
+    if _yes(entry.get("devis")): rows.append(("Devis", "Un devis a été demandé"))
+    return [(label, value) for label, value in rows if str(value or "").strip()]
+
+
+def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-academy-logo"):
+    config = _secretariat_formation_config(entry.get("formation"))
+    fallback = _secretariat_email_fallback(entry)
+    facts = {key: entry.get(key, "") for key in ("formation_date_souhaitee", "devis", "rdv_status", "rdv_date", "rdv_time", "rdv_mode", "cpf_consulte", "cpf_montant", "france_travail", "france_travail_status", "financement_perso", "identite_numerique", "cnaps_ok", "cnaps_status")}
+    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 à 4 paragraphes, 130 à 220 mots au total), financing_message, cnaps_message et next_steps (2 à 4 éléments). Français naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. N'invente aucune information et ne reproduis aucune note interne. Un souhait France Travail n'est jamais une demande déposée, en cours ou validée. Distingue absence de carte, autorisation préalable, demande transmise, expiration et refus CNAPS. Ne répète pas mot pour mot le tableau factuel."""
+    user = json.dumps({"prospect": contact.get("prenom") or entry.get("nom"), "formation": config["label"], "faits_autorises": facts}, ensure_ascii=False)
+    try:
+        content = _validate_secretariat_ai_content(_crm_ai(system, user, max_tokens=900), fallback, entry)
     except Exception as exc:
-        print("⚠️ Compte rendu IA indisponible, utilisation du contenu de secours :", exc)
-        body = _secretariat_email_fallback(entry)
-    subject = f"Votre échange avec Intégrale Academy — {formation_name}"
-    html_body = render_template("emails/secretariat_followup.html",
-                                prenom=contact.get("prenom") or "",
-                                formation=formation_name,
-                                content_lines=body.splitlines())
-    plain = (f"Bonjour {contact.get('prenom') or ''},\n\n{body}\n\nBonne journée,\n\n"
-             "Cassandre MENARD\nResponsable commerciale Intégrale Academy\n04 22 47 07 68")
+        print("Compte rendu IA indisponible, fallback déterministe :", exc)
+        content = fallback
+    subject = f"Votre projet {config.get('short') or config['label']} – le résumé de notre échange"
+    context = dict(prenom=contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0], formation=config, entry=entry,
+                   content=content, project_rows=_secretariat_project_rows(entry, config), appointment=_secretariat_rdv(entry),
+                   logo_src=logo_src, ai_url=SECRETARIAT_AI_URL)
+    html_body = render_template("emails/email_resume_echange_integrale.html", **context)
+    plain = render_template("emails/email_resume_echange_integrale.txt", **context)
     return subject, plain, html_body
 
+
+def _secretariat_preview_data(scheduled=False):
+    return ({
+        "id": "preview-secretariat", "formation": "APS", "nom": "Clément Martin",
+        "email": "preview@example.invalid", "telephone": "0600000000",
+        "formation_date_souhaitee": "Côte d’Azur — du 7 septembre au 9 octobre 2026",
+        "cpf_consulte": "OUI", "cpf_montant": "2000", "france_travail": "OUI",
+        "financement_perso": "OUI", "identite_numerique": "OUI", "cnaps_ok": "NON",
+        "devis": "OUI", "rdv_status": "scheduled" if scheduled else "none",
+        "rdv_date": "15 septembre 2026" if scheduled else "", "rdv_time": "10:30" if scheduled else "",
+        "rdv_mode": "visioconférence" if scheduled else "",
+    }, {"prenom": "Clément"})
+
+
+@app.route("/admin/secretariat/email-preview")
+@login_required
+def secretariat_email_preview():
+    entry, contact = _secretariat_preview_data(request.args.get("scenario") == "scheduled")
+    _, _, html_body = _build_secretariat_followup_email(
+        entry, contact, logo_src=url_for("static", filename="logo.png", _external=True)
+    )
+    return html_body
+
+
+@app.route("/api/admin/secretariat/email-preview/send", methods=["POST"])
+@login_required
+def send_secretariat_email_preview():
+    recipient = str((request.get_json(silent=True) or {}).get("email") or "").strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient):
+        return jsonify({"ok": False, "error": "Adresse de test invalide"}), 400
+    entry, contact = _secretariat_preview_data(False)
+    subject, plain, html_body = _build_secretariat_followup_email(entry, contact)
+    if not send_email_html(recipient, f"[TEST] {subject}", plain, html_body):
+        return jsonify({"ok": False, "error": "Échec de l’envoi de test"}), 502
+    return jsonify({"ok": True})
 
 def _crm_no_answer_message(contact):
     """Build the shared e-mail/SMS follow-up sent after an unanswered call."""
