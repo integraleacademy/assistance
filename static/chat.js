@@ -124,12 +124,12 @@
       if (revision === unreadRevision) state.unread = data.unread;
       render(); clearNotice();
       const saved = Number(sessionStorage.getItem("ic-chat-current"));
-      if (saved && state.conversations.some((item) => item.id === saved)) openConversation(saved, false);
+      if (!state.current && saved && state.conversations.some((item) => item.id === saved)) openConversation(saved, false);
       else markRead();
     } catch (error) { notice(`Connexion au chat impossible : ${error.message}`, bootstrap); }
   }
 
-  function appendMessage(message) {
+  function appendMessage(message, beforeElement = null) {
     if (state.seen.has(message.id)) return;
     state.seen.add(message.id);
     const element = document.createElement("article");
@@ -138,7 +138,9 @@
     const del = document.createElement("button"); del.type = "button"; del.className = "ic-delete"; del.textContent = "×"; del.title = "Supprimer ce message"; del.setAttribute("aria-label", "Supprimer ce message");
     const time = document.createElement("time"); time.textContent = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(message.created_at));
     if (message.sender_user_id !== state.me) { const sender = document.createElement("small"); sender.textContent = message.sender_name; element.append(sender); }
-    element.append(body, del, time); messages.append(element); messages.scrollTop = messages.scrollHeight;
+    element.append(body, del, time);
+    if (beforeElement) messages.insertBefore(element, beforeElement); else messages.append(element);
+    if (!beforeElement) messages.scrollTop = messages.scrollHeight;
   }
 
   async function loadMessages(before) {
@@ -146,8 +148,16 @@
     try {
       const data = await request(`/api/chat/conversations/${id}/messages?limit=50${before ? `&before_id=${before}` : ""}`);
       if (id !== state.current) return;
-      if (!before) { messages.querySelectorAll(".ic-msg").forEach((item) => item.remove()); state.seen.clear(); }
-      data.messages.forEach(appendMessage); state.oldest = data.messages[0]?.id; $(".ic-older").hidden = !data.has_more;
+      if (!before) {
+        messages.querySelectorAll(".ic-msg").forEach((item) => item.remove()); state.seen.clear();
+        data.messages.forEach((message) => appendMessage(message));
+      } else {
+        const previousHeight = messages.scrollHeight;
+        const firstMessage = messages.querySelector(".ic-msg");
+        data.messages.forEach((message) => appendMessage(message, firstMessage));
+        messages.scrollTop += messages.scrollHeight - previousHeight;
+      }
+      state.oldest = data.messages[0]?.id || state.oldest; $(".ic-older").hidden = !data.has_more;
       markRead(); clearNotice();
     } catch (error) { notice(`Impossible de charger les messages : ${error.message}`, () => loadMessages(before)); }
   }
