@@ -109,8 +109,16 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
     deliveries = {"sms": [], "email": []}
     monkeypatch.setattr(application, "send_sms", lambda phone, body: deliveries["sms"].append((phone, body)) or True)
     monkeypatch.setattr(application, "send_email_html", lambda mail, subject, plain, html: deliveries["email"].append((mail, subject, plain, html)) or True)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "lina@example.com", "telephone": "+33612345678"},
+    )
     created = signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
-    client.patch(f"/api/crm/contacts/{created.get_json()['contact_id']}", json={"formation": "APS"})
+    assert created.get_json()["contact_id"] == contact["id"]
     appointment_id = client.get(
         "/api/crm/calendly/appointments"
     ).get_json()["appointments"][0]["id"]
@@ -157,7 +165,7 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
     assert invalid.status_code == 400
 
 
-def test_webhook_creates_a_lead_for_a_new_invitee(tmp_path, monkeypatch):
+def test_webhook_keeps_an_unmatched_appointment_without_creating_a_lead(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
 
     response = signed_webhook(
@@ -168,24 +176,30 @@ def test_webhook_creates_a_lead_for_a_new_invitee(tmp_path, monkeypatch):
     )
 
     assert response.status_code == 200
-    contacts = client.get("/api/crm/contacts").get_json()
-    assert len(contacts) == 1
-    assert contacts[0]["mail"] == "nouveau@example.com"
-    assert contacts[0]["origine"] == "Calendly"
-    assert contacts[0]["statut"] == "RDV programmé"
+    assert response.get_json()["contact_id"] is None
+    assert client.get("/api/crm/contacts").get_json() == []
+    appointments = client.get("/api/crm/calendly/appointments").get_json()["appointments"]
+    assert len(appointments) == 1
+    assert appointments[0]["invitee_email"] == "nouveau@example.com"
+    assert appointments[0]["contact_id"] is None
 
 
 def test_webhook_infers_dirigeant_formation_from_event_name(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": ""},
+    ).get_json()
+    client.patch(f"/api/crm/contacts/{contact['id']}", json={"mail": "dirigeant@example.com"})
     payload = calendly_payload(email="dirigeant@example.com")
     payload["scheduled_event"]["name"] = "Dirigeant d'entreprise de sécurité privée"
 
     response = signed_webhook(client, monkeypatch, "invitee.created", payload)
 
     assert response.status_code == 200
-    contact = client.get(f"/api/crm/contacts/{response.get_json()['contact_id']}").get_json()
-    assert contact["formation"] == "DESP"
-    assert contact["desp_type"] == "INITIAL"
+    updated = client.get(f"/api/crm/contacts/{response.get_json()['contact_id']}").get_json()
+    assert updated["formation"] == "DESP"
+    assert updated["desp_type"] == "INITIAL"
 
 
 def test_webhook_fills_missing_formation_on_an_existing_contact(tmp_path, monkeypatch):
