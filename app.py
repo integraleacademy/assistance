@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, send_from_directory, url_for,
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading
 import html as html_module
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -453,6 +455,136 @@ SECRETARIAT_WEBSITE_URL = "https://www.integraleacademy.com/"
 SECRETARIAT_DOSSIER_URL = "https://www.integraleacademy.com/dossiersfc"
 SECRETARIAT_PLANNING_URL = "https://www.integraleacademy.com/calendrier-formations"
 SECRETARIAT_AI_URL = "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy"
+
+_SECRETARIAT_WEBSITE_CACHE = {"sitemap": (0, []), "pages": {}}
+_SECRETARIAT_WEBSITE_CACHE_LOCK = threading.Lock()
+_SECRETARIAT_WEBSITE_CACHE_SECONDS = 15 * 60
+_SECRETARIAT_WEBSITE_MAX_PAGES = 8
+_SECRETARIAT_WEBSITE_ALIASES = {
+    "A3P": ("a3p", "apr", "protection", "garde du corps"),
+    "APS": ("aps", "agent de prevention", "agent de sécurité"),
+    "SSIAP": ("ssiap", "incendie"),
+    "DESP_INIT": ("desp", "dirigeant", "entreprise de sécurité"),
+    "DESP_VAE": ("desp", "vae", "dirigeant"),
+    "VTC": ("vtc", "chauffeur"),
+    "BTS_MOS": ("bts mos", "management opérationnel"),
+    "BTS_MCO": ("bts mco", "management commercial"),
+    "BTS_CI": ("bts ci", "commerce international"),
+    "BTS_NDRC": ("bts ndrc", "négociation"),
+    "BTS_PI": ("bts pi", "professions immobilières"),
+    "BTS_CG": ("bts cg", "comptabilité gestion"),
+}
+
+
+class _SecretariatWebsiteTextParser(HTMLParser):
+    """Extract readable copy from an official website page without extra dependencies."""
+
+    _ignored_tags = {"script", "style", "noscript", "svg"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._ignored_depth = 0
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in self._ignored_tags:
+            self._ignored_depth += 1
+
+    def handle_endtag(self, tag):
+        if tag.lower() in self._ignored_tags and self._ignored_depth:
+            self._ignored_depth -= 1
+
+    def handle_data(self, data):
+        if not self._ignored_depth and data.strip():
+            self.parts.append(data.strip())
+
+
+def _secretariat_official_url(url):
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and (parsed.hostname or "").lower() in {
+        "integraleacademy.com", "www.integraleacademy.com"
+    }
+
+
+def _secretariat_fetch_official_text(url):
+    """Fetch one allow-listed official page and cache its visible text."""
+    now = time.monotonic()
+    with _SECRETARIAT_WEBSITE_CACHE_LOCK:
+        cached = _SECRETARIAT_WEBSITE_CACHE["pages"].get(url)
+    if cached and now - cached[0] < _SECRETARIAT_WEBSITE_CACHE_SECONDS:
+        return cached[1]
+    if not _secretariat_official_url(url):
+        return ""
+    response = requests.get(url, timeout=8, headers={"User-Agent": "IntegraleAcademy-Secretariat/1.0"})
+    response.raise_for_status()
+    if "text/html" not in response.headers.get("Content-Type", "text/html").lower():
+        return ""
+    parser = _SecretariatWebsiteTextParser()
+    parser.feed(response.text[:2_000_000])
+    text_content = re.sub(r"\s+", " ", " ".join(parser.parts)).strip()[:16_000]
+    with _SECRETARIAT_WEBSITE_CACHE_LOCK:
+        _SECRETARIAT_WEBSITE_CACHE["pages"][url] = (now, text_content)
+    return text_content
+
+
+def _secretariat_sitemap_urls():
+    now = time.monotonic()
+    with _SECRETARIAT_WEBSITE_CACHE_LOCK:
+        cached_at, cached_urls = _SECRETARIAT_WEBSITE_CACHE["sitemap"]
+    if cached_urls and now - cached_at < _SECRETARIAT_WEBSITE_CACHE_SECONDS:
+        return cached_urls
+    response = requests.get(f"{SECRETARIAT_WEBSITE_URL}sitemap.xml", timeout=8,
+                            headers={"User-Agent": "IntegraleAcademy-Secretariat/1.0"})
+    response.raise_for_status()
+    urls = []
+    sitemap_urls = re.findall(r"<loc>\s*(.*?)\s*</loc>", response.text, flags=re.I)
+    # Wix may expose a sitemap index. Read its small child sitemaps before selecting pages.
+    for location in sitemap_urls[:20]:
+        location = html_module.unescape(location)
+        if location.lower().endswith(".xml") and _secretariat_official_url(location):
+            child = requests.get(location, timeout=8,
+                                 headers={"User-Agent": "IntegraleAcademy-Secretariat/1.0"})
+            child.raise_for_status()
+            urls.extend(re.findall(r"<loc>\s*(.*?)\s*</loc>", child.text, flags=re.I))
+        else:
+            urls.append(location)
+    urls = list(dict.fromkeys(html_module.unescape(url) for url in urls
+                              if _secretariat_official_url(html_module.unescape(url))))
+    with _SECRETARIAT_WEBSITE_CACHE_LOCK:
+        _SECRETARIAT_WEBSITE_CACHE["sitemap"] = (now, urls)
+    return urls
+
+
+def _secretariat_website_context(formation_code, question):
+    """Retrieve the most relevant official pages for a training question."""
+    try:
+        try:
+            urls = _secretariat_sitemap_urls()
+        except Exception:
+            app.logger.warning("Sitemap Intégrale Academy indisponible", exc_info=True)
+            urls = []
+        terms = (*_SECRETARIAT_WEBSITE_ALIASES.get(formation_code, ()),
+                 *re.findall(r"[a-zà-ÿ0-9]{4,}", question.lower()))
+        def relevance(url):
+            normalized = unicodedata.normalize("NFKD", url).encode("ascii", "ignore").decode().lower()
+            return sum(3 if term in _SECRETARIAT_WEBSITE_ALIASES.get(formation_code, ()) else 1
+                       for term in terms
+                       if unicodedata.normalize("NFKD", term).encode("ascii", "ignore").decode() in normalized)
+        ranked = sorted(urls, key=lambda url: (relevance(url), url == SECRETARIAT_WEBSITE_URL), reverse=True)
+        selected = [SECRETARIAT_WEBSITE_URL, *[url for url in ranked if relevance(url) > 0]]
+        excerpts = []
+        for url in list(dict.fromkeys(selected))[:_SECRETARIAT_WEBSITE_MAX_PAGES]:
+            try:
+                content = _secretariat_fetch_official_text(url)
+            except Exception:
+                app.logger.warning("Page Intégrale Academy indisponible : %s", url, exc_info=True)
+                continue
+            if content:
+                excerpts.append(f"SOURCE : {url}\n{content}")
+        return "\n\n".join(excerpts)[:40_000]
+    except Exception:
+        app.logger.exception("Lecture du site Intégrale Academy impossible")
+        return ""
 
 # Repères volontairement rédigés pour une personne qui ne connaît pas encore les
 # formations. Les conditions définitives restent validées par l'équipe admissions.
@@ -3150,16 +3282,20 @@ def _call_secretariat_ai(formation_code, task, conversation=None):
     context = _secretariat_ai_context(formation_code)
     if context is None:
         return None
+    website_context = _secretariat_website_context(formation_code, task)
     started = time.monotonic()
     system = (
         "Tu aides le secrétariat d'Intégrale Academy pendant un appel. Réponds en français, "
-        "de façon claire et directement exploitable. Utilise EXCLUSIVEMENT les données de la fiche "
-        "fiable fournie ci-dessous, y compris pour les dates, tarifs et règles. N'invente jamais "
-        "et ne complète pas avec tes connaissances générales. Si la réponse n'est pas explicitement "
-        "présente, réponds exactement : « Cette information n’est pas disponible dans la fiche de la formation. »"
+        "de façon claire et directement exploitable. Utilise EXCLUSIVEMENT la fiche fiable et les "
+        "extraits du site officiel integraleacademy.com fournis ci-dessous, y compris pour les dates, "
+        "tarifs et règles. Cherche d'abord la réponse dans ces deux sources. N'invente jamais et ne "
+        "complète pas avec tes connaissances générales. Si la réponse n'est explicitement présente "
+        "dans aucune des deux sources, réponds exactement : « Cette information n’est pas disponible "
+        "dans la fiche de la formation ni sur le site officiel. »"
     )
     history = conversation or []
     user = (f"FICHE FIABLE :\n{json.dumps(context, ensure_ascii=False)}\n\n"
+            f"EXTRAITS ACTUELS DU SITE OFFICIEL :\n{website_context or 'Site officiel temporairement inaccessible.'}\n\n"
             f"HISTORIQUE SUR CETTE FORMATION :\n{json.dumps(history, ensure_ascii=False)}\n\n"
             f"TÂCHE :\n{task}")
     try:
