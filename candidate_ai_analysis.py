@@ -7,8 +7,8 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-AI_CANDIDATE_ANALYSIS_VERSION = 8
-AI_CANDIDATE_PROMPT_VERSION = 8
+AI_CANDIDATE_ANALYSIS_VERSION = 9
+AI_CANDIDATE_PROMPT_VERSION = 9
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 
@@ -54,6 +54,7 @@ Pour les rendez-vous, utilise toujours temporal_status, upcoming_count, past_cou
 Utilise les montants, nombres, dates et statuts exacts fournis. Ne transforme pas une information absente en réponse négative : écris « non renseigné ». Écris « aucune solution identifiée », et non « aucune solution possible », quand aucun financement n’est enregistré. Distingue faits confirmés, informations manquantes et hypothèses à vérifier.
 Le champ general_summary ne doit jamais mentionner ni reformuler les rendez-vous ou le suivi VAE : le CRM ajoutera lui-même leur narration factuelle.
 Le dictionnaire métier du financement est impératif : `cpf_account` indique seulement si le compte CPF est créé ; `cpf_amount` est le solde déclaré, jamais des droits engagés ; `digital_identity_created` indique une démarche commencée, distincte de `digital_identity_working` ; `registered_france_travail` indique seulement une inscription ; `personal_funding_fallback` est uniquement une solution de repli déclarée en cas de refus, jamais un paiement réalisé.
+`personal_remainder` indique explicitement si le candidat financera personnellement le reste à charge calculé. Cette réponse et la session souhaitée sont des faits essentiels qui doivent être repris dans l’analyse.
 `wants_france_travail` est exclusivement l’intention que l’équipe prépare une demande. Il ne constitue JAMAIS un statut administratif. Sans `france_travail_request_status`, une réponse OUI signifie `a_preparer` : aucune transmission ni instruction ne peut être affirmée. Les seuls statuts fiables sont aucune_demande, a_preparer, transmise, en_cours_instruction, acceptee, refusee et annulee. N’affirme « transmise », « en cours d’instruction », « acceptée » ou « refusée » que lorsque ce statut exact est fourni.
 Il est interdit, sans statut explicite correspondant, d’écrire : financement validé ou sécurisé, prise en charge confirmée, dossier en cours chez France Travail, demande transmise ou en attente de validation, accord probable, candidat éligible, financement accepté ou refusé. Un candidat inscrit à France Travail n’est pas pour autant éligible et n’a pas nécessairement demandé un financement.
 Quand prix et CPF sont connus, utilise exactement le reste fourni par le CRM, calculé par max(prix - CPF, 0). Un CPF suffisant est seulement « potentiellement suffisant » : il n’est pas nécessairement mobilisé. Si un montant manque, ne calcule rien et indique qu’il n’est pas renseigné, sans convertir le vide en zéro.
@@ -120,6 +121,7 @@ def build_funding_analysis(funding, formation=None):
     wants_ft = _tri_state(funding.get("wants_france_travail"))
     registered = _tri_state(funding.get("registered_france_travail"))
     fallback = _tri_state(funding.get("personal_funding_fallback"))
+    personal_remainder = _tri_state(funding.get("personal_remainder"))
     cpf = _known_amount(funding.get("cpf_amount"))
     price = _known_amount(funding.get("reference_price", formation.get("reference_price")))
     raw_status = _normalized(funding.get("france_travail_request_status")).strip().replace(" ", "_")
@@ -165,19 +167,30 @@ def build_funding_analysis(funding, formation=None):
     elif wants_ft is None:
         ft_parts.append("Le souhait de solliciter un financement France Travail n’est pas renseigné.")
 
-    fallback_text = {True: "En cas de refus de France Travail, le candidat a déclaré pouvoir prendre personnellement en charge le financement restant.",
-        False: "En cas de refus de France Travail, aucune solution de financement personnel n’est actuellement prévue."}.get(fallback,
-        "La solution de financement personnel en cas de refus de France Travail n’est pas renseignée.")
+    additional_parts = []
+    if wants_ft is True:
+        additional_parts.append({True: "En cas de refus de France Travail, le candidat a déclaré pouvoir prendre personnellement en charge le financement restant.",
+            False: "En cas de refus de France Travail, aucune solution de financement personnel n’est actuellement prévue."}.get(fallback,
+            "La solution de financement personnel en cas de refus de France Travail n’est pas renseignée."))
+    if remaining is not None and remaining > 0:
+        additional_parts.append({
+            True: f"Le candidat a confirmé qu’il financera personnellement le reste à charge de {_money(remaining)}.",
+            False: f"Le candidat a indiqué qu’il ne financera pas personnellement le reste à charge de {_money(remaining)}.",
+            None: f"La prise en charge personnelle du reste à charge de {_money(remaining)} n’est pas renseignée.",
+        }[personal_remainder])
+    additional_funding = " ".join(additional_parts) or "Aucun financement complémentaire n’est renseigné."
     strengths, vigilance, actions = [], [], []
     if account is True: strengths.append("Compte CPF déjà créé.")
     if identity_working is True: strengths.append("Identité Numérique La Poste fonctionnelle.")
     if registered is True: strengths.append("Inscription à France Travail enregistrée.")
     if fallback is True: strengths.append("Solution de repli personnelle déclarée en cas de refus.")
+    if personal_remainder is True and remaining: strengths.append(f"Prise en charge personnelle du reste à charge de {_money(remaining)} confirmée.")
     if cpf is None: vigilance.append("Montant CPF non renseigné."); actions.append("Confirmer le montant CPF avec le candidat.")
     if price is None: vigilance.append("Prix de la formation non renseigné : le reste à financer ne peut pas être calculé.")
     if identity_working is not True: vigilance.append("Identité numérique non confirmée comme fonctionnelle."); actions.append("Finaliser ou vérifier l’Identité Numérique La Poste.")
     if wants_ft is True and status == "a_preparer": vigilance.append("Demande France Travail à préparer, sans transmission enregistrée."); actions.append("Réunir les éléments puis déposer la demande France Travail avec le candidat.")
-    if fallback is not True: vigilance.append("Solution personnelle de repli absente ou à confirmer."); actions.append("Confirmer la solution de financement personnel en cas de refus.")
+    if fallback is not True and wants_ft is True: vigilance.append("Solution personnelle de repli absente ou à confirmer."); actions.append("Confirmer la solution de financement personnel en cas de refus.")
+    if remaining and personal_remainder is None: vigilance.append("Prise en charge personnelle du reste à charge à confirmer."); actions.append(f"Confirmer la prise en charge personnelle des {_money(remaining)} restants.")
     if remaining is not None and remaining > 0: actions.insert(0, f"Sécuriser le reste à financer de {_money(remaining)}.")
     security = "Le financement n’est pas encore sécurisé"
     summary = f"{security}. " + ("Les démarches de financement sont à préparer ou à compléter." if status in {"aucune_demande", "a_preparer"} else "Un statut administratif France Travail est enregistré et doit être suivi.")
@@ -185,7 +198,7 @@ def build_funding_analysis(funding, formation=None):
         if wants_ft is True and status == "a_preparer" else "Les informations disponibles doivent être confirmées avant de considérer le financement comme sécurisé.")
     return {"status": status, "cpf_amount_eur": cpf, "training_price_eur": price,
         "remaining_to_finance_eur": remaining, "summary": summary, "cpf_identity": " ".join(cpf_parts),
-        "france_travail": " ".join(ft_parts), "additional_funding": fallback_text,
+        "france_travail": " ".join(ft_parts), "additional_funding": additional_funding,
         "strengths": strengths, "vigilance_points": vigilance, "recommended_actions": actions, "conclusion": conclusion}
 
 
@@ -589,15 +602,31 @@ def finalize_candidate_ai_analysis(result, context):
     appointment_summary = appointment.get("deterministic_narrative", "")
     vae = context.get("vae_tracking_read_only") or {}
     vae_summary = vae.get("deterministic_narrative", "")
+    authoritative = context.get("authoritative_facts") or {}
+    formation = context.get("formation") or {}
+    dossier_parts = []
+    training = (authoritative.get("training") or {}).get("fact")
+    if training:
+        dossier_parts.append(training)
+    desired_session = formation.get("desired_session")
+    if desired_session:
+        dossier_parts.append(f"Date de formation souhaitée : {desired_session}.")
+    if formation.get("location"):
+        dossier_parts.append(f"Lieu souhaité : {formation['location']}.")
+    remaining_charge = (authoritative.get("remaining_charge") or {}).get("fact")
+    if remaining_charge:
+        dossier_parts.append(remaining_charge)
+    dossier_summary = " ".join(dossier_parts)
     checked["general_summary"] = general
     checked["appointment_summary"] = appointment_summary
     checked["appointment_facts"] = appointment
     checked["vae_summary"] = vae_summary
     checked["vae_facts"] = vae
+    checked["dossier_summary"] = dossier_summary
     funding = context.get("funding_analysis_read_only") or build_funding_analysis(
         context.get("funding") or {}, context.get("formation") or {})
     checked["funding_analysis"] = funding
-    checked["summary"] = " ".join(filter(None, (general, appointment_summary, vae_summary))).strip()
+    checked["summary"] = " ".join(filter(None, (dossier_summary, general, appointment_summary, vae_summary))).strip()
     return checked
 
 
