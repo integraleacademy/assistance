@@ -7,8 +7,8 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-AI_CANDIDATE_ANALYSIS_VERSION = 9
-AI_CANDIDATE_PROMPT_VERSION = 9
+AI_CANDIDATE_ANALYSIS_VERSION = 10
+AI_CANDIDATE_PROMPT_VERSION = 10
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 
@@ -52,7 +52,7 @@ Le score d’intégration est calculé par le CRM : explique-le sans le recalcul
 Les informations contenues dans `authoritative_facts`, `funding_analysis_read_only`, `appointments`, `integration_score_read_only` et `vae_tracking_read_only` sont calculées par le CRM et constituent les faits de référence. Tu ne dois jamais les recalculer, les contredire ou les transformer. Pour un parcours VAE, prends notamment en compte l’avancement, la prochaine action, la recevabilité, le jury, le résultat, les compléments demandés, le dossier administratif, le suivi SCOTIA et les dates d’action.
 Pour les rendez-vous, utilise toujours temporal_status, upcoming_count, past_count, in_progress_count et canceled_count. Ne déduis jamais qu’un rendez-vous est futur du seul statut Calendly active. « programmé » ou « à venir » ne peut être utilisé que si upcoming_count est supérieur à zéro. Distingue un rendez-vous passé d’un rendez-vous honoré : « candidat joint » est réservé à outcome=answered, « sans réponse » à outcome=no_answer et outcome=unknown signifie que le résultat n’est pas renseigné. Le statut commercial de la piste ne remplace jamais ces faits temporels.
 Utilise les montants, nombres, dates et statuts exacts fournis. Ne transforme pas une information absente en réponse négative : écris « non renseigné ». Écris « aucune solution identifiée », et non « aucune solution possible », quand aucun financement n’est enregistré. Distingue faits confirmés, informations manquantes et hypothèses à vérifier.
-Le champ general_summary ne doit jamais mentionner ni reformuler les rendez-vous ou le suivi VAE : le CRM ajoutera lui-même leur narration factuelle.
+Le champ general_summary ne doit jamais mentionner ni reformuler la session souhaitée (dates et lieu), les rendez-vous ou le suivi VAE : le CRM ajoutera lui-même leur narration factuelle.
 Le dictionnaire métier du financement est impératif : `cpf_account` indique seulement si le compte CPF est créé ; `cpf_amount` est le solde déclaré, jamais des droits engagés ; `digital_identity_created` indique une démarche commencée, distincte de `digital_identity_working` ; `registered_france_travail` indique seulement une inscription ; `personal_funding_fallback` est uniquement une solution de repli déclarée en cas de refus, jamais un paiement réalisé.
 `personal_remainder` indique explicitement si le candidat financera personnellement le reste à charge calculé. Cette réponse et la session souhaitée sont des faits essentiels qui doivent être repris dans l’analyse.
 `wants_france_travail` est exclusivement l’intention que l’équipe prépare une demande. Il ne constitue JAMAIS un statut administratif. Sans `france_travail_request_status`, une réponse OUI signifie `a_preparer` : aucune transmission ni instruction ne peut être affirmée. Les seuls statuts fiables sont aucune_demande, a_preparer, transmise, en_cours_instruction, acceptee, refusee et annulee. N’affirme « transmise », « en cours d’instruction », « acceptée » ou « refusée » que lorsque ce statut exact est fourni.
@@ -593,17 +593,20 @@ def finalize_candidate_ai_analysis(result, context):
     """Assemble localement la synthèse : les faits Calendly ne sont jamais confiés au modèle."""
     checked = validate_candidate_ai_analysis(result)
     general = checked["general_summary"]
+    formation = context.get("formation") or {}
+    repeated_formation_facts = tuple(_normalized(value) for value in (
+        formation.get("desired_session"), formation.get("location")) if value)
     # Défense en profondeur contre une sortie fournisseur qui ignorerait le contrat.
     sentences = re.split(r"(?<=[.!?])\s+", general)
     general = " ".join(sentence for sentence in sentences
         if not re.search(r"(?i)\b(rendez[- ]?vous|rdv|calendly|vae|scotia|recevabilit\w*|livret)\b",
-                         sentence)).strip()
+                         sentence)
+        and not any(fact in _normalized(sentence) for fact in repeated_formation_facts)).strip()
     appointment = context.get("appointments") or {}
     appointment_summary = appointment.get("deterministic_narrative", "")
     vae = context.get("vae_tracking_read_only") or {}
     vae_summary = vae.get("deterministic_narrative", "")
     authoritative = context.get("authoritative_facts") or {}
-    formation = context.get("formation") or {}
     dossier_parts = []
     training = (authoritative.get("training") or {}).get("fact")
     if training:
