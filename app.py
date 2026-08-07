@@ -3099,6 +3099,34 @@ def _brouillon_correspond_a_formulaire_soumis(draft, identifiants):
     return False
 
 
+def _brevo_sms_credits() -> float:
+    """Return the SMS credits currently available on the configured Brevo account."""
+    api_key = os.getenv("BREVO_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("La clé API Brevo n’est pas configurée.")
+
+    response = requests.get(
+        "https://api.brevo.com/v3/account",
+        headers={"accept": "application/json", "api-key": api_key},
+        timeout=10,
+    )
+    if not 200 <= response.status_code < 300:
+        raise RuntimeError("Brevo n’a pas pu communiquer le solde SMS.")
+
+    payload = response.json()
+    plans = payload.get("plan", []) if isinstance(payload, dict) else []
+    sms_plans = [
+        plan for plan in plans
+        if isinstance(plan, dict) and str(plan.get("type", "")).casefold() == "sms"
+    ]
+    if not sms_plans:
+        raise RuntimeError("Aucun crédit SMS n’a été trouvé sur le compte Brevo.")
+    try:
+        return sum(float(plan.get("credits", 0)) for plan in sms_plans)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Brevo a renvoyé un solde SMS invalide.") from exc
+
+
 def _nettoyer_formulaires_abandonnes_soumis(data):
     abandons = data.get("formulaires_abandonnes", [])
     if not abandons:
@@ -9336,6 +9364,19 @@ def crm_delete_database():
     data["crm_cnaps_scoring_snapshots"] = {}
     save_data(data)
     return jsonify({"ok": True, "deleted_count": deleted_count})
+
+
+@app.get("/api/crm/brevo/sms-credits")
+@login_required
+def crm_brevo_sms_credits():
+    """Expose the live Brevo SMS balance to CRM administrators only."""
+    if (current_user() or {}).get("role") != "admin":
+        return jsonify({"error": "Cette information est réservée à l’administrateur"}), 403
+    try:
+        credits = _brevo_sms_credits()
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        return jsonify({"error": str(exc) or "Le solde SMS Brevo est indisponible."}), 503
+    return jsonify({"credits": credits})
 
 
 @app.post("/api/crm/statuses")
