@@ -449,8 +449,9 @@ SECRETARIAT_FORMATIONS = {
     "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
 }
 
-SECRETARIAT_DOSSIER_URL = "https://www.integralesecuriteformations.com/dossiersfc"
-SECRETARIAT_PLANNING_URL = "https://www.integralesecuriteformations.com/calendrier-formations"
+SECRETARIAT_WEBSITE_URL = "https://www.integraleacademy.com/"
+SECRETARIAT_DOSSIER_URL = "https://www.integraleacademy.com/dossiersfc"
+SECRETARIAT_PLANNING_URL = "https://www.integraleacademy.com/calendrier-formations"
 SECRETARIAT_AI_URL = "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy"
 
 # Repères volontairement rédigés pour une personne qui ne connaît pas encore les
@@ -507,6 +508,8 @@ for _code, _details in SECRETARIAT_FORMATIONS.items():
     # toujours celles de la session choisie et ne figurent donc pas ici.
     _details.update({
         "label": _details.get("label") or PLAN_FORMATIONS.get(_code, _details.get("short", _code)),
+        "source_url": SECRETARIAT_WEBSITE_URL,
+        "assistant_url": SECRETARIAT_AI_URL,
         "dossier_url": SECRETARIAT_DOSSIER_URL,
         "planning_url": SECRETARIAT_PLANNING_URL,
     })

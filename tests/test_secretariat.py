@@ -77,9 +77,9 @@ def test_secretariat_displays_training_details_before_caller_form(client, monkey
     assert b"Financements possibles" in response.data
     assert b"Pr\xc3\xa9requis \xc3\xa0 v\xc3\xa9rifier" in response.data
     assert b"Ce que l\xe2\x80\x99appelant va apprendre" in response.data
-    assert b"Prochaines dates" in response.data
     assert b"protection rapproch" in response.data
-    assert b"Demander \xc3\xa0 l\xe2\x80\x99assistant IA" in response.data
+    assert b"site internet d\xe2\x80\x99Int\xc3\xa9grale Academy" in response.data
+    assert b"consultez l\xe2\x80\x99assistant IA des formations" in response.data
 
 
 def test_secretariat_requires_asking_for_the_preferred_training_session(client, monkeypatch):
@@ -778,16 +778,25 @@ def test_secretariat_ai_rejects_unknown_training(client):
     assert response.status_code == 400
 
 
-def test_secretariat_exposes_both_ai_features(client, monkeypatch):
+def test_secretariat_removes_embedded_ai_features(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert b"Poser une question \xc3\xa0 l\xe2\x80\x99IA sur cette formation" in response.data
-    assert b"G\xc3\xa9n\xc3\xa9rer les informations cl\xc3\xa9s avec l\xe2\x80\x99IA" in response.data
-    assert b"Recherche en cours\xe2\x80\xa6" in response.data
-    assert b"Copier la r\xc3\xa9ponse" in response.data
-    assert b"R\xc3\xa9g\xc3\xa9n\xc3\xa9rer" in response.data
+    assert b"Poser une question \xc3\xa0 l\xe2\x80\x99IA sur cette formation" not in response.data
+    assert b"G\xc3\xa9n\xc3\xa9rer les informations cl\xc3\xa9s avec l\xe2\x80\x99IA" not in response.data
+    assert b'id="askAi"' not in response.data
+    assert b'id="generateKeyInfo"' not in response.data
+
+
+def test_secretariat_asks_for_dates_before_the_training_sheet(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    body = response.data.decode()
+    assert body.index("Quelles dates de formation souhaitez-vous") < body.index("La fiche pratique de la formation")
+    assert "https://www.integraleacademy.com/" in body
 
 
 def test_secretariat_question_route_uses_a3p_data_and_conversation(client, monkeypatch):
