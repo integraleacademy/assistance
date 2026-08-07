@@ -360,6 +360,12 @@ def test_crm_email_starter_exposes_editable_complete_html(tmp_path, monkeypatch)
     assert "Écrivez ici le contenu de votre e-mail." in starter
     assert "<!-- EMAIL_CONTENT_START -->" in starter
     assert "<!-- EMAIL_CONTENT_END -->" in starter
+    assert "Cassandre MENARD" in starter
+    assert "cassandre@integraleacademy.com" in starter
+    assert "SIREN 840 899 884" in starter
+    assert "Autorisation d’exercice CNAPS" in starter
+    assert "<!-- EMAIL_HEADER_TITLE_START -->" in starter
+    assert "<!-- EMAIL_HEADER_TAGLINE_END -->" in starter
     assert "{{ contenu|safe }}" not in starter
 
 
@@ -515,6 +521,11 @@ def test_starter_email_has_a_simple_content_editor():
     assert "la mise en page du modèle est conservée automatiquement" in crm_js
     assert "Modifier le code HTML (avancé)" in crm_js
     assert "emailContentToHtml(tplContent.value)" in crm_js
+    assert "Header du mail" in crm_js
+    assert 'for="tplHeaderTitle">Titre' in crm_js
+    assert 'for="tplHeaderSubtitle">Sous-titre' in crm_js
+    assert 'for="tplHeaderTagline">Accroche' in crm_js
+    assert "EMAIL_HEADER_TITLE_START" in crm_js
 
 
 def test_crm_pipeline_statuses_can_be_added_renamed_and_deleted(tmp_path, monkeypatch):
