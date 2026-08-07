@@ -165,7 +165,7 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
     assert invalid.status_code == 400
 
 
-def test_answered_appointment_sends_the_named_email_and_sms_templates(tmp_path, monkeypatch):
+def test_answered_appointment_patch_does_not_send_followup_before_call_log(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     deliveries = {"sms": [], "email": []}
     monkeypatch.setattr(application, "send_sms", lambda phone, body: deliveries["sms"].append((phone, body)) or True)
@@ -180,13 +180,36 @@ def test_answered_appointment_sends_the_named_email_and_sms_templates(tmp_path, 
     response = client.patch(f"/api/crm/calendly/appointments/{appointment_id}", json={"response_status": "answered"})
 
     assert response.status_code == 200
-    assert response.get_json()["delivery"] == {"sms": True, "email": True}
-    assert deliveries["sms"][0][1] == "Merci Lina pour notre appel."
-    assert deliveries["email"][0][1] == "La suite pour APS"
-    assert "suite à notre appel" in deliveries["email"][0][3]
+    assert "delivery" not in response.get_json()
+    assert deliveries == {"sms": [], "email": []}
     duplicate = client.patch(f"/api/crm/calendly/appointments/{appointment_id}", json={"response_status": "answered"})
     assert "delivery" not in duplicate.get_json()
+    assert deliveries == {"sms": [], "email": []}
+
+
+def test_answered_followup_is_sent_only_when_the_call_is_logged(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    deliveries = {"sms": [], "email": []}
+    monkeypatch.setattr(application, "send_sms", lambda phone, body: deliveries["sms"].append((phone, body)) or True)
+    monkeypatch.setattr(application, "send_email_html", lambda mail, subject, plain, html: deliveries["email"].append((mail, subject)) or True)
+    contact = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"}).get_json()
+    client.patch(f"/api/crm/contacts/{contact['id']}", json={"mail": "lina@example.com", "telephone": "+33612345678"})
+    client.post("/api/crm/templates", json={"type": "sms", "nom": "Suite appel répondu", "contenu": "Merci {{ prenom }}."})
+    client.post("/api/crm/templates", json={"type": "email", "nom": "Suite appel répondu", "sujet": "Suite", "contenu": "<p>Merci.</p>"})
+    signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
+    appointment_id = client.get("/api/crm/calendly/appointments").get_json()["appointments"][0]["id"]
+
+    assert deliveries == {"sms": [], "email": []}
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/appel",
+        json={"commentaire": "Échange concluant.", "appointment_id": appointment_id},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["appointment"]["response_status"] == "answered"
+    assert response.get_json()["delivery"] == {"sms": True, "email": True}
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
+    assert client.get(f"/api/crm/contacts/{contact['id']}").get_json()["activities"][0]["detail"] == "Échange concluant."
 
 
 def test_webhook_keeps_an_unmatched_appointment_without_creating_a_lead(tmp_path, monkeypatch):
