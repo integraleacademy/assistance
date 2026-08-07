@@ -281,10 +281,19 @@ def test_crm_email_starter_exposes_editable_complete_html(tmp_path, monkeypatch)
 
     assert starter.lower().startswith("<!doctype html>")
     assert "Faites le premier pas vers votre futur métier" in starter
+    assert "Le résumé de notre échange" in starter
     assert "Écrivez ici le contenu de votre e-mail." in starter
     assert "<!-- EMAIL_CONTENT_START -->" in starter
     assert "<!-- EMAIL_CONTENT_END -->" in starter
     assert "{{ contenu|safe }}" not in starter
+
+
+def test_crm_template_library_lists_all_supported_variables():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    for variable in ("prenom", "nom", "email", "telephone", "formation", "lieu", "statut", "dates_formation", "prochaines_dates"):
+        assert "{{ " + variable + " }}" in crm_js
+    assert "Variables disponibles" in crm_js
 
 
 def test_complete_crm_email_html_is_not_wrapped_twice(tmp_path, monkeypatch):

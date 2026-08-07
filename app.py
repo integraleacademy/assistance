@@ -8100,6 +8100,50 @@ def _crm_no_answer_message(contact):
     )
 
 
+def _crm_named_template(data, kind, name):
+    """Return a message template by its user-facing name (case insensitive)."""
+    expected = str(name).strip().casefold()
+    return next((item for item in data.get(f"crm_{kind}_templates", [])
+                 if str(item.get("nom") or "").strip().casefold() == expected), None)
+
+
+def _crm_send_appointment_followup(data, contact, template_name):
+    """Send the e-mail and SMS bearing the configured appointment template name."""
+    delivery = {"sms": False, "email": False}
+    sms_template = _crm_named_template(data, "sms", template_name)
+    email_template = _crm_named_template(data, "email", template_name)
+    # Historical databases may not yet contain the newly named templates. Keep
+    # the existing missed-call follow-up operational until an administrator
+    # saves its custom versions in the library.
+    if template_name == "Pas de réponse appel":
+        fallback = _crm_no_answer_message(contact)
+        sms_template = sms_template or {"contenu": fallback}
+        email_template = email_template or {
+            "sujet": f"Intégrale Academy — Votre formation {contact.get('formation') or ''}".strip(),
+            "contenu": fallback,
+        }
+    if sms_template and contact.get("telephone"):
+        sms_body = _crm_resolve_message_variables(
+            sms_template.get("contenu"), contact, data_store=data
+        )
+        delivery["sms"] = send_sms(contact.get("telephone"), sms_body)
+        if delivery["sms"]:
+            _crm_activity(contact, "sms", f"SMS « {template_name} » envoyé", sms_body, sms_body)
+    if email_template and contact.get("mail"):
+        email_body = _crm_resolve_message_variables(
+            email_template.get("contenu"), contact, html=True, data_store=data
+        )
+        email_html = _crm_email_html(email_body, contact)
+        subject = _crm_resolve_message_variables(
+            email_template.get("sujet") or template_name, contact, data_store=data
+        )
+        plain = html_module.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", email_body))).strip()
+        delivery["email"] = send_email_html(contact.get("mail"), subject, plain, email_html)
+        if delivery["email"]:
+            _crm_activity(contact, "email", f"E-mail « {template_name} » envoyé", subject, email_html)
+    return delivery
+
+
 def _crm_ai(system_prompt, user_prompt, max_tokens=500):
     """Single, testable entry point for the CRM writing assistants."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -8801,31 +8845,17 @@ def crm_calendly_update_appointment(appointment_id):
     appointment["response_status_updated_at"] = now
     appointment["updated_at"] = now
     delivery = None
-    if response_status == "no_answer" and previous_status != "no_answer":
+    if response_status in {"no_answer", "answered"} and previous_status != response_status:
         contact = _crm_contact(data, appointment.get("contact_id"))
         if contact:
-            contact["statut"] = "A relancer"
-            paris_today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
-            contact["relance_date"] = (paris_today + datetime.timedelta(days=2)).isoformat()
+            if response_status == "no_answer":
+                contact["statut"] = "A relancer"
+                paris_today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
+                contact["relance_date"] = (paris_today + datetime.timedelta(days=2)).isoformat()
+                _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+2")
             contact["updated_at"] = now
-            message = _crm_no_answer_message(contact)
-            sms_sent = send_sms(contact.get("telephone"), message)
-            email_html = "".join(
-                f"<p>{html_module.escape(paragraph).replace(chr(10), '<br>')}</p>"
-                for paragraph in message.split("\n\n")
-            )
-            email_sent = send_email_html(
-                contact.get("mail"),
-                f"Intégrale Academy — Votre formation {contact.get('formation') or ''}".strip(),
-                message,
-                email_html,
-            )
-            _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+2")
-            if sms_sent:
-                _crm_activity(contact, "sms", "SMS de relance automatique envoyé", message, message)
-            if email_sent:
-                _crm_activity(contact, "email", "E-mail de relance automatique envoyé", "Sans réponse au rendez-vous", email_html)
-            delivery = {"sms": sms_sent, "email": email_sent}
+            template_name = "Pas de réponse appel" if response_status == "no_answer" else "Suite appel répondu"
+            delivery = _crm_send_appointment_followup(data, contact, template_name)
     save_data(data)
     result = dict(appointment)
     if delivery is not None:
@@ -9826,10 +9856,19 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
         CRM_UPCOMING_DATES_VARIABLE,
         _crm_upcoming_dates(contact, html=html, data_store=data_store),
     )
-    if html:
-        first_name = html_module.escape(str(contact.get("prenom") or ""))
-        for variable in ("{{ prenom }}", "{{prenom}}"):
-            resolved = resolved.replace(variable, first_name)
+    variables = {
+        "prenom": contact.get("prenom"), "nom": contact.get("nom"),
+        "email": contact.get("mail"), "mail": contact.get("mail"),
+        "telephone": contact.get("telephone"), "formation": contact.get("formation"),
+        "lieu": contact.get("lieu"), "statut": contact.get("statut"),
+        "dates_formation": contact.get("dates_formation"),
+    }
+    for name, value in variables.items():
+        value = str(value or "")
+        if html:
+            value = html_module.escape(value)
+        for variable in (f"{{{{ {name} }}}}", f"{{{{{name}}}}}"):
+            resolved = resolved.replace(variable, value)
     return resolved
 
 
