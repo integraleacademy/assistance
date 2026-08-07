@@ -416,7 +416,7 @@ async function calendlyModal(c){
   const bookButton=document.querySelector('#calBook');
   try{
     const types=await api(`/api/crm/calendly/event-types?formation=${encodeURIComponent(c.formation||'')}`);
-    if(!types.length)throw Error('Aucun type de rendez-vous Calendly actif.');
+    if(!types.length)throw Error(`Aucun type de rendez-vous Calendly actif ne correspond à la formation ${c.formation||'renseignée'}.`);
     let rangeStart=new Date(),selectedStart='',selectedType=types[0];
     rangeStart.setHours(0,0,0,0);
     document.querySelector('.modal-body').innerHTML=`<div class="calendly-booking-grid"><section><div class="field"><label>Type de rendez-vous</label><select id="calEventType">${types.map((t,i)=>`<option value="${i}">${esc(t.name)}${t.duration?` · ${t.duration} min`:''}${t.profile?.name?` · ${esc(t.profile.name)}`:''}</option>`).join('')}</select></div><div id="calTypeInfo"></div><div class="availability-nav"><button class="btn" id="calPrev">← 14 jours</button><b id="calRange"></b><button class="btn" id="calNext">14 jours →</button></div><div id="calSlots" class="cal-slots"><div class="activity-empty">Chargement des disponibilités…</div></div></section><aside><div class="booking-person"><span class="avatar">${initials(c)}</span><div><b>${esc(displayName(c))}</b><small>${esc(c.mail)}${c.telephone?` · ${esc(c.telephone)}`:''}</small></div></div><div id="calLocationFields"></div><div class="fields calendly-questions" id="calQuestions"></div></aside></div>`;

@@ -9014,7 +9014,14 @@ def crm_calendly_event_types():
         if formation:
             normalized = unicodedata.normalize("NFKD", formation).encode("ascii", "ignore").decode().lower()
             expected = {
-                "aps": ("agent de securite", " aps"), "a3p": ("a3p", "protection physique"),
+                "aps": ("agent de securite", " aps"),
+                "a3p": (
+                    "a3p",
+                    " apr",
+                    "garde du corps",
+                    "protection physique",
+                    "protection rapprochee",
+                ),
                 "desp": ("desp", "dirigeant"), "ssiap 1": ("ssiap",),
                 "chauffeur vtc": ("vtc", "chauffeur"),
             }.get(normalized, (normalized,))
