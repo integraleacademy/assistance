@@ -7,12 +7,26 @@ Merci pour le temps accordé lors de notre échange au sujet de la formation {{ 
 {% endfor %}Votre projet en bref
 {% for label,value in project_rows %}- {{ label }} : {{ value }}
 {% endfor %}
-{% if content.financing_message %}Financement et CPF
+À retenir sur la formation
+- Durée et rythme : {{ formation.duration }}{% if formation.format %} · {{ formation.format }}{% endif %}
+- Tarif : {{ formation.price }}
+{% if formation.location %}- Lieu : {{ formation.location }}
+{% endif %}{% if formation.certification %}- Certification / objectif : {{ formation.certification }}
+{% endif %}
+{% if upcoming_sessions %}Toutes les prochaines sessions
+{% for group in upcoming_sessions %}{{ group.centre }}
+{% for session in group.sessions %}- {{ session.label }}{% if session.selected %} (session envisagée){% endif %}
+{% endfor %}{% endfor %}
+{% endif %}{% if content.financing_message %}Financement et CPF
 {{ content.financing_message }}
 
-{% endif %}{% if content.cnaps_message %}Situation CNAPS
+{% endif %}{% if content.cnaps_message and entry.formation in ['APS', 'A3P'] %}Situation CNAPS
 {{ content.cnaps_message }}
 
+{% endif %}{% if appointment %}Votre rendez-vous
+{% if appointment.status == 'scheduled' %}Votre rendez-vous est planifié{% if appointment.date %} le {{ appointment.date }}{% endif %}{% if appointment.time %} à {{ appointment.time }}{% endif %}{% if appointment.mode %} · {{ appointment.mode }}{% endif %}.
+{% else %}Un rendez-vous vous a été proposé.
+{% endif %}
 {% endif %}Prochaines étapes
 {% for step in content.next_steps %}- {{ step }}
 {% endfor %}
