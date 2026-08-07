@@ -3000,6 +3000,11 @@ def api_secretariat_demandes():
         "formation": payload.get("formation", ""),
         "formation_date_souhaitee": str(payload.get("formation_date_souhaitee", "")).strip(),
         "nom": str(payload.get("nom", "")).strip(),
+        "prenom": str(payload.get("prenom", "")).strip(),
+        "nom_famille": str(payload.get("nom_famille", "")).strip(),
+        "formation_centre": str(payload.get("formation_centre", "")).strip(),
+        "formation_session_label": str(payload.get("formation_session_label", "")).strip(),
+        "formation_date_examen": str(payload.get("formation_date_examen", "")).strip(),
         "telephone": str(payload.get("telephone", "")).strip(),
         "email": str(payload.get("email", "")).strip(),
         "notes": str(payload.get("notes", "")).strip(),
@@ -3018,6 +3023,7 @@ def api_secretariat_demandes():
         "ft_refus_ok": str(payload.get("ft_refus_ok", "")).strip(),
         "financement_perso": str(payload.get("financement_perso", "")).strip(),
         "identite_numerique": str(payload.get("identite_numerique", "")).strip(),
+        "ssiap_secourisme_valide": str(payload.get("ssiap_secourisme_valide", "")).strip(),
         "cnaps_ok": str(payload.get("cnaps_ok", "")).strip(),
         "cnaps_status": str(payload.get("cnaps_status", "")).strip(),
         "garde_vue": str(payload.get("garde_vue", "")).strip(),
@@ -3054,8 +3060,8 @@ def api_secretariat_demandes():
     # dans Intégrale Connect CRM et envoyée à Salesforce.
     name_parts = entry["nom"].split(None, 1)
     crm_payload = {
-        "prenom": str(payload.get("prenom") or (name_parts[0] if name_parts else "")).strip(),
-        "nom": str(payload.get("nom_famille") or (name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Sans nom"))).strip(),
+        "prenom": str(entry.get("prenom") or (name_parts[0] if name_parts else "")).strip(),
+        "nom": str(entry.get("nom_famille") or (name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Sans nom"))).strip(),
         "mail": entry["email"],
         "telephone": entry["telephone"],
         "formation": entry["formation"],
@@ -3087,6 +3093,7 @@ def api_secretariat_demandes():
                             if contact.get("source_secretariat_id") == entry.get("id")), None)
     message_results = {}
     if entry["type"] == "formation" and crm_contact:
+        _ensure_secretariat_quote(data_store, entry, crm_contact)
         message_results = _send_secretariat_information_messages(data_store, entry, crm_contact)
     save_data(data_store)
     if creates_new_lead:
@@ -7313,6 +7320,12 @@ def _send_secretariat_information_messages(data, entry, contact):
             entry[f"information_{kind}_content"] = body
             _crm_activity(contact, kind, title, detail, preview)
             contact["updated_at"] = now
+            if kind == "email" and entry.get("devis_id"):
+                quote = next((row for row in data.get("demandes", [])
+                              if row.get("id") == entry["devis_id"]), None)
+                if quote:
+                    quote["statut_devis"] = "Envoyé"
+                    quote["date_envoi_plan"] = now
         else:
             entry[status_key] = "failed"
             entry[error_key] = entry.get(error_key) or "Le fournisseur a refusé ou n’a pas confirmé l’envoi"
@@ -7352,6 +7365,86 @@ def _yes(value):
     return str(value or "").strip().upper() in {"OUI", "YES", "TRUE", "1"}
 
 
+def _secretariat_display_first_name(value):
+    """Format a first name without ever transliterating away its accents."""
+    value = re.sub(r"\s+", " ", str(value or "").strip())
+    if not value:
+        return ""
+    formatted = "-".join(part[:1].upper() + part[1:].lower() for part in value.split("-"))
+    return {"clement": "Clément"}.get(formatted.casefold(), formatted)
+
+
+def _secretariat_upcoming_session_groups(formation_code, selected_session=""):
+    selected = str(selected_session or "").strip()
+    groups = []
+    sessions = get_upcoming_formation_sessions(load_data())
+    for centre_code, centre_name in FORMATION_CENTRES.items():
+        rows = sessions.get(centre_code, {}).get(str(formation_code or "").strip(), [])
+        labelled = []
+        for row in rows:
+            label = str(row.get("label") or "").strip()
+            exam = str(row.get("date_examen") or "").strip()
+            if not label:
+                continue
+            display = label
+            if exam and "examen" not in label.casefold():
+                display = f"{label} - examen le {exam}"
+            labelled.append({
+                "label": display,
+                "selected": selected in {label, display, f"{centre_name} — {label}"},
+            })
+        if labelled:
+            groups.append({"centre": centre_name, "sessions": labelled})
+    return groups
+
+
+def _ensure_secretariat_quote(data, entry, contact):
+    """Create or reconnect the single financing quote belonging to a call."""
+    if not _yes(entry.get("devis")):
+        return None
+    demandes = data.setdefault("demandes", [])
+    quote = next((row for row in demandes if row.get("id") == entry.get("devis_id")), None)
+    if quote is None:
+        quote = next((row for row in demandes
+                      if row.get("source_secretariat_id") == entry.get("id")), None)
+    if quote is None:
+        quote_id, token = str(uuid.uuid4()), uuid.uuid4().hex
+        details = {
+            "formation": entry.get("formation", ""),
+            "dates": entry.get("formation_session_label") or entry.get("formation_date_souhaitee", ""),
+            "centre": entry.get("formation_centre", ""),
+            "date_examen": entry.get("formation_date_examen", ""),
+            "cpf_montant": entry.get("cpf_montant", ""),
+            "france_travail": entry.get("france_travail", ""),
+            "identite_numerique": entry.get("identite_numerique", ""),
+            "ssiap_secourisme_valide": entry.get("ssiap_secourisme_valide", ""),
+        }
+        quote = {
+            "id": quote_id, "token_plan": token,
+            "source_secretariat_id": entry.get("id"),
+            "nom": entry.get("nom_famille") or str(entry.get("nom") or "").strip(),
+            "prenom": _secretariat_display_first_name(entry.get("prenom") or str(entry.get("nom") or "").split(" ")[0]),
+            "telephone": entry.get("telephone", ""), "mail": entry.get("email", ""),
+            "motif": "Demande de devis détaillé",
+            "details": json.dumps(details, ensure_ascii=False),
+            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
+            "statut": "Non traité", "statut_devis": "A envoyer", "attribution": "",
+            "commentaire": "", "commentaire_admin": "", "mail_confirme": "",
+            "mail_erreur": "", "mail_contenu": "", "mail_html": "",
+            "pieces_jointes": [], "reponses": [], "is_doublon": False,
+            "rappel_date": "", "plage": "", "notation_interne": "",
+            "echeancier_manuel": [], "pdf_path": "",
+        }
+        demandes.append(quote)
+        quote_url = url_for("plan_public", token=token, _external=True)
+        _crm_activity(contact, "devis", "Devis détaillé créé", quote_url,
+                      f'<p><a href="{quote_url}" target="_blank">Ouvrir le devis</a></p>')
+    quote_url = url_for("plan_public", token=quote["token_plan"], _external=True)
+    entry["devis_id"], entry["devis_url"] = quote["id"], quote_url
+    contact["source_devis_id"], contact["devis_url"] = quote["id"], quote_url
+    return quote
+
+
 def _secretariat_rdv(entry):
     status = str(entry.get("rdv_status") or entry.get("appointment_status") or "").lower().strip()
     if status in {"declined", "not_requested", "none"}:
@@ -7368,16 +7461,17 @@ def _secretariat_email_fallback(entry):
     formation = _secretariat_formation_name(entry.get("formation"))
     session = str(entry.get("formation_date_souhaitee") or "").strip()
     paragraphs = [
-        f"Merci pour le temps consacré à notre échange au sujet de la formation {formation}. Nous avons pu préciser votre projet et les éléments utiles pour préparer la suite dans de bonnes conditions.",
-        (f"Vous envisagez la session {session}. Cette session reste à confirmer avec notre équipe, qui vérifiera avec vous les disponibilités et les prérequis applicables."
-         if session else "Notre équipe reviendra avec vous sur la session la plus adaptée et vérifiera les disponibilités ainsi que les prérequis applicables."),
-        "Vous trouverez ci-dessous les repères fiables abordés ensemble et les actions concrètes pour avancer. Notre équipe reste disponible pour vous accompagner sans présumer de l’accord d’un organisme financeur ou administratif.",
+        (f"Vous souhaitez intégrer la session {session} pour suivre la formation {formation}. Notre équipe vérifiera avec vous les disponibilités et les prérequis applicables."
+         if session else f"Vous souhaitez suivre la formation {formation}. Notre équipe vous aidera à choisir la session adaptée et vérifiera avec vous les disponibilités et les prérequis."),
+        "Vous trouverez ci-dessous vos repères fiables et les actions concrètes pour avancer. Notre équipe reste disponible pour vous accompagner sans présumer de l’accord d’un organisme financeur ou administratif.",
     ]
     financing = ""
     cpf = _parse_cpf_value(entry.get("cpf_montant"))
     price = PLAN_TARIFS.get(entry.get("formation"), 0)
     if cpf and price and cpf >= price:
-        financing = "Votre solde CPF déclaré semble permettre de couvrir le tarif, sous réserve de vos droits disponibles au moment de l’inscription."
+        financing = "Votre montant CPF déclaré couvre le tarif, sous réserve du solde réel disponible au moment de l’inscription."
+    elif cpf and price:
+        financing = f"Votre montant CPF déclaré finance une partie du tarif ; le reste à couvrir est de {price - cpf:,} € TTC.".replace(",", " ")
     if _yes(entry.get("france_travail")):
         ft_status = str(entry.get("france_travail_status") or "").lower().strip()
         if ft_status in {"submitted", "transmitted", "transmise", "deposee", "déposée"}:
@@ -7419,6 +7513,8 @@ def _validate_secretariat_ai_content(raw, fallback, entry=None, prospect_first_n
         forbidden = ("<", "bonjour", "cassandre menard", "le candidat", "la candidate",
                      "le prospect", "la personne souhaite", "il souhaite", "elle souhaite",
                      "il devra", "elle devra")
+        duplicate_introductions = ("merci pour le temps", "merci pour le temps consacré",
+                                   "lors de notre échange", "notre échange au sujet de")
         clean_paragraphs = [str(p).strip() for p in paragraphs if str(p).strip()]
         if not 2 <= len(clean_paragraphs) <= 4:
             raise ValueError("nombre de paragraphes invalide")
@@ -7427,6 +7523,9 @@ def _validate_secretariat_ai_content(raw, fallback, entry=None, prospect_first_n
         all_content += [str(step).strip() for step in steps]
         if any(any(token in text.lower() for token in forbidden) for text in all_content):
             raise ValueError("contenu interdit")
+        if any(any(token in text.casefold() for token in duplicate_introductions)
+               for text in clean_paragraphs):
+            raise ValueError("introduction répétée")
         first_name = str(prospect_first_name or "").strip()
         if first_name and any(re.search(rf"(?<!\w){re.escape(first_name)}(?!\w)", text, re.I)
                               for text in all_content):
@@ -7462,14 +7561,18 @@ def _secretariat_project_rows(entry, config):
 def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-academy-logo"):
     config = _secretariat_formation_config(entry.get("formation"))
     fallback = _secretariat_email_fallback(entry)
-    facts = {key: entry.get(key, "") for key in ("formation_date_souhaitee", "devis", "rdv_status", "rdv_date", "rdv_time", "rdv_mode", "cpf_consulte", "cpf_montant", "france_travail", "france_travail_status", "financement_perso", "identite_numerique", "cnaps_ok", "cnaps_status")}
+    facts = {key: entry.get(key, "") for key in ("formation_date_souhaitee", "formation_session_label", "formation_centre", "formation_date_examen", "devis", "rdv_status", "rdv_date", "rdv_time", "rdv_mode", "cpf_consulte", "cpf_montant", "france_travail", "france_travail_status", "ft_refus_ok", "financement_perso", "identite_numerique", "cnaps_ok", "cnaps_status", "notes")}
+    facts.update({"code": entry.get("formation"), "intitule": config.get("label"),
+                  "adresse_centre": config.get("location", ""), "tarif": config.get("price", ""),
+                  "duree": config.get("duration", ""),
+                  "objectif_certification": config.get("certification") or config.get("purpose", "")})
     formation_code = str(entry.get("formation") or "").strip().upper()
     if formation_code not in {"APS", "A3P"}:
         facts = {key: value for key, value in facts.items() if key not in {"cnaps_ok", "cnaps_status"}}
-    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 à 4 paragraphes, 130 à 220 mots au total), financing_message, cnaps_message et next_steps (2 à 4 éléments). Français naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. Vous rédigez un message adressé directement au destinataire. Employez exclusivement vous, votre et vos. Ne mentionnez jamais son prénom et ne parlez jamais de lui à la troisième personne. N'invente aucune information et ne reproduis aucune note interne. Un souhait France Travail n'est jamais une demande déposée, en cours ou validée. Sans statut explicite, indiquez : « Vous souhaitez étudier avec notre équipe la possibilité d’une demande de financement auprès de France Travail. » Le CNAPS est applicable uniquement aux formations APS et A3P : pour toute autre formation, renvoie une chaîne vide dans cnaps_message et n'ajoute aucune étape CNAPS ou carte professionnelle. Distingue absence de carte, autorisation préalable, demande transmise, expiration et refus CNAPS. Ne répète pas mot pour mot le tableau factuel."""
+    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 à 3 paragraphes, 130 à 220 mots au total), financing_message, cnaps_message et next_steps (2 à 4 éléments). Français naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. Vous rédigez un message adressé directement au destinataire. Employez exclusivement vous, votre et vos. Ne mentionnez jamais son prénom et ne parlez jamais de lui à la troisième personne. N'invente aucune information et utilise les notes uniquement comme source factuelle, sans reproduire de note interne. L’introduction de remerciement est déjà affichée avant votre texte. Ne la répétez jamais. Le premier paragraphe doit commencer directement par “Vous souhaitez…”. N’utilisez pas les expressions “Merci pour le temps”, “lors de notre échange” ou “notre échange au sujet de”. Un souhait France Travail n'est jamais une demande déposée, en cours ou validée. Sans statut explicite, indiquez : « Vous souhaitez étudier avec notre équipe la possibilité d’une demande de financement auprès de France Travail. » Le CNAPS est applicable uniquement aux formations APS et A3P : pour toute autre formation, renvoie une chaîne vide dans cnaps_message et n'ajoute aucune étape CNAPS ou carte professionnelle. Distingue absence de carte, autorisation préalable, demande transmise, expiration et refus CNAPS. Ne répète pas mot pour mot le tableau factuel."""
     user = json.dumps({"code_formation": formation_code, "intitule_formation": config["label"],
                        "faits_autorises": facts}, ensure_ascii=False)
-    first_name = contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0]
+    first_name = _secretariat_display_first_name(entry.get("prenom") or contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0])
     try:
         content = _validate_secretariat_ai_content(
             _crm_ai(system, user, max_tokens=900), fallback, entry, first_name
@@ -7478,9 +7581,10 @@ def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-ac
         print("Compte rendu IA indisponible, fallback déterministe :", exc)
         content = fallback
     subject = f"Votre projet {config.get('short') or config['label']} – le résumé de notre échange"
-    context = dict(prenom=contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0], formation=config, entry=entry,
+    context = dict(prenom=first_name, formation=config, entry=entry,
                    content=content, project_rows=_secretariat_project_rows(entry, config), appointment=_secretariat_rdv(entry),
-                   logo_src=logo_src, ai_url=SECRETARIAT_AI_URL)
+                   upcoming_sessions=_secretariat_upcoming_session_groups(formation_code, entry.get("formation_date_souhaitee", "")),
+                   quote_url=entry.get("devis_url", ""), logo_src=logo_src, ai_url=SECRETARIAT_AI_URL)
     html_body = render_template(
         "emails/email_resume_echange_integrale.html",
         **context

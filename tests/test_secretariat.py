@@ -276,6 +276,49 @@ def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appoi
     assert len(application._secretariat_email_fallback(entry)["summary_paragraphs"]) >= 2
 
 
+def test_secretariat_first_name_restores_clement_without_removing_accents():
+    assert application._secretariat_display_first_name("Clement") == "Clément"
+    assert application._secretariat_display_first_name("ÉLODIE") == "Élodie"
+
+
+def test_secretariat_rejects_a_repeated_thank_you_from_ai():
+    entry, _ = application._secretariat_preview_data(False)
+    fallback = application._secretariat_email_fallback(entry)
+    raw = {
+        "summary_paragraphs": [
+            "Merci pour le temps consacré à votre projet.",
+            "Vous souhaitez confirmer votre session.",
+        ],
+        "financing_message": "", "cnaps_message": "", "next_steps": [],
+    }
+    assert application._validate_secretariat_ai_content(raw, fallback, entry) is fallback
+
+
+def test_secretariat_quote_creation_is_idempotent():
+    entry, contact = application._secretariat_preview_data(False)
+    entry.update({"prenom": "Clement", "nom_famille": "Martin",
+                  "formation_centre": "cote_azur",
+                  "formation_session_label": "Du 7 septembre au 9 octobre 2026",
+                  "formation_date_examen": "12 octobre 2026"})
+    data = {"demandes": []}
+    with application.app.test_request_context(base_url="https://example.test"):
+        first = application._ensure_secretariat_quote(data, entry, contact)
+        second = application._ensure_secretariat_quote(data, entry, contact)
+    assert first is second
+    assert len(data["demandes"]) == 1
+    assert first["prenom"] == "Clément"
+    assert first["statut_devis"] == "A envoyer"
+    assert "/plan/" in entry["devis_url"]
+
+
+def test_secretariat_quote_is_not_created_when_not_requested():
+    entry, contact = application._secretariat_preview_data(False)
+    entry["devis"] = "NON"
+    data = {"demandes": []}
+    assert application._ensure_secretariat_quote(data, entry, contact) is None
+    assert data["demandes"] == []
+
+
 def test_secretariat_scheduled_appointment_and_other_training(monkeypatch):
     monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "invalid-json")
     entry, contact = application._secretariat_preview_data(True)
@@ -293,7 +336,7 @@ def test_secretariat_scheduled_appointment_and_other_training(monkeypatch):
 def test_secretariat_france_travail_wish_is_not_described_as_pending():
     entry, _ = application._secretariat_preview_data(False)
     fallback = application._secretariat_email_fallback(entry)
-    assert "étudiions avec vous la possibilité" in fallback["financing_message"]
+    assert "souhaitez étudier avec notre équipe la possibilité" in fallback["financing_message"]
     assert "en attente" not in fallback["financing_message"]
 
 
