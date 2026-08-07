@@ -3093,6 +3093,7 @@ def api_secretariat_demandes():
                             if contact.get("source_secretariat_id") == entry.get("id")), None)
     message_results = {}
     if entry["type"] == "formation" and crm_contact:
+        _secretariat_hydrate_appointment_from_crm(data_store, entry, crm_contact)
         _ensure_secretariat_quote(data_store, entry, crm_contact)
         message_results = _send_secretariat_information_messages(data_store, entry, crm_contact)
     save_data(data_store)
@@ -7311,6 +7312,79 @@ def _secretariat_information_template(data, kind, formation_code):
     templates = data.get(f"crm_{kind}_templates", [])
     return next((template for name in expected for template in templates
                  if normalise(template.get("nom")) == name), None)
+
+
+def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
+    """Copy the next phone appointment from the CRM into the follow-up facts.
+
+    Calendly can receive the booking between the first secretariat form and the
+    final CRM submission.  Consequently the browser's payload is not the source
+    of truth here: the appointment cached on the CRM contact is looked up again
+    immediately before the summary e-mail is generated.
+    """
+    contact_id = str(contact.get("id") or "").strip()
+    emails = {
+        _crm_normalize_email(value)
+        for value in (contact.get("mail"), entry.get("email"))
+        if _crm_normalize_email(value)
+    }
+    phones = {
+        _crm_normalize_phone(value)
+        for value in (contact.get("telephone"), entry.get("telephone"))
+        if _crm_normalize_phone(value)
+    }
+    now = datetime.datetime.now(pytz.timezone("Europe/Paris"))
+    matches = []
+    for appointment in data.get("crm_calendly_appointments", []):
+        same_contact = bool(contact_id) and str(appointment.get("contact_id") or "") == contact_id
+        same_email = _crm_normalize_email(appointment.get("invitee_email")) in emails
+        same_phone = _crm_normalize_phone(appointment.get("invitee_phone")) in phones
+        if not (same_contact or same_email or same_phone):
+            continue
+        if str(appointment.get("status") or "active").casefold() in {"canceled", "cancelled"}:
+            continue
+        location = appointment.get("location") or {}
+        if isinstance(location, dict):
+            location_kind = str(location.get("kind") or location.get("type") or "").casefold()
+        else:
+            location_kind = str(location).casefold()
+        phone_terms = ("phone", "call", "appel", "téléphone", "telephone")
+        if not any(term in location_kind for term in phone_terms):
+            continue
+        try:
+            start = datetime.datetime.fromisoformat(
+                str(appointment.get("start_time") or "").replace("Z", "+00:00")
+            )
+            if start.tzinfo is None:
+                start = pytz.UTC.localize(start)
+            start = start.astimezone(pytz.timezone("Europe/Paris"))
+        except (TypeError, ValueError):
+            continue
+        if start <= now:
+            continue
+        matches.append((start, appointment))
+
+    if not matches:
+        return None
+    start, appointment = min(matches, key=lambda item: item[0])
+    entry.update({
+        "rdv": _crm_calendly_datetime_label(appointment.get("start_time")),
+        "rdv_status": "scheduled",
+        "rdv_date": start.strftime("%d/%m/%Y"),
+        "rdv_time": start.strftime("%H:%M"),
+        "rdv_mode": "Appel téléphonique",
+        "rdv_url": "",
+    })
+    # Repair a stale/unassigned Calendly link so the appointment is visible on
+    # the CRM record that was just created from the secretariat submission.
+    linked_contact = _crm_contact(data, appointment.get("contact_id"))
+    already_linked = str(appointment.get("contact_id") or "") == contact_id
+    if contact_id and (not linked_contact or already_linked):
+        appointment["contact_id"] = contact_id
+        appointment["updated_at"] = _crm_now()
+    contact["formulaire"] = {**(contact.get("formulaire") or {}), **entry}
+    contact["updated_at"] = _crm_now()
+    return appointment
 
 
 def _mask_delivery_recipient(value, kind):
