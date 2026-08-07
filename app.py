@@ -8167,7 +8167,7 @@ def build_candidate_ai_context(contact_id, data=None, now=None):
     if not contact:
         raise KeyError(contact_id)
     try:
-        wedof = _wedof_contact_resources(contact_id)
+        wedof = _wedof_contact_resources(contact_id, data)
     except Exception:
         wedof = []
     vae_tracking = None
@@ -8379,6 +8379,17 @@ def _wedof_attendee_name(folder):
     return _wedof_normalize_name(first_name), _wedof_normalize_name(last_name)
 
 
+def _wedof_contact_name_matches(folder, contact):
+    """Compare l'identité sans jamais modifier l'orthographe stockée dans le CRM."""
+    first_name, last_name = _wedof_attendee_name(folder)
+    return bool(
+        first_name
+        and last_name
+        and _wedof_normalize_name(contact.get("prenom")) == first_name
+        and _wedof_normalize_name(contact.get("nom")) == last_name
+    )
+
+
 def _wedof_match_contact(folder, contacts):
     emails, phones, _ = _wedof_attendee_values(folder)
     email_matches = [
@@ -8387,16 +8398,12 @@ def _wedof_match_contact(folder, contacts):
     ]
     if emails and len(email_matches) == 1:
         return email_matches[0], "email"
-    if len(email_matches) > 1:
-        return None, None
     phone_matches = [
         contact for contact in contacts
         if _crm_normalize_phone(contact.get("telephone")) in phones
     ]
     if phones and len(phone_matches) == 1:
         return phone_matches[0], "phone"
-    if len(phone_matches) > 1:
-        return None, None
 
     first_name, last_name = _wedof_attendee_name(folder)
     if not first_name or not last_name:
@@ -8525,21 +8532,41 @@ def _wedof_sync():
         raise WedofAPIError(message)
 
 
-def _wedof_contact_resources(contact_id):
+def _wedof_contact_resources(contact_id, data=None):
+    data = data or load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return []
     with _wedof_connect() as db:
         rows = db.execute("""
             SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
-                   r.synced_at, l.attendee_id, l.match_method
-            FROM wedof_contact_links l JOIN wedof_resources r
+                   r.synced_at, l.contact_id AS linked_contact_id,
+                   l.attendee_id, l.match_method
+            FROM wedof_resources r LEFT JOIN wedof_contact_links l
               ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-            WHERE l.contact_id=? ORDER BY r.synced_at DESC
-        """, (contact_id,)).fetchall()
-    return [{
-        "type": row["resource_type"], "stable_id": row["stable_id"],
-        "payload": json.loads(row["payload_json"]), "remote_date": row["remote_date"],
-        "synced_at": row["synced_at"], "attendee_id": row["attendee_id"],
-        "match_method": row["match_method"],
-    } for row in rows]
+            ORDER BY r.synced_at DESC
+        """).fetchall()
+    resources = []
+    for row in rows:
+        payload = json.loads(row["payload_json"])
+        directly_linked = str(row["linked_contact_id"] or "") == str(contact_id)
+        # Une même personne peut avoir plusieurs pistes CRM. Le lien WEDOF reste
+        # unique en base, mais chaque doublon d'identité doit pouvoir consulter
+        # ses dossiers sans perdre les accents de son nom dans le CRM.
+        if not directly_linked and not _wedof_contact_name_matches(payload, contact):
+            continue
+        attendee_id = row["attendee_id"]
+        match_method = row["match_method"]
+        if not directly_linked:
+            _, _, attendee_id = _wedof_attendee_values(payload)
+            match_method = "name"
+        resources.append({
+            "type": row["resource_type"], "stable_id": row["stable_id"],
+            "payload": payload, "remote_date": row["remote_date"],
+            "synced_at": row["synced_at"], "attendee_id": attendee_id,
+            "match_method": match_method,
+        })
+    return resources
 
 
 def _wedof_status_payload(test_connection=True):
@@ -8584,19 +8611,21 @@ def crm_wedof_sync():
 @app.route("/api/crm/contacts/<contact_id>/wedof")
 @login_required
 def crm_contact_wedof(contact_id):
-    if not _crm_contact(load_data(), contact_id):
+    data = load_data()
+    if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
-    return jsonify({"resources": _wedof_contact_resources(contact_id)})
+    return jsonify({"resources": _wedof_contact_resources(contact_id, data)})
 
 
 @app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
 @login_required
 def crm_contact_wedof_refresh(contact_id):
-    if not _crm_contact(load_data(), contact_id):
+    data = load_data()
+    if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
     try:
         sync = _wedof_sync()
-        return jsonify({"sync": sync, "resources": _wedof_contact_resources(contact_id)})
+        return jsonify({"sync": sync, "resources": _wedof_contact_resources(contact_id, data)})
     except WedofAPIError as exc:
         return jsonify({"error": _wedof_clean(exc)}), 503
 

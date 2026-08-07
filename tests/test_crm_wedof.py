@@ -144,6 +144,72 @@ def test_unique_name_matching_ignores_accents(tmp_path, monkeypatch):
     assert resources[0]["match_method"] == "name"
 
 
+def test_shared_email_is_disambiguated_by_accent_insensitive_name(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    clement = client.post(
+        "/api/crm/contacts", json={"prenom": "Clément", "nom": "VAILLANT"}
+    ).get_json()
+    other = client.post(
+        "/api/crm/contacts", json={"prenom": "Autre", "nom": "Personne"}
+    ).get_json()
+    for contact in (clement, other):
+        client.patch(
+            f"/api/crm/contacts/{contact['id']}",
+            json={"mail": "accueil@example.test"},
+        )
+
+    application._wedof_store_page(
+        [folder(
+            "shared-email-name", "accueil@example.test",
+            first_name="Clement", last_name="Vaillant",
+        )],
+        application.load_data()["crm_contacts"], 1,
+    )
+
+    resources = client.get(
+        f"/api/crm/contacts/{clement['id']}/wedof"
+    ).get_json()["resources"]
+    assert resources[0]["stable_id"] == "shared-email-name"
+    assert resources[0]["match_method"] == "name"
+
+
+def test_wedof_folder_is_visible_on_accented_duplicate_contact(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    original = client.post(
+        "/api/crm/contacts", json={"prenom": "Clement", "nom": "Vaillant"}
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{original['id']}",
+        json={"mail": "accueil@example.test"},
+    )
+    application._wedof_store_page(
+        [folder(
+            "existing-person-folder", "accueil@example.test",
+            first_name="Clement", last_name="Vaillant",
+        )],
+        application.load_data()["crm_contacts"], 1,
+    )
+
+    duplicate = client.post(
+        "/api/crm/contacts", json={"prenom": "Clément", "nom": "VAILLANT"}
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{duplicate['id']}",
+        json={"mail": "accueil@example.test"},
+    )
+
+    resources = client.get(
+        f"/api/crm/contacts/{duplicate['id']}/wedof"
+    ).get_json()["resources"]
+    stored_duplicate = next(
+        contact for contact in application.load_data()["crm_contacts"]
+        if contact["id"] == duplicate["id"]
+    )
+    assert resources[0]["stable_id"] == "existing-person-folder"
+    assert resources[0]["match_method"] == "name"
+    assert stored_duplicate["prenom"] == "Clément"
+
+
 def test_ambiguous_normalized_name_is_not_linked(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     client.post("/api/crm/contacts", json={"prenom": "Élodie", "nom": "André"})
