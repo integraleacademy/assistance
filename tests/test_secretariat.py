@@ -457,6 +457,41 @@ def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkey
     assert "Vous n'avez pas encore planifié" not in emails[0][3]
 
 
+def test_secretariat_summary_finds_and_displays_cached_phone_appointment(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["crm_calendly_appointments"] = [{
+        "id": "appointment-preview",
+        "contact_id": "another-contact",
+        "invitee_email": "camille@example.com",
+        "status": "active",
+        "start_time": "2099-08-12T08:30:00Z",
+        "name": "Appel découverte",
+        "location": {"kind": "outbound_call", "location": "+33600000000"},
+    }]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+
+    response = client.post("/api/secretariat/calendly/appointment", json={
+        "email": "camille@example.com", "telephone": "0600000000",
+    })
+
+    assert response.status_code == 200
+    appointment = response.get_json()["appointment"]
+    assert appointment == {
+        "date": "12/08/2099", "time": "10:30", "mode": "Appel téléphonique",
+        "label": "12/08/2099 à 10:30", "name": "Appel découverte",
+    }
+    assert data["crm_calendly_appointments"][0]["contact_id"] == "another-contact"
+
+
+def test_secretariat_summary_page_contains_phone_appointment_panel(client, monkeypatch):
+    monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda *_: [])
+    response = client.get("/secretariat")
+    assert response.status_code == 200
+    assert b'id="phoneAppointment"' in response.data
+    assert "RDV téléphonique".encode() in response.data
+    assert b"/api/secretariat/calendly/appointment" in response.data
+
+
 def test_secretariat_refreshes_calendly_before_building_summary_email(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
     data["secretariat_demandes"] = []
