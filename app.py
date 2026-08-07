@@ -7447,6 +7447,8 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
         "rdv_time": start.strftime("%H:%M"),
         "rdv_mode": "Appel téléphonique",
         "rdv_url": "",
+        "rdv_name": appointment.get("name") or "Rendez-vous téléphonique",
+        "rdv_host_name": appointment.get("host_name") or "",
     })
     # Repair a stale/unassigned Calendly link so the appointment is visible on
     # the CRM record that was just created from the secretariat submission.
@@ -7702,8 +7704,25 @@ def _secretariat_rdv(entry):
                 paris = pytz.timezone("Europe/Paris")
                 if paris.localize(parsed) <= datetime.datetime.now(paris):
                     return None
+        day, month = "", ""
+        if date_value:
+            match = re.match(r"^(\d{1,2})/(\d{1,2})/\d{4}$", date_value)
+            if match:
+                day = match.group(1).zfill(2)
+                month_number = int(match.group(2))
+                if 1 <= month_number <= 12:
+                    month = ("JANV.", "FÉVR.", "MARS", "AVR.", "MAI", "JUIN", "JUIL.",
+                             "AOÛT", "SEPT.", "OCT.", "NOV.", "DÉC.")[month_number - 1]
+            else:
+                words = date_value.split()
+                if words:
+                    day = words[0].zfill(2) if words[0].isdigit() else ""
+                if len(words) > 1:
+                    month = words[1].upper()
         return {"status": status, "date": entry.get("rdv_date"), "time": entry.get("rdv_time"),
-                "mode": entry.get("rdv_mode"), "url": entry.get("rdv_url") or entry.get("calendly_url")}
+                "mode": entry.get("rdv_mode"), "url": entry.get("rdv_url") or entry.get("calendly_url"),
+                "name": entry.get("rdv_name") or "Rendez-vous téléphonique",
+                "host_name": entry.get("rdv_host_name") or "", "day": day, "month": month}
     if status == "proposed":
         return {"status": status}
     return None

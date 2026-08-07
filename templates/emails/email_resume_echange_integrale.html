@@ -129,13 +129,27 @@
 
               {% if appointment and appointment.status in ['proposed', 'scheduled'] %}
               <h2 style="margin:30px 0 13px; font-size:20px; line-height:27px; color:#102c5c;">Votre prochain rendez-vous téléphonique</h2>
-              <div style="padding:20px; border:1px solid #bfd0ef; border-left:5px solid #3269da; background:#f4f7fd; border-radius:14px;">
-                <div style="font-size:12px; line-height:18px; color:#3269da; font-weight:700; letter-spacing:.7px; text-transform:uppercase;">Échange avec notre équipe</div>
-                <div style="margin-top:5px; font-size:15px; line-height:24px; color:#25344d;">{% if appointment.get('status') == 'scheduled' %}Votre rendez-vous téléphonique a bien été planifié.{% else %}Un rendez-vous téléphonique vous a été proposé. Notre équipe attend votre confirmation du créneau.{% endif %}</div>
-                {% if appointment.get('status') == 'scheduled' and (appointment.get('date') or appointment.get('time') or appointment.get('mode') or appointment.get('url')) %}
-                <div style="margin-top:10px; font-size:17px; line-height:25px; color:#102c5c; font-weight:700;">{% if appointment.get('date') %}{{ appointment.get('date') }}{% endif %}{% if appointment.get('time') %}{% if appointment.get('date') %} à {% endif %}{{ appointment.get('time') }}{% endif %}{% if appointment.get('mode') %} · {{ appointment.get('mode') }}{% endif %}</div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-radius:16px; overflow:hidden; background:#356ae6; background-image:linear-gradient(125deg,#173d91 0%,#356ae6 58%,#6483ef 100%); box-shadow:0 12px 28px rgba(40,88,199,.20);">
+                <tr><td style="padding:18px 20px 7px; color:#dce7ff; font-size:10px; line-height:15px; font-weight:700; letter-spacing:1.1px; text-transform:uppercase;"><span style="display:inline-block; width:7px; height:7px; margin-right:7px; border-radius:50%; background:#8df0cf; box-shadow:0 0 0 4px rgba(141,240,207,.14);"></span> Prochain rendez-vous</td></tr>
+                {% if appointment.get('status') == 'scheduled' %}
+                <tr>
+                  <td style="padding:5px 20px 20px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+                      <tr>
+                        {% if appointment.get('day') %}<td width="72" valign="middle" align="center" style="width:72px; height:74px; border:1px solid rgba(255,255,255,.25); border-radius:15px; background:rgba(255,255,255,.10); color:#ffffff;"><div style="font-size:28px; line-height:30px; font-weight:800;">{{ appointment.get('day') }}</div><div style="margin-top:3px; color:#dfe8ff; font-size:10px; line-height:14px; font-weight:800; text-transform:uppercase;">{{ appointment.get('month') }}</div></td><td width="17" style="width:17px;">&nbsp;</td>{% endif %}
+                        <td valign="middle" style="color:#ffffff;">
+                          <div style="font-size:18px; line-height:23px; font-weight:800; color:#ffffff;">{{ appointment.get('name') }}</div>
+                          <div style="margin-top:5px; color:#dce7ff; font-size:12px; line-height:18px;">{% if appointment.get('date') %}{{ appointment.get('date') }}{% endif %}{% if appointment.get('time') %}{% if appointment.get('date') %} à {% endif %}{{ appointment.get('time') }}{% endif %}</div>
+                          <div style="margin-top:7px; color:#e3ebff; font-size:11px; line-height:16px;">{% if appointment.get('host_name') %}● Avec {{ appointment.get('host_name') }} &nbsp;&nbsp;{% endif %}{% if appointment.get('mode') %}◆ {{ appointment.get('mode') }}{% endif %}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td style="padding:5px 20px 20px; color:#ffffff; font-size:15px; line-height:24px;">Un rendez-vous téléphonique vous a été proposé. Notre équipe attend votre confirmation du créneau.</td></tr>
                 {% endif %}
-              </div>
+              </table>
               {% endif %}
 
               {% if not appointment %}
