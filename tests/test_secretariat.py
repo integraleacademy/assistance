@@ -1,6 +1,7 @@
 import pytest
 
 import app as application
+import secretariat_followup_patch as followup_patch
 
 
 @pytest.fixture
@@ -370,6 +371,25 @@ def test_secretariat_quote_creation_is_idempotent():
     assert first["prenom"] == "Clément"
     assert first["statut_devis"] == "A envoyer"
     assert "/plan/" in entry["devis_url"]
+
+
+def test_secretariat_quote_keeps_crm_compatible_centre_label():
+    contact = {}
+
+    followup_patch._sync_quote_contact_training(
+        contact,
+        "quote-1",
+        "cote_azur",
+        "Intégrale Academy Côte d’Azur",
+        "Puget-sur-Argens",
+        "Du 9 novembre 2026 au 19 janvier 2027",
+    )
+
+    assert contact == {
+        "source_devis_id": "quote-1",
+        "dates_formation": "Du 9 novembre 2026 au 19 janvier 2027",
+        "lieu": "Côte d’Azur",
+    }
 
 
 def test_secretariat_quote_is_not_created_when_not_requested():
