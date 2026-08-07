@@ -33,7 +33,7 @@
               <img src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" width="148" alt="Intégrale Academy" style="display:block; width:148px; max-width:100%; height:auto; margin:0 auto 20px; border:0; outline:none; text-decoration:none;">
               <div style="font-size:12px; line-height:16px; font-weight:700; letter-spacing:2.1px; text-transform:uppercase; opacity:.88;">Intégrale Academy</div>
               <h1 class="hero-title" style="margin:9px 0 8px; font-size:32px; line-height:38px; font-weight:750; letter-spacing:-.6px; color:#ffffff;">Le résumé de notre échange</h1>
-              <div style="font-size:15px; line-height:22px; color:#e9f0ff;">Votre projet&nbsp;: <strong>{{ formation.get('label') }}</strong></div>
+              <div style="font-size:15px; line-height:22px; color:#e9f0ff;">Votre projet&nbsp;: <strong>Formation {{ formation.get('label') }}</strong></div>
               <div style="width:56px; height:3px; background:#f4c45a; border-radius:3px; margin:20px auto 15px;"></div>
               <div style="font-size:15px; line-height:21px; font-weight:700; color:#f8d982;">Faites le premier pas vers votre futur métier</div>
             </td>
@@ -93,6 +93,28 @@
                 </tr>
               </table>
 
+              {% if upcoming_sessions %}
+              <h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Toutes les prochaines sessions</h2>
+              <div style="border:1px solid #dbe4f1; background:#f8faff; border-radius:14px; overflow:hidden;">
+                {% for group in upcoming_sessions %}
+                <div style="padding:15px 17px; {% if not loop.last %}border-bottom:1px solid #dbe4f1;{% endif %}">
+                  <div style="margin:0 0 9px; font-size:14px; line-height:20px; font-weight:700; color:#102c5c;">{{ group.get('centre') }}</div>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+                    {% for session in group.get('sessions', []) %}
+                    <tr>
+                      <td valign="top" width="24" style="width:24px; padding:4px 7px 5px 0; font-size:14px; line-height:20px;">📅</td>
+                      <td valign="top" style="padding:4px 8px 5px 0; font-size:14px; line-height:21px; color:#33435c;">{{ session.get('label') }}</td>
+                      {% if session.get('selected') %}
+                      <td valign="top" align="right" style="padding:4px 0 5px 8px; white-space:nowrap;"><span style="display:inline-block; padding:4px 8px; border-radius:999px; background:#e7efff; color:#174ca8; font-size:11px; line-height:16px; font-weight:700;">Session envisagée</span></td>
+                      {% endif %}
+                    </tr>
+                    {% endfor %}
+                  </table>
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+
               {% if content.get('financing_message') %}
               <div style="margin:28px 0 0; padding:17px 18px; background:#fff9e9; border-left:4px solid #f4c45a; border-radius:10px;">
                 <div style="font-size:14px; line-height:22px; color:#3b4658;"><strong style="color:#172033;">Financement et CPF.</strong> {{ content.get('financing_message') }}</div>
@@ -127,6 +149,21 @@
                 </tr>
                 {% endfor %}
               </table>
+              {% endif %}
+
+              {% if quote_url %}
+              <div style="margin:30px 0 8px; padding:25px 22px; background:#102c5c; border-radius:15px; text-align:center; color:#ffffff;">
+                <div style="font-size:19px; line-height:26px; color:#ffffff; font-weight:700;">Votre devis personnalisé</div>
+                <div style="margin-top:7px; font-size:14px; line-height:22px; color:#dce7fa;">Votre devis reprend la session choisie, le tarif de la formation, votre budget CPF déclaré et les solutions de financement envisagées.</div>
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:18px auto 0;">
+                  <tr>
+                    <td align="center" bgcolor="#f4c45a" style="border-radius:9px;">
+                      <a class="cta-button" href="{{ quote_url }}" target="_blank" style="display:inline-block; padding:13px 22px; color:#102c5c; text-decoration:none; font-size:15px; line-height:20px; font-weight:700; border-radius:9px;">Consulter mon devis personnalisé</a>
+                    </td>
+                  </tr>
+                </table>
+                <div style="margin-top:11px; font-size:12px; line-height:18px; color:#bfcdea;">Ce lien est personnel et sécurisé.</div>
+              </div>
               {% endif %}
 
               <!-- Appel à l'action principal -->
