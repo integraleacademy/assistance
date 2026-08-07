@@ -410,18 +410,22 @@ def test_crm_template_library_lists_all_supported_variables():
     assert "Variables disponibles" in crm_js
 
 
-def test_crm_today_appointment_variables_use_paris_date_and_time(tmp_path, monkeypatch):
+def test_crm_unanswered_appointment_variables_use_its_paris_date_and_time(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
     paris_now = application.datetime.datetime.now(
         application.pytz.timezone("Europe/Paris")
     )
-    appointment_at = paris_now.replace(hour=14, minute=30, second=0, microsecond=0)
+    appointment_at = (paris_now - application.datetime.timedelta(days=7)).replace(
+        hour=14, minute=30, second=0, microsecond=0
+    )
     data = application.load_data()
     data["crm_calendly_appointments"] = [{
         "id": "rdv-today",
         "contact_id": contact["id"],
         "status": "active",
+        "response_status": "no_answer",
+        "response_status_updated_at": paris_now.isoformat(),
         "start_time": appointment_at.astimezone(application.pytz.UTC).isoformat(),
     }]
     application.save_data(data)
@@ -437,6 +441,23 @@ def test_crm_today_appointment_variables_use_paris_date_and_time(tmp_path, monke
     assert f"{appointment_at.day} " in html
     assert "{{ date_rdv_du_jour }}" not in html
     assert "{{ heure_rdv_du_jour }}" not in html
+
+
+def test_crm_formation_variable_uses_complete_customer_facing_name(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts", json={"prenom": "Lina", "formation": "A3P"}
+    ).get_json()
+
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={"contenu": "Votre formation {{ formation }}"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_json()["html"]
+    assert "Agent de protection physique des personnes (A3P)" in html
+    assert "Votre formation A3P<" not in html
 
 
 def test_complete_crm_email_html_is_not_wrapped_twice(tmp_path, monkeypatch):
