@@ -28,6 +28,15 @@ def test_global_search_closes_when_clicking_outside():
     assert "if(!searchBox.contains(e.target))globalResults.classList.remove('open')" in crm_js
 
 
+def test_sidebar_lead_count_includes_every_active_pipeline_status():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "const isActiveLead=c=>!['Converti','Disqualifié'].includes(c.statut)" in crm_js
+    assert "contacts.filter(isActiveLead).length" in crm_js
+    assert "leadCount.textContent=contacts.filter(c=>c.statut==='Nouveaux').length" not in crm_js
+
+
 def test_tracking_card_can_expand_and_displays_secretariat_origin():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
