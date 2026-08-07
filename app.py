@@ -8911,8 +8911,8 @@ def crm_calendly_update_appointment(appointment_id):
     appointment["response_status_updated_at"] = now
     appointment["updated_at"] = now
     delivery = None
+    contact = _crm_contact(data, appointment.get("contact_id"))
     if response_status in {"no_answer", "answered"} and previous_status != response_status:
-        contact = _crm_contact(data, appointment.get("contact_id"))
         if contact:
             if response_status == "no_answer":
                 contact["statut"] = "A relancer"
@@ -8924,6 +8924,10 @@ def crm_calendly_update_appointment(appointment_id):
                 delivery = _crm_send_appointment_followup(data, contact, "Pas de réponse appel")
     save_data(data)
     result = dict(appointment)
+    if contact:
+        # Return the contact changed by this action so the CRM can update its
+        # in-memory list immediately, without requiring a full page refresh.
+        result["contact"] = contact
     if delivery is not None:
         result["delivery"] = delivery
     return jsonify(result)
