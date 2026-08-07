@@ -424,3 +424,18 @@ def test_summary_always_includes_desired_session_and_confirmed_personal_remainde
     assert "Lieu souhaité : Côte d’Azur." in final["summary"]
     assert "financera personnellement le reste à charge de 3 000 €" in final["summary"]
     assert "financera personnellement le reste à charge de 3 000 €" in final["funding_analysis"]["additional_funding"]
+
+
+def test_summary_drops_model_repetition_of_desired_session_and_location():
+    context = build_candidate_ai_context(
+        {"id": "lead-session", "formation": "A3P", "lieu": "Intégrale Academy Côte d’Azur",
+         "dates_formation": "Du 9 novembre 2026 au 19 janvier 2027"},
+        {"crm_calendly_appointments": []})
+
+    final = finalize_candidate_ai_analysis(valid_result(general_summary=(
+        "Le candidat souhaite suivre la formation A3P à l'Intégrale Academy Côte d’Azur "
+        "du 9 novembre 2026 au 19 janvier 2027. Le dossier de financement est renseigné.")), context)
+
+    assert final["summary"].count("Du 9 novembre 2026 au 19 janvier 2027") == 1
+    assert final["summary"].count("Intégrale Academy Côte d’Azur") == 1
+    assert final["general_summary"] == "Le dossier de financement est renseigné."
