@@ -7210,6 +7210,36 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
         "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
         "VTC": "Chauffeur VTC",
     }.get(formation_key, formation_key)
+    preferred_session = str(entry.get("formation_date_souhaitee") or "").strip()
+    session_label = str(entry.get("formation_session_label") or "").strip()
+    centre_code = _normalize_centre_code(entry.get("formation_centre"))
+
+    # Current secretariat submissions provide the centre and session separately.
+    # Keep a fallback for older submissions that only contain the displayed value
+    # (for example "Intégrale Academy Côte d’Azur — Du 9 novembre ...").
+    if not centre_code and preferred_session:
+        normalized_preference = unicodedata.normalize("NFKD", preferred_session)
+        normalized_preference = "".join(
+            character for character in normalized_preference
+            if not unicodedata.combining(character)
+        ).casefold()
+        normalized_preference = re.sub(r"[^a-z0-9]+", " ", normalized_preference).strip()
+        if "cote d azur" in normalized_preference:
+            centre_code = "cote_azur"
+        elif "auvergne" in normalized_preference:
+            centre_code = "auvergne"
+        elif "paris" in normalized_preference:
+            centre_code = "paris"
+    if not session_label and " — " in preferred_session:
+        session_label = preferred_session.split(" — ", 1)[1].strip()
+    if not session_label:
+        session_label = preferred_session
+
+    lieu = {
+        "paris": "Paris",
+        "cote_azur": "Côte d’Azur",
+        "auvergne": "Auvergne",
+    }.get(centre_code, "")
     contact = {
         "id": str(uuid.uuid4()),
         "prenom": _crm_format_first_name(crm_payload.get("prenom")),
@@ -7217,9 +7247,9 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
         "telephone": str(entry.get("telephone") or "").strip(),
         "mail": str(entry.get("email") or "").strip(),
         "formation": formation,
-        "lieu": "",
+        "lieu": lieu,
         "statut": "Nouveaux",
-        "dates_formation": "",
+        "dates_formation": session_label,
         "cpf": str(entry.get("cpf_consulte") or "").strip(),
         "cpf_montant": normalize_cpf_amount(entry.get("cpf_montant")),
         "carte_pro": str(entry.get("cnaps_ok") or "").strip(),
