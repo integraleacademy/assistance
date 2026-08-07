@@ -10016,8 +10016,22 @@ def _crm_calendly_url(contact):
     return formation.get("calendly") or CRM_CALENDLY_URL
 
 
+def _crm_formation_label(contact):
+    """Return the complete, customer-facing name used in message templates."""
+    formation_code = _crm_formation_code(contact)
+    labels = {
+        "A3P": "Agent de protection physique des personnes (A3P)",
+        "APS": "Agent de prévention et de sécurité (APS)",
+        "SSIAP": "Agent de sécurité incendie (SSIAP 1)",
+        "VTC": "Chauffeur de transport avec chauffeur (VTC)",
+        "DESP_INIT": "Dirigeant d’entreprise de sécurité privée (DESP – initial)",
+        "DESP_VAE": "Dirigeant d’entreprise de sécurité privée (DESP – VAE)",
+    }
+    return labels.get(formation_code) or str(contact.get("formation") or "")
+
+
 def _crm_today_appointment_variables(contact, data_store=None, now=None):
-    """Return the date and time of this contact's appointment today in Paris."""
+    """Return the date/time of the latest appointment marked unanswered."""
     paris = pytz.timezone("Europe/Paris")
     now = now or datetime.datetime.now(paris)
     if now.tzinfo is None:
@@ -10031,6 +10045,8 @@ def _crm_today_appointment_variables(contact, data_store=None, now=None):
             continue
         if str(appointment.get("status") or "active").casefold() in {"canceled", "cancelled"}:
             continue
+        if appointment.get("response_status") != "no_answer":
+            continue
         try:
             start = datetime.datetime.fromisoformat(
                 str(appointment.get("start_time") or "").replace("Z", "+00:00")
@@ -10040,12 +10056,21 @@ def _crm_today_appointment_variables(contact, data_store=None, now=None):
             start = start.astimezone(paris)
         except (TypeError, ValueError):
             continue
-        if start.date() == now.date():
-            matches.append(start)
+        try:
+            status_updated_at = datetime.datetime.fromisoformat(
+                str(appointment.get("response_status_updated_at") or "").replace("Z", "+00:00")
+            )
+            if status_updated_at.tzinfo is None:
+                status_updated_at = pytz.UTC.localize(status_updated_at)
+        except (TypeError, ValueError):
+            status_updated_at = start
+        matches.append((status_updated_at, start))
     if not matches:
         return {"date_rdv_du_jour": "", "heure_rdv_du_jour": "", "date_heure_rdv_du_jour": ""}
 
-    start = min(matches)
+    # ``response_status_updated_at`` identifies the appointment on which the
+    # user most recently clicked “Sans réponse”, regardless of its age.
+    start = max(matches, key=lambda item: item[0])[1]
     months = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre")
     date_label = f"{start.day} {months[start.month - 1]} {start.year}"
     time_label = f"{start.hour}h" + (f"{start.minute:02d}" if start.minute else "")
@@ -10065,7 +10090,7 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
     variables = {
         "prenom": contact.get("prenom"), "nom": contact.get("nom"),
         "email": contact.get("mail"), "mail": contact.get("mail"),
-        "telephone": contact.get("telephone"), "formation": contact.get("formation"),
+        "telephone": contact.get("telephone"), "formation": _crm_formation_label(contact),
         "lieu": contact.get("lieu"), "statut": contact.get("statut"),
         "dates_formation": contact.get("dates_formation"),
         "lien_rdv_calendly": _crm_calendly_url(contact),
