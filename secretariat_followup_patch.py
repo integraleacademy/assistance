@@ -44,6 +44,7 @@ def register_secretariat_followup_patch(app_module):
 
     original_first_name = app_module._crm_format_first_name
     original_send = app_module._send_secretariat_information_messages
+    canonical_hydrate_appointment = app_module._secretariat_hydrate_appointment_from_crm
 
     def first_name(value):
         formatted = original_first_name(value)
@@ -355,67 +356,15 @@ def register_secretariat_followup_patch(app_module):
         return [(label, initial_upper(value)) for label, value in rows if value]
 
     def hydrate_appointment_from_crm(data, entry, contact):
-        """Copie le rendez-vous Calendly du CRM avant de générer le récapitulatif."""
-        contact_id = _text(contact.get("id"))
-        email = _norm(entry.get("email") or contact.get("mail"))
-        phone = re.sub(r"\D", "", _text(entry.get("telephone") or contact.get("telephone")))
+        """Use the single, tested Calendly matching implementation.
 
-        def belongs_to_contact(item):
-            if contact_id and _text(item.get("contact_id")) == contact_id:
-                return True
-            if email and _norm(item.get("invitee_email")) == email:
-                return True
-            item_phone = re.sub(r"\D", "", _text(item.get("invitee_phone")))
-            return bool(phone and item_phone and phone[-9:] == item_phone[-9:])
-
-        now = datetime.datetime.now(pytz.utc)
-
-        def is_upcoming_phone_call(item):
-            start = _text(item.get("start_time"))
-            try:
-                parsed = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    parsed = pytz.utc.localize(parsed)
-            except (TypeError, ValueError):
-                return False
-            location = item.get("location") or {}
-            kind = _norm(location.get("kind") if isinstance(location, dict) else location)
-            return parsed.astimezone(pytz.utc) > now and kind in {"outbound call", "inbound call", "phone", "telephone"}
-
-        appointments = [
-            item for item in data.get("crm_calendly_appointments", [])
-            if belongs_to_contact(item)
-            and _norm(item.get("status")) in {"active", "scheduled"}
-            and is_upcoming_phone_call(item)
-        ]
-        if not appointments:
-            return
-        appointment = min(appointments, key=lambda item: _text(item.get("start_time")) or "9999")
-        start = _text(appointment.get("start_time"))
-        if start:
-            try:
-                parsed = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    parsed = pytz.utc.localize(parsed)
-                local = parsed.astimezone(pytz.timezone("Europe/Paris"))
-                entry["rdv_date"] = local.strftime("%d/%m/%Y")
-                entry["rdv_time"] = local.strftime("%H:%M")
-            except ValueError:
-                entry["rdv_date"] = start
-        location = appointment.get("location") or {}
-        if isinstance(location, dict):
-            kind = _norm(location.get("kind"))
-            entry["rdv_mode"] = {
-                "outbound call": "Appel téléphonique",
-                "inbound call": "Appel téléphonique",
-                "zoom": "Visioconférence",
-                "google conference": "Visioconférence",
-                "microsoft teams conference": "Visioconférence",
-            }.get(kind, _text(location.get("location")))
-            entry["rdv_url"] = _text(location.get("join_url"))
-        else:
-            entry["rdv_mode"] = _text(location)
-        entry["rdv_status"] = "scheduled"
+        This runtime patch previously kept a second, stricter implementation
+        that accepted only ``location.kind == outbound_call``.  It silently
+        replaced the canonical implementation at startup and therefore
+        rejected Calendly events named "RDV téléphonique" when no location was
+        configured.  Delegating prevents the two paths from diverging again.
+        """
+        return canonical_hydrate_appointment(data, entry, contact)
 
     def session_html(groups):
         if not groups:

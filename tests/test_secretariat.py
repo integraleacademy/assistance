@@ -477,10 +477,46 @@ def test_secretariat_summary_finds_and_displays_cached_phone_appointment(client,
     assert response.status_code == 200
     appointment = response.get_json()["appointment"]
     assert appointment == {
-        "date": "12/08/2099", "time": "10:30", "mode": "Appel téléphonique",
-        "label": "12/08/2099 à 10:30", "name": "Appel découverte",
+        "date": "12/08/2099", "time": "09:30", "mode": "Appel téléphonique",
+        "label": "12/08/2099 à 09:30", "name": "Appel découverte",
     }
     assert data["crm_calendly_appointments"][0]["contact_id"] == "another-contact"
+
+
+def test_secretariat_summary_reuses_existing_contact_link_for_cached_appointment(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["crm_contacts"] = [{
+        "id": "existing-contact",
+        "mail": "caller@example.com",
+        "telephone": "+33 6 12 34 56 78",
+        "formulaire": {},
+    }]
+    data["crm_calendly_appointments"] = [{
+        "id": "appointment-linked-to-contact",
+        "contact_id": "existing-contact",
+        # The appointment identity can be absent or differ after a targeted
+        # CRM refresh.  Its explicit contact link remains authoritative.
+        "invitee_email": "",
+        "invitee_phone": "",
+        "status": "active",
+        "start_time": "2099-08-12T07:00:00Z",
+        "name": "RDV téléphonique formation garde du corps (APR)",
+        "location": None,
+    }]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+
+    response = client.post("/api/secretariat/calendly/appointment", json={
+        "email": "caller@example.com", "telephone": "06 12 34 56 78",
+    })
+
+    assert response.status_code == 200
+    assert response.get_json()["appointment"] == {
+        "date": "12/08/2099", "time": "08:00", "mode": "Appel téléphonique",
+        "label": "12/08/2099 à 08:00",
+        "name": "RDV téléphonique formation garde du corps (APR)",
+    }
+    # The preview runs on a deep copy and must not modify CRM data.
+    assert data["crm_contacts"][0]["formulaire"] == {}
 
 
 def test_secretariat_finds_booking_by_phone_when_calendly_email_differs(client, monkeypatch):
@@ -526,8 +562,8 @@ def test_secretariat_finds_booking_by_phone_when_calendly_email_differs(client, 
 
     assert response.status_code == 200
     assert response.get_json()["appointment"] == {
-        "date": "12/08/2099", "time": "09:00", "mode": "Appel téléphonique",
-        "label": "12/08/2099 à 09:00",
+        "date": "12/08/2099", "time": "08:00", "mode": "Appel téléphonique",
+        "label": "12/08/2099 à 08:00",
         "name": "RDV téléphonique formation garde du corps (APR)",
     }
 
