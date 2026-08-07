@@ -7112,7 +7112,22 @@ def _crm_contact(data, contact_id):
     return next((c for c in data["crm_contacts"] if c.get("id") == contact_id), None)
 
 
+def _crm_backfill_information_request_answers(contact):
+    """Restore regulatory answers omitted from older information-form leads."""
+    form = contact.get("formulaire")
+    if contact.get("source") != "demande_infos_formations" or not isinstance(form, dict):
+        return False
+    changed = False
+    for key in ("garde_vue", "titre_sejour"):
+        value = str(form.get(key) or "").strip()
+        if value and not str(contact.get(key) or "").strip():
+            contact[key] = value
+            changed = True
+    return changed
+
+
 def _crm_contact_response(contact, data=None, regulatory_snapshot=None):
+    _crm_backfill_information_request_answers(contact)
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
     snapshot = regulatory_snapshot
@@ -7154,6 +7169,8 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "cpf": str(fields.get("cpf_consulte") or "").strip(),
         "cpf_montant": normalize_cpf_amount(fields.get("cpf_montant")),
         "carte_pro": str(fields.get("cnaps_ok") or "").strip(),
+        "titre_sejour": str(fields.get("titre_sejour") or "").strip(),
+        "garde_vue": str(fields.get("garde_vue") or "").strip(),
         "antecedents": str(fields.get("garde_vue") or "").strip(),
         "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
         "identite_creation": str(fields.get("identite_numerique") or "").strip(),
@@ -8744,6 +8761,8 @@ def crm_contacts():
     if request.method == "GET":
         changed = False
         for existing in data["crm_contacts"]:
+            if _crm_backfill_information_request_answers(existing):
+                changed = True
             prenom = _crm_format_first_name(existing.get("prenom"))
             nom = _crm_format_last_name(existing.get("nom"))
             if (prenom, nom) != (existing.get("prenom", ""), existing.get("nom", "")):

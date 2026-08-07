@@ -153,6 +153,9 @@ def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path
     assert contact["cpf"] == "OUI"
     assert contact["cpf_montant"] == "1200.00"
     assert contact["financement_ft"] == "NON"
+    assert contact["garde_vue"] == "NON"
+    assert contact["titre_sejour"] == "OUI"
+    assert contact["antecedents"] == "NON"
     assert contact["origine"] == "Site internet"
     assert contact["commentaires"] == ""
     assert contact["formulaire"]["cpf_montant"] == "1200"
@@ -166,6 +169,27 @@ def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path
     assert "E-mail automatique envoyé" in activities
     assert "SMS automatique envoyé" in activities
     assert activities["E-mail automatique envoyé"]["preview"]
+
+
+def test_crm_backfills_regulatory_answers_from_older_information_form_contacts(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["crm_contacts"] = [{
+        "id": "legacy-form-lead",
+        "source": "demande_infos_formations",
+        "prenom": "Lina",
+        "nom": "MARTIN",
+        "garde_vue": "",
+        "titre_sejour": "",
+        "formulaire": {"garde_vue": "NON", "titre_sejour": "OUI"},
+    }]
+    application.save_data(data)
+
+    response = test_client.get("/api/crm/contacts/legacy-form-lead")
+
+    assert response.status_code == 200
+    assert response.get_json()["garde_vue"] == "NON"
+    assert response.get_json()["titre_sejour"] == "OUI"
 
 
 def test_crm_pages_and_templates(tmp_path, monkeypatch):
