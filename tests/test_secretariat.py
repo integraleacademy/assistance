@@ -483,6 +483,55 @@ def test_secretariat_summary_finds_and_displays_cached_phone_appointment(client,
     assert data["crm_calendly_appointments"][0]["contact_id"] == "another-contact"
 
 
+def test_secretariat_finds_booking_by_phone_when_calendly_email_differs(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["crm_calendly_appointments"] = []
+    data["crm_calendly"] = {
+        "user": "https://api.calendly.com/users/USER1",
+        "organization": "https://api.calendly.com/organizations/ORG1",
+        "scope": "organization",
+    }
+    monkeypatch.setenv("CALENDLY_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr(application, "load_data", lambda: data)
+
+    event = {
+        "uri": "https://api.calendly.com/scheduled_events/EVENT1",
+        "name": "RDV téléphonique formation garde du corps (APR)",
+        "status": "active",
+        "start_time": "2099-08-12T07:00:00Z",
+        "end_time": "2099-08-12T07:15:00Z",
+        "location": None,
+    }
+    invitee = {
+        "uri": "https://api.calendly.com/scheduled_events/EVENT1/invitees/INVITEE1",
+        "event": event["uri"],
+        "name": "Clément Vaillant",
+        "email": "shared-company@example.com",
+        "status": "active",
+        "questions_and_answers": [{
+            "question": "Numéro de téléphone", "answer": "+33 6 65 24 52 71",
+        }],
+    }
+
+    def calendly_collection(path, params=None, max_pages=100):
+        if path == "/scheduled_events":
+            return [] if params.get("invitee_email") else [event]
+        return [invitee]
+
+    monkeypatch.setattr(application, "_calendly_paginated_collection", calendly_collection)
+
+    response = client.post("/api/secretariat/calendly/appointment", json={
+        "email": "caller@example.com", "telephone": "06 65 24 52 71",
+    })
+
+    assert response.status_code == 200
+    assert response.get_json()["appointment"] == {
+        "date": "12/08/2099", "time": "09:00", "mode": "Appel téléphonique",
+        "label": "12/08/2099 à 09:00",
+        "name": "RDV téléphonique formation garde du corps (APR)",
+    }
+
+
 def test_secretariat_summary_page_contains_phone_appointment_panel(client, monkeypatch):
     monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda *_: [])
     response = client.get("/secretariat")
