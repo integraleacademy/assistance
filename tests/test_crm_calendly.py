@@ -341,6 +341,29 @@ def test_event_types_are_filtered_for_aps_formation(tmp_path, monkeypatch):
     ]
 
 
+def test_event_types_match_apr_calendly_name_for_a3p_formation(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "_calendly_event_types_for_context", lambda data: [
+        {
+            "uri": "type-apr",
+            "name": "RDV téléphonique formation garde du corps (APR)",
+            "active": True,
+        },
+        {
+            "uri": "type-vtc",
+            "name": "RDV téléphonique formation Chauffeur VTC",
+            "active": True,
+        },
+    ])
+
+    response = client.get("/api/crm/calendly/event-types?formation=A3P")
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.get_json()] == [
+        "RDV téléphonique formation garde du corps (APR)"
+    ]
+
+
 def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post(
