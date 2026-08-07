@@ -345,6 +345,63 @@ def test_secretariat_scheduled_appointment_and_other_training(monkeypatch):
     assert application.SECRETARIAT_FORMATIONS["VTC"]["label"] in sms
 
 
+def test_secretariat_a3p_wording_and_project_values_are_normalized(monkeypatch):
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "invalid-json")
+    entry, contact = application._secretariat_preview_data(False)
+    entry.update({
+        "formation": "A3P",
+        "formation_date_souhaitee": (
+            "Intégrale Academy Côte d’Azur — Du 9 novembre 2026 au 19 janvier 2027"
+        ),
+        "france_travail": "NON",
+        "ft_refus_ok": "NON",
+        "financement_perso": "OUI",
+        "cpf_montant": "1200",
+    })
+
+    with application.app.test_request_context():
+        _, _, rendered = application._build_secretariat_followup_email(entry, contact)
+
+    assert "au sein de notre centre de formation Intégrale Academy Côte d’Azur à Puget-sur-Argens" in rendered
+    assert "Votre objectif est de suivre" not in rendered
+    assert "refus de CPF" not in rendered
+    assert ">Financement personnel possible</td>" in rendered
+
+
+def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
+    data["crm_calendly_appointments"] = [{
+        "id": "appointment-1",
+        "contact_id": "another-contact",
+        "invitee_email": "camille@example.com",
+        "invitee_phone": "+33600000000",
+        "status": "active",
+        "start_time": "2026-08-12T08:30:00Z",
+        "location": {"kind": "outbound_call", "location": "+33600000000"},
+    }]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "invalid-json")
+    emails = []
+    monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: True)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "APS", "prenom": "Camille",
+        "nom": "Camille Martin", "email": "camille@example.com", "telephone": "0600000000",
+    })
+
+    assert response.status_code == 201
+    assert "Votre rendez-vous a bien été planifié" in emails[0][3]
+    assert "12/08/2026" in emails[0][3]
+    assert "10:30" in emails[0][3]
+    assert "Appel téléphonique" in emails[0][3]
+    assert "Vous n'avez pas encore planifié" not in emails[0][3]
+
+
 def test_secretariat_france_travail_wish_is_not_described_as_pending():
     entry, _ = application._secretariat_preview_data(False)
     fallback = application._secretariat_email_fallback(entry)
