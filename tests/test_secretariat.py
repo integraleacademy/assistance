@@ -762,6 +762,8 @@ def test_secretariat_ai_uses_selected_training_context(client, monkeypatch):
         return "La formation dure 175 heures. Faites confirmer les prérequis par l'équipe."
 
     monkeypatch.setattr(application, "_crm_ai", fake_ai)
+    monkeypatch.setattr(application, "_secretariat_website_context",
+                        lambda formation, question: "Hébergement possible sur place.")
     response = client.post("/api/secretariat/assistant", json={
         "formation": "APS",
         "message": "Combien de temps dure la formation ?",
@@ -810,6 +812,8 @@ def test_secretariat_question_route_uses_a3p_data_and_conversation(client, monke
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     monkeypatch.setattr(application, "_crm_ai",
                         lambda system, user, max_tokens: calls.append((system, user)) or "Réponse fiable")
+    monkeypatch.setattr(application, "_secretariat_website_context",
+                        lambda formation, question: "Hébergement possible sur place.")
 
     response = client.post("/api/secretariat/formations/A3P/ai/question", json={
         "question": "Faut-il une autorisation du CNAPS pour entrer en formation ?",
@@ -822,7 +826,34 @@ def test_secretariat_question_route_uses_a3p_data_and_conversation(client, monke
     assert "328 h" in calls[0][1]
     assert "Présentiel" in calls[0][1]
     assert "CNAPS" in calls[0][1]
+    assert "Hébergement possible sur place" in calls[0][1]
+    assert "site officiel integraleacademy.com" in calls[0][0]
     assert "Cette information n’est pas disponible" in calls[0][0]
+
+
+def test_secretariat_reads_relevant_information_from_official_website(monkeypatch):
+    pages = {
+        "https://www.integraleacademy.com/": "<html><body>Accueil Intégrale Academy</body></html>",
+        "https://www.integraleacademy.com/formation-a3p": (
+            "<html><body><h1>Formation A3P</h1><p>Un hébergement est disponible sur place.</p>"
+            "<script>texte non visible</script></body></html>"
+        ),
+    }
+    def visible_text(document):
+        parser = application._SecretariatWebsiteTextParser()
+        parser.feed(document)
+        return " ".join(parser.parts)
+
+    monkeypatch.setattr(application, "_secretariat_sitemap_urls",
+                        lambda: ["https://www.integraleacademy.com/formation-a3p"])
+    monkeypatch.setattr(application, "_secretariat_fetch_official_text",
+                        lambda url: visible_text(pages[url]))
+
+    context = application._secretariat_website_context("A3P", "Peut-on dormir sur place ?")
+
+    assert "SOURCE : https://www.integraleacademy.com/formation-a3p" in context
+    assert "Un hébergement est disponible sur place" in context
+    assert "texte non visible" not in context
 
 
 def test_secretariat_key_information_route_uses_server_context(client, monkeypatch):
@@ -830,6 +861,7 @@ def test_secretariat_key_information_route_uses_server_context(client, monkeypat
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     monkeypatch.setattr(application, "_crm_ai",
                         lambda system, user, max_tokens: calls.append(user) or "Synthèse A3P")
+    monkeypatch.setattr(application, "_secretariat_website_context", lambda formation, question: "")
 
     response = client.post("/api/secretariat/formations/A3P/ai/key-information", json={
         "price": "1 €", "duration": "1 h",
