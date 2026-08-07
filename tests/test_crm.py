@@ -20,6 +20,42 @@ def test_crm_is_private(tmp_path, monkeypatch):
     assert "/login" in response.location
 
 
+def test_admin_can_read_live_brevo_sms_credits(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setenv("BREVO_API_KEY", "test-key")
+    response = SimpleNamespace(
+        status_code=200,
+        json=lambda: {"plan": [{"type": "sms", "credits": 125.5}]},
+    )
+    with patch.object(application.requests, "get", return_value=response) as get:
+        result = c.get("/api/crm/brevo/sms-credits")
+
+    assert result.status_code == 200
+    assert result.get_json() == {"credits": 125.5}
+    get.assert_called_once_with(
+        "https://api.brevo.com/v3/account",
+        headers={"accept": "application/json", "api-key": "test-key"},
+        timeout=10,
+    )
+
+
+def test_brevo_sms_credits_are_admin_only(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    with c.session_transaction() as session:
+        session["user_email"] = "cassandre@integraleacademy.com"
+
+    assert c.get("/api/crm/brevo/sms-credits").status_code == 403
+
+
+def test_administration_menu_displays_brevo_sms_balance():
+    template = open(application.app.root_path + "/templates/crm.html", encoding="utf-8").read()
+    crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
+
+    assert 'id="brevoSmsCredits"' in template
+    assert "api('/api/crm/brevo/sms-credits')" in crm_js
+    assert "if(opening)loadBrevoSmsCredits()" in crm_js
+
+
 def test_global_search_closes_when_clicking_outside():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
