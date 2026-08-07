@@ -9971,6 +9971,46 @@ def _crm_calendly_url(contact):
     return formation.get("calendly") or CRM_CALENDLY_URL
 
 
+def _crm_today_appointment_variables(contact, data_store=None, now=None):
+    """Return the date and time of this contact's appointment today in Paris."""
+    paris = pytz.timezone("Europe/Paris")
+    now = now or datetime.datetime.now(paris)
+    if now.tzinfo is None:
+        now = paris.localize(now)
+    else:
+        now = now.astimezone(paris)
+    contact_id = str(contact.get("id") or "")
+    matches = []
+    for appointment in (data_store or {}).get("crm_calendly_appointments", []):
+        if str(appointment.get("contact_id") or "") != contact_id:
+            continue
+        if str(appointment.get("status") or "active").casefold() in {"canceled", "cancelled"}:
+            continue
+        try:
+            start = datetime.datetime.fromisoformat(
+                str(appointment.get("start_time") or "").replace("Z", "+00:00")
+            )
+            if start.tzinfo is None:
+                start = pytz.UTC.localize(start)
+            start = start.astimezone(paris)
+        except (TypeError, ValueError):
+            continue
+        if start.date() == now.date():
+            matches.append(start)
+    if not matches:
+        return {"date_rdv_du_jour": "", "heure_rdv_du_jour": "", "date_heure_rdv_du_jour": ""}
+
+    start = min(matches)
+    months = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre")
+    date_label = f"{start.day} {months[start.month - 1]} {start.year}"
+    time_label = f"{start.hour}h" + (f"{start.minute:02d}" if start.minute else "")
+    return {
+        "date_rdv_du_jour": date_label,
+        "heure_rdv_du_jour": time_label,
+        "date_heure_rdv_du_jour": f"{date_label} à {time_label}",
+    }
+
+
 def _crm_resolve_message_variables(content, contact, html=False, data_store=None):
     """Resolve CRM template variables at preview/send time, never when saving."""
     resolved = str(content or "").replace(
@@ -9984,6 +10024,7 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
         "lieu": contact.get("lieu"), "statut": contact.get("statut"),
         "dates_formation": contact.get("dates_formation"),
         "lien_rdv_calendly": _crm_calendly_url(contact),
+        **_crm_today_appointment_variables(contact, data_store=data_store),
     }
     for name, value in variables.items():
         value = str(value or "")
@@ -10012,6 +10053,7 @@ def crm_send_message(contact_id):
     body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     if kind == "email":
         body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
+        subject = _crm_resolve_message_variables(subject, contact, data_store=data)
         branded = _crm_email_html(body, contact)
         ok = send_email_html(contact.get("mail"), subject, body, branded)
         preview = branded
@@ -10029,12 +10071,13 @@ def crm_send_message(contact_id):
 @login_required
 def crm_message_preview(contact_id):
     """Render the exact branded HTML used when an e-mail is sent."""
-    contact = _crm_contact(load_data(), contact_id)
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     payload = request.get_json(silent=True) or {}
     body = _crm_resolve_message_variables(
-        payload.get("contenu", ""), contact, html=True
+        payload.get("contenu", ""), contact, html=True, data_store=data
     )
     html = _crm_email_html(body, contact)
     return jsonify({"html": html})
