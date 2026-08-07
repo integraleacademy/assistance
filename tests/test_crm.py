@@ -1,6 +1,9 @@
-import app as application
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
+
+import app as application
 
 
 def client(tmp_path, monkeypatch):
@@ -372,7 +375,7 @@ def test_crm_email_starter_exposes_editable_complete_html(tmp_path, monkeypatch)
 def test_crm_template_library_lists_all_supported_variables():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
-    for variable in ("prenom", "nom", "email", "telephone", "formation", "lieu", "statut", "dates_formation", "prochaines_dates"):
+    for variable in ("prenom", "nom", "email", "telephone", "formation", "lieu", "statut", "dates_formation", "prochaines_dates", "lien_rdv_calendly"):
         assert "{{ " + variable + " }}" in crm_js
     assert "Variables disponibles" in crm_js
 
@@ -456,6 +459,33 @@ def test_crm_email_dynamic_dates_come_from_upcoming_admin_sessions(tmp_path, mon
     assert "3 septembre au 30 septembre 2099" in html
     assert "1 janvier au 2 janvier 2020" not in html
     assert "{{prochaines_dates}}" not in html
+
+
+@pytest.mark.parametrize(("formation", "expected_url"), [
+    ("APS", "https://calendly.com/integraleacademy/aps"),
+    ("A3P", "https://calendly.com/integraleacademy/apr"),
+    ("SSIAP 1", "https://calendly.com/integraleacademy/ssiap1"),
+    ("DESP", "https://calendly.com/integraleacademy/dirigeant"),
+    ("Chauffeur VTC", "https://calendly.com/integraleacademy/chauffeurvtc"),
+    ("Formation personnalisée", "https://calendly.com/integraleacademy/formation"),
+])
+def test_crm_calendly_variable_matches_contact_training(
+    tmp_path, monkeypatch, formation, expected_url
+):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts", json={"prenom": "Lina", "formation": formation}
+    ).get_json()
+
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={"contenu": "<a href=\"{{ lien_rdv_calendly }}\">Prendre rendez-vous</a>"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_json()["html"]
+    assert f'href="{expected_url}"' in html
+    assert "{{ lien_rdv_calendly }}" not in html
 
 
 def test_crm_can_send_a_template_test_email(tmp_path, monkeypatch):

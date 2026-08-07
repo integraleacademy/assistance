@@ -9926,6 +9926,7 @@ def crm_template(template_id):
 
 
 CRM_UPCOMING_DATES_VARIABLE = "{{prochaines_dates}}"
+CRM_CALENDLY_URL = "https://calendly.com/integraleacademy/formation"
 
 
 def _crm_formation_code(contact):
@@ -9957,6 +9958,12 @@ def _crm_upcoming_dates(contact, html=False, data_store=None):
     ) + "</ul>"
 
 
+def _crm_calendly_url(contact):
+    """Return the booking page matching the training selected on the contact."""
+    formation = SECRETARIAT_FORMATIONS.get(_crm_formation_code(contact), {})
+    return formation.get("calendly") or CRM_CALENDLY_URL
+
+
 def _crm_resolve_message_variables(content, contact, html=False, data_store=None):
     """Resolve CRM template variables at preview/send time, never when saving."""
     resolved = str(content or "").replace(
@@ -9969,6 +9976,7 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
         "telephone": contact.get("telephone"), "formation": contact.get("formation"),
         "lieu": contact.get("lieu"), "statut": contact.get("statut"),
         "dates_formation": contact.get("dates_formation"),
+        "lien_rdv_calendly": _crm_calendly_url(contact),
     }
     for name, value in variables.items():
         value = str(value or "")
