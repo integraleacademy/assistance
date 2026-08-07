@@ -37,6 +37,20 @@ def _euros(value):
     return f"{amount:,}".replace(",", " ") + " €"
 
 
+def _sync_quote_contact_training(contact, quote_id, centre_code, centre_label, city, session):
+    """Keep quote data compatible with the CRM's exact select values."""
+    crm_location = {
+        "cote_azur": "Côte d’Azur",
+        "auvergne": "Auvergne",
+        "paris": "Paris",
+    }.get(_text(centre_code), _text(city or centre_label))
+    contact.update({
+        "source_devis_id": quote_id,
+        "dates_formation": session,
+        "lieu": crm_location,
+    })
+
+
 def register_secretariat_followup_patch(app_module):
     if getattr(app_module, "_secretariat_followup_patch_registered", False):
         return
@@ -328,7 +342,9 @@ def register_secretariat_followup_patch(app_module):
         })
         public_url = quote_url(token)
         entry.update({"devis_id": quote["id"], "devis_url": public_url})
-        contact.update({"source_devis_id": quote["id"], "dates_formation": session, "lieu": centre_label or city})
+        _sync_quote_contact_training(
+            contact, quote["id"], centre_code, centre_label, city, session
+        )
         contact.setdefault("formulaire", {})["devis_url"] = public_url
         if created:
             preview = f'<div style="padding:24px"><h2>Devis personnalisé</h2><p><a href="{public_url}">Ouvrir le devis</a></p></div>'
