@@ -8920,8 +8920,8 @@ def crm_calendly_update_appointment(appointment_id):
                 contact["relance_date"] = (paris_today + datetime.timedelta(days=2)).isoformat()
                 _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+2")
             contact["updated_at"] = now
-            template_name = "Pas de réponse appel" if response_status == "no_answer" else "Suite appel répondu"
-            delivery = _crm_send_appointment_followup(data, contact, template_name)
+            if response_status == "no_answer":
+                delivery = _crm_send_appointment_followup(data, contact, "Pas de réponse appel")
     save_data(data)
     result = dict(appointment)
     if delivery is not None:
@@ -9525,11 +9525,39 @@ def crm_candidate_score_preview():
 def crm_log_call(contact_id):
     data = load_data(); contact = _crm_contact(data, contact_id)
     if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    note = str((request.get_json(silent=True) or {}).get("commentaire", "")).strip()
+    payload = request.get_json(silent=True) or {}
+    note = str(payload.get("commentaire", "")).strip()
     if not note: return jsonify({"error": "Un commentaire est requis"}), 400
+    appointment = None
+    appointment_id = str(payload.get("appointment_id") or "").strip()
+    if appointment_id:
+        appointment = next(
+            (item for item in data.get("crm_calendly_appointments", [])
+             if item.get("id") == appointment_id and item.get("contact_id") == contact_id),
+            None,
+        )
+        if not appointment:
+            return jsonify({"error": "Rendez-vous introuvable pour ce contact"}), 404
     _crm_activity(contact, "appel", "Appel consigné", note)
-    contact["updated_at"] = _crm_now(); save_data(data)
-    return jsonify(contact)
+    now = _crm_now()
+    contact["updated_at"] = now
+    delivery = None
+    if appointment:
+        if appointment.get("response_status") != "answered":
+            appointment["response_status"] = "answered"
+            appointment["response_status_updated_at"] = now
+            appointment["updated_at"] = now
+        if not appointment.get("answered_followup_sent_at"):
+            appointment["answered_followup_sent_at"] = now
+            appointment["updated_at"] = now
+            delivery = _crm_send_appointment_followup(data, contact, "Suite appel répondu")
+    save_data(data)
+    if not appointment:
+        return jsonify(contact)
+    result = {"contact": contact, "appointment": appointment}
+    if delivery is not None:
+        result["delivery"] = delivery
+    return jsonify(result)
 
 
 @app.route("/api/crm/contacts/<contact_id>/publications", methods=["POST"])
