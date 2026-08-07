@@ -162,6 +162,29 @@ def test_crm_displays_vae_eligibility_score_and_clickable_details():
     assert "vaeEligibilityQuestions.map" in crm_js
 
 
+def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
+    response = client(tmp_path, monkeypatch).get("/api/crm/templates")
+
+    assert response.status_code == 200
+    automatic = response.get_json()["automatic_email"]
+    assert [template["formation"] for template in automatic] == [
+        "DESP_VAE", "A3P", "APS", "SSIAP", "VTC", "DESP_INIT",
+    ]
+    aps = next(template for template in automatic if template["formation"] == "APS")
+    assert aps["sujet"] == "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+    assert "{{ prenom }}" in aps["contenu"]
+    assert "1 650" in aps["contenu"]
+
+
+def test_crm_templates_page_displays_automatic_emails_as_read_only():
+    crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
+
+    assert "E-mails automatiques du formulaire" in crm_js
+    assert "data-preview-automatic-template" in crm_js
+    assert "Envoi automatique" in crm_js
+    assert "templates.automatic_email||[]" in crm_js
+
+
 def test_admin_can_reset_only_crm_prospect_data(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     c.post("/api/crm/contacts", json={"prenom": "Lina"})

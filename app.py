@@ -6805,7 +6805,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260807-crm-reset"
+CRM_ASSET_VERSION = "20260807-automatic-email-templates"
 
 
 def _crm_statuses(data=None):
@@ -9892,9 +9892,54 @@ def crm_templates():
                 "{{ contenu|safe }}",
                 "<!-- EMAIL_CONTENT_START --><p>Écrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
             )
+        automatic_email = [
+            {
+                "id": "automatic-desp-vae",
+                "nom": "VAE DESP",
+                "formation": "DESP_VAE",
+                "sujet": "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)",
+                "contenu": build_vae_desp_email_html("{{ prenom }}", "{{ lien_devis }}"),
+            },
+            {
+                "id": "automatic-a3p",
+                "nom": "A3P – Bodyguard",
+                "formation": "A3P",
+                "sujet": "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
+                "contenu": build_a3p_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
+            },
+            {
+                "id": "automatic-aps",
+                "nom": "APS – Agent de sécurité privée",
+                "formation": "APS",
+                "sujet": "👮‍♂️ Formation Agent de Sécurité Privée (APS)",
+                "contenu": build_aps_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
+            },
+            {
+                "id": "automatic-ssiap1",
+                "nom": "SSIAP 1 – Sécurité incendie",
+                "formation": "SSIAP",
+                "sujet": "🔥 Formation Agent de sécurité incendie SSIAP 1",
+                "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui"),
+            },
+            {
+                "id": "automatic-vtc",
+                "nom": "Chauffeur VTC",
+                "formation": "VTC",
+                "sujet": "🚗 Formation Chauffeur VTC",
+                "contenu": build_vtc_email_html("{{ prenom }}", "cote_azur", "{{ lien_devis }}"),
+            },
+            {
+                "id": "automatic-desp-initial",
+                "nom": "DESP initial",
+                "formation": "DESP_INIT",
+                "sujet": "Votre demande de renseignements – Formation DESP initial",
+                "contenu": build_desp_init_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
+            },
+        ]
         return jsonify({
             "email": data["crm_email_templates"],
             "sms": data["crm_sms_templates"],
+            "automatic_email": automatic_email,
             "email_starter": email_starter,
         })
     payload = request.get_json(silent=True) or {}; kind = payload.get("type")
