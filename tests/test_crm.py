@@ -59,6 +59,54 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     assert call.get_json()["activities"][0]["kind"] == "appel"
 
 
+def test_admin_can_reset_only_crm_prospect_data(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    c.post("/api/crm/contacts", json={"prenom": "Lina"})
+    data = application.load_data()
+    data.update({
+        "demandes": [{"id": "outside-crm"}],
+        "crm_calendly_appointments": [{"id": "rdv-1", "contact_id": "lead-1"}],
+        "crm_notifications": [{"id": "notification-1", "contact_id": "lead-1"}],
+        "crm_ai_candidate_analyses": {"lead-1": {"score": 80}},
+        "crm_cnaps_scoring_snapshots": {"lead-1": {"score": 70}},
+        "crm_email_templates": [{"id": "template-1"}],
+    })
+    application.save_data(data)
+
+    response = c.delete("/api/crm/database")
+
+    assert response.status_code == 200
+    assert response.get_json()["deleted_count"] == 1
+    saved = application.load_data()
+    assert saved["crm_contacts"] == []
+    assert saved["crm_calendly_appointments"] == []
+    assert saved["crm_notifications"] == []
+    assert saved["crm_ai_candidate_analyses"] == {}
+    assert saved["crm_cnaps_scoring_snapshots"] == {}
+    assert saved["crm_email_templates"] == [{"id": "template-1"}]
+    assert saved["demandes"] == [{"id": "outside-crm"}]
+
+
+def test_non_admin_cannot_reset_crm_database(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    with c.session_transaction() as session:
+        session["user_email"] = "cassandre@integraleacademy.com"
+
+    response = c.delete("/api/crm/database")
+
+    assert response.status_code == 403
+    assert application.load_data()["crm_contacts"][0]["id"] == contact["id"]
+
+
+def test_database_reset_button_is_only_rendered_for_admin(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    assert b'id="deleteCrmDatabase"' in c.get("/crm").data
+    with c.session_transaction() as session:
+        session["user_email"] = "cassandre@integraleacademy.com"
+    assert b'id="deleteCrmDatabase"' not in c.get("/crm").data
+
+
 def test_contact_publication_is_signed_and_persisted(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()

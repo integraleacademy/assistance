@@ -6522,7 +6522,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260806-email-preview-subject"
+CRM_ASSET_VERSION = "20260807-crm-reset"
 
 
 def _crm_statuses(data=None):
@@ -8994,6 +8994,26 @@ def crm_contacts():
     data["crm_contacts"].insert(0, contact)
     save_data(data)
     return jsonify(_crm_contact_response(contact, data)), 201
+
+
+@app.delete("/api/crm/database")
+@login_required
+def crm_delete_database():
+    """Efface les données des prospects sans toucher aux autres outils du site."""
+    if (current_user() or {}).get("role") != "admin":
+        return jsonify({"error": "Cette action est réservée à l’administrateur"}), 403
+
+    data = load_data()
+    deleted_count = len(data.get("crm_contacts", []))
+    # Les réglages CRM (étapes, modèles et connexion Calendly) sont conservés,
+    # mais toutes les données rattachées aux prospects doivent disparaître.
+    data["crm_contacts"] = []
+    data["crm_calendly_appointments"] = []
+    data["crm_notifications"] = []
+    data["crm_ai_candidate_analyses"] = {}
+    data["crm_cnaps_scoring_snapshots"] = {}
+    save_data(data)
+    return jsonify({"ok": True, "deleted_count": deleted_count})
 
 
 @app.post("/api/crm/statuses")
