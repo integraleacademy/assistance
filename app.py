@@ -3097,6 +3097,7 @@ def api_secretariat_demandes():
                             if contact.get("source_secretariat_id") == entry.get("id")), None)
     message_results = {}
     if entry["type"] == "formation" and crm_contact:
+        _secretariat_refresh_calendly_appointments(data_store, entry, crm_contact)
         _secretariat_hydrate_appointment_from_crm(data_store, entry, crm_contact)
         _ensure_secretariat_quote(data_store, entry, crm_contact)
         message_results = _send_secretariat_information_messages(data_store, entry, crm_contact)
@@ -7395,6 +7396,45 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
     contact["formulaire"] = {**(contact.get("formulaire") or {}), **entry}
     contact["updated_at"] = _crm_now()
     return appointment
+
+
+def _secretariat_refresh_calendly_appointments(data, entry, contact):
+    """Refresh the CRM record from Calendly before building the summary email.
+
+    The webhook cache is normally current, but a booking made while the
+    secretary is completing the form can arrive after the final button is
+    clicked.  A targeted lookup closes that race.  Calendly failures remain
+    non-blocking: the already cached appointments are still used by the next
+    step and the delivery can continue.
+    """
+    state = data.get("crm_calendly") or {}
+    can_lookup = bool(
+        _calendly_token()
+        and state.get("user")
+        and state.get("organization")
+        and _crm_normalize_email(contact.get("mail") or entry.get("email"))
+    )
+    if not can_lookup:
+        return 0
+
+    try:
+        payloads, _lookup = _crm_calendly_fetch_contact_appointments(data, contact)
+    except (CalendlyAPIError, RuntimeError) as exc:
+        entry["calendly_lookup_warning"] = str(exc)
+        return 0
+
+    for payload in payloads:
+        _crm_upsert_calendly_appointment(
+            data,
+            payload,
+            source="secretariat_targeted_lookup",
+            contact_id=contact.get("id"),
+            create_contact=False,
+            record_activity=False,
+        )
+    _crm_calendly_relink_appointments(data, contact)
+    _crm_sync_contact_calendly_status(data, contact)
+    return len(payloads)
 
 
 def _mask_delivery_recipient(value, kind):

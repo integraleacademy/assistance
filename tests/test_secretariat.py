@@ -457,6 +457,55 @@ def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkey
     assert "Vous n'avez pas encore planifié" not in emails[0][3]
 
 
+def test_secretariat_refreshes_calendly_before_building_summary_email(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
+    data["crm_calendly_appointments"] = []
+    data["crm_calendly"] = {
+        "user": "https://api.calendly.com/users/USER1",
+        "organization": "https://api.calendly.com/organizations/ORG1",
+        "scope": "organization",
+    }
+    monkeypatch.setenv("CALENDLY_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "invalid-json")
+    monkeypatch.setattr(application, "_crm_calendly_fetch_contact_appointments", lambda stored, contact: ([{
+        "uri": "https://api.calendly.com/scheduled_events/EVENT1/invitees/INVITEE1",
+        "event": "https://api.calendly.com/scheduled_events/EVENT1",
+        "name": "Camille Martin",
+        "email": "camille@example.com",
+        "status": "active",
+        "scheduled_event": {
+            "uri": "https://api.calendly.com/scheduled_events/EVENT1",
+            "name": "Appel découverte",
+            "status": "active",
+            "start_time": "2026-08-12T08:30:00Z",
+            "end_time": "2026-08-12T09:00:00Z",
+            "location": {"type": "outbound_call", "location": "+33600000000"},
+        },
+    }], {"method": "email", "processed_events": 1}))
+    emails = []
+    monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: True)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "APS", "prenom": "Camille",
+        "nom": "Camille Martin", "email": "camille@example.com", "telephone": "0600000000",
+    })
+
+    assert response.status_code == 201
+    contact = data["crm_contacts"][0]
+    assert data["crm_calendly_appointments"][0]["contact_id"] == contact["id"]
+    assert contact["statut"] == "RDV programmé"
+    assert "Votre rendez-vous téléphonique a bien été planifié" in emails[0][3]
+    assert "12/08/2026" in emails[0][3]
+    assert "10:30" in emails[0][3]
+    assert "Vous n'avez pas encore planifié" not in emails[0][3]
+
+
 def test_secretariat_ignores_past_and_non_phone_calendly_appointments(monkeypatch):
     data = {"crm_calendly_appointments": [
         {"contact_id": "crm-1", "status": "active", "start_time": "2020-01-01T10:00:00Z",
