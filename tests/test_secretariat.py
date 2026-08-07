@@ -318,6 +318,9 @@ def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appoi
     assert rendered.count("Bonjour Clément") == 1
     assert "cid:integrale-academy-logo" in rendered
     assert "Faites le premier pas vers votre futur métier" in rendered
+    assert "Vous souhaitez des renseignements concernant la formation" in rendered
+    assert "Vous souhaitez intégrer" not in rendered
+    assert "Vous souhaitez vous inscrire" not in rendered
     assert "Votre prochain rendez-vous téléphonique" not in rendered
     assert "Prendre un RDV téléphonique" in rendered
     assert "Formation Formation" not in rendered
@@ -350,6 +353,19 @@ def test_secretariat_rejects_a_repeated_thank_you_from_ai():
         "summary_paragraphs": [
             "Merci pour le temps consacré à votre projet.",
             "Vous souhaitez confirmer votre session.",
+        ],
+        "financing_message": "", "cnaps_message": "", "next_steps": [],
+    }
+    assert application._validate_secretariat_ai_content(raw, fallback, entry) is fallback
+
+
+def test_secretariat_rejects_ai_wording_that_assumes_registration():
+    entry, _ = application._secretariat_preview_data(False)
+    fallback = application._secretariat_email_fallback(entry)
+    raw = {
+        "summary_paragraphs": [
+            "Vous souhaitez vous inscrire à la formation APS.",
+            "Notre équipe vous présente les prochaines étapes.",
         ],
         "financing_message": "", "cnaps_message": "", "next_steps": [],
     }
