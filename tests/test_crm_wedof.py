@@ -36,10 +36,13 @@ def create_contact(client, *, email="", phone=""):
     ).get_json()
 
 
-def folder(identifier, email="", phone=""):
+def folder(identifier, email="", phone="", first_name="", last_name=""):
     return {
         "externalId": identifier,
-        "attendee": {"email": email, "phone": phone, "custom": "kept"},
+        "attendee": {
+            "email": email, "phone": phone, "firstName": first_name,
+            "lastName": last_name, "custom": "kept",
+        },
         "state": "accepted",
         "billingState": "paid",
         "controlState": "ok",
@@ -124,6 +127,33 @@ def test_unique_normalized_phone_matching(tmp_path, monkeypatch):
     application._wedof_store_page([folder("phone-folder", phone="+33 6 12 34 56 78")], application.load_data()["crm_contacts"], 1)
     resources = client.get(f"/api/crm/contacts/{contact['id']}/wedof").get_json()["resources"]
     assert resources[0]["match_method"] == "phone"
+
+
+def test_unique_name_matching_ignores_accents(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts", json={"prenom": "Clément", "nom": "Lévy"}
+    ).get_json()
+    application._wedof_store_page(
+        [folder("name-folder", first_name="Clement", last_name="Levy")],
+        application.load_data()["crm_contacts"], 1,
+    )
+    resources = client.get(
+        f"/api/crm/contacts/{contact['id']}/wedof"
+    ).get_json()["resources"]
+    assert resources[0]["match_method"] == "name"
+
+
+def test_ambiguous_normalized_name_is_not_linked(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    client.post("/api/crm/contacts", json={"prenom": "Élodie", "nom": "André"})
+    client.post("/api/crm/contacts", json={"prenom": "Elodie", "nom": "Andre"})
+    application._wedof_store_page(
+        [folder("ambiguous-name", first_name="Elodie", last_name="Andre")],
+        application.load_data()["crm_contacts"], 1,
+    )
+    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
+        assert db.execute("SELECT COUNT(*) FROM wedof_contact_links").fetchone()[0] == 0
 
 
 def test_ambiguous_match_is_not_linked_and_creates_no_contact(tmp_path, monkeypatch):
