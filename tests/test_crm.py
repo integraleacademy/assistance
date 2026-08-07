@@ -49,6 +49,18 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
     assert "'Secrétariat','Autre'" in crm_js
 
 
+def test_tracking_card_is_displayed_above_publications():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    main_column = crm_js.split('<div class="contact-main-column">', 1)[1].split(
+        '<aside class="contact-side-column">', 1
+    )[0]
+    assert main_column.index('id="trackingCard"') < main_column.index(
+        'class="card publications-card"'
+    )
+
+
 def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"})
