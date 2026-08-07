@@ -2964,7 +2964,7 @@ def secretariat():
     data_store = load_data()
     formations = []
     formation_icons = {
-        "A3P": "🛡️",
+        "A3P": "🧭",
         "APS": "👮",
         "SSIAP": "🔥",
         "DESP_INIT": "💼",
@@ -2983,7 +2983,7 @@ def secretariat():
             "label": details.get("label", PLAN_FORMATIONS.get(code, code)),
             "centres": centres,
             "category": "bts" if code.startswith("BTS_") else "security",
-            "icon": "🎓" if code.startswith("BTS_") else formation_icons.get(code, "🛡️"),
+            "icon": "🎓" if code.startswith("BTS_") else formation_icons.get(code, "📘"),
             **details,
         })
     journal = sorted(
