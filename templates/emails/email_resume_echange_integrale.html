@@ -70,23 +70,23 @@
 
               <!-- Informations déterministes de la formation -->
               <h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">À retenir sur la formation</h2>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; background:#f7f9fc; border:1px solid #e1e8f2; border-radius:14px; overflow:hidden;">
                 <tr>
-                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 10px 12px 0;">
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:18px 18px 16px; border-right:1px solid #e1e8f2; border-bottom:1px solid #e1e8f2;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Durée et rythme</div>
                     <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('duration', '') }}{% if formation.get('format') and formation.get('format')|lower not in formation.get('duration', '')|lower %} · {{ formation.get('format') }}{% endif %}</div>
                   </td>
-                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 0 12px 10px;">
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:18px 18px 16px; border-bottom:1px solid #e1e8f2;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Tarif</div>
                     <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('price', '') }}</div>
                   </td>
                 </tr>
                 <tr>
-                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:10px 10px 0 0;">
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:16px 18px 18px; border-right:1px solid #e1e8f2;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Lieu</div>
                     <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{% if formation.get('location') %}{{ formation.get('location') }}{% elif entry.get('formation_date_souhaitee') %}{{ entry.get('formation_date_souhaitee') }}{% else %}Lieu communiqué avec la session choisie{% endif %}</div>
                   </td>
-                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:10px 0 0 10px;">
+                  <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:16px 18px 18px;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Certification et objectif</div>
                     <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('certification') or formation.get('purpose', '') }}</div>
                   </td>
@@ -128,11 +128,12 @@
               {% endif %}
 
               {% if appointment and appointment.status in ['proposed', 'scheduled'] %}
-              <h2 style="margin:30px 0 13px; font-size:20px; line-height:27px; color:#102c5c;">Votre rendez-vous</h2>
-              <div style="padding:18px 20px; border:1px solid #cddbf3; background:#f7faff; border-radius:13px;">
-                <div style="font-size:15px; line-height:24px; color:#25344d;">{% if appointment.get('status') == 'scheduled' %}Votre rendez-vous a bien été planifié avec notre équipe.{% else %}Un rendez-vous vous a été proposé. Notre équipe attend votre confirmation du créneau.{% endif %}</div>
+              <h2 style="margin:30px 0 13px; font-size:20px; line-height:27px; color:#102c5c;">Votre prochain rendez-vous téléphonique</h2>
+              <div style="padding:20px; border:1px solid #bfd0ef; border-left:5px solid #3269da; background:#f4f7fd; border-radius:14px;">
+                <div style="font-size:12px; line-height:18px; color:#3269da; font-weight:700; letter-spacing:.7px; text-transform:uppercase;">Échange avec notre équipe</div>
+                <div style="margin-top:5px; font-size:15px; line-height:24px; color:#25344d;">{% if appointment.get('status') == 'scheduled' %}Votre rendez-vous téléphonique a bien été planifié.{% else %}Un rendez-vous téléphonique vous a été proposé. Notre équipe attend votre confirmation du créneau.{% endif %}</div>
                 {% if appointment.get('status') == 'scheduled' and (appointment.get('date') or appointment.get('time') or appointment.get('mode') or appointment.get('url')) %}
-                <div style="margin-top:9px; font-size:16px; line-height:24px; color:#102c5c; font-weight:700;">{% if appointment.get('date') %}{{ appointment.get('date') }}{% endif %}{% if appointment.get('time') %}{% if appointment.get('date') %} à {% endif %}{{ appointment.get('time') }}{% endif %}{% if appointment.get('mode') %} · {{ appointment.get('mode') }}{% endif %}{% if appointment.get('url') %}<br><a href="{{ appointment.get('url') }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Accéder au rendez-vous</a>{% endif %}</div>
+                <div style="margin-top:10px; font-size:17px; line-height:25px; color:#102c5c; font-weight:700;">{% if appointment.get('date') %}{{ appointment.get('date') }}{% endif %}{% if appointment.get('time') %}{% if appointment.get('date') %} à {% endif %}{{ appointment.get('time') }}{% endif %}{% if appointment.get('mode') %} · {{ appointment.get('mode') }}{% endif %}</div>
                 {% endif %}
               </div>
               {% endif %}

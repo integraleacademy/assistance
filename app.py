@@ -7497,6 +7497,23 @@ def _secretariat_rdv(entry):
     if status in {"declined", "not_requested", "none"}:
         return None
     if status == "scheduled":
+        mode = str(entry.get("rdv_mode") or "").lower().strip()
+        if mode and not any(term in mode for term in ("appel", "téléphone", "telephone", "phone")):
+            return None
+        date_value = str(entry.get("rdv_date") or "").strip()
+        time_value = str(entry.get("rdv_time") or "00:00").strip()
+        if date_value:
+            parsed = None
+            for pattern in ("%d/%m/%Y %H:%M", "%d %B %Y %H:%M", "%Y-%m-%d %H:%M"):
+                try:
+                    parsed = datetime.datetime.strptime(f"{date_value} {time_value}", pattern)
+                    break
+                except ValueError:
+                    continue
+            if parsed is not None:
+                paris = pytz.timezone("Europe/Paris")
+                if paris.localize(parsed) <= datetime.datetime.now(paris):
+                    return None
         return {"status": status, "date": entry.get("rdv_date"), "time": entry.get("rdv_time"),
                 "mode": entry.get("rdv_mode"), "url": entry.get("rdv_url") or entry.get("calendly_url")}
     if status == "proposed":

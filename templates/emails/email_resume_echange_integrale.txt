@@ -23,7 +23,7 @@ Merci pour le temps accordé lors de notre échange au sujet de la formation {{ 
 {% endif %}{% if content.cnaps_message and entry.formation in ['APS', 'A3P'] %}Situation CNAPS
 {{ content.cnaps_message }}
 
-{% endif %}{% if appointment %}Votre rendez-vous
+{% endif %}{% if appointment %}Votre prochain rendez-vous téléphonique
 {% if appointment.status == 'scheduled' %}Votre rendez-vous est planifié{% if appointment.date %} le {{ appointment.date }}{% endif %}{% if appointment.time %} à {{ appointment.time }}{% endif %}{% if appointment.mode %} · {{ appointment.mode }}{% endif %}.
 {% else %}Un rendez-vous vous a été proposé.
 {% endif %}

@@ -288,7 +288,7 @@ def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appoi
     assert rendered.count("Bonjour Clément") == 1
     assert "cid:integrale-academy-logo" in rendered
     assert "Faites le premier pas vers votre futur métier" in rendered
-    assert "Votre rendez-vous" not in rendered
+    assert "Votre prochain rendez-vous téléphonique" not in rendered
     assert "Prendre un RDV téléphonique" in rendered
     assert "Formation Formation" not in rendered
     assert "Nos prochaines dates" in rendered
@@ -355,13 +355,15 @@ def test_secretariat_scheduled_appointment_and_other_training(monkeypatch):
     monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "invalid-json")
     entry, contact = application._secretariat_preview_data(True)
     entry["formation"] = "VTC"
+    entry["rdv_mode"] = "Appel téléphonique"
     with application.app.test_request_context():
         subject, _, rendered = application._build_secretariat_followup_email(entry, contact)
     sms = application._build_secretariat_followup_sms("VTC")
 
     assert "VTC" in subject and application.SECRETARIAT_FORMATIONS["VTC"]["label"] in rendered
-    assert "Votre rendez-vous" in rendered
-    assert "15 septembre 2026" in rendered and "10:30" in rendered and "visioconférence" in rendered
+    assert "Votre prochain rendez-vous téléphonique" in rendered
+    assert "Accéder au rendez-vous" not in rendered
+    assert "15 septembre 2026" in rendered and "10:30" in rendered and "Appel téléphonique" in rendered
     assert "Vous n'avez pas encore planifié" not in rendered
     assert application.SECRETARIAT_FORMATIONS["VTC"]["label"] in sms
 
@@ -387,6 +389,9 @@ def test_secretariat_a3p_wording_and_project_values_are_normalized(monkeypatch):
     assert "Votre objectif est de suivre" not in rendered
     assert "refus de CPF" not in rendered
     assert ">Financement personnel possible</td>" in rendered
+    assert "d’étaler le paiement en plusieurs fois jusqu’à la fin de la formation" in rendered
+    assert "autorisation préalable d’entrée en formation délivrée par le CNAPS" in rendered
+    assert "notre équipe vous accompagnera dans cette démarche" in rendered
 
 
 def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkeypatch):
@@ -416,11 +421,24 @@ def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkey
     })
 
     assert response.status_code == 201
-    assert "Votre rendez-vous a bien été planifié" in emails[0][3]
+    assert "Votre rendez-vous téléphonique a bien été planifié" in emails[0][3]
     assert "12/08/2026" in emails[0][3]
     assert "10:30" in emails[0][3]
     assert "Appel téléphonique" in emails[0][3]
     assert "Vous n'avez pas encore planifié" not in emails[0][3]
+
+
+def test_secretariat_ignores_past_and_non_phone_calendly_appointments(monkeypatch):
+    data = {"crm_calendly_appointments": [
+        {"contact_id": "crm-1", "status": "active", "start_time": "2020-01-01T10:00:00Z",
+         "location": {"kind": "outbound_call"}},
+        {"contact_id": "crm-1", "status": "active", "start_time": "2099-01-01T10:00:00Z",
+         "location": {"kind": "zoom", "join_url": "https://example.test/video"}},
+    ]}
+    entry, contact = application._secretariat_preview_data(False)
+    contact["id"] = "crm-1"
+    application._secretariat_hydrate_appointment_from_crm(data, entry, contact)
+    assert application._secretariat_rdv(entry) is None
 
 
 def test_secretariat_france_travail_wish_is_not_described_as_pending():
