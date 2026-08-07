@@ -28,6 +28,18 @@ def test_global_search_closes_when_clicking_outside():
     assert "if(!searchBox.contains(e.target))globalResults.classList.remove('open')" in crm_js
 
 
+def test_tracking_card_can_expand_and_displays_secretariat_origin():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert 'id="trackingExpand"' in crm_js
+    assert "trackingCard.showPopover()" in crm_js
+    assert ".tracking-card:popover-open" in open(
+        application.app.root_path + "/static/crm.css", encoding="utf-8"
+    ).read()
+    assert "'Secrétariat','Autre'" in crm_js
+
+
 def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"})
