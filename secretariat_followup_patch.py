@@ -82,7 +82,7 @@ def register_secretariat_followup_patch(app_module):
         if code == "APS":
             return (
                 "Votre objectif est de suivre le parcours complet permettant d’obtenir le TFP APS, "
-                "puis de demander la carte professionnelle indispensable pour exercer dans le métier "
+                "puis de demander la carte professionnelle indispensable pour exercer le métier "
                 "d’agent de surveillance humaine et de gardiennage."
             )
         if code == "A3P":
@@ -165,8 +165,8 @@ def register_secretariat_followup_patch(app_module):
                 administrative.append("Vous disposez déjà d’une carte professionnelle CNAPS en cours de validité.")
             else:
                 administrative.append(
-                    "Vous ne disposez pas encore d’une carte professionnelle valide ; cette situation est normale avant l’entrée en formation "
-                    "et notre équipe pourra vous accompagner pour les démarches d’autorisation auprès du CNAPS."
+                    "Vous ne disposez pas encore d’une carte professionnelle ou d'une autorisation préalable délivrée par le CNAPS "
+                    "(Ministère de l'intérieur) ; Notre équipe vous accompagnera dans cette démarche auprès du CNAPS."
                 )
         elif code == "A3P":
             if _yes(entry.get("cnaps_ok")):
@@ -178,14 +178,23 @@ def register_secretariat_followup_patch(app_module):
         if len(paragraphs) == 1:
             paragraphs.append("Notre équipe reste à votre disposition pour vérifier avec vous les prérequis, le financement et les documents nécessaires avant l’inscription.")
 
-        steps = ["Consulter le dossier de présentation et l’ensemble des prochaines dates."]
-        if session:
-            steps.append("Confirmer avec notre équipe la session que vous avez retenue.")
-        if _yes(entry.get("devis")):
-            steps.append("Consulter votre devis personnalisé généré à partir des informations communiquées.")
-        if code in {"APS", "A3P"} and not _yes(entry.get("cnaps_ok")):
-            steps.append("Finaliser avec notre équipe les démarches CNAPS nécessaires avant l’entrée en formation.")
-        return {"summary_paragraphs": paragraphs[:4], "financing_message": "", "cnaps_message": "", "next_steps": steps[:4]}
+        return {"summary_paragraphs": paragraphs[:4], "financing_message": "", "cnaps_message": "", "next_steps": project_steps(code)}
+
+    def project_steps(code):
+        financing = (
+            "Mise en place de votre plan de financement (demande de financement France Travail, création de votre "
+            "Identité Numérique La Poste, utilisation de votre compte CPF)."
+        )
+        if code in {"APS", "A3P"}:
+            financing += (
+                " Si nécessaire, demande d'autorisation préalable d'entrée en formation auprès du CNAPS "
+                "(Ministère de l'intérieur). Cette démarche est réalisée par nos soins."
+            )
+        return [
+            "RDV téléphonique avec notre équipe pour aborder ensemble tous les détails de votre projet de formation.",
+            financing,
+            "Inscription en formation.",
+        ]
 
     def validate_ai(raw, backup, displayed_first_name, entry):
         try:
@@ -314,7 +323,7 @@ def register_secretariat_followup_patch(app_module):
             rows.append(("Budget CPF déclaré", _euros(cpf)))
         financing = []
         if _yes(entry.get("france_travail")):
-            financing.append("étude d’un financement France Travail souhaitée")
+            financing.append("Étude d'un financement France Travail souhaitée")
         if _yes(entry.get("ft_refus_ok")) or _yes(entry.get("financement_perso")):
             financing.append("financement personnel possible")
         if financing:
@@ -344,7 +353,7 @@ def register_secretariat_followup_patch(app_module):
                 + "".join(rows) + "</table></div>"
             )
         return (
-            '<h2 style="margin:30px 0 14px;font-size:20px;line-height:27px;color:#102c5c;">Toutes les prochaines dates de la formation</h2>'
+            '<h2 style="margin:30px 0 14px;font-size:20px;line-height:27px;color:#102c5c;">Nos prochaines dates</h2>'
             '<div style="padding:18px 20px;border:1px solid #d9e3f2;background:#f8faff;border-radius:13px;">'
             + "".join(centres) + "</div>"
         )
@@ -356,16 +365,14 @@ def register_secretariat_followup_patch(app_module):
         return (
             '<div style="margin:28px 0 8px;padding:24px 22px;background:#fff8e5;border:1px solid #f2d88e;border-radius:15px;text-align:center;">'
             '<div style="font-size:18px;line-height:25px;color:#102c5c;font-weight:700;">Votre devis personnalisé est prêt</div>'
-            '<div style="margin-top:6px;font-size:14px;line-height:21px;color:#5b6a80;">Il a été généré à partir de la formation, de la session et des solutions de financement évoquées ensemble.</div>'
             '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:18px auto 0;"><tr><td align="center" bgcolor="#f4c45a" style="border-radius:9px;">'
             f'<a href="{public_url}" target="_blank" style="display:inline-block;padding:13px 22px;color:#102c5c;text-decoration:none;font-size:15px;font-weight:700;border-radius:9px;">Consulter mon devis personnalisé</a>'
-            '</td></tr></table><div style="margin-top:11px;font-size:12px;line-height:18px;color:#7a6841;">Ce lien est personnel et vous permet de consulter le détail du tarif et du financement.</div></div>'
+            '</td></tr></table></div>'
         )
 
     def enhance_html(rendered, groups, public_url):
-        rendered = rendered.replace("Votre projet&nbsp;: <strong>", "Votre projet&nbsp;: <strong>Formation ", 1)
         sessions = session_html(groups)
-        next_steps_marker = '<h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Vos prochaines étapes</h2>'
+        next_steps_marker = '<h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Un projet de formation ? Notre équipe vous accompagne dans toutes vos démarches</h2>'
         if sessions:
             marker = next_steps_marker if next_steps_marker in rendered else "<!-- Appel à l'action principal -->"
             rendered = rendered.replace(marker, sessions + marker, 1)
@@ -385,7 +392,7 @@ def register_secretariat_followup_patch(app_module):
         lines.extend(f"- {label} : {value}" for label, value in rows)
         lines.append("")
         if groups:
-            lines.append("Toutes les prochaines dates de la formation")
+            lines.append("Nos prochaines dates")
             for centre in groups:
                 lines.append(_text(centre.get("centre_label")))
                 lines.extend(f"- {_text(session.get('label'))}" for session in centre.get("sessions", []))
@@ -406,8 +413,10 @@ def register_secretariat_followup_patch(app_module):
             else:
                 lines.append("Un rendez-vous vous a été proposé. Notre équipe attend votre confirmation du créneau.")
             lines.append("")
+        else:
+            lines.extend(["Prendre un RDV téléphonique", f"Réserver votre rendez-vous : {config.get('calendly')}", ""])
         if content.get("next_steps"):
-            lines.append("Vos prochaines étapes")
+            lines.append("Un projet de formation ? Notre équipe vous accompagne dans toutes vos démarches")
             lines.extend(f"- {_text(step)}" for step in content.get("next_steps", []))
             lines.append("")
         if public_url:
@@ -449,6 +458,7 @@ def register_secretariat_followup_patch(app_module):
         except Exception as exc:
             print("Compte rendu IA indisponible, fallback personnalisé :", exc)
             content = backup
+        content["next_steps"] = project_steps(code)
         rows = project_rows(entry, config)
         appointment = app_module._secretariat_rdv(entry)
         groups = upcoming_sessions(code)
