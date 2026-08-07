@@ -834,13 +834,6 @@ def _parse_exam_date_from_dates_txt(dates_txt):
     if match_numeric:
         return f"{match_numeric.group(3)}-{match_numeric.group(2).zfill(2)}-{match_numeric.group(1).zfill(2)}"
 
-    match = re.search(r"examen le (\d{1,2}) ([a-zà-ÿ]+) (\d{4})", dates_txt, re.IGNORECASE)
-    if not match:
-        return ""
-
-    jour = match.group(1).zfill(2)
-    mois_texte = match.group(2).lower()
-    annee = match.group(3)
     mois_map = {
         "janvier": "01",
         "février": "02",
@@ -858,10 +851,37 @@ def _parse_exam_date_from_dates_txt(dates_txt):
         "décembre": "12",
         "decembre": "12"
     }
-    mois = mois_map.get(mois_texte)
-    if not mois:
-        return ""
-    return f"{annee}-{mois}-{jour}"
+
+    def format_french_date(match):
+        mois = mois_map.get(match.group(2).lower())
+        if not mois:
+            return ""
+        return f"{match.group(3)}-{mois}-{match.group(1).zfill(2)}"
+
+    match = re.search(r"examen le (\d{1,2}) ([a-zà-ÿ]+) (\d{4})", dates_txt, re.IGNORECASE)
+    if match:
+        return format_french_date(match)
+
+    # Les devis personnalisés peuvent ne contenir que la période de formation
+    # (par exemple « Du 9 novembre 2026 au 19 janvier 2027 »). Dans ce cas, la
+    # fin de session est la meilleure date limite disponible pour l'échéancier.
+    range_numeric = re.search(
+        r"\bau\s+(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b",
+        dates_txt,
+        re.IGNORECASE,
+    )
+    if range_numeric:
+        return (
+            f"{range_numeric.group(3)}-{range_numeric.group(2).zfill(2)}-"
+            f"{range_numeric.group(1).zfill(2)}"
+        )
+
+    range_text = re.search(
+        r"\bau\s+(\d{1,2})\s+([a-zà-ÿ]+)\s+(20\d{2})\b",
+        dates_txt,
+        re.IGNORECASE,
+    )
+    return format_french_date(range_text) if range_text else ""
 
 def compute_plan_financement_simulation(formation, dates_txt, cpf_value, france_travail, date_examen_str, centre_code="cote_azur"):
     formation_code = formation or "APS"
