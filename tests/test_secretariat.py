@@ -166,6 +166,8 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
     assert crm_calls[0]["nom"] == "Martin"
     assert crm_calls[0]["formation"] == "APS"
     assert crm_calls[0]["source_formulaire"] == "assistant-secretariat"
+    assert crm_calls[0]["centre"] == "cote_azur"
+    assert crm_calls[0]["dates"] == "8 juillet au 12 août 2026"
     contact = data["crm_contacts"][0]
     assert response.get_json()["crm_contact_id"] == contact["id"]
     assert contact["prenom"] == "Camille"
@@ -206,6 +208,33 @@ def test_secretariat_crm_recovers_centre_and_date_from_legacy_session_value():
 
     assert contact["lieu"] == "Côte d’Azur"
     assert contact["dates_formation"] == "Du 9 novembre 2026 au 19 janvier 2027"
+
+
+def test_secretariat_visible_session_corrects_conflicting_centre_for_both_crms(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    salesforce_calls = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_calls.append)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "A3P", "nom": "Camille Martin",
+        "telephone": "0600000000", "statut": "Traité",
+        "formation_date_souhaitee": (
+            "Intégrale Academy Côte d’Azur — Du 9 novembre 2026 au 19 janvier 2027"
+        ),
+        # Simulate a stale or incorrect browser data attribute: the choice shown
+        # and confirmed by the secretary must remain authoritative.
+        "formation_centre": "auvergne",
+    })
+
+    assert response.status_code == 201
+    assert data["crm_contacts"][0]["lieu"] == "Côte d’Azur"
+    assert data["crm_contacts"][0]["dates_formation"] == "Du 9 novembre 2026 au 19 janvier 2027"
+    assert salesforce_calls[0]["centre"] == "cote_azur"
+    assert salesforce_calls[0]["dates"] == "Du 9 novembre 2026 au 19 janvier 2027"
 
 
 def test_secretariat_api_does_not_duplicate_crm_contact_when_completing_request(client, monkeypatch):

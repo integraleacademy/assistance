@@ -3085,6 +3085,10 @@ def api_secretariat_demandes():
             f"Devis demandé : {entry['devis']}" if entry["devis"] else "",
         ])),
     }
+    centre_code, session_label = _secretariat_session_details(entry)
+    # Salesforce expects these exact generic form keys. Without them, its lead
+    # received neither the selected campus nor the requested training dates.
+    crm_payload.update({"centre": centre_code, "dates": session_label})
     crm_contact = None
     if creates_new_lead:
         crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
@@ -7202,6 +7206,35 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
     return contact
 
 
+def _secretariat_session_details(entry):
+    """Return the CRM centre code and date label selected by the secretary."""
+    preferred_session = str(entry.get("formation_date_souhaitee") or "").strip()
+    session_label = str(entry.get("formation_session_label") or "").strip()
+    raw_centre = str(entry.get("formation_centre") or "").strip()
+    centre_code = _normalize_centre_code(raw_centre) if raw_centre else ""
+
+    # The full, visible choice is the most reliable value: unlike data attributes,
+    # it is also present in legacy submissions. It wins if the two values disagree.
+    normalized_preference = unicodedata.normalize("NFKD", preferred_session)
+    normalized_preference = "".join(
+        character for character in normalized_preference
+        if not unicodedata.combining(character)
+    ).casefold()
+    normalized_preference = re.sub(r"[^a-z0-9]+", " ", normalized_preference).strip()
+    if "cote d azur" in normalized_preference:
+        centre_code = "cote_azur"
+    elif "auvergne" in normalized_preference:
+        centre_code = "auvergne"
+    elif "paris" in normalized_preference:
+        centre_code = "paris"
+
+    if not session_label and " — " in preferred_session:
+        session_label = preferred_session.split(" — ", 1)[1].strip()
+    if not session_label:
+        session_label = preferred_session
+    return centre_code, session_label
+
+
 def _crm_create_contact_from_secretariat(data, entry, crm_payload):
     """Crée une piste CRM interne à partir d'un appel saisi au secrétariat."""
     now = _crm_now()
@@ -7210,30 +7243,7 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
         "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
         "VTC": "Chauffeur VTC",
     }.get(formation_key, formation_key)
-    preferred_session = str(entry.get("formation_date_souhaitee") or "").strip()
-    session_label = str(entry.get("formation_session_label") or "").strip()
-    centre_code = _normalize_centre_code(entry.get("formation_centre"))
-
-    # Current secretariat submissions provide the centre and session separately.
-    # Keep a fallback for older submissions that only contain the displayed value
-    # (for example "Intégrale Academy Côte d’Azur — Du 9 novembre ...").
-    if not centre_code and preferred_session:
-        normalized_preference = unicodedata.normalize("NFKD", preferred_session)
-        normalized_preference = "".join(
-            character for character in normalized_preference
-            if not unicodedata.combining(character)
-        ).casefold()
-        normalized_preference = re.sub(r"[^a-z0-9]+", " ", normalized_preference).strip()
-        if "cote d azur" in normalized_preference:
-            centre_code = "cote_azur"
-        elif "auvergne" in normalized_preference:
-            centre_code = "auvergne"
-        elif "paris" in normalized_preference:
-            centre_code = "paris"
-    if not session_label and " — " in preferred_session:
-        session_label = preferred_session.split(" — ", 1)[1].strip()
-    if not session_label:
-        session_label = preferred_session
+    centre_code, session_label = _secretariat_session_details(entry)
 
     lieu = {
         "paris": "Paris",
