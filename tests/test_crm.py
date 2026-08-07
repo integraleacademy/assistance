@@ -57,6 +57,10 @@ def test_administration_menu_displays_brevo_sms_balance():
     assert 'id="brevoSmsCredits"' in template
     assert "api('/api/crm/brevo/sms-credits')" in crm_js
     assert "if(opening)loadBrevoSmsCredits()" in crm_js
+    assert "Estimation calculée sur une consommation moyenne de 4,5 crédits par SMS." in template
+    assert "const brevoCreditsToSms=" in crm_js
+    assert "Math.floor(numericCredits/4.5)" in crm_js
+    assert "Solde Brevo : ${formattedCredits}" in crm_js
 
 
 def test_global_search_closes_when_clicking_outside():
