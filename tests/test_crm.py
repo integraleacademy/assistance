@@ -33,7 +33,10 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
         crm_js = source.read()
 
     assert 'id="trackingExpand"' in crm_js
-    assert "trackingCard.classList.toggle('tracking-expanded',expanded)" in crm_js
+    assert "trackingCard.showPopover()" in crm_js
+    assert ".tracking-card:popover-open" in open(
+        application.app.root_path + "/static/crm.css", encoding="utf-8"
+    ).read()
     assert "'Secrétariat','Autre'" in crm_js
 
 

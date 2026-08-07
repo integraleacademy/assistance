@@ -156,9 +156,9 @@ function bindContact(c){
   refreshFundingBadges(c);
   renderIntegrationScore(c);
   loadCandidateAi(c);
-  const toggleTracking=expanded=>{trackingCard.classList.toggle('tracking-expanded',expanded);trackingExpand.setAttribute('aria-expanded',String(expanded));trackingExpand.setAttribute('aria-label',expanded?'Réduire le suivi':'Agrandir le suivi');trackingExpand.title=expanded?'Réduire le suivi':'Agrandir le suivi';trackingExpand.textContent=expanded?'×':'⛶';document.body.classList.toggle('tracking-open',expanded)};
-  trackingExpand.onclick=()=>toggleTracking(!trackingCard.classList.contains('tracking-expanded'));
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&trackingCard.classList.contains('tracking-expanded'))toggleTracking(false)});
+  const reflectTrackingState=expanded=>{trackingExpand.setAttribute('aria-expanded',String(expanded));trackingExpand.setAttribute('aria-label',expanded?'Réduire le suivi':'Agrandir le suivi');trackingExpand.title=expanded?'Réduire le suivi':'Agrandir le suivi';trackingExpand.textContent=expanded?'×':'⛶';document.body.classList.toggle('tracking-open',expanded);if(!expanded)trackingCard.removeAttribute('popover')};
+  const toggleTracking=()=>{if(trackingCard.matches(':popover-open'))trackingCard.hidePopover();else{trackingCard.setAttribute('popover','auto');trackingCard.showPopover()}};
+  trackingCard.addEventListener('toggle',event=>reflectTrackingState(event.newState==='open'));trackingExpand.onclick=toggleTracking;
   rephraseComments.onclick=async()=>{const field=document.querySelector('[name=commentaires]');if(!field.value.trim())return toast('Saisissez d’abord un commentaire',true);rephraseComments.disabled=true;try{field.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:field.value})})).texte;field.dispatchEvent(new Event('input',{bubbles:true}))}catch(e){toast(e.message,true)}finally{rephraseComments.disabled=false}};
   const bindFeed=expanded=>{const more=document.querySelector('#feedMore');if(more)more.onclick=()=>{activityFeed.innerHTML=feed(c,!expanded);bindFeed(!expanded)};document.querySelectorAll('[data-preview]').forEach(a=>a.onclick=()=>previewModal(decodeURIComponent(a.dataset.preview)))};bindFeed(false);
   backList.onclick=()=>{history.pushState({},'',`/CRM/contacts`);render()};
