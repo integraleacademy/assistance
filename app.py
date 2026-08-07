@@ -6987,17 +6987,25 @@ def _crm_sync_contact_calendly_status(data, contact):
 
 
 def _crm_calendly_fetch_contact_appointments(data, contact):
-    """Fetch only the events Calendly associates with this contact's email."""
+    """Fetch the events Calendly associates with this contact.
+
+    The e-mail entered in Calendly is not necessarily the one collected by the
+    secretary (a shared/company address is sometimes used).  Try Calendly's
+    efficient e-mail filter first, then fall back to the phone number contained
+    in the invitee answers when it did not find anything.
+    """
     email = _crm_normalize_email(contact.get("mail"))
-    if not email:
+    phone = _crm_normalize_phone(contact.get("telephone"))
+    if not email and not phone:
         return [], {"method": "phone_cache", "processed_events": 0}
 
     context = _calendly_context_from_data(data)
     params = {
         "count": 100,
         "sort": "start_time:desc",
-        "invitee_email": email,
     }
+    if email:
+        params["invitee_email"] = email
     if context.get("scope") == "user":
         params["user"] = context["user"]
     else:
@@ -7016,16 +7024,53 @@ def _crm_calendly_fetch_contact_appointments(data, contact):
         )
         if not event_uuid:
             continue
+        invitee_params = {"count": 100}
+        if email:
+            invitee_params["email"] = email
         invitees = _calendly_paginated_collection(
             f"/scheduled_events/{event_uuid}/invitees",
-            params={"count": 100, "email": email},
+            params=invitee_params,
             max_pages=100,
         )
         for invitee in invitees:
-            if _crm_normalize_email(invitee.get("email")) == email:
+            if (email and _crm_normalize_email(invitee.get("email")) == email) or (
+                phone and _crm_normalize_phone(_crm_calendly_payload_phone(invitee)) == phone
+            ):
                 payloads.append({**invitee, "scheduled_event": scheduled_event})
+
+    # An e-mail-filtered query cannot return a booking made with a different
+    # address.  Scan the active events only when needed and identify the
+    # invitee by the telephone answer collected by Calendly.
+    matched_by_phone = False
+    if not payloads and phone and email:
+        phone_params = {
+            "count": 100,
+            "sort": "start_time:asc",
+            "status": "active",
+            "min_start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        if context.get("scope") == "user":
+            phone_params["user"] = context["user"]
+        else:
+            phone_params["organization"] = context["organization"]
+        phone_events = _calendly_paginated_collection(
+            "/scheduled_events", params=phone_params, max_pages=100
+        )
+        for scheduled_event in phone_events:
+            event_uuid = _calendly_resource_uuid(scheduled_event.get("uri"), "scheduled_events")
+            if not event_uuid:
+                continue
+            invitees = _calendly_paginated_collection(
+                f"/scheduled_events/{event_uuid}/invitees",
+                params={"count": 100},
+                max_pages=100,
+            )
+            for invitee in invitees:
+                if _crm_normalize_phone(_crm_calendly_payload_phone(invitee)) == phone:
+                    payloads.append({**invitee, "scheduled_event": scheduled_event})
+                    matched_by_phone = True
     return payloads, {
-        "method": "email",
+        "method": "phone" if matched_by_phone or not email else "email",
         "processed_events": len(scheduled_events),
     }
 
@@ -7392,7 +7437,8 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
         else:
             location_kind = str(location).casefold()
         phone_terms = ("phone", "call", "appel", "téléphone", "telephone")
-        if not any(term in location_kind for term in phone_terms):
+        appointment_name = str(appointment.get("name") or "").casefold()
+        if not any(term in location_kind or term in appointment_name for term in phone_terms):
             continue
         try:
             start = datetime.datetime.fromisoformat(
@@ -7444,7 +7490,10 @@ def _secretariat_refresh_calendly_appointments(data, entry, contact):
         _calendly_token()
         and state.get("user")
         and state.get("organization")
-        and _crm_normalize_email(contact.get("mail") or entry.get("email"))
+        and (
+            _crm_normalize_email(contact.get("mail") or entry.get("email"))
+            or _crm_normalize_phone(contact.get("telephone") or entry.get("telephone"))
+        )
     )
     if not can_lookup:
         return 0
