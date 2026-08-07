@@ -144,6 +144,40 @@ def _payload_salesforce_simulation_vae(nom, prenom, mail, telephone, reponses, s
     }
 
 
+def _crm_create_contact_from_vae_simulation(data, nom, prenom, mail, telephone,
+                                            reponses, score, resultat):
+    """Crée une piste CRM traçable à partir du test public VAE DESP."""
+    now = _crm_now()
+    answers = {f"q{i}": str(reponses.get(f"q{i}") or "").strip().lower()
+               for i in range(1, 6)}
+    contact = {
+        "id": str(uuid.uuid4()),
+        "prenom": _crm_format_first_name(prenom),
+        "nom": _crm_format_last_name(nom),
+        "telephone": telephone, "mail": mail,
+        "formation": "DESP", "desp_type": "VAE", "lieu": "",
+        "statut": "Nouveaux", "dates_formation": "",
+        "cpf": "", "cpf_montant": "", "carte_pro": "",
+        "antecedents": "", "garde_vue": "", "titre_sejour": "",
+        "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_username": "",
+        "cnaps_password": "", "integration_dracar": "", "identite_creation": "",
+        "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
+        "refus_ft_perso": "", "reste_a_charge_perso": "", "inscrit_ft": "",
+        "relance_date": "", "origine": "Site internet",
+        "commentaires": f"Test d’éligibilité VAE DESP réalisé — score : {score}% — {resultat}.",
+        "created_at": now, "updated_at": now, "activities": [],
+        "source": "simulateur_vae_desp",
+        "vae_eligibility": {
+            "completed_at": now, "score": score, "resultat": resultat,
+            "reponses": answers,
+        },
+    }
+    _crm_activity(contact, "creation", "Test d’éligibilité VAE DESP complété",
+                  f"Score : {score}% · Résultat : {resultat}")
+    data.setdefault("crm_contacts", []).insert(0, contact)
+    return contact
+
+
 def creer_piste_salesforce(form):
     print("FORMULAIRE RECU:", dict(form))
     formulaire_abandonne = _est_payload_formulaire_abandonne(form)
@@ -4947,6 +4981,9 @@ def simulateur_vae_desp():
         "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
         "statut": "Non traité",
     })
+    contact = _crm_create_contact_from_vae_simulation(
+        data, nom, prenom, mail, telephone, reponses, score, resultat,
+    )
     save_data(data)
 
     creer_piste_salesforce(_payload_salesforce_simulation_vae(
@@ -4959,7 +4996,8 @@ def simulateur_vae_desp():
         resultat=resultat,
     ))
 
-    return jsonify({"ok": True, "score": score, "resultat": resultat})
+    return jsonify({"ok": True, "score": score, "resultat": resultat,
+                    "crm_contact_id": contact["id"]})
 
 @app.route("/admin-devis/simulateur/data", methods=["POST"])
 @login_required
