@@ -149,6 +149,7 @@ def test_final_summary_always_displays_scotia_status_without_relying_on_model():
     final = finalize_candidate_ai_analysis(valid_result(
         general_summary="Dossier en cours. Statut SCOTIA : information inventée."), context)
     assert final["summary"] == (
+        "Le candidat souhaite suivre le parcours DESP par la VAE. "
         "Dossier en cours. Statut SCOTIA : En attente documents complémentaires.")
     assert final["vae_summary"] == "Statut SCOTIA : En attente documents complémentaires."
 
@@ -403,3 +404,23 @@ def test_context_contains_authoritative_personal_remainder_fact():
     assert context["authoritative_facts"]["remaining_charge"] == {
         "amount_eur": 2200, "status": "confirmed",
         "fact": "Le candidat a confirmé qu’il financera personnellement le reste à charge de 2 200 €."}
+
+
+def test_summary_always_includes_desired_session_and_confirmed_personal_remainder():
+    score = {"score": 79, "personal_remainder_applicable": True,
+        "personal_remainder_amount_eur": 3000, "personal_remainder_status": "confirmed",
+        "remaining_to_finance_eur": 3000, "training_price_eur": 4200,
+        "funding_solution_status": "secured_personal", "unsecured_amount_eur": 0}
+    context = build_candidate_ai_context(
+        {"id": "lead-complete", "formation": "A3P", "lieu": "Côte d’Azur",
+         "dates_formation": "Du 14 septembre au 9 octobre 2026", "cpf_montant": "1200",
+         "financement_ft": "NON", "reste_a_charge_perso": "OUI"},
+        {"crm_calendly_appointments": []}, score)
+
+    final = finalize_candidate_ai_analysis(valid_result(
+        general_summary="Le dossier de financement est renseigné."), context)
+
+    assert "Date de formation souhaitée : Du 14 septembre au 9 octobre 2026." in final["summary"]
+    assert "Lieu souhaité : Côte d’Azur." in final["summary"]
+    assert "financera personnellement le reste à charge de 3 000 €" in final["summary"]
+    assert "financera personnellement le reste à charge de 3 000 €" in final["funding_analysis"]["additional_funding"]
