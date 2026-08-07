@@ -80,6 +80,45 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     assert call.get_json()["activities"][0]["kind"] == "appel"
 
 
+def test_vae_eligibility_simulation_creates_detailed_crm_lead(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    application.app.config.update(TESTING=True)
+
+    response = application.app.test_client().post(
+        "/simulateur-eligibilite-vae-desp",
+        json={
+            "nom": "martin", "prenom": "lina", "mail": "lina@example.com",
+            "telephone": "06 12 34 56 78",
+            "reponses": {"q1": "oui", "q2": "oui", "q3": "non", "q4": "oui", "q5": "oui"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["score"] == 75
+    contact = application.load_data()["crm_contacts"][0]
+    assert response.get_json()["crm_contact_id"] == contact["id"]
+    assert (contact["prenom"], contact["nom"]) == ("Lina", "MARTIN")
+    assert (contact["formation"], contact["desp_type"], contact["statut"]) == ("DESP", "VAE", "Nouveaux")
+    assert contact["source"] == "simulateur_vae_desp"
+    assert contact["vae_eligibility"] == {
+        "completed_at": contact["created_at"], "score": 75,
+        "resultat": "Profil favorable",
+        "reponses": {"q1": "oui", "q2": "oui", "q3": "non", "q4": "oui", "q5": "oui"},
+    }
+    assert contact["activities"][0]["title"] == "Test d’éligibilité VAE DESP complété"
+    assert "Score : 75%" in contact["activities"][0]["detail"]
+
+
+def test_crm_displays_vae_eligibility_score_and_clickable_details():
+    crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
+
+    assert "vaeEligibilityCard(c)" in crm_js
+    assert "VAE ${Number(eligibility.score)} %" in crm_js
+    assert "Voir le détail des réponses" in crm_js
+    assert "vaeEligibilityQuestions.map" in crm_js
+
+
 def test_admin_can_reset_only_crm_prospect_data(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     c.post("/api/crm/contacts", json={"prenom": "Lina"})
