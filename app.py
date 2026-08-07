@@ -7732,8 +7732,8 @@ def _secretariat_email_fallback(entry):
     formation = _secretariat_formation_name(entry.get("formation"))
     session = str(entry.get("formation_date_souhaitee") or "").strip()
     paragraphs = [
-        (f"Vous souhaitez intégrer la session {session} pour suivre la formation {formation}. Notre équipe vérifiera avec vous les disponibilités et les prérequis applicables."
-         if session else f"Vous souhaitez suivre la formation {formation}. Notre équipe vous aidera à choisir la session adaptée et vérifiera avec vous les disponibilités et les prérequis."),
+        (f"Vous souhaitez des renseignements concernant la formation {formation}, notamment pour la session {session}. Notre équipe vérifiera avec vous les disponibilités et les prérequis applicables."
+         if session else f"Vous souhaitez des renseignements concernant la formation {formation}. Notre équipe vous aidera à choisir la session adaptée et vérifiera avec vous les disponibilités et les prérequis."),
         "Vous trouverez ci-dessous vos repères fiables et les actions concrètes pour avancer. Notre équipe reste disponible pour vous accompagner sans présumer de l’accord d’un organisme financeur ou administratif.",
     ]
     financing = ""
@@ -7789,6 +7789,8 @@ def _validate_secretariat_ai_content(raw, fallback, entry=None, prospect_first_n
         clean_paragraphs = [str(p).strip() for p in paragraphs if str(p).strip()]
         if not 2 <= len(clean_paragraphs) <= 4:
             raise ValueError("nombre de paragraphes invalide")
+        if not clean_paragraphs[0].casefold().startswith("vous souhaitez des renseignements concernant la formation"):
+            raise ValueError("formulation de la demande invalide")
         all_content = clean_paragraphs + [str(value.get("financing_message") or "").strip(),
                                           str(value.get("cnaps_message") or "").strip()]
         all_content += [str(step).strip() for step in steps]
@@ -7840,7 +7842,7 @@ def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-ac
     formation_code = str(entry.get("formation") or "").strip().upper()
     if formation_code not in {"APS", "A3P"}:
         facts = {key: value for key, value in facts.items() if key not in {"cnaps_ok", "cnaps_status"}}
-    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 à 3 paragraphes, 130 à 220 mots au total), financing_message, cnaps_message et next_steps (2 à 4 éléments). Français naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. Vous rédigez un message adressé directement au destinataire. Employez exclusivement vous, votre et vos. Ne mentionnez jamais son prénom et ne parlez jamais de lui à la troisième personne. N'invente aucune information et utilise les notes uniquement comme source factuelle, sans reproduire de note interne. L’introduction de remerciement est déjà affichée avant votre texte. Ne la répétez jamais. Le premier paragraphe doit commencer directement par “Vous souhaitez…”. N’utilisez pas les expressions “Merci pour le temps”, “lors de notre échange” ou “notre échange au sujet de”. Un souhait France Travail n'est jamais une demande déposée, en cours ou validée. Sans statut explicite, indiquez : « Vous souhaitez étudier avec notre équipe la possibilité d’une demande de financement auprès de France Travail. » Le CNAPS est applicable uniquement aux formations APS et A3P : pour toute autre formation, renvoie une chaîne vide dans cnaps_message et n'ajoute aucune étape CNAPS ou carte professionnelle. Distingue absence de carte, autorisation préalable, demande transmise, expiration et refus CNAPS. Ne répète pas mot pour mot le tableau factuel."""
+    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 à 3 paragraphes, 130 à 220 mots au total), financing_message, cnaps_message et next_steps (2 à 4 éléments). Français naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. Vous rédigez un message adressé directement au destinataire. Employez exclusivement vous, votre et vos. Ne mentionnez jamais son prénom et ne parlez jamais de lui à la troisième personne. N'invente aucune information et utilise les notes uniquement comme source factuelle, sans reproduire de note interne. L’introduction de remerciement est déjà affichée avant votre texte. Ne la répétez jamais. Le premier paragraphe doit commencer directement par “Vous souhaitez des renseignements concernant la formation…”. Ne présente jamais la demande de renseignements comme un souhait de s’inscrire, d’intégrer ou de suivre la formation. N’utilisez pas les expressions “Merci pour le temps”, “lors de notre échange” ou “notre échange au sujet de”. Un souhait France Travail n'est jamais une demande déposée, en cours ou validée. Sans statut explicite, indiquez : « Vous souhaitez étudier avec notre équipe la possibilité d’une demande de financement auprès de France Travail. » Le CNAPS est applicable uniquement aux formations APS et A3P : pour toute autre formation, renvoie une chaîne vide dans cnaps_message et n'ajoute aucune étape CNAPS ou carte professionnelle. Distingue absence de carte, autorisation préalable, demande transmise, expiration et refus CNAPS. Ne répète pas mot pour mot le tableau factuel."""
     user = json.dumps({"code_formation": formation_code, "intitule_formation": config["label"],
                        "faits_autorises": facts}, ensure_ascii=False)
     first_name = _secretariat_display_first_name(entry.get("prenom") or contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0])

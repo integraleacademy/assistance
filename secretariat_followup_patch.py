@@ -125,9 +125,9 @@ def register_secretariat_followup_patch(app_module):
             location = f" au sein de notre centre de formation {centre}" if centre else ""
             if location and city:
                 location += f" à {city}"
-            first = f"Vous souhaitez intégrer la session organisée {session_text}{location}. {objective(code, config)}"
+            first = f"Vous souhaitez des renseignements concernant la formation {config.get('label')}, notamment pour la session organisée {session_text}{location}. {objective(code, config)}"
         else:
-            first = f"Vous souhaitez avancer sur votre projet de formation {config.get('label')}. {objective(code, config)}"
+            first = f"Vous souhaitez des renseignements concernant la formation {config.get('label')}. {objective(code, config)}"
 
         paragraphs = [first]
         cpf = app_module._parse_cpf_value(entry.get("cpf_montant"))
@@ -238,6 +238,8 @@ def register_secretariat_followup_patch(app_module):
             )
             if any(paragraph.lower().lstrip().startswith("merci") for paragraph in paragraphs):
                 raise ValueError("duplicate thanks")
+            if not paragraphs[0].casefold().startswith("vous souhaitez des renseignements concernant la formation"):
+                raise ValueError("request intent wording")
             if any(any(token in item.lower() for token in forbidden) for item in all_text):
                 raise ValueError("forbidden wording")
             joined_all = " ".join(all_text)
@@ -497,7 +499,7 @@ def register_secretariat_followup_patch(app_module):
         system = (
             "Tu rédiges la synthèse d'un appel adressée directement au destinataire. Retourne uniquement un objet JSON valide avec "
             "summary_paragraphs (2 à 4 paragraphes) et next_steps (2 à 4 actions). Le mail contient déjà l'introduction « Merci pour le temps accordé lors de notre échange… » : ne la répète jamais. "
-            "Commence directement par « Vous souhaitez… » ou « Votre… ». Emploie exclusivement vous, votre et vos. Ne mentionne jamais le prénom, le candidat, le prospect, il ou elle. "
+            "Commence directement par « Vous souhaitez des renseignements concernant la formation… ». Ne présente jamais cette demande de renseignements comme un souhait de s'inscrire, d'intégrer ou de suivre la formation. Emploie exclusivement vous, votre et vos. Ne mentionne jamais le prénom, le candidat, le prospect, il ou elle. "
             "Reprends fidèlement la session, le centre, l'objectif, le montant CPF, le tarif et les choix de financement fournis. Un simple souhait de financement France Travail n'est jamais une demande déposée ou en cours. "
             "Pour le centre Côte d’Azur, écris toujours « au sein de notre centre de formation Intégrale Academy Côte d’Azur à Puget-sur-Argens ». Ne parle jamais d’un refus de CPF : seul France Travail peut refuser sa prise en charge. "
             "Pour APS, l'absence de carte professionnelle avant la formation est normale et l'équipe accompagne la démarche d'autorisation CNAPS. N'invente aucune information, aucun statut et aucun montant. Aucun HTML ni Markdown."
