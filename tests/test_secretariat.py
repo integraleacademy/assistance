@@ -393,6 +393,9 @@ def test_secretariat_scheduled_appointment_and_other_training(monkeypatch):
     assert "Votre prochain rendez-vous téléphonique" in rendered
     assert "Accéder au rendez-vous" not in rendered
     assert "15 septembre 2026" in rendered and "10:30" in rendered and "Appel téléphonique" in rendered
+    assert "Prochain rendez-vous" in rendered
+    assert ">15</div>" in rendered and ">SEPTEMBRE</div>" in rendered
+    assert "Rendez-vous téléphonique" in rendered
     assert "Vous n'avez pas encore planifié" not in rendered
     assert application.SECRETARIAT_FORMATIONS["VTC"]["label"] in sms
 
