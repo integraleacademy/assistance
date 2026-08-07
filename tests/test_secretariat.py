@@ -268,6 +268,17 @@ def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appoi
     assert "cid:integrale-academy-logo" in rendered
     assert "Faites le premier pas vers votre futur métier" in rendered
     assert "Votre rendez-vous" not in rendered
+    assert "Prendre un RDV téléphonique" in rendered
+    assert "Formation Formation" not in rendered
+    assert "Nos prochaines dates" in rendered
+    assert "Certification et objectif" in rendered
+    assert rendered.count("5 semaines") == 1
+    assert "exercer le métier d’agent de surveillance humaine" in rendered
+    assert "carte professionnelle ou d&#39;une autorisation préalable" in rendered
+    assert "Un projet de formation ? Notre équipe vous accompagne dans toutes vos démarches" in rendered
+    assert "Cette démarche est réalisée par nos soins" in rendered
+    assert "Il a été généré à partir de la formation" not in rendered
+    assert "Ce lien est personnel et vous permet" not in rendered
     assert "financement en attente" not in rendered.lower()
     assert "Carte professionnelle CNAPS : Non valide" not in rendered
     assert "Télécharger le dossier de présentation" in rendered
@@ -330,6 +341,7 @@ def test_secretariat_scheduled_appointment_and_other_training(monkeypatch):
     assert "VTC" in subject and application.SECRETARIAT_FORMATIONS["VTC"]["label"] in rendered
     assert "Votre rendez-vous" in rendered
     assert "15 septembre 2026" in rendered and "10:30" in rendered and "visioconférence" in rendered
+    assert "Vous n'avez pas encore planifié" not in rendered
     assert application.SECRETARIAT_FORMATIONS["VTC"]["label"] in sms
 
 

@@ -74,7 +74,7 @@
                 <tr>
                   <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 10px 12px 0;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Durée et rythme</div>
-                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('duration', '') }}{% if formation.get('format') %} · {{ formation.get('format') }}{% endif %}</div>
+                    <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('duration', '') }}{% if formation.get('format') and formation.get('format')|lower not in formation.get('duration', '')|lower %} · {{ formation.get('format') }}{% endif %}</div>
                   </td>
                   <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:0 0 12px 10px;">
                     <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Tarif</div>
@@ -87,7 +87,7 @@
                     <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{% if formation.get('location') %}{{ formation.get('location') }}{% elif entry.get('formation_date_souhaitee') %}{{ entry.get('formation_date_souhaitee') }}{% else %}Lieu communiqué avec la session choisie{% endif %}</div>
                   </td>
                   <td class="mobile-stack" width="50%" valign="top" style="width:50%; padding:10px 0 0 10px;">
-                    <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Certification / objectif</div>
+                    <div style="font-size:13px; line-height:18px; color:#718096; text-transform:uppercase; letter-spacing:.6px; font-weight:700;">Certification et objectif</div>
                     <div style="margin-top:5px; font-size:15px; line-height:23px; color:#172033;">{{ formation.get('certification') or formation.get('purpose', '') }}</div>
                   </td>
                 </tr>
@@ -137,8 +137,15 @@
               </div>
               {% endif %}
 
+              {% if not appointment %}
+              <div style="margin:28px 0 0; padding:20px; border:1px solid #cddbf3; background:#f7faff; border-radius:13px; text-align:center;">
+                <div style="font-size:15px; line-height:24px; color:#25344d;">Vous n'avez pas encore planifié de rendez-vous téléphonique avec notre équipe.</div>
+                <a href="{{ formation.get('calendly') }}" target="_blank" style="display:inline-block; margin-top:13px; padding:12px 20px; color:#ffffff; background:#3269da; border-radius:9px; text-decoration:none; font-size:14px; font-weight:700;">Prendre un RDV téléphonique</a>
+              </div>
+              {% endif %}
+
               {% if content.get('next_steps') %}
-              <h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Vos prochaines étapes</h2>
+              <h2 style="margin:30px 0 14px; font-size:20px; line-height:27px; color:#102c5c;">Un projet de formation ? Notre équipe vous accompagne dans toutes vos démarches</h2>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
                 {% for step in content.get('next_steps', []) %}
                 <tr>

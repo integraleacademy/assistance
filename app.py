@@ -512,7 +512,7 @@ for _code, _details in SECRETARIAT_FORMATIONS.items():
     })
 
 SECRETARIAT_FORMATIONS["APS"].update({
-    "format": "Du lundi au vendredi, environ 5 semaines",
+    "format": "Du lundi au vendredi",
     "location": "Puget-sur-Argens, entre Cannes et Saint-Tropez",
     "capacity": "Groupe limité à 12 personnes",
     "certification": "TFP APS, puis demande de carte professionnelle CNAPS",
