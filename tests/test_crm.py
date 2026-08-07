@@ -180,6 +180,9 @@ def test_crm_templates_page_displays_automatic_emails_as_read_only():
     crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
 
     assert "E-mails automatiques du formulaire" in crm_js
+    assert '<details class="card automatic-template-card">' in crm_js
+    assert '<summary class="card-head">' in crm_js
+    assert '</div>`+automaticSection' in crm_js
     assert "data-preview-automatic-template" in crm_js
     assert "Envoi automatique" in crm_js
     assert "templates.automatic_email||[]" in crm_js
