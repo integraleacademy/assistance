@@ -26,6 +26,7 @@ def test_crm_is_private(tmp_path, monkeypatch):
 def test_admin_can_read_live_brevo_sms_credits(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     monkeypatch.setenv("BREVO_API_KEY", "test-key")
+    monkeypatch.setattr(application, "send_email_html", lambda *args: True)
     response = SimpleNamespace(
         status_code=200,
         json=lambda: {"plan": [{"type": "sms", "credits": 125.5}]},
@@ -40,6 +41,63 @@ def test_admin_can_read_live_brevo_sms_credits(tmp_path, monkeypatch):
         headers={"accept": "application/json", "api-key": "test-key"},
         timeout=10,
     )
+
+
+def test_low_brevo_sms_balance_alerts_both_recipients_only_once(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "_brevo_sms_credits", lambda: 220.5)
+    deliveries = []
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda *args: deliveries.append(args) or True,
+    )
+
+    assert c.get("/api/crm/brevo/sms-credits").status_code == 200
+    assert c.get("/api/crm/brevo/sms-credits").status_code == 200
+
+    assert len(deliveries) == 1
+    recipients, subject, plain_text, html_body = deliveries[0]
+    assert recipients == (
+        "clement@integraleacademy.com",
+        "cassandre@integraleacademy.com",
+    )
+    assert "moins de 50 SMS" in subject
+    assert "49 SMS restants" in plain_text
+    assert "49 SMS restants" in html_body
+
+
+def test_brevo_sms_balance_alert_rearms_after_top_up(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    balances = iter((220.5, 225, 220.5))
+    monkeypatch.setattr(application, "_brevo_sms_credits", lambda: next(balances))
+    deliveries = []
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda *args: deliveries.append(args) or True,
+    )
+
+    for _ in range(3):
+        assert c.get("/api/crm/brevo/sms-credits").status_code == 200
+
+    assert len(deliveries) == 2
+
+
+def test_failed_brevo_sms_balance_alert_is_retried(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "_brevo_sms_credits", lambda: 0)
+    attempts = []
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda *args: attempts.append(args) or len(attempts) > 1,
+    )
+
+    assert c.get("/api/crm/brevo/sms-credits").status_code == 200
+    assert c.get("/api/crm/brevo/sms-credits").status_code == 200
+
+    assert len(attempts) == 2
 
 
 def test_brevo_sms_credits_are_admin_only(tmp_path, monkeypatch):

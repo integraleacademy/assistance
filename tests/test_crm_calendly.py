@@ -130,6 +130,7 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
 
     assert response.status_code == 200
     assert response.get_json()["response_status"] == "no_answer"
+    assert response.get_json()["contact"]["statut"] == "A relancer"
     assert response.get_json()["delivery"] == {"sms": True, "email": True}
     updated_contact = client.get(f"/api/crm/contacts/{created.get_json()['contact_id']}").get_json()
     assert updated_contact["statut"] == "A relancer"
@@ -677,3 +678,10 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         ".calendar-training-ssiap{",
     ]:
         assert marker in crm_css
+
+
+def test_no_answer_updates_the_in_memory_contact_without_refresh():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "if(contact&&updated.contact)Object.assign(contact,updated.contact)" in crm_js
