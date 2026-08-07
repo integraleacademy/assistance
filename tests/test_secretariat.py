@@ -782,15 +782,17 @@ def test_secretariat_ai_rejects_unknown_training(client):
     assert response.status_code == 400
 
 
-def test_secretariat_removes_embedded_ai_features(client, monkeypatch):
+def test_secretariat_embeds_training_ai_directly_in_the_page(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert b"Poser une question \xc3\xa0 l\xe2\x80\x99IA sur cette formation" not in response.data
-    assert b"G\xc3\xa9n\xc3\xa9rer les informations cl\xc3\xa9s avec l\xe2\x80\x99IA" not in response.data
-    assert b'id="askAi"' not in response.data
-    assert b'id="generateKeyInfo"' not in response.data
+    assert "Posez votre question à l’IA".encode() in response.data
+    assert b'id="trainingAiForm"' in response.data
+    assert b'id="trainingAiQuestion"' in response.data
+    assert b'id="askTrainingAi"' in response.data
+    assert b"/api/secretariat/formations/${encodeURIComponent(formation.value)}/ai/question" in response.data
+    assert b"integraleacademy.com" in response.data
 
 
 def test_secretariat_asks_for_dates_before_the_training_sheet(client, monkeypatch):
