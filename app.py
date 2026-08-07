@@ -7948,6 +7948,27 @@ def _wedof_attendee_values(folder):
     return emails, phones, str(attendee_id or "")
 
 
+def _wedof_normalize_name(value):
+    """Return an accent-insensitive identity value for WEDOF matching."""
+    decomposed = unicodedata.normalize("NFKD", str(value or "").strip())
+    without_accents = "".join(
+        character for character in decomposed
+        if not unicodedata.combining(character)
+    )
+    return re.sub(r"[^\w]+", " ", without_accents, flags=re.UNICODE).strip().casefold()
+
+
+def _wedof_attendee_name(folder):
+    attendee = folder.get("attendee") if isinstance(folder.get("attendee"), dict) else {}
+    first_name = next((attendee.get(key) for key in (
+        "firstName", "firstname", "first_name", "givenName"
+    ) if attendee.get(key)), "")
+    last_name = next((attendee.get(key) for key in (
+        "lastName", "lastname", "last_name", "familyName"
+    ) if attendee.get(key)), "")
+    return _wedof_normalize_name(first_name), _wedof_normalize_name(last_name)
+
+
 def _wedof_match_contact(folder, contacts):
     emails, phones, _ = _wedof_attendee_values(folder)
     email_matches = [
@@ -7964,6 +7985,19 @@ def _wedof_match_contact(folder, contacts):
     ]
     if phones and len(phone_matches) == 1:
         return phone_matches[0], "phone"
+    if len(phone_matches) > 1:
+        return None, None
+
+    first_name, last_name = _wedof_attendee_name(folder)
+    if not first_name or not last_name:
+        return None, None
+    name_matches = [
+        contact for contact in contacts
+        if _wedof_normalize_name(contact.get("prenom")) == first_name
+        and _wedof_normalize_name(contact.get("nom")) == last_name
+    ]
+    if len(name_matches) == 1:
+        return name_matches[0], "name"
     return None, None
 
 
