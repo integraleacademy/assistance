@@ -165,6 +165,30 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
     assert invalid.status_code == 400
 
 
+def test_answered_appointment_sends_the_named_email_and_sms_templates(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    deliveries = {"sms": [], "email": []}
+    monkeypatch.setattr(application, "send_sms", lambda phone, body: deliveries["sms"].append((phone, body)) or True)
+    monkeypatch.setattr(application, "send_email_html", lambda mail, subject, plain, html: deliveries["email"].append((mail, subject, plain, html)) or True)
+    contact = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"}).get_json()
+    client.patch(f"/api/crm/contacts/{contact['id']}", json={"mail": "lina@example.com", "telephone": "+33612345678"})
+    client.post("/api/crm/templates", json={"type": "sms", "nom": "Suite appel répondu", "contenu": "Merci {{ prenom }} pour notre appel."})
+    client.post("/api/crm/templates", json={"type": "email", "nom": "Suite appel répondu", "sujet": "La suite pour {{ formation }}", "contenu": "<p>Bonjour {{ prenom }}, suite à notre appel.</p>"})
+    signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
+    appointment_id = client.get("/api/crm/calendly/appointments").get_json()["appointments"][0]["id"]
+
+    response = client.patch(f"/api/crm/calendly/appointments/{appointment_id}", json={"response_status": "answered"})
+
+    assert response.status_code == 200
+    assert response.get_json()["delivery"] == {"sms": True, "email": True}
+    assert deliveries["sms"][0][1] == "Merci Lina pour notre appel."
+    assert deliveries["email"][0][1] == "La suite pour APS"
+    assert "suite à notre appel" in deliveries["email"][0][3]
+    duplicate = client.patch(f"/api/crm/calendly/appointments/{appointment_id}", json={"response_status": "answered"})
+    assert "delivery" not in duplicate.get_json()
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
+
+
 def test_webhook_keeps_an_unmatched_appointment_without_creating_a_lead(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
 
