@@ -143,6 +143,8 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
         "type": "formation",
         "formation": "APS",
         "formation_date_souhaitee": "Côte d’Azur — 8 juillet au 12 août 2026",
+        "formation_centre": "cote_azur",
+        "formation_session_label": "8 juillet au 12 août 2026",
         "nom": "Camille Martin",
         "telephone": "0600000000",
         "rdv": "06/08/2026 10:30",
@@ -170,6 +172,8 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
     assert contact["nom"] == "MARTIN"
     assert contact["telephone"] == "0600000000"
     assert contact["formation"] == "APS"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["dates_formation"] == "8 juillet au 12 août 2026"
     assert contact["statut"] == "Nouveaux"
     assert contact["origine"] == "Secrétariat"
     assert contact["cpf"] == "OUI"
@@ -185,6 +189,23 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
     assert crm_calls[0]["cpf_montant"] == "1250"
     assert contact["source_secretariat_id"] == data["secretariat_demandes"][0]["id"]
     assert contact["activities"][0]["title"] == "Piste créée depuis le secrétariat"
+
+
+def test_secretariat_crm_recovers_centre_and_date_from_legacy_session_value():
+    entry = {
+        "id": "secretariat-legacy", "formation": "A3P",
+        "formation_date_souhaitee": (
+            "Intégrale Academy Côte d’Azur — Du 9 novembre 2026 au 19 janvier 2027"
+        ),
+    }
+    data = {"crm_contacts": []}
+
+    contact = application._crm_create_contact_from_secretariat(
+        data, entry, {"prenom": "Camille", "nom": "Martin"}
+    )
+
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["dates_formation"] == "Du 9 novembre 2026 au 19 janvier 2027"
 
 
 def test_secretariat_api_does_not_duplicate_crm_contact_when_completing_request(client, monkeypatch):
