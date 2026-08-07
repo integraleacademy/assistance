@@ -30,9 +30,14 @@ Merci pour le temps accordé lors de notre échange au sujet de la formation {{ 
 {% endif %}Prochaines étapes
 {% for step in content.next_steps %}- {{ step }}
 {% endfor %}
-{% if quote_url %}Votre devis personnalisé : {{ quote_url }}
+{% if upcoming_sessions %}Toutes les prochaines sessions
+{% for group in upcoming_sessions %}{{ group.centre }}
+{% for session in group.sessions %}- {{ session.label }}{% if session.selected %} — Session envisagée{% endif %}
+{% endfor %}{% endfor %}
+{% endif %}{% if quote_url %}Votre devis personnalisé : {{ quote_url }}
 
-{% endif %}Dossier de présentation : {{ formation.dossier_url }}
+{% endif %}
+Télécharger le dossier de présentation : {{ formation.dossier_url }}
 Planning : {{ formation.planning_url }}
 
 Cassandre MENARD
