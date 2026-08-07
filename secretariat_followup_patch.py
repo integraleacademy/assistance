@@ -145,7 +145,10 @@ def register_secretariat_followup_patch(app_module):
             if _yes(entry.get("france_travail")):
                 financing.append("Vous avez prévu un financement personnel si cette solution n’aboutit pas.")
             elif price and cpf < price:
-                financing.append("Vous avez prévu un financement personnel pour compléter le reste à charge.")
+                financing.append(
+                    "Vous avez également la possibilité de financer le reste de la formation par vos propres moyens, "
+                    "nous pouvons vous proposer d’étaler le paiement en plusieurs fois jusqu’à la fin de la formation."
+                )
             else:
                 financing.append("Vous avez également indiqué qu’un financement personnel restait possible si nécessaire.")
         if financing:
@@ -169,7 +172,17 @@ def register_secretariat_followup_patch(app_module):
             if _yes(entry.get("cnaps_ok")):
                 administrative.append("Votre carte professionnelle CNAPS est indiquée comme valide ; notre équipe vérifiera avec vous les justificatifs nécessaires.")
             else:
-                administrative.append("Notre équipe vérifiera avec vous la démarche CNAPS adaptée à votre situation avant l’entrée en formation A3P.")
+                if identity == "NON":
+                    administrative = [
+                        "Il est à noter que vous n’avez pas encore créé votre identité numérique et n’êtes pas encore "
+                        "titulaire d’une autorisation préalable d’entrée en formation délivrée par le CNAPS "
+                        "(Ministère de l’Intérieur). Toutefois, notre équipe vous accompagnera dans cette démarche."
+                    ]
+                else:
+                    administrative.append(
+                        "Vous n’êtes pas encore titulaire d’une autorisation préalable d’entrée en formation délivrée "
+                        "par le CNAPS (Ministère de l’Intérieur). Toutefois, notre équipe vous accompagnera dans cette démarche."
+                    )
         if administrative:
             paragraphs.append(" ".join(administrative))
         if len(paragraphs) == 1:
@@ -355,9 +368,25 @@ def register_secretariat_followup_patch(app_module):
             item_phone = re.sub(r"\D", "", _text(item.get("invitee_phone")))
             return bool(phone and item_phone and phone[-9:] == item_phone[-9:])
 
+        now = datetime.datetime.now(pytz.utc)
+
+        def is_upcoming_phone_call(item):
+            start = _text(item.get("start_time"))
+            try:
+                parsed = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = pytz.utc.localize(parsed)
+            except (TypeError, ValueError):
+                return False
+            location = item.get("location") or {}
+            kind = _norm(location.get("kind") if isinstance(location, dict) else location)
+            return parsed.astimezone(pytz.utc) > now and kind in {"outbound call", "inbound call", "phone", "telephone"}
+
         appointments = [
             item for item in data.get("crm_calendly_appointments", [])
-            if belongs_to_contact(item) and _norm(item.get("status")) in {"active", "scheduled"}
+            if belongs_to_contact(item)
+            and _norm(item.get("status")) in {"active", "scheduled"}
+            and is_upcoming_phone_call(item)
         ]
         if not appointments:
             return
@@ -454,7 +483,7 @@ def register_secretariat_followup_patch(app_module):
                 lines.extend(f"- {_text(session.get('label'))}" for session in centre.get("sessions", []))
             lines.append("")
         if appointment:
-            lines.append("Votre rendez-vous")
+            lines.append("Votre prochain rendez-vous téléphonique")
             if appointment.get("status") == "scheduled":
                 detail = "Votre rendez-vous a bien été planifié"
                 if appointment.get("date"):
@@ -464,8 +493,6 @@ def register_secretariat_followup_patch(app_module):
                 if appointment.get("mode"):
                     detail += f" — {appointment['mode']}"
                 lines.append(detail + ".")
-                if appointment.get("url"):
-                    lines.append(f"Accéder au rendez-vous : {appointment['url']}")
             else:
                 lines.append("Un rendez-vous vous a été proposé. Notre équipe attend votre confirmation du créneau.")
             lines.append("")
@@ -509,6 +536,8 @@ def register_secretariat_followup_patch(app_module):
             "Reprends fidèlement la session, le centre, l'objectif, le montant CPF, le tarif et les choix de financement fournis. Un simple souhait de financement France Travail n'est jamais une demande déposée ou en cours. "
             "Pour le centre Côte d’Azur, écris toujours « au sein de notre centre de formation Intégrale Academy Côte d’Azur à Puget-sur-Argens ». Ne parle jamais d’un refus de CPF : seul France Travail peut refuser sa prise en charge. "
             "Pour APS, l'absence de carte professionnelle avant la formation est normale et l'équipe accompagne la démarche d'autorisation CNAPS. N'invente aucune information, aucun statut et aucun montant. Aucun HTML ni Markdown."
+            " Lorsqu’un financement personnel est possible, précise que le reste peut être financé par ses propres moyens et que le paiement peut être étalé en plusieurs fois jusqu’à la fin de la formation."
+            " Pour A3P, si l’identité numérique et l’autorisation préalable CNAPS ne sont pas acquises, indique clairement ces deux éléments et l’accompagnement de l’équipe dans cette démarche."
         )
         try:
             content = validate_ai(app_module._crm_ai(system, json.dumps(facts, ensure_ascii=False), max_tokens=900), backup, displayed_first_name, entry)
@@ -531,6 +560,7 @@ def register_secretariat_followup_patch(app_module):
     app_module._crm_format_first_name = first_name
     app_module._secretariat_email_fallback = fallback
     app_module._secretariat_project_rows = project_rows
+    app_module._secretariat_hydrate_appointment_from_crm = hydrate_appointment_from_crm
     app_module._build_secretariat_followup_email = build_email
 
     def send_with_quote(data, entry, contact):
