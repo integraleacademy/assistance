@@ -3255,12 +3255,23 @@ def api_secretariat_calendly_appointment():
     # is submitted, so merely opening the summary never creates CRM records.
     data = copy.deepcopy(load_data())
     entry = {"email": email, "telephone": telephone}
-    contact = {
-        "id": "secretariat-calendly-preview",
-        "mail": email,
-        "telephone": telephone,
-        "formulaire": {},
-    }
+    # Reuse the existing CRM contact when the caller is already known.  A
+    # Calendly appointment can legitimately be linked only by ``contact_id``
+    # (for example after a targeted CRM refresh), while its cached invitee
+    # e-mail/phone is missing or differs from the values collected during the
+    # call.  Using a synthetic id unconditionally made that valid link
+    # invisible to the secretariat preview.
+    contact = (
+        _crm_calendly_contact_by_email(data, email)
+        or _crm_calendly_contact_by_phone(data, telephone)
+    )
+    if not contact:
+        contact = {
+            "id": "secretariat-calendly-preview",
+            "mail": email,
+            "telephone": telephone,
+            "formulaire": {},
+        }
     _secretariat_refresh_calendly_appointments(data, entry, contact)
     appointment = _secretariat_hydrate_appointment_from_crm(data, entry, contact)
     if not appointment:
@@ -7405,7 +7416,11 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
             location_kind = str(location.get("kind") or location.get("type") or "").casefold()
         else:
             location_kind = str(location).casefold()
-        phone_terms = ("phone", "call", "appel", "téléphone", "telephone")
+        # Use the common stem as Calendly event names usually contain
+        # "téléphonique" rather than the noun "téléphone".  The previous
+        # exact terms did not match "RDV téléphonique ..." when the event had
+        # no explicit location.
+        phone_terms = ("phone", "call", "appel", "téléphoni", "telephoni")
         appointment_name = str(appointment.get("name") or "").casefold()
         if not any(term in location_kind or term in appointment_name for term in phone_terms):
             continue
