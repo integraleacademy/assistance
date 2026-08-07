@@ -27,7 +27,7 @@ def test_secretariat_flow_includes_bts_optional_quote_and_calendly(client, monke
     assert b"BTS Management Op\xc3\xa9rationnel de la S\xc3\xa9curit\xc3\xa9" in response.data
     assert b'name="devis" value="OUI"' in response.data
     assert b'name="devis" value="OUI" checked' not in response.data
-    assert b'id="calendlyLink"' in response.data
+    assert b'id="calendlyInline"' in response.data
     assert b"ne souhaite pas de rendez-vous" in response.data
 
 
@@ -121,15 +121,18 @@ def test_secretariat_form_collects_funding_and_regulatory_information(client, mo
     )
 
 
-def test_secretariat_uses_a_direct_calendly_link_instead_of_a_blocked_embed(client, monkeypatch):
+def test_secretariat_embeds_calendly_without_leaving_the_page(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert b'id="calendlyLink"' in response.data
-    assert b'target="_blank"' in response.data
-    assert b"Voir les cr\xc3\xa9neaux disponibles" in response.data
-    assert b"Calendly ne peut pas \xc3\xaatre affich\xc3\xa9 ici" not in response.data
+    assert b'id="calendlyInline"' in response.data
+    assert b"https://assets.calendly.com/assets/external/widget.js" in response.data
+    assert b"Calendly.initInlineWidget" in response.data
+    assert b"calendly.event_scheduled" in response.data
+    assert b"sans quitter cette page" in response.data
+    assert b'id="calendlyLink"' not in response.data
+    assert b'target="_blank"' not in response.data
 
 def test_secretariat_api_records_a_request(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
