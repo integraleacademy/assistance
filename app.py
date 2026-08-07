@@ -3127,6 +3127,58 @@ def _brevo_sms_credits() -> float:
         raise RuntimeError("Brevo a renvoyé un solde SMS invalide.") from exc
 
 
+BREVO_SMS_CREDITS_PER_MESSAGE = 4.5
+BREVO_SMS_LOW_BALANCE_THRESHOLD = 50
+BREVO_SMS_LOW_BALANCE_RECIPIENTS = (
+    "clement@integraleacademy.com",
+    "cassandre@integraleacademy.com",
+)
+
+
+def _brevo_sms_remaining(credits: float) -> int:
+    """Convert Brevo credits to the same estimated SMS count shown in the CRM."""
+    return max(0, int(float(credits) // BREVO_SMS_CREDITS_PER_MESSAGE))
+
+
+def _notify_brevo_sms_low_balance(credits: float) -> bool:
+    """Send one alert per low-balance period and re-arm it after a top-up."""
+    sms_remaining = _brevo_sms_remaining(credits)
+    data = load_data()
+    alert_key = "crm_brevo_sms_low_balance_alerted"
+
+    if sms_remaining >= BREVO_SMS_LOW_BALANCE_THRESHOLD:
+        if data.get(alert_key):
+            data[alert_key] = False
+            save_data(data)
+        return False
+    if data.get(alert_key):
+        return False
+
+    subject = f"Alerte Brevo : moins de {BREVO_SMS_LOW_BALANCE_THRESHOLD} SMS restants"
+    plain_text = (
+        "Le solde SMS Brevo est bientôt épuisé.\n\n"
+        f"Solde estimé : {sms_remaining} SMS restants ({credits:g} crédits Brevo).\n"
+        "Merci de recharger le compte Brevo afin d’éviter une interruption des envois."
+    )
+    html_body = (
+        "<p>Le solde SMS Brevo est bientôt épuisé.</p>"
+        f"<p><strong>Solde estimé : {sms_remaining} SMS restants</strong> "
+        f"({credits:g} crédits Brevo).</p>"
+        "<p>Merci de recharger le compte Brevo afin d’éviter une interruption des envois.</p>"
+    )
+    if not send_email_html(
+        BREVO_SMS_LOW_BALANCE_RECIPIENTS,
+        subject,
+        plain_text,
+        html_body,
+    ):
+        return False
+
+    data[alert_key] = True
+    save_data(data)
+    return True
+
+
 def _nettoyer_formulaires_abandonnes_soumis(data):
     abandons = data.get("formulaires_abandonnes", [])
     if not abandons:
@@ -9417,6 +9469,7 @@ def crm_brevo_sms_credits():
         credits = _brevo_sms_credits()
     except (requests.RequestException, RuntimeError, ValueError) as exc:
         return jsonify({"error": str(exc) or "Le solde SMS Brevo est indisponible."}), 503
+    _notify_brevo_sms_low_balance(credits)
     return jsonify({"credits": credits})
 
 
