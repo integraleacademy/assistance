@@ -3242,6 +3242,38 @@ def api_secretariat_ai_request_summary():
         return jsonify({"ok": False, "error": "La reformulation IA est momentanément indisponible. Réessayez plus tard."}), 503
 
 
+@app.route("/api/secretariat/calendly/appointment", methods=["POST"])
+def api_secretariat_calendly_appointment():
+    """Find the telephone booking made while the secretariat form is open."""
+    payload = request.get_json(silent=True) or {}
+    email = _crm_normalize_email(payload.get("email"))
+    telephone = str(payload.get("telephone") or "").strip()
+    if not email and not _crm_normalize_phone(telephone):
+        return jsonify({"appointment": None})
+
+    # Preview on a copy. The definitive CRM link is made only when the request
+    # is submitted, so merely opening the summary never creates CRM records.
+    data = copy.deepcopy(load_data())
+    entry = {"email": email, "telephone": telephone}
+    contact = {
+        "id": "secretariat-calendly-preview",
+        "mail": email,
+        "telephone": telephone,
+        "formulaire": {},
+    }
+    _secretariat_refresh_calendly_appointments(data, entry, contact)
+    appointment = _secretariat_hydrate_appointment_from_crm(data, entry, contact)
+    if not appointment:
+        return jsonify({"appointment": None})
+    return jsonify({"appointment": {
+        "date": entry.get("rdv_date"),
+        "time": entry.get("rdv_time"),
+        "mode": entry.get("rdv_mode"),
+        "label": entry.get("rdv"),
+        "name": appointment.get("name") or "Rendez-vous téléphonique",
+    }})
+
+
 @app.route("/api/secretariat/assistant", methods=["POST"])
 def api_secretariat_assistant():
     """Compatibility endpoint for existing clients."""
