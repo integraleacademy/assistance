@@ -631,6 +631,10 @@ def test_secretariat_summary_page_contains_phone_appointment_panel(client, monke
     assert b'id="phoneAppointment"' in response.data
     assert "RDV téléphonique".encode() in response.data
     assert b"/api/secretariat/calendly/appointment" in response.data
+    assert "Mise à jour du dossier en cours".encode() in response.data
+    assert b"Promise.allSettled([summaryPromise,calendlyPromise])" in response.data
+    assert "Création du résumé IA".encode() in response.data
+    assert "Recherche du rendez-vous Calendly".encode() in response.data
 
 
 def test_secretariat_refreshes_calendly_before_building_summary_email(client, monkeypatch):
