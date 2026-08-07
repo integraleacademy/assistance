@@ -28,7 +28,7 @@ def test_secretariat_flow_includes_bts_optional_quote_and_calendly(client, monke
     assert b'name="devis" value="OUI"' in response.data
     assert b'name="devis" value="OUI" checked' not in response.data
     assert b'id="calendlyInline"' in response.data
-    assert b"ne souhaite pas de rendez-vous" in response.data
+    assert "Non, passer cette étape".encode() in response.data
 
 
 def test_secretariat_displays_formations_as_modern_buttons(client, monkeypatch):
@@ -147,6 +147,28 @@ def test_secretariat_embeds_calendly_without_leaving_the_page(client, monkeypatc
     assert b"sans quitter cette page" in response.data
     assert b'id="calendlyLink"' not in response.data
     assert b'target="_blank"' not in response.data
+
+
+def test_secretariat_requires_an_explicit_appointment_choice(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b'name="wants_rdv" value="oui" checked' not in response.data
+    assert b'name="wants_rdv" value="non" checked' not in response.data
+    assert b'id="reviewRequest" disabled' in response.data
+    assert b"reviewRequest.disabled=false" in response.data
+    assert b'id="skipRdv"' not in response.data
+    assert "Finaliser l’appel".encode() in response.data
+
+
+def test_secretariat_gives_the_calendly_widget_more_space(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b"main{max-width:1200px" in response.data
+    assert b".calendly-widget-host{width:100%;height:720px" in response.data
 
 def test_secretariat_api_records_a_request(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
