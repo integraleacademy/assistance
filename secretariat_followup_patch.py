@@ -86,10 +86,7 @@ def register_secretariat_followup_patch(app_module):
                 "d’agent de surveillance humaine et de gardiennage."
             )
         if code == "A3P":
-            return (
-                "Votre objectif est de suivre le parcours complet de protection physique des personnes, "
-                "puis d’effectuer les démarches nécessaires auprès du CNAPS pour exercer cette activité."
-            )
+            return "Cette formation vous prépare aux missions de protection physique des personnes."
         certification = _text(config.get("certification"))
         purpose = _text(config.get("purpose"))
         if certification:
@@ -110,7 +107,7 @@ def register_secretariat_followup_patch(app_module):
         _, centre, city, session = split_session(entry.get("formation_date_souhaitee"))
         session_text = re.sub(r"^(Du|Le)\s+", lambda match: match.group(0).lower(), session, count=1)
         if session:
-            location = f" dans notre centre de formation {centre}" if centre else ""
+            location = f" au sein de notre centre de formation {centre}" if centre else ""
             if location and city:
                 location += f" à {city}"
             first = f"Vous souhaitez intégrer la session organisée {session_text}{location}. {objective(code, config)}"
@@ -215,6 +212,14 @@ def register_secretariat_followup_patch(app_module):
                 raise ValueError("duplicate thanks")
             if any(any(token in item.lower() for token in forbidden) for item in all_text):
                 raise ValueError("forbidden wording")
+            joined_all = " ".join(all_text)
+            if re.search(r"(?:à|a) l['’]Intégrale Academy Côte d['’]Azur", joined_all, re.I):
+                raise ValueError("centre wording")
+            if re.search(r"refus (?:du |de )?CPF", joined_all, re.I):
+                raise ValueError("CPF refusal invented")
+            if _text(entry.get("formation")).upper() == "A3P":
+                if re.search(r"Votre objectif est de suivre", joined_all, re.I):
+                    raise ValueError("A3P objective wording")
             normalized_name = _norm(displayed_first_name)
             if normalized_name and any(re.search(rf"(?<!\w){re.escape(normalized_name)}(?!\w)", _norm(item)) for item in all_text):
                 raise ValueError("name repeated")
@@ -325,12 +330,63 @@ def register_secretariat_followup_patch(app_module):
         if _yes(entry.get("france_travail")):
             financing.append("Étude d'un financement France Travail souhaitée")
         if _yes(entry.get("ft_refus_ok")) or _yes(entry.get("financement_perso")):
-            financing.append("financement personnel possible")
+            financing.append("Financement personnel possible")
         if financing:
             rows.append(("Financement envisagé", " ; ".join(financing)))
         if _yes(entry.get("devis")):
             rows.append(("Devis", "Devis personnalisé généré" if entry.get("devis_url") else "Devis personnalisé demandé"))
-        return [(label, value) for label, value in rows if value]
+        def initial_upper(value):
+            value = _text(value)
+            return value[:1].upper() + value[1:] if value else value
+
+        return [(label, initial_upper(value)) for label, value in rows if value]
+
+    def hydrate_appointment_from_crm(data, entry, contact):
+        """Copie le rendez-vous Calendly du CRM avant de générer le récapitulatif."""
+        contact_id = _text(contact.get("id"))
+        email = _norm(entry.get("email") or contact.get("mail"))
+        phone = re.sub(r"\D", "", _text(entry.get("telephone") or contact.get("telephone")))
+
+        def belongs_to_contact(item):
+            if contact_id and _text(item.get("contact_id")) == contact_id:
+                return True
+            if email and _norm(item.get("invitee_email")) == email:
+                return True
+            item_phone = re.sub(r"\D", "", _text(item.get("invitee_phone")))
+            return bool(phone and item_phone and phone[-9:] == item_phone[-9:])
+
+        appointments = [
+            item for item in data.get("crm_calendly_appointments", [])
+            if belongs_to_contact(item) and _norm(item.get("status")) in {"active", "scheduled"}
+        ]
+        if not appointments:
+            return
+        appointment = min(appointments, key=lambda item: _text(item.get("start_time")) or "9999")
+        start = _text(appointment.get("start_time"))
+        if start:
+            try:
+                parsed = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = pytz.utc.localize(parsed)
+                local = parsed.astimezone(pytz.timezone("Europe/Paris"))
+                entry["rdv_date"] = local.strftime("%d/%m/%Y")
+                entry["rdv_time"] = local.strftime("%H:%M")
+            except ValueError:
+                entry["rdv_date"] = start
+        location = appointment.get("location") or {}
+        if isinstance(location, dict):
+            kind = _norm(location.get("kind"))
+            entry["rdv_mode"] = {
+                "outbound call": "Appel téléphonique",
+                "inbound call": "Appel téléphonique",
+                "zoom": "Visioconférence",
+                "google conference": "Visioconférence",
+                "microsoft teams conference": "Visioconférence",
+            }.get(kind, _text(location.get("location")))
+            entry["rdv_url"] = _text(location.get("join_url"))
+        else:
+            entry["rdv_mode"] = _text(location)
+        entry["rdv_status"] = "scheduled"
 
     def session_html(groups):
         if not groups:
@@ -451,6 +507,7 @@ def register_secretariat_followup_patch(app_module):
             "summary_paragraphs (2 à 4 paragraphes) et next_steps (2 à 4 actions). Le mail contient déjà l'introduction « Merci pour le temps accordé lors de notre échange… » : ne la répète jamais. "
             "Commence directement par « Vous souhaitez… » ou « Votre… ». Emploie exclusivement vous, votre et vos. Ne mentionne jamais le prénom, le candidat, le prospect, il ou elle. "
             "Reprends fidèlement la session, le centre, l'objectif, le montant CPF, le tarif et les choix de financement fournis. Un simple souhait de financement France Travail n'est jamais une demande déposée ou en cours. "
+            "Pour le centre Côte d’Azur, écris toujours « au sein de notre centre de formation Intégrale Academy Côte d’Azur à Puget-sur-Argens ». Ne parle jamais d’un refus de CPF : seul France Travail peut refuser sa prise en charge. "
             "Pour APS, l'absence de carte professionnelle avant la formation est normale et l'équipe accompagne la démarche d'autorisation CNAPS. N'invente aucune information, aucun statut et aucun montant. Aucun HTML ni Markdown."
         )
         try:
@@ -477,6 +534,7 @@ def register_secretariat_followup_patch(app_module):
     app_module._build_secretariat_followup_email = build_email
 
     def send_with_quote(data, entry, contact):
+        hydrate_appointment_from_crm(data, entry, contact)
         quote = ensure_quote(data, entry, contact)
         results = original_send(data, entry, contact)
         if quote and results.get("email") in {"sent", "already_sent"}:
