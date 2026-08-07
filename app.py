@@ -2960,6 +2960,14 @@ def _supprimer_brouillon_formulaire_soumis(data, form_data):
 def secretariat():
     data_store = load_data()
     formations = []
+    formation_icons = {
+        "A3P": "🛡️",
+        "APS": "👮",
+        "SSIAP": "🔥",
+        "DESP_INIT": "💼",
+        "DESP_VAE": "📋",
+        "VTC": "🚘",
+    }
     sessions = get_upcoming_formation_sessions(data_store)
     for code, details in SECRETARIAT_FORMATIONS.items():
         centres = []
@@ -2967,7 +2975,14 @@ def secretariat():
             rows = sessions.get(centre_code, {}).get(code, [])
             if rows:
                 centres.append({"code": centre_code, "label": centre_label, "sessions": rows})
-        formations.append({"code": code, "label": details.get("label", PLAN_FORMATIONS.get(code, code)), "centres": centres, **details})
+        formations.append({
+            "code": code,
+            "label": details.get("label", PLAN_FORMATIONS.get(code, code)),
+            "centres": centres,
+            "category": "bts" if code.startswith("BTS_") else "security",
+            "icon": "🎓" if code.startswith("BTS_") else formation_icons.get(code, "🛡️"),
+            **details,
+        })
     journal = sorted(
         data_store.get("secretariat_demandes", []),
         key=lambda row: row.get("created_at", ""),

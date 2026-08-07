@@ -42,6 +42,20 @@ def test_secretariat_displays_formations_as_modern_buttons(client, monkeypatch):
     assert b'<select id="formation"' not in response.data
 
 
+def test_secretariat_groups_trainings_and_displays_specific_icons(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    security_heading = response.data.index("Métiers de la sécurité".encode())
+    bts_heading = response.data.index(b'id="btsFormationsTitle"')
+    assert security_heading < response.data.index(b'data-formation-code="APS"') < bts_heading
+    assert bts_heading < response.data.index(b'data-formation-code="BTS_MOS"')
+    assert b'data-formation-code="SSIAP"' in response.data
+    assert "🔥".encode() in response.data
+    assert b"document.querySelectorAll('[data-formation-group]')" in response.data
+
+
 def test_secretariat_includes_a_training_search(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
