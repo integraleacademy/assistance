@@ -733,6 +733,23 @@ def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
     assert "changeReminderDate(-1)" in crm_js
     assert "changeReminderDate(1)" in crm_js
     assert "Aucune relance ce jour-là" in crm_js
+    assert 'id="reminderShowAll"' in crm_js
+    assert "Voir toutes les relances" in crm_js
+    assert "all.reduce((dates,c)" in crm_js
+
+
+def test_planning_a_reminder_updates_the_contact_immediately(tmp_path, monkeypatch):
+    client(tmp_path, monkeypatch)
+
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    optimistic_update = "mergeContactInStore(id,next);closeModal();showContact(id)"
+    api_update = "api(`/api/crm/contacts/${id}`"
+    assert optimistic_update in crm_js
+    assert crm_js.index(optimistic_update) < crm_js.index(api_update, crm_js.index("function relaunchModal"))
+    assert "stored=contactInStore(id)||c" in crm_js
+    assert "mergeContactInStore(id,updated);showContact(id)" in crm_js
 
 
 def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
