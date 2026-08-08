@@ -174,8 +174,12 @@ def _crm_create_contact_from_vae_simulation(data, nom, prenom, mail, telephone,
     }
     _crm_activity(contact, "creation", "Test d’éligibilité VAE DESP complété",
                   f"Score : {score}% · Résultat : {resultat}")
-    data.setdefault("crm_contacts", []).insert(0, contact)
-    return contact
+    matched, _, _ = find_or_create_crm_contact(
+        data, {"nom": nom, "prenom": prenom, "mail": mail,
+               "telephone": telephone, "formation": "DESP"},
+        "simulateur_vae_desp", proposed_contact=contact,
+    )
+    return matched
 
 
 def creer_piste_salesforce(form):
@@ -1138,6 +1142,9 @@ DEFAULT_DATA = {
     "plans_simulation": {},
     "secretariat_demandes": [],
     "crm_contacts": [],
+    # Journal additif des nouvelles sollicitations. Il est volontairement
+    # distinct des fiches afin qu'une personne puisse avoir plusieurs demandes.
+    "crm_inbound_requests": [],
     "crm_email_templates": [],
     "crm_sms_templates": [],
     "crm_calendly_appointments": [],
@@ -3331,11 +3338,7 @@ def api_secretariat_demandes():
         "date": now.strftime("%d/%m/%Y %H:%M"),
     }
     data_store = load_data()
-    submitted_email = _crm_normalize_email(entry["email"])
-    submitted_phone = _crm_normalize_phone(entry["telephone"])
-    crm_contact = next((contact for contact in data_store.get("crm_contacts", []) if
-                        (submitted_email and _crm_normalize_email(contact.get("mail")) == submitted_email) or
-                        (submitted_phone and _crm_normalize_phone(contact.get("telephone")) == submitted_phone)), None)
+    contact_count_before = len(data_store.get("crm_contacts", []))
     entries = data_store.setdefault("secretariat_demandes", [])
     # Le formulaire formation crée déjà une ligne « RDV à prendre ». La dernière
     # étape du parcours l'enrichit au lieu de créer un doublon dans le journal.
@@ -3350,7 +3353,6 @@ def api_secretariat_demandes():
         except (TypeError, ValueError):
             return False
     existing = next((row for row in reversed(entries) if is_same_recent_submission(row)), None)
-    creates_new_lead = existing is None and crm_contact is None
     if existing:
         created_at, date_label, entry_id = existing.get("created_at"), existing.get("date"), existing.get("id")
         existing.update(entry)
@@ -3392,21 +3394,8 @@ def api_secretariat_demandes():
     # Salesforce expects these exact generic form keys. Without them, its lead
     # received neither the selected campus nor the requested training dates.
     crm_payload.update({"centre": centre_code, "dates": session_label})
-    if creates_new_lead:
-        crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
-    elif crm_contact is None:
-        crm_contact = next((contact for contact in data_store.get("crm_contacts", [])
-                            if contact.get("source_secretariat_id") == entry.get("id")), None)
-    if crm_contact and not creates_new_lead:
-        crm_contact.update({
-            "prenom": _crm_format_first_name(crm_payload["prenom"]) or crm_contact.get("prenom", ""),
-            "nom": _crm_format_last_name(crm_payload["nom"]) or crm_contact.get("nom", ""),
-            "mail": entry["email"] or crm_contact.get("mail", ""),
-            "telephone": entry["telephone"] or crm_contact.get("telephone", ""),
-            "updated_at": _crm_now(),
-        })
-        crm_contact.setdefault("formulaire", {}).update(entry)
-        _crm_activity(crm_contact, "note", "Appel complété par le secrétariat", entry.get("notes", ""))
+    crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
+    creates_new_lead = len(data_store.get("crm_contacts", [])) > contact_count_before
     message_results = {}
     if entry["type"] == "formation" and crm_contact:
         _secretariat_refresh_calendly_appointments(data_store, entry, crm_contact)
@@ -5105,7 +5094,7 @@ def simulateur_vae_desp():
     ))
 
     return jsonify({"ok": True, "score": score, "resultat": resultat,
-                    "crm_contact_id": contact["id"]})
+                    "crm_contact_id": contact.get("id") if contact else None})
 
 @app.route("/admin-devis/simulateur/data", methods=["POST"])
 @login_required
@@ -7038,11 +7027,128 @@ def _crm_normalize_email(value):
 
 def _crm_normalize_phone(value):
     digits = re.sub(r"\D", "", str(value or ""))
-    if digits.startswith("00"):
+    if digits.startswith("0033"):
         digits = digits[2:]
-    if len(digits) == 10 and digits.startswith("0"):
+    if len(digits) == 10 and digits.startswith("0") and digits[1] in "123456789":
         digits = f"33{digits[1:]}"
     return digits
+
+
+def _crm_normalize_name(value):
+    text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def _crm_is_empty(value):
+    return value is None or (isinstance(value, str) and value.strip().casefold() in {"", "non renseigné", "non renseigne"})
+
+
+def _crm_names_compatible(contact, payload):
+    supplied = [payload.get("prenom"), payload.get("nom")]
+    stored = [contact.get("prenom"), contact.get("nom")]
+    compared = [(a, b) for a, b in zip(stored, supplied) if not _crm_is_empty(a) and not _crm_is_empty(b)]
+    return bool(compared) and all(_crm_normalize_name(a) == _crm_normalize_name(b) for a, b in compared)
+
+
+_CRM_RECONCILIATION_LOCK = threading.RLock()
+
+
+def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
+                                external_id=None, selected_contact_id=None,
+                                force_create=False):
+    """Point d'entrée unique, non destructif, pour toute nouvelle sollicitation CRM.
+
+    Les coordonnées normalisées ne sont utilisées que pour chercher. Une valeur
+    existante n'est jamais remplacée; seuls les champs explicitement autorisés et
+    réellement vides peuvent être complétés.
+    """
+    requests = data.setdefault("crm_inbound_requests", [])
+    if external_id:
+        duplicate = next((row for row in requests if row.get("source") == source and
+                          row.get("external_id") == str(external_id)), None)
+        if duplicate:
+            return _crm_contact(data, duplicate.get("contact_id")), duplicate, False
+
+    email = _crm_normalize_email(payload.get("mail") or payload.get("email"))
+    phone = _crm_normalize_phone(payload.get("telephone"))
+    contacts = data.setdefault("crm_contacts", [])
+    email_matches = [c for c in contacts if email and _crm_normalize_email(c.get("mail")) == email]
+    phone_matches = [c for c in contacts if phone and _crm_normalize_phone(c.get("telephone")) == phone]
+    selected = _crm_contact(data, selected_contact_id) if selected_contact_id else None
+    ambiguous_reasons = []
+    contact = selected
+    if not contact and not force_create:
+        email_ids, phone_ids = {c.get("id") for c in email_matches}, {c.get("id") for c in phone_matches}
+        if len(email_matches) > 1 or len(phone_matches) > 1:
+            ambiguous_reasons.append("coordonnée associée à plusieurs fiches")
+        elif email_matches and phone_matches and email_ids != phone_ids:
+            ambiguous_reasons.append("e-mail et téléphone associés à des fiches différentes")
+        elif email_matches and phone_matches and email_ids == phone_ids:
+            contact = email_matches[0]
+        else:
+            candidate = (email_matches or phone_matches)
+            if len(candidate) == 1:
+                if _crm_names_compatible(candidate[0], payload):
+                    contact = candidate[0]
+                else:
+                    ambiguous_reasons.append("coordonnée concordante mais identité incompatible")
+            elif any(_crm_names_compatible(c, payload) for c in contacts):
+                ambiguous_reasons.append("nom et prénom seuls concordants")
+
+    now = _crm_now()
+    inbound = {
+        "id": str(uuid.uuid4()), "contact_id": None, "created_at": now,
+        "source": source, "external_id": str(external_id) if external_id else "",
+        "formation": str(payload.get("formation") or "").strip(),
+        "commentaire": str(payload.get("commentaire") or payload.get("notes") or "").strip(),
+        "coordinates": {"nom": payload.get("nom", ""), "prenom": payload.get("prenom", ""),
+                        "mail": payload.get("mail") or payload.get("email", ""),
+                        "telephone": payload.get("telephone", "")},
+        "raw_payload": copy.deepcopy(dict(payload)), "differences": [],
+        "status": "pending_review" if ambiguous_reasons and not force_create else "matched",
+        "review_reasons": ambiguous_reasons, "resolved_at": None, "resolved_by": None,
+    }
+    created = False
+    if not contact and not ambiguous_reasons:
+        contact = proposed_contact or {
+            "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
+            "nom": _crm_format_last_name(payload.get("nom")),
+            "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
+            "telephone": str(payload.get("telephone") or "").strip(),
+            "formation": str(payload.get("formation") or "").strip(), "statut": "Nouveaux",
+            "origine": source, "created_at": now, "updated_at": now, "activities": [],
+        }
+        contacts.insert(0, contact); created = True; inbound["status"] = "created"
+    if contact:
+        inbound["contact_id"] = contact.get("id")
+        normalizers = {"mail": _crm_normalize_email, "telephone": _crm_normalize_phone,
+                       "nom": _crm_normalize_name, "prenom": _crm_normalize_name}
+        values = {"mail": payload.get("mail") or payload.get("email"), "telephone": payload.get("telephone"),
+                  "nom": payload.get("nom"), "prenom": payload.get("prenom"),
+                  "formation": payload.get("formation"), "lieu": payload.get("lieu") or payload.get("centre")}
+        completed = []
+        if not created:
+            for field, incoming in values.items():
+                if _crm_is_empty(incoming): continue
+                if _crm_is_empty(contact.get(field)):
+                    contact[field] = incoming; completed.append(field)
+                else:
+                    normalize = normalizers.get(field, lambda value: str(value or "").strip().casefold())
+                    if normalize(contact.get(field)) != normalize(incoming): inbound["differences"].append(field)
+            contact["updated_at"] = now
+            detail = f"Source : {source}."
+            if completed: detail += " Champs complétés : " + ", ".join(completed) + "."
+            if inbound["differences"]: detail += " Informations différentes à vérifier : " + ", ".join(inbound["differences"]) + "."
+            _crm_activity(contact, "inbound_request", "Nouvelle demande reçue", detail)
+    requests.insert(0, inbound)
+    return contact, inbound, created
+
+
+def find_or_create_crm_contact(data, payload, source, **options):
+    """Sérialise le rapprochement dans un processus applicatif."""
+    with _CRM_RECONCILIATION_LOCK:
+        return _find_or_create_crm_contact(data, payload, source, **options)
 
 
 def _crm_calendly_payload_phone(payload):
@@ -7581,8 +7687,11 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         f'<p><a href="{devis_url}" target="_blank">Ouvrir le devis</a></p></div>'
     )
     _crm_activity(contact, "devis", "Devis détaillé créé", f"Devis n° {devis_id}", quote_preview)
-    data.setdefault("crm_contacts", []).insert(0, contact)
-    return contact
+    matched, _, _ = find_or_create_crm_contact(
+        data, fields, "demande_infos_formations", proposed_contact=contact,
+        external_id=demande_id,
+    )
+    return matched
 
 
 def _secretariat_session_details(entry):
@@ -7666,8 +7775,15 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
     if entry.get("rdv"):
         detail += f" · Rendez-vous : {entry['rdv']}"
     _crm_activity(contact, "creation", "Piste créée depuis le secrétariat", detail)
-    data.setdefault("crm_contacts", []).insert(0, contact)
-    return contact
+    reconciliation_payload = {**dict(entry), "mail": entry.get("email"),
+                              "nom": crm_payload.get("nom"),
+                              "prenom": crm_payload.get("prenom"),
+                              "lieu": lieu, "formation": formation}
+    matched, _, _ = find_or_create_crm_contact(
+        data, reconciliation_payload, "assistant-secretariat",
+        proposed_contact=contact, external_id=entry.get("id"),
+    )
+    return matched
 
 
 def _secretariat_information_template(data, kind, formation_code):
@@ -9451,7 +9567,9 @@ def crm_contacts():
     now = _crm_now()
     contact = {
         "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
-        "nom": _crm_format_last_name(payload.get("nom")), "telephone": "", "mail": "",
+        "nom": _crm_format_last_name(payload.get("nom")),
+        "telephone": str(payload.get("telephone") or "").strip(),
+        "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
         "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
         "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
         "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
@@ -9462,9 +9580,15 @@ def crm_contacts():
         "created_at": now, "updated_at": now, "activities": [],
     }
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
-    data["crm_contacts"].insert(0, contact)
+    contact, inbound, created = find_or_create_crm_contact(
+        data, payload, "saisie_manuelle", proposed_contact=contact,
+        selected_contact_id=payload.get("selected_contact_id"),
+        force_create=bool(payload.get("force_create")),
+    )
     save_data(data)
-    return jsonify(_crm_contact_response(contact, data)), 201
+    if contact is None:
+        return jsonify({"status": "pending_review", "request_id": inbound["id"]}), 202
+    return jsonify(_crm_contact_response(contact, data)), 201 if created else 200
 
 
 @app.delete("/api/crm/database")
@@ -9485,6 +9609,45 @@ def crm_delete_database():
     data["crm_cnaps_scoring_snapshots"] = {}
     save_data(data)
     return jsonify({"ok": True, "deleted_count": deleted_count})
+
+
+@app.get("/api/crm/inbound-requests/pending")
+@login_required
+def crm_pending_inbound_requests():
+    data = load_data()
+    return jsonify([row for row in data.get("crm_inbound_requests", [])
+                    if row.get("status") == "pending_review"])
+
+
+@app.post("/api/crm/inbound-requests/<request_id>/resolve")
+@login_required
+def crm_resolve_inbound_request(request_id):
+    """Résout explicitement une correspondance sans jamais modifier la fiche cible."""
+    data = load_data(); payload = request.get_json(silent=True) or {}
+    inbound = next((row for row in data.get("crm_inbound_requests", [])
+                    if row.get("id") == request_id), None)
+    if not inbound or inbound.get("status") != "pending_review":
+        return jsonify({"error": "Demande à vérifier introuvable"}), 404
+    action = payload.get("action")
+    if action == "cancel":
+        return jsonify(inbound)
+    if action == "attach":
+        contact = _crm_contact(data, payload.get("contact_id"))
+        if not contact: return jsonify({"error": "Fiche introuvable"}), 404
+    elif action == "create":
+        raw = inbound.get("raw_payload") or {}
+        contact, _, _ = find_or_create_crm_contact(
+            data, raw, inbound.get("source") or "résolution_manuelle", force_create=True,
+            external_id=f"resolution:{request_id}")
+    else:
+        return jsonify({"error": "Action invalide"}), 400
+    inbound["contact_id"] = contact.get("id"); inbound["status"] = "resolved"
+    inbound["resolved_at"] = _crm_now()
+    inbound["resolved_by"] = (current_user() or {}).get("email") or (current_user() or {}).get("name")
+    _crm_activity(contact, "inbound_request", "Correspondance résolue manuellement",
+                  f"Source : {inbound.get('source')}. Action : {action}.")
+    save_data(data)
+    return jsonify(inbound)
 
 
 @app.get("/api/crm/brevo/sms-credits")
