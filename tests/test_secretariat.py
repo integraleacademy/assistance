@@ -940,3 +940,45 @@ def test_secretariat_question_route_validates_input(client):
 
     assert too_long.status_code == 400
     assert unknown.status_code == 404
+
+
+def test_secretariat_finds_existing_crm_contact_by_email_or_phone(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["crm_contacts"] = [{
+        "id": "crm-existing", "mail": "camille@example.com", "telephone": "06 01 02 03 04"
+    }]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+
+    by_email = client.post("/api/secretariat/crm-contact", json={"email": " CAMILLE@example.com "})
+    by_phone = client.post("/api/secretariat/crm-contact", json={"telephone": "0601020304"})
+
+    assert by_email.get_json() == {"contact_id": "crm-existing"}
+    assert by_phone.get_json() == {"contact_id": "crm-existing"}
+
+
+def test_secretariat_updates_existing_crm_contact_without_creating_lead(client, monkeypatch):
+    contact = {
+        "id": "crm-existing", "prenom": "Camille", "nom": "MARTIN",
+        "mail": "camille@example.com", "telephone": "", "activities": [], "formulaire": {},
+    }
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = [contact]
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    salesforce_calls = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_calls.append)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "APS", "prenom": "Camille",
+        "nom_famille": "Martin", "nom": "Camille Martin",
+        "email": "camille@example.com", "telephone": "0601020304",
+        "crm_contact_id": "crm-existing", "rdv": "Calendly proposé",
+    })
+
+    assert response.status_code == 201
+    assert len(data["crm_contacts"]) == 1
+    assert salesforce_calls == []
+    assert contact["telephone"] == "0601020304"
+    assert contact["formulaire"]["rdv"] == "Calendly proposé"
+    assert contact["activities"][0]["title"] == "Appel complété par le secrétariat"

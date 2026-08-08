@@ -3271,6 +3271,20 @@ def _serialize_secretariat_delivery(view):
     return wrapped
 
 
+@app.route("/api/secretariat/crm-contact", methods=["POST"])
+def api_secretariat_crm_contact():
+    """Find an existing CRM record without exposing the contact list."""
+    payload = request.get_json(silent=True) or {}
+    email = _crm_normalize_email(payload.get("email"))
+    phone = _crm_normalize_phone(payload.get("telephone"))
+    if not email and not phone:
+        return jsonify({"contact_id": None})
+    contact = next((row for row in load_data().get("crm_contacts", []) if
+                    (email and _crm_normalize_email(row.get("mail")) == email) or
+                    (phone and _crm_normalize_phone(row.get("telephone")) == phone)), None)
+    return jsonify({"contact_id": contact.get("id") if contact else None})
+
+
 @app.route("/api/secretariat/demandes", methods=["POST"])
 @_serialize_secretariat_delivery
 def api_secretariat_demandes():
@@ -3317,6 +3331,11 @@ def api_secretariat_demandes():
         "date": now.strftime("%d/%m/%Y %H:%M"),
     }
     data_store = load_data()
+    submitted_email = _crm_normalize_email(entry["email"])
+    submitted_phone = _crm_normalize_phone(entry["telephone"])
+    crm_contact = next((contact for contact in data_store.get("crm_contacts", []) if
+                        (submitted_email and _crm_normalize_email(contact.get("mail")) == submitted_email) or
+                        (submitted_phone and _crm_normalize_phone(contact.get("telephone")) == submitted_phone)), None)
     entries = data_store.setdefault("secretariat_demandes", [])
     # Le formulaire formation crée déjà une ligne « RDV à prendre ». La dernière
     # étape du parcours l'enrichit au lieu de créer un doublon dans le journal.
@@ -3331,7 +3350,7 @@ def api_secretariat_demandes():
         except (TypeError, ValueError):
             return False
     existing = next((row for row in reversed(entries) if is_same_recent_submission(row)), None)
-    creates_new_lead = existing is None
+    creates_new_lead = existing is None and crm_contact is None
     if existing:
         created_at, date_label, entry_id = existing.get("created_at"), existing.get("date"), existing.get("id")
         existing.update(entry)
@@ -3373,12 +3392,21 @@ def api_secretariat_demandes():
     # Salesforce expects these exact generic form keys. Without them, its lead
     # received neither the selected campus nor the requested training dates.
     crm_payload.update({"centre": centre_code, "dates": session_label})
-    crm_contact = None
     if creates_new_lead:
         crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
-    else:
+    elif crm_contact is None:
         crm_contact = next((contact for contact in data_store.get("crm_contacts", [])
                             if contact.get("source_secretariat_id") == entry.get("id")), None)
+    if crm_contact and not creates_new_lead:
+        crm_contact.update({
+            "prenom": _crm_format_first_name(crm_payload["prenom"]) or crm_contact.get("prenom", ""),
+            "nom": _crm_format_last_name(crm_payload["nom"]) or crm_contact.get("nom", ""),
+            "mail": entry["email"] or crm_contact.get("mail", ""),
+            "telephone": entry["telephone"] or crm_contact.get("telephone", ""),
+            "updated_at": _crm_now(),
+        })
+        crm_contact.setdefault("formulaire", {}).update(entry)
+        _crm_activity(crm_contact, "note", "Appel complété par le secrétariat", entry.get("notes", ""))
     message_results = {}
     if entry["type"] == "formation" and crm_contact:
         _secretariat_refresh_calendly_appointments(data_store, entry, crm_contact)
