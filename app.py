@@ -6885,7 +6885,7 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260807-automatic-email-templates"
+CRM_ASSET_VERSION = "20260808-contact-sheet-fixes"
 
 
 def _crm_statuses(data=None):
