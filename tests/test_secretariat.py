@@ -68,6 +68,19 @@ def test_secretariat_includes_a_training_search(client, monkeypatch):
     assert b"function filterFormations()" in response.data
 
 
+def test_secretariat_checks_crm_before_showing_new_caller_questions(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    assert b'id="newCallerFields" class="full grid" hidden' in response.data
+    assert b'#newCallerFields[hidden]{display:none}' in response.data
+    assert 'id="callerSubmit">Vérifier dans le CRM'.encode() in response.data
+    assert b"if(existingCrmContactId||requestType!=='formation')" in response.data
+    assert b"callerLookupComplete=true;newCallerFields.hidden=false" in response.data
+    assert b"showStep(5);renderCalendlyWidget();return" in response.data
+
+
 def test_secretariat_displays_training_details_before_caller_form(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
