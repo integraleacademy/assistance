@@ -439,3 +439,17 @@ def test_summary_drops_model_repetition_of_desired_session_and_location():
     assert final["summary"].count("Du 9 novembre 2026 au 19 janvier 2027") == 1
     assert final["summary"].count("Intégrale Academy Côte d’Azur") == 1
     assert final["general_summary"] == "Le dossier de financement est renseigné."
+
+
+def test_summary_drops_model_repetition_of_training_fact():
+    context = build_candidate_ai_context(
+        {"id": "lead-training", "formation": "APS", "lieu": "Côte d’Azur",
+         "dates_formation": "Du 7 septembre au 9 octobre 2026"},
+        {"crm_calendly_appointments": []})
+
+    final = finalize_candidate_ai_analysis(valid_result(general_summary=(
+        "Le candidat souhaite suivre la formation APS. "
+        "Les démarches de financement sont à préparer.")), context)
+
+    assert final["summary"].count("Le candidat souhaite suivre la formation APS.") == 1
+    assert final["general_summary"] == "Les démarches de financement sont à préparer."

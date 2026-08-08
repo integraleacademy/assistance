@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-AI_CANDIDATE_ANALYSIS_VERSION = 10
+AI_CANDIDATE_ANALYSIS_VERSION = 11
 AI_CANDIDATE_PROMPT_VERSION = 10
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
@@ -594,7 +594,9 @@ def finalize_candidate_ai_analysis(result, context):
     checked = validate_candidate_ai_analysis(result)
     general = checked["general_summary"]
     formation = context.get("formation") or {}
+    authoritative = context.get("authoritative_facts") or {}
     repeated_formation_facts = tuple(_normalized(value) for value in (
+        (authoritative.get("training") or {}).get("fact"),
         formation.get("desired_session"), formation.get("location")) if value)
     # Défense en profondeur contre une sortie fournisseur qui ignorerait le contrat.
     sentences = re.split(r"(?<=[.!?])\s+", general)
@@ -606,7 +608,6 @@ def finalize_candidate_ai_analysis(result, context):
     appointment_summary = appointment.get("deterministic_narrative", "")
     vae = context.get("vae_tracking_read_only") or {}
     vae_summary = vae.get("deterministic_narrative", "")
-    authoritative = context.get("authoritative_facts") or {}
     dossier_parts = []
     training = (authoritative.get("training") or {}).get("fact")
     if training:
