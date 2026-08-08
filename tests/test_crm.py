@@ -202,6 +202,7 @@ def test_vae_eligibility_simulation_creates_detailed_crm_lead(tmp_path, monkeypa
     assert (contact["prenom"], contact["nom"]) == ("Lina", "MARTIN")
     assert (contact["formation"], contact["desp_type"], contact["statut"]) == ("DESP", "VAE", "Nouveaux")
     assert contact["source"] == "simulateur_vae_desp"
+    assert contact["origine"] == "Simulateur VAE"
     assert contact["vae_eligibility"] == {
         "completed_at": contact["created_at"], "score": 75,
         "resultat": "Profil favorable",
@@ -218,6 +219,8 @@ def test_crm_displays_vae_eligibility_score_and_clickable_details():
     assert "VAE ${Number(eligibility.score)} %" in crm_js
     assert "Voir le détail des réponses" in crm_js
     assert "vaeEligibilityQuestions.map" in crm_js
+    assert crm_js.index('id="calendlyCard"') < crm_js.index('${vaeEligibilityCard(c)}')
+    assert "Simulateur VAE" in crm_js
 
 
 def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
