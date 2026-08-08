@@ -561,6 +561,16 @@ def test_message_template_picker_prioritizes_the_contact_formation():
     assert 'label="Autres modèles"' in crm_js
 
 
+def test_message_modal_does_not_rely_on_named_window_properties():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    message_modal = crm_js.split("function messageModal", 1)[1].split("function previewModal", 1)[0]
+    for selector in ("#generateMessage", "#tpl", "#msg", "#subject", "#messagePreview", "#sendMessage"):
+        assert f"document.querySelector('{selector}')" in message_modal
+    assert "messagePreview.onclick" not in message_modal
+
+
 def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
