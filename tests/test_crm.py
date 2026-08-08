@@ -754,10 +754,12 @@ def test_planning_a_reminder_updates_the_contact_immediately(tmp_path, monkeypat
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    optimistic_update = "c.statut='A relancer';c.relance_date=date;closeModal();showContact(c.id)"
-    api_update = "api(`/api/crm/contacts/${c.id}`"
+    optimistic_update = "mergeContactInStore(id,next);closeModal();showContact(id)"
+    api_update = "api(`/api/crm/contacts/${id}`"
     assert optimistic_update in crm_js
     assert crm_js.index(optimistic_update) < crm_js.index(api_update, crm_js.index("function relaunchModal"))
+    assert "stored=contactInStore(id)||c" in crm_js
+    assert "mergeContactInStore(id,updated);showContact(id)" in crm_js
 
 
 def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
