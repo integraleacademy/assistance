@@ -1145,6 +1145,8 @@ DEFAULT_DATA = {
     # Journal additif des nouvelles sollicitations. Il est volontairement
     # distinct des fiches afin qu'une personne puisse avoir plusieurs demandes.
     "crm_inbound_requests": [],
+    # Une ligne immuable par soumission Meta (l'identifiant externe est unique).
+    "crm_meta_lead_submissions": [],
     "crm_email_templates": [],
     "crm_sms_templates": [],
     "crm_calendly_appointments": [],
@@ -7056,7 +7058,8 @@ _CRM_RECONCILIATION_LOCK = threading.RLock()
 
 def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
                                 external_id=None, selected_contact_id=None,
-                                force_create=False):
+                                force_create=False, ordered_coordinates=False,
+                                record_activity=True):
     """Point d'entrée unique, non destructif, pour toute nouvelle sollicitation CRM.
 
     Les coordonnées normalisées ne sont utilisées que pour chercher. Une valeur
@@ -7082,14 +7085,18 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
         email_ids, phone_ids = {c.get("id") for c in email_matches}, {c.get("id") for c in phone_matches}
         if len(email_matches) > 1 or len(phone_matches) > 1:
             ambiguous_reasons.append("coordonnée associée à plusieurs fiches")
-        elif email_matches and phone_matches and email_ids != phone_ids:
+        elif email_matches and phone_matches and email_ids != phone_ids and not ordered_coordinates:
             ambiguous_reasons.append("e-mail et téléphone associés à des fiches différentes")
         elif email_matches and phone_matches and email_ids == phone_ids:
             contact = email_matches[0]
+        elif ordered_coordinates and len(email_matches) == 1:
+            contact = email_matches[0]
+        elif ordered_coordinates and len(phone_matches) == 1:
+            contact = phone_matches[0]
         else:
             candidate = (email_matches or phone_matches)
             if len(candidate) == 1:
-                if _crm_names_compatible(candidate[0], payload):
+                if ordered_coordinates or _crm_names_compatible(candidate[0], payload):
                     contact = candidate[0]
                 else:
                     ambiguous_reasons.append("coordonnée concordante mais identité incompatible")
@@ -7140,7 +7147,8 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
             detail = f"Source : {source}."
             if completed: detail += " Champs complétés : " + ", ".join(completed) + "."
             if inbound["differences"]: detail += " Informations différentes à vérifier : " + ", ".join(inbound["differences"]) + "."
-            _crm_activity(contact, "inbound_request", "Nouvelle demande reçue", detail)
+            if record_activity:
+                _crm_activity(contact, "inbound_request", "Nouvelle demande reçue", detail)
     requests.insert(0, inbound)
     return contact, inbound, created
 
@@ -7149,6 +7157,163 @@ def find_or_create_crm_contact(data, payload, source, **options):
     """Sérialise le rapprochement dans un processus applicatif."""
     with _CRM_RECONCILIATION_LOCK:
         return _find_or_create_crm_contact(data, payload, source, **options)
+
+
+_META_LEAD_FIELDS = (
+    "id", "lead_id", "leadgen_id", "created_time", "page_id", "form_id",
+    "form_name", "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id",
+    "campaign_name", "platform", "full_name", "first_name", "last_name", "email",
+    "phone_number", "city", "zip_code", "postal_code", "formation", "centre",
+)
+
+
+def _meta_key(value):
+    text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+    return "".join(char for char in text if char.isalnum() and not unicodedata.combining(char))
+
+
+def _meta_scalar(value):
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if item is not None).strip()
+    if isinstance(value, (dict, tuple)):
+        return ""
+    return str(value or "").strip()
+
+
+def _parse_meta_lead_payload(payload):
+    """Tolère les libellés Zapier/Meta usuels sans éliminer les questions inconnues."""
+    aliases = {_meta_key(field): field for field in _META_LEAD_FIELDS}
+    aliases.update({
+        "leadgenid": "leadgen_id", "leadid": "lead_id", "fullname": "full_name",
+        "firstname": "first_name", "lastname": "last_name", "mail": "email",
+        "emailaddress": "email", "phone": "phone_number", "telephone": "phone_number",
+        "mobile": "phone_number", "zipcode": "zip_code", "postalcode": "postal_code",
+    })
+    fields, custom = {}, {}
+
+    def consume(name, value):
+        canonical = aliases.get(_meta_key(name))
+        scalar = _meta_scalar(value)
+        if canonical:
+            if scalar and not fields.get(canonical):
+                fields[canonical] = scalar
+        elif name not in {"field_data", "fieldData"}:
+            custom[str(name)] = copy.deepcopy(value)
+
+    for name, value in payload.items():
+        consume(name, value)
+    field_data = payload.get("field_data") or payload.get("fieldData") or []
+    if isinstance(field_data, list):
+        for answer in field_data:
+            if not isinstance(answer, dict):
+                continue
+            question = answer.get("name") or answer.get("question") or answer.get("key")
+            value = answer.get("values", answer.get("value", answer.get("answer")))
+            if question:
+                consume(question, value)
+                if not aliases.get(_meta_key(question)):
+                    custom[str(question)] = copy.deepcopy(value)
+    full_name = fields.get("full_name", "")
+    if full_name and not fields.get("first_name") and not fields.get("last_name"):
+        parts = full_name.split(None, 1)
+        fields["first_name"] = parts[0]
+        fields["last_name"] = parts[1] if len(parts) > 1 else ""
+    return fields, custom
+
+
+def _meta_activity_detail(fields):
+    details = []
+    for key, label in (("form_name", "Formulaire"), ("campaign_name", "Campagne"),
+                       ("ad_name", "Publicité")):
+        if fields.get(key):
+            details.append(f"{label} : {fields[key]}")
+    return " · ".join(details)
+
+
+@app.post("/api/integrations/meta/zapier-leads")
+def meta_zapier_leads():
+    """Endpoint public : le secret dédié remplace l'authentification de session/CSRF."""
+    supplied_secret = request.headers.get("X-Zapier-Secret")
+    if supplied_secret is None:
+        return jsonify({"success": False, "error": "unauthorized"}), 403
+    configured_secret = os.getenv("ZAPIER_META_WEBHOOK_SECRET", "")
+    if not configured_secret:
+        app.logger.error("Le secret du webhook Meta/Zapier n'est pas configuré.")
+        return jsonify({"success": False, "error": "internal_error"}), 500
+    if not hmac.compare_digest(supplied_secret.encode(), configured_secret.encode()):
+        return jsonify({"success": False, "error": "unauthorized"}), 403
+    if not request.is_json:
+        return jsonify({"success": False, "error": "Le corps doit être un objet JSON."}), 400
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "error": "Le corps JSON doit être un objet."}), 400
+    fields, custom_answers = _parse_meta_lead_payload(payload)
+    meta_lead_id = fields.get("leadgen_id") or fields.get("lead_id") or fields.get("id")
+    if not meta_lead_id:
+        return jsonify({"success": False, "error": "Identifiant Meta manquant (leadgen_id, lead_id ou id)."}), 400
+    if not fields.get("email") and not fields.get("phone_number"):
+        return jsonify({"success": False, "error": "Une adresse e-mail ou un téléphone est requis."}), 400
+
+    try:
+        with _CRM_RECONCILIATION_LOCK:
+            data = load_data()
+            submissions = data.setdefault("crm_meta_lead_submissions", [])
+            duplicate = next((row for row in submissions
+                              if str(row.get("meta_lead_id")) == str(meta_lead_id)), None)
+            if duplicate:
+                return jsonify({"success": True, "result": "already_processed",
+                                "contact_id": duplicate.get("contact_id")}), 200
+            already_inbound = next((row for row in data.get("crm_inbound_requests", [])
+                                    if row.get("source") == "meta_zapier"
+                                    and row.get("external_id") == str(meta_lead_id)), None)
+            if already_inbound:
+                return jsonify({"success": True, "result": "already_processed",
+                                "contact_id": already_inbound.get("contact_id")}), 200
+
+            crm_payload = {
+                "prenom": fields.get("first_name", ""), "nom": fields.get("last_name", ""),
+                "mail": fields.get("email", ""), "telephone": fields.get("phone_number", ""),
+                "formation": fields.get("formation", ""), "centre": fields.get("centre", ""),
+            }
+            contact, inbound, created = find_or_create_crm_contact(
+                data, crm_payload, "meta_zapier", external_id=meta_lead_id,
+                ordered_coordinates=True, record_activity=False,
+            )
+            if contact is None:
+                return jsonify({"success": False, "error": "Rapprochement CRM ambigu."}), 400
+            if created:
+                contact["statut"] = "Nouveaux"
+                contact["origine"] = "META"
+                contact["source"] = "META"
+                contact["source_detail"] = "Facebook / Instagram Lead Ads"
+                contact["received_at"] = _crm_now()
+            title = ("Piste créée automatiquement depuis un formulaire instantané Meta via Zapier."
+                     if created else
+                     "Nouvelle demande reçue depuis un formulaire instantané Meta via Zapier.")
+            _crm_activity(contact, "meta_lead", title, _meta_activity_detail(fields))
+            received_at = _crm_now()
+            submission = {
+                "meta_lead_id": str(meta_lead_id), "contact_id": contact["id"],
+                "received_at": received_at, "created_time": fields.get("created_time", ""),
+                **{key: fields.get(key, "") for key in (
+                    "page_id", "form_id", "form_name", "ad_id", "ad_name", "adset_id",
+                    "adset_name", "campaign_id", "campaign_name", "platform")},
+                "raw_payload": copy.deepcopy(payload), "custom_answers": custom_answers,
+            }
+            submissions.insert(0, submission)
+            inbound["custom_answers"] = copy.deepcopy(custom_answers)
+            if created:
+                data.setdefault("crm_notifications", []).insert(0, {
+                    "id": str(uuid.uuid4()), "date": received_at, "kind": "meta_lead",
+                    "text": title, "read": False, "contact_id": contact["id"],
+                    "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
+                })
+            save_data(data)
+        return jsonify({"success": True, "result": "created" if created else "attached",
+                        "contact_id": contact["id"]}), 201 if created else 200
+    except Exception:
+        app.logger.exception("Échec du traitement du webhook Meta/Zapier")
+        return jsonify({"success": False, "error": "internal_error"}), 500
 
 
 def _crm_calendly_payload_phone(payload):
