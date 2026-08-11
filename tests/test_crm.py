@@ -1008,3 +1008,16 @@ def test_crm_regulatory_and_funding_dependencies_are_present():
     assert 'data-show="identity-created"' in script
     assert 'data-show="ft-yes"' in script
     assert 'wedofLoaded=true;loadWedof(c)' in script
+
+
+def test_leads_can_be_filtered_by_an_exact_training_session():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert 'id="sessionFilter"' in crm_js
+    assert 'Toutes les sessions' in crm_js
+    assert 'sessionFilterRows()' in crm_js
+    assert "c.dates_formation===session[2]" in crm_js
+    assert "c.formation===session[0]" in crm_js
+    assert "(c.lieu||'')===session[1]" in crm_js
+    assert 'id="filterResultCount"' in crm_js
