@@ -37,3 +37,22 @@ def test_tracking_card_uses_the_standard_form_section_heading():
 
     assert '<h3 class="tracking-card-head">' in javascript
     assert '.form-section>h3.tracking-card-head' in stylesheet
+
+
+def test_contact_supports_a_removable_secondary_timeline():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    for status in (
+        "Financement FT en cours",
+        "Financement FT refusé",
+        "Def MOB",
+        "POEI",
+        "C2P en cours",
+        "Marché FT",
+    ):
+        assert status in javascript
+    assert 'id="addSecondaryTimeline"' in javascript
+    assert 'id="removeSecondaryTimeline"' in javascript
+    assert "statut_secondaire:next" in javascript
+    assert ".timeline-secondary button.current" in stylesheet

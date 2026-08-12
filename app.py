@@ -9769,6 +9769,13 @@ def crm_contacts():
     if request.method == "GET":
         changed = False
         for existing in data["crm_contacts"]:
+            if "statut_secondaire" not in existing:
+                funding_status = str(existing.get("statut_demande_financement_ft") or "").strip()
+                existing["statut_secondaire"] = {
+                    "en_cours_instruction": "Financement FT en cours",
+                    "refusee": "Financement FT refusé",
+                }.get(funding_status, "")
+                changed = True
             if _crm_backfill_information_request_answers(existing):
                 changed = True
             prenom = _crm_format_first_name(existing.get("prenom"))
@@ -9792,7 +9799,7 @@ def crm_contacts():
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
-        "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "",
+        "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "", "statut_secondaire": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
@@ -9936,8 +9943,9 @@ def crm_contact(contact_id):
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
-               "statut", "relance_date"}
+               "statut", "statut_secondaire", "relance_date"}
     old_status = contact.get("statut")
+    old_secondary_status = contact.get("statut_secondaire", "")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
     old_score = calculate_candidate_integration_score(contact, snapshot)
     if "cpf_montant" in payload:
@@ -9948,6 +9956,11 @@ def crm_contact(contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    secondary_statuses = {
+        "", "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI", "C2P en cours", "Marché FT"
+    }
+    if contact.get("statut_secondaire", "") not in secondary_statuses:
+        contact["statut_secondaire"] = ""
     # Une confirmation porte sur un montant exact : toute modification de ses
     # déterminants l'invalide afin qu'elle ne soit jamais réutilisée pour un autre montant.
     determinants = {"formation", "desp_type", "cpf", "cpf_montant", "financement_ft", "statut_demande_financement_ft"}
@@ -9964,6 +9977,10 @@ def crm_contact(contact_id):
         contact["statut"] = old_status if old_status in statuses else statuses[0]
     if contact.get("statut") != old_status:
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
+    if contact.get("statut_secondaire", "") != old_secondary_status:
+        secondary_label = contact.get("statut_secondaire") or "retiré"
+        _crm_activity(contact, "statut", f"Deuxième statut : {secondary_label}",
+                      f"Ancien deuxième statut : {old_secondary_status or 'aucun'}")
     new_score = calculate_candidate_integration_score(contact, snapshot)
     if old_score.get("level") and new_score.get("level") != old_score.get("level"):
         _crm_activity(contact, "score", f"Score d’intégration passé de {old_score['score']} à {new_score['score']} : {new_score['label']}")
