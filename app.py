@@ -8748,6 +8748,11 @@ class WedofAPIError(RuntimeError):
         self.status_code = status_code
 
 
+_WEDOF_SYNC_LOCK = threading.Lock()
+_WEDOF_POLLER_STARTED = False
+_WEDOF_POLLER_STOP = threading.Event()
+
+
 def _wedof_db_path():
     """Place le cache à côté de data.json, sauf surcharge explicite."""
     return os.getenv("WEDOF_DB_PATH") or os.path.join(
@@ -8892,6 +8897,143 @@ def _wedof_attendee_name(folder):
     return _wedof_normalize_name(first_name), _wedof_normalize_name(last_name)
 
 
+def _wedof_contact_payload(folder):
+    """Extrait les informations utiles à une piste sans altérer le JSON WEDOF."""
+    attendee = folder.get("attendee") if isinstance(folder.get("attendee"), dict) else {}
+    training = (
+        folder.get("trainingActionInfo")
+        if isinstance(folder.get("trainingActionInfo"), dict)
+        else {}
+    )
+    first_name = next((attendee.get(key) for key in (
+        "firstName", "firstname", "first_name", "givenName"
+    ) if attendee.get(key)), "")
+    last_name = next((attendee.get(key) for key in (
+        "lastName", "lastname", "last_name", "familyName"
+    ) if attendee.get(key)), "")
+    email = next((attendee.get(key) for key in (
+        "email", "mail", "emailAddress"
+    ) if attendee.get(key)), "")
+    phone = next((attendee.get(key) for key in (
+        "phoneNumber", "phone", "telephone", "mobile"
+    ) if attendee.get(key)), "")
+    formation = next((value for value in (
+        training.get("title"), folder.get("trainingTitle"),
+        folder.get("title"),
+    ) if value), "")
+
+    address = training.get("address") or folder.get("location") or ""
+    if isinstance(address, dict):
+        location = next((address.get(key) for key in (
+            "city", "locality", "addressLocality", "name"
+        ) if address.get(key)), "")
+    else:
+        location = address
+
+    start = training.get("sessionStartDate") or folder.get("startDate") or ""
+    end = training.get("sessionEndDate") or folder.get("endDate") or ""
+    dates = " → ".join(str(value).strip() for value in (start, end) if value)
+    stable_id = str(folder.get("externalId") or "").strip()
+    return {
+        "prenom": str(first_name or "").strip(),
+        "nom": str(last_name or "").strip(),
+        "mail": str(email or "").strip(),
+        "telephone": str(phone or "").strip(),
+        "formation": str(formation or "").strip(),
+        "lieu": str(location or "").strip(),
+        "dates_formation": dates,
+        "cpf": "OUI",
+        "commentaire": f"Demande CPF reçue via WEDOF · dossier {stable_id}",
+    }
+
+
+def _wedof_has_usable_identity(payload):
+    """Empêche la création d'une piste vide si WEDOF omet l'identité."""
+    return bool(
+        _crm_normalize_email(payload.get("mail"))
+        or _crm_normalize_phone(payload.get("telephone"))
+        or (
+            _crm_normalize_name(payload.get("prenom"))
+            and _crm_normalize_name(payload.get("nom"))
+        )
+    )
+
+
+def _wedof_is_open_cpf_request(folder):
+    """Exclut les anciens dossiers clos d'une création commerciale tardive."""
+    state = re.sub(
+        r"[^a-z0-9]", "",
+        unicodedata.normalize("NFD", str(
+            folder.get("state") or folder.get("status")
+            or folder.get("registrationState") or ""
+        )).encode("ascii", "ignore").decode().lower(),
+    )
+    terminal_states = {
+        "intraining", "terminated", "servicedonedeclared",
+        "servicedonevalidated", "notbillable", "tobill", "billed", "paid",
+        "cancelled", "canceled", "refused", "rejected", "abandoned",
+    }
+    if state in terminal_states:
+        return False
+    training = (
+        folder.get("trainingActionInfo")
+        if isinstance(folder.get("trainingActionInfo"), dict)
+        else {}
+    )
+    session_end = training.get("sessionEndDate") or folder.get("endDate")
+    if session_end:
+        try:
+            end_date = datetime.date.fromisoformat(str(session_end).strip()[:10])
+            if end_date < datetime.datetime.now(pytz.timezone("Europe/Paris")).date():
+                return False
+        except ValueError:
+            pass
+    return True
+
+
+def _wedof_activity(contact, title, detail):
+    """Ajoute une activité utilisable aussi hors d'un contexte de requête Flask."""
+    contact.setdefault("activities", []).insert(0, {
+        "id": str(uuid.uuid4()), "date": _crm_now(), "kind": "inbound_request",
+        "title": title, "detail": detail, "preview": "",
+        "author": "Automatisation WEDOF",
+    })
+
+
+def _wedof_new_crm_contact(data, payload, stable_id):
+    """Construit une piste CRM complète à partir d'une demande Mon Compte Formation."""
+    now = _crm_now()
+    contact = {
+        "id": str(uuid.uuid4()),
+        "prenom": _crm_format_first_name(payload.get("prenom")),
+        "nom": _crm_format_last_name(payload.get("nom")),
+        "telephone": str(payload.get("telephone") or "").strip(),
+        "mail": str(payload.get("mail") or "").strip(),
+        "formation": str(payload.get("formation") or "").strip(),
+        "lieu": str(payload.get("lieu") or "").strip(),
+        "statut": next((status for status in _crm_statuses(data)
+                         if status not in CRM_RESERVED_STATUSES), "Nouveaux"),
+        "dates_formation": str(payload.get("dates_formation") or "").strip(),
+        "cpf": "OUI", "cpf_montant": "", "carte_pro": "",
+        "antecedents": "", "garde_vue": "", "titre_sejour": "",
+        "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_username": "",
+        "cnaps_password": "", "integration_dracar": "", "desp_type": "",
+        "identite_creation": "", "identite_ok": "", "financement_ft": "",
+        "statut_demande_financement_ft": "", "refus_ft_perso": "",
+        "reste_a_charge_perso": "", "inscrit_ft": "", "relance_date": "",
+        "statut_secondaire": "", "origine": "Mon Compte Formation",
+        "commentaires": f"Demande CPF reçue automatiquement via WEDOF · dossier {stable_id}.",
+        "created_at": now, "updated_at": now, "activities": [],
+        "source": "wedof_cpf", "source_wedof_folder_id": stable_id,
+    }
+    _wedof_activity(
+        contact,
+        "Piste créée depuis Mon Compte Formation",
+        f"Dossier CPF {stable_id} synchronisé automatiquement via WEDOF.",
+    )
+    return contact
+
+
 def _wedof_contact_name_matches(folder, contact):
     """Compare l'identité sans jamais modifier l'orthographe stockée dans le CRM."""
     first_name, last_name = _wedof_attendee_name(folder)
@@ -8925,14 +9067,31 @@ def _wedof_match_contact(folder, contacts):
         contact for contact in contacts
         if _wedof_normalize_name(contact.get("prenom")) == first_name
         and _wedof_normalize_name(contact.get("nom")) == last_name
+        and (not emails or not _crm_normalize_email(contact.get("mail"))
+             or _crm_normalize_email(contact.get("mail")) in emails)
+        and (not phones or not _crm_normalize_phone(contact.get("telephone"))
+             or _crm_normalize_phone(contact.get("telephone")) in phones)
     ]
     if len(name_matches) == 1:
         return name_matches[0], "name"
     return None, None
 
 
-def _wedof_store_page(items, contacts, page, total_count=None):
+def _wedof_store_page(items, data, page, total_count=None):
+    """Rapproche et persiste une page sans concurrencer une autre mutation CRM."""
+    with _CRM_RECONCILIATION_LOCK:
+        return _wedof_store_page_locked(
+            items, data if data is not None else load_data(), page, total_count,
+        )
+
+
+def _wedof_store_page_locked(items, data, page, total_count=None):
+    contacts = data.setdefault("crm_contacts", [])
     now = _wedof_now()
+    crm_changed = False
+    created_contacts = 0
+    linked_folders = 0
+    pending_reviews = 0
     with _wedof_connect() as db:
         for folder in items:
             if not isinstance(folder, dict) or not folder.get("externalId"):
@@ -8940,7 +9099,8 @@ def _wedof_store_page(items, contacts, page, total_count=None):
             stable_id = str(folder["externalId"])
             payload_json = json.dumps(folder, ensure_ascii=False, separators=(",", ":"))
             remote_date = next((str(folder.get(key)) for key in (
-                "updatedAt", "modifiedAt", "dateUpdated", "createdAt"
+                "updatedAt", "updatedOn", "modifiedAt", "dateUpdated",
+                "createdAt", "createdOn",
             ) if folder.get(key)), None)
             db.execute("""
                 INSERT INTO wedof_resources
@@ -8962,7 +9122,47 @@ def _wedof_store_page(items, contacts, page, total_count=None):
                 method = "stable" if contact else None
             if not contact:
                 contact, method = _wedof_match_contact(folder, contacts)
+                crm_payload = _wedof_contact_payload(folder)
+                if contact:
+                    contact, _, _ = find_or_create_crm_contact(
+                        data, crm_payload, "wedof_cpf", external_id=stable_id,
+                        selected_contact_id=contact.get("id"),
+                        ordered_coordinates=True, record_activity=False,
+                    )
+                    crm_changed = True
+                    if contact:
+                        _wedof_activity(
+                            contact, "Nouvelle demande CPF reçue",
+                            f"Dossier {stable_id} associé automatiquement via WEDOF.",
+                        )
+                elif (_wedof_has_usable_identity(crm_payload)
+                      and _wedof_is_open_cpf_request(folder)):
+                    proposed = _wedof_new_crm_contact(data, crm_payload, stable_id)
+                    contact, inbound, created = find_or_create_crm_contact(
+                        data, crm_payload, "wedof_cpf", external_id=stable_id,
+                        proposed_contact=proposed, ordered_coordinates=True,
+                        record_activity=False,
+                    )
+                    crm_changed = True
+                    if created:
+                        method = "created"
+                        created_contacts += 1
+                    elif contact:
+                        _, method = _wedof_match_contact(folder, [contact])
+                        method = method or "matched"
+                        _wedof_activity(
+                            contact, "Nouvelle demande CPF reçue",
+                            f"Dossier {stable_id} associé automatiquement via WEDOF.",
+                        )
+                    elif inbound.get("status") == "pending_review":
+                        pending_reviews += 1
             if contact:
+                # La présence du dossier WEDOF prouve que le compte CPF est actif,
+                # y compris si une ancienne réponse CRM indiquait encore « NON ».
+                if str(contact.get("cpf") or "").strip().upper() != "OUI":
+                    contact["cpf"] = "OUI"
+                    contact["updated_at"] = _crm_now()
+                    crm_changed = True
                 _, _, attendee_id = _wedof_attendee_values(folder)
                 db.execute("""
                     INSERT INTO wedof_contact_links
@@ -8975,6 +9175,7 @@ def _wedof_store_page(items, contacts, page, total_count=None):
                         match_method=excluded.match_method,
                         updated_at=excluded.updated_at
                 """, (contact["id"], stable_id, attendee_id, method, now, now))
+                linked_folders += 1
         state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
         if total_count is not None:
             state["total_count"] = total_count
@@ -8984,6 +9185,13 @@ def _wedof_store_page(items, contacts, page, total_count=None):
             ON CONFLICT(sync_key) DO UPDATE SET
                 value_json=excluded.value_json, updated_at=excluded.updated_at
         """, (json.dumps(state), now))
+        if crm_changed:
+            save_data(data)
+    return {
+        "created_contacts": created_contacts,
+        "linked_folders": linked_folders,
+        "pending_reviews": pending_reviews,
+    }
 
 
 def _wedof_set_state(**state):
@@ -9009,11 +9217,27 @@ def _wedof_state():
 
 
 def _wedof_sync():
+    """Exécute au plus une synchronisation WEDOF par processus applicatif."""
+    if not _WEDOF_SYNC_LOCK.acquire(blocking=False):
+        return {
+            "ok": True, "in_progress": True, "processed": 0,
+            "created_contacts": 0, "linked_folders": 0,
+            "pending_reviews": 0,
+        }
+    try:
+        return _wedof_sync_locked()
+    finally:
+        _WEDOF_SYNC_LOCK.release()
+
+
+def _wedof_sync_locked():
     state = _wedof_state()
     page = int(state.get("next_page") or 1) if state.get("in_progress") else 1
     max_pages = max(1, min(int(os.getenv("WEDOF_MAX_PAGES", "1000")), 10000))
     processed = 0
-    contacts = load_data().get("crm_contacts", [])
+    created_contacts = 0
+    linked_folders = 0
+    pending_reviews = 0
     try:
         for _ in range(max_pages):
             payload, headers = _wedof_request(
@@ -9025,8 +9249,13 @@ def _wedof_sync():
                 total = int(total) if total is not None else None
             except (TypeError, ValueError):
                 total = None
-            _wedof_store_page(items, contacts, page, total)
+            # Recharge le fichier après l'appel réseau : une saisie réalisée
+            # pendant la pagination ne doit jamais être écrasée par un ancien snapshot.
+            page_result = _wedof_store_page(items, None, page, total)
             processed += len(items)
+            created_contacts += page_result["created_contacts"]
+            linked_folders += page_result["linked_folders"]
+            pending_reviews += page_result["pending_reviews"]
             current = headers.get("x-current-page") or headers.get("X-Current-Page") or page
             per_page = headers.get("x-item-per-page") or headers.get("X-Item-Per-Page") or 100
             try:
@@ -9036,13 +9265,64 @@ def _wedof_sync():
             if complete or len(items) < 100:
                 finished = _wedof_now()
                 _wedof_set_state(next_page=1, in_progress=False, last_error="", last_sync_at=finished)
-                return {"ok": True, "processed": processed, "last_sync_at": finished}
+                return {
+                    "ok": True, "processed": processed,
+                    "created_contacts": created_contacts,
+                    "linked_folders": linked_folders,
+                    "pending_reviews": pending_reviews,
+                    "last_sync_at": finished,
+                }
             page += 1
         raise WedofAPIError("Limite de pagination WEDOF atteinte ; la reprise reste disponible.")
     except Exception as exc:
         message = _wedof_clean(exc)
         _wedof_set_state(next_page=page, in_progress=True, last_error=message)
         raise WedofAPIError(message)
+
+
+def _wedof_positive_interval(name, default, minimum):
+    try:
+        return max(minimum, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _wedof_background_sync_loop():
+    initial_delay = _wedof_positive_interval(
+        "WEDOF_SYNC_INITIAL_DELAY_SECONDS", 10, 1,
+    )
+    interval = _wedof_positive_interval(
+        "WEDOF_SYNC_INTERVAL_SECONDS", 300, 60,
+    )
+    if _WEDOF_POLLER_STOP.wait(initial_delay):
+        return
+    while not _WEDOF_POLLER_STOP.is_set():
+        try:
+            result = _wedof_sync()
+            if result.get("created_contacts"):
+                app.logger.info(
+                    "wedof auto-sync created_contacts=%s processed=%s",
+                    result["created_contacts"], result.get("processed", 0),
+                )
+        except Exception as exc:
+            app.logger.warning("wedof auto-sync failed: %s", _wedof_clean(exc))
+        if _WEDOF_POLLER_STOP.wait(interval):
+            return
+
+
+def _start_wedof_background_sync():
+    """Démarre le polling uniquement quand l'intégration serveur est configurée."""
+    global _WEDOF_POLLER_STARTED
+    enabled = str(os.getenv("WEDOF_AUTO_SYNC_ENABLED", "true")).strip().casefold()
+    if (_WEDOF_POLLER_STARTED or not os.getenv("WEDOF_API_KEY", "").strip()
+            or enabled in {"0", "false", "non", "no", "off"}):
+        return False
+    _WEDOF_POLLER_STARTED = True
+    threading.Thread(
+        target=_wedof_background_sync_loop,
+        name="wedof-crm-auto-sync", daemon=True,
+    ).start()
+    return True
 
 
 def _wedof_contact_resources(contact_id, data=None):
@@ -9813,7 +10093,7 @@ def crm_contacts():
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
-        "origine": "Ajout manuel", "inscrit_ft": "", "commentaires": "", "relance_date": "", "statut_secondaire": "",
+        "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "", "statut_secondaire": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
@@ -10755,6 +11035,9 @@ def inject_authenticated_chat_widget(response):
             response.set_data(body.replace(marker, widget + marker, 1))
             response.headers["Content-Length"] = len(response.get_data())
     return response
+
+
+_start_wedof_background_sync()
 
 
 if __name__ == "__main__":
