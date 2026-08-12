@@ -49,6 +49,7 @@ def folder(identifier, email="", phone="", first_name="", last_name=""):
         "billingState": "paid",
         "controlState": "ok",
         "type": "cpf",
+        "createdAt": "2026-08-12T00:00:00+02:00",
         "history": [{"state": "accepted"}],
         "trainingActionInfo": {"title": "APS"},
         "files": [{"name": "proof.pdf"}],
@@ -236,6 +237,54 @@ def test_closed_historical_folder_never_creates_new_lead(tmp_path, monkeypatch):
     result = application._wedof_store_page(
         [historical], application.load_data(), 1,
     )
+    assert result["created_contacts"] == 0
+    assert application.load_data()["crm_contacts"] == []
+
+
+def test_open_cpf_folder_created_before_cutoff_never_creates_lead(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    historical = folder(
+        "cpf-before-cutoff", "former@example.test",
+        first_name="Ancien", last_name="Stagiaire",
+    )
+    historical["createdAt"] = "2026-08-11T23:59:59+02:00"
+
+    result = application._wedof_store_page(
+        [historical], application.load_data(), 1,
+    )
+
+    assert result["created_contacts"] == 0
+    assert application.load_data()["crm_contacts"] == []
+
+
+def test_folder_without_creation_date_never_creates_lead(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    undated = folder(
+        "cpf-undated", "unknown@example.test",
+        first_name="Date", last_name="Inconnue",
+    )
+    del undated["createdAt"]
+
+    result = application._wedof_store_page(
+        [undated], application.load_data(), 1,
+    )
+
+    assert result["created_contacts"] == 0
+    assert application.load_data()["crm_contacts"] == []
+
+
+def test_non_cpf_folder_never_creates_lead(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    non_cpf = folder(
+        "non-cpf", "other@example.test",
+        first_name="Autre", last_name="Financement",
+    )
+    non_cpf["type"] = "france-travail"
+
+    result = application._wedof_store_page(
+        [non_cpf], application.load_data(), 1,
+    )
+
     assert result["created_contacts"] == 0
     assert application.load_data()["crm_contacts"] == []
 

@@ -8959,8 +8959,35 @@ def _wedof_has_usable_identity(payload):
     )
 
 
+WEDOF_CPF_LEAD_START_DATE = datetime.date(2026, 8, 12)
+
+
+def _wedof_folder_creation_date(folder):
+    """Retourne la date de création WEDOF, sans utiliser une date de mise à jour."""
+    raw_value = next((folder.get(key) for key in (
+        "createdAt", "createdOn", "dateCreated", "creationDate",
+    ) if folder.get(key)), None)
+    if not raw_value:
+        return None
+    try:
+        return datetime.date.fromisoformat(str(raw_value).strip()[:10])
+    except (TypeError, ValueError):
+        return None
+
+
 def _wedof_is_open_cpf_request(folder):
-    """Exclut les anciens dossiers clos d'une création commerciale tardive."""
+    """Autorise uniquement les nouveaux dossiers CPF reçus depuis le 12/08/2026."""
+    folder_type = re.sub(
+        r"[^a-z0-9]", "", unicodedata.normalize(
+            "NFD", str(folder.get("type") or "")
+        ).encode("ascii", "ignore").decode().lower(),
+    )
+    created_on = _wedof_folder_creation_date(folder)
+    if folder_type != "cpf" or created_on is None:
+        return False
+    if created_on < WEDOF_CPF_LEAD_START_DATE:
+        return False
+
     state = re.sub(
         r"[^a-z0-9]", "",
         unicodedata.normalize("NFD", str(
