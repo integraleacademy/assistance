@@ -129,6 +129,27 @@ def test_unique_normalized_phone_matching(tmp_path, monkeypatch):
     assert resources[0]["match_method"] == "phone"
 
 
+def test_contact_list_exposes_ft_instruction_even_with_scheduled_appointment_status(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"statut": "RDV programmé"},
+    )
+    ft_folder = folder("ft-folder", "lina@example.test")
+    ft_folder["state"] = "waitingAcceptation"
+    ft_folder["history"] = [{"state": "waitingAcceptation"}]
+    application._wedof_store_page(
+        [ft_folder], application.load_data()["crm_contacts"], 1)
+
+    listed = client.get("/api/crm/contacts").get_json()
+    result = next(item for item in listed if item["id"] == contact["id"])
+
+    assert result["statut"] == "RDV programmé"
+    assert result["statut_demande_financement_ft"] == "en_cours_instruction"
+
+
 def test_unique_name_matching_ignores_accents(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post(
