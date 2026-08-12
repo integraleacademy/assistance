@@ -185,7 +185,7 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
     assert ".tracking-card:popover-open" in open(
         application.app.root_path + "/static/crm.css", encoding="utf-8"
     ).read()
-    assert "'Secrétariat','Autre'" in crm_js
+    assert "'Secrétariat','Ajout manuel','Autre'" in crm_js
 
 
 def test_tracking_card_is_displayed_above_publications():
@@ -206,6 +206,7 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     assert created.status_code == 201
     contact = created.get_json()
     assert contact["statut"] == "Nouveaux"
+    assert contact["origine"] == "Ajout manuel"
 
     updated = c.patch(
         f"/api/crm/contacts/{contact['id']}",

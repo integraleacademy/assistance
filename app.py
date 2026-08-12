@@ -9813,7 +9813,7 @@ def crm_contacts():
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
-        "origine": "", "inscrit_ft": "", "commentaires": "", "relance_date": "", "statut_secondaire": "",
+        "origine": "Ajout manuel", "inscrit_ft": "", "commentaires": "", "relance_date": "", "statut_secondaire": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
