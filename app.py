@@ -6878,7 +6878,7 @@ CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_ONLY_STATUSES = {
     "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260812-secondary-timeline-sync"
+CRM_ASSET_VERSION = "20260812-merge-session-marche-ft"
 
 
 def _crm_statuses(data=None):
@@ -9772,6 +9772,9 @@ def crm_contacts():
     if request.method == "GET":
         changed = False
         for existing in data["crm_contacts"]:
+            if existing.get("statut_secondaire") == "Session FT":
+                existing["statut_secondaire"] = "Marché FT"
+                changed = True
             funding_status = str(existing.get("statut_demande_financement_ft") or "").strip()
             automatic_secondary = {
                 "en_cours_instruction": "Financement FT en cours",
@@ -9967,6 +9970,8 @@ def crm_contact(contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    if contact.get("statut_secondaire") == "Session FT":
+        contact["statut_secondaire"] = "Marché FT"
     if "statut_demande_financement_ft" in payload:
         automatic_secondary = {
             "en_cours_instruction": "Financement FT en cours",
@@ -9977,7 +9982,7 @@ def crm_contact(contact_id):
         elif old_secondary_status in {"Financement FT en cours", "Financement FT refusé"}:
             contact["statut_secondaire"] = ""
     secondary_statuses = {
-        "", "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI", "Session FT", "C2P en cours", "Marché FT"
+        "", "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI", "C2P en cours", "Marché FT"
     }
     if contact.get("statut_secondaire", "") not in secondary_statuses:
         contact["statut_secondaire"] = ""
