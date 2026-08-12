@@ -64,3 +64,10 @@ def test_primary_timeline_excludes_secondary_only_steps():
 
     assert "PRIMARY_EXCLUDED_STATUSES=new Set(['POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé'])" in javascript
     assert "S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status))" in javascript
+
+
+def test_pipeline_overview_displays_primary_and_secondary_steps():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
+    assert "pipelineOverviewStatuses().map(s=>" in javascript
