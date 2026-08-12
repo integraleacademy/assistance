@@ -142,11 +142,19 @@ def test_pipeline_financing_stages_follow_real_funding_request_status():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    assert "if(fundingStatus==='en_cours_instruction')return'Financement FT en cours'" in crm_js
-    assert "if(fundingStatus==='refusee')return'Financement FT refusé'" in crm_js
-    assert "contacts.filter(c=>contactPipelineStatus(c)===s).length" in crm_js
-    assert "list.filter(c=>contactPipelineStatus(c)===statusFilter)" in crm_js
-    assert "!statusFilter||contactPipelineStatus(c)===statusFilter" in crm_js
+    assert "if(fundingStatus==='en_cours_instruction')statuses.add('Financement FT en cours')" in crm_js
+    assert "if(fundingStatus==='refusee')statuses.add('Financement FT refusé')" in crm_js
+    assert "const contactHasPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status)" in crm_js
+    assert "contacts.filter(c=>contactHasPipelineStatus(c,s)).length" in crm_js
+    assert "list.filter(c=>contactHasPipelineStatus(c,statusFilter))" in crm_js
+    assert "!statusFilter||contactHasPipelineStatus(c,statusFilter)" in crm_js
+
+
+def test_pipeline_table_displays_every_status_held_by_a_contact():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "contactPipelineStatuses(c).map(badge).join(' ')" in crm_js
 
 
 def test_tracking_card_can_expand_and_displays_secretariat_origin():
