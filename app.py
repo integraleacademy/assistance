@@ -7784,6 +7784,25 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None):
     _crm_backfill_information_request_answers(contact)
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
+    # Le statut commercial (par exemple « RDV programmé ») et le statut du
+    # financement sont deux axes indépendants. WEDOF reste la source de vérité
+    # pour ce dernier, y compris lorsqu'un rendez-vous est planifié.
+    try:
+        resources = _wedof_contact_resources(contact.get("id"), data)
+        wedof_funding_statuses = [
+            _wedof_france_travail_status(resource.get("payload") or {})
+            for resource in resources
+        ]
+        effective_funding_status = next(
+            (status for status in wedof_funding_statuses if status == "en_cours_instruction"),
+            next((status for status in wedof_funding_statuses if status), ""),
+        )
+        if effective_funding_status:
+            response["statut_demande_financement_ft"] = effective_funding_status
+    except Exception:
+        # Une indisponibilité locale de la synchronisation WEDOF ne doit jamais
+        # empêcher le chargement des contacts ; la valeur CRM reste utilisable.
+        pass
     snapshot = regulatory_snapshot
     if snapshot is None and data is not None:
         snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact.get("id")))
@@ -9058,6 +9077,38 @@ def _wedof_contact_resources(contact_id, data=None):
             "match_method": match_method,
         })
     return resources
+
+
+def _wedof_france_travail_status(payload):
+    """Déduit le statut FT d'un dossier WEDOF sans dépendre du statut commercial."""
+    normalize = lambda value: re.sub(r"[^a-z0-9]", "", unicodedata.normalize(
+        "NFD", str(value or "")).encode("ascii", "ignore").decode().lower())
+    state = normalize(payload.get("state") or payload.get("status")
+                      or payload.get("registrationState"))
+    history = payload.get("history") or payload.get("stateHistory") or payload.get("events") or []
+    if isinstance(history, dict):
+        history_values = [*history.keys(), *history.values()]
+    elif isinstance(history, list):
+        history_values = []
+        for event in history:
+            if isinstance(event, dict):
+                history_values.extend([*event.keys(), *event.values()])
+            else:
+                history_values.append(event)
+    else:
+        history_values = [history]
+    had_instruction = state == "waitingacceptation" or any(
+        "waitingacceptation" in normalize(value) for value in history_values)
+    if not had_instruction:
+        return ""
+    if re.search(r"refus|reject", state):
+        return "refusee"
+    if re.search(r"cancel|annul|abandon", state):
+        return "annulee"
+    if state in {"accepted", "intraining", "terminated", "servicedonedeclared",
+                 "servicedonevalidated", "tobill", "billed", "paid"}:
+        return "acceptee"
+    return "en_cours_instruction"
 
 
 def _wedof_status_payload(test_connection=True):
