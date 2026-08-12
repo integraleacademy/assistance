@@ -29,7 +29,9 @@ def authenticated_client(tmp_path, monkeypatch, email="clement@integraleacademy.
 
 
 def create_contact(client, *, email="", phone=""):
-    contact = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
+    contact = client.post("/api/crm/contacts", json={
+        "prenom": "Lina", "nom": "Martin", "force_create": True,
+    }).get_json()
     return client.patch(
         f"/api/crm/contacts/{contact['id']}",
         json={"mail": email, "telephone": phone},
@@ -66,6 +68,40 @@ def test_missing_configuration_and_private_status(tmp_path, monkeypatch):
     assert application.app.test_client().get("/api/crm/wedof/status").status_code == 302
 
 
+def test_background_sync_starts_only_when_wedof_is_configured(monkeypatch):
+    monkeypatch.setattr(application, "_WEDOF_POLLER_STARTED", False)
+    monkeypatch.delenv("WEDOF_API_KEY", raising=False)
+    assert application._start_wedof_background_sync() is False
+
+    started = []
+
+    class FakeThread:
+        def __init__(self, **kwargs):
+            started.append(kwargs)
+
+        def start(self):
+            started.append("started")
+
+    monkeypatch.setenv("WEDOF_API_KEY", SECRET)
+    monkeypatch.setattr(application.threading, "Thread", FakeThread)
+    assert application._start_wedof_background_sync() is True
+    assert started[0]["name"] == "wedof-crm-auto-sync"
+    assert started[0]["daemon"] is True
+    assert started[1] == "started"
+    assert application._start_wedof_background_sync() is False
+
+
+def test_concurrent_sync_returns_without_starting_a_second_scan():
+    application._WEDOF_SYNC_LOCK.acquire()
+    try:
+        result = application._wedof_sync()
+    finally:
+        application._WEDOF_SYNC_LOCK.release()
+    assert result["ok"] is True
+    assert result["in_progress"] is True
+    assert result["created_contacts"] == 0
+
+
 def test_api_key_header_and_errors_never_leak_secret(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     monkeypatch.setenv("WEDOF_API_KEY", SECRET)
@@ -99,9 +135,14 @@ def test_pagination_complete_json_and_idempotent_upsert(tmp_path, monkeypatch):
         })
 
     monkeypatch.setattr(application.requests, "get", fake_get)
-    assert client.post("/api/crm/wedof/sync").status_code == 200
+    first_sync = client.post("/api/crm/wedof/sync")
+    assert first_sync.status_code == 200
+    assert first_sync.get_json()["created_contacts"] == 2
     assert [call[1]["params"]["page"] for call in calls] == [1, 2]
-    assert client.post("/api/crm/wedof/sync").status_code == 200
+    second_sync = client.post("/api/crm/wedof/sync")
+    assert second_sync.status_code == 200
+    assert second_sync.get_json()["created_contacts"] == 0
+    assert len(application.load_data()["crm_contacts"]) == 2
 
     with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
         assert db.execute("SELECT COUNT(*) FROM wedof_resources").fetchone()[0] == 2
@@ -112,10 +153,111 @@ def test_pagination_complete_json_and_idempotent_upsert(tmp_path, monkeypatch):
     assert stored["unknownFutureField"] == [1, 2, 3]
 
 
+def test_new_cpf_folder_creates_and_links_one_crm_lead(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    cpf_request = folder(
+        "cpf-new-lead", "lina@example.test", "+33 6 12 34 56 78",
+        "Lina", "Martin",
+    )
+    cpf_request["trainingActionInfo"].update({
+        "title": "Agent de prévention et de sécurité",
+        "sessionStartDate": "2026-09-07",
+        "sessionEndDate": "2026-10-09",
+        "address": {"city": "Puget-sur-Argens"},
+    })
+
+    first = application._wedof_store_page(
+        [cpf_request], application.load_data(), 1,
+    )
+    second = application._wedof_store_page(
+        [cpf_request], application.load_data(), 1,
+    )
+    stored = application.load_data()
+
+    assert first["created_contacts"] == 1
+    assert second["created_contacts"] == 0
+    assert len(stored["crm_contacts"]) == 1
+    contact = stored["crm_contacts"][0]
+    assert contact["prenom"] == "Lina"
+    assert contact["nom"] == "MARTIN"
+    assert contact["mail"] == "lina@example.test"
+    assert contact["telephone"] == "+33 6 12 34 56 78"
+    assert contact["formation"] == "Agent de prévention et de sécurité"
+    assert contact["lieu"] == "Puget-sur-Argens"
+    assert contact["cpf"] == "OUI"
+    assert contact["origine"] == "Mon Compte Formation"
+    assert contact["source"] == "wedof_cpf"
+    assert contact["source_wedof_folder_id"] == "cpf-new-lead"
+    assert len(stored["crm_inbound_requests"]) == 1
+    assert stored["crm_inbound_requests"][0]["external_id"] == "cpf-new-lead"
+    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
+        link = db.execute(
+            "SELECT contact_id, match_method FROM wedof_contact_links "
+            "WHERE resource_id='cpf-new-lead'"
+        ).fetchone()
+    assert link == (contact["id"], "stable")
+
+
+def test_existing_person_is_reused_for_cpf_folder(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="LINA@example.test")
+    client.patch(f"/api/crm/contacts/{contact['id']}", json={"cpf": "NON"})
+    result = application._wedof_store_page(
+        [folder(
+            "cpf-existing-person", "lina@example.test",
+            first_name="Lina", last_name="Martin",
+        )],
+        application.load_data(), 1,
+    )
+    stored = application.load_data()
+
+    assert result["created_contacts"] == 0
+    assert len(stored["crm_contacts"]) == 1
+    assert stored["crm_contacts"][0]["id"] == contact["id"]
+    assert stored["crm_contacts"][0]["cpf"] == "OUI"
+
+
+def test_folder_without_usable_identity_never_creates_blank_lead(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    result = application._wedof_store_page(
+        [folder("cpf-no-identity")], application.load_data(), 1,
+    )
+    assert result["created_contacts"] == 0
+    assert application.load_data()["crm_contacts"] == []
+
+
+def test_closed_historical_folder_never_creates_new_lead(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    historical = folder(
+        "cpf-historical", "former@example.test",
+        first_name="Ancien", last_name="Stagiaire",
+    )
+    historical["state"] = "terminated"
+    result = application._wedof_store_page(
+        [historical], application.load_data(), 1,
+    )
+    assert result["created_contacts"] == 0
+    assert application.load_data()["crm_contacts"] == []
+
+
+def test_accepted_folder_with_past_session_never_creates_late_lead(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    historical = folder(
+        "cpf-past-accepted", "past@example.test",
+        first_name="Passé", last_name="Stagiaire",
+    )
+    historical["trainingActionInfo"]["sessionEndDate"] = "2020-01-02"
+    result = application._wedof_store_page(
+        [historical], application.load_data(), 1,
+    )
+    assert result["created_contacts"] == 0
+    assert application.load_data()["crm_contacts"] == []
+
+
 def test_unique_email_matching(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="LINA@example.test")
-    application._wedof_store_page([folder("email-folder", "lina@example.test")], application.load_data()["crm_contacts"], 1)
+    application._wedof_store_page([folder("email-folder", "lina@example.test")], application.load_data(), 1)
     resources = client.get(f"/api/crm/contacts/{contact['id']}/wedof").get_json()["resources"]
     assert resources[0]["stable_id"] == "email-folder"
     assert resources[0]["match_method"] == "email"
@@ -124,7 +266,7 @@ def test_unique_email_matching(tmp_path, monkeypatch):
 def test_unique_normalized_phone_matching(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, phone="06 12 34 56 78")
-    application._wedof_store_page([folder("phone-folder", phone="+33 6 12 34 56 78")], application.load_data()["crm_contacts"], 1)
+    application._wedof_store_page([folder("phone-folder", phone="+33 6 12 34 56 78")], application.load_data(), 1)
     resources = client.get(f"/api/crm/contacts/{contact['id']}/wedof").get_json()["resources"]
     assert resources[0]["match_method"] == "phone"
 
@@ -141,7 +283,7 @@ def test_contact_list_exposes_ft_instruction_even_with_scheduled_appointment_sta
     ft_folder["state"] = "waitingAcceptation"
     ft_folder["history"] = [{"state": "waitingAcceptation"}]
     application._wedof_store_page(
-        [ft_folder], application.load_data()["crm_contacts"], 1)
+        [ft_folder], application.load_data(), 1)
 
     listed = client.get("/api/crm/contacts").get_json()
     result = next(item for item in listed if item["id"] == contact["id"])
@@ -157,12 +299,37 @@ def test_unique_name_matching_ignores_accents(tmp_path, monkeypatch):
     ).get_json()
     application._wedof_store_page(
         [folder("name-folder", first_name="Clement", last_name="Levy")],
-        application.load_data()["crm_contacts"], 1,
+        application.load_data(), 1,
     )
     resources = client.get(
         f"/api/crm/contacts/{contact['id']}/wedof"
     ).get_json()["resources"]
     assert resources[0]["match_method"] == "name"
+
+
+def test_same_name_with_conflicting_email_is_not_attached(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    existing = client.post(
+        "/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{existing['id']}",
+        json={"mail": "existing@example.test"},
+    )
+    application._wedof_store_page(
+        [folder(
+            "conflicting-email", "other@example.test",
+            first_name="Lina", last_name="Martin",
+        )],
+        application.load_data(), 1,
+    )
+    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM wedof_contact_links WHERE resource_id='conflicting-email'"
+        ).fetchone()[0] == 0
+    stored = application.load_data()
+    assert len(stored["crm_contacts"]) == 1
+    assert stored["crm_inbound_requests"][0]["status"] == "pending_review"
 
 
 def test_shared_email_is_disambiguated_by_accent_insensitive_name(tmp_path, monkeypatch):
@@ -184,7 +351,7 @@ def test_shared_email_is_disambiguated_by_accent_insensitive_name(tmp_path, monk
             "shared-email-name", "accueil@example.test",
             first_name="Clement", last_name="Vaillant",
         )],
-        application.load_data()["crm_contacts"], 1,
+        application.load_data(), 1,
     )
 
     resources = client.get(
@@ -208,11 +375,13 @@ def test_wedof_folder_is_visible_on_accented_duplicate_contact(tmp_path, monkeyp
             "existing-person-folder", "accueil@example.test",
             first_name="Clement", last_name="Vaillant",
         )],
-        application.load_data()["crm_contacts"], 1,
+        application.load_data(), 1,
     )
 
     duplicate = client.post(
-        "/api/crm/contacts", json={"prenom": "Clément", "nom": "VAILLANT"}
+        "/api/crm/contacts", json={
+            "prenom": "Clément", "nom": "VAILLANT", "force_create": True,
+        }
     ).get_json()
     client.patch(
         f"/api/crm/contacts/{duplicate['id']}",
@@ -234,10 +403,12 @@ def test_wedof_folder_is_visible_on_accented_duplicate_contact(tmp_path, monkeyp
 def test_ambiguous_normalized_name_is_not_linked(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     client.post("/api/crm/contacts", json={"prenom": "Élodie", "nom": "André"})
-    client.post("/api/crm/contacts", json={"prenom": "Elodie", "nom": "Andre"})
+    client.post("/api/crm/contacts", json={
+        "prenom": "Elodie", "nom": "Andre", "force_create": True,
+    })
     application._wedof_store_page(
         [folder("ambiguous-name", first_name="Elodie", last_name="Andre")],
-        application.load_data()["crm_contacts"], 1,
+        application.load_data(), 1,
     )
     with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
         assert db.execute("SELECT COUNT(*) FROM wedof_contact_links").fetchone()[0] == 0
@@ -248,7 +419,7 @@ def test_ambiguous_match_is_not_linked_and_creates_no_contact(tmp_path, monkeypa
     create_contact(client, email="same@example.test")
     create_contact(client, email="same@example.test")
     before = len(application.load_data()["crm_contacts"])
-    application._wedof_store_page([folder("ambiguous", "same@example.test")], application.load_data()["crm_contacts"], 1)
+    application._wedof_store_page([folder("ambiguous", "same@example.test")], application.load_data(), 1)
     with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
         assert db.execute("SELECT COUNT(*) FROM wedof_contact_links").fetchone()[0] == 0
     assert len(application.load_data()["crm_contacts"]) == before
