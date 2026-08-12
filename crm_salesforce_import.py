@@ -118,7 +118,7 @@ def _status(row: dict[str, str]) -> str:
         "nouveaux": "Nouveaux",
         "blocage": "Blocage",
         "poei": "POEI",
-        "session ft": "Session FT",
+        "session ft": "Marché FT",
         "def mob": "Def MOB",
         "def mobilite": "Def MOB",
         "rdv programme": "RDV programmé",

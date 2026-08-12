@@ -48,11 +48,11 @@ def test_contact_supports_a_removable_secondary_timeline():
         "Financement FT refusé",
         "Def MOB",
         "POEI",
-        "Session FT",
         "C2P en cours",
         "Marché FT",
     ):
         assert status in javascript
+    assert "'Session FT','C2P en cours'" not in javascript
     assert 'id="addSecondaryTimeline"' in javascript
     assert 'id="removeSecondaryTimeline"' in javascript
     assert "statut_secondaire:next" in javascript
