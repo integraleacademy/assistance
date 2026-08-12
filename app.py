@@ -6878,7 +6878,7 @@ CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_ONLY_STATUSES = {
     "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260812-crm-performance-wedof"
+CRM_ASSET_VERSION = "20260812-pipeline-secondary-stages"
 
 
 def _crm_statuses(data=None):
