@@ -150,6 +150,39 @@ def test_pipeline_financing_stages_follow_real_funding_request_status():
     assert "!statusFilter||contactHasPipelineStatus(c,statusFilter)" in crm_js
 
 
+def test_crm_collaborative_refresh_is_lightweight_and_never_overlaps():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "CRM_REFRESH_INTERVAL_MS=60000" in crm_js
+    assert "crmRefreshInFlight" in crm_js
+    assert "document.hidden||crmRefreshInFlight" in crm_js
+    assert "api(`/api/crm/contacts/updates${suffix}`)" in crm_js
+    assert "setInterval(async()=>{try{const fresh=await api('/api/crm/contacts')" not in crm_js
+
+
+def test_wedof_remote_sync_is_manual_from_the_contact_sheet():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert 'id="wedofRefresh"' in crm_js
+    assert "refresh.onclick=()=>refreshWedof(c,status)" in crm_js
+    assert "cached.sync?.last_sync_at||status.last_sync_at});if(status.configured!==false)" not in crm_js
+    assert "loadWedofTabCount(c,contactWedofTab);wedofLoaded=true;loadWedof(c)" not in crm_js
+
+
+def test_gunicorn_recycles_the_single_worker():
+    root = application.app.root_path
+    procfile = open(root + "/Procfile", encoding="utf-8").read()
+    config = open(root + "/gunicorn.conf.py", encoding="utf-8").read()
+
+    assert "--max-requests ${GUNICORN_MAX_REQUESTS:-750}" in procfile
+    assert "--max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-75}" in procfile
+    assert 'max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "750"))' in config
+    assert 'max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "75"))' in config
+    assert "max_requests = 0" not in config
+
+
 def test_funding_request_status_automatically_updates_secondary_timeline(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={"prenom": "Auto", "nom": "FT"}).get_json()
@@ -476,7 +509,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260806-email-preview-subject" in page.data
+    assert b"20260812-crm-performance-wedof" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"

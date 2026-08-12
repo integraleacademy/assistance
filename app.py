@@ -6878,7 +6878,7 @@ CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_ONLY_STATUSES = {
     "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260812-merge-session-marche-ft"
+CRM_ASSET_VERSION = "20260812-crm-performance-wedof"
 
 
 def _crm_statuses(data=None):
@@ -7783,29 +7783,16 @@ def _crm_backfill_information_request_answers(contact):
     return changed
 
 
-def _crm_contact_response(contact, data=None, regulatory_snapshot=None):
+def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
+                          funding_status=None):
     _crm_backfill_information_request_answers(contact)
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
-    # Le statut commercial (par exemple « RDV programmé ») et le statut du
-    # financement sont deux axes indépendants. WEDOF reste la source de vérité
-    # pour ce dernier, y compris lorsqu'un rendez-vous est planifié.
-    try:
-        resources = _wedof_contact_resources(contact.get("id"), data)
-        wedof_funding_statuses = [
-            _wedof_france_travail_status(resource.get("payload") or {})
-            for resource in resources
-        ]
-        effective_funding_status = next(
-            (status for status in wedof_funding_statuses if status == "en_cours_instruction"),
-            next((status for status in wedof_funding_statuses if status), ""),
-        )
-        if effective_funding_status:
-            response["statut_demande_financement_ft"] = effective_funding_status
-    except Exception:
-        # Une indisponibilité locale de la synchronisation WEDOF ne doit jamais
-        # empêcher le chargement des contacts ; la valeur CRM reste utilisable.
-        pass
+    # Le statut WEDOF est calculé une seule fois pour toute la liste des contacts
+    # puis injecté ici. Ne jamais relire toute la base WEDOF depuis cette fonction :
+    # elle est appelée une fois par piste et transformerait la requête en N × M.
+    if funding_status:
+        response["statut_demande_financement_ft"] = funding_status
     snapshot = regulatory_snapshot
     if snapshot is None and data is not None:
         snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact.get("id")))
@@ -9357,15 +9344,46 @@ def _wedof_contact_resources(contact_id, data=None):
     contact = _crm_contact(data, contact_id)
     if not contact:
         return []
+
+    contact_name = (
+        _wedof_normalize_name(contact.get("prenom")),
+        _wedof_normalize_name(contact.get("nom")),
+    )
+    same_name_count = sum(
+        1 for candidate in data.get("crm_contacts", [])
+        if all(contact_name) and (
+            _wedof_normalize_name(candidate.get("prenom")),
+            _wedof_normalize_name(candidate.get("nom")),
+        ) == contact_name
+    )
+
+    # Cas courant : le dossier est déjà rattaché à cette piste. Le filtre SQL
+    # évite alors de charger et décoder tous les dossiers WEDOF de l'organisme.
     with _wedof_connect() as db:
-        rows = db.execute("""
+        directly_linked_rows = db.execute("""
             SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
                    r.synced_at, l.contact_id AS linked_contact_id,
                    l.attendee_id, l.match_method
             FROM wedof_resources r LEFT JOIN wedof_contact_links l
               ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
+            WHERE l.contact_id=?
             ORDER BY r.synced_at DESC
-        """).fetchall()
+        """, (str(contact_id),)).fetchall()
+
+        # Le balayage par identité ne reste nécessaire que pour une nouvelle
+        # piste non encore liée ou pour de vrais doublons nom/prénom.
+        if directly_linked_rows and same_name_count <= 1:
+            rows = directly_linked_rows
+        else:
+            rows = db.execute("""
+                SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
+                       r.synced_at, l.contact_id AS linked_contact_id,
+                       l.attendee_id, l.match_method
+                FROM wedof_resources r LEFT JOIN wedof_contact_links l
+                  ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
+                ORDER BY r.synced_at DESC
+            """).fetchall()
+
     resources = []
     for row in rows:
         payload = json.loads(row["payload_json"])
@@ -9419,6 +9437,75 @@ def _wedof_france_travail_status(payload):
                  "servicedonevalidated", "tobill", "billed", "paid"}:
         return "acceptee"
     return "en_cours_instruction"
+
+
+def _wedof_effective_funding_status(statuses):
+    """Conserve la priorité historique : instruction active, puis état récent."""
+    clean = [str(status or "").strip() for status in statuses if status]
+    if "en_cours_instruction" in clean:
+        return "en_cours_instruction"
+    return clean[0] if clean else ""
+
+
+def _wedof_funding_statuses_by_contact(data):
+    """Calcule tous les statuts FT en un seul parcours du cache WEDOF.
+
+    L'ancienne implémentation relisait et décodait la table complète pour chaque
+    contact. Cette fonction construit d'abord un index des contacts par identité,
+    puis ne décode chaque dossier WEDOF qu'une seule fois.
+    """
+    if not os.path.exists(_wedof_db_path()):
+        return {}
+
+    contacts = data.get("crm_contacts", [])
+    known_contact_ids = {
+        str(contact.get("id")) for contact in contacts if contact.get("id")
+    }
+    contacts_by_name = {}
+    for contact in contacts:
+        key = (
+            _wedof_normalize_name(contact.get("prenom")),
+            _wedof_normalize_name(contact.get("nom")),
+        )
+        if all(key):
+            contacts_by_name.setdefault(key, []).append(str(contact.get("id")))
+
+    statuses_by_contact = {}
+    with _wedof_connect() as db:
+        rows = db.execute("""
+            SELECT r.stable_id, r.payload_json,
+                   l.contact_id AS linked_contact_id
+            FROM wedof_resources r LEFT JOIN wedof_contact_links l
+              ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
+            ORDER BY r.synced_at DESC
+        """)
+
+        # Itérer sur le curseur plutôt que fetchall() garde un seul gros JSON
+        # WEDOF en mémoire à la fois, même avec plusieurs milliers de dossiers.
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                app.logger.warning(
+                    "Dossier WEDOF ignoré : JSON local illisible (%s)",
+                    row["stable_id"],
+                )
+                continue
+            funding_status = _wedof_france_travail_status(payload)
+            if not funding_status:
+                continue
+            target_ids = set()
+            linked_contact_id = str(row["linked_contact_id"] or "")
+            if linked_contact_id in known_contact_ids:
+                target_ids.add(linked_contact_id)
+            target_ids.update(contacts_by_name.get(_wedof_attendee_name(payload), []))
+            for target_id in target_ids:
+                statuses_by_contact.setdefault(target_id, []).append(funding_status)
+
+    return {
+        contact_id: _wedof_effective_funding_status(statuses)
+        for contact_id, statuses in statuses_by_contact.items()
+    }
 
 
 def _wedof_status_payload(test_connection=True):
@@ -10072,41 +10159,82 @@ def crm_calendly_webhook():
     })
 
 
+def _crm_prepare_contacts(data):
+    """Applique les migrations légères et les statuts WEDOF en un seul passage."""
+    changed = False
+    statuses = _crm_statuses(data)
+    try:
+        wedof_funding_statuses = _wedof_funding_statuses_by_contact(data)
+    except Exception as exc:
+        # Le CRM doit rester disponible même si son cache WEDOF est momentanément
+        # verrouillé ou illisible. Les dernières valeurs persistées sont conservées.
+        app.logger.warning(
+            "Synchronisation des statuts WEDOF ignorée (%s)", type(exc).__name__,
+        )
+        wedof_funding_statuses = {}
+
+    automatic_secondary_statuses = {
+        "en_cours_instruction": "Financement FT en cours",
+        "refusee": "Financement FT refusé",
+    }
+    automatic_secondary_labels = set(automatic_secondary_statuses.values())
+
+    for existing in data.get("crm_contacts", []):
+        if existing.get("statut_secondaire") == "Session FT":
+            existing["statut_secondaire"] = "Marché FT"
+            changed = True
+
+        contact_id = str(existing.get("id") or "")
+        live_funding_status = wedof_funding_statuses.get(contact_id)
+        if (live_funding_status
+                and existing.get("statut_demande_financement_ft") != live_funding_status):
+            existing["statut_demande_financement_ft"] = live_funding_status
+            changed = True
+
+        funding_status = str(
+            existing.get("statut_demande_financement_ft") or ""
+        ).strip()
+        automatic_secondary = automatic_secondary_statuses.get(funding_status)
+        if automatic_secondary and existing.get("statut_secondaire") != automatic_secondary:
+            existing["statut_secondaire"] = automatic_secondary
+            changed = True
+        elif (not automatic_secondary
+              and existing.get("statut_secondaire") in automatic_secondary_labels):
+            existing["statut_secondaire"] = ""
+            changed = True
+        elif "statut_secondaire" not in existing:
+            existing["statut_secondaire"] = ""
+            changed = True
+
+        if existing.get("statut") not in statuses:
+            existing["statut"] = statuses[0]
+            changed = True
+        if _crm_backfill_information_request_answers(existing):
+            changed = True
+        prenom = _crm_format_first_name(existing.get("prenom"))
+        nom = _crm_format_last_name(existing.get("nom"))
+        if (prenom, nom) != (existing.get("prenom", ""), existing.get("nom", "")):
+            existing["prenom"], existing["nom"] = prenom, nom
+            changed = True
+
+    return changed, wedof_funding_statuses
+
+
 @app.route("/api/crm/contacts", methods=["GET", "POST"])
 @login_required
 def crm_contacts():
     data = load_data()
     if request.method == "GET":
-        changed = False
-        for existing in data["crm_contacts"]:
-            if existing.get("statut_secondaire") == "Session FT":
-                existing["statut_secondaire"] = "Marché FT"
-                changed = True
-            funding_status = str(existing.get("statut_demande_financement_ft") or "").strip()
-            automatic_secondary = {
-                "en_cours_instruction": "Financement FT en cours",
-                "refusee": "Financement FT refusé",
-            }.get(funding_status)
-            if automatic_secondary and existing.get("statut_secondaire") != automatic_secondary:
-                existing["statut_secondaire"] = automatic_secondary
-                changed = True
-            elif "statut_secondaire" not in existing:
-                existing["statut_secondaire"] = ""
-                changed = True
-            statuses = _crm_statuses(data)
-            if existing.get("statut") not in statuses:
-                existing["statut"] = statuses[0]
-                changed = True
-            if _crm_backfill_information_request_answers(existing):
-                changed = True
-            prenom = _crm_format_first_name(existing.get("prenom"))
-            nom = _crm_format_last_name(existing.get("nom"))
-            if (prenom, nom) != (existing.get("prenom", ""), existing.get("nom", "")):
-                existing["prenom"], existing["nom"] = prenom, nom
-                changed = True
+        changed, wedof_funding_statuses = _crm_prepare_contacts(data)
         if changed:
             save_data(data)
-        return jsonify([_crm_contact_response(contact, data) for contact in data["crm_contacts"]])
+        return jsonify([
+            _crm_contact_response(
+                contact, data,
+                funding_status=wedof_funding_statuses.get(str(contact.get("id") or "")),
+            )
+            for contact in data["crm_contacts"]
+        ])
     payload = request.get_json(silent=True) or {}
     now = _crm_now()
     contact = {
@@ -10133,6 +10261,38 @@ def crm_contacts():
     if contact is None:
         return jsonify({"status": "pending_review", "request_id": inbound["id"]}), 202
     return jsonify(_crm_contact_response(contact, data)), 201 if created else 200
+
+
+@app.get("/api/crm/contacts/updates")
+@login_required
+def crm_contact_updates():
+    """Retourne uniquement les données utiles au rafraîchissement collaboratif."""
+    data = load_data()
+    changed, _ = _crm_prepare_contacts(data)
+    if changed:
+        save_data(data)
+
+    summaries = [
+        {
+            "id": contact.get("id"),
+            "statut": contact.get("statut"),
+            "statut_secondaire": contact.get("statut_secondaire", ""),
+            "statut_demande_financement_ft": contact.get(
+                "statut_demande_financement_ft", ""
+            ),
+            "updated_at": contact.get("updated_at"),
+        }
+        for contact in data.get("crm_contacts", [])
+    ]
+    selected = _crm_contact(data, request.args.get("contact_id"))
+    selected_payload = None
+    if selected:
+        selected_payload = {
+            "id": selected.get("id"),
+            "activities": selected.get("activities", []),
+            "publications": selected.get("publications", []),
+        }
+    return jsonify({"contacts": summaries, "selected": selected_payload})
 
 
 @app.delete("/api/crm/database")

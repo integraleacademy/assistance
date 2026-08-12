@@ -341,6 +341,117 @@ def test_contact_list_exposes_ft_instruction_even_with_scheduled_appointment_sta
     assert result["statut_demande_financement_ft"] == "en_cours_instruction"
 
 
+def test_contact_list_decodes_each_wedof_folder_only_once(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    first = create_contact(client, email="first@example.test")
+    second = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Nora", "nom": "Durand", "force_create": True},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{second['id']}",
+        json={"mail": "second@example.test"},
+    )
+    folders = [
+        folder(
+            "ft-first", "first@example.test",
+            first_name="Lina", last_name="Martin",
+        ),
+        folder(
+            "ft-second", "second@example.test",
+            first_name="Nora", last_name="Durand",
+        ),
+    ]
+    for item in folders:
+        item["state"] = "waitingAcceptation"
+        item["history"] = [{"state": "waitingAcceptation"}]
+    application._wedof_store_page(folders, application.load_data(), 1)
+
+    decoded_folder_ids = []
+    original_loads = json.loads
+
+    def tracked_loads(value, *args, **kwargs):
+        if isinstance(value, str) and '"externalId"' in value:
+            decoded_folder_ids.append(original_loads(value)["externalId"])
+        return original_loads(value, *args, **kwargs)
+
+    monkeypatch.setattr(application.json, "loads", tracked_loads)
+    statuses = application._wedof_funding_statuses_by_contact(
+        application.load_data()
+    )
+
+    assert sorted(decoded_folder_ids) == ["ft-first", "ft-second"]
+    assert statuses[first["id"]] == "en_cours_instruction"
+    assert statuses[second["id"]] == "en_cours_instruction"
+
+
+def test_linked_contact_does_not_scan_unrelated_wedof_names(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    application._wedof_store_page(
+        [folder("direct-folder", "lina@example.test")],
+        application.load_data(), 1,
+    )
+
+    monkeypatch.setattr(
+        application,
+        "_wedof_contact_name_matches",
+        lambda *_: (_ for _ in ()).throw(AssertionError("unexpected full scan")),
+    )
+    resources = client.get(
+        f"/api/crm/contacts/{contact['id']}/wedof"
+    ).get_json()["resources"]
+
+    assert [resource["stable_id"] for resource in resources] == ["direct-folder"]
+
+
+def test_completed_ft_instruction_clears_automatic_secondary_timeline(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    ft_folder = folder(
+        "ft-completed", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    ft_folder["state"] = "waitingAcceptation"
+    ft_folder["history"] = [{"state": "waitingAcceptation"}]
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    in_progress = next(
+        row for row in client.get("/api/crm/contacts").get_json()
+        if row["id"] == contact["id"]
+    )
+    assert in_progress["statut_secondaire"] == "Financement FT en cours"
+
+    ft_folder["state"] = "accepted"
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+    completed = next(
+        row for row in client.get("/api/crm/contacts").get_json()
+        if row["id"] == contact["id"]
+    )
+    assert completed["statut_demande_financement_ft"] == "acceptee"
+    assert completed["statut_secondaire"] == ""
+
+
+def test_collaborative_updates_endpoint_returns_a_small_payload(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+
+    response = client.get(
+        f"/api/crm/contacts/updates?contact_id={contact['id']}"
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert set(payload["contacts"][0]) == {
+        "id", "statut", "statut_secondaire",
+        "statut_demande_financement_ft", "updated_at",
+    }
+    assert payload["selected"]["id"] == contact["id"]
+    assert set(payload["selected"]) == {"id", "activities", "publications"}
+    assert "integration_score" not in payload["contacts"][0]
+
+
 def test_unique_name_matching_ignores_accents(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post(
