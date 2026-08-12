@@ -150,6 +150,25 @@ def test_pipeline_financing_stages_follow_real_funding_request_status():
     assert "!statusFilter||contactHasPipelineStatus(c,statusFilter)" in crm_js
 
 
+def test_funding_request_status_automatically_updates_secondary_timeline(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post("/api/crm/contacts", json={"prenom": "Auto", "nom": "FT"}).get_json()
+
+    in_progress = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut_demande_financement_ft": "en_cours_instruction"},
+    )
+    assert in_progress.status_code == 200
+    assert in_progress.get_json()["statut_secondaire"] == "Financement FT en cours"
+
+    refused = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut_demande_financement_ft": "refusee"},
+    )
+    assert refused.status_code == 200
+    assert refused.get_json()["statut_secondaire"] == "Financement FT refusé"
+
+
 def test_pipeline_table_displays_every_status_held_by_a_contact():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()

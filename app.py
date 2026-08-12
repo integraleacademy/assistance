@@ -6871,12 +6871,14 @@ def lookup_hebergement():
 
 
 CRM_STATUSES = [
-    "Nouveaux", "Blocage", "POEI", "Session FT", "Def MOB", "RDV programmé",
-    "Prochain RDV inscription", "Financement FT en cours", "Financement FT refusé",
+    "Nouveaux", "Blocage", "RDV programmé", "Prochain RDV inscription",
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_ASSET_VERSION = "20260808-contact-sheet-fixes"
+CRM_SECONDARY_ONLY_STATUSES = {
+    "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
+}
+CRM_ASSET_VERSION = "20260812-secondary-timeline-sync"
 
 
 def _crm_statuses(data=None):
@@ -6887,7 +6889,8 @@ def _crm_statuses(data=None):
     clean = []
     for value in configured:
         label = str(value or "").strip()
-        if label and label not in clean and label not in CRM_RESERVED_STATUSES:
+        if (label and label not in clean and label not in CRM_RESERVED_STATUSES
+                and label not in CRM_SECONDARY_ONLY_STATUSES):
             clean.append(label)
     clean.extend(status for status in CRM_STATUSES if status in CRM_RESERVED_STATUSES)
     return clean
@@ -9769,12 +9772,20 @@ def crm_contacts():
     if request.method == "GET":
         changed = False
         for existing in data["crm_contacts"]:
-            if "statut_secondaire" not in existing:
-                funding_status = str(existing.get("statut_demande_financement_ft") or "").strip()
-                existing["statut_secondaire"] = {
-                    "en_cours_instruction": "Financement FT en cours",
-                    "refusee": "Financement FT refusé",
-                }.get(funding_status, "")
+            funding_status = str(existing.get("statut_demande_financement_ft") or "").strip()
+            automatic_secondary = {
+                "en_cours_instruction": "Financement FT en cours",
+                "refusee": "Financement FT refusé",
+            }.get(funding_status)
+            if automatic_secondary and existing.get("statut_secondaire") != automatic_secondary:
+                existing["statut_secondaire"] = automatic_secondary
+                changed = True
+            elif "statut_secondaire" not in existing:
+                existing["statut_secondaire"] = ""
+                changed = True
+            statuses = _crm_statuses(data)
+            if existing.get("statut") not in statuses:
+                existing["statut"] = statuses[0]
                 changed = True
             if _crm_backfill_information_request_answers(existing):
                 changed = True
@@ -9956,8 +9967,17 @@ def crm_contact(contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    if "statut_demande_financement_ft" in payload:
+        automatic_secondary = {
+            "en_cours_instruction": "Financement FT en cours",
+            "refusee": "Financement FT refusé",
+        }.get(contact.get("statut_demande_financement_ft"))
+        if automatic_secondary:
+            contact["statut_secondaire"] = automatic_secondary
+        elif old_secondary_status in {"Financement FT en cours", "Financement FT refusé"}:
+            contact["statut_secondaire"] = ""
     secondary_statuses = {
-        "", "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI", "C2P en cours", "Marché FT"
+        "", "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI", "Session FT", "C2P en cours", "Marché FT"
     }
     if contact.get("statut_secondaire", "") not in secondary_statuses:
         contact["statut_secondaire"] = ""

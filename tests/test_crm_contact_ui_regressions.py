@@ -48,6 +48,7 @@ def test_contact_supports_a_removable_secondary_timeline():
         "Financement FT refusé",
         "Def MOB",
         "POEI",
+        "Session FT",
         "C2P en cours",
         "Marché FT",
     ):
@@ -56,3 +57,10 @@ def test_contact_supports_a_removable_secondary_timeline():
     assert 'id="removeSecondaryTimeline"' in javascript
     assert "statut_secondaire:next" in javascript
     assert ".timeline-secondary button.current" in stylesheet
+
+
+def test_primary_timeline_excludes_secondary_only_steps():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "PRIMARY_EXCLUDED_STATUSES=new Set(['POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé'])" in javascript
+    assert "S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status))" in javascript
