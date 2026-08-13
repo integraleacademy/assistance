@@ -9015,6 +9015,14 @@ def _wedof_is_open_cpf_request(folder):
     return True
 
 
+def _wedof_is_cpf_folder(folder):
+    """Indique si le dossier WEDOF provient de Mon Compte Formation."""
+    folder_type = unicodedata.normalize(
+        "NFD", str(folder.get("type") or "")
+    ).encode("ascii", "ignore").decode().casefold()
+    return re.sub(r"[^a-z0-9]", "", folder_type) == "cpf"
+
+
 def _wedof_activity(contact, title, detail):
     """Ajoute une activité utilisable aussi hors d'un contexte de requête Flask."""
     contact.setdefault("activities", []).insert(0, {
@@ -9186,6 +9194,13 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                 # y compris si une ancienne réponse CRM indiquait encore « NON ».
                 if str(contact.get("cpf") or "").strip().upper() != "OUI":
                     contact["cpf"] = "OUI"
+                    contact["updated_at"] = _crm_now()
+                    crm_changed = True
+                # Répare aussi les pistes créées ou rapprochées avant que leur
+                # provenance WEDOF soit enregistrée dans le CRM.
+                if (_wedof_is_cpf_folder(folder)
+                        and contact.get("origine") != "Mon Compte Formation"):
+                    contact["origine"] = "Mon Compte Formation"
                     contact["updated_at"] = _crm_now()
                     crm_changed = True
                 _, _, attendee_id = _wedof_attendee_values(folder)
