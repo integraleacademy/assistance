@@ -199,6 +199,33 @@ def test_new_cpf_folder_creates_and_links_one_crm_lead(tmp_path, monkeypatch):
     assert link == (contact["id"], "stable")
 
 
+def test_cpf_desp_vae_title_populates_crm_fields_and_keeps_origin(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    cpf_request = folder(
+        "cpf-desp-vae", "frederic@example.test", first_name="Frederic",
+        last_name="Magnani",
+    )
+    cpf_request["trainingActionInfo"]["title"] = (
+        "VAE TOTALE Dirigeant d'une entreprise sécurité privée – CQP dirigeant – "
+        "Titre Dirigeant d'entreprise de sécurité privée (DESP) – "
+        "Validation des acquis de l'expérience"
+    )
+
+    application._wedof_store_page([cpf_request], application.load_data(), 1)
+    contact = application.load_data()["crm_contacts"][0]
+
+    assert contact["formation"] == "DESP"
+    assert contact["desp_type"] == "VAE"
+    assert contact["origine"] == "Mon Compte Formation"
+
+    updated = client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"formation": "A3P", "origine": ""},
+    ).get_json()
+    assert updated["formation"] == "A3P"
+    assert updated["origine"] == "Mon Compte Formation"
+
+
 def test_existing_person_is_reused_for_cpf_folder(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="LINA@example.test")
