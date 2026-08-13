@@ -784,8 +784,8 @@ _FRENCH_MONTH_NUMBERS = {
 }
 
 
-def _session_start_date(label):
-    """Extract a session's first day from the French label used by the admin."""
+def _session_date_range(label):
+    """Extract the training range from the French label used by the admin."""
     normalized = (
         unicodedata.normalize("NFKD", str(label or ""))
         .encode("ascii", "ignore")
@@ -798,27 +798,46 @@ def _session_start_date(label):
         normalized,
     )
     if not start:
-        return None
+        return None, None
 
-    day = int(start.group("day"))
+    start_day = int(start.group("day"))
     month_name = start.group("month")
-    year = start.group("year")
+    start_year = start.group("year")
     remainder = normalized[start.end():]
-    end = re.match(r"(?:\d{1,2})(?:er)?\s+([a-z]+)(?:\s+(\d{4}))?", remainder)
+    end = re.match(
+        r"(?P<day>\d{1,2})(?:er)?\s+(?P<month>[a-z]+)"
+        r"(?:\s+(?P<year>\d{4}))?",
+        remainder,
+    )
+    if not end:
+        return None, None
     if not month_name and end:
-        month_name = end.group(1)
-    month = _FRENCH_MONTH_NUMBERS.get(month_name or "")
-    end_month = _FRENCH_MONTH_NUMBERS.get(end.group(1)) if end else None
-    if not year:
-        year = end.group(2) if end else None
-        if year and month and end_month and month > end_month:
-            year = str(int(year) - 1)
-    if not month or not year:
-        return None
+        month_name = end.group("month")
+    start_month = _FRENCH_MONTH_NUMBERS.get(month_name or "")
+    end_month = _FRENCH_MONTH_NUMBERS.get(end.group("month") or "")
+    end_year = end.group("year")
+    if not start_year:
+        start_year = end_year
+        if start_year and start_month and end_month and start_month > end_month:
+            start_year = str(int(start_year) - 1)
+    if not end_year:
+        end_year = start_year
+        if end_year and start_month and end_month and end_month < start_month:
+            end_year = str(int(end_year) + 1)
+    if not start_month or not end_month or not start_year or not end_year:
+        return None, None
     try:
-        return datetime.date(int(year), month, day)
+        return (
+            datetime.date(int(start_year), start_month, start_day),
+            datetime.date(int(end_year), end_month, int(end.group("day"))),
+        )
     except ValueError:
-        return None
+        return None, None
+
+
+def _session_start_date(label):
+    """Extract a session's first day from the French label used by the admin."""
+    return _session_date_range(label)[0]
 
 
 def get_upcoming_formation_sessions(data_store=None, today=None):
@@ -8896,14 +8915,177 @@ def _wedof_attendee_name(folder):
     return _wedof_normalize_name(first_name), _wedof_normalize_name(last_name)
 
 
-def _wedof_contact_payload(folder):
-    """Extrait les informations utiles à une piste sans altérer le JSON WEDOF."""
-    attendee = folder.get("attendee") if isinstance(folder.get("attendee"), dict) else {}
-    training = (
-        folder.get("trainingActionInfo")
-        if isinstance(folder.get("trainingActionInfo"), dict)
-        else {}
+_CRM_WEDOF_FORMATIONS = {"APS", "A3P", "DESP", "SSIAP 1", "Chauffeur VTC"}
+_CRM_WEDOF_CENTRES = {
+    "cote_azur": "Côte d’Azur",
+    "auvergne": "Auvergne",
+    "paris": "Paris",
+}
+_FRENCH_MONTH_NAMES = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
+def _wedof_value(payload, *paths):
+    """Return the first non-empty value from dotted WEDOF payload paths."""
+    for path in paths:
+        value = payload
+        for key in path.split("."):
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(key)
+        if value not in (None, ""):
+            return value
+    return ""
+
+
+def _wedof_location_text(value):
+    """Flatten the usual WEDOF address variants into searchable text."""
+    if isinstance(value, (list, tuple)):
+        parts = [_wedof_location_text(item) for item in value]
+        return ", ".join(part for part in parts if part)
+    if not isinstance(value, dict):
+        return str(value or "").strip()
+
+    preferred_keys = (
+        "name", "label", "city", "locality", "addressLocality", "town",
+        "postalCode", "zipCode", "postcode", "streetAddress", "address",
+        "fullAddress",
     )
+    parts = []
+    for key in preferred_keys:
+        part = _wedof_location_text(value.get(key))
+        if part and part not in parts:
+            parts.append(part)
+    return ", ".join(parts)
+
+
+def _wedof_crm_training(title):
+    """Translate a commercial CPF title to the finite CRM formation values."""
+    original = str(title or "").strip()
+    normalized = _wedof_normalize_name(original)
+    if (re.search(r"\bdesp\b", normalized)
+            or "dirigeant d entreprise de securite" in normalized
+            or "cqp dirigeant" in normalized):
+        is_vae = "vae" in normalized or "validation des acquis" in normalized
+        return "DESP", "VAE" if is_vae else "INITIAL"
+    if (re.search(r"\ba3p\b", normalized)
+            or "agent de protection physique des personnes" in normalized):
+        return "A3P", ""
+    if (re.search(r"\bssiap\s*1\b", normalized)
+            or "service de securite incendie et d assistance a personnes 1" in normalized):
+        return "SSIAP 1", ""
+    if re.search(r"\bvtc\b", normalized) or "chauffeur vtc" in normalized:
+        return "Chauffeur VTC", ""
+    if (re.search(r"\baps\b", normalized)
+            or "agent de prevention et de securite" in normalized):
+        return "APS", ""
+    return original, ""
+
+
+def _wedof_date(value):
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.date.fromisoformat(text[:10])
+    except ValueError:
+        pass
+    for date_format in ("%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.datetime.strptime(text[:10], date_format).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _wedof_date_range_label(start, end):
+    if not start and not end:
+        return ""
+    if not start:
+        return f"Jusqu’au {end.day} {_FRENCH_MONTH_NAMES[end.month - 1]} {end.year}"
+    if not end:
+        return f"À partir du {start.day} {_FRENCH_MONTH_NAMES[start.month - 1]} {start.year}"
+    start_month = _FRENCH_MONTH_NAMES[start.month - 1]
+    end_month = _FRENCH_MONTH_NAMES[end.month - 1]
+    if start.year == end.year and start.month == end.month:
+        return f"Du {start.day} au {end.day} {end_month} {end.year}"
+    if start.year == end.year:
+        return f"Du {start.day} {start_month} au {end.day} {end_month} {end.year}"
+    return (
+        f"Du {start.day} {start_month} {start.year} "
+        f"au {end.day} {end_month} {end.year}"
+    )
+
+
+def _wedof_crm_centre_code(location):
+    normalized = _wedof_normalize_name(_wedof_location_text(location))
+    if any(marker in normalized for marker in (
+        "cote d azur", "puget sur argens", "frejus", "83480", " var",
+    )):
+        return "cote_azur"
+    if any(marker in normalized for marker in (
+        "auvergne", "aurillac", "arpajon sur cere", "cantal",
+    )):
+        return "auvergne"
+    if "paris" in normalized or "ile de france" in normalized:
+        return "paris"
+    return ""
+
+
+def _wedof_session_code(formation, desp_type):
+    if formation == "DESP":
+        return "DESP_VAE" if desp_type == "VAE" else "DESP_INIT"
+    return {
+        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP",
+        "Chauffeur VTC": "VTC",
+    }.get(formation, "")
+
+
+def _wedof_crm_session(data, formation, desp_type, raw_location, start, end):
+    """Resolve WEDOF dates/address to the exact selectable CRM session."""
+    centre_code = _wedof_crm_centre_code(raw_location)
+    session_code = _wedof_session_code(formation, desp_type)
+    candidates = []
+    if session_code and (start or end):
+        for candidate_centre, formations in get_formation_sessions(data).items():
+            for row in formations.get(session_code, []):
+                label = str(row.get("label") or "").strip()
+                row_start, row_end = _session_date_range(label)
+                if not label:
+                    continue
+                if start and row_start != start:
+                    continue
+                if end and row_end != end:
+                    continue
+                candidates.append((candidate_centre, label))
+
+    # The address wins when the same dates exist at several campuses.
+    if centre_code:
+        same_centre = [candidate for candidate in candidates if candidate[0] == centre_code]
+        candidates = same_centre or []
+    unique_candidates = list(dict.fromkeys(candidates))
+    if len(unique_candidates) == 1:
+        centre_code, session_label = unique_candidates[0]
+    else:
+        session_label = _wedof_date_range_label(start, end)
+
+    location = _CRM_WEDOF_CENTRES.get(
+        centre_code, _wedof_location_text(raw_location)
+    )
+    return location, session_label
+
+
+def _wedof_contact_payload(folder, data=None):
+    """Extrait les informations utiles à une piste sans altérer le JSON WEDOF."""
+    attendee = _wedof_value(folder, "attendee", "learner", "trainee")
+    attendee = attendee if isinstance(attendee, dict) else {}
     first_name = next((attendee.get(key) for key in (
         "firstName", "firstname", "first_name", "givenName"
     ) if attendee.get(key)), "")
@@ -8916,31 +9098,27 @@ def _wedof_contact_payload(folder):
     phone = next((attendee.get(key) for key in (
         "phoneNumber", "phone", "telephone", "mobile"
     ) if attendee.get(key)), "")
-    formation = next((value for value in (
-        training.get("title"), folder.get("trainingTitle"),
-        folder.get("title"),
-    ) if value), "")
-    normalized_formation = _wedof_normalize_name(formation)
-    desp_type = ""
-    # Mon Compte Formation fournit un intitulé commercial long alors que le
-    # CRM sépare la formation DESP de son parcours.
-    if ("desp" in normalized_formation
-            and ("vae" in normalized_formation
-                 or "validation des acquis" in normalized_formation)):
-        formation = "DESP"
-        desp_type = "VAE"
-
-    address = training.get("address") or folder.get("location") or ""
-    if isinstance(address, dict):
-        location = next((address.get(key) for key in (
-            "city", "locality", "addressLocality", "name"
-        ) if address.get(key)), "")
-    else:
-        location = address
-
-    start = training.get("sessionStartDate") or folder.get("startDate") or ""
-    end = training.get("sessionEndDate") or folder.get("endDate") or ""
-    dates = " → ".join(str(value).strip() for value in (start, end) if value)
+    raw_formation = _wedof_value(
+        folder, "trainingActionInfo.title", "training.title",
+        "trainingAction.title", "trainingTitle", "title",
+    )
+    formation, desp_type = _wedof_crm_training(raw_formation)
+    raw_location = _wedof_value(
+        folder, "trainingActionInfo.address", "trainingActionInfo.location",
+        "training.address", "training.location", "location.name", "location",
+        "session.location", "session.address",
+    )
+    start = _wedof_date(_wedof_value(
+        folder, "trainingActionInfo.sessionStartDate", "session.startDate",
+        "session.start", "startDate",
+    ))
+    end = _wedof_date(_wedof_value(
+        folder, "trainingActionInfo.sessionEndDate", "session.endDate",
+        "session.end", "endDate",
+    ))
+    location, dates = _wedof_crm_session(
+        data, formation, desp_type, raw_location, start, end,
+    )
     stable_id = str(folder.get("externalId") or "").strip()
     return {
         "prenom": str(first_name or "").strip(),
@@ -9011,12 +9189,10 @@ def _wedof_is_open_cpf_request(folder):
     }
     if state in terminal_states:
         return False
-    training = (
-        folder.get("trainingActionInfo")
-        if isinstance(folder.get("trainingActionInfo"), dict)
-        else {}
+    session_end = _wedof_value(
+        folder, "trainingActionInfo.sessionEndDate", "session.endDate",
+        "session.end", "endDate",
     )
-    session_end = training.get("sessionEndDate") or folder.get("endDate")
     if session_end:
         try:
             end_date = datetime.date.fromisoformat(str(session_end).strip()[:10])
@@ -9077,6 +9253,58 @@ def _wedof_new_crm_contact(data, payload, stable_id):
         f"Dossier CPF {stable_id} synchronisé automatiquement via WEDOF.",
     )
     return contact
+
+
+def _wedof_apply_contact_details(contact, payload):
+    """Fill or repair CRM-select values from an already linked CPF folder."""
+    changed_fields = []
+    source_is_wedof = contact.get("source") == "wedof_cpf"
+
+    incoming_formation = str(payload.get("formation") or "").strip()
+    current_formation = str(contact.get("formation") or "").strip()
+    if (incoming_formation in _CRM_WEDOF_FORMATIONS
+            and (_crm_is_empty(current_formation)
+                 or (source_is_wedof
+                     and current_formation not in _CRM_WEDOF_FORMATIONS))):
+        contact["formation"] = incoming_formation
+        current_formation = incoming_formation
+        changed_fields.append("formation")
+
+    incoming_desp_type = str(payload.get("desp_type") or "").strip()
+    current_desp_type = str(contact.get("desp_type") or "").strip()
+    if (current_formation == "DESP" and incoming_desp_type in {"INITIAL", "VAE"}
+            and (_crm_is_empty(current_desp_type)
+                 or (source_is_wedof
+                     and current_desp_type not in {"INITIAL", "VAE"}))):
+        contact["desp_type"] = incoming_desp_type
+        changed_fields.append("parcours DESP")
+
+    incoming_location = str(payload.get("lieu") or "").strip()
+    current_location = str(contact.get("lieu") or "").strip()
+    canonical_locations = set(_CRM_WEDOF_CENTRES.values())
+    if (incoming_location
+            and (_crm_is_empty(current_location)
+                 or (source_is_wedof
+                     and incoming_location in canonical_locations
+                     and current_location not in canonical_locations))):
+        contact["lieu"] = incoming_location
+        changed_fields.append("lieu")
+
+    incoming_dates = str(payload.get("dates_formation") or "").strip()
+    current_dates = str(contact.get("dates_formation") or "").strip()
+    legacy_machine_dates = bool(
+        re.search(r"\d{4}-\d{2}-\d{2}", current_dates)
+        or " → " in current_dates
+    )
+    if (incoming_dates
+            and (_crm_is_empty(current_dates)
+                 or (source_is_wedof and legacy_machine_dates))):
+        contact["dates_formation"] = incoming_dates
+        changed_fields.append("dates souhaitées")
+
+    if changed_fields:
+        contact["updated_at"] = _crm_now()
+    return changed_fields
 
 
 def _wedof_contact_name_matches(folder, contact):
@@ -9142,6 +9370,7 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
             if not isinstance(folder, dict) or not folder.get("externalId"):
                 continue
             stable_id = str(folder["externalId"])
+            crm_payload = _wedof_contact_payload(folder, data)
             payload_json = json.dumps(folder, ensure_ascii=False, separators=(",", ":"))
             remote_date = next((str(folder.get(key)) for key in (
                 "updatedAt", "updatedOn", "modifiedAt", "dateUpdated",
@@ -9167,7 +9396,6 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                 method = "stable" if contact else None
             if not contact:
                 contact, method = _wedof_match_contact(folder, contacts)
-                crm_payload = _wedof_contact_payload(folder)
                 if contact:
                     contact, _, _ = find_or_create_crm_contact(
                         data, crm_payload, "wedof_cpf", external_id=stable_id,
@@ -9202,6 +9430,14 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                     elif inbound.get("status") == "pending_review":
                         pending_reviews += 1
             if contact:
+                repaired_fields = _wedof_apply_contact_details(contact, crm_payload)
+                if repaired_fields:
+                    _wedof_activity(
+                        contact, "Informations CPF synchronisées",
+                        "Champs complétés depuis WEDOF : "
+                        + ", ".join(repaired_fields) + ".",
+                    )
+                    crm_changed = True
                 # La présence du dossier WEDOF prouve que le compte CPF est actif,
                 # y compris si une ancienne réponse CRM indiquait encore « NON ».
                 if str(contact.get("cpf") or "").strip().upper() != "OUI":

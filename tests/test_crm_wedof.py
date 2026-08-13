@@ -183,8 +183,11 @@ def test_new_cpf_folder_creates_and_links_one_crm_lead(tmp_path, monkeypatch):
     assert contact["nom"] == "MARTIN"
     assert contact["mail"] == "lina@example.test"
     assert contact["telephone"] == "+33 6 12 34 56 78"
-    assert contact["formation"] == "Agent de prévention et de sécurité"
-    assert contact["lieu"] == "Puget-sur-Argens"
+    assert contact["formation"] == "APS"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["dates_formation"] == (
+        "Du 7 septembre au 9 octobre 2026 - examen le 12 octobre 2026"
+    )
     assert contact["cpf"] == "OUI"
     assert contact["origine"] == "Mon Compte Formation"
     assert contact["source"] == "wedof_cpf"
@@ -224,6 +227,65 @@ def test_cpf_desp_vae_title_populates_crm_fields_and_keeps_origin(tmp_path, monk
     ).get_json()
     assert updated["formation"] == "A3P"
     assert updated["origine"] == "Mon Compte Formation"
+
+
+def test_cpf_desp_initial_populates_selectable_training_campus_and_session(
+        tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    cpf_request = folder(
+        "cpf-desp-initial", "samuel@example.test", first_name="Samuel",
+        last_name="Maclean",
+    )
+    cpf_request["trainingActionInfo"].update({
+        "title": (
+            "Formation Dirigeant d'une entreprise sécurité privée – "
+            "CQP dirigeant – Titre Dirigeant d'entreprise de sécurité privée "
+            "(DESP)"
+        ),
+        "sessionStartDate": "2026-09-07",
+        "sessionEndDate": "2026-10-23",
+        "address": {
+            "streetAddress": "54 chemin du Carreou",
+            "postalCode": "83480",
+            "city": "Puget-sur-Argens",
+        },
+    })
+
+    application._wedof_store_page([cpf_request], application.load_data(), 1)
+    contact = application.load_data()["crm_contacts"][0]
+
+    assert contact["formation"] == "DESP"
+    assert contact["desp_type"] == "INITIAL"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["dates_formation"] == (
+        "Du 7 septembre au 23 octobre 2026 (présentiel du 12 au 23/10) "
+        "- examen le 26 octobre 2026"
+    )
+
+
+def test_nested_wedof_session_and_location_fields_are_supported(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    cpf_request = folder(
+        "cpf-nested-fields", "nested@example.test", first_name="Nora",
+        last_name="Durand",
+    )
+    cpf_request["trainingActionInfo"] = {
+        "title": "Agent de prévention et de sécurité (APS)",
+    }
+    cpf_request["session"] = {
+        "startDate": "2026-11-03",
+        "endDate": "2026-12-08",
+        "location": {"name": "Puget-sur-Argens"},
+    }
+
+    application._wedof_store_page([cpf_request], application.load_data(), 1)
+    contact = application.load_data()["crm_contacts"][0]
+
+    assert contact["formation"] == "APS"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["dates_formation"] == (
+        "Du 3 novembre au 8 décembre 2026 - examen le 9 décembre 2026"
+    )
 
 
 def test_existing_person_is_reused_for_cpf_folder(tmp_path, monkeypatch):
@@ -268,6 +330,51 @@ def test_existing_cpf_link_repairs_missing_origin(tmp_path, monkeypatch):
         f"/api/crm/contacts/{contact['id']}"
     ).get_json()
     assert repaired["origine"] == "Mon Compte Formation"
+
+
+def test_existing_cpf_link_repairs_missing_or_legacy_training_fields(
+        tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    cpf_request = folder(
+        "cpf-training-repair", "samuel@example.test", first_name="Samuel",
+        last_name="Maclean",
+    )
+    long_title = (
+        "Formation Dirigeant d'une entreprise sécurité privée – CQP dirigeant – "
+        "Titre Dirigeant d'entreprise de sécurité privée (DESP)"
+    )
+    cpf_request["trainingActionInfo"].update({
+        "title": long_title,
+        "sessionStartDate": "2026-09-07",
+        "sessionEndDate": "2026-10-23",
+        "address": {"city": "Puget-sur-Argens"},
+    })
+    application._wedof_store_page([cpf_request], application.load_data(), 1)
+
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    contact.update({
+        "formation": long_title,
+        "desp_type": "",
+        "lieu": "",
+        "dates_formation": "2026-09-07 → 2026-10-23",
+    })
+    application.save_data(data)
+    activities_before = len(contact["activities"])
+
+    application._wedof_store_page([cpf_request], application.load_data(), 1)
+    repaired = application.load_data()["crm_contacts"][0]
+
+    assert repaired["formation"] == "DESP"
+    assert repaired["desp_type"] == "INITIAL"
+    assert repaired["lieu"] == "Côte d’Azur"
+    assert repaired["dates_formation"].startswith("Du 7 septembre au 23 octobre 2026")
+    assert len(repaired["activities"]) == activities_before + 1
+    assert repaired["activities"][0]["title"] == "Informations CPF synchronisées"
+
+    application._wedof_store_page([cpf_request], application.load_data(), 1)
+    idempotent = application.load_data()["crm_contacts"][0]
+    assert len(idempotent["activities"]) == activities_before + 1
 
 
 def test_folder_without_usable_identity_never_creates_blank_lead(tmp_path, monkeypatch):
