@@ -104,6 +104,28 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     assert updated_contact["activities"][0]["title"] == "Rendez-vous Calendly annulé"
 
 
+def test_upcoming_appointment_does_not_replace_a_manually_scheduled_follow_up(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "lina@example.com", "statut": "A relancer", "relance_date": "2099-08-10"},
+    )
+    payload = calendly_payload()
+    payload["scheduled_event"]["start_time"] = "2099-08-12T08:00:00Z"
+    payload["scheduled_event"]["end_time"] = "2099-08-12T08:30:00Z"
+
+    response = signed_webhook(client, monkeypatch, "invitee.created", payload)
+
+    assert response.status_code == 200
+    refreshed = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert refreshed["statut"] == "A relancer"
+    assert refreshed["relance_date"] == "2099-08-10"
+
+
 def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     deliveries = {"sms": [], "email": []}

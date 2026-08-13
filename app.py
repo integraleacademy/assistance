@@ -7059,6 +7059,15 @@ def _crm_names_compatible(contact, payload):
 _CRM_RECONCILIATION_LOCK = threading.RLock()
 
 
+def _crm_serialized(view):
+    """Keep JSON-file CRM read/modify/write transactions from overlapping."""
+    @wraps(view)
+    def serialized_view(*args, **kwargs):
+        with _CRM_RECONCILIATION_LOCK:
+            return view(*args, **kwargs)
+    return serialized_view
+
+
 def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
                                 external_id=None, selected_contact_id=None,
                                 force_create=False, ordered_coordinates=False,
@@ -7516,6 +7525,7 @@ def _crm_upsert_calendly_appointment(
     if (
         contact
         and classify_calendly_appointment(appointment, datetime.datetime.now(pytz.timezone("Europe/Paris"))) in {"upcoming", "in_progress"}
+        and contact.get("statut") not in CRM_RESERVED_STATUSES
         and contact.get("statut") != "RDV programmé"
     ):
         old_status = contact.get("statut") or "Nouveaux"
@@ -7553,7 +7563,9 @@ def _crm_sync_contact_calendly_status(data, contact):
         and classify_calendly_appointment(item, now) in {"upcoming", "in_progress"}
         for item in data.get("crm_calendly_appointments", [])
     )
-    if not has_active_appointment or contact.get("statut") == "RDV programmé":
+    if (not has_active_appointment
+            or contact.get("statut") == "RDV programmé"
+            or contact.get("statut") in CRM_RESERVED_STATUSES):
         return False
     contact["statut"] = "RDV programmé"
     contact["updated_at"] = _crm_now()
@@ -10248,6 +10260,7 @@ def _crm_prepare_contacts(data):
 
 @app.route("/api/crm/contacts", methods=["GET", "POST"])
 @login_required
+@_crm_serialized
 def crm_contacts():
     data = load_data()
     if request.method == "GET":
@@ -10291,6 +10304,7 @@ def crm_contacts():
 
 @app.get("/api/crm/contacts/updates")
 @login_required
+@_crm_serialized
 def crm_contact_updates():
     """Retourne uniquement les données utiles au rafraîchissement collaboratif."""
     data = load_data()
@@ -10430,6 +10444,7 @@ def crm_change_status(old_label):
 
 @app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
 @login_required
+@_crm_serialized
 def crm_contact(contact_id):
     data = load_data()
     contact = _crm_contact(data, contact_id)
