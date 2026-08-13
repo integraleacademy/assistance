@@ -8908,6 +8908,15 @@ def _wedof_contact_payload(folder):
         training.get("title"), folder.get("trainingTitle"),
         folder.get("title"),
     ) if value), "")
+    normalized_formation = _wedof_normalize_name(formation)
+    desp_type = ""
+    # Mon Compte Formation fournit un intitulé commercial long alors que le
+    # CRM sépare la formation DESP de son parcours.
+    if ("desp" in normalized_formation
+            and ("vae" in normalized_formation
+                 or "validation des acquis" in normalized_formation)):
+        formation = "DESP"
+        desp_type = "VAE"
 
     address = training.get("address") or folder.get("location") or ""
     if isinstance(address, dict):
@@ -8927,6 +8936,7 @@ def _wedof_contact_payload(folder):
         "mail": str(email or "").strip(),
         "telephone": str(phone or "").strip(),
         "formation": str(formation or "").strip(),
+        "desp_type": desp_type,
         "lieu": str(location or "").strip(),
         "dates_formation": dates,
         "cpf": "OUI",
@@ -9031,7 +9041,8 @@ def _wedof_new_crm_contact(data, payload, stable_id):
         "cpf": "OUI", "cpf_montant": "", "carte_pro": "",
         "antecedents": "", "garde_vue": "", "titre_sejour": "",
         "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_username": "",
-        "cnaps_password": "", "integration_dracar": "", "desp_type": "",
+        "cnaps_password": "", "integration_dracar": "",
+        "desp_type": str(payload.get("desp_type") or "").strip(),
         "identite_creation": "", "identite_ok": "", "financement_ft": "",
         "statut_demande_financement_ft": "", "refus_ft_perso": "",
         "reste_a_charge_perso": "", "inscrit_ft": "", "relance_date": "",
@@ -10420,6 +10431,10 @@ def crm_contact(contact_id):
         save_data(data)
         return "", 204
     payload = request.get_json(silent=True) or {}
+    # La provenance d'une piste WEDOF reste Mon Compte Formation lorsque
+    # l'équipe corrige manuellement la formation ou un autre champ.
+    if contact.get("source") == "wedof_cpf":
+        payload["origine"] = "Mon Compte Formation"
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
