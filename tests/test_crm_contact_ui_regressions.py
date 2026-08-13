@@ -22,6 +22,13 @@ def test_relaunch_template_is_available_for_every_formation():
     assert 'optgroup label="Tous les parcours"' in javascript
 
 
+def test_contact_header_displays_the_scheduled_relaunch_date_explicitly():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "`Relance prévue le ${" in javascript
+    assert "day:'2-digit',month:'2-digit',year:'numeric'" in javascript
+
+
 def test_activity_log_only_displays_contact_communications_and_delegates_more():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
