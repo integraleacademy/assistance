@@ -243,6 +243,31 @@ def test_existing_person_is_reused_for_cpf_folder(tmp_path, monkeypatch):
     assert len(stored["crm_contacts"]) == 1
     assert stored["crm_contacts"][0]["id"] == contact["id"]
     assert stored["crm_contacts"][0]["cpf"] == "OUI"
+    assert stored["crm_contacts"][0]["origine"] == "Mon Compte Formation"
+
+
+def test_existing_cpf_link_repairs_missing_origin(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    cpf_request = folder(
+        "cpf-origin-repair", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    application._wedof_store_page(
+        [cpf_request], application.load_data(), 1,
+    )
+    contact = application.load_data()["crm_contacts"][0]
+    data = application.load_data()
+    data["crm_contacts"][0]["origine"] = ""
+    application.save_data(data)
+
+    application._wedof_store_page(
+        [cpf_request], application.load_data(), 1,
+    )
+
+    repaired = client.get(
+        f"/api/crm/contacts/{contact['id']}"
+    ).get_json()
+    assert repaired["origine"] == "Mon Compte Formation"
 
 
 def test_folder_without_usable_identity_never_creates_blank_lead(tmp_path, monkeypatch):
