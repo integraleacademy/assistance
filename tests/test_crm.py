@@ -248,6 +248,10 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     assert updated.status_code == 200
     assert updated.get_json()["activities"][0]["title"] == "Statut : A relancer"
 
+    reloaded = c.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert reloaded["statut"] == "A relancer"
+    assert reloaded["relance_date"] == "2026-08-10"
+
     call = c.post(f"/api/crm/contacts/{contact['id']}/appel", json={"commentaire": "Échange financement."})
     assert call.status_code == 200
     assert call.get_json()["activities"][0]["kind"] == "appel"
@@ -820,18 +824,22 @@ def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
     assert "all.reduce((dates,c)" in crm_js
 
 
-def test_planning_a_reminder_updates_the_contact_immediately(tmp_path, monkeypatch):
+def test_planning_a_reminder_waits_for_server_persistence_before_updating_contact(tmp_path, monkeypatch):
     client(tmp_path, monkeypatch)
 
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    optimistic_update = "mergeContactInStore(id,next);closeModal();showContact(id)"
+    handler_start = crm_js.index("function relaunchModal")
     api_update = "api(`/api/crm/contacts/${id}`"
-    assert optimistic_update in crm_js
-    assert crm_js.index(optimistic_update) < crm_js.index(api_update, crm_js.index("function relaunchModal"))
-    assert "stored=contactInStore(id)||c" in crm_js
-    assert "mergeContactInStore(id,updated);showContact(id)" in crm_js
+    confirmed_update = "mergeContactInStore(id,updated);closeModal();showContact(id)"
+    optimistic_update = "Object.assign(c,next);mergeContactInStore(id,next);closeModal();showContact(id)"
+    assert api_update in crm_js
+    assert confirmed_update in crm_js
+    assert crm_js.index(api_update, handler_start) < crm_js.index(confirmed_update, handler_start)
+    assert optimistic_update not in crm_js
+    assert "saveRelaunch.textContent='Enregistrement…'" in crm_js
+    assert "saveRelaunch.disabled=false" in crm_js
 
 
 def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
