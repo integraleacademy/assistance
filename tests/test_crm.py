@@ -513,7 +513,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260813-relaunch-persistence" in page.data
+    assert b"20260813-relaunch-tracking" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
@@ -832,7 +832,7 @@ def test_planning_a_reminder_waits_for_server_persistence_before_updating_contac
 
     handler_start = crm_js.index("function relaunchModal")
     api_update = "api(`/api/crm/contacts/${id}`"
-    confirmed_update = "mergeContactInStore(id,updated);closeModal();showContact(id)"
+    confirmed_update = "mergeContactInStore(id,updated);closeModal();showContact(id,options.returnTab||'contactInfoTab')"
     optimistic_update = "Object.assign(c,next);mergeContactInStore(id,next);closeModal();showContact(id)"
     assert api_update in crm_js
     assert confirmed_update in crm_js
@@ -840,6 +840,139 @@ def test_planning_a_reminder_waits_for_server_persistence_before_updating_contac
     assert optimistic_update not in crm_js
     assert "saveRelaunch.textContent='Enregistrement…'" in crm_js
     assert "saveRelaunch.disabled=false" in crm_js
+
+
+def test_relance_no_answer_reprograms_and_sends_named_templates_only_once(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    deliveries = {"sms": [], "email": []}
+    monkeypatch.setattr(
+        application,
+        "send_sms",
+        lambda phone, body: deliveries["sms"].append((phone, body)) or True,
+    )
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda mail, subject, plain, html: deliveries["email"].append(
+            (mail, subject, plain, html)
+        ) or True,
+    )
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    c.post(
+        "/api/crm/templates",
+        json={
+            "type": "sms",
+            "nom": "Pas de réponse relance",
+            "contenu": "Bonjour {{ prenom }}, nous avons tenté de vous joindre.",
+        },
+    )
+    c.post(
+        "/api/crm/templates",
+        json={
+            "type": "email",
+            "nom": "Pas de réponse relance",
+            "sujet": "Votre relance {{ formation }}",
+            "contenu": "<p>Bonjour {{ prenom }}, nous avons tenté de vous joindre.</p>",
+        },
+    )
+    planned = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "telephone": "+33612345678",
+            "mail": "lina@example.com",
+            "statut": "A relancer",
+            "relance_date": "2026-08-13",
+        },
+    ).get_json()
+    first_relance = planned["relances"][0]
+    assert first_relance["status"] == "scheduled"
+
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/relances/{first_relance['id']}/sans-reponse",
+        json={"next_date": "2026-08-15"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["delivery"] == {"email": True, "sms": True}
+    assert payload["relance"]["status"] == "no_answer"
+    assert payload["relance"]["message_template"] == "Pas de réponse relance"
+    assert payload["next_relance"]["status"] == "scheduled"
+    assert payload["contact"]["relance_date"] == "2026-08-15"
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
+    assert "Lina" in deliveries["sms"][0][1]
+    assert "Agent de prévention et de sécurité" in deliveries["email"][0][1]
+
+    duplicate = c.post(
+        f"/api/crm/contacts/{contact['id']}/relances/{first_relance['id']}/sans-reponse",
+        json={"next_date": "2026-08-16"},
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.get_json()["duplicate"] is True
+    assert duplicate.get_json()["contact"]["relance_date"] == "2026-08-15"
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
+
+
+def test_answered_relance_requires_and_records_a_call_once(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    planned = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"statut": "A relancer", "relance_date": "2026-08-14"},
+    ).get_json()
+    relance = planned["relances"][0]
+
+    missing_note = c.post(
+        f"/api/crm/contacts/{contact['id']}/appel",
+        json={"commentaire": "", "relance_id": relance["id"]},
+    )
+    assert missing_note.status_code == 400
+
+    answered = c.post(
+        f"/api/crm/contacts/{contact['id']}/appel",
+        json={"commentaire": "La candidate a répondu et souhaite recevoir le devis.", "relance_id": relance["id"]},
+    )
+    assert answered.status_code == 200
+    payload = answered.get_json()
+    assert payload["relance"]["status"] == "answered"
+    assert payload["contact"]["relance_date"] == ""
+    assert any(
+        activity["kind"] == "appel"
+        and activity["detail"] == "La candidate a répondu et souhaite recevoir le devis."
+        for activity in payload["contact"]["activities"]
+    )
+
+    activity_count = len(payload["contact"]["activities"])
+    duplicate = c.post(
+        f"/api/crm/contacts/{contact['id']}/appel",
+        json={"commentaire": "Double clic", "relance_id": relance["id"]},
+    ).get_json()
+    assert duplicate["duplicate"] is True
+    assert len(duplicate["contact"]["activities"]) == activity_count
+
+
+def test_legacy_relance_date_is_migrated_without_being_duplicated(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    data = application.load_data()
+    stored = next(item for item in data["crm_contacts"] if item["id"] == contact["id"])
+    stored["relances"] = []
+    stored["relance_date"] = "2026-08-20"
+    application.save_data(data)
+
+    first = c.get("/api/crm/contacts").get_json()[0]
+    second = c.get("/api/crm/contacts").get_json()[0]
+
+    assert first["relance_date"] == "2026-08-20"
+    assert len(first["relances"]) == 1
+    assert len(second["relances"]) == 1
+    assert second["relances"][0]["source"] == "legacy"
 
 
 def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
@@ -872,12 +1005,15 @@ def test_contact_activity_log_and_vae_tracking_are_displayed_in_tabs():
     wedof = crm_js.index('id="contactWedofTab"', tabs)
     vae = crm_js.index('id="contactVaeTab"', tabs)
     activity = crm_js.index('id="contactActivityTab"', tabs)
+    relance = crm_js.index('id="contactRelanceTab"', tabs)
 
-    assert information < wedof < vae < activity
+    assert information < wedof < vae < activity < relance
     assert 'id="contactVaePanel" role="tabpanel" aria-labelledby="contactVaeTab" hidden' in crm_js
     assert 'id="contactActivityPanel" role="tabpanel" aria-labelledby="contactActivityTab" hidden' in crm_js
+    assert 'id="contactRelancePanel" role="tabpanel" aria-labelledby="contactRelanceTab" hidden' in crm_js
     assert crm_js.index('id="vaeTrackingPanel"') > crm_js.index('id="contactVaePanel"')
     assert crm_js.index('id="activityFeed"') > crm_js.index('id="contactActivityPanel"')
+    assert crm_js.index('${relanceTracking(c)}') > crm_js.index('id="contactRelancePanel"')
 
 
 def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):

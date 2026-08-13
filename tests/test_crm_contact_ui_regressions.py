@@ -73,6 +73,37 @@ def test_primary_timeline_excludes_secondary_only_steps():
     assert "S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status))" in javascript
 
 
+def test_contact_relance_tracking_is_actionable_and_visually_scoped():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    activity_tab = javascript.index('id="contactActivityTab"')
+    relance_tab = javascript.index('id="contactRelanceTab"')
+    assert activity_tab < relance_tab
+    for marker in (
+        "Suivi des relances",
+        "Les relances prévues",
+        "Pas de réponse",
+        "A répondu",
+        "Pas de réponse relance",
+        "function noAnswerRelanceModal",
+        "function bindRelanceTracking",
+        "/sans-reponse",
+        "relance_id:options.relance?.id",
+    ):
+        assert marker in javascript
+    for selector in (
+        ".relance-tracking",
+        ".relance-hero",
+        ".relance-metrics",
+        ".relance-item",
+        ".relance-actions",
+        ".relance-history",
+        ".relance-result-modal",
+    ):
+        assert selector in stylesheet
+
+
 def test_pipeline_overview_displays_primary_and_secondary_steps():
     javascript = CRM_JS.read_text(encoding="utf-8")
 

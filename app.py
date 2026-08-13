@@ -6897,7 +6897,7 @@ CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_ONLY_STATUSES = {
     "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260813-relaunch-persistence"
+CRM_ASSET_VERSION = "20260813-relaunch-tracking"
 
 
 def _crm_statuses(data=None):
@@ -7817,6 +7817,7 @@ def _crm_backfill_information_request_answers(contact):
 def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
                           funding_status=None):
     _crm_backfill_information_request_answers(contact)
+    _crm_ensure_relances(contact)
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
     # Le statut WEDOF est calculé une seule fois pour toute la liste des contacts
@@ -7837,6 +7838,170 @@ def _crm_activity(contact, kind, title, detail="", preview=""):
         "title": title, "detail": detail, "preview": preview,
         "author": (current_user() or {}).get("name", "Équipe Intégrale"),
     })
+
+
+CRM_RELANCE_STATUSES = {"scheduled", "answered", "no_answer", "reprogrammed", "cancelled"}
+
+
+def _crm_relance_date(value):
+    """Return a normalized ISO date or raise a user-facing validation error."""
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    try:
+        datetime.date.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError("La date de relance est invalide.") from exc
+    return normalized
+
+
+def _crm_refresh_relance_date(contact):
+    """Keep the historical scalar field aligned with the next open follow-up."""
+    scheduled_dates = [
+        str(item.get("scheduled_date") or "")
+        for item in contact.get("relances", [])
+        if isinstance(item, dict) and item.get("status") == "scheduled"
+        and str(item.get("scheduled_date") or "")
+    ]
+    next_date = min(scheduled_dates) if scheduled_dates else ""
+    changed = str(contact.get("relance_date") or "") != next_date
+    contact["relance_date"] = next_date
+    return changed
+
+
+def _crm_ensure_relances(contact):
+    """Migrate the legacy ``relance_date`` field to an auditable relance list."""
+    changed = False
+    raw_relances = contact.get("relances")
+    if not isinstance(raw_relances, list):
+        raw_relances = []
+        changed = True
+
+    normalized = []
+    seen_ids = set()
+    for raw in raw_relances:
+        if not isinstance(raw, dict):
+            changed = True
+            continue
+        item = dict(raw)
+        relance_id = str(item.get("id") or "").strip()
+        if not relance_id or relance_id in seen_ids:
+            relance_id = str(uuid.uuid4())
+            item["id"] = relance_id
+            changed = True
+        seen_ids.add(relance_id)
+        status = str(item.get("status") or "scheduled").strip()
+        if status not in CRM_RELANCE_STATUSES:
+            status = "scheduled"
+            item["status"] = status
+            changed = True
+        try:
+            scheduled_date = _crm_relance_date(item.get("scheduled_date"))
+        except ValueError:
+            scheduled_date = ""
+        if item.get("scheduled_date") != scheduled_date:
+            item["scheduled_date"] = scheduled_date
+            changed = True
+        if "created_at" not in item:
+            item["created_at"] = contact.get("updated_at") or contact.get("created_at") or _crm_now()
+            changed = True
+        if "created_by" not in item:
+            item["created_by"] = "Équipe Intégrale"
+            changed = True
+        normalized.append(item)
+
+    if contact.get("relances") != normalized:
+        changed = True
+    contact["relances"] = normalized
+
+    try:
+        legacy_date = _crm_relance_date(contact.get("relance_date"))
+    except ValueError:
+        legacy_date = ""
+        contact["relance_date"] = ""
+        changed = True
+    if legacy_date and not any(
+        item.get("status") == "scheduled" and item.get("scheduled_date") == legacy_date
+        for item in normalized
+    ):
+        normalized.insert(0, {
+            "id": str(uuid.uuid4()),
+            "scheduled_date": legacy_date,
+            "status": "scheduled",
+            "created_at": contact.get("updated_at") or contact.get("created_at") or _crm_now(),
+            "created_by": "Historique CRM",
+            "source": "legacy",
+        })
+        changed = True
+
+    if _crm_refresh_relance_date(contact):
+        changed = True
+    return changed
+
+
+def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_relance_id=None):
+    """Schedule one next action while preserving previous attempts as history."""
+    scheduled_date = _crm_relance_date(scheduled_date)
+    _crm_ensure_relances(contact)
+    now = _crm_now()
+    active = [item for item in contact["relances"] if item.get("status") == "scheduled"]
+
+    if not scheduled_date:
+        for item in active:
+            item.update({
+                "status": "cancelled",
+                "completed_at": now,
+                "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+            })
+        _crm_refresh_relance_date(contact)
+        return None, bool(active)
+
+    same = next((item for item in active if item.get("scheduled_date") == scheduled_date), None)
+    changed = False
+    for item in active:
+        if item is same:
+            continue
+        item.update({
+            "status": "reprogrammed",
+            "completed_at": now,
+            "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+        })
+        changed = True
+
+    if same is None:
+        same = {
+            "id": str(uuid.uuid4()),
+            "scheduled_date": scheduled_date,
+            "status": "scheduled",
+            "created_at": now,
+            "created_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+            "source": source,
+        }
+        if parent_relance_id:
+            same["parent_relance_id"] = parent_relance_id
+        contact["relances"].insert(0, same)
+        changed = True
+
+    if _crm_refresh_relance_date(contact):
+        changed = True
+    return same, changed
+
+
+def _crm_complete_relance(contact, relance, status, *, note=""):
+    """Close a scheduled follow-up exactly once and refresh the next action."""
+    if status not in {"answered", "no_answer"}:
+        raise ValueError("Résultat de relance invalide.")
+    if relance.get("status") != "scheduled":
+        return False
+    relance.update({
+        "status": status,
+        "completed_at": _crm_now(),
+        "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+    })
+    if note:
+        relance["note"] = note
+    _crm_refresh_relance_date(contact)
+    return True
 
 
 def _crm_create_contact_from_information_request(data, fields, demande_id, devis_id, devis_url):
@@ -10000,7 +10165,12 @@ def crm_calendly_update_appointment(appointment_id):
             if response_status == "no_answer":
                 contact["statut"] = "A relancer"
                 paris_today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
-                contact["relance_date"] = (paris_today + datetime.timedelta(days=2)).isoformat()
+                next_relance_date = (paris_today + datetime.timedelta(days=2)).isoformat()
+                _crm_schedule_relance(
+                    contact,
+                    next_relance_date,
+                    source="calendly_no_answer",
+                )
                 _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+2")
             contact["updated_at"] = now
             if response_status == "no_answer":
@@ -10485,6 +10655,8 @@ def _crm_prepare_contacts(data):
             changed = True
         if _crm_backfill_information_request_answers(existing):
             changed = True
+        if _crm_ensure_relances(existing):
+            changed = True
         prenom = _crm_format_first_name(existing.get("prenom"))
         nom = _crm_format_last_name(existing.get("nom"))
         if (prenom, nom) != (existing.get("prenom", ""), existing.get("nom", "")):
@@ -10523,7 +10695,7 @@ def crm_contacts():
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
-        "origine": "Ajout manuel", "inscrit_ft": "", "commentaires": "", "relance_date": "", "statut_secondaire": "",
+        "origine": "Ajout manuel", "inscrit_ft": "", "commentaires": "", "relance_date": "", "relances": [], "statut_secondaire": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
@@ -10687,6 +10859,8 @@ def crm_contact(contact_id):
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
+        if _crm_ensure_relances(contact):
+            save_data(data)
         return jsonify(_crm_contact_response(contact, data))
     if request.method == "DELETE":
         data["crm_contacts"].remove(contact)
@@ -10701,11 +10875,14 @@ def crm_contact(contact_id):
     # l'équipe corrige manuellement la formation ou un autre champ.
     if contact.get("source") == "wedof_cpf":
         payload["origine"] = "Mon Compte Formation"
+    _crm_ensure_relances(contact)
+    relance_date_supplied = "relance_date" in payload
+    requested_relance_date = payload.get("relance_date")
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
-               "statut", "statut_secondaire", "relance_date"}
+               "statut", "statut_secondaire"}
     old_status = contact.get("statut")
     old_secondary_status = contact.get("statut_secondaire", "")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
@@ -10718,6 +10895,25 @@ def crm_contact(contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    if relance_date_supplied:
+        try:
+            planned_relance, relance_changed = _crm_schedule_relance(
+                contact,
+                requested_relance_date,
+                source="manual",
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if relance_changed:
+            if planned_relance:
+                _crm_activity(
+                    contact,
+                    "relance",
+                    "Relance planifiée",
+                    f"Prochaine relance le {planned_relance['scheduled_date']}",
+                )
+            else:
+                _crm_activity(contact, "relance", "Relance annulée")
     if contact.get("statut_secondaire") == "Session FT":
         contact["statut_secondaire"] = "Marché FT"
     if "statut_demande_financement_ft" in payload:
@@ -10783,12 +10979,29 @@ def crm_candidate_score_preview():
 
 @app.route("/api/crm/contacts/<contact_id>/appel", methods=["POST"])
 @login_required
+@_crm_serialized
 def crm_log_call(contact_id):
     data = load_data(); contact = _crm_contact(data, contact_id)
     if not contact: return jsonify({"error": "Contact introuvable"}), 404
     payload = request.get_json(silent=True) or {}
     note = str(payload.get("commentaire", "")).strip()
     if not note: return jsonify({"error": "Un commentaire est requis"}), 400
+    _crm_ensure_relances(contact)
+    relance = None
+    relance_id = str(payload.get("relance_id") or "").strip()
+    if relance_id:
+        relance = next(
+            (item for item in contact.get("relances", []) if item.get("id") == relance_id),
+            None,
+        )
+        if not relance:
+            return jsonify({"error": "Relance introuvable pour ce contact"}), 404
+        if relance.get("status") != "scheduled":
+            return jsonify({
+                "contact": _crm_contact_response(contact, data),
+                "relance": relance,
+                "duplicate": True,
+            })
     appointment = None
     appointment_id = str(payload.get("appointment_id") or "").strip()
     if appointment_id:
@@ -10799,10 +11012,17 @@ def crm_log_call(contact_id):
         )
         if not appointment:
             return jsonify({"error": "Rendez-vous introuvable pour ce contact"}), 404
-    _crm_activity(contact, "appel", "Appel consigné", note)
     now = _crm_now()
     contact["updated_at"] = now
     delivery = None
+    if relance:
+        _crm_complete_relance(contact, relance, "answered", note=note)
+        _crm_activity(
+            contact,
+            "relance",
+            "Relance traitée — a répondu",
+            f"Appel consigné : {note}",
+        )
     if appointment:
         if appointment.get("response_status") != "answered":
             appointment["response_status"] = "answered"
@@ -10812,13 +11032,92 @@ def crm_log_call(contact_id):
             appointment["answered_followup_sent_at"] = now
             appointment["updated_at"] = now
             delivery = _crm_send_appointment_followup(data, contact, "Suite appel répondu")
+    _crm_activity(contact, "appel", "Appel consigné", note)
     save_data(data)
-    if not appointment:
-        return jsonify(contact)
-    result = {"contact": contact, "appointment": appointment}
+    if not appointment and not relance:
+        return jsonify(_crm_contact_response(contact, data))
+    result = {"contact": _crm_contact_response(contact, data)}
+    if appointment:
+        result["appointment"] = appointment
+    if relance:
+        result["relance"] = relance
     if delivery is not None:
         result["delivery"] = delivery
     return jsonify(result)
+
+
+@app.post("/api/crm/contacts/<contact_id>/relances/<relance_id>/sans-reponse")
+@login_required
+@_crm_serialized
+def crm_relance_no_answer(contact_id, relance_id):
+    """Close one relance, schedule the next one and send both named templates once."""
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    _crm_ensure_relances(contact)
+    relance = next(
+        (item for item in contact.get("relances", []) if item.get("id") == relance_id),
+        None,
+    )
+    if not relance:
+        return jsonify({"error": "Relance introuvable pour ce contact"}), 404
+
+    if relance.get("status") != "scheduled":
+        next_relance = next(
+            (item for item in contact.get("relances", [])
+             if item.get("parent_relance_id") == relance_id and item.get("status") == "scheduled"),
+            None,
+        )
+        return jsonify({
+            "contact": _crm_contact_response(contact, data),
+            "relance": relance,
+            "next_relance": next_relance,
+            "delivery": relance.get("delivery") or {"sms": False, "email": False},
+            "duplicate": True,
+        })
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        next_date = _crm_relance_date(payload.get("next_date"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not next_date:
+        return jsonify({"error": "Choisissez la date de la prochaine relance."}), 400
+
+    _crm_complete_relance(contact, relance, "no_answer")
+    next_relance, _ = _crm_schedule_relance(
+        contact,
+        next_date,
+        source="no_answer",
+        parent_relance_id=relance_id,
+    )
+    old_status = contact.get("statut")
+    contact["statut"] = "A relancer"
+    if old_status != "A relancer":
+        _crm_activity(contact, "statut", "Statut : A relancer", f"Ancien statut : {old_status}")
+    _crm_activity(
+        contact,
+        "relance",
+        "Relance sans réponse",
+        f"Nouvelle relance programmée le {next_date}",
+    )
+
+    delivery = _crm_send_appointment_followup(data, contact, "Pas de réponse relance")
+    relance.update({
+        "message_template": "Pas de réponse relance",
+        "delivery": delivery,
+        "messages_processed_at": _crm_now(),
+    })
+    contact["updated_at"] = _crm_now()
+    save_data(data)
+    return jsonify({
+        "contact": _crm_contact_response(contact, data),
+        "relance": relance,
+        "next_relance": next_relance,
+        "delivery": delivery,
+        "duplicate": False,
+    })
 
 
 @app.route("/api/crm/contacts/<contact_id>/publications", methods=["POST"])
