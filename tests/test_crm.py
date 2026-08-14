@@ -310,6 +310,9 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
     assert aps["sujet"] == "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
     assert "{{ prenom }}" in aps["contenu"]
     assert "1 650" in aps["contenu"]
+    a3p = next(template for template in automatic if template["formation"] == "A3P")
+    assert "youtube" not in a3p["contenu"].lower()
+    assert "<iframe" not in a3p["contenu"].lower()
 
 
 def test_crm_templates_page_displays_automatic_emails_as_read_only():
