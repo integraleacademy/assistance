@@ -7744,6 +7744,79 @@ def _meta_activity_detail(fields, answer_rows=None, completed_fields=None):
     return " · ".join(details)
 
 
+def _meta_salesforce_payload(meta_lead_id, fields, crm_payload, answer_rows):
+    """Construit la piste Salesforce à partir du mapping CRM du formulaire META."""
+    formation = str(crm_payload.get("formation") or "").strip()
+    if formation == "DESP":
+        formation_salesforce = (
+            "DESP_VAE" if crm_payload.get("desp_type") == "VAE" else "DESP_INIT"
+        )
+    else:
+        formation_salesforce = {
+            "APS": "APS",
+            "A3P": "A3P",
+            "SSIAP 1": "SSIAP",
+            "Chauffeur VTC": "VTC",
+        }.get(formation, "")
+
+    centre = {
+        "cote d azur": "cote_azur",
+        "paris": "paris",
+        "auvergne": "auvergne",
+    }.get(_meta_words(crm_payload.get("lieu")), "")
+
+    details = [
+        "PROSPECT META - FORMULAIRE INSTANTANÉ FACEBOOK / INSTAGRAM",
+        f"Identifiant Meta : {meta_lead_id}",
+    ]
+    for key, label in (
+        ("form_name", "Formulaire"),
+        ("campaign_name", "Campagne"),
+        ("adset_name", "Ensemble de publicités"),
+        ("ad_name", "Publicité"),
+        ("platform", "Plateforme"),
+    ):
+        if fields.get(key):
+            details.append(f"{label} : {fields[key]}")
+    if answer_rows:
+        details.append("")
+        details.append("Réponses au formulaire :")
+        details.extend(
+            f"- {row.get('question', '')} : {row.get('answer', '')}"
+            for row in answer_rows
+        )
+
+    desp_type = str(crm_payload.get("desp_type") or "").strip()
+    return {
+        "prenom": str(crm_payload.get("prenom") or "").strip(),
+        "nom": str(crm_payload.get("nom") or "").strip() or "Sans nom",
+        "mail": str(crm_payload.get("mail") or "").strip(),
+        "telephone": str(crm_payload.get("telephone") or "").strip(),
+        "formation": formation_salesforce,
+        "type_formation": f"DESP {desp_type}" if desp_type else formation,
+        "centre": centre,
+        "dates": str(crm_payload.get("dates_formation") or "").strip(),
+        "cpf_consulte": str(crm_payload.get("cpf") or "").strip(),
+        "cpf_montant": str(crm_payload.get("cpf_montant") or "").strip(),
+        "cnaps_ok": str(crm_payload.get("carte_pro") or "").strip(),
+        "garde_vue": str(crm_payload.get("garde_vue") or "").strip(),
+        "identite_numerique": str(
+            crm_payload.get("identite_ok")
+            or crm_payload.get("identite_creation")
+            or ""
+        ).strip(),
+        "france_travail": str(crm_payload.get("financement_ft") or "").strip(),
+        "ft_refus_ok": str(crm_payload.get("refus_ft_perso") or "").strip(),
+        "financement_perso": str(
+            crm_payload.get("reste_a_charge_perso") or ""
+        ).strip(),
+        "origine": "META",
+        "source_formulaire": "meta-zapier-leads",
+        "meta_lead_id": str(meta_lead_id),
+        "infos_complementaires": "\n".join(details),
+    }
+
+
 @app.post("/api/integrations/meta/zapier-leads")
 def meta_zapier_leads():
     """Endpoint public : le secret dédié remplace l'authentification de session/CSRF."""
@@ -7768,6 +7841,7 @@ def meta_zapier_leads():
     if not fields.get("email") and not fields.get("phone_number"):
         return jsonify({"success": False, "error": "Une adresse e-mail ou un téléphone est requis."}), 400
 
+    salesforce_payload = None
     try:
         with _CRM_RECONCILIATION_LOCK:
             data = load_data()
@@ -7802,6 +7876,9 @@ def meta_zapier_leads():
                 contact["source"] = "META"
                 contact["source_detail"] = "Facebook / Instagram Lead Ads"
                 contact["received_at"] = received_at
+                salesforce_payload = _meta_salesforce_payload(
+                    meta_lead_id, fields, crm_payload, answer_rows,
+                )
             title = ("Piste créée automatiquement depuis un formulaire instantané Meta via Zapier."
                      if created else
                      "Nouvelle demande reçue depuis un formulaire instantané Meta via Zapier.")
@@ -7831,6 +7908,16 @@ def meta_zapier_leads():
                     "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
                 })
             save_data(data)
+        if salesforce_payload:
+            # La soumission META est enregistrée avant l'appel externe : un retry
+            # Zapier avec le même leadgen_id ne peut donc pas créer deux pistes.
+            try:
+                creer_piste_salesforce(salesforce_payload)
+            except Exception:
+                app.logger.exception(
+                    "Échec de la création Salesforce pour le prospect META %s",
+                    meta_lead_id,
+                )
         return jsonify({"success": True, "result": "created" if created else "attached",
                         "contact_id": contact["id"]}), 201 if created else 200
     except Exception:
