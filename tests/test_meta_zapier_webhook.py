@@ -8,6 +8,7 @@ SECRET = "test-webhook-secret"
 def setup_client(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     monkeypatch.setenv("ZAPIER_META_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
     application.app.config.update(TESTING=True)
     return application.app.test_client()
 
@@ -249,6 +250,8 @@ def test_crm_ui_displays_every_original_meta_answer():
 
 def test_email_match_is_case_insensitive_and_only_fills_empty_fields(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
+    salesforce_payloads = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_payloads.append)
     data = application.load_data()
     data["crm_contacts"] = [{
         "id": "existing", "prenom": "Lina", "nom": "MARTIN",
@@ -262,6 +265,7 @@ def test_email_match_is_case_insensitive_and_only_fills_empty_fields(tmp_path, m
     contact = application.load_data()["crm_contacts"][0]
     assert contact["telephone"] == "+33 6 12 34 56 78"
     assert contact["statut"] == "Converti" and contact["origine"] == "Téléphone"
+    assert salesforce_payloads == []
 
 
 def test_phone_match_accepts_french_formats_without_name(tmp_path, monkeypatch):

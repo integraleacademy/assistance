@@ -7821,6 +7821,7 @@ def meta_zapier_leads():
     if not fields.get("email") and not fields.get("phone_number"):
         return jsonify({"success": False, "error": "Une adresse e-mail ou un téléphone est requis."}), 400
 
+    salesforce_payload = None
     try:
         with _CRM_RECONCILIATION_LOCK:
             data = load_data()
@@ -7855,6 +7856,9 @@ def meta_zapier_leads():
                 contact["source"] = "META"
                 contact["source_detail"] = "Facebook / Instagram Lead Ads"
                 contact["received_at"] = received_at
+                salesforce_payload = _meta_salesforce_payload(
+                    meta_lead_id, fields, crm_payload, answer_rows,
+                )
             title = ("Piste créée automatiquement depuis un formulaire instantané Meta via Zapier."
                      if created else
                      "Nouvelle demande reçue depuis un formulaire instantané Meta via Zapier.")
@@ -7886,6 +7890,16 @@ def meta_zapier_leads():
                     "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
                 })
             save_data(data)
+        if salesforce_payload:
+            # La soumission META est enregistrée avant l'appel externe : un retry
+            # Zapier avec le même leadgen_id ne peut donc pas créer deux pistes.
+            try:
+                creer_piste_salesforce(salesforce_payload)
+            except Exception:
+                app.logger.exception(
+                    "Échec de la création Salesforce pour le prospect META %s",
+                    meta_lead_id,
+                )
         return jsonify({"success": True, "result": "created" if created else "attached",
                         "contact_id": contact["id"]}), 201 if created else 200
     except Exception:
