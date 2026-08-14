@@ -201,6 +201,76 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
     assert refused.get_json()["statut_secondaire"] == "Financement FT refusé"
 
 
+@pytest.mark.parametrize("status", application.CRM_STATUSES)
+def test_each_manually_selected_primary_status_survives_refresh(
+        tmp_path, monkeypatch, status):
+    c = client(tmp_path, monkeypatch)
+    created = c.post(
+        "/api/crm/contacts", json={"prenom": "Persistance", "nom": "Primaire"}
+    ).get_json()
+
+    saved = c.patch(
+        f"/api/crm/contacts/{created['id']}", json={"statut": status}
+    )
+    assert saved.status_code == 200
+    assert saved.get_json()["statut"] == status
+
+    refreshed = next(
+        contact for contact in c.get("/api/crm/contacts").get_json()
+        if contact["id"] == created["id"]
+    )
+    assert refreshed["statut"] == status
+
+
+@pytest.mark.parametrize("status", application.CRM_SECONDARY_STATUSES)
+def test_each_manually_selected_secondary_status_survives_refresh(
+        tmp_path, monkeypatch, status):
+    c = client(tmp_path, monkeypatch)
+    created = c.post(
+        "/api/crm/contacts", json={"prenom": "Persistance", "nom": "Secondaire"}
+    ).get_json()
+
+    saved = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut_secondaire": status},
+    )
+    assert saved.status_code == 200
+    assert saved.get_json()["statut_secondaire"] == status
+
+    refreshed = next(
+        contact for contact in c.get("/api/crm/contacts").get_json()
+        if contact["id"] == created["id"]
+    )
+    assert refreshed["statut_secondaire"] == status
+
+
+def test_manual_ft_refusal_updates_real_status_and_beats_stale_wedof_state(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post(
+        "/api/crm/contacts", json={"prenom": "Persistance", "nom": "FT"}
+    ).get_json()
+    monkeypatch.setattr(
+        application,
+        "_wedof_funding_statuses_by_contact",
+        lambda data: {created["id"]: "en_cours_instruction"},
+    )
+
+    saved = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut_secondaire": "Financement FT refusé"},
+    ).get_json()
+    assert saved["statut_secondaire"] == "Financement FT refusé"
+    assert saved["statut_demande_financement_ft"] == "refusee"
+
+    refreshed = next(
+        contact for contact in c.get("/api/crm/contacts").get_json()
+        if contact["id"] == created["id"]
+    )
+    assert refreshed["statut_secondaire"] == "Financement FT refusé"
+    assert refreshed["statut_demande_financement_ft"] == "refusee"
+
+
 def test_pipeline_table_displays_every_status_held_by_a_contact():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
@@ -522,7 +592,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260814-wedof-ft-refusal" in page.data
+    assert b"20260814-status-persistence" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"

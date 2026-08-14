@@ -63,6 +63,7 @@ def test_contact_supports_a_removable_secondary_timeline():
     assert 'id="addSecondaryTimeline"' in javascript
     assert 'id="removeSecondaryTimeline"' in javascript
     assert "statut_secondaire:next" in javascript
+    assert "Deuxième statut enregistré" in javascript
     assert ".timeline-secondary button.current" in stylesheet
 
 

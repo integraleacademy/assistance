@@ -6915,10 +6915,21 @@ CRM_STATUSES = [
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
-CRM_SECONDARY_ONLY_STATUSES = {
-    "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
+CRM_SECONDARY_STATUSES = (
+    "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI",
+    "C2P en cours", "Marché FT",
+)
+CRM_SECONDARY_ONLY_STATUSES = set(CRM_SECONDARY_STATUSES) | {"Session FT"}
+CRM_FT_SECONDARY_BY_STATUS = {
+    "en_cours_instruction": "Financement FT en cours",
+    "refusee": "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260814-wedof-ft-refusal"
+CRM_FT_STATUS_BY_SECONDARY = {
+    secondary: funding_status
+    for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
+}
+CRM_MANUAL_STATUS_SOURCE = "manual"
+CRM_ASSET_VERSION = "20260814-status-persistence"
 
 
 def _crm_statuses(data=None):
@@ -8383,7 +8394,9 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     # Le statut WEDOF est calculé une seule fois pour toute la liste des contacts
     # puis injecté ici. Ne jamais relire toute la base WEDOF depuis cette fonction :
     # elle est appelée une fois par piste et transformerait la requête en N × M.
-    if funding_status:
+    if (funding_status
+            and contact.get("statut_demande_financement_ft_source")
+            != CRM_MANUAL_STATUS_SOURCE):
         response["statut_demande_financement_ft"] = funding_status
     snapshot = regulatory_snapshot
     if snapshot is None and data is not None:
@@ -11184,11 +11197,7 @@ def _crm_prepare_contacts(data):
         )
         wedof_funding_statuses = {}
 
-    automatic_secondary_statuses = {
-        "en_cours_instruction": "Financement FT en cours",
-        "refusee": "Financement FT refusé",
-    }
-    automatic_secondary_labels = set(automatic_secondary_statuses.values())
+    automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
 
     for existing in data.get("crm_contacts", []):
         if existing.get("statut_secondaire") == "Session FT":
@@ -11198,6 +11207,8 @@ def _crm_prepare_contacts(data):
         contact_id = str(existing.get("id") or "")
         live_funding_status = wedof_funding_statuses.get(contact_id)
         if (live_funding_status
+                and existing.get("statut_demande_financement_ft_source")
+                != CRM_MANUAL_STATUS_SOURCE
                 and existing.get("statut_demande_financement_ft") != live_funding_status):
             existing["statut_demande_financement_ft"] = live_funding_status
             changed = True
@@ -11205,15 +11216,20 @@ def _crm_prepare_contacts(data):
         funding_status = str(
             existing.get("statut_demande_financement_ft") or ""
         ).strip()
-        automatic_secondary = automatic_secondary_statuses.get(funding_status)
-        if automatic_secondary and existing.get("statut_secondaire") != automatic_secondary:
-            existing["statut_secondaire"] = automatic_secondary
-            changed = True
-        elif (not automatic_secondary
-              and existing.get("statut_secondaire") in automatic_secondary_labels):
-            existing["statut_secondaire"] = ""
-            changed = True
-        elif "statut_secondaire" not in existing:
+        automatic_secondary = CRM_FT_SECONDARY_BY_STATUS.get(funding_status)
+        secondary_is_manual = (
+            existing.get("statut_secondaire_source") == CRM_MANUAL_STATUS_SOURCE
+        )
+        if not secondary_is_manual:
+            if (automatic_secondary
+                    and existing.get("statut_secondaire") != automatic_secondary):
+                existing["statut_secondaire"] = automatic_secondary
+                changed = True
+            elif (not automatic_secondary
+                  and existing.get("statut_secondaire") in automatic_secondary_labels):
+                existing["statut_secondaire"] = ""
+                changed = True
+        if "statut_secondaire" not in existing:
             existing["statut_secondaire"] = ""
             changed = True
 
@@ -11483,18 +11499,32 @@ def crm_contact(contact_id):
                 _crm_activity(contact, "relance", "Relance annulée")
     if contact.get("statut_secondaire") == "Session FT":
         contact["statut_secondaire"] = "Marché FT"
+    if "statut_secondaire" in payload:
+        # Une étape choisie dans la timeline est volontaire : elle ne doit plus
+        # être écrasée au prochain GET par une valeur WEDOF encore en cache.
+        contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
+        manual_funding_status = CRM_FT_STATUS_BY_SECONDARY.get(
+            contact.get("statut_secondaire")
+        )
+        if manual_funding_status:
+            contact["statut_demande_financement_ft"] = manual_funding_status
+            contact["statut_demande_financement_ft_source"] = (
+                CRM_MANUAL_STATUS_SOURCE
+            )
     if "statut_demande_financement_ft" in payload:
-        automatic_secondary = {
-            "en_cours_instruction": "Financement FT en cours",
-            "refusee": "Financement FT refusé",
-        }.get(contact.get("statut_demande_financement_ft"))
+        contact["statut_demande_financement_ft_source"] = (
+            CRM_MANUAL_STATUS_SOURCE
+        )
+        automatic_secondary = CRM_FT_SECONDARY_BY_STATUS.get(
+            contact.get("statut_demande_financement_ft")
+        )
         if automatic_secondary:
             contact["statut_secondaire"] = automatic_secondary
+            contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
         elif old_secondary_status in {"Financement FT en cours", "Financement FT refusé"}:
             contact["statut_secondaire"] = ""
-    secondary_statuses = {
-        "", "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI", "C2P en cours", "Marché FT"
-    }
+            contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
+    secondary_statuses = {"", *CRM_SECONDARY_STATUSES}
     if contact.get("statut_secondaire", "") not in secondary_statuses:
         contact["statut_secondaire"] = ""
     # Une confirmation porte sur un montant exact : toute modification de ses
