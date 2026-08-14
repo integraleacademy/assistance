@@ -433,6 +433,13 @@ def test_news_feed_page_is_available(tmp_path, monkeypatch):
     assert b'Elsa DUQUESNE' in response.data
 
 
+def test_news_feed_section_renders_publications_instead_of_contacts():
+    crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
+
+    assert "else if(C.section==='fil-actu')return newsPage()" in crm_js
+    assert "function newsPage()" in crm_js
+
+
 def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     application.app.config.update(TESTING=True, SERVER_NAME="localhost")
