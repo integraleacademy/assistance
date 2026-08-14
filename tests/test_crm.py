@@ -129,13 +129,12 @@ def test_global_search_closes_when_clicking_outside():
     assert "if(!searchBox.contains(e.target))globalResults.classList.remove('open')" in crm_js
 
 
-def test_sidebar_lead_count_includes_every_active_pipeline_status():
+def test_sidebar_lead_count_only_includes_new_leads():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    assert "const isActiveLead=c=>!['Converti','Disqualifié'].includes(c.statut)" in crm_js
-    assert "contacts.filter(isActiveLead).length" in crm_js
-    assert "leadCount.textContent=contacts.filter(c=>c.statut==='Nouveaux').length" not in crm_js
+    assert "const count=contacts.filter(c=>c.statut==='Nouveaux').length" in crm_js
+    assert "contacts.filter(isActiveLead).length;if(leadCount)leadCount.textContent=count" not in crm_js
 
 
 def test_pipeline_financing_stages_follow_real_funding_request_status():
