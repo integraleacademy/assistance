@@ -629,7 +629,7 @@ def test_crm_templates_can_be_edited_and_deleted(tmp_path, monkeypatch):
     assert updated.get_json()["updated_at"]
     assert c.patch(f"/api/crm/templates/{created['id']}", json={"nom": " "}).status_code == 400
     assert c.delete(f"/api/crm/templates/{created['id']}").status_code == 204
-    assert c.get("/api/crm/templates").get_json()["sms"] == []
+    assert [item["nom"] for item in c.get("/api/crm/templates").get_json()["sms"]] == ["Relance documents"]
     assert c.delete(f"/api/crm/templates/{created['id']}").status_code == 404
 
 
@@ -641,6 +641,21 @@ def test_message_template_picker_prioritizes_the_contact_formation():
     assert "includes(needle)" in crm_js
     assert 'value="__other_templates__">Autres modèles…' in crm_js
     assert 'label="Autres modèles"' in crm_js
+    assert ".startsWith('relance')" in crm_js
+
+
+def test_crm_templates_include_document_reminders(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+
+    result = c.get("/api/crm/templates").get_json()
+
+    email = next(item for item in result["email"] if item["nom"] == "Relance documents")
+    sms = next(item for item in result["sms"] if item["nom"] == "Relance documents")
+    assert email["system"] is True
+    assert "Documents manquants" in email["sujet"]
+    assert "{{ prenom }}" in email["contenu"]
+    assert sms["system"] is True
+    assert "documents manquants" in sms["contenu"]
 
 
 def test_message_modal_does_not_rely_on_named_window_properties():
