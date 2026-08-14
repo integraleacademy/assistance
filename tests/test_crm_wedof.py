@@ -592,6 +592,37 @@ def test_completed_ft_instruction_clears_automatic_secondary_timeline(
     assert completed["statut_secondaire"] == ""
 
 
+def test_refused_ft_instruction_returning_to_validated_updates_secondary_timeline(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    ft_folder = folder(
+        "ft-refused", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    ft_folder["state"] = "waitingAcceptation"
+    ft_folder["history"] = [{"state": "waitingAcceptation"}]
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    in_progress = next(
+        row for row in client.get("/api/crm/contacts").get_json()
+        if row["id"] == contact["id"]
+    )
+    assert in_progress["statut_demande_financement_ft"] == "en_cours_instruction"
+    assert in_progress["statut_secondaire"] == "Financement FT en cours"
+
+    # WEDOF revient à « En attente d'acceptation du candidat » après le refus FT.
+    ft_folder["state"] = "validated"
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+    refused = next(
+        row for row in client.get("/api/crm/contacts").get_json()
+        if row["id"] == contact["id"]
+    )
+
+    assert refused["statut_demande_financement_ft"] == "refusee"
+    assert refused["statut_secondaire"] == "Financement FT refusé"
+
+
 def test_collaborative_updates_endpoint_returns_a_small_payload(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")

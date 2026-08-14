@@ -6918,7 +6918,7 @@ CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_ONLY_STATUSES = {
     "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260814-meta-lead-answers"
+CRM_ASSET_VERSION = "20260814-wedof-ft-refusal"
 
 
 def _crm_statuses(data=None):
@@ -10435,6 +10435,13 @@ def _wedof_france_travail_status(payload):
     if state in {"accepted", "intraining", "terminated", "servicedonedeclared",
                  "servicedonevalidated", "tobill", "billed", "paid"}:
         return "acceptee"
+    # Après un refus de financement France Travail, WEDOF ne conserve pas un
+    # état terminal dédié : le dossier CPF revient à ``validated`` afin que le
+    # candidat puisse de nouveau l'accepter ou choisir un autre financement.
+    # La présence antérieure de ``waitingAcceptation`` permet de distinguer ce
+    # retour d'un dossier simplement validé qui n'a jamais été transmis à FT.
+    if state == "validated":
+        return "refusee"
     return "en_cours_instruction"
 
 
