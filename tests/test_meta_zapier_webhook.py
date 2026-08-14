@@ -66,56 +66,65 @@ def test_new_lead_creates_contact_submission_notification_and_custom_answers(tmp
     assert "Formation APS" in contact["activities"][0]["detail"]
 
 
-def test_new_meta_lead_creates_exactly_one_salesforce_prospect(tmp_path, monkeypatch):
+def test_new_a3p_meta_lead_receives_public_form_email_and_sms_without_quote(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
-    salesforce_payloads = []
-    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_payloads.append)
+    emails, sms = [], []
+    monkeypatch.setattr(
+        application, "send_email_html",
+        lambda *args: emails.append(args) or True,
+    )
+    monkeypatch.setattr(
+        application, "send_sms",
+        lambda *args: sms.append(args) or True,
+    )
     payload = lead(**{
-        "leadgen_id": "meta-salesforce-1",
-        "Quelle formation souhaitez-vous ?": "Agent de Prévention et de Sécurité (APS)",
-        "Dans quel centre souhaitez-vous suivre la formation ?": "Puget-sur-Argens (Côte d'Azur)",
-        "Quelles dates de formation souhaitez-vous ?": "7 septembre au 9 octobre 2026",
-        "Avez-vous consulté votre compte CPF ?": "Oui",
-        "Quel montant avez-vous sur votre CPF ?": "1 250 €",
-        "Souhaitez-vous un financement France Travail ?": "Oui",
-        "Avez-vous une carte professionnelle CNAPS ?": "Non",
+        "leadgen_id": "meta-a3p",
+        "Quelle formation souhaitez-vous ?": "A3P – Bodyguard",
+        "Dans quel centre souhaitez-vous suivre la formation ?": "Paris",
+        "Quelles dates de formation souhaitez-vous ?": "Septembre 2026",
     })
 
-    first = post(client, payload)
-    duplicate = post(client, payload)
+    response = post(client, payload)
 
-    assert first.status_code == 201 and first.get_json()["result"] == "created"
-    assert duplicate.status_code == 200 and duplicate.get_json()["result"] == "already_processed"
-    assert len(salesforce_payloads) == 1
-    salesforce = salesforce_payloads[0]
-    assert salesforce["source_formulaire"] == "meta-zapier-leads"
-    assert salesforce["meta_lead_id"] == "meta-salesforce-1"
-    assert salesforce["origine"] == "META"
-    assert salesforce["formation"] == "APS"
-    assert salesforce["centre"] == "cote_azur"
-    assert salesforce["cpf_consulte"] == "OUI"
-    assert salesforce["cpf_montant"] == "1250.00"
-    assert salesforce["france_travail"] == "OUI"
-    assert salesforce["cnaps_ok"] == "NON"
-    assert "Identifiant Meta : meta-salesforce-1" in salesforce["infos_complementaires"]
-    assert "Réponses au formulaire" in salesforce["infos_complementaires"]
-
-
-def test_meta_salesforce_payload_maps_all_supported_crm_training_labels():
-    cases = (
-        ({"formation": "APS"}, "APS"),
-        ({"formation": "A3P"}, "A3P"),
-        ({"formation": "SSIAP 1"}, "SSIAP"),
-        ({"formation": "Chauffeur VTC"}, "VTC"),
-        ({"formation": "DESP", "desp_type": "INITIAL"}, "DESP_INIT"),
-        ({"formation": "DESP", "desp_type": "VAE"}, "DESP_VAE"),
+    assert response.status_code == 201
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    submission = data["crm_meta_lead_submissions"][0]
+    assert submission["automatic_delivery"] == {"email": True, "sms": True}
+    assert data.get("demandes", []) == []
+    assert not contact.get("source_devis_id")
+    assert not contact.get("devis_url")
+    assert emails[0][0] == "LINA@Example.FR"
+    expected = application._a3p_information_email_content(
+        "Lina", "Septembre 2026", "paris", "",
     )
-    for crm_values, expected in cases:
-        salesforce = application._meta_salesforce_payload(
-            "meta-mapping", {}, crm_values, [],
-        )
-        assert salesforce["formation"] == expected
-        assert salesforce["nom"] == "Sans nom"
+    assert emails[0][1:] == expected
+    assert "Télécharger mon devis détaillé" not in emails[0][3]
+    assert "/plan/" not in emails[0][3]
+    assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P"))]
+    titles = [activity["title"] for activity in contact["activities"]]
+    assert "Devis détaillé créé" not in titles
+    assert "E-mail automatique envoyé" in titles
+    assert "SMS automatique envoyé" in titles
+
+
+def test_attached_a3p_meta_lead_does_not_resend_automatic_messages(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["crm_contacts"] = [{
+        "id": "existing", "prenom": "Lina", "nom": "MARTIN",
+        "mail": "lina@example.fr", "telephone": "+33612345678",
+        "formation": "A3P", "activities": [],
+    }]
+    application.save_data(data)
+    monkeypatch.setattr(application, "send_email_html", lambda *args: (_ for _ in ()).throw(AssertionError("email envoyé")))
+    monkeypatch.setattr(application, "send_sms", lambda *args: (_ for _ in ()).throw(AssertionError("SMS envoyé")))
+
+    response = post(client, lead())
+
+    assert response.status_code == 200
+    assert response.get_json()["result"] == "attached"
+    assert application.load_data()["crm_meta_lead_submissions"][0].get("automatic_delivery") is None
 
 
 def test_meta_questions_fill_training_session_funding_and_regulatory_fields(tmp_path, monkeypatch):

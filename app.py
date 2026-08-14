@@ -2117,7 +2117,44 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
     session_html = _format_upcoming_sessions_for_email(centre_code, "A3P")
-    return _render_email_template("a3p.html", prenom=prenom, centre_display=centre_display, session_html=session_html, devis_url=devis_url)
+    devis_button_html = ""
+    if devis_url:
+        devis_button_html = (
+            '<p style="margin:0; text-align:center;">'
+            f'<a href="{devis_url}" style="display:inline-block; background:#F4C45A; color:#111827; '
+            'text-decoration:none; padding:13px 22px; border-radius:10px; font-weight:bold;">'
+            "Télécharger mon devis détaillé</a></p>"
+        )
+    return _render_email_template(
+        "a3p.html", prenom=prenom, centre_display=centre_display,
+        session_html=session_html, devis_button_html=devis_button_html,
+    )
+
+
+def _a3p_information_email_content(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
+    """Return the A3P message shared by the public form and META leads."""
+    session_date = _format_selected_session_date(dates_txt)
+    centre_label, centre_address = _centre_label_and_address(centre_code)
+    plain = (
+        f"Bonjour {prenom},\n\n"
+        "Je fais suite à votre demande de renseignements concernant notre formation Agent de Protection Physique des Personnes (A3P – Bodyguard), titre reconnu par l’État (RNCP38002 – niveau 4).\n"
+        "Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que garde du corps, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle Agent de protection physique des personnes délivrée par le CNAPS (Ministère de l'intérieur).\n\n"
+        "Durée et organisation : 328 heures de formation.\n"
+        + (f"Session : {session_date}\n" if session_date else "")
+        + f"Lieu : {centre_label} — {centre_address}\n\n"
+        "Tarif : 4200 € TTC (financement possible via CPF).\n"
+        "Identité Numérique La Poste requise pour le CPF.\n"
+        "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
+        "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
+        "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
+        "Je reste à votre disposition pour toute information complémentaire.\n\n"
+        "Clément VAILLANT\nDirecteur – Intégrale Academy"
+    )
+    return (
+        "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
+        plain,
+        build_a3p_email_html(prenom, dates_txt, centre_code, devis_url),
+    )
 
 
 
@@ -3798,25 +3835,9 @@ def demande_informations_formations():
             html = build_vae_desp_email_html(prenom, devis_url)
             email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
         elif form_data.get("formation") == "A3P":
-            session_date = _format_selected_session_date(form_data.get("dates", ""))
-            centre_label, centre_address = _centre_label_and_address(form_data.get("centre", ""))
-            plain = (
-                f"Bonjour {prenom},\n\n"
-                "Je fais suite à votre demande de renseignements concernant notre formation Agent de Protection Physique des Personnes (A3P – Bodyguard), titre reconnu par l’État (RNCP38002 – niveau 4).\n"
-                "Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que garde du corps, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle Agent de protection physique des personnes délivrée par le CNAPS (Ministère de l'intérieur).\n\n"
-                "Durée et organisation : 328 heures de formation.\n"
-                + (f"Session : {session_date}\n" if session_date else "")
-                + f"Lieu : {centre_label} — {centre_address}\n\n"
-                "Tarif : 4200 € TTC (financement possible via CPF).\n"
-                "Identité Numérique La Poste requise pour le CPF.\n"
-                "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
-                "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
-                "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
-                "Je reste à votre disposition pour toute information complémentaire.\n\n"
-                "Clément VAILLANT\nDirecteur – Intégrale Academy"
+            email_subject, plain, html = _a3p_information_email_content(
+                prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url,
             )
-            html = build_a3p_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
-            email_subject = "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
         elif form_data.get("formation") == "APS":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
             centre_label, centre_address = _centre_label_and_address(form_data.get("centre", ""))
@@ -7744,77 +7765,36 @@ def _meta_activity_detail(fields, answer_rows=None, completed_fields=None):
     return " · ".join(details)
 
 
-def _meta_salesforce_payload(meta_lead_id, fields, crm_payload, answer_rows):
-    """Construit la piste Salesforce à partir du mapping CRM du formulaire META."""
-    formation = str(crm_payload.get("formation") or "").strip()
-    if formation == "DESP":
-        formation_salesforce = (
-            "DESP_VAE" if crm_payload.get("desp_type") == "VAE" else "DESP_INIT"
+def _send_meta_a3p_information(contact):
+    """Send and log the same A3P email and SMS as the public information form."""
+    centre_code = _normalize_centre_code(contact.get("lieu"))
+    subject, plain, html = _a3p_information_email_content(
+        contact.get("prenom", ""), contact.get("dates_formation", ""), centre_code, "",
+    )
+    delivery = {"email": False, "sms": False}
+    if contact.get("mail"):
+        try:
+            delivery["email"] = bool(send_email_html(contact["mail"], subject, plain, html))
+        except Exception:
+            app.logger.exception("Échec de l'e-mail automatique A3P pour une piste META")
+        _crm_activity(
+            contact, "email" if delivery["email"] else "erreur",
+            "E-mail automatique envoyé" if delivery["email"] else "Échec de l’e-mail automatique",
+            subject, html,
         )
-    else:
-        formation_salesforce = {
-            "APS": "APS",
-            "A3P": "A3P",
-            "SSIAP 1": "SSIAP",
-            "Chauffeur VTC": "VTC",
-        }.get(formation, "")
-
-    centre = {
-        "cote d azur": "cote_azur",
-        "paris": "paris",
-        "auvergne": "auvergne",
-    }.get(_meta_words(crm_payload.get("lieu")), "")
-
-    details = [
-        "PROSPECT META - FORMULAIRE INSTANTANÉ FACEBOOK / INSTAGRAM",
-        f"Identifiant Meta : {meta_lead_id}",
-    ]
-    for key, label in (
-        ("form_name", "Formulaire"),
-        ("campaign_name", "Campagne"),
-        ("adset_name", "Ensemble de publicités"),
-        ("ad_name", "Publicité"),
-        ("platform", "Plateforme"),
-    ):
-        if fields.get(key):
-            details.append(f"{label} : {fields[key]}")
-    if answer_rows:
-        details.append("")
-        details.append("Réponses au formulaire :")
-        details.extend(
-            f"- {row.get('question', '')} : {row.get('answer', '')}"
-            for row in answer_rows
+    if contact.get("telephone"):
+        sms_body = build_training_information_sms_text("A3P")
+        try:
+            delivery["sms"] = bool(send_sms(contact["telephone"], sms_body))
+        except Exception:
+            app.logger.exception("Échec du SMS automatique A3P pour une piste META")
+        _crm_activity(
+            contact, "sms" if delivery["sms"] else "erreur",
+            "SMS automatique envoyé" if delivery["sms"] else "Échec du SMS automatique",
+            sms_body,
         )
-
-    desp_type = str(crm_payload.get("desp_type") or "").strip()
-    return {
-        "prenom": str(crm_payload.get("prenom") or "").strip(),
-        "nom": str(crm_payload.get("nom") or "").strip() or "Sans nom",
-        "mail": str(crm_payload.get("mail") or "").strip(),
-        "telephone": str(crm_payload.get("telephone") or "").strip(),
-        "formation": formation_salesforce,
-        "type_formation": f"DESP {desp_type}" if desp_type else formation,
-        "centre": centre,
-        "dates": str(crm_payload.get("dates_formation") or "").strip(),
-        "cpf_consulte": str(crm_payload.get("cpf") or "").strip(),
-        "cpf_montant": str(crm_payload.get("cpf_montant") or "").strip(),
-        "cnaps_ok": str(crm_payload.get("carte_pro") or "").strip(),
-        "garde_vue": str(crm_payload.get("garde_vue") or "").strip(),
-        "identite_numerique": str(
-            crm_payload.get("identite_ok")
-            or crm_payload.get("identite_creation")
-            or ""
-        ).strip(),
-        "france_travail": str(crm_payload.get("financement_ft") or "").strip(),
-        "ft_refus_ok": str(crm_payload.get("refus_ft_perso") or "").strip(),
-        "financement_perso": str(
-            crm_payload.get("reste_a_charge_perso") or ""
-        ).strip(),
-        "origine": "META",
-        "source_formulaire": "meta-zapier-leads",
-        "meta_lead_id": str(meta_lead_id),
-        "infos_complementaires": "\n".join(details),
-    }
+    contact["updated_at"] = _crm_now()
+    return delivery
 
 
 @app.post("/api/integrations/meta/zapier-leads")
@@ -7901,6 +7881,8 @@ def meta_zapier_leads():
             submissions.insert(0, submission)
             inbound["custom_answers"] = copy.deepcopy(custom_answers)
             inbound["mapped_fields"] = copy.deepcopy(submission["mapped_fields"])
+            if created and contact.get("formation") == "A3P":
+                submission["automatic_delivery"] = _send_meta_a3p_information(contact)
             if created:
                 data.setdefault("crm_notifications", []).insert(0, {
                     "id": str(uuid.uuid4()), "date": received_at, "kind": "meta_lead",
