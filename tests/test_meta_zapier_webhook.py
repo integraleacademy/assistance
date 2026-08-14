@@ -8,6 +8,7 @@ SECRET = "test-webhook-secret"
 def setup_client(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     monkeypatch.setenv("ZAPIER_META_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
     application.app.config.update(TESTING=True)
     return application.app.test_client()
 
@@ -63,6 +64,58 @@ def test_new_lead_creates_contact_submission_notification_and_custom_answers(tmp
     assert submission["mapped_fields"]["formation"] == "APS"
     assert submission["mapped_fields"]["carte_pro"] == "OUI"
     assert "Formation APS" in contact["activities"][0]["detail"]
+
+
+def test_new_meta_lead_creates_exactly_one_salesforce_prospect(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    salesforce_payloads = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_payloads.append)
+    payload = lead(**{
+        "leadgen_id": "meta-salesforce-1",
+        "Quelle formation souhaitez-vous ?": "Agent de Prévention et de Sécurité (APS)",
+        "Dans quel centre souhaitez-vous suivre la formation ?": "Puget-sur-Argens (Côte d'Azur)",
+        "Quelles dates de formation souhaitez-vous ?": "7 septembre au 9 octobre 2026",
+        "Avez-vous consulté votre compte CPF ?": "Oui",
+        "Quel montant avez-vous sur votre CPF ?": "1 250 €",
+        "Souhaitez-vous un financement France Travail ?": "Oui",
+        "Avez-vous une carte professionnelle CNAPS ?": "Non",
+    })
+
+    first = post(client, payload)
+    duplicate = post(client, payload)
+
+    assert first.status_code == 201 and first.get_json()["result"] == "created"
+    assert duplicate.status_code == 200 and duplicate.get_json()["result"] == "already_processed"
+    assert len(salesforce_payloads) == 1
+    salesforce = salesforce_payloads[0]
+    assert salesforce["source_formulaire"] == "meta-zapier-leads"
+    assert salesforce["meta_lead_id"] == "meta-salesforce-1"
+    assert salesforce["origine"] == "META"
+    assert salesforce["formation"] == "APS"
+    assert salesforce["centre"] == "cote_azur"
+    assert salesforce["cpf_consulte"] == "OUI"
+    assert salesforce["cpf_montant"] == "1250.00"
+    assert salesforce["france_travail"] == "OUI"
+    assert salesforce["cnaps_ok"] == "NON"
+    assert "Identifiant Meta : meta-salesforce-1" in salesforce["infos_complementaires"]
+    assert "Réponses au formulaire" in salesforce["infos_complementaires"]
+
+
+def test_meta_salesforce_payload_maps_all_supported_crm_training_labels():
+    cases = (
+        ({"formation": "APS"}, "APS"),
+        ({"formation": "A3P"}, "A3P"),
+        ({"formation": "SSIAP 1"}, "SSIAP"),
+        ({"formation": "Chauffeur VTC"}, "VTC"),
+        ({"formation": "DESP", "desp_type": "INITIAL"}, "DESP_INIT"),
+        ({"formation": "DESP", "desp_type": "VAE"}, "DESP_VAE"),
+    )
+    for crm_values, expected in cases:
+        salesforce = application._meta_salesforce_payload(
+            "meta-mapping", {}, crm_values, [],
+        )
+        assert salesforce["formation"] == expected
+        assert salesforce["nom"] == "Sans nom"
 
 
 def test_meta_questions_fill_training_session_funding_and_regulatory_fields(tmp_path, monkeypatch):
@@ -188,6 +241,8 @@ def test_crm_ui_displays_every_original_meta_answer():
 
 def test_email_match_is_case_insensitive_and_only_fills_empty_fields(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
+    salesforce_payloads = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_payloads.append)
     data = application.load_data()
     data["crm_contacts"] = [{
         "id": "existing", "prenom": "Lina", "nom": "MARTIN",
@@ -201,6 +256,7 @@ def test_email_match_is_case_insensitive_and_only_fills_empty_fields(tmp_path, m
     contact = application.load_data()["crm_contacts"][0]
     assert contact["telephone"] == "+33 6 12 34 56 78"
     assert contact["statut"] == "Converti" and contact["origine"] == "Téléphone"
+    assert salesforce_payloads == []
 
 
 def test_phone_match_accepts_french_formats_without_name(tmp_path, monkeypatch):
