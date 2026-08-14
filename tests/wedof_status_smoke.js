@@ -15,6 +15,8 @@ assert.equal(wedofFranceTravailStatus({state:'waitingAcceptation'}), 'en_cours_i
 assert.equal(wedofMainStatusLabel({state:'waitingAcceptation'}), 'En cours d’instruction France Travail');
 assert.equal(wedofFranceTravailStatus({state:'validated'}), '');
 assert.equal(wedofMainStatusLabel({state:'validated'}), 'En attente d’acceptation du candidat');
+assert.equal(wedofFranceTravailStatus({state:'validated',history:[{state:'waitingAcceptation'}]}), 'refusee');
+assert.equal(wedofMainStatusLabel({state:'validated',history:[{state:'waitingAcceptation'}]}), 'En attente d’acceptation du candidat');
 assert.equal(wedofFranceTravailStatus({state:'accepted'}), '');
 assert.equal(wedofFranceTravailStatus({state:'accepted',history:{waitingAcceptationDate:'2026-08-11'}}), 'acceptee');
 assert.equal(wedofFranceTravailStatus({state:'refused',history:[{state:'waitingAcceptation'}]}), 'refusee');
