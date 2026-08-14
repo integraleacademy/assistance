@@ -65,6 +65,67 @@ def test_new_lead_creates_contact_submission_notification_and_custom_answers(tmp
     assert "Formation APS" in contact["activities"][0]["detail"]
 
 
+def test_new_a3p_meta_lead_receives_public_form_email_and_sms_without_quote(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    emails, sms = [], []
+    monkeypatch.setattr(
+        application, "send_email_html",
+        lambda *args: emails.append(args) or True,
+    )
+    monkeypatch.setattr(
+        application, "send_sms",
+        lambda *args: sms.append(args) or True,
+    )
+    payload = lead(**{
+        "leadgen_id": "meta-a3p",
+        "Quelle formation souhaitez-vous ?": "A3P – Bodyguard",
+        "Dans quel centre souhaitez-vous suivre la formation ?": "Paris",
+        "Quelles dates de formation souhaitez-vous ?": "Septembre 2026",
+    })
+
+    response = post(client, payload)
+
+    assert response.status_code == 201
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    submission = data["crm_meta_lead_submissions"][0]
+    assert submission["automatic_delivery"] == {"email": True, "sms": True}
+    assert data.get("demandes", []) == []
+    assert not contact.get("source_devis_id")
+    assert not contact.get("devis_url")
+    assert emails[0][0] == "LINA@Example.FR"
+    expected = application._a3p_information_email_content(
+        "Lina", "Septembre 2026", "paris", "",
+    )
+    assert emails[0][1:] == expected
+    assert "Télécharger mon devis détaillé" not in emails[0][3]
+    assert "/plan/" not in emails[0][3]
+    assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P"))]
+    titles = [activity["title"] for activity in contact["activities"]]
+    assert "Devis détaillé créé" not in titles
+    assert "E-mail automatique envoyé" in titles
+    assert "SMS automatique envoyé" in titles
+
+
+def test_attached_a3p_meta_lead_does_not_resend_automatic_messages(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["crm_contacts"] = [{
+        "id": "existing", "prenom": "Lina", "nom": "MARTIN",
+        "mail": "lina@example.fr", "telephone": "+33612345678",
+        "formation": "A3P", "activities": [],
+    }]
+    application.save_data(data)
+    monkeypatch.setattr(application, "send_email_html", lambda *args: (_ for _ in ()).throw(AssertionError("email envoyé")))
+    monkeypatch.setattr(application, "send_sms", lambda *args: (_ for _ in ()).throw(AssertionError("SMS envoyé")))
+
+    response = post(client, lead())
+
+    assert response.status_code == 200
+    assert response.get_json()["result"] == "attached"
+    assert application.load_data()["crm_meta_lead_submissions"][0].get("automatic_delivery") is None
+
+
 def test_meta_questions_fill_training_session_funding_and_regulatory_fields(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     session = "Du 7 septembre au 9 octobre 2026 - examen le 12 octobre 2026"
