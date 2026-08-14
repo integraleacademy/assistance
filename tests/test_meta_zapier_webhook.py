@@ -49,11 +49,141 @@ def test_new_lead_creates_contact_submission_notification_and_custom_answers(tmp
     contact = data["crm_contacts"][0]
     assert contact["statut"] == "Nouveaux" and contact["origine"] == "META"
     assert contact["source_detail"] == "Facebook / Instagram Lead Ads"
+    assert contact["formation"] == "APS"
+    assert contact["meta_answers"] == [
+        {"question": "Avez-vous une carte professionnelle ?", "answer": "Oui",
+         "received_at": contact["received_at"]},
+        {"question": "Formation souhaitée", "answer": "APS",
+         "received_at": contact["received_at"]},
+    ]
     assert len(data["crm_notifications"]) == 1
     submission = data["crm_meta_lead_submissions"][0]
     assert submission["raw_payload"] == payload
     assert submission["custom_answers"]["Avez-vous une carte professionnelle ?"] == ["Oui"]
+    assert submission["mapped_fields"]["formation"] == "APS"
+    assert submission["mapped_fields"]["carte_pro"] == "OUI"
     assert "Formation APS" in contact["activities"][0]["detail"]
+
+
+def test_meta_questions_fill_training_session_funding_and_regulatory_fields(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    session = "Du 7 septembre au 9 octobre 2026 - examen le 12 octobre 2026"
+    payload = lead(**{
+        "Quelle formation souhaitez-vous ?": "Agent de Prévention et de Sécurité (APS)",
+        "Dans quel centre souhaitez-vous suivre la formation ?": "Puget-sur-Argens (Côte d'Azur)",
+        "Quelles dates de formation souhaitez-vous ?": "7 septembre au 9 octobre 2026",
+        "Avez-vous consulté votre compte CPF ?": "Oui",
+        "Quel montant avez-vous sur votre CPF ?": "1 250 €",
+        "Avez-vous créé votre identité numérique La Poste ?": "Pas encore",
+        "Souhaitez-vous un financement France Travail ?": "Oui",
+        "Êtes-vous inscrit à France Travail ?": "Oui, je suis déjà inscrit",
+        "Avez-vous une carte professionnelle CNAPS ?": "Non",
+    })
+
+    response = post(client, payload)
+
+    assert response.status_code == 201
+    contact = application.load_data()["crm_contacts"][0]
+    assert contact["formation"] == "APS"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["dates_formation"] == session
+    assert contact["cpf"] == "OUI"
+    assert contact["cpf_montant"] == "1250.00"
+    assert contact["identite_creation"] == "NON"
+    assert contact["financement_ft"] == "OUI"
+    assert contact["inscrit_ft"] == "OUI"
+    assert contact["carte_pro"] == "NON"
+    assert len(contact["meta_answers"]) >= 9
+
+
+def test_nested_zapier_answers_and_form_name_fallback_are_supported(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    payload = {
+        "data": {
+            "leadgen_id": "meta-nested",
+            "Full Name": "Lina Martin",
+            "Email": "lina@example.fr",
+            "Form Name": "Demande formation SSIAP 1 - Côte d'Azur",
+            "questions_and_answers": {
+                "cpf_consulte": {"answer": "Oui"},
+                "identite_numerique": {"value": "Non"},
+                "mode de financement": {"values": ["CPF", "France Travail"]},
+            },
+        },
+    }
+
+    response = post(client, payload)
+
+    assert response.status_code == 201
+    contact = application.load_data()["crm_contacts"][0]
+    assert contact["formation"] == "SSIAP 1"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["cpf"] == "OUI"
+    assert contact["identite_creation"] == "NON"
+    assert contact["financement_ft"] == "OUI"
+
+
+def test_existing_meta_submissions_are_backfilled_without_overwriting_manual_values(tmp_path, monkeypatch):
+    setup_client(tmp_path, monkeypatch)
+    payload = lead(**{
+        "Quelle formation souhaitez-vous ?": "APS",
+        "Lieu de formation": "Puget-sur-Argens",
+        "Avez-vous consulté votre compte CPF ?": "Oui",
+    })
+    data = application.load_data()
+    data["crm_contacts"] = [{
+        "id": "legacy-meta", "prenom": "Franck", "nom": "DENIOT",
+        "mail": "franck@example.fr", "telephone": "0600000000",
+        "formation": "A3P", "lieu": "", "cpf": "", "activities": [],
+        "statut": "Nouveaux", "source": "META",
+    }]
+    data["crm_meta_lead_submissions"] = [{
+        "meta_lead_id": "meta-legacy", "contact_id": "legacy-meta",
+        "received_at": "2026-08-14T15:49:00+02:00", "raw_payload": payload,
+        "custom_answers": {},
+    }]
+
+    changed, _ = application._crm_prepare_contacts(data)
+
+    contact = data["crm_contacts"][0]
+    assert changed is True
+    assert contact["formation"] == "A3P"
+    assert contact["lieu"] == "Côte d’Azur"
+    assert contact["cpf"] == "OUI"
+    assert any(row["question"] == "Avez-vous consulté votre compte CPF ?"
+               for row in contact["meta_answers"])
+    assert application._crm_prepare_contacts(data)[0] is False
+
+
+def test_meta_backfill_keeps_the_latest_source_context_and_is_idempotent():
+    data = {
+        "crm_contacts": [{"id": "contact-1", "formation": "", "activities": []}],
+        "crm_meta_lead_submissions": [
+            {
+                "contact_id": "contact-1", "received_at": "2026-08-14T15:00:00+02:00",
+                "raw_payload": {"leadgen_id": "new", "Form Name": "APS - formulaire récent"},
+            },
+            {
+                "contact_id": "contact-1", "received_at": "2026-08-01T10:00:00+02:00",
+                "raw_payload": {"leadgen_id": "old", "Form Name": "A3P - ancien formulaire"},
+            },
+        ],
+    }
+
+    assert application._crm_backfill_meta_submissions(data) is True
+    assert data["crm_contacts"][0]["formation"] == "APS"
+    assert data["crm_contacts"][0]["meta_source"]["form_name"] == "APS - formulaire récent"
+    assert application._crm_backfill_meta_submissions(data) is False
+
+
+def test_crm_ui_displays_every_original_meta_answer():
+    javascript = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
+    stylesheet = open(application.app.root_path + "/static/crm.css", encoding="utf-8").read()
+
+    assert "function metaAnswersSection(c)" in javascript
+    assert "Réponses du formulaire META" in javascript
+    assert "rows.map(row=>" in javascript
+    assert ".meta-answer-list" in stylesheet
 
 
 def test_email_match_is_case_insensitive_and_only_fills_empty_fields(tmp_path, monkeypatch):

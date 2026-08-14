@@ -6897,7 +6897,7 @@ CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_ONLY_STATUSES = {
     "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260813-relaunch-tracking"
+CRM_ASSET_VERSION = "20260814-meta-lead-answers"
 
 
 def _crm_statuses(data=None):
@@ -7195,6 +7195,76 @@ _META_LEAD_FIELDS = (
     "form_name", "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id",
     "campaign_name", "platform", "full_name", "first_name", "last_name", "email",
     "phone_number", "city", "zip_code", "postal_code", "formation", "centre",
+    "lieu", "dates", "dates_formation",
+)
+
+_META_ANSWER_CONTAINERS = {
+    "fielddata", "fields", "answers", "questionsandanswers", "questionanswers",
+}
+_META_PAYLOAD_WRAPPERS = {"data", "lead", "payload", "body"}
+
+_META_DIRECT_CRM_QUESTION_ALIASES = {
+    "formation": "formation",
+    "formationsouhaitee": "formation",
+    "formationdesiree": "formation",
+    "formationchoisie": "formation",
+    "typedeformation": "formation",
+    "centre": "lieu",
+    "formationcentre": "lieu",
+    "centreformation": "lieu",
+    "lieu": "lieu",
+    "lieudeformation": "lieu",
+    "lieuformation": "lieu",
+    "villedeformation": "lieu",
+    "dates": "dates_formation",
+    "date": "dates_formation",
+    "session": "dates_formation",
+    "datesformation": "dates_formation",
+    "datesdeformation": "dates_formation",
+    "datessouhaitees": "dates_formation",
+    "sessionformation": "dates_formation",
+    "cpf": "cpf",
+    "comptecpf": "cpf",
+    "cpfconsulte": "cpf",
+    "montantcpf": "cpf_montant",
+    "cpfmontant": "cpf_montant",
+    "montantcpfdisponible": "cpf_montant",
+    "cartepro": "carte_pro",
+    "carteprofessionnelle": "carte_pro",
+    "cnapsok": "carte_pro",
+    "titredesejour": "titre_sejour",
+    "gardevue": "garde_vue",
+    "antecedents": "antecedents",
+    "antecedentsjudiciaires": "antecedents",
+    "comptecnaps": "compte_cnaps",
+    "parcoursdesp": "desp_type",
+    "typedesp": "desp_type",
+    "identitenumerique": "identite_creation",
+    "identitenumeriquelaposte": "identite_creation",
+    "identitecreation": "identite_creation",
+    "identiteok": "identite_ok",
+    "francetravail": "financement_ft",
+    "financementfrancetravail": "financement_ft",
+    "financementft": "financement_ft",
+    "statutdemandefinancementft": "statut_demande_financement_ft",
+    "statutdemandefrancetravail": "statut_demande_financement_ft",
+    "ftrefusok": "refus_ft_perso",
+    "refusftperso": "refus_ft_perso",
+    "financementperso": "reste_a_charge_perso",
+    "resteachargeperso": "reste_a_charge_perso",
+    "inscritft": "inscrit_ft",
+    "inscritfrancetravail": "inscrit_ft",
+    "commentaire": "commentaires",
+    "commentaires": "commentaires",
+    "notes": "commentaires",
+}
+
+_META_CRM_COMPLETION_FIELDS = (
+    "formation", "lieu", "dates_formation", "cpf", "cpf_montant", "carte_pro",
+    "titre_sejour", "garde_vue", "antecedents", "compte_cnaps", "desp_type",
+    "identite_creation", "identite_ok", "financement_ft",
+    "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso",
+    "inscrit_ft", "commentaires",
 )
 
 
@@ -7205,10 +7275,23 @@ def _meta_key(value):
 
 def _meta_scalar(value):
     if isinstance(value, list):
-        return ", ".join(str(item) for item in value if item is not None).strip()
-    if isinstance(value, (dict, tuple)):
+        return ", ".join(
+            scalar for item in value if (scalar := _meta_scalar(item))
+        ).strip()
+    if isinstance(value, dict):
+        for key in ("values", "value", "answer", "answers", "response"):
+            if key in value:
+                return _meta_scalar(value.get(key))
+        return ""
+    if isinstance(value, tuple):
         return ""
     return str(value or "").strip()
+
+
+def _meta_words(value):
+    text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 
 def _parse_meta_lead_payload(payload):
@@ -7228,22 +7311,49 @@ def _parse_meta_lead_payload(payload):
         if canonical:
             if scalar and not fields.get(canonical):
                 fields[canonical] = scalar
-        elif name not in {"field_data", "fieldData"}:
+        elif _meta_key(name) not in _META_ANSWER_CONTAINERS | _META_PAYLOAD_WRAPPERS:
             custom[str(name)] = copy.deepcopy(value)
 
-    for name, value in payload.items():
-        consume(name, value)
-    field_data = payload.get("field_data") or payload.get("fieldData") or []
-    if isinstance(field_data, list):
-        for answer in field_data:
-            if not isinstance(answer, dict):
-                continue
-            question = answer.get("name") or answer.get("question") or answer.get("key")
-            value = answer.get("values", answer.get("value", answer.get("answer")))
-            if question:
-                consume(question, value)
-                if not aliases.get(_meta_key(question)):
-                    custom[str(question)] = copy.deepcopy(value)
+    def consume_answers(value):
+        if isinstance(value, list):
+            for item in value:
+                consume_answers(item)
+            return
+        if not isinstance(value, dict):
+            return
+        question = (
+            value.get("name") or value.get("question") or value.get("label")
+            or value.get("key") or value.get("title")
+        )
+        if question:
+            answer = value.get(
+                "values",
+                value.get("value", value.get("answer", value.get("response"))),
+            )
+            consume(question, answer)
+            if not aliases.get(_meta_key(question)):
+                custom[str(question)] = copy.deepcopy(answer)
+            return
+        for name, answer in value.items():
+            consume(name, answer)
+
+    def consume_mapping(mapping):
+        if not isinstance(mapping, dict):
+            return
+        for name, value in mapping.items():
+            key = _meta_key(name)
+            if key in _META_ANSWER_CONTAINERS:
+                consume_answers(value)
+            elif key in _META_PAYLOAD_WRAPPERS:
+                if isinstance(value, dict):
+                    consume_mapping(value)
+                elif isinstance(value, list):
+                    for item in value:
+                        consume_mapping(item)
+            else:
+                consume(name, value)
+
+    consume_mapping(payload)
     full_name = fields.get("full_name", "")
     if full_name and not fields.get("first_name") and not fields.get("last_name"):
         parts = full_name.split(None, 1)
@@ -7252,12 +7362,385 @@ def _parse_meta_lead_payload(payload):
     return fields, custom
 
 
-def _meta_activity_detail(fields):
+def _meta_yes_no(value):
+    normalized = _meta_words(value)
+    if not normalized:
+        return ""
+    negative = (
+        normalized in {"non", "no", "false", "0", "aucun", "aucune", "pas encore"}
+        or normalized.startswith(("non ", "pas "))
+        or any(phrase in normalized for phrase in (
+            "je n ai pas", "je ne suis pas", "non inscrit", "non cree", "pas cree",
+            "sans compte", "aucune demande",
+        ))
+    )
+    if negative:
+        return "NON"
+    positive = (
+        normalized in {"oui", "yes", "true", "1"}
+        or normalized.startswith(("oui ", "yes "))
+        or any(phrase in normalized for phrase in (
+            "deja cree", "deja inscrit", "je suis inscrit", "j ai un", "je dispose",
+        ))
+    )
+    return "OUI" if positive else ""
+
+
+def _meta_formation(value):
+    normalized = _meta_words(value)
+    if not normalized:
+        return "", ""
+    formation, desp_type = "", ""
+    if (re.search(r"\ba3p\b", normalized) or re.search(r"\bapr\b", normalized)
+            or "protection physique" in normalized or "protection rapprochee" in normalized
+            or "garde du corps" in normalized):
+        formation = "A3P"
+    elif ("desp" in normalized
+          or ("dirigeant" in normalized and "securite" in normalized)):
+        formation = "DESP"
+        if "vae" in normalized or "validation des acquis" in normalized:
+            desp_type = "VAE"
+        elif "initial" in normalized:
+            desp_type = "INITIAL"
+    elif "ssiap" in normalized or "securite incendie" in normalized:
+        formation = "SSIAP 1"
+    elif "vtc" in normalized or "chauffeur" in normalized:
+        formation = "Chauffeur VTC"
+    elif (re.search(r"\baps\b", normalized) or "agent de prevention" in normalized
+          or "agent de securite privee" in normalized):
+        formation = "APS"
+    return formation, desp_type
+
+
+def _meta_place(value):
+    normalized = _meta_words(value)
+    if not normalized:
+        return ""
+    if "paris" in normalized or "ile de france" in normalized:
+        return "Paris"
+    if any(term in normalized for term in (
+        "cote d azur", "puget", "frejus", "saint raphael", "var", "paca",
+    )):
+        return "Côte d’Azur"
+    if any(term in normalized for term in ("auvergne", "aurillac", "cantal")):
+        return "Auvergne"
+    return ""
+
+
+def _meta_funding_status(value):
+    normalized = _meta_words(value)
+    if not normalized:
+        return ""
+    if "refus" in normalized or "rejete" in normalized:
+        return "refusee"
+    if "annul" in normalized or "abandon" in normalized:
+        return "annulee"
+    if any(term in normalized for term in ("accepte", "accorde", "valide")):
+        return "acceptee"
+    if any(term in normalized for term in ("instruction", "en cours", "en attente")):
+        return "en_cours_instruction"
+    if any(term in normalized for term in ("transmis", "envoye", "depose")):
+        return "transmise"
+    if any(term in normalized for term in ("a preparer", "pas encore depose")):
+        return "a_preparer"
+    if any(term in normalized for term in ("aucune demande", "pas de demande")):
+        return "aucune_demande"
+    return ""
+
+
+def _meta_crm_question_field(question):
+    key = _meta_key(question)
+    direct = _META_DIRECT_CRM_QUESTION_ALIASES.get(key)
+    if direct:
+        return direct
+    if "montant" in key and "cpf" in key:
+        return "cpf_montant"
+    if "identitenumerique" in key or "franceconnect" in key:
+        return "identite_ok" if any(term in key for term in ("fonction", "active", "valide")) else "identite_creation"
+    if "inscrit" in key and ("francetravail" in key or "poleemploi" in key):
+        return "inscrit_ft"
+    if "demandeuremploi" in key:
+        return "inscrit_ft"
+    if "statut" in key and ("francetravail" in key or "financementft" in key):
+        return "statut_demande_financement_ft"
+    if "refus" in key and ("francetravail" in key or "ft" in key) and "financ" in key:
+        return "refus_ft_perso"
+    if "resteacharge" in key or ("financementpersonnel" in key and "refus" not in key):
+        return "reste_a_charge_perso"
+    if "financement" in key and ("francetravail" in key or key.endswith("ft")):
+        return "financement_ft"
+    if "cpf" in key and any(term in key for term in ("compte", "consulte", "dispose", "avezvous")):
+        return "cpf"
+    if "carteprofessionnelle" in key or "cartepro" in key:
+        return "carte_pro"
+    if "comptecnaps" in key:
+        return "compte_cnaps"
+    if "titredesejour" in key:
+        return "titre_sejour"
+    if "gardevue" in key or "empreinte" in key:
+        return "garde_vue"
+    if "antecedent" in key or "casierjudiciaire" in key:
+        return "antecedents"
+    if "parcours" in key and "desp" in key:
+        return "desp_type"
+    if ("date" in key or "session" in key) and "naissance" not in key:
+        return "dates_formation"
+    if any(term in key for term in ("lieu", "centre", "villeformation")) and "domicile" not in key:
+        return "lieu"
+    if "formation" in key and not any(term in key for term in ("date", "lieu", "centre")):
+        return "formation"
+    if any(term in key for term in ("commentaire", "precision", "projetformation", "besoinparticulier")):
+        return "commentaires"
+    return ""
+
+
+def _meta_answer_rows(fields, custom_answers):
+    rows, seen = [], set()
+
+    def add(question, value):
+        answer = _meta_scalar(value)
+        if not answer:
+            return
+        marker = (_meta_key(question), answer.casefold())
+        if marker in seen:
+            return
+        seen.add(marker)
+        rows.append({"question": str(question).strip(), "answer": answer})
+
+    for question, value in custom_answers.items():
+        add(question, value)
+    for field, label in (
+        ("formation", "Formation souhaitée"), ("centre", "Centre souhaité"),
+        ("lieu", "Lieu souhaité"), ("dates", "Dates souhaitées"),
+        ("dates_formation", "Dates souhaitées"), ("city", "Ville"),
+        ("zip_code", "Code postal"), ("postal_code", "Code postal"),
+    ):
+        if fields.get(field):
+            add(label, fields[field])
+    return rows
+
+
+def _meta_crm_payload(fields, custom_answers):
+    """Traduit les réponses visibles du formulaire META vers les champs du CRM."""
+    crm = {
+        "prenom": fields.get("first_name", ""), "nom": fields.get("last_name", ""),
+        "mail": fields.get("email", ""), "telephone": fields.get("phone_number", ""),
+    }
+    answer_rows = _meta_answer_rows(fields, custom_answers)
+
+    def set_yes_no(field, value):
+        normalized = _meta_yes_no(value)
+        if normalized and not crm.get(field):
+            crm[field] = normalized
+
+    def apply(field, value):
+        if field == "formation":
+            formation, desp_type = _meta_formation(value)
+            if formation and not crm.get("formation"):
+                crm["formation"] = formation
+            if desp_type and not crm.get("desp_type"):
+                crm["desp_type"] = desp_type
+        elif field == "lieu":
+            if (place := _meta_place(value)) and not crm.get("lieu"):
+                crm["lieu"] = place
+        elif field == "dates_formation":
+            normalized = _meta_words(value)
+            if normalized and not any(term in normalized for term in ("a definir", "ne sais pas", "pas encore")):
+                raw = _meta_scalar(value)
+                if " — " in raw and _meta_place(raw.split(" — ", 1)[0]):
+                    raw = raw.split(" — ", 1)[1].strip()
+                crm.setdefault("dates_formation", raw)
+        elif field == "cpf_montant":
+            try:
+                amount_text = re.sub(r"[^0-9,\.\s]", "", _meta_scalar(value)).strip()
+                amount = normalize_cpf_amount(amount_text)
+            except ValueError:
+                amount = ""
+            if amount and not crm.get("cpf_montant"):
+                crm["cpf_montant"] = amount
+        elif field == "desp_type":
+            normalized = _meta_words(value)
+            if "vae" in normalized or "validation des acquis" in normalized:
+                crm.setdefault("desp_type", "VAE")
+            elif "initial" in normalized:
+                crm.setdefault("desp_type", "INITIAL")
+        elif field == "statut_demande_financement_ft":
+            if (status := _meta_funding_status(value)) and not crm.get(field):
+                crm[field] = status
+        elif field == "commentaires":
+            text = _meta_scalar(value)
+            if text and not crm.get(field):
+                crm[field] = text
+        elif field in {
+            "cpf", "carte_pro", "titre_sejour", "garde_vue", "antecedents",
+            "compte_cnaps", "identite_creation", "identite_ok", "financement_ft",
+            "refus_ft_perso", "reste_a_charge_perso", "inscrit_ft",
+        }:
+            set_yes_no(field, value)
+
+    for direct_field in ("formation", "centre", "lieu", "dates", "dates_formation"):
+        if fields.get(direct_field):
+            apply({"centre": "lieu", "dates": "dates_formation"}.get(direct_field, direct_field), fields[direct_field])
+    for row in answer_rows:
+        apply(_meta_crm_question_field(row["question"]), row["answer"])
+        question, answer = _meta_words(row["question"]), _meta_words(row["answer"])
+        if "financ" in question or "prise en charge" in question:
+            if "cpf" in answer:
+                crm.setdefault("cpf", "OUI")
+            if "france travail" in answer or "pole emploi" in answer:
+                crm.setdefault("financement_ft", "OUI")
+
+    if not crm.get("formation"):
+        for key in ("form_name", "campaign_name", "adset_name", "ad_name"):
+            formation, desp_type = _meta_formation(fields.get(key))
+            if formation:
+                crm["formation"] = formation
+                if desp_type:
+                    crm["desp_type"] = desp_type
+                break
+    if not crm.get("lieu"):
+        for key in ("form_name", "campaign_name", "adset_name", "ad_name"):
+            if place := _meta_place(fields.get(key)):
+                crm["lieu"] = place
+                break
+    return crm, answer_rows
+
+
+def _meta_resolve_session(data, crm_payload):
+    """Aligne une réponse libre META sur le libellé de session réellement sélectionnable."""
+    raw = str(crm_payload.get("dates_formation") or "").strip()
+    formation = str(crm_payload.get("formation") or "").strip()
+    if not raw or not formation:
+        return crm_payload
+    formation_code = {
+        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "Chauffeur VTC": "VTC",
+        "DESP": "DESP_VAE" if crm_payload.get("desp_type") == "VAE" else "DESP_INIT",
+    }.get(formation)
+    if not formation_code:
+        return crm_payload
+    requested_centre = (
+        _normalize_centre_code(crm_payload.get("lieu")) if crm_payload.get("lieu") else ""
+    )
+    centres = [requested_centre] if requested_centre else list(get_formation_sessions(data))
+    raw_key = _meta_words(raw)
+    matches = []
+    for centre_code in centres:
+        for row in get_formation_sessions(data).get(centre_code, {}).get(formation_code, []):
+            label = str(row.get("label") or "").strip() if isinstance(row, dict) else ""
+            label_key = _meta_words(label)
+            if not label_key:
+                continue
+            if (raw_key == label_key or (len(raw_key) >= 12 and raw_key in label_key)
+                    or (len(label_key) >= 12 and label_key in raw_key)):
+                matches.append((centre_code, label))
+                continue
+            raw_range, label_range = _session_date_range(raw), _session_date_range(label)
+            if all(raw_range) and raw_range == label_range:
+                matches.append((centre_code, label))
+    if len(matches) == 1:
+        centre_code, label = matches[0]
+        crm_payload["dates_formation"] = label
+        crm_payload.setdefault("lieu", {
+            "paris": "Paris", "cote_azur": "Côte d’Azur", "auvergne": "Auvergne",
+        }.get(centre_code, centre_code))
+    return crm_payload
+
+
+def _meta_source_details(fields, received_at=""):
+    if not fields:
+        return {}
+    return {
+        key: value for key, value in {
+            "form_name": fields.get("form_name", ""),
+            "campaign_name": fields.get("campaign_name", ""),
+            "ad_name": fields.get("ad_name", ""),
+            "received_at": received_at,
+        }.items() if value
+    }
+
+
+def _meta_apply_contact_answers(contact, crm_payload, answer_rows, *, fields=None, received_at=""):
+    """Complète seulement les champs vides et rattache toutes les réponses à la fiche."""
+    changed, completed = False, []
+    for field in _META_CRM_COMPLETION_FIELDS:
+        incoming = crm_payload.get(field)
+        if _crm_is_empty(incoming) or not _crm_is_empty(contact.get(field)):
+            continue
+        contact[field] = incoming
+        completed.append(field)
+        changed = True
+
+    existing_rows = contact.get("meta_answers")
+    if not isinstance(existing_rows, list):
+        existing_rows = []
+        if answer_rows:
+            changed = True
+    normalized_rows = [row for row in existing_rows if isinstance(row, dict)]
+    known = {
+        (_meta_key(row.get("question")), str(row.get("answer") or "").strip().casefold())
+        for row in normalized_rows
+    }
+    for row in answer_rows:
+        marker = (_meta_key(row.get("question")), str(row.get("answer") or "").strip().casefold())
+        if not all(marker) or marker in known:
+            continue
+        stored = dict(row)
+        if received_at:
+            stored["received_at"] = received_at
+        normalized_rows.append(stored)
+        known.add(marker)
+        changed = True
+    if contact.get("meta_answers") != normalized_rows:
+        contact["meta_answers"] = normalized_rows
+        changed = True
+
+    source = _meta_source_details(fields or {}, received_at)
+    if source and contact.get("meta_source") != source:
+        contact["meta_source"] = source
+        changed = True
+    if changed:
+        contact["updated_at"] = _crm_now()
+    return changed, completed
+
+
+def _crm_backfill_meta_submissions(data):
+    """Répare automatiquement les pistes déjà créées avant le mapping des réponses."""
+    changed, source_contacts = False, set()
+    for submission in data.get("crm_meta_lead_submissions", []):
+        if not isinstance(submission, dict):
+            continue
+        contact = _crm_contact(data, submission.get("contact_id"))
+        raw_payload = submission.get("raw_payload")
+        if not contact or not isinstance(raw_payload, dict):
+            continue
+        fields, custom_answers = _parse_meta_lead_payload(raw_payload)
+        stored_answers = submission.get("custom_answers")
+        if isinstance(stored_answers, dict):
+            custom_answers = {**stored_answers, **custom_answers}
+        crm_payload, answer_rows = _meta_crm_payload(fields, custom_answers)
+        _meta_resolve_session(data, crm_payload)
+        contact_id = str(contact.get("id") or "")
+        source_fields = fields if contact_id not in source_contacts else None
+        source_contacts.add(contact_id)
+        applied, _ = _meta_apply_contact_answers(
+            contact, crm_payload, answer_rows, fields=source_fields,
+            received_at=str(submission.get("received_at") or ""),
+        )
+        if applied:
+            changed = True
+    return changed
+
+
+def _meta_activity_detail(fields, answer_rows=None, completed_fields=None):
     details = []
     for key, label in (("form_name", "Formulaire"), ("campaign_name", "Campagne"),
                        ("ad_name", "Publicité")):
         if fields.get(key):
             details.append(f"{label} : {fields[key]}")
+    if answer_rows:
+        details.append(f"{len(answer_rows)} réponse(s) au formulaire")
+    if completed_fields:
+        details.append("Champs complétés : " + ", ".join(completed_fields))
     return " · ".join(details)
 
 
@@ -7301,28 +7784,31 @@ def meta_zapier_leads():
                 return jsonify({"success": True, "result": "already_processed",
                                 "contact_id": already_inbound.get("contact_id")}), 200
 
-            crm_payload = {
-                "prenom": fields.get("first_name", ""), "nom": fields.get("last_name", ""),
-                "mail": fields.get("email", ""), "telephone": fields.get("phone_number", ""),
-                "formation": fields.get("formation", ""), "centre": fields.get("centre", ""),
-            }
+            crm_payload, answer_rows = _meta_crm_payload(fields, custom_answers)
+            _meta_resolve_session(data, crm_payload)
             contact, inbound, created = find_or_create_crm_contact(
                 data, crm_payload, "meta_zapier", external_id=meta_lead_id,
                 ordered_coordinates=True, record_activity=False,
             )
             if contact is None:
                 return jsonify({"success": False, "error": "Rapprochement CRM ambigu."}), 400
+            received_at = _crm_now()
+            _, completed_fields = _meta_apply_contact_answers(
+                contact, crm_payload, answer_rows, fields=fields, received_at=received_at,
+            )
             if created:
                 contact["statut"] = "Nouveaux"
                 contact["origine"] = "META"
                 contact["source"] = "META"
                 contact["source_detail"] = "Facebook / Instagram Lead Ads"
-                contact["received_at"] = _crm_now()
+                contact["received_at"] = received_at
             title = ("Piste créée automatiquement depuis un formulaire instantané Meta via Zapier."
                      if created else
                      "Nouvelle demande reçue depuis un formulaire instantané Meta via Zapier.")
-            _crm_activity(contact, "meta_lead", title, _meta_activity_detail(fields))
-            received_at = _crm_now()
+            _crm_activity(
+                contact, "meta_lead", title,
+                _meta_activity_detail(fields, answer_rows, completed_fields),
+            )
             submission = {
                 "meta_lead_id": str(meta_lead_id), "contact_id": contact["id"],
                 "received_at": received_at, "created_time": fields.get("created_time", ""),
@@ -7330,9 +7816,14 @@ def meta_zapier_leads():
                     "page_id", "form_id", "form_name", "ad_id", "ad_name", "adset_id",
                     "adset_name", "campaign_id", "campaign_name", "platform")},
                 "raw_payload": copy.deepcopy(payload), "custom_answers": custom_answers,
+                "mapped_fields": {
+                    key: crm_payload[key] for key in _META_CRM_COMPLETION_FIELDS
+                    if not _crm_is_empty(crm_payload.get(key))
+                },
             }
             submissions.insert(0, submission)
             inbound["custom_answers"] = copy.deepcopy(custom_answers)
+            inbound["mapped_fields"] = copy.deepcopy(submission["mapped_fields"])
             if created:
                 data.setdefault("crm_notifications", []).insert(0, {
                     "id": str(uuid.uuid4()), "date": received_at, "kind": "meta_lead",
@@ -10605,7 +11096,7 @@ def crm_calendly_webhook():
 
 def _crm_prepare_contacts(data):
     """Applique les migrations légères et les statuts WEDOF en un seul passage."""
-    changed = False
+    changed = _crm_backfill_meta_submissions(data)
     statuses = _crm_statuses(data)
     try:
         wedof_funding_statuses = _wedof_funding_statuses_by_contact(data)
