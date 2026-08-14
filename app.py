@@ -1174,44 +1174,6 @@ DEFAULT_DATA = {
     "crm_cnaps_scoring_snapshots": {},
 }
 
-CRM_DOCUMENT_REMINDER_TEMPLATES = {
-    "email": {
-        "id": "system-email-relance-documents",
-        "nom": "Relance documents",
-        "sujet": "Documents manquants pour votre dossier {{ formation }}",
-        "contenu": (
-            "<p>Bonjour {{ prenom }},</p>"
-            "<p>Afin de finaliser votre dossier pour la formation {{ formation }}, "
-            "merci de nous transmettre les documents manquants dès que possible.</p>"
-            "<p>Si vous les avez déjà envoyés, vous pouvez ne pas tenir compte de ce message. "
-            "Notre équipe reste à votre disposition pour toute question.</p>"
-            "<p>Bien cordialement,<br>L’équipe Intégrale Academy</p>"
-        ),
-        "system": True,
-    },
-    "sms": {
-        "id": "system-sms-relance-documents",
-        "nom": "Relance documents",
-        "sujet": "",
-        "contenu": (
-            "Bonjour {{ prenom }}, afin de finaliser votre dossier pour la formation "
-            "{{ formation }}, merci de nous transmettre les documents manquants. "
-            "S’ils ont déjà été envoyés, ne tenez pas compte de ce SMS. Intégrale Academy"
-        ),
-        "system": True,
-    },
-}
-
-
-def _crm_templates_with_document_reminder(data, kind):
-    """Expose the built-in document reminder unless a custom version replaces it."""
-    items = list(data.get(f"crm_{kind}_templates", []))
-    reminder = CRM_DOCUMENT_REMINDER_TEMPLATES[kind]
-    expected_name = reminder["nom"].casefold()
-    if not any(str(item.get("nom") or "").strip().casefold() == expected_name for item in items):
-        items.insert(0, dict(reminder))
-    return items
-
 # -------------------------------------------------------------------
 # Utils
 # -------------------------------------------------------------------
@@ -6935,7 +6897,7 @@ CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_ONLY_STATUSES = {
     "POEI", "Session FT", "Def MOB", "Financement FT en cours", "Financement FT refusé",
 }
-CRM_ASSET_VERSION = "20260814-document-reminders"
+CRM_ASSET_VERSION = "20260813-relaunch-tracking"
 
 
 def _crm_statuses(data=None):
@@ -11528,8 +11490,8 @@ def crm_templates():
             },
         ]
         return jsonify({
-            "email": _crm_templates_with_document_reminder(data, "email"),
-            "sms": _crm_templates_with_document_reminder(data, "sms"),
+            "email": data["crm_email_templates"],
+            "sms": data["crm_sms_templates"],
             "automatic_email": automatic_email,
             "email_starter": email_starter,
         })
