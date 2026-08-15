@@ -9,6 +9,8 @@ def setup_client(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     monkeypatch.setenv("ZAPIER_META_WEBHOOK_SECRET", SECRET)
     monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    monkeypatch.setattr(application, "send_email_html", lambda *args: True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: True)
     application.app.config.update(TESTING=True)
     return application.app.test_client()
 
@@ -158,6 +160,67 @@ def test_new_a3p_meta_lead_receives_public_form_email_and_sms_without_quote(tmp_
     assert "Devis détaillé créé" not in titles
     assert "E-mail automatique envoyé" in titles
     assert "SMS automatique envoyé" in titles
+
+
+def test_unmapped_meta_lead_still_receives_a3p_email_and_sms(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    emails, sms = [], []
+    monkeypatch.setattr(
+        application, "send_email_html",
+        lambda *args: emails.append(args) or True,
+    )
+    monkeypatch.setattr(
+        application, "send_sms",
+        lambda *args: sms.append(args) or True,
+    )
+    payload = lead(**{
+        "leadgen_id": "meta-a3p-unmapped",
+        "Form Name": "Formulaire instantané",
+        "Campaign Name": "Campagne recrutement",
+        "Ad Name": "Vidéo recrutement",
+    })
+
+    response = post(client, payload)
+
+    assert response.status_code == 201
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    submission = data["crm_meta_lead_submissions"][0]
+    assert not contact.get("formation")
+    assert submission["automatic_delivery"] == {"email": True, "sms": True}
+    assert emails and "A3P" in emails[0][1]
+    assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P"))]
+    assert {activity["title"] for activity in contact["activities"]} >= {
+        "E-mail automatique envoyé", "SMS automatique envoyé",
+    }
+
+
+def test_failed_meta_a3p_deliveries_remain_visible_in_activity_journal(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "send_email_html", lambda *args: False)
+    monkeypatch.setattr(application, "send_sms", lambda *args: False)
+    payload = lead(**{
+        "leadgen_id": "meta-a3p-failed-delivery",
+        "Quelle formation souhaitez-vous ?": "A3P – Bodyguard",
+    })
+
+    response = post(client, payload)
+
+    assert response.status_code == 201
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    submission = data["crm_meta_lead_submissions"][0]
+    assert submission["automatic_delivery"] == {"email": False, "sms": False}
+    failures = [
+        activity for activity in contact["activities"]
+        if activity["title"].startswith("Échec")
+    ]
+    assert len(failures) == 2
+    assert {activity["kind"] for activity in failures} == {"erreur"}
+    javascript = open(
+        application.app.root_path + "/static/crm.js", encoding="utf-8",
+    ).read()
+    assert "'calendly','erreur'" in javascript
 
 
 def test_attached_a3p_meta_lead_does_not_resend_automatic_messages(tmp_path, monkeypatch):

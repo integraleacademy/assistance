@@ -7881,6 +7881,18 @@ def _send_meta_a3p_information(contact):
     return delivery
 
 
+def _meta_requires_a3p_information(contact):
+    """Keep the A3P follow-up when META omits the training answer.
+
+    The current A3P instant form can reach the webhook without a usable
+    formation label.  An explicitly mapped different course must still be
+    respected, but a missing value must not silently skip the requested A3P
+    e-mail and SMS.
+    """
+    formation = str(contact.get("formation") or "").strip()
+    return not formation or formation == "A3P"
+
+
 @app.post("/api/integrations/meta/zapier-leads")
 def meta_zapier_leads():
     """Endpoint public : le secret dédié remplace l'authentification de session/CSRF."""
@@ -7965,7 +7977,7 @@ def meta_zapier_leads():
             submissions.insert(0, submission)
             inbound["custom_answers"] = copy.deepcopy(custom_answers)
             inbound["mapped_fields"] = copy.deepcopy(submission["mapped_fields"])
-            if created and contact.get("formation") == "A3P":
+            if created and _meta_requires_a3p_information(contact):
                 submission["automatic_delivery"] = _send_meta_a3p_information(contact)
             if created:
                 data.setdefault("crm_notifications", []).insert(0, {
