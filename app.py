@@ -12377,6 +12377,7 @@ def crm_send_message(contact_id):
     data = load_data(); contact = _crm_contact(data, contact_id)
     if not contact: return jsonify({"error": "Contact introuvable"}), 404
     payload = request.get_json(silent=True) or {}; kind = payload.get("type")
+    template_id = str(payload.get("template_id") or "").strip()
     body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     if kind == "email":
         body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
@@ -12389,7 +12390,13 @@ def crm_send_message(contact_id):
         ok = send_sms(contact.get("telephone"), body); preview = body
     else: return jsonify({"error": "Type invalide"}), 400
     if not ok: return jsonify({"error": "L’envoi a échoué. Vérifiez la configuration et les coordonnées."}), 502
-    _crm_activity(contact, kind, "E-mail envoyé" if kind == "email" else "SMS envoyé", subject if kind == "email" else body, preview)
+    meta_a3p_template = template_id == f"automatic-meta-a3p-{kind}"
+    activity_title = (
+        f"{'E-mail' if kind == 'email' else 'SMS'} META A3P envoyé manuellement"
+        if meta_a3p_template else
+        ("E-mail envoyé" if kind == "email" else "SMS envoyé")
+    )
+    _crm_activity(contact, kind, activity_title, subject if kind == "email" else body, preview)
     contact["updated_at"] = _crm_now(); save_data(data)
     return jsonify(contact)
 

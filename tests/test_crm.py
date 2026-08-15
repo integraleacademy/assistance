@@ -742,6 +742,68 @@ def test_message_template_picker_prioritizes_the_contact_formation():
     assert 'label="Autres modèles"' in crm_js
 
 
+def test_meta_a3p_templates_are_available_in_manual_message_picker():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    picker = crm_js.split("function messageTemplateOptions", 1)[1].split(
+        "function smsPreviewHtml", 1,
+    )[0]
+    message_modal = crm_js.split("function messageModal", 1)[1].split(
+        "function previewModal", 1,
+    )[0]
+    assert "automatic-meta-a3p-" in picker
+    assert 'optgroup label="Messages META A3P"' in picker
+    assert "templates.automatic_meta||[]" in message_modal
+    assert ".filter(t=>t.type===type)" in message_modal
+    assert "c.origine,c.source" in message_modal
+    assert "isMeta||isA3p" in message_modal
+    assert "template_id:templateSelect.value" in message_modal
+
+
+def test_meta_a3p_templates_can_be_sent_manually_and_logged(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Nancoro"}).get_json()
+    contact = c.patch(f"/api/crm/contacts/{contact['id']}", json={
+        "origine": "META", "mail": "nancoro@example.com",
+        "telephone": "+33641574512",
+    }).get_json()
+    automatic_meta = c.get("/api/crm/templates").get_json()["automatic_meta"]
+    email = next(template for template in automatic_meta if template["type"] == "email")
+    sms = next(template for template in automatic_meta if template["type"] == "sms")
+    sent_email, sent_sms = {}, {}
+    monkeypatch.setattr(
+        application, "send_email_html",
+        lambda to, subject, plain, html: sent_email.update(
+            to=to, subject=subject, plain=plain, html=html,
+        ) or True,
+    )
+    monkeypatch.setattr(
+        application, "send_sms",
+        lambda to, body: sent_sms.update(to=to, body=body) or True,
+    )
+
+    email_response = c.post(f"/api/crm/contacts/{contact['id']}/message", json={
+        "type": "email", "template_id": email["id"],
+        "sujet": email["sujet"], "contenu": email["contenu"],
+    })
+    sms_response = c.post(f"/api/crm/contacts/{contact['id']}/message", json={
+        "type": "sms", "template_id": sms["id"], "contenu": sms["contenu"],
+    })
+
+    assert email_response.status_code == 200
+    assert sms_response.status_code == 200
+    assert sent_email["to"] == "nancoro@example.com"
+    assert "Bonjour Nancoro" in sent_email["html"]
+    assert "{{ prenom }}" not in sent_email["html"]
+    assert sent_sms == {"to": "+33641574512", "body": sms["contenu"]}
+    titles = {activity["title"] for activity in sms_response.get_json()["activities"]}
+    assert titles >= {
+        "E-mail META A3P envoyé manuellement",
+        "SMS META A3P envoyé manuellement",
+    }
+
+
 def test_message_modal_does_not_rely_on_named_window_properties():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
