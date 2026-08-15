@@ -12171,10 +12171,32 @@ def crm_templates():
                 "contenu": build_desp_init_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
             },
         ]
+        meta_a3p_subject, _, meta_a3p_html = _a3p_information_email_content(
+            "{{ prenom }}", "", "cote_azur", "",
+        )
+        automatic_meta = [
+            {
+                "id": "automatic-meta-a3p-email",
+                "type": "email",
+                "nom": "META A3P – E-mail d’information",
+                "formation": "A3P",
+                "sujet": meta_a3p_subject,
+                "contenu": meta_a3p_html,
+            },
+            {
+                "id": "automatic-meta-a3p-sms",
+                "type": "sms",
+                "nom": "META A3P – SMS de suivi",
+                "formation": "A3P",
+                "sujet": "",
+                "contenu": build_training_information_sms_text("A3P"),
+            },
+        ]
         return jsonify({
             "email": data["crm_email_templates"],
             "sms": data["crm_sms_templates"],
             "automatic_email": automatic_email,
+            "automatic_meta": automatic_meta,
             "email_starter": email_starter,
         })
     payload = request.get_json(silent=True) or {}; kind = payload.get("type")
