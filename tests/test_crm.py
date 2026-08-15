@@ -385,6 +385,22 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
     assert "<iframe" not in a3p["contenu"].lower()
 
 
+def test_crm_templates_include_meta_a3p_email_and_sms(tmp_path, monkeypatch):
+    response = client(tmp_path, monkeypatch).get("/api/crm/templates")
+
+    assert response.status_code == 200
+    automatic_meta = response.get_json()["automatic_meta"]
+    assert [(template["type"], template["formation"]) for template in automatic_meta] == [
+        ("email", "A3P"), ("sms", "A3P"),
+    ]
+    email, sms = automatic_meta
+    assert email["sujet"] == "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
+    assert "{{ prenom }}" in email["contenu"]
+    assert "Télécharger mon devis détaillé" not in email["contenu"]
+    assert sms["contenu"] == application.build_training_information_sms_text("A3P")
+    assert "https://calendly.com/integraleacademy/apr" in sms["contenu"]
+
+
 def test_crm_templates_page_displays_automatic_emails_as_read_only():
     crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
 
@@ -395,6 +411,16 @@ def test_crm_templates_page_displays_automatic_emails_as_read_only():
     assert "data-preview-automatic-template" in crm_js
     assert "Envoi automatique" in crm_js
     assert "templates.automatic_email||[]" in crm_js
+
+
+def test_crm_templates_page_displays_meta_a3p_messages_as_read_only():
+    crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
+
+    assert "Messages automatiques META A3P" in crm_js
+    assert "templates.automatic_meta||[]" in crm_js
+    assert "data-preview-automatic-meta" in crm_js
+    assert "t.type==='email'?'E-mail':'SMS'" in crm_js
+    assert "automatique · META · A3P" in crm_js
 
 
 def test_admin_can_reset_only_crm_prospect_data(tmp_path, monkeypatch):
