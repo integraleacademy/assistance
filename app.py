@@ -7222,6 +7222,55 @@ def find_or_create_crm_contact(data, payload, source, **options):
         return _find_or_create_crm_contact(data, payload, source, **options)
 
 
+CRM_META_ORIGIN = "META"
+CRM_META_FORMATION = "A3P"
+CRM_META_LOCATION = "Côte d’Azur"
+
+
+def _crm_is_meta_contact(contact):
+    """Identifie une piste META même si son origine visible a été altérée."""
+    return any(
+        str(contact.get(field) or "").strip().casefold() == "meta"
+        for field in ("origine", "source")
+    )
+
+
+def _crm_mark_unclassified_contact_as_meta(contact):
+    """Rattache à META une fiche sans aucune provenance liée à une soumission META."""
+    if not (_crm_is_empty(contact.get("origine")) and _crm_is_empty(contact.get("source"))):
+        return False
+    contact["origine"] = CRM_META_ORIGIN
+    contact["source"] = CRM_META_ORIGIN
+    contact["source_detail"] = "Facebook / Instagram Lead Ads"
+    contact["updated_at"] = _crm_now()
+    return True
+
+
+def _crm_enforce_meta_defaults(contact):
+    """Applique les valeurs métier immuables des pistes META A3P Côte d’Azur."""
+    if not _crm_is_meta_contact(contact):
+        return False
+    changed = False
+    for field, expected in (
+        ("origine", CRM_META_ORIGIN),
+        ("formation", CRM_META_FORMATION),
+        ("lieu", CRM_META_LOCATION),
+    ):
+        if contact.get(field) != expected:
+            contact[field] = expected
+            changed = True
+    if changed:
+        contact["updated_at"] = _crm_now()
+    return changed
+
+
+def _meta_enforce_crm_payload_defaults(crm_payload):
+    """Normalise une nouvelle demande META avant rapprochement et export."""
+    crm_payload["formation"] = CRM_META_FORMATION
+    crm_payload["lieu"] = CRM_META_LOCATION
+    return crm_payload
+
+
 _META_LEAD_FIELDS = (
     "id", "lead_id", "leadgen_id", "created_time", "page_id", "form_id",
     "form_name", "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id",
@@ -7745,11 +7794,13 @@ def _crm_backfill_meta_submissions(data):
         raw_payload = submission.get("raw_payload")
         if not contact or not isinstance(raw_payload, dict):
             continue
+        classified_as_meta = _crm_mark_unclassified_contact_as_meta(contact)
         fields, custom_answers = _parse_meta_lead_payload(raw_payload)
         stored_answers = submission.get("custom_answers")
         if isinstance(stored_answers, dict):
             custom_answers = {**stored_answers, **custom_answers}
         crm_payload, answer_rows = _meta_crm_payload(fields, custom_answers)
+        _meta_enforce_crm_payload_defaults(crm_payload)
         _meta_resolve_session(data, crm_payload)
         contact_id = str(contact.get("id") or "")
         source_fields = fields if contact_id not in source_contacts else None
@@ -7758,7 +7809,8 @@ def _crm_backfill_meta_submissions(data):
             contact, crm_payload, answer_rows, fields=source_fields,
             received_at=str(submission.get("received_at") or ""),
         )
-        if applied:
+        normalized = _crm_enforce_meta_defaults(contact)
+        if applied or normalized or classified_as_meta:
             changed = True
     return changed
 
@@ -7882,15 +7934,9 @@ def _send_meta_a3p_information(contact):
 
 
 def _meta_requires_a3p_information(contact):
-    """Keep the A3P follow-up when META omits the training answer.
-
-    The current A3P instant form can reach the webhook without a usable
-    formation label.  An explicitly mapped different course must still be
-    respected, but a missing value must not silently skip the requested A3P
-    e-mail and SMS.
-    """
+    """Déclenche les messages A3P pour une piste META déjà normalisée."""
     formation = str(contact.get("formation") or "").strip()
-    return not formation or formation == "A3P"
+    return formation == CRM_META_FORMATION
 
 
 @app.post("/api/integrations/meta/zapier-leads")
@@ -7935,6 +7981,7 @@ def meta_zapier_leads():
                                 "contact_id": already_inbound.get("contact_id")}), 200
 
             crm_payload, answer_rows = _meta_crm_payload(fields, custom_answers)
+            _meta_enforce_crm_payload_defaults(crm_payload)
             _meta_resolve_session(data, crm_payload)
             contact, inbound, created = find_or_create_crm_contact(
                 data, crm_payload, "meta_zapier", external_id=meta_lead_id,
@@ -7952,6 +7999,10 @@ def meta_zapier_leads():
                 contact["source"] = "META"
                 contact["source_detail"] = "Facebook / Instagram Lead Ads"
                 contact["received_at"] = received_at
+            else:
+                _crm_mark_unclassified_contact_as_meta(contact)
+            _crm_enforce_meta_defaults(contact)
+            if created:
                 salesforce_payload = _meta_salesforce_payload(
                     meta_lead_id, fields, crm_payload, answer_rows,
                 )
@@ -11285,6 +11336,9 @@ def _crm_prepare_contacts(data):
     automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
 
     for existing in data.get("crm_contacts", []):
+        if _crm_enforce_meta_defaults(existing):
+            changed = True
+
         if existing.get("statut_secondaire") == "Session FT":
             existing["statut_secondaire"] = "Marché FT"
             changed = True
@@ -11527,7 +11581,10 @@ def crm_contact(contact_id):
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
-        if _crm_ensure_relances(contact):
+        changed = _crm_ensure_relances(contact)
+        if _crm_enforce_meta_defaults(contact):
+            changed = True
+        if changed:
             save_data(data)
         return jsonify(_crm_contact_response(contact, data))
     if request.method == "DELETE":
@@ -11543,6 +11600,12 @@ def crm_contact(contact_id):
     # l'équipe corrige manuellement la formation ou un autre champ.
     if contact.get("source") == "wedof_cpf":
         payload["origine"] = "Mon Compte Formation"
+    # Une piste META reste rattachée à sa campagne A3P Côte d’Azur, même si
+    # d'autres champs de la fiche sont enregistrés en même temps.
+    if _crm_is_meta_contact(contact):
+        payload["origine"] = CRM_META_ORIGIN
+        payload["formation"] = CRM_META_FORMATION
+        payload["lieu"] = CRM_META_LOCATION
     _crm_ensure_relances(contact)
     relance_date_supplied = "relance_date" in payload
     requested_relance_date = payload.get("relance_date")
@@ -11563,6 +11626,7 @@ def crm_contact(contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    _crm_enforce_meta_defaults(contact)
     if relance_date_supplied:
         try:
             planned_relance, relance_changed = _crm_schedule_relance(
