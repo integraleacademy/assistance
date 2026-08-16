@@ -390,6 +390,8 @@ def test_crm_ui_displays_every_original_meta_answer():
 
     assert "function metaAnswersSection(c)" in javascript
     assert "Réponses du formulaire META" in javascript
+    assert '<details class="form-section section-meta">' in javascript
+    assert '<details class="form-section section-meta" open>' not in javascript
     assert "rows.map(row=>" in javascript
     assert "originSelect.add(new Option('META','META'))" in javascript
     assert ".meta-answer-list" in stylesheet
