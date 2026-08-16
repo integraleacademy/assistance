@@ -52,7 +52,8 @@ def test_new_lead_creates_contact_submission_notification_and_custom_answers(tmp
     contact = data["crm_contacts"][0]
     assert contact["statut"] == "Nouveaux" and contact["origine"] == "META"
     assert contact["source_detail"] == "Facebook / Instagram Lead Ads"
-    assert contact["formation"] == "APS"
+    assert contact["formation"] == "A3P"
+    assert contact["lieu"] == "Côte d’Azur"
     assert contact["meta_answers"] == [
         {"question": "Avez-vous une carte professionnelle ?", "answer": "Oui",
          "received_at": contact["received_at"]},
@@ -63,9 +64,13 @@ def test_new_lead_creates_contact_submission_notification_and_custom_answers(tmp
     submission = data["crm_meta_lead_submissions"][0]
     assert submission["raw_payload"] == payload
     assert submission["custom_answers"]["Avez-vous une carte professionnelle ?"] == ["Oui"]
-    assert submission["mapped_fields"]["formation"] == "APS"
+    assert submission["mapped_fields"]["formation"] == "A3P"
+    assert submission["mapped_fields"]["lieu"] == "Côte d’Azur"
     assert submission["mapped_fields"]["carte_pro"] == "OUI"
-    assert "Formation APS" in contact["activities"][0]["detail"]
+    assert any(
+        "Formation APS" in activity.get("detail", "")
+        for activity in contact["activities"]
+    )
 
 
 def test_new_meta_lead_creates_exactly_one_salesforce_prospect(tmp_path, monkeypatch):
@@ -93,7 +98,7 @@ def test_new_meta_lead_creates_exactly_one_salesforce_prospect(tmp_path, monkeyp
     assert salesforce["source_formulaire"] == "meta-zapier-leads"
     assert salesforce["meta_lead_id"] == "meta-salesforce-1"
     assert salesforce["origine"] == "META"
-    assert salesforce["formation"] == "APS"
+    assert salesforce["formation"] == "A3P"
     assert salesforce["centre"] == "cote_azur"
     assert salesforce["cpf_consulte"] == "OUI"
     assert salesforce["cpf_montant"] == "1250.00"
@@ -150,7 +155,7 @@ def test_new_a3p_meta_lead_receives_public_form_email_and_sms_without_quote(tmp_
     assert not contact.get("devis_url")
     assert emails[0][0] == "LINA@Example.FR"
     expected = application._a3p_information_email_content(
-        "Lina", "Septembre 2026", "paris", "",
+        "Lina", contact["dates_formation"], "cote_azur", "",
     )
     assert emails[0][1:] == expected
     assert "Télécharger mon devis détaillé" not in emails[0][3]
@@ -186,7 +191,8 @@ def test_unmapped_meta_lead_still_receives_a3p_email_and_sms(tmp_path, monkeypat
     data = application.load_data()
     contact = data["crm_contacts"][0]
     submission = data["crm_meta_lead_submissions"][0]
-    assert not contact.get("formation")
+    assert contact["formation"] == "A3P"
+    assert contact["lieu"] == "Côte d’Azur"
     assert submission["automatic_delivery"] == {"email": True, "sms": True}
     assert emails and "A3P" in emails[0][1]
     assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P"))]
@@ -244,7 +250,6 @@ def test_attached_a3p_meta_lead_does_not_resend_automatic_messages(tmp_path, mon
 
 def test_meta_questions_fill_training_session_funding_and_regulatory_fields(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
-    session = "Du 7 septembre au 9 octobre 2026 - examen le 12 octobre 2026"
     payload = lead(**{
         "Quelle formation souhaitez-vous ?": "Agent de Prévention et de Sécurité (APS)",
         "Dans quel centre souhaitez-vous suivre la formation ?": "Puget-sur-Argens (Côte d'Azur)",
@@ -261,9 +266,9 @@ def test_meta_questions_fill_training_session_funding_and_regulatory_fields(tmp_
 
     assert response.status_code == 201
     contact = application.load_data()["crm_contacts"][0]
-    assert contact["formation"] == "APS"
+    assert contact["formation"] == "A3P"
     assert contact["lieu"] == "Côte d’Azur"
-    assert contact["dates_formation"] == session
+    assert contact["dates_formation"] == "7 septembre au 9 octobre 2026"
     assert contact["cpf"] == "OUI"
     assert contact["cpf_montant"] == "1250.00"
     assert contact["identite_creation"] == "NON"
@@ -293,7 +298,7 @@ def test_nested_zapier_answers_and_form_name_fallback_are_supported(tmp_path, mo
 
     assert response.status_code == 201
     contact = application.load_data()["crm_contacts"][0]
-    assert contact["formation"] == "SSIAP 1"
+    assert contact["formation"] == "A3P"
     assert contact["lieu"] == "Côte d’Azur"
     assert contact["cpf"] == "OUI"
     assert contact["identite_creation"] == "NON"
@@ -311,8 +316,8 @@ def test_existing_meta_submissions_are_backfilled_without_overwriting_manual_val
     data["crm_contacts"] = [{
         "id": "legacy-meta", "prenom": "Franck", "nom": "DENIOT",
         "mail": "franck@example.fr", "telephone": "0600000000",
-        "formation": "A3P", "lieu": "", "cpf": "", "activities": [],
-        "statut": "Nouveaux", "source": "META",
+        "formation": "APS", "lieu": "Paris", "cpf": "", "activities": [],
+        "statut": "Nouveaux", "origine": "", "source": "META",
     }]
     data["crm_meta_lead_submissions"] = [{
         "meta_lead_id": "meta-legacy", "contact_id": "legacy-meta",
@@ -326,10 +331,36 @@ def test_existing_meta_submissions_are_backfilled_without_overwriting_manual_val
     assert changed is True
     assert contact["formation"] == "A3P"
     assert contact["lieu"] == "Côte d’Azur"
+    assert contact["origine"] == "META"
     assert contact["cpf"] == "OUI"
     assert any(row["question"] == "Avez-vous consulté votre compte CPF ?"
                for row in contact["meta_answers"])
     assert application._crm_prepare_contacts(data)[0] is False
+
+
+def test_editing_meta_contact_preserves_origin_training_and_location(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    response = post(client, lead(leadgen_id="meta-edit-protection"))
+    contact_id = response.get_json()["contact_id"]
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+
+    updated = client.patch(
+        f"/api/crm/contacts/{contact_id}",
+        json={
+            "commentaires": "Informations vérifiées par téléphone.",
+            "origine": "",
+            "formation": "APS",
+            "lieu": "Paris",
+        },
+    )
+
+    assert updated.status_code == 200
+    contact = updated.get_json()
+    assert contact["commentaires"] == "Informations vérifiées par téléphone."
+    assert contact["origine"] == "META"
+    assert contact["formation"] == "A3P"
+    assert contact["lieu"] == "Côte d’Azur"
 
 
 def test_meta_backfill_keeps_the_latest_source_context_and_is_idempotent():
@@ -348,7 +379,7 @@ def test_meta_backfill_keeps_the_latest_source_context_and_is_idempotent():
     }
 
     assert application._crm_backfill_meta_submissions(data) is True
-    assert data["crm_contacts"][0]["formation"] == "APS"
+    assert data["crm_contacts"][0]["formation"] == "A3P"
     assert data["crm_contacts"][0]["meta_source"]["form_name"] == "APS - formulaire récent"
     assert application._crm_backfill_meta_submissions(data) is False
 
@@ -360,6 +391,7 @@ def test_crm_ui_displays_every_original_meta_answer():
     assert "function metaAnswersSection(c)" in javascript
     assert "Réponses du formulaire META" in javascript
     assert "rows.map(row=>" in javascript
+    assert "originSelect.add(new Option('META','META'))" in javascript
     assert ".meta-answer-list" in stylesheet
 
 
