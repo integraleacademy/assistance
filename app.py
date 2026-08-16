@@ -7230,6 +7230,9 @@ _META_LEAD_FIELDS = (
     "lieu", "dates", "dates_formation",
 )
 
+_META_DEFAULT_FORMATION = "A3P"
+_META_DEFAULT_LOCATION = "Côte d’Azur"
+
 _META_ANSWER_CONTAINERS = {
     "fielddata", "fields", "answers", "questionsandanswers", "questionanswers",
 }
@@ -7324,6 +7327,33 @@ def _meta_words(value):
     text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
     text = "".join(char for char in text if not unicodedata.combining(char))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _crm_is_meta_contact(contact):
+    """Identifie une piste META même si son origine a été effacée par l'ancien formulaire."""
+    return any(
+        str(contact.get(field) or "").strip().casefold() in {"meta", "meta_zapier"}
+        for field in ("origine", "source")
+    )
+
+
+def _crm_enforce_meta_defaults(contact):
+    """Conserve la provenance et les valeurs communes à toutes les pistes META."""
+    if not _crm_is_meta_contact(contact):
+        return False
+    expected = {
+        "origine": "META",
+        "formation": _META_DEFAULT_FORMATION,
+        "lieu": _META_DEFAULT_LOCATION,
+    }
+    changed = False
+    for field, value in expected.items():
+        if contact.get(field) != value:
+            contact[field] = value
+            changed = True
+    if changed:
+        contact["updated_at"] = _crm_now()
+    return changed
 
 
 def _parse_meta_lead_payload(payload):
@@ -7635,6 +7665,11 @@ def _meta_crm_payload(fields, custom_answers):
             if place := _meta_place(fields.get(key)):
                 crm["lieu"] = place
                 break
+    # Le formulaire instantané META actuellement utilisé est exclusivement
+    # consacré à l'A3P sur la Côte d'Azur. Ces valeurs fiables priment sur les
+    # libellés variables (ou absents) transmis par Meta/Zapier.
+    crm["formation"] = _META_DEFAULT_FORMATION
+    crm["lieu"] = _META_DEFAULT_LOCATION
     return crm, answer_rows
 
 
@@ -11285,6 +11320,8 @@ def _crm_prepare_contacts(data):
     automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
 
     for existing in data.get("crm_contacts", []):
+        if _crm_enforce_meta_defaults(existing):
+            changed = True
         if existing.get("statut_secondaire") == "Session FT":
             existing["statut_secondaire"] = "Marché FT"
             changed = True
@@ -11543,6 +11580,15 @@ def crm_contact(contact_id):
     # l'équipe corrige manuellement la formation ou un autre champ.
     if contact.get("source") == "wedof_cpf":
         payload["origine"] = "Mon Compte Formation"
+    # L'ancien sélecteur ne proposait pas META et envoyait une valeur vide lors
+    # de chaque sauvegarde automatique. La provenance META, ainsi que les
+    # valeurs communes à cette campagne, restent désormais immuables.
+    if _crm_is_meta_contact(contact):
+        payload.update({
+            "origine": "META",
+            "formation": _META_DEFAULT_FORMATION,
+            "lieu": _META_DEFAULT_LOCATION,
+        })
     _crm_ensure_relances(contact)
     relance_date_supplied = "relance_date" in payload
     requested_relance_date = payload.get("relance_date")
