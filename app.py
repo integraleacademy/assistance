@@ -1170,6 +1170,14 @@ DEFAULT_DATA = {
     "crm_sms_templates": [],
     "crm_calendly_appointments": [],
     "crm_calendly": {},
+    "crm_settings": {
+        "calendar_default_view": "week",
+        "calendar_workday_start": "08:00",
+        "calendar_workday_end": "19:00",
+        "notification_mentions": True,
+        "notification_system": True,
+        "direction_costs": {},
+    },
     "crm_ai_candidate_analyses": {},
     "crm_cnaps_scoring_snapshots": {},
 }
@@ -6929,7 +6937,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260814-status-persistence"
+CRM_ASSET_VERSION = "20260816-crm-workspace-complet"
 
 
 def _crm_statuses(data=None):
@@ -11303,6 +11311,63 @@ def crm_calendly_webhook():
     })
 
 
+CRM_DEFAULT_SALE_PRICES = {
+    "APS": 1650,
+    "A3P": 4200,
+    "SSIAP 1": 1200,
+    "CHAUFFEUR VTC": 1500,
+    "DESP_INITIAL": 4300,
+    "DESP_VAE": 3800,
+}
+
+
+def _crm_default_sale_price(contact):
+    formation = str(contact.get("formation") or "").strip().upper()
+    if formation == "DESP":
+        formation = f"DESP_{str(contact.get('desp_type') or 'INITIAL').strip().upper()}"
+    return CRM_DEFAULT_SALE_PRICES.get(formation, "")
+
+
+def _crm_workspace_backfill(contact):
+    """Ajoute les champs du poste de travail sans altérer les données existantes."""
+    changed = False
+    defaults = {
+        "commercial": "",
+        "tags": "",
+        "prix_vente": _crm_default_sale_price(contact),
+        "cout_estime": "",
+        "disqualification_reason": "",
+        "disqualification_detail": "",
+        "reactivation_date": "",
+        "archived_at": "",
+        "converted_at": "",
+        "status_changed_at": contact.get("updated_at") or contact.get("created_at") or "",
+    }
+    for key, value in defaults.items():
+        if key not in contact:
+            contact[key] = value
+            changed = True
+    if contact.get("statut") == "Converti" and not contact.get("converted_at"):
+        contact["converted_at"] = contact.get("updated_at") or contact.get("created_at") or _crm_now()
+        changed = True
+    history = contact.get("source_history")
+    if not isinstance(history, list):
+        history = []
+        contact["source_history"] = history
+        changed = True
+    if not history and (contact.get("origine") or contact.get("source")):
+        meta = contact.get("meta_source") or {}
+        history.append({
+            "origin": contact.get("origine") or contact.get("source") or "Non renseignée",
+            "campaign": meta.get("campaign_name", ""),
+            "ad": meta.get("ad_name", ""),
+            "form": meta.get("form_name", ""),
+            "date": meta.get("received_at") or contact.get("created_at") or _crm_now(),
+        })
+        changed = True
+    return changed
+
+
 def _crm_prepare_contacts(data):
     """Applique les migrations légères et les statuts WEDOF en un seul passage."""
     changed = _crm_backfill_meta_submissions(data)
@@ -11320,6 +11385,8 @@ def _crm_prepare_contacts(data):
     automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
 
     for existing in data.get("crm_contacts", []):
+        if _crm_workspace_backfill(existing):
+            changed = True
         if _crm_enforce_meta_defaults(existing):
             changed = True
         if existing.get("statut_secondaire") == "Session FT":
@@ -11394,13 +11461,14 @@ def crm_contacts():
         "nom": _crm_format_last_name(payload.get("nom")),
         "telephone": str(payload.get("telephone") or "").strip(),
         "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
-        "formation": str(payload.get("formation", "APS")), "lieu": "Paris",
+        "formation": str(payload.get("formation", "APS")), "lieu": str(payload.get("lieu") or "Paris"),
         "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
         "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
-        "origine": "Ajout manuel", "inscrit_ft": "", "commentaires": "", "relance_date": "", "relances": [], "statut_secondaire": "",
+        "origine": str(payload.get("origine") or "Ajout manuel"), "commercial": str(payload.get("commercial") or ""),
+        "inscrit_ft": "", "commentaires": "", "relance_date": "", "relances": [], "statut_secondaire": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
@@ -11555,6 +11623,147 @@ def crm_change_status(old_label):
     return jsonify({"statuses": next_statuses, "replacement": replacement})
 
 
+@app.route("/api/crm/settings", methods=["GET", "PATCH"])
+@login_required
+@_crm_serialized
+def crm_settings():
+    data = load_data()
+    settings = data.setdefault("crm_settings", {})
+    defaults = DEFAULT_DATA["crm_settings"]
+    for key, value in defaults.items():
+        settings.setdefault(key, value.copy() if isinstance(value, dict) else value)
+    if request.method == "GET":
+        return jsonify(settings)
+    payload = request.get_json(silent=True) or {}
+    allowed = {
+        "calendar_default_view", "calendar_workday_start", "calendar_workday_end",
+        "notification_mentions", "notification_system", "direction_costs",
+    }
+    if "direction_costs" in payload and (current_user() or {}).get("role") != "admin":
+        return jsonify({"error": "La configuration des coûts est réservée à l’administrateur."}), 403
+    for key in allowed.intersection(payload):
+        if key == "direction_costs":
+            costs = payload.get(key)
+            if not isinstance(costs, dict):
+                return jsonify({"error": "La configuration des coûts est invalide."}), 400
+            normalized = {}
+            for label, value in costs.items():
+                raw = str(value or "").strip().replace(" ", "").replace(",", ".")
+                if not raw:
+                    continue
+                try:
+                    amount = float(raw)
+                except ValueError:
+                    return jsonify({"error": f"Le coût de {label} est invalide."}), 400
+                if amount < 0:
+                    return jsonify({"error": "Les coûts doivent être positifs."}), 400
+                normalized[str(label)] = amount
+            settings[key] = normalized
+        elif key.startswith("notification_"):
+            settings[key] = bool(payload.get(key))
+        else:
+            settings[key] = str(payload.get(key) or "")
+    save_data(data)
+    return jsonify(settings)
+
+
+@app.patch("/api/crm/contacts/bulk")
+@login_required
+@_crm_serialized
+def crm_contacts_bulk():
+    data = load_data(); payload = request.get_json(silent=True) or {}
+    ids = {str(value) for value in payload.get("ids", []) if value}
+    if not ids or len(ids) > 500:
+        return jsonify({"error": "Sélection invalide."}), 400
+    action = str(payload.get("action") or "").strip()
+    statuses = _crm_statuses(data)
+    updated = []
+    for contact in data.get("crm_contacts", []):
+        if str(contact.get("id")) not in ids:
+            continue
+        old_status = contact.get("statut")
+        if action == "status":
+            status = str(payload.get("value") or "").strip()
+            if status not in statuses:
+                return jsonify({"error": "Étape inconnue."}), 400
+            contact["statut"] = status
+        elif action == "commercial":
+            contact["commercial"] = str(payload.get("value") or "").strip()
+        elif action == "archive":
+            contact["archived_at"] = _crm_now()
+        elif action == "restore":
+            contact["archived_at"] = ""
+        elif action == "relance":
+            try:
+                planned, _ = _crm_schedule_relance(contact, payload.get("value"), source="bulk")
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+            contact["statut"] = "A relancer"
+            if planned:
+                _crm_activity(contact, "relance", "Relance planifiée en groupe",
+                              f"Prochaine relance le {planned['scheduled_date']}")
+        elif action == "disqualify":
+            reason = str(payload.get("reason") or "").strip()
+            if not reason:
+                return jsonify({"error": "Le motif de disqualification est obligatoire."}), 400
+            contact.update({
+                "statut": "Disqualifié",
+                "disqualification_reason": reason,
+                "disqualification_detail": str(payload.get("detail") or "").strip(),
+                "reactivation_date": str(payload.get("reactivation_date") or "").strip(),
+            })
+        else:
+            return jsonify({"error": "Action groupée inconnue."}), 400
+        if contact.get("statut") != old_status:
+            contact["status_changed_at"] = _crm_now()
+            if contact.get("statut") == "Converti" and not contact.get("converted_at"):
+                contact["converted_at"] = contact["status_changed_at"]
+            if contact.get("statut") != "Disqualifié":
+                contact["disqualification_reason"] = ""
+                contact["disqualification_detail"] = ""
+            _crm_activity(contact, "statut", f"Statut : {contact['statut']}",
+                          f"Ancien statut : {old_status} · action groupée")
+        contact["updated_at"] = _crm_now()
+        updated.append(_crm_contact_response(contact, data))
+    save_data(data)
+    return jsonify({"updated": updated, "count": len(updated)})
+
+
+@app.post("/api/crm/contacts/merge")
+@login_required
+@_crm_serialized
+def crm_contacts_merge():
+    data = load_data(); payload = request.get_json(silent=True) or {}
+    target = _crm_contact(data, payload.get("target_id"))
+    source = _crm_contact(data, payload.get("source_id"))
+    if not target or not source or target is source:
+        return jsonify({"error": "Les deux fiches à fusionner sont invalides."}), 400
+    protected = {"id", "created_at"}
+    for key, value in source.items():
+        if key in protected or key in {"activities", "publications", "relances", "source_history", "meta_answers"}:
+            continue
+        if not target.get(key) and value not in (None, "", [], {}):
+            target[key] = value
+    for key in ("activities", "publications", "relances", "source_history", "meta_answers"):
+        merged = [*(target.get(key) or []), *(source.get(key) or [])]
+        seen = set(); unique = []
+        for item in merged:
+            marker = str(item.get("id") or json.dumps(item, sort_keys=True, ensure_ascii=False)) if isinstance(item, dict) else str(item)
+            if marker in seen:
+                continue
+            seen.add(marker); unique.append(item)
+        target[key] = unique
+    for appointment in data.get("crm_calendly_appointments", []):
+        if str(appointment.get("contact_id")) == str(source.get("id")):
+            appointment["contact_id"] = target.get("id")
+    data["crm_contacts"].remove(source)
+    _crm_activity(target, "fusion", "Fiches fusionnées",
+                  f"La fiche de {source.get('prenom', '')} {source.get('nom', '')} a été regroupée ici.")
+    target["updated_at"] = _crm_now()
+    save_data(data)
+    return jsonify({"contact": _crm_contact_response(target, data), "removed_id": source.get("id")})
+
+
 @app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
 @login_required
 @_crm_serialized
@@ -11596,9 +11805,11 @@ def crm_contact(contact_id):
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
-               "statut", "statut_secondaire"}
+               "statut", "statut_secondaire", "commercial", "tags", "prix_vente", "cout_estime",
+               "disqualification_reason", "disqualification_detail", "reactivation_date", "archived_at"}
     old_status = contact.get("statut")
     old_secondary_status = contact.get("statut_secondaire", "")
+    old_origin = contact.get("origine", "")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
     old_score = calculate_candidate_integration_score(contact, snapshot)
     if "cpf_montant" in payload:
@@ -11606,6 +11817,16 @@ def crm_contact(contact_id):
             payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+    for money_field in ("prix_vente", "cout_estime"):
+        if money_field in payload:
+            raw_money = str(payload.get(money_field) or "").strip().replace(" ", "").replace(",", ".")
+            if raw_money:
+                try:
+                    if float(raw_money) < 0:
+                        raise ValueError
+                except ValueError:
+                    return jsonify({"error": "Les montants commerciaux doivent être positifs."}), 400
+            payload[money_field] = raw_money
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
@@ -11673,7 +11894,23 @@ def crm_contact(contact_id):
     if contact.get("statut") not in statuses:
         contact["statut"] = old_status if old_status in statuses else statuses[0]
     if contact.get("statut") != old_status:
+        contact["status_changed_at"] = _crm_now()
+        if contact.get("statut") == "Converti" and not contact.get("converted_at"):
+            contact["converted_at"] = contact["status_changed_at"]
+        if contact.get("statut") != "Disqualifié":
+            contact["disqualification_reason"] = ""
+            contact["disqualification_detail"] = ""
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
+    if contact.get("origine") != old_origin:
+        contact.setdefault("source_history", []).append({
+            "origin": contact.get("origine") or "Non renseignée",
+            "campaign": "",
+            "ad": "",
+            "form": "",
+            "date": _crm_now(),
+        })
+        _crm_activity(contact, "origine", f"Origine : {contact.get('origine') or 'Non renseignée'}",
+                      f"Ancienne origine : {old_origin or 'Non renseignée'}")
     if contact.get("statut_secondaire", "") != old_secondary_status:
         secondary_label = contact.get("statut_secondaire") or "retiré"
         _crm_activity(contact, "statut", f"Deuxième statut : {secondary_label}",
@@ -12249,7 +12486,8 @@ def crm_templates():
     if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
     item = {"id": str(uuid.uuid4()), "nom": str(payload.get("nom", "Sans titre")).strip(),
             "sujet": str(payload.get("sujet", "")).strip(), "contenu": str(payload.get("contenu", "")),
-            "created_at": _crm_now()}
+            "categorie": str(payload.get("categorie", "Général")).strip() or "Général",
+            "usage_count": 0, "versions": [], "created_at": _crm_now()}
     data[f"crm_{kind}_templates"].append(item); save_data(data)
     return jsonify(item), 201
 
@@ -12274,7 +12512,13 @@ def crm_template(template_id):
             return jsonify({"error": "Le nom du modèle est obligatoire"}), 400
         if not content.strip():
             return jsonify({"error": "Le contenu du modèle est obligatoire"}), 400
-        item.update({"nom": name, "sujet": str(payload.get("sujet", item.get("sujet", ""))).strip() if kind == "email" else "", "contenu": content, "updated_at": _crm_now()})
+        item.setdefault("versions", []).insert(0, {
+            "nom": item.get("nom", ""), "sujet": item.get("sujet", ""),
+            "contenu": item.get("contenu", ""), "date": item.get("updated_at") or item.get("created_at") or _crm_now(),
+        })
+        item["versions"] = item["versions"][:20]
+        item.update({"nom": name, "sujet": str(payload.get("sujet", item.get("sujet", ""))).strip() if kind == "email" else "", "contenu": content,
+                     "categorie": str(payload.get("categorie", item.get("categorie", "Général"))).strip() or "Général", "updated_at": _crm_now()})
         save_data(data)
         return jsonify(item)
     return jsonify({"error": "Modèle introuvable"}), 404
@@ -12443,6 +12687,14 @@ def crm_send_message(contact_id):
         ("E-mail envoyé" if kind == "email" else "SMS envoyé")
     )
     _crm_activity(contact, kind, activity_title, subject if kind == "email" else body, preview)
+    if template_id:
+        for template_kind in ("email", "sms"):
+            template = next((item for item in data.get(f"crm_{template_kind}_templates", [])
+                             if item.get("id") == template_id), None)
+            if template:
+                template["usage_count"] = int(template.get("usage_count") or 0) + 1
+                template["last_used_at"] = _crm_now()
+                break
     contact["updated_at"] = _crm_now(); save_data(data)
     return jsonify(contact)
 
