@@ -166,6 +166,132 @@ def test_dashboard_compares_periods_and_remains_compact_on_mobile():
     assert ".analytics-table-wrap{width:100%;overflow:auto}" in crm_css
 
 
+def test_complete_workspace_assets_are_loaded_before_the_crm_script():
+    root = application.app.root_path
+    template = open(root + "/templates/crm.html", encoding="utf-8").read()
+    workspace_js = open(root + "/static/crm_workspace.js", encoding="utf-8").read()
+    workspace_css = open(root + "/static/crm_workspace.css", encoding="utf-8").read()
+
+    assert template.index("crm_workspace.js") < template.index("crm.js")
+    assert "crm_workspace.css" in template
+    for marker in (
+        "pipeline-board", "workspace-bulk", "calendar_default_view",
+        "Disqualifier la piste", "CENTRE D’ACTIVITÉ", "Espace Direction",
+        "Coûts moyens par formation", "createContactModal",
+        "calendar-filterbar", "directionComparison",
+    ):
+        assert marker in workspace_js
+    assert "@media(max-width:700px)" in workspace_css
+    assert ".pipeline-board" in workspace_css
+    assert ".direction-comparison" in workspace_css
+
+
+def test_manual_contact_creation_keeps_workspace_fields(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post("/api/crm/contacts", json={
+        "prenom": "Lina", "nom": "Martin", "formation": "A3P",
+        "lieu": "Côte d’Azur", "origine": "Google", "commercial": "Cassandre",
+    }).get_json()
+
+    assert created["lieu"] == "Côte d’Azur"
+    assert created["origine"] == "Google"
+    assert created["commercial"] == "Cassandre"
+
+
+def test_workspace_bulk_actions_require_disqualification_reason_and_are_audited(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    first = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
+    second = c.post("/api/crm/contacts", json={"prenom": "Nora", "nom": "Petit"}).get_json()
+    ids = [first["id"], second["id"]]
+
+    missing = c.patch("/api/crm/contacts/bulk", json={"ids": ids, "action": "disqualify"})
+    assert missing.status_code == 400
+
+    result = c.patch("/api/crm/contacts/bulk", json={
+        "ids": ids, "action": "disqualify", "reason": "Projet reporté",
+        "detail": "Recontacter après la rentrée", "reactivation_date": "2027-01-15",
+    })
+    assert result.status_code == 200
+    assert result.get_json()["count"] == 2
+    for contact in result.get_json()["updated"]:
+        assert contact["statut"] == "Disqualifié"
+        assert contact["disqualification_reason"] == "Projet reporté"
+        assert contact["reactivation_date"] == "2027-01-15"
+        assert any("action groupée" in item.get("detail", "") for item in contact["activities"])
+
+    restored = c.patch("/api/crm/contacts/bulk", json={
+        "ids": [first["id"]], "action": "status", "value": "Nouveaux",
+    }).get_json()["updated"][0]
+    assert restored["disqualification_reason"] == ""
+
+
+def test_workspace_archive_assignment_and_financial_fields_persist(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+
+    updated = c.patch(f"/api/crm/contacts/{contact['id']}", json={
+        "commercial": "Aurélie", "tags": "urgent, entreprise",
+        "prix_vente": "4200", "cout_estime": "2600",
+    }).get_json()
+    assert updated["commercial"] == "Aurélie"
+    assert updated["prix_vente"] == "4200"
+    assert updated["cout_estime"] == "2600"
+
+    archived = c.patch("/api/crm/contacts/bulk", json={
+        "ids": [contact["id"]], "action": "archive",
+    }).get_json()["updated"][0]
+    assert archived["archived_at"]
+    restored = c.patch("/api/crm/contacts/bulk", json={
+        "ids": [contact["id"]], "action": "restore",
+    }).get_json()["updated"][0]
+    assert restored["archived_at"] == ""
+
+
+def test_workspace_can_merge_duplicates_without_losing_history(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    target = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "mail": "lina@example.com"}).get_json()
+    source = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "telephone": "0611223344", "force_create": True}).get_json()
+    c.post(f"/api/crm/contacts/{source['id']}/publications", json={"texte": "À conserver"})
+
+    result = c.post("/api/crm/contacts/merge", json={
+        "target_id": target["id"], "source_id": source["id"],
+    })
+    assert result.status_code == 200
+    merged = result.get_json()["contact"]
+    assert merged["telephone"] == "0611223344"
+    assert any(item.get("texte") == "À conserver" for item in merged["publications"])
+    assert c.get(f"/api/crm/contacts/{source['id']}").status_code == 404
+
+
+def test_crm_settings_persist_and_direction_costs_are_admin_only(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    updated = c.patch("/api/crm/settings", json={
+        "calendar_default_view": "month", "calendar_workday_start": "07:30",
+        "direction_costs": {"A3P": "2500"},
+    })
+    assert updated.status_code == 200
+    assert updated.get_json()["calendar_default_view"] == "month"
+    assert updated.get_json()["direction_costs"]["A3P"] == 2500
+
+    with c.session_transaction() as session:
+        session["user_email"] = "cassandre@integraleacademy.com"
+    denied = c.patch("/api/crm/settings", json={"direction_costs": {"APS": 900}})
+    assert denied.status_code == 403
+
+
+def test_template_updates_keep_a_version_history(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post("/api/crm/templates", json={
+        "type": "sms", "nom": "Relance", "contenu": "Premier texte", "categorie": "Relance",
+    }).get_json()
+    updated = c.patch(f"/api/crm/templates/{created['id']}", json={
+        "nom": "Relance", "contenu": "Deuxième texte", "categorie": "Relance",
+    }).get_json()
+
+    assert updated["categorie"] == "Relance"
+    assert updated["versions"][0]["contenu"] == "Premier texte"
+
+
 def test_pipeline_financing_stages_follow_real_funding_request_status():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
@@ -562,9 +688,11 @@ def test_news_feed_page_is_available(tmp_path, monkeypatch):
 
 def test_news_feed_section_renders_publications_instead_of_contacts():
     crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
+    workspace_js = open(application.app.root_path + "/static/crm_workspace.js", encoding="utf-8").read()
 
-    assert "else if(C.section==='fil-actu')return newsPage()" in crm_js
-    assert "function newsPage()" in crm_js
+    assert "CRMWorkspace.activityPage(workspaceContext(),'publications')" in crm_js
+    assert "state.activityTab==='publications'" in workspace_js
+    assert "ctx.publicationCard(row.item,row.contact,true)" in workspace_js
 
 
 def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path, monkeypatch):
@@ -647,7 +775,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260814-status-persistence" in page.data
+    assert b"20260816-crm-workspace-complet" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
