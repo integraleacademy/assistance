@@ -756,7 +756,7 @@ def test_meta_a3p_templates_are_available_in_manual_message_picker():
     assert 'optgroup label="Messages META A3P"' in picker
     assert "templates.automatic_meta||[]" in message_modal
     assert ".filter(t=>t.type===type)" in message_modal
-    assert "c.origine,c.source" in message_modal
+    assert "isMetaLead(c)" in message_modal
     assert "isMeta||isA3p" in message_modal
     assert "template_id:templateSelect.value" in message_modal
 
