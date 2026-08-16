@@ -137,6 +137,35 @@ def test_sidebar_lead_count_only_includes_new_leads():
     assert "contacts.filter(isActiveLead).length;if(leadCount)leadCount.textContent=count" not in crm_js
 
 
+def test_dashboard_reports_meta_and_builds_origins_from_live_contacts():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "function dashboardOrigin(contact)" in crm_js
+    assert "return'META'" in crm_js
+    assert "origins=dashboardGroup(current,dashboardOrigin)" in crm_js
+    assert "META n’est plus exclu" in crm_js
+    assert "campaign_name" in crm_js
+    assert "ad_name" in crm_js
+    assert "sourceCounts=['Google','Site internet','Simulateur VAE'" not in crm_js
+
+
+def test_dashboard_compares_periods_and_remains_compact_on_mobile():
+    root = application.app.root_path
+    with open(root + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    with open(root + "/static/crm.css", encoding="utf-8") as source:
+        crm_css = source.read()
+
+    assert "week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'" in crm_js
+    assert "lastYear.start.setFullYear" in crm_js
+    assert "data-dashboard-shift" in crm_js
+    assert "bindDashboard()" in crm_js
+    assert "@media(max-width:650px)" in crm_css
+    assert ".analytics-kpis{grid-template-columns:1fr 1fr" in crm_css
+    assert ".analytics-table-wrap{width:100%;overflow:auto}" in crm_css
+
+
 def test_pipeline_financing_stages_follow_real_funding_request_status():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
