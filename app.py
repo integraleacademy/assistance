@@ -6946,7 +6946,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260817-completude-dossiers"
+CRM_ASSET_VERSION = "20260817-activite-performance-completude"
 
 
 def _crm_statuses(data=None):
@@ -11455,13 +11455,149 @@ def _crm_prepare_contacts(data):
     return changed, wedof_funding_statuses
 
 
+CRM_CONTACT_SUMMARY_FIELDS = (
+    "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
+    "statut", "statut_secondaire", "statut_demande_financement_ft",
+    "statut_demande_financement_ft_source", "dates_formation", "cpf",
+    "cpf_montant", "financement_ft", "reste_a_charge_perso", "desp_type",
+    "origine", "source", "source_detail", "commercial", "tags",
+    "prix_vente", "cout_estime", "relance_date", "archived_at",
+    "converted_at", "status_changed_at", "disqualification_reason",
+    "disqualification_detail", "reactivation_date", "created_at",
+    "received_at", "updated_at", "commentaires", "wedof_status",
+)
+CRM_CONTACT_ACTIVITY_KINDS = {"appel", "email", "sms"}
+CRM_ACTIVITY_SECTIONS = {"notifications", "fil-actu"}
+
+
+def _crm_compact_contact_activities(contact):
+    """Conserve uniquement les marqueurs nécessaires aux listes et statistiques."""
+    activities = [
+        item for item in contact.get("activities", [])
+        if isinstance(item, dict) and item.get("date")
+    ]
+    if not activities:
+        return []
+    newest = max(activities, key=lambda item: str(item.get("date") or ""))
+    contacted = [
+        item for item in activities
+        if item.get("kind") in CRM_CONTACT_ACTIVITY_KINDS
+    ]
+    selected = [newest]
+    if contacted:
+        latest_contact = max(
+            contacted, key=lambda item: str(item.get("date") or "")
+        )
+        if latest_contact is not newest:
+            selected.append(latest_contact)
+    return [
+        {
+            "id": item.get("id"),
+            "kind": item.get("kind"),
+            "date": item.get("date"),
+        }
+        for item in selected
+    ]
+
+
+def _crm_contact_summary_response(contact, data, *, funding_status=None,
+                                  activities=None, publications=None):
+    """Construit une fiche légère ; le détail complet reste chargé à la demande."""
+    summary = {
+        key: contact.get(key)
+        for key in CRM_CONTACT_SUMMARY_FIELDS
+        if key in contact
+    }
+    if (funding_status
+            and contact.get("statut_demande_financement_ft_source")
+            != CRM_MANUAL_STATUS_SOURCE):
+        summary["statut_demande_financement_ft"] = funding_status
+    snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(
+        str(contact.get("id"))
+    )
+    score = calculate_candidate_integration_score(contact, snapshot)
+    summary["integration_score"] = {
+        key: score.get(key)
+        for key in (
+            "score", "level", "operational_status", "regulatory_applicable",
+            "regulatory_status", "regulatory_label",
+        )
+    }
+    # Ces deux objets sont petits et servent au tableau de bord d'acquisition.
+    summary["meta_source"] = contact.get("meta_source") or {}
+    summary["vae_eligibility"] = contact.get("vae_eligibility")
+    # Les relances restent disponibles sur la vue dédiée, mais les e-mails,
+    # aperçus HTML, réponses META et autres champs lourds ne partent plus ici.
+    summary["relances"] = contact.get("relances", [])
+    summary["activities"] = (
+        activities
+        if activities is not None
+        else _crm_compact_contact_activities(contact)
+    )
+    summary["publications"] = publications if publications is not None else []
+    summary["_summary"] = True
+    return summary
+
+
+def _crm_contact_summaries_payload(data, section=""):
+    """Prépare un instantané compact adapté à la rubrique demandée.
+
+    Les anciennes réponses renvoyaient chaque fiche complète, notamment les
+    aperçus d'e-mails HTML et les réponses brutes aux formulaires. En production
+    cela représentait plus de 5 Mo à chaque ouverture du CRM.
+    """
+    changed, wedof_funding_statuses = _crm_prepare_contacts(data)
+    include_activity = str(section or "").strip().lower() in CRM_ACTIVITY_SECTIONS
+    activity_by_contact = {}
+    publication_by_contact = {}
+    if include_activity:
+        activity_rows = sorted(
+            (
+                (str(item.get("date") or ""), str(contact.get("id") or ""), item)
+                for contact in data.get("crm_contacts", [])
+                for item in contact.get("activities", [])
+                if isinstance(item, dict)
+            ),
+            key=lambda row: row[0],
+            reverse=True,
+        )[:150]
+        for _, contact_id, item in activity_rows:
+            activity_by_contact.setdefault(contact_id, []).append({
+                key: item.get(key)
+                for key in ("id", "date", "kind", "title", "detail", "author")
+                if key in item
+            })
+        publication_by_contact = {
+            str(contact.get("id") or ""): contact.get("publications", [])
+            for contact in data.get("crm_contacts", [])
+            if contact.get("publications")
+        }
+
+    contacts = []
+    for contact in data["crm_contacts"]:
+        contact_id = str(contact.get("id") or "")
+        contacts.append(_crm_contact_summary_response(
+            contact,
+            data,
+            funding_status=wedof_funding_statuses.get(contact_id),
+            activities=(activity_by_contact.get(contact_id, [])
+                        if include_activity else None),
+            publications=(publication_by_contact.get(contact_id, [])
+                          if include_activity else None),
+        ))
+    return contacts, changed
+
+
 def _crm_contacts_payload(data):
-    """Prépare la liste CRM à partir d'un instantané déjà chargé."""
+    """Conserve la réponse historique complète pour les intégrations explicites."""
     changed, wedof_funding_statuses = _crm_prepare_contacts(data)
     contacts = [
         _crm_contact_response(
-            contact, data,
-            funding_status=wedof_funding_statuses.get(str(contact.get("id") or "")),
+            contact,
+            data,
+            funding_status=wedof_funding_statuses.get(
+                str(contact.get("id") or "")
+            ),
         )
         for contact in data["crm_contacts"]
     ]
@@ -11474,7 +11610,11 @@ def _crm_contacts_payload(data):
 def crm_contacts():
     data = load_data()
     if request.method == "GET":
-        contacts, changed = _crm_contacts_payload(data)
+        section = request.args.get("section", "")
+        if section or request.args.get("compact") == "1":
+            contacts, changed = _crm_contact_summaries_payload(data, section)
+        else:
+            contacts, changed = _crm_contacts_payload(data)
         if changed:
             save_data(data)
         return jsonify(contacts)
@@ -12550,7 +12690,9 @@ def crm_bootstrap():
     reparsait le même fichier complet, ce qui multipliait le pic mémoire.
     """
     data = load_data()
-    contacts, changed = _crm_contacts_payload(data)
+    contacts, changed = _crm_contact_summaries_payload(
+        data, section=request.args.get("section", "")
+    )
     settings = _crm_settings_payload(data)
     appointments = _crm_calendly_appointments_payload(data)
     if changed:

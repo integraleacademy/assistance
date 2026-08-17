@@ -164,7 +164,7 @@
       preview.innerHTML = '<div class="activity-empty">Import des pistes et enregistrement dans le CRM…</div>';
       try {
         const result = await sendFile(selectedFile, options(), false);
-        contacts = await api('/api/crm/contacts');
+        contacts = await api('/api/crm/contacts?compact=1');
         preview.innerHTML = summaryHtml(result, true);
         confirm.textContent = 'Terminé';
         document.querySelector('#salesforceCancel').textContent = 'Fermer';
