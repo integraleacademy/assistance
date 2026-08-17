@@ -635,7 +635,7 @@ def test_collaborative_updates_endpoint_returns_a_small_payload(tmp_path, monkey
     assert response.status_code == 200
     assert set(payload["contacts"][0]) == {
         "id", "statut", "statut_secondaire",
-        "statut_demande_financement_ft", "updated_at",
+        "statut_demande_financement_ft", "updated_at", "activity_counts",
     }
     assert payload["selected"]["id"] == contact["id"]
     assert set(payload["selected"]) == {"id", "activities", "publications"}

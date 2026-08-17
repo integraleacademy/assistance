@@ -631,7 +631,7 @@ async function calendlyModal(c){
       bookButton.disabled=true;bookButton.textContent='Création du rendez-vous…';
       try{
         const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments`,{method:'POST',body:JSON.stringify({event_type:selectedType.uri,start_time:selectedStart,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',location,answers})});
-        Object.assign(c,result.contact||{});closeModal();showContact(c.id);toast('Rendez-vous Calendly planifié');
+        Object.assign(c,result.contact||{});if(result.appointment){const index=crmAppointments.findIndex(item=>String(item.id)===String(result.appointment.id)),appointment={...result.appointment,contact:{id:c.id,prenom:c.prenom,nom:c.nom,formation:c.formation,telephone:c.telephone,mail:c.mail}};if(index>=0)crmAppointments[index]=appointment;else crmAppointments.push(appointment);c.activity_counts={...(c.activity_counts||{}),appointments:crmAppointments.filter(item=>String(item.contact_id)===String(c.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase())).length}}closeModal();showContact(c.id);toast('Rendez-vous Calendly planifié');
       }catch(e){toast(e.message,true);bookButton.disabled=false;bookButton.textContent='Confirmer le rendez-vous'}
     };
     renderType();

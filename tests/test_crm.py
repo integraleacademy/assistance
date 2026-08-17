@@ -495,6 +495,81 @@ def test_crm_bootstrap_is_compact_and_contact_details_are_loaded_on_demand(
     assert len(detail["activities"][0]["preview"]) > 250_000
 
 
+def test_contact_summaries_count_messages_relances_and_active_appointments(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post(
+        "/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}
+    ).get_json()
+    data = application.load_data()
+    contact = next(
+        row for row in data["crm_contacts"] if row["id"] == created["id"]
+    )
+    contact["origine"] = "Google Ads"
+    contact["activities"] = [
+        {"id": "mail-1", "date": "2026-08-10T09:00:00+02:00", "kind": "email"},
+        {"id": "mail-2", "date": "2026-08-11T09:00:00+02:00", "kind": "email"},
+        {"id": "sms-1", "date": "2026-08-12T09:00:00+02:00", "kind": "sms"},
+        {"id": "failed", "date": "2026-08-13T09:00:00+02:00", "kind": "erreur"},
+    ]
+    contact["relances"] = [
+        {"id": "scheduled", "scheduled_date": "2026-08-20", "status": "scheduled"},
+        {"id": "answered", "scheduled_date": "2026-08-12", "status": "answered"},
+        {"id": "no-answer", "scheduled_date": "2026-08-13", "status": "no_answer"},
+        {"id": "reprogrammed", "scheduled_date": "2026-08-14", "status": "reprogrammed"},
+        {"id": "cancelled", "scheduled_date": "2026-08-15", "status": "cancelled"},
+    ]
+    data["crm_calendly_appointments"] = [
+        {
+            "id": "past", "contact_id": created["id"], "status": "active",
+            "start_time": "2026-08-10T08:00:00Z",
+        },
+        {
+            "id": "future", "contact_id": created["id"], "status": "active",
+            "start_time": "2026-08-25T08:00:00Z",
+        },
+        {
+            "id": "canceled", "contact_id": created["id"], "status": "canceled",
+            "start_time": "2026-08-22T08:00:00Z",
+        },
+        {
+            "id": "undated", "contact_id": created["id"], "status": "active",
+            "start_time": "",
+        },
+    ]
+    application.save_data(data)
+
+    bootstrap = c.get("/api/crm/bootstrap?section=contacts").get_json()
+    summary = next(row for row in bootstrap["contacts"] if row["id"] == created["id"])
+
+    assert summary["origine"] == "Google Ads"
+    assert summary["activity_counts"] == {
+        "appointments": 2,
+        "relances": 3,
+        "emails": 2,
+        "sms": 1,
+    }
+
+    updates = c.get("/api/crm/contacts/updates").get_json()["contacts"]
+    update = next(row for row in updates if row["id"] == created["id"])
+    assert update["activity_counts"] == summary["activity_counts"]
+
+
+def test_contacts_table_displays_origin_and_activity_badges():
+    root = application.app.root_path
+    workspace_js = open(root + "/static/crm_workspace.js", encoding="utf-8").read()
+    workspace_css = open(root + "/static/crm_workspace.css", encoding="utf-8").read()
+
+    assert "if(type==='contacts')return'<th>CONTACT</th><th>ORIGINE</th><th>ACTIVITÉS</th>" in workspace_js
+    assert "function contactActivityBadges" in workspace_js
+    for label in ("RDV téléphonique", "relance", "mail", "SMS"):
+        assert label in workspace_js
+    assert "function originBadge" in workspace_js
+    assert "google-ads" in workspace_js
+    assert ".workspace-activity-tag.rdv" in workspace_css
+    assert ".workspace-origin-badge.google-ads" in workspace_css
+
+
 def test_contact_sheet_fetches_full_record_only_when_a_summary_is_opened():
     crm_js = open(
         application.app.root_path + "/static/crm.js", encoding="utf-8"
@@ -1064,7 +1139,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260817-activite-performance-completude" in page.data
+    assert b"20260817-contacts-activites-origine" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
