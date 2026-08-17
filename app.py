@@ -8522,9 +8522,53 @@ def _crm_backfill_information_request_answers(contact):
     return changed
 
 
+CRM_GOOGLE_ADS_ORIGIN = "Google Ads"
+
+
+def _crm_information_request_gclid(fields):
+    """Return the Google click identifier captured by the public form."""
+    return str((fields or {}).get("gclid") or "").strip()
+
+
+def _crm_information_request_origin(fields):
+    """Resolve the CRM origin without misclassifying secretariat submissions."""
+    if str((fields or {}).get("source_secretariat") or "") == "1":
+        return "Secrétariat"
+    return CRM_GOOGLE_ADS_ORIGIN if _crm_information_request_gclid(fields) else "Site internet"
+
+
+def _crm_apply_information_request_attribution(contact, fields):
+    """Promote a captured GCLID to the CRM contact and its acquisition origin."""
+    if not isinstance(fields, dict):
+        return False
+    gclid = _crm_information_request_gclid(fields)
+    if not gclid or str(fields.get("source_secretariat") or "") == "1":
+        return False
+
+    changed = False
+    if contact.get("gclid") != gclid:
+        contact["gclid"] = gclid
+        changed = True
+    if contact.get("origine") != CRM_GOOGLE_ADS_ORIGIN:
+        contact["origine"] = CRM_GOOGLE_ADS_ORIGIN
+        changed = True
+    if changed:
+        contact["updated_at"] = _crm_now()
+    return changed
+
+
+def _crm_backfill_information_request_attribution(contact):
+    """Repair contacts created before GCLID was promoted to a first-class field."""
+    form = contact.get("formulaire")
+    if contact.get("source") != "demande_infos_formations" or not isinstance(form, dict):
+        return False
+    return _crm_apply_information_request_attribution(contact, form)
+
+
 def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
                           funding_status=None):
     _crm_backfill_information_request_answers(contact)
+    _crm_backfill_information_request_attribution(contact)
     _crm_ensure_relances(contact)
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
@@ -8717,6 +8761,8 @@ def _crm_complete_relance(contact, relance, status, *, note=""):
 def _crm_create_contact_from_information_request(data, fields, demande_id, devis_id, devis_url):
     """Crée la fiche CRM complète et son journal lors d'une demande d'informations."""
     now = _crm_now()
+    is_secretariat = str(fields.get("source_secretariat") or "") == "1"
+    gclid = "" if is_secretariat else _crm_information_request_gclid(fields)
     formation_key = str(fields.get("formation") or "").strip()
     formation = {
         "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
@@ -8749,7 +8795,8 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "financement_ft": str(fields.get("france_travail") or "").strip(),
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": "",
-        "origine": "Secrétariat" if str(fields.get("source_secretariat") or "") == "1" else "Site internet",
+        "origine": _crm_information_request_origin(fields),
+        "gclid": gclid,
         "inscrit_ft": "",
         "commentaires": "",
         "relance_date": "",
@@ -8771,6 +8818,8 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         data, fields, "demande_infos_formations", proposed_contact=contact,
         external_id=demande_id,
     )
+    if matched:
+        _crm_apply_information_request_attribution(matched, fields)
     return matched
 
 
@@ -11402,6 +11451,8 @@ def _crm_prepare_contacts(data):
     automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
 
     for existing in data.get("crm_contacts", []):
+        if _crm_backfill_information_request_attribution(existing):
+            changed = True
         if _crm_workspace_backfill(existing):
             changed = True
         if _crm_enforce_meta_defaults(existing):
@@ -11943,7 +11994,12 @@ def crm_contact(contact_id):
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
-        if _crm_ensure_relances(contact):
+        changed = _crm_ensure_relances(contact)
+        if _crm_backfill_information_request_answers(contact):
+            changed = True
+        if _crm_backfill_information_request_attribution(contact):
+            changed = True
+        if changed:
             save_data(data)
         return jsonify(_crm_contact_response(contact, data))
     if request.method == "DELETE":
