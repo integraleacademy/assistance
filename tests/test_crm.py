@@ -986,6 +986,18 @@ def test_crm_contact_page_displays_google_ads_gclid():
     assert 'value="${esc(c.gclid)}" readonly' in crm_js
 
 
+def test_information_form_recovers_gclid_from_google_ads_attribution_sources():
+    form_html = open(
+        application.app.root_path + "/templates/demande_informations_formations.html",
+        encoding="utf-8",
+    ).read()
+
+    assert "params.get('gclid')" in form_html
+    assert "document.referrer" in form_html
+    assert "cookieValue('_gcl_aw')" in form_html
+    assert "window.setTimeout(syncGclid, 1500)" in form_html
+
+
 def test_crm_backfills_regulatory_answers_from_older_information_form_contacts(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
     data = application.load_data()
