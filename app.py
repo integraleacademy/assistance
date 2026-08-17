@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil
 import html as html_module
 from html.parser import HTMLParser
 from urllib.parse import urlparse
@@ -1237,10 +1237,9 @@ def save_data(data):
     if os.path.exists(DATA_FILE):
         backup_file = f"{DATA_FILE}.bak"
         try:
-            with open(DATA_FILE, "r", encoding="utf-8") as src:
-                previous = src.read()
-            with open(backup_file, "w", encoding="utf-8") as dst:
-                dst.write(previous)
+            # Une copie flux-à-flux évite de conserver une deuxième version du
+            # gros fichier JSON en mémoire pendant chaque écriture CRM.
+            shutil.copyfile(DATA_FILE, backup_file)
         except OSError:
             pass
 
@@ -2032,8 +2031,10 @@ def _extract_exam_label_from_dates_txt(dates_txt: str) -> str:
     return match.group(1).strip(" .)")
 
 
-def _format_upcoming_sessions_for_email(centre_code: str, formation_code: str) -> str:
-    sessions = get_formation_sessions()
+def _format_upcoming_sessions_for_email(
+    centre_code: str, formation_code: str, data_store=None,
+) -> str:
+    sessions = get_formation_sessions(data_store)
     rows = sessions.get(_normalize_centre_code(centre_code), {}).get(formation_code, [])
     labels = [
         (row.get("label") or "").strip()
@@ -2121,10 +2122,12 @@ def _centre_legal_block(centre_code: str) -> str:
     )
 
 
-def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
+def build_a3p_email_html(
+    prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
+):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
-    session_html = _format_upcoming_sessions_for_email(centre_code, "A3P")
+    session_html = _format_upcoming_sessions_for_email(centre_code, "A3P", data_store)
     devis_button_html = ""
     if devis_url:
         devis_button_html = (
@@ -2139,7 +2142,9 @@ def build_a3p_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
     )
 
 
-def _a3p_information_email_content(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
+def _a3p_information_email_content(
+    prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
+):
     """Return the A3P message shared by the public form and META leads."""
     session_date = _format_selected_session_date(dates_txt)
     centre_label, centre_address = _centre_label_and_address(centre_code)
@@ -2161,7 +2166,7 @@ def _a3p_information_email_content(prenom: str, dates_txt: str, centre_code: str
     return (
         "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
         plain,
-        build_a3p_email_html(prenom, dates_txt, centre_code, devis_url),
+        build_a3p_email_html(prenom, dates_txt, centre_code, devis_url, data_store),
     )
 
 
@@ -2232,10 +2237,14 @@ def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
 
 
 
-def build_desp_init_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
+def build_desp_init_email_html(
+    prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
+):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
-    session_html = _format_upcoming_sessions_for_email(centre_code, "DESP_INIT")
+    session_html = _format_upcoming_sessions_for_email(
+        centre_code, "DESP_INIT", data_store,
+    )
     return _render_email_template("desp_init.html", prenom=prenom, centre_display=centre_display, session_html=session_html, devis_url=devis_url)
 
 
@@ -6937,7 +6946,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260816-crm-workspace-complet"
+CRM_ASSET_VERSION = "20260817-render-stabilite"
 
 
 def _crm_statuses(data=None):
@@ -10819,11 +10828,8 @@ def crm_calendly_status():
     return jsonify(_crm_calendly_status_payload(load_data()))
 
 
-@app.route("/api/crm/calendly/appointments")
-@login_required
-def crm_calendly_appointments():
-    """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
-    data = load_data()
+def _crm_calendly_appointments_payload(data):
+    """Construit l'agenda CRM sans relire le fichier de données."""
     contacts = {item.get("id"): item for item in data.get("crm_contacts", [])}
     appointments = []
     for item in data.get("crm_calendly_appointments", []):
@@ -10840,7 +10846,18 @@ def crm_calendly_appointments():
             },
         })
     appointments.sort(key=lambda item: item.get("start_time") or "")
-    return jsonify({"appointments": appointments, "integration": _crm_calendly_status_payload(data)})
+    return {
+        "appointments": appointments,
+        "integration": _crm_calendly_status_payload(data),
+    }
+
+
+@app.route("/api/crm/calendly/appointments")
+@login_required
+@_crm_serialized
+def crm_calendly_appointments():
+    """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
+    return jsonify(_crm_calendly_appointments_payload(load_data()))
 
 
 @app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
@@ -11438,22 +11455,29 @@ def _crm_prepare_contacts(data):
     return changed, wedof_funding_statuses
 
 
+def _crm_contacts_payload(data):
+    """Prépare la liste CRM à partir d'un instantané déjà chargé."""
+    changed, wedof_funding_statuses = _crm_prepare_contacts(data)
+    contacts = [
+        _crm_contact_response(
+            contact, data,
+            funding_status=wedof_funding_statuses.get(str(contact.get("id") or "")),
+        )
+        for contact in data["crm_contacts"]
+    ]
+    return contacts, changed
+
+
 @app.route("/api/crm/contacts", methods=["GET", "POST"])
 @login_required
 @_crm_serialized
 def crm_contacts():
     data = load_data()
     if request.method == "GET":
-        changed, wedof_funding_statuses = _crm_prepare_contacts(data)
+        contacts, changed = _crm_contacts_payload(data)
         if changed:
             save_data(data)
-        return jsonify([
-            _crm_contact_response(
-                contact, data,
-                funding_status=wedof_funding_statuses.get(str(contact.get("id") or "")),
-            )
-            for contact in data["crm_contacts"]
-        ])
+        return jsonify(contacts)
     payload = request.get_json(silent=True) or {}
     now = _crm_now()
     contact = {
@@ -11623,15 +11647,21 @@ def crm_change_status(old_label):
     return jsonify({"statuses": next_statuses, "replacement": replacement})
 
 
+def _crm_settings_payload(data):
+    """Normalise les réglages CRM sans relire le fichier JSON."""
+    settings = data.setdefault("crm_settings", {})
+    defaults = DEFAULT_DATA["crm_settings"]
+    for key, value in defaults.items():
+        settings.setdefault(key, value.copy() if isinstance(value, dict) else value)
+    return settings
+
+
 @app.route("/api/crm/settings", methods=["GET", "PATCH"])
 @login_required
 @_crm_serialized
 def crm_settings():
     data = load_data()
-    settings = data.setdefault("crm_settings", {})
-    defaults = DEFAULT_DATA["crm_settings"]
-    for key, value in defaults.items():
-        settings.setdefault(key, value.copy() if isinstance(value, dict) else value)
+    settings = _crm_settings_payload(data)
     if request.method == "GET":
         return jsonify(settings)
     payload = request.get_json(silent=True) or {}
@@ -12137,11 +12167,19 @@ def _crm_add_mention_notifications(data, text, contact, publication, *, kind="me
         })
 
 
+def _crm_notifications_payload(data, email):
+    return [
+        item for item in data.get("crm_notifications", [])
+        if item.get("recipient_email") == email
+    ]
+
+
 @app.route("/api/crm/notifications", methods=["GET", "PATCH"])
 @login_required
+@_crm_serialized
 def crm_notifications():
     data = load_data(); email = (current_user() or {}).get("email", "")
-    items = [item for item in data.get("crm_notifications", []) if item.get("recipient_email") == email]
+    items = _crm_notifications_payload(data, email)
     if request.method == "PATCH":
         notification_id = str((request.get_json(silent=True) or {}).get("id") or "")
         for item in items:
@@ -12399,89 +12437,99 @@ def crm_generate_message(contact_id):
         return jsonify({"error": "La génération est momentanément indisponible"}), 502
 
 
+def _crm_templates_payload(data):
+    """Construit la bibliothèque de modèles depuis un instantané existant."""
+    wrapper_path = os.path.join(app.root_path, "templates", "crm_email_wrapper.html")
+    with open(wrapper_path, encoding="utf-8") as wrapper_file:
+        email_starter = wrapper_file.read().replace(
+            "{{ contenu|safe }}",
+            "<!-- EMAIL_CONTENT_START --><p>Écrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
+        )
+    automatic_email = [
+        {
+            "id": "automatic-desp-vae",
+            "nom": "VAE DESP",
+            "formation": "DESP_VAE",
+            "sujet": "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)",
+            "contenu": build_vae_desp_email_html("{{ prenom }}", "{{ lien_devis }}"),
+        },
+        {
+            "id": "automatic-a3p",
+            "nom": "A3P – Bodyguard",
+            "formation": "A3P",
+            "sujet": "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
+            "contenu": build_a3p_email_html(
+                "{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data,
+            ),
+        },
+        {
+            "id": "automatic-aps",
+            "nom": "APS – Agent de sécurité privée",
+            "formation": "APS",
+            "sujet": "👮‍♂️ Formation Agent de Sécurité Privée (APS)",
+            "contenu": build_aps_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
+        },
+        {
+            "id": "automatic-ssiap1",
+            "nom": "SSIAP 1 – Sécurité incendie",
+            "formation": "SSIAP",
+            "sujet": "🔥 Formation Agent de sécurité incendie SSIAP 1",
+            "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui"),
+        },
+        {
+            "id": "automatic-vtc",
+            "nom": "Chauffeur VTC",
+            "formation": "VTC",
+            "sujet": "🚗 Formation Chauffeur VTC",
+            "contenu": build_vtc_email_html("{{ prenom }}", "cote_azur", "{{ lien_devis }}"),
+        },
+        {
+            "id": "automatic-desp-initial",
+            "nom": "DESP initial",
+            "formation": "DESP_INIT",
+            "sujet": "Votre demande de renseignements – Formation DESP initial",
+            "contenu": build_desp_init_email_html(
+                "{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data,
+            ),
+        },
+    ]
+    meta_a3p_subject, _, meta_a3p_html = _a3p_information_email_content(
+        "{{ prenom }}", "", "cote_azur", "", data,
+    )
+    automatic_meta = [
+        {
+            "id": "automatic-meta-a3p-email",
+            "type": "email",
+            "nom": "META A3P – E-mail d’information",
+            "formation": "A3P",
+            "sujet": meta_a3p_subject,
+            "contenu": meta_a3p_html,
+        },
+        {
+            "id": "automatic-meta-a3p-sms",
+            "type": "sms",
+            "nom": "META A3P – SMS de suivi",
+            "formation": "A3P",
+            "sujet": "",
+            "contenu": build_training_information_sms_text("A3P"),
+        },
+    ]
+    return {
+        "email": data["crm_email_templates"],
+        "sms": data["crm_sms_templates"],
+        "automatic_email": automatic_email,
+        "automatic_meta": automatic_meta,
+        "email_starter": email_starter,
+    }
+
+
 @app.route("/api/crm/templates", methods=["GET", "POST"])
 @login_required
+@_crm_serialized
 def crm_templates():
     data = load_data()
     if request.method == "GET":
-        wrapper_path = os.path.join(app.root_path, "templates", "crm_email_wrapper.html")
-        with open(wrapper_path, encoding="utf-8") as wrapper_file:
-            email_starter = wrapper_file.read().replace(
-                "{{ contenu|safe }}",
-                "<!-- EMAIL_CONTENT_START --><p>Écrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
-            )
-        automatic_email = [
-            {
-                "id": "automatic-desp-vae",
-                "nom": "VAE DESP",
-                "formation": "DESP_VAE",
-                "sujet": "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)",
-                "contenu": build_vae_desp_email_html("{{ prenom }}", "{{ lien_devis }}"),
-            },
-            {
-                "id": "automatic-a3p",
-                "nom": "A3P – Bodyguard",
-                "formation": "A3P",
-                "sujet": "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
-                "contenu": build_a3p_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
-            },
-            {
-                "id": "automatic-aps",
-                "nom": "APS – Agent de sécurité privée",
-                "formation": "APS",
-                "sujet": "👮‍♂️ Formation Agent de Sécurité Privée (APS)",
-                "contenu": build_aps_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
-            },
-            {
-                "id": "automatic-ssiap1",
-                "nom": "SSIAP 1 – Sécurité incendie",
-                "formation": "SSIAP",
-                "sujet": "🔥 Formation Agent de sécurité incendie SSIAP 1",
-                "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui"),
-            },
-            {
-                "id": "automatic-vtc",
-                "nom": "Chauffeur VTC",
-                "formation": "VTC",
-                "sujet": "🚗 Formation Chauffeur VTC",
-                "contenu": build_vtc_email_html("{{ prenom }}", "cote_azur", "{{ lien_devis }}"),
-            },
-            {
-                "id": "automatic-desp-initial",
-                "nom": "DESP initial",
-                "formation": "DESP_INIT",
-                "sujet": "Votre demande de renseignements – Formation DESP initial",
-                "contenu": build_desp_init_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
-            },
-        ]
-        meta_a3p_subject, _, meta_a3p_html = _a3p_information_email_content(
-            "{{ prenom }}", "", "cote_azur", "",
-        )
-        automatic_meta = [
-            {
-                "id": "automatic-meta-a3p-email",
-                "type": "email",
-                "nom": "META A3P – E-mail d’information",
-                "formation": "A3P",
-                "sujet": meta_a3p_subject,
-                "contenu": meta_a3p_html,
-            },
-            {
-                "id": "automatic-meta-a3p-sms",
-                "type": "sms",
-                "nom": "META A3P – SMS de suivi",
-                "formation": "A3P",
-                "sujet": "",
-                "contenu": build_training_information_sms_text("A3P"),
-            },
-        ]
-        return jsonify({
-            "email": data["crm_email_templates"],
-            "sms": data["crm_sms_templates"],
-            "automatic_email": automatic_email,
-            "automatic_meta": automatic_meta,
-            "email_starter": email_starter,
-        })
+        return jsonify(_crm_templates_payload(data))
     payload = request.get_json(silent=True) or {}; kind = payload.get("type")
     if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
     item = {"id": str(uuid.uuid4()), "nom": str(payload.get("nom", "Sans titre")).strip(),
@@ -12490,6 +12538,34 @@ def crm_templates():
             "usage_count": 0, "versions": [], "created_at": _crm_now()}
     data[f"crm_{kind}_templates"].append(item); save_data(data)
     return jsonify(item), 201
+
+
+@app.get("/api/crm/bootstrap")
+@login_required
+@_crm_serialized
+def crm_bootstrap():
+    """Charge tout l'espace CRM avec une seule lecture du fichier JSON.
+
+    L'ancien démarrage lançait six requêtes en parallèle. Chaque requête
+    reparsait le même fichier complet, ce qui multipliait le pic mémoire.
+    """
+    data = load_data()
+    contacts, changed = _crm_contacts_payload(data)
+    settings = _crm_settings_payload(data)
+    appointments = _crm_calendly_appointments_payload(data)
+    if changed:
+        save_data(data)
+    return jsonify({
+        "contacts": contacts,
+        "templates": _crm_templates_payload(data),
+        "formation_sessions": get_formation_sessions(data),
+        "notifications": _crm_notifications_payload(
+            data, (current_user() or {}).get("email", ""),
+        ),
+        "appointments": appointments["appointments"],
+        "calendly_integration": appointments["integration"],
+        "settings": settings,
+    })
 
 
 @app.route("/api/crm/templates/<template_id>", methods=["PATCH", "DELETE"])

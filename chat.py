@@ -164,8 +164,12 @@ class ChatService:
         Base.metadata.create_all(self.engine)
         self._ensure_team()
         redis_url = os.getenv("REDIS_URL")
+        # La session est uniquement lue pour authentifier les événements. Laisser
+        # Flask-SocketIO la recopier casse avec Flask 3.1.3 (RequestContext.session
+        # est désormais en lecture seule) et provoque une boucle de reconnexions.
         self.socketio = SocketIO(app, async_mode="threading", message_queue=redis_url or None,
-                                 ping_interval=20, ping_timeout=45, cors_allowed_origins=[])
+                                 manage_session=False, ping_interval=20, ping_timeout=45,
+                                 cors_allowed_origins=[])
         self.presence_grace = float(app.config.get("CHAT_PRESENCE_GRACE", 15))
         self.presence = SharedPresence(self, redis_url)
         self.rate = defaultdict(deque); self.rate_lock = threading.Lock()
