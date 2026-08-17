@@ -574,12 +574,18 @@ def test_pistes_table_displays_origin_and_activity_badges_in_both_renderers():
     root = application.app.root_path
     crm_js = open(root + "/static/crm.js", encoding="utf-8").read()
     workspace_js = open(root + "/static/crm_workspace.js", encoding="utf-8").read()
+    workspace_css = open(root + "/static/crm_workspace.css", encoding="utf-8").read()
 
     assert "<th>CONTACT</th><th>ORIGINE</th><th>ACTIVITÉS</th><th>FORMATION</th>" in crm_js
     assert "function listOriginBadge" in crm_js
     assert "function listActivityBadges" in crm_js
+    assert "'Google Ads'" in crm_js and "'Ajout manuel'" in crm_js
+    assert "function leadOriginFilterOptions" in crm_js
     assert "<th>PROJET</th><th>ORIGINE</th><th>ACTIVITÉS</th>" in workspace_js
     assert "${originBadge(contact,ctx)}</td><td>${contactActivityBadges(contact,appointmentCount)}" in workspace_js
+    assert "workspaceOriginOptions" in workspace_js
+    assert "table-layout:fixed" in workspace_css
+    assert "col.crm-col-contact{width:310px}" in workspace_css
 
 
 def test_contact_sheet_fetches_full_record_only_when_a_summary_is_opened():
@@ -1151,7 +1157,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260817-pistes-activites-origine" in page.data
+    assert b"20260817-pistes-colonnes-origines" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
