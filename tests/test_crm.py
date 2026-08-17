@@ -380,8 +380,83 @@ def test_crm_frontend_uses_the_single_bootstrap_endpoint():
 
     init = crm_js[crm_js.index("async function init()"):
                   crm_js.index("const newContactButton")]
-    assert "api('/api/crm/bootstrap')" in init
+    assert "api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`)" in init
     assert "Promise.all" not in init
+
+
+def test_crm_bootstrap_is_compact_and_contact_details_are_loaded_on_demand(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post(
+        "/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}
+    ).get_json()
+    data = application.load_data()
+    contact = next(
+        row for row in data["crm_contacts"] if row["id"] == created["id"]
+    )
+    contact["formulaire"] = {"document": "x" * 250_000}
+    contact["activities"] = [{
+        "id": "activity-heavy",
+        "date": "2026-08-17T12:00:00+02:00",
+        "kind": "email",
+        "title": "E-mail envoyé",
+        "detail": "Informations transmises",
+        "preview": "<html>" + "y" * 250_000 + "</html>",
+    }]
+    contact["publications"] = [{
+        "id": "publication-1", "date": "2026-08-17T12:05:00+02:00",
+        "texte": "Publication visible", "comments": [], "likes": [],
+    }]
+    application.save_data(data)
+
+    compact_response = c.get("/api/crm/bootstrap?section=pistes")
+    compact = compact_response.get_json()["contacts"][0]
+
+    assert compact["_summary"] is True
+    assert "formulaire" not in compact
+    assert compact["activities"] == [{
+        "id": "activity-heavy", "kind": "email",
+        "date": "2026-08-17T12:00:00+02:00",
+    }]
+    assert compact["publications"] == []
+    assert len(compact_response.data) < 150_000
+
+    activity_response = c.get("/api/crm/bootstrap?section=fil-actu")
+    activity_contact = activity_response.get_json()["contacts"][0]
+    assert activity_contact["activities"][0]["title"] == "E-mail envoyé"
+    assert "preview" not in activity_contact["activities"][0]
+    assert activity_contact["publications"][0]["texte"] == "Publication visible"
+    assert len(activity_response.data) < 150_000
+
+    detail = c.get(f"/api/crm/contacts/{created['id']}").get_json()
+    assert len(detail["formulaire"]["document"]) == 250_000
+    assert len(detail["activities"][0]["preview"]) > 250_000
+
+
+def test_contact_sheet_fetches_full_record_only_when_a_summary_is_opened():
+    crm_js = open(
+        application.app.root_path + "/static/crm.js", encoding="utf-8"
+    ).read()
+
+    assert "async function showContact(id,initialTab='contactInfoTab')" in crm_js
+    assert "if(c._summary)" in crm_js
+    assert "api(`/api/crm/contacts/${encodeURIComponent(id)}`)" in crm_js
+    assert "delete c._summary" in crm_js
+
+
+def test_activity_preferences_are_bound_only_after_the_modal_exists():
+    workspace_js = open(
+        application.app.root_path + "/static/crm_workspace.js", encoding="utf-8"
+    ).read()
+    activity = workspace_js[
+        workspace_js.index("function enhancedActivityPage"):
+        workspace_js.index("function createContactModal")
+    ]
+
+    assert "settings.onclick=()=>{" in activity
+    assert "document.querySelector('#cancelNotificationSettings')" in activity
+    assert "document.querySelector('#saveNotificationSettings')" in activity
+    assert "cancelNotificationSettings.onclick" not in activity
 
 
 def test_save_data_streams_the_previous_file_to_backup(tmp_path, monkeypatch):
@@ -855,7 +930,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260817-retour-pistes-calendrier" in page.data
+    assert b"20260817-activite-performance" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
