@@ -676,7 +676,8 @@ let integrationTimer;function scheduleContactIntegrations(c){clearTimeout(integr
 function render(){
  document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===C.section));updateLeadCount();
  if(C.section==='accueil'){page.innerHTML=dashboard();bindDashboard();return}
- if(C.section==='calendrier'&&window.CRMWorkspace)return CRMWorkspace.calendarPage(workspaceContext());
+ if(C.section==='calendrier')return calendarPage();
+ if(C.section==='pistes'){page.innerHTML=listPage(C.section);bindList(C.section);bindRows();return}
  if(C.section==='relances'&&window.CRMWorkspace)return CRMWorkspace.remindersPage(workspaceContext());
  if(C.section==='notifications'&&window.CRMWorkspace)return CRMWorkspace.activityPage(workspaceContext(),'mentions');
  if(C.section==='fil-actu'&&window.CRMWorkspace)return CRMWorkspace.activityPage(workspaceContext(),'publications');
