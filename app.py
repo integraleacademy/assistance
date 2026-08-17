@@ -6946,7 +6946,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260817-activite-performance-completude"
+CRM_ASSET_VERSION = "20260817-contacts-activites-origine"
 
 
 def _crm_statuses(data=None):
@@ -11519,6 +11519,48 @@ CRM_CONTACT_SUMMARY_FIELDS = (
 )
 CRM_CONTACT_ACTIVITY_KINDS = {"appel", "email", "sms"}
 CRM_ACTIVITY_SECTIONS = {"notifications", "fil-actu"}
+CRM_COUNTED_RELANCE_STATUSES = {"scheduled", "answered", "no_answer"}
+CRM_CANCELLED_APPOINTMENT_STATUSES = {"canceled", "cancelled"}
+
+
+def _crm_appointment_counts_by_contact(data):
+    """Indexe les rendez-vous passés ou à venir sans compter les annulations."""
+    counts = {}
+    for appointment in data.get("crm_calendly_appointments", []):
+        if not isinstance(appointment, dict):
+            continue
+        contact_id = str(appointment.get("contact_id") or "").strip()
+        status = str(appointment.get("status") or "active").strip().lower()
+        if (not contact_id or not appointment.get("start_time")
+                or status in CRM_CANCELLED_APPOINTMENT_STATUSES):
+            continue
+        counts[contact_id] = counts.get(contact_id, 0) + 1
+    return counts
+
+
+def _crm_contact_activity_counts(contact, appointment_count=0):
+    """Retourne les compteurs légers affichés dans la liste des contacts."""
+    channel_counts = {"email": 0, "sms": 0}
+    for activity in contact.get("activities", []):
+        if not isinstance(activity, dict):
+            continue
+        kind = str(activity.get("kind") or "").strip().lower()
+        if kind in channel_counts:
+            channel_counts[kind] += 1
+
+    relance_count = sum(
+        1 for relance in contact.get("relances", [])
+        if isinstance(relance, dict)
+        and str(relance.get("status") or "scheduled").strip().lower()
+        in CRM_COUNTED_RELANCE_STATUSES
+        and bool(relance.get("scheduled_date"))
+    )
+    return {
+        "appointments": max(0, int(appointment_count or 0)),
+        "relances": relance_count,
+        "emails": channel_counts["email"],
+        "sms": channel_counts["sms"],
+    }
 
 
 def _crm_compact_contact_activities(contact):
@@ -11552,7 +11594,8 @@ def _crm_compact_contact_activities(contact):
 
 
 def _crm_contact_summary_response(contact, data, *, funding_status=None,
-                                  activities=None, publications=None):
+                                  activities=None, publications=None,
+                                  appointment_count=0):
     """Construit une fiche légère ; le détail complet reste chargé à la demande."""
     summary = {
         key: contact.get(key)
@@ -11585,6 +11628,9 @@ def _crm_contact_summary_response(contact, data, *, funding_status=None,
         if activities is not None
         else _crm_compact_contact_activities(contact)
     )
+    summary["activity_counts"] = _crm_contact_activity_counts(
+        contact, appointment_count,
+    )
     summary["publications"] = publications if publications is not None else []
     summary["_summary"] = True
     return summary
@@ -11598,6 +11644,7 @@ def _crm_contact_summaries_payload(data, section=""):
     cela représentait plus de 5 Mo à chaque ouverture du CRM.
     """
     changed, wedof_funding_statuses = _crm_prepare_contacts(data)
+    appointment_counts = _crm_appointment_counts_by_contact(data)
     include_activity = str(section or "").strip().lower() in CRM_ACTIVITY_SECTIONS
     activity_by_contact = {}
     publication_by_contact = {}
@@ -11635,6 +11682,7 @@ def _crm_contact_summaries_payload(data, section=""):
                         if include_activity else None),
             publications=(publication_by_contact.get(contact_id, [])
                           if include_activity else None),
+            appointment_count=appointment_counts.get(contact_id, 0),
         ))
     return contacts, changed
 
@@ -11705,6 +11753,7 @@ def crm_contact_updates():
     """Retourne uniquement les données utiles au rafraîchissement collaboratif."""
     data = load_data()
     changed, _ = _crm_prepare_contacts(data)
+    appointment_counts = _crm_appointment_counts_by_contact(data)
     if changed:
         save_data(data)
 
@@ -11717,6 +11766,10 @@ def crm_contact_updates():
                 "statut_demande_financement_ft", ""
             ),
             "updated_at": contact.get("updated_at"),
+            "activity_counts": _crm_contact_activity_counts(
+                contact,
+                appointment_counts.get(str(contact.get("id") or ""), 0),
+            ),
         }
         for contact in data.get("crm_contacts", [])
     ]
