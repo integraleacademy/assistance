@@ -205,6 +205,44 @@ def test_pistes_restore_the_clickable_status_overview():
     assert render.index(legacy_pistes) < render.index("if(window.CRMWorkspace)")
 
 
+def test_pistes_can_filter_by_origin_and_sort_by_score():
+    root = application.app.root_path
+    crm_js = open(root + "/static/crm.js", encoding="utf-8").read()
+
+    assert 'id="originFilter"' in crm_js
+    assert 'aria-label="Filtrer selon l’origine"' in crm_js
+    assert "dashboardOrigin(c)===origin" in crm_js
+    assert 'id="scoreSort"' in crm_js
+    assert "Score : du plus grand au plus petit" in crm_js
+    assert "Score : du plus petit au plus grand" in crm_js
+    assert "function contactScoreValue(contact)" in crm_js
+    assert "function sortLeadsByScore(list,direction)" in crm_js
+    assert "if(first===null)return 1" in crm_js
+    assert "direction==='asc'?first-second:second-first" in crm_js
+
+
+def test_pistes_support_selection_and_individualized_bulk_messages():
+    root = application.app.root_path
+    crm_js = open(root + "/static/crm.js", encoding="utf-8").read()
+    crm_css = open(root + "/static/crm.css", encoding="utf-8").read()
+
+    for marker in (
+        'id="leadSelectAll"', "data-lead-select", 'id="selectAllLeads"',
+        'id="leadBulkBar"', 'data-bulk-message="email"',
+        'data-bulk-message="sms"', "function bulkMessageModal(type)",
+    ):
+        assert marker in crm_js
+    assert "selectedLeadIds.add(id)" in crm_js
+    assert "selectedLeadIds.delete(id)" in crm_js
+    assert "Chaque piste recevra un message individuel" in crm_js
+    assert "for(let index=0;index<batch.length;index++)" in crm_js
+    assert "`/api/crm/contacts/${contact.id}/message`" in crm_js
+    assert "mergeContactInStore(contact.id,updated)" in crm_js
+    assert "pending=failures.map(item=>item.contact)" in crm_js
+    assert ".lead-bulk-bar" in crm_css
+    assert ".bulk-message-progress" in crm_css
+
+
 def test_calendar_restores_training_colours_without_touching_contact_sheets():
     crm_js = open(
         application.app.root_path + "/static/crm.js", encoding="utf-8"
