@@ -1137,16 +1137,47 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const CENTRE_FRAME_TIMEOUT_MS = 12000;
     let centreFrameTimeout = null;
 
-    (function syncGclid(){
+    function cookieValue(name) {
+      const prefix = `${name}=`;
+      const row = document.cookie.split(';').map((item) => item.trim())
+        .find((item) => item.startsWith(prefix));
+      if (!row) return '';
+      try {
+        return decodeURIComponent(row.slice(prefix.length));
+      } catch (_) {
+        return row.slice(prefix.length);
+      }
+    }
+
+    function googleAdsCookieGclid() {
+      const match = cookieValue('_gcl_aw').match(/^GCL\.\d+\.(.+)$/i);
+      return (match?.[1] || '').trim();
+    }
+
+    function referrerGclid() {
+      if (!document.referrer) return '';
+      try {
+        return (new URL(document.referrer).searchParams.get('gclid') || '').trim();
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function syncGclid(){
       const params = new URLSearchParams(window.location.search);
       const gclidFromUrl = (params.get('gclid') || '').trim();
-      if (gclidFromUrl) {
-        localStorage.setItem('gclid', gclidFromUrl);
-        gclidField.value = gclidFromUrl;
+      const capturedGclid = gclidFromUrl || referrerGclid() || googleAdsCookieGclid();
+      if (capturedGclid) {
+        localStorage.setItem('gclid', capturedGclid);
+        gclidField.value = capturedGclid;
       } else {
         gclidField.value = (localStorage.getItem('gclid') || gclidField.value || '').trim();
       }
-    })();
+    }
+    syncGclid();
+    // Le conteneur Google Tag Manager est asynchrone et peut déposer _gcl_aw
+    // juste après le rendu du formulaire lors d'un passage entre deux domaines.
+    window.setTimeout(syncGclid, 1500);
 
     cpfConsulte.addEventListener('change', () => {
       blocCpfMontant.classList.toggle('hidden', cpfConsulte.value !== 'OUI');
