@@ -225,6 +225,30 @@ def test_calendar_restores_training_colours_without_touching_contact_sheets():
     assert "CRMWorkspace.bindContactActions(c,workspaceContext())" in crm_js
 
 
+def test_contact_completeness_uses_the_real_conditional_requirements():
+    workspace_js = open(
+        application.app.root_path + "/static/crm_workspace.js", encoding="utf-8"
+    ).read()
+
+    assert "function contactCompletenessDetails(contact)" in workspace_js
+    for marker in (
+        "dates_formation",
+        "next_action",
+        "cpf_montant",
+        "identite_creation",
+        "statut_demande_financement_ft",
+        "reste_a_charge_perso",
+        "carte_pro",
+        "titre_sejour_cnaps",
+        "integration_dracar",
+    ):
+        assert marker in workspace_js
+    assert "enhanceContact:enhanceContactWithCompleteness" in workspace_js
+    assert "refreshContactCompleteness(draft)" in workspace_js
+    assert "details.missing.slice(0,3)" in workspace_js
+    assert "contactCompletenessDetails(contact).percent" in workspace_js
+
+
 def test_manual_contact_creation_keeps_workspace_fields(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={
@@ -930,7 +954,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260817-activite-performance" in page.data
+    assert b"20260817-activite-performance-completude" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
