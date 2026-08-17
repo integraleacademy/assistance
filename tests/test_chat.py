@@ -37,6 +37,7 @@ def reset_chat():
 
 
 def test_socket_refuses_anonymous_and_accepts_authenticated_presence():
+    assert application.socketio.manage_session is False
     anon, _ = socket_client()
     assert not anon.is_connected("/chat")
     user, _ = socket_client("clement@integraleacademy.com")

@@ -315,6 +315,47 @@ def test_crm_collaborative_refresh_is_lightweight_and_never_overlaps():
     assert "setInterval(async()=>{try{const fresh=await api('/api/crm/contacts')" not in crm_js
 
 
+def test_crm_bootstrap_reads_the_shared_data_file_once(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    original_load_data = application.load_data
+    calls = []
+
+    def counted_load_data():
+        calls.append(True)
+        return original_load_data()
+
+    monkeypatch.setattr(application, "load_data", counted_load_data)
+    response = c.get("/api/crm/bootstrap")
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert set(response.get_json()) == {
+        "contacts", "templates", "formation_sessions", "notifications",
+        "appointments", "calendly_integration", "settings",
+    }
+
+
+def test_crm_frontend_uses_the_single_bootstrap_endpoint():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    init = crm_js[crm_js.index("async function init()"):
+                  crm_js.index("const newContactButton")]
+    assert "api('/api/crm/bootstrap')" in init
+    assert "Promise.all" not in init
+
+
+def test_save_data_streams_the_previous_file_to_backup(tmp_path, monkeypatch):
+    data_file = tmp_path / "data.json"
+    monkeypatch.setattr(application, "DATA_FILE", str(data_file))
+    application.save_data({"version": "avant"})
+    application.save_data({"version": "apres"})
+
+    assert application.json.loads((tmp_path / "data.json.bak").read_text(
+        encoding="utf-8"
+    )) == {"version": "avant"}
+
+
 def test_wedof_remote_sync_is_manual_from_the_contact_sheet():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
@@ -775,7 +816,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260816-crm-workspace-complet" in page.data
+    assert b"20260817-render-stabilite" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
@@ -1314,7 +1355,7 @@ def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
     with open(javascript, encoding="utf-8") as source:
         crm_js = source.read()
     assert "Programmer un rappel" in crm_js
-    assert "api('/api/formation-sessions')" in crm_js
+    assert "formationSessions=snapshot.formation_sessions||{}" in crm_js
     assert "<h3>${crmIcon('book')}<span>Formation</span></h3>" in crm_js
     assert "<h3>${crmIcon('shield')}<span>Réglementaire</span></h3>" in crm_js
     assert "<h3>${crmIcon('wallet')}<span>Financement</span></h3>" in crm_js
