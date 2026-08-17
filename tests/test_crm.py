@@ -186,6 +186,45 @@ def test_complete_workspace_assets_are_loaded_before_the_crm_script():
     assert ".direction-comparison" in workspace_css
 
 
+def test_pistes_restore_the_clickable_status_overview():
+    crm_js = open(
+        application.app.root_path + "/static/crm.js", encoding="utf-8"
+    ).read()
+    render = crm_js[
+        crm_js.index("function render(){"):crm_js.index("async function init()")
+    ]
+
+    assert "pipelineOverviewStatuses().map" in crm_js
+    assert 'data-status="${esc(s)}"' in crm_js
+    assert "document.querySelectorAll('[data-status]')" in crm_js
+    legacy_pistes = (
+        "if(C.section==='pistes'){page.innerHTML=listPage(C.section);"
+        "bindList(C.section);bindRows();return}"
+    )
+    assert legacy_pistes in render
+    assert render.index(legacy_pistes) < render.index("if(window.CRMWorkspace)")
+
+
+def test_calendar_restores_training_colours_without_touching_contact_sheets():
+    crm_js = open(
+        application.app.root_path + "/static/crm.js", encoding="utf-8"
+    ).read()
+    crm_css = open(
+        application.app.root_path + "/static/crm.css", encoding="utf-8"
+    ).read()
+    render = crm_js[
+        crm_js.index("function render(){"):crm_js.index("async function init()")
+    ]
+
+    assert "if(C.section==='calendrier')return calendarPage()" in render
+    assert "CRMWorkspace.calendarPage" not in render
+    assert "calendar-training-${calendarFormationTone(a,c)}" in crm_js
+    for tone in ("aps", "a3p", "vtc", "ssiap", "desp"):
+        assert f".calendar-training-{tone}" in crm_css
+    assert "CRMWorkspace.enhanceContact(c,workspaceContext())" in crm_js
+    assert "CRMWorkspace.bindContactActions(c,workspaceContext())" in crm_js
+
+
 def test_manual_contact_creation_keeps_workspace_fields(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={
@@ -816,7 +855,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260817-render-stabilite" in page.data
+    assert b"20260817-retour-pistes-calendrier" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
