@@ -3685,7 +3685,7 @@ def demande_informations_formations():
     if request.method == "POST":
         form_data = request.form.to_dict()
         creer_piste_salesforce(request.form)
-        form_data["gclid"] = (form_data.get("gclid") or "").strip()
+        form_data.update(_crm_google_ads_tracking_fields(form_data))
 
         prospect_chaud = (
             form_data.get("cpf_consulte") == "OUI"
@@ -4028,13 +4028,13 @@ def demande_informations_formations():
 
         return redirect(url_for("confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=form_data.get("formation", "")))
 
-    gclid = (request.args.get("gclid") or "").strip()
+    google_ads_attribution = _crm_google_ads_tracking_fields(request.args)
     return render_template(
         "demande_informations_formations.html",
         sessions=sessions,
         formations=PLAN_FORMATIONS,
-        gclid=gclid,
         secretariat=request.args.get("secretariat") == "1",
+        **google_ads_attribution,
     )
 
 
@@ -4915,6 +4915,13 @@ def imprimer_formulaire_admin_devis(formulaire_id):
 
     label_overrides = {
         "gclid": "Gclid",
+        "wbraid": "WBRAID Google Ads",
+        "gbraid": "GBRAID Google Ads",
+        "gad_source": "Source Google Ads",
+        "gad_campaignid": "Campagne Google Ads",
+        "utm_source": "Source UTM",
+        "utm_medium": "Support UTM",
+        "utm_campaign": "Campagne UTM",
         "nom": "Nom",
         "prenom": "Prénom",
         "mail": "Mail",
@@ -4946,7 +4953,11 @@ def imprimer_formulaire_admin_devis(formulaire_id):
     }
 
     def category_for_key(normalized_key):
-        if normalized_key in {"nom", "prenom", "mail", "mail_confirm", "telephone", "gclid"}:
+        if normalized_key in {
+            "nom", "prenom", "mail", "mail_confirm", "telephone", "gclid",
+            "wbraid", "gbraid", "gad_source", "gad_campaignid", "utm_source",
+            "utm_medium", "utm_campaign",
+        }:
             return "infos_generales"
         if normalized_key in {"formation"}:
             return "formation_souhaitee"
@@ -8523,31 +8534,83 @@ def _crm_backfill_information_request_answers(contact):
 
 
 CRM_GOOGLE_ADS_ORIGIN = "Google Ads"
+CRM_GOOGLE_ADS_IDENTIFIER_KEYS = ("gclid", "wbraid", "gbraid")
+CRM_GOOGLE_ADS_TRACKING_KEYS = (
+    *CRM_GOOGLE_ADS_IDENTIFIER_KEYS,
+    "gad_source",
+    "gad_campaignid",
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+)
+
+
+def _crm_google_ads_tracking_fields(fields):
+    """Normalize the Google Ads parameters accepted from public forms."""
+    source = fields or {}
+    return {
+        key: str(source.get(key) or "").strip()[:512]
+        for key in CRM_GOOGLE_ADS_TRACKING_KEYS
+    }
+
+
+def _crm_information_request_google_ads_identifier(fields):
+    """Return the first Google click identifier and its type."""
+    normalized = _crm_google_ads_tracking_fields(fields)
+    for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS:
+        if normalized[key]:
+            return key.upper(), normalized[key]
+    return "", ""
 
 
 def _crm_information_request_gclid(fields):
     """Return the Google click identifier captured by the public form."""
-    return str((fields or {}).get("gclid") or "").strip()
+    return _crm_google_ads_tracking_fields(fields)["gclid"]
+
+
+def _crm_information_request_is_google_ads(fields):
+    """Detect paid Google traffic even when iOS uses WBRAID/GBRAID."""
+    normalized = _crm_google_ads_tracking_fields(fields)
+    if any(normalized[key] for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS):
+        return True
+    if normalized["gad_source"] == "1" or normalized["gad_campaignid"]:
+        return True
+    source = normalized["utm_source"].casefold().replace(" ", "_")
+    medium = normalized["utm_medium"].casefold().replace(" ", "_")
+    return source in {"google", "google_ads", "googleads", "adwords"} and medium in {
+        "cpc", "ppc", "paid", "paid_search", "paidsearch",
+    }
 
 
 def _crm_information_request_origin(fields):
     """Resolve the CRM origin without misclassifying secretariat submissions."""
     if str((fields or {}).get("source_secretariat") or "") == "1":
         return "Secrétariat"
-    return CRM_GOOGLE_ADS_ORIGIN if _crm_information_request_gclid(fields) else "Site internet"
+    return CRM_GOOGLE_ADS_ORIGIN if _crm_information_request_is_google_ads(fields) else "Site internet"
 
 
 def _crm_apply_information_request_attribution(contact, fields):
-    """Promote a captured GCLID to the CRM contact and its acquisition origin."""
+    """Promote captured Google Ads attribution to the CRM contact."""
     if not isinstance(fields, dict):
         return False
-    gclid = _crm_information_request_gclid(fields)
-    if not gclid or str(fields.get("source_secretariat") or "") == "1":
+    if (
+        str(fields.get("source_secretariat") or "") == "1"
+        or not _crm_information_request_is_google_ads(fields)
+    ):
         return False
 
+    normalized = _crm_google_ads_tracking_fields(fields)
+    identifier_type, identifier = _crm_information_request_google_ads_identifier(fields)
     changed = False
-    if contact.get("gclid") != gclid:
-        contact["gclid"] = gclid
+    for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS:
+        if normalized[key] and contact.get(key) != normalized[key]:
+            contact[key] = normalized[key]
+            changed = True
+    if identifier and contact.get("google_ads_identifier") != identifier:
+        contact["google_ads_identifier"] = identifier
+        changed = True
+    if identifier_type and contact.get("google_ads_identifier_type") != identifier_type:
+        contact["google_ads_identifier_type"] = identifier_type
         changed = True
     if contact.get("origine") != CRM_GOOGLE_ADS_ORIGIN:
         contact["origine"] = CRM_GOOGLE_ADS_ORIGIN
@@ -8762,7 +8825,16 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
     """Crée la fiche CRM complète et son journal lors d'une demande d'informations."""
     now = _crm_now()
     is_secretariat = str(fields.get("source_secretariat") or "") == "1"
-    gclid = "" if is_secretariat else _crm_information_request_gclid(fields)
+    google_ads_tracking = (
+        {key: "" for key in CRM_GOOGLE_ADS_TRACKING_KEYS}
+        if is_secretariat
+        else _crm_google_ads_tracking_fields(fields)
+    )
+    google_ads_identifier_type, google_ads_identifier = (
+        ("", "")
+        if is_secretariat
+        else _crm_information_request_google_ads_identifier(fields)
+    )
     formation_key = str(fields.get("formation") or "").strip()
     formation = {
         "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
@@ -8796,7 +8868,11 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": "",
         "origine": _crm_information_request_origin(fields),
-        "gclid": gclid,
+        "gclid": google_ads_tracking["gclid"],
+        "wbraid": google_ads_tracking["wbraid"],
+        "gbraid": google_ads_tracking["gbraid"],
+        "google_ads_identifier": google_ads_identifier,
+        "google_ads_identifier_type": google_ads_identifier_type,
         "inscrit_ft": "",
         "commentaires": "",
         "relance_date": "",

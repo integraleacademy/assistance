@@ -1085,6 +1085,44 @@ def test_information_form_attributes_google_ads_and_exposes_gclid(tmp_path, monk
     assert contact["formulaire"]["gclid"] == "CjwKCA-test_123"
 
 
+@pytest.mark.parametrize("identifier_key", ["wbraid", "gbraid"])
+def test_information_form_accepts_google_ads_privacy_identifiers(
+    identifier_key, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
+    application.app.config.update(TESTING=True, SERVER_NAME="localhost")
+    public_client = application.app.test_client()
+
+    with (
+        patch.object(application, "creer_piste_salesforce"),
+        patch.object(application, "send_email_html", return_value=True),
+        patch.object(application, "envoyer_sms_demande_infos_formation", return_value=True),
+    ):
+        response = public_client.post("/demande-informations-formations", data={
+            "nom": "Durand", "prenom": "Emma", "mail": "emma@example.com",
+            "telephone": "0698765432", "formation": "A3P", "centre": "cote_azur",
+            "dates": "Du 1er septembre au 27 octobre 2026", "cpf_consulte": "NON",
+            "france_travail": "NON", "financement_perso": "OUI",
+            "identite_numerique": "NON", "cnaps_ok": "NON", "garde_vue": "NON",
+            "titre_sejour": "NON", "souhaite_devis": "OUI",
+            identifier_key: f"{identifier_key}-test-123",
+        })
+
+    assert response.status_code == 302
+    contact = application.load_data()["crm_contacts"][0]
+    assert contact["origine"] == "Google Ads"
+    assert contact[identifier_key] == f"{identifier_key}-test-123"
+    assert contact["google_ads_identifier"] == f"{identifier_key}-test-123"
+    assert contact["google_ads_identifier_type"] == identifier_key.upper()
+
+
+def test_information_form_recognizes_google_paid_utm_without_click_id():
+    fields = {"utm_source": "google", "utm_medium": "cpc"}
+
+    assert application._crm_information_request_origin(fields) == "Google Ads"
+    assert application._crm_information_request_google_ads_identifier(fields) == ("", "")
+
+
 def test_crm_backfills_google_ads_attribution_from_legacy_information_form(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
     data = application.load_data()
@@ -1115,6 +1153,9 @@ def test_crm_contact_page_displays_google_ads_gclid():
     assert "'Google Ads','Google','Site internet'" in crm_js
     assert 'GCLID Google Ads' in crm_js
     assert 'value="${esc(c.gclid)}" readonly' in crm_js
+    assert "c.google_ads_identifier||c.gclid||c.wbraid||c.gbraid" in crm_js
+    assert "googleAdsIdentifierType" in crm_js
+    assert "Non transmis par Google" in crm_js
 
 
 def test_information_form_recovers_gclid_from_google_ads_attribution_sources():
@@ -1123,10 +1164,12 @@ def test_information_form_recovers_gclid_from_google_ads_attribution_sources():
         encoding="utf-8",
     ).read()
 
-    assert "params.get('gclid')" in form_html
+    assert "'gclid', 'wbraid', 'gbraid'" in form_html
+    assert "params.get(name)" in form_html
     assert "document.referrer" in form_html
     assert "cookieValue('_gcl_aw')" in form_html
-    assert "window.setTimeout(syncGclid, 1500)" in form_html
+    assert "integrale_google_ads_attribution_v2" in form_html
+    assert "window.setTimeout(syncGoogleAdsAttribution, 1500)" in form_html
 
 
 def test_crm_backfills_regulatory_answers_from_older_information_form_contacts(tmp_path, monkeypatch):
