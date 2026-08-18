@@ -6957,7 +6957,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260817-pistes-colonnes-origines"
+CRM_ASSET_VERSION = "20260818-relances-par-date"
 
 
 def _crm_statuses(data=None):
