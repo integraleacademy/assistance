@@ -1200,7 +1200,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260817-pistes-colonnes-origines" in page.data
+    assert b"20260818-relances-par-date" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
@@ -1571,6 +1571,21 @@ def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
     assert 'id="reminderShowAll"' in crm_js
     assert "Voir toutes les relances" in crm_js
     assert "all.reduce((dates,c)" in crm_js
+
+    # CRMWorkspace remplace la vue historique lorsque la page est chargée :
+    # il doit donc conserver lui aussi la navigation quotidienne.
+    with open(
+        application.app.root_path + "/static/crm_workspace.js", encoding="utf-8"
+    ) as source:
+        workspace_js = source.read()
+    assert "function remindersPage(ctx)" in workspace_js
+    assert 'id="workspaceReminderDate" type="date"' in workspace_js
+    assert "contact.relance_date===selectedDate" in workspace_js
+    assert "selectedDate=today" in workspace_js
+    assert "moveDate(-1)" in workspace_js
+    assert "moveDate(1)" in workspace_js
+    assert "Voir toutes les relances" in workspace_js
+    assert "Aucune relance prévue le" in workspace_js
 
 
 def test_planning_a_reminder_waits_for_server_persistence_before_updating_contact(tmp_path, monkeypatch):
