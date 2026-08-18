@@ -546,6 +546,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <div class="form-wrapper">
     <form method="POST" id="infosForm" class="steps-viewport">
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
+      <input type="hidden" name="wbraid" id="wbraidField" value="{{ wbraid or '' }}">
+      <input type="hidden" name="gbraid" id="gbraidField" value="{{ gbraid or '' }}">
+      <input type="hidden" name="gad_source" id="gadSourceField" value="{{ gad_source or '' }}">
+      <input type="hidden" name="gad_campaignid" id="gadCampaignIdField" value="{{ gad_campaignid or '' }}">
+      <input type="hidden" name="utm_source" id="utmSourceField" value="{{ utm_source or '' }}">
+      <input type="hidden" name="utm_medium" id="utmMediumField" value="{{ utm_medium or '' }}">
+      <input type="hidden" name="utm_campaign" id="utmCampaignField" value="{{ utm_campaign or '' }}">
       <input type="hidden" name="source_secretariat" id="sourceSecretariat" value="{{ '1' if secretariat else '' }}">
       <input type="hidden" name="draft_form_id" id="draftFormIdField" value="">
       <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
@@ -894,6 +901,22 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const dateExamen = document.getElementById('dateExamen');
     const sessions = {{ sessions|tojson }};
     const gclidField = document.getElementById('gclidField');
+    const googleAdsAttributionNames = [
+      'gclid', 'wbraid', 'gbraid', 'gad_source', 'gad_campaignid',
+      'utm_source', 'utm_medium', 'utm_campaign'
+    ];
+    const googleAdsAttributionFields = {
+      gclid: gclidField,
+      wbraid: document.getElementById('wbraidField'),
+      gbraid: document.getElementById('gbraidField'),
+      gad_source: document.getElementById('gadSourceField'),
+      gad_campaignid: document.getElementById('gadCampaignIdField'),
+      utm_source: document.getElementById('utmSourceField'),
+      utm_medium: document.getElementById('utmMediumField'),
+      utm_campaign: document.getElementById('utmCampaignField')
+    };
+    const googleAdsStorageKey = 'integrale_google_ads_attribution_v2';
+    const googleAdsStorageMaxAge = 90 * 24 * 60 * 60 * 1000;
     const franceTravail = document.getElementById('franceTravail');
     const cpfConsulte = document.getElementById('cpfConsulte');
     const cpfLinkNote = document.getElementById('cpfLinkNote');
@@ -1154,30 +1177,65 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       return (match?.[1] || '').trim();
     }
 
-    function referrerGclid() {
-      if (!document.referrer) return '';
+    function attributionFromUrl(url) {
+      if (!url) return {};
       try {
-        return (new URL(document.referrer).searchParams.get('gclid') || '').trim();
+        const params = new URL(url).searchParams;
+        return Object.fromEntries(googleAdsAttributionNames.map((name) => [
+          name,
+          (params.get(name) || '').trim()
+        ]).filter(([, value]) => value));
       } catch (_) {
-        return '';
+        return {};
       }
     }
 
-    function syncGclid(){
-      const params = new URLSearchParams(window.location.search);
-      const gclidFromUrl = (params.get('gclid') || '').trim();
-      const capturedGclid = gclidFromUrl || referrerGclid() || googleAdsCookieGclid();
-      if (capturedGclid) {
-        localStorage.setItem('gclid', capturedGclid);
-        gclidField.value = capturedGclid;
-      } else {
-        gclidField.value = (localStorage.getItem('gclid') || gclidField.value || '').trim();
+    function storedGoogleAdsAttribution() {
+      try {
+        const payload = JSON.parse(localStorage.getItem(googleAdsStorageKey) || '{}');
+        if (!payload.savedAt || Date.now() - payload.savedAt > googleAdsStorageMaxAge) {
+          localStorage.removeItem(googleAdsStorageKey);
+          return {};
+        }
+        return payload.values && typeof payload.values === 'object' ? payload.values : {};
+      } catch (_) {
+        return {};
       }
     }
-    syncGclid();
+
+    function storeGoogleAdsAttribution(values) {
+      try {
+        localStorage.setItem(googleAdsStorageKey, JSON.stringify({
+          savedAt: Date.now(),
+          values
+        }));
+      } catch (_) {}
+    }
+
+    function syncGoogleAdsAttribution(){
+      const fromUrl = attributionFromUrl(window.location.href);
+      const fromReferrer = attributionFromUrl(document.referrer);
+      const captured = {};
+      googleAdsAttributionNames.forEach((name) => {
+        const value = fromUrl[name] || fromReferrer[name] || '';
+        if (value) captured[name] = value;
+      });
+      if (!captured.gclid) {
+        const cookieGclid = googleAdsCookieGclid();
+        if (cookieGclid) captured.gclid = cookieGclid;
+      }
+
+      const values = Object.keys(captured).length ? captured : storedGoogleAdsAttribution();
+      if (Object.keys(captured).length) storeGoogleAdsAttribution(captured);
+      googleAdsAttributionNames.forEach((name) => {
+        const field = googleAdsAttributionFields[name];
+        if (field) field.value = (values[name] || field.value || '').trim();
+      });
+    }
+    syncGoogleAdsAttribution();
     // Le conteneur Google Tag Manager est asynchrone et peut déposer _gcl_aw
     // juste après le rendu du formulaire lors d'un passage entre deux domaines.
-    window.setTimeout(syncGclid, 1500);
+    window.setTimeout(syncGoogleAdsAttribution, 1500);
 
     cpfConsulte.addEventListener('change', () => {
       blocCpfMontant.classList.toggle('hidden', cpfConsulte.value !== 'OUI');
