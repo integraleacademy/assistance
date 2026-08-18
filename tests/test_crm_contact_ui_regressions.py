@@ -32,7 +32,7 @@ def test_contact_header_displays_the_scheduled_relaunch_date_explicitly():
 def test_activity_log_only_displays_contact_communications_and_delegates_more():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
-    assert "visibleActivityKinds=new Set(['appel','email','sms','calendly'])" in javascript
+    assert "visibleActivityKinds=new Set(['appel','email','sms','calendly','erreur'])" in javascript
     assert ".filter(a=>visibleActivityKinds.has(a.kind))" in javascript
     assert "activityFeed.onclick=event=>" in javascript
     assert "event.target.closest('#feedMore')" in javascript

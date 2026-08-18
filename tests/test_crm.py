@@ -1,5 +1,9 @@
 from types import SimpleNamespace
 from unittest.mock import patch
+import gzip
+import json
+import threading
+import time
 
 import pytest
 
@@ -13,6 +17,80 @@ def client(tmp_path, monkeypatch):
     with test_client.session_transaction() as session:
         session["user_email"] = "clement@integraleacademy.com"
     return test_client
+
+
+def test_data_file_is_decoded_once_and_mutable_callers_are_isolated(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
+    application._DATA_CACHE_PAYLOAD = None
+    application._DATA_CACHE_SIGNATURE = None
+    application.save_data({**application.DEFAULT_DATA, "crm_contacts": [{"id": "one"}]})
+    application._DATA_CACHE_PAYLOAD = None
+    application._DATA_CACHE_SIGNATURE = None
+    calls = 0
+    real_load = json.load
+
+    def counted_load(stream, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return real_load(stream, *args, **kwargs)
+
+    monkeypatch.setattr(application.json, "load", counted_load)
+    first = application.load_data()
+    first["crm_contacts"][0]["id"] = "mutated"
+    second = application.load_data()
+
+    assert calls == 1
+    assert second["crm_contacts"][0]["id"] == "one"
+
+
+def test_contact_detail_read_does_not_wait_for_crm_write_lock(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    locked = threading.Event()
+    release = threading.Event()
+
+    def hold_write_lock():
+        with application._CRM_RECONCILIATION_LOCK:
+            locked.set()
+            release.wait(2)
+
+    worker = threading.Thread(target=hold_write_lock)
+    worker.start()
+    assert locked.wait(1)
+    started = time.perf_counter()
+    try:
+        response = c.get(f"/api/crm/contacts/{contact['id']}")
+    finally:
+        release.set()
+        worker.join(2)
+
+    assert response.status_code == 200
+    assert time.perf_counter() - started < 0.5
+
+
+def test_large_crm_json_responses_are_gzipped_for_mobile_clients(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["crm_contacts"] = [
+        {
+            "id": f"contact-{index}", "prenom": "Lina", "nom": "MARTIN",
+            "statut": "Nouveaux", "formation": "APS", "commentaires": "x" * 200,
+            "activities": [], "relances": [],
+        }
+        for index in range(20)
+    ]
+    application.save_data(data)
+
+    response = c.get(
+        "/api/crm/bootstrap?section=pistes",
+        headers={"Accept-Encoding": "gzip"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Content-Encoding"] == "gzip"
+    decoded = json.loads(gzip.decompress(response.data))
+    assert len(decoded["contacts"]) == 20
 
 
 def test_crm_is_private(tmp_path, monkeypatch):
@@ -490,9 +568,17 @@ def test_crm_bootstrap_is_compact_and_contact_details_are_loaded_on_demand(
     assert activity_contact["publications"][0]["texte"] == "Publication visible"
     assert len(activity_response.data) < 150_000
 
-    detail = c.get(f"/api/crm/contacts/{created['id']}").get_json()
-    assert len(detail["formulaire"]["document"]) == 250_000
-    assert len(detail["activities"][0]["preview"]) > 250_000
+    detail_response = c.get(f"/api/crm/contacts/{created['id']}")
+    detail = detail_response.get_json()
+    assert "formulaire" not in detail
+    assert detail["activities"][0]["has_preview"] is True
+    assert "preview" not in detail["activities"][0]
+    assert len(detail_response.data) < 150_000
+
+    preview = c.get(
+        f"/api/crm/contacts/{created['id']}/activities/activity-heavy/preview"
+    ).get_json()
+    assert len(preview["preview"]) > 250_000
 
 
 def test_contact_summaries_count_messages_relances_and_active_appointments(
@@ -1200,7 +1286,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260818-relances-par-date" in page.data
+    assert b"20260818-performance-crm" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"
@@ -1407,7 +1493,7 @@ def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     html = response.get_json()["html"]
-    assert "Bonjour Lina" in html
+    assert "Bonjour <strong>Lina</strong>" in html
     assert "Mon texte libre" in html
     assert "Faites le premier pas vers votre futur métier" in html
     assert "integraleacademy.com" in html

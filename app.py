@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil, gzip
 import html as html_module
 from html.parser import HTMLParser
 from urllib.parse import urlparse
@@ -1185,61 +1185,110 @@ DEFAULT_DATA = {
 # -------------------------------------------------------------------
 # Utils
 # -------------------------------------------------------------------
-def load_data():
-    def _normalize_payload(payload):
-        if isinstance(payload, dict):
-            normalized = dict(payload)
-            for key, default in DEFAULT_DATA.items():
-                if key not in normalized:
-                    normalized[key] = default.copy() if isinstance(default, (list, dict)) else default
-            return normalized
-        if isinstance(payload, list):
-            normalized = dict(DEFAULT_DATA)
-            normalized["demandes"] = payload
-            normalized["archives"] = []
-            normalized["compteur_traitees"] = 0
-            return normalized
-        return None
+_DATA_CACHE_LOCK = threading.RLock()
+_DATA_CACHE_SIGNATURE = None
+_DATA_CACHE_PAYLOAD = None
+_DATA_BACKUP_TIMES = {}
+_DATA_BACKUP_INTERVAL_SECONDS = 300
 
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = _normalize_payload(json.load(f))
-                if data is not None:
-                    return data
-        except (json.JSONDecodeError, OSError):
-            # fichier corrompu/inaccessible : on tente d'abord une restauration auto via backup
-            backup_path = f"{DATA_FILE}.bak"
-            if os.path.exists(backup_path):
-                try:
-                    with open(backup_path, "r", encoding="utf-8") as backup:
-                        backup_data = _normalize_payload(json.load(backup))
-                    if backup_data is not None:
-                        return backup_data
-                except (json.JSONDecodeError, OSError):
-                    pass
 
-            # sinon on garde une copie puis on repart proprement
+def _normalize_data_payload(payload):
+    if isinstance(payload, dict):
+        normalized = dict(payload)
+        for key, default in DEFAULT_DATA.items():
+            if key not in normalized:
+                normalized[key] = (
+                    default.copy() if isinstance(default, (list, dict)) else default
+                )
+        return normalized
+    if isinstance(payload, list):
+        normalized = dict(DEFAULT_DATA)
+        normalized["demandes"] = payload
+        normalized["archives"] = []
+        normalized["compteur_traitees"] = 0
+        return normalized
+    return None
+
+
+def _data_file_signature():
+    """Cheaply identify the active JSON snapshot, including test path swaps."""
+    path = os.path.abspath(DATA_FILE)
+    try:
+        stat = os.stat(path)
+        return path, stat.st_ino, stat.st_size, stat.st_mtime_ns
+    except OSError:
+        return path, None, 0, 0
+
+
+def _load_data_snapshot():
+    """Return a process-local immutable-by-convention snapshot.
+
+    Render runs a single Gunicorn process for Socket.IO. Keeping the decoded
+    JSON in that process avoids reparsing several megabytes for every CRM poll
+    and every contact sheet. Callers that mutate data must keep using
+    ``load_data()``, which returns a defensive copy.
+    """
+    global _DATA_CACHE_PAYLOAD, _DATA_CACHE_SIGNATURE
+    signature = _data_file_signature()
+    with _DATA_CACHE_LOCK:
+        if (_DATA_CACHE_PAYLOAD is not None
+                and _DATA_CACHE_SIGNATURE == signature):
+            return _DATA_CACHE_PAYLOAD
+
+        data = None
+        if os.path.exists(DATA_FILE):
             try:
-                backup_path = f"{DATA_FILE}.corrupted"
-                os.replace(DATA_FILE, backup_path)
-            except OSError:
-                pass
-    return {
-        key: value.copy() if isinstance(value, (list, dict)) else value
-        for key, value in DEFAULT_DATA.items()
-    }
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    data = _normalize_data_payload(json.load(f))
+            except (json.JSONDecodeError, OSError):
+                # fichier corrompu/inaccessible : on tente d'abord une restauration auto via backup
+                backup_path = f"{DATA_FILE}.bak"
+                if os.path.exists(backup_path):
+                    try:
+                        with open(backup_path, "r", encoding="utf-8") as backup:
+                            data = _normalize_data_payload(json.load(backup))
+                    except (json.JSONDecodeError, OSError):
+                        data = None
+
+                # sinon on garde une copie puis on repart proprement
+                if data is None:
+                    try:
+                        os.replace(DATA_FILE, f"{DATA_FILE}.corrupted")
+                    except OSError:
+                        pass
+        if data is None:
+            data = {
+                key: value.copy() if isinstance(value, (list, dict)) else value
+                for key, value in DEFAULT_DATA.items()
+            }
+        _DATA_CACHE_PAYLOAD = data
+        _DATA_CACHE_SIGNATURE = _data_file_signature()
+        return _DATA_CACHE_PAYLOAD
+
+
+def load_data():
+    """Return an isolated mutable copy for legacy read/modify/write callers."""
+    return copy.deepcopy(_load_data_snapshot())
 
 def save_data(data):
+    global _DATA_CACHE_PAYLOAD, _DATA_CACHE_SIGNATURE
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
 
-    # Sauvegarde de sécurité (anti-perte en cas de mauvaise manip)
-    if os.path.exists(DATA_FILE):
+    # Conserver une sauvegarde de sécurité sans recopier plusieurs mégaoctets à
+    # chaque frappe dans une fiche CRM. Une sauvegarde toutes les cinq minutes
+    # protège les données tout en divisant fortement les écritures sur le disque.
+    data_path = os.path.abspath(DATA_FILE)
+    now = time.monotonic()
+    last_backup = _DATA_BACKUP_TIMES.get(data_path, 0)
+    if (os.path.exists(DATA_FILE)
+            and (not last_backup
+                 or now - last_backup >= _DATA_BACKUP_INTERVAL_SECONDS)):
         backup_file = f"{DATA_FILE}.bak"
         try:
             # Une copie flux-à-flux évite de conserver une deuxième version du
             # gros fichier JSON en mémoire pendant chaque écriture CRM.
             shutil.copyfile(DATA_FILE, backup_file)
+            _DATA_BACKUP_TIMES[data_path] = now
         except OSError:
             pass
 
@@ -1254,11 +1303,17 @@ def save_data(data):
             delete=False,
         ) as f:
             temp_file = f.name
-            json.dump(data, f, indent=4, ensure_ascii=False)
+            # Le fichier est une base applicative, pas un document destiné à
+            # être édité à la main. Le JSON compact réduit le volume, le temps
+            # CPU et la durée du fsync sur le disque persistant Render.
+            json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
             f.flush()
             os.fsync(f.fileno())
 
         os.replace(temp_file, DATA_FILE)
+        with _DATA_CACHE_LOCK:
+            _DATA_CACHE_PAYLOAD = copy.deepcopy(data)
+            _DATA_CACHE_SIGNATURE = _data_file_signature()
     finally:
         if temp_file and os.path.exists(temp_file):
             try:
@@ -6957,7 +7012,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260818-relances-par-date"
+CRM_ASSET_VERSION = "20260818-performance-crm"
 
 
 def _crm_statuses(data=None):
@@ -8649,6 +8704,33 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     return response
 
 
+def _crm_contact_detail_response(contact, data=None, regulatory_snapshot=None,
+                                 funding_status=None):
+    """Build the interactive sheet without embedding historical HTML bodies."""
+    response = _crm_contact_response(
+        contact,
+        data,
+        regulatory_snapshot=regulatory_snapshot,
+        funding_status=funding_status,
+    )
+    # The original public form may contain a large technical/raw payload. Its
+    # useful answers are already promoted to first-class CRM fields.
+    response.pop("formulaire", None)
+    compact_activities = []
+    for raw_activity in response.get("activities", []):
+        if not isinstance(raw_activity, dict):
+            continue
+        activity = {
+            key: value for key, value in raw_activity.items() if key != "preview"
+        }
+        if raw_activity.get("preview"):
+            activity["has_preview"] = True
+        compact_activities.append(activity)
+    response["activities"] = compact_activities
+    response["activity_count"] = len(compact_activities)
+    return response
+
+
 def _crm_activity(contact, kind, title, detail="", preview=""):
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
@@ -9769,6 +9851,10 @@ class WedofAPIError(RuntimeError):
 _WEDOF_SYNC_LOCK = threading.Lock()
 _WEDOF_POLLER_STARTED = False
 _WEDOF_POLLER_STOP = threading.Event()
+_WEDOF_FUNDING_CACHE_LOCK = threading.RLock()
+_WEDOF_FUNDING_CACHE_KEY = None
+_WEDOF_FUNDING_CACHE_VALUE = None
+_WEDOF_FUNDING_CACHE_AT = 0.0
 
 
 def _wedof_db_path():
@@ -9776,6 +9862,19 @@ def _wedof_db_path():
     return os.getenv("WEDOF_DB_PATH") or os.path.join(
         os.path.dirname(DATA_FILE) or ".", "wedof.sqlite3"
     )
+
+
+def _wedof_db_signature():
+    """Track both SQLite and its WAL because synchronisation runs in WAL mode."""
+    path = os.path.abspath(_wedof_db_path())
+    signature = [path]
+    for candidate in (path, f"{path}-wal"):
+        try:
+            stat = os.stat(candidate)
+            signature.append((stat.st_ino, stat.st_size, stat.st_mtime_ns))
+        except OSError:
+            signature.append(None)
+    return tuple(signature)
 
 
 def _wedof_connect():
@@ -10735,10 +10834,27 @@ def _wedof_funding_statuses_by_contact(data):
     contact. Cette fonction construit d'abord un index des contacts par identité,
     puis ne décode chaque dossier WEDOF qu'une seule fois.
     """
+    global _WEDOF_FUNDING_CACHE_AT, _WEDOF_FUNDING_CACHE_KEY
+    global _WEDOF_FUNDING_CACHE_VALUE
     if not os.path.exists(_wedof_db_path()):
         return {}
 
     contacts = data.get("crm_contacts", [])
+    identity_signature = tuple(
+        (
+            str(contact.get("id") or ""),
+            _wedof_normalize_name(contact.get("prenom")),
+            _wedof_normalize_name(contact.get("nom")),
+        )
+        for contact in contacts
+    )
+    cache_key = (_wedof_db_signature(), identity_signature)
+    with _WEDOF_FUNDING_CACHE_LOCK:
+        if (_WEDOF_FUNDING_CACHE_VALUE is not None
+                and _WEDOF_FUNDING_CACHE_KEY == cache_key
+                and time.monotonic() - _WEDOF_FUNDING_CACHE_AT < 300):
+            return dict(_WEDOF_FUNDING_CACHE_VALUE)
+
     known_contact_ids = {
         str(contact.get("id")) for contact in contacts if contact.get("id")
     }
@@ -10783,10 +10899,15 @@ def _wedof_funding_statuses_by_contact(data):
             for target_id in target_ids:
                 statuses_by_contact.setdefault(target_id, []).append(funding_status)
 
-    return {
+    result = {
         contact_id: _wedof_effective_funding_status(statuses)
         for contact_id, statuses in statuses_by_contact.items()
     }
+    with _WEDOF_FUNDING_CACHE_LOCK:
+        _WEDOF_FUNDING_CACHE_KEY = (_wedof_db_signature(), identity_signature)
+        _WEDOF_FUNDING_CACHE_VALUE = dict(result)
+        _WEDOF_FUNDING_CACHE_AT = time.monotonic()
+    return result
 
 
 def _wedof_status_payload(test_connection=True):
@@ -11582,6 +11703,61 @@ def _crm_prepare_contacts(data):
     return changed, wedof_funding_statuses
 
 
+_CRM_READ_MODEL_LOCK = threading.RLock()
+_CRM_READ_MODEL_KEY = None
+_CRM_READ_MODEL_VALUE = None
+
+
+def _crm_read_model_key():
+    wedof_signature = (
+        _wedof_db_signature() if os.path.exists(_wedof_db_path()) else None
+    )
+    return _data_file_signature(), wedof_signature
+
+
+def _crm_prepared_read_model():
+    """Reuse one prepared CRM model across bootstrap, detail and polling reads."""
+    global _CRM_READ_MODEL_KEY, _CRM_READ_MODEL_VALUE
+    key = _crm_read_model_key()
+    with _CRM_READ_MODEL_LOCK:
+        if _CRM_READ_MODEL_VALUE is not None and _CRM_READ_MODEL_KEY == key:
+            return _CRM_READ_MODEL_VALUE
+
+        data = load_data()
+        _crm_prepare_contacts(data)
+        final_key = _crm_read_model_key()
+        if final_key != key:
+            # A webhook or a background WEDOF page landed while the model was
+            # being prepared. Rebuild once from the new atomic snapshot.
+            data = load_data()
+            _crm_prepare_contacts(data)
+            final_key = _crm_read_model_key()
+        _CRM_READ_MODEL_KEY = final_key
+        _CRM_READ_MODEL_VALUE = data
+        return _CRM_READ_MODEL_VALUE
+
+
+def _crm_persist_prepared_contact_if_idle(prepared_contact):
+    """Persist a one-time legacy migration without ever waiting behind WEDOF."""
+    acquired = _CRM_RECONCILIATION_LOCK.acquire(blocking=False)
+    if not acquired:
+        return False
+    try:
+        model_key = _CRM_READ_MODEL_KEY
+        if not model_key or model_key[0] != _data_file_signature():
+            return False
+        data = load_data()
+        stored = _crm_contact(data, prepared_contact.get("id"))
+        if stored is None or stored == prepared_contact:
+            return False
+        index = data["crm_contacts"].index(stored)
+        data["crm_contacts"][index] = copy.deepcopy(prepared_contact)
+        save_data(data)
+        return True
+    finally:
+        _CRM_RECONCILIATION_LOCK.release()
+
+
 CRM_CONTACT_SUMMARY_FIELDS = (
     "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
     "statut", "statut_secondaire", "statut_demande_financement_ft",
@@ -11712,14 +11888,17 @@ def _crm_contact_summary_response(contact, data, *, funding_status=None,
     return summary
 
 
-def _crm_contact_summaries_payload(data, section=""):
+def _crm_contact_summaries_payload(data, section="", *, prepared=False):
     """Prépare un instantané compact adapté à la rubrique demandée.
 
     Les anciennes réponses renvoyaient chaque fiche complète, notamment les
     aperçus d'e-mails HTML et les réponses brutes aux formulaires. En production
     cela représentait plus de 5 Mo à chaque ouverture du CRM.
     """
-    changed, wedof_funding_statuses = _crm_prepare_contacts(data)
+    if prepared:
+        changed, wedof_funding_statuses = False, {}
+    else:
+        changed, wedof_funding_statuses = _crm_prepare_contacts(data)
     appointment_counts = _crm_appointment_counts_by_contact(data)
     include_activity = str(section or "").strip().lower() in CRM_ACTIVITY_SECTIONS
     activity_by_contact = {}
@@ -11781,18 +11960,28 @@ def _crm_contacts_payload(data):
 
 @app.route("/api/crm/contacts", methods=["GET", "POST"])
 @login_required
-@_crm_serialized
 def crm_contacts():
-    data = load_data()
     if request.method == "GET":
         section = request.args.get("section", "")
         if section or request.args.get("compact") == "1":
-            contacts, changed = _crm_contact_summaries_payload(data, section)
+            data = _crm_prepared_read_model()
+            contacts, _ = _crm_contact_summaries_payload(
+                data, section, prepared=True,
+            )
         else:
+            data = load_data()
             contacts, changed = _crm_contacts_payload(data)
-        if changed:
-            save_data(data)
+            if changed:
+                with _CRM_RECONCILIATION_LOCK:
+                    save_data(data)
         return jsonify(contacts)
+
+    with _CRM_RECONCILIATION_LOCK:
+        return _crm_create_contact_locked()
+
+
+def _crm_create_contact_locked():
+    data = load_data()
     payload = request.get_json(silent=True) or {}
     now = _crm_now()
     contact = {
@@ -11824,14 +12013,10 @@ def crm_contacts():
 
 @app.get("/api/crm/contacts/updates")
 @login_required
-@_crm_serialized
 def crm_contact_updates():
     """Retourne uniquement les données utiles au rafraîchissement collaboratif."""
-    data = load_data()
-    changed, _ = _crm_prepare_contacts(data)
+    data = _crm_prepared_read_model()
     appointment_counts = _crm_appointment_counts_by_contact(data)
-    if changed:
-        save_data(data)
 
     summaries = [
         {
@@ -12116,29 +12301,41 @@ def crm_contacts_merge():
 
 @app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
 @login_required
-@_crm_serialized
 def crm_contact(contact_id):
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
-        changed = _crm_ensure_relances(contact)
-        if _crm_backfill_information_request_answers(contact):
-            changed = True
-        if _crm_backfill_information_request_attribution(contact):
-            changed = True
-        if changed:
+        data = _crm_prepared_read_model()
+        source_contact = _crm_contact(data, contact_id)
+        if not source_contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        _crm_persist_prepared_contact_if_idle(source_contact)
+        contact = copy.deepcopy(source_contact)
+        snapshot = copy.deepcopy(
+            data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
+        )
+        return jsonify(_crm_contact_detail_response(
+            contact, regulatory_snapshot=snapshot,
+        ))
+
+    # Mutations remain serialized; read-only contact sheets no longer queue
+    # behind a long WEDOF reconciliation or another user's autosave.
+    with _CRM_RECONCILIATION_LOCK:
+        data = load_data()
+        contact = _crm_contact(data, contact_id)
+        if not contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        if request.method == "DELETE":
+            data["crm_contacts"].remove(contact)
+            data["crm_calendly_appointments"] = [
+                item for item in data.get("crm_calendly_appointments", [])
+                if item.get("contact_id") != contact_id
+            ]
             save_data(data)
-        return jsonify(_crm_contact_response(contact, data))
-    if request.method == "DELETE":
-        data["crm_contacts"].remove(contact)
-        data["crm_calendly_appointments"] = [
-            item for item in data.get("crm_calendly_appointments", [])
-            if item.get("contact_id") != contact_id
-        ]
-        save_data(data)
-        return "", 204
+            return "", 204
+        return _crm_patch_contact_locked(data, contact, contact_id)
+
+
+def _crm_patch_contact_locked(data, contact, contact_id):
+    """Apply one contact PATCH while the caller holds the CRM write lock."""
     payload = request.get_json(silent=True) or {}
     # La provenance d'une piste WEDOF reste Mon Compte Formation lorsque
     # l'équipe corrige manuellement la formation ou un autre champ.
@@ -12281,7 +12478,27 @@ def crm_contact(contact_id):
     _crm_calendly_relink_appointments(data, contact)
     contact["updated_at"] = _crm_now()
     save_data(data)
-    return jsonify(_crm_contact_response(contact, data))
+    return jsonify(_crm_contact_detail_response(contact, data))
+
+
+@app.get("/api/crm/contacts/<contact_id>/activities/<activity_id>/preview")
+@login_required
+def crm_contact_activity_preview(contact_id, activity_id):
+    """Load a potentially large e-mail/SMS body only when the user opens it."""
+    data = _load_data_snapshot()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    activity = next(
+        (
+            item for item in contact.get("activities", [])
+            if isinstance(item, dict) and str(item.get("id")) == activity_id
+        ),
+        None,
+    )
+    if not activity or not activity.get("preview"):
+        return jsonify({"error": "Aperçu introuvable"}), 404
+    return jsonify({"preview": activity["preview"], "kind": activity.get("kind", "")})
 
 
 @app.post("/api/crm/candidate-score/preview")
@@ -12867,21 +13084,18 @@ def crm_templates():
 
 @app.get("/api/crm/bootstrap")
 @login_required
-@_crm_serialized
 def crm_bootstrap():
     """Charge tout l'espace CRM avec une seule lecture du fichier JSON.
 
     L'ancien démarrage lançait six requêtes en parallèle. Chaque requête
     reparsait le même fichier complet, ce qui multipliait le pic mémoire.
     """
-    data = load_data()
-    contacts, changed = _crm_contact_summaries_payload(
-        data, section=request.args.get("section", "")
+    data = _crm_prepared_read_model()
+    contacts, _ = _crm_contact_summaries_payload(
+        data, section=request.args.get("section", ""), prepared=True,
     )
     settings = _crm_settings_payload(data)
     appointments = _crm_calendly_appointments_payload(data)
-    if changed:
-        save_data(data)
     return jsonify({
         "contacts": contacts,
         "templates": _crm_templates_payload(data),
@@ -13198,6 +13412,53 @@ app.logger.info(
     os.getpid(), socketio.async_mode, chat.presence.backend, bool(os.getenv("REDIS_URL")),
     _database_backend, os.getenv("RENDER_GIT_COMMIT", "local"), CHAT_ASSET_VERSION,
 )
+
+
+@app.before_request
+def start_crm_request_timing():
+    if request.path.startswith("/api/crm/"):
+        request.environ["integrale.crm_started_at"] = time.perf_counter()
+
+
+@app.after_request
+def report_slow_crm_requests(response):
+    started_at = request.environ.get("integrale.crm_started_at")
+    if started_at is None:
+        return response
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    response.headers["Server-Timing"] = f"app;dur={duration_ms:.1f}"
+    if duration_ms >= 1000:
+        app.logger.warning(
+            "slow_crm_request method=%s path=%s status=%s duration_ms=%.1f bytes=%s",
+            request.method,
+            request.path,
+            response.status_code,
+            duration_ms,
+            response.calculate_content_length() or 0,
+        )
+    return response
+
+
+@app.after_request
+def compress_crm_json(response):
+    """Keep the compact CRM payload fast on mobile/4G connections."""
+    if (not request.path.startswith("/api/crm/")
+            or response.status_code < 200 or response.status_code >= 300
+            or response.mimetype != "application/json"
+            or response.headers.get("Content-Encoding")
+            or "gzip" not in request.headers.get("Accept-Encoding", "").lower()):
+        return response
+    body = response.get_data()
+    if len(body) < 1024:
+        return response
+    compressed = gzip.compress(body, compresslevel=3)
+    if len(compressed) >= len(body):
+        return response
+    response.set_data(compressed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(compressed))
+    response.headers["Vary"] = "Accept-Encoding"
+    return response
 
 
 @app.after_request
