@@ -30,14 +30,14 @@ def calendly_payload(email="lina@example.com", status="active"):
         "text_reminder_number": "+33612345678",
         "cancel_url": "https://calendly.com/cancellations/INVITEE1",
         "reschedule_url": "https://calendly.com/reschedulings/INVITEE1",
-        "created_at": "2026-08-03T08:00:00Z",
-        "updated_at": "2026-08-03T08:00:00Z",
+        "created_at": "2099-08-03T08:00:00Z",
+        "updated_at": "2099-08-03T08:00:00Z",
         "scheduled_event": {
             "uri": "https://api.calendly.com/scheduled_events/EVENT1",
             "name": "Appel découverte",
             "status": status,
-            "start_time": "2026-08-12T08:00:00Z",
-            "end_time": "2026-08-12T08:30:00Z",
+            "start_time": "2099-08-12T08:00:00Z",
+            "end_time": "2099-08-12T08:30:00Z",
             "event_type": "https://api.calendly.com/event_types/TYPE1",
             "location": {"type": "outbound_call", "location": "+33612345678"},
             "event_memberships": [{
@@ -441,7 +441,7 @@ def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_
         f"/api/crm/contacts/{contact['id']}/calendly/appointments",
         json={
             "event_type": "https://api.calendly.com/event_types/TYPE1",
-            "start_time": "2026-08-12T08:00:00Z",
+            "start_time": "2099-08-12T08:00:00Z",
             "timezone": "Europe/Paris",
             "location": {"kind": "outbound_call", "location": "06 12 34 56 78"},
             "answers": {"0": "Formation APS"},
@@ -560,9 +560,18 @@ def test_contact_appointments_are_fetched_directly_by_email(tmp_path, monkeypatc
 
     monkeypatch.setattr(application, "_calendly_request", fake_calendly)
 
-    response = client.get(
-        f"/api/crm/contacts/{contact['id']}/calendly/appointments"
-    )
+    url = f"/api/crm/contacts/{contact['id']}/calendly/appointments"
+    local_response = client.get(url)
+
+    assert local_response.status_code == 200
+    assert local_response.get_json()["lookup"] == {
+        "method": "local",
+        "processed_events": 0,
+        "matched_appointments": 0,
+    }
+    assert calls == []
+
+    response = client.get(f"{url}?refresh=1")
 
     assert response.status_code == 200
     result = response.get_json()
@@ -594,7 +603,7 @@ def test_cached_active_appointment_updates_contact_pipeline_status(tmp_path, mon
             "id": "appointment-1",
             "contact_id": contact["id"],
             "status": "active",
-            "start_time": "2026-08-12T08:00:00Z",
+            "start_time": "2099-08-12T08:00:00Z",
         }
     ]
     application.save_data(data)
@@ -657,7 +666,7 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "Rendez-vous passés",
         "Rendez-vous annulés",
         "tone==='upcoming'?calendlyActions(a):''",
-        "if(b.dataset.step==='Converti')return openRegistrationDraft(c)",
+        "b.dataset.primaryStep==='Converti'",
         "calendarSelectedDate=calendarDateKey(new Date())",
         'id="calendarDate" type="date"',
         "calendarDateKey(new Date(a.start_time))===calendarSelectedDate",

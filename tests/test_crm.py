@@ -101,6 +101,18 @@ def test_crm_is_private(tmp_path, monkeypatch):
     assert "/login" in response.location
 
 
+def test_versioned_static_assets_are_immutable_and_navigation_is_canonical():
+    response = application.app.test_client().get("/static/crm.js?v=test-version")
+    template = open(
+        application.app.root_path + "/templates/crm.html", encoding="utf-8"
+    ).read()
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert 'href="/CRM' not in template
+    assert "iaconnectcrm.png',v=asset_version" in template
+
+
 def test_admin_can_read_live_brevo_sms_credits(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     monkeypatch.setenv("BREVO_API_KEY", "test-key")
@@ -681,7 +693,7 @@ def test_contact_sheet_fetches_full_record_only_when_a_summary_is_opened():
 
     assert "async function showContact(id,initialTab='contactInfoTab')" in crm_js
     assert "if(c._summary)" in crm_js
-    assert "api(`/api/crm/contacts/${encodeURIComponent(id)}`)" in crm_js
+    assert "api(`/api/crm/contacts/${encodeURIComponent(id)}`,{timeout:10000})" in crm_js
     assert "delete c._summary" in crm_js
 
 
@@ -726,10 +738,10 @@ def test_gunicorn_recycles_the_single_worker():
     procfile = open(root + "/Procfile", encoding="utf-8").read()
     config = open(root + "/gunicorn.conf.py", encoding="utf-8").read()
 
-    assert "--max-requests ${GUNICORN_MAX_REQUESTS:-750}" in procfile
-    assert "--max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-75}" in procfile
-    assert 'max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "750"))' in config
-    assert 'max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "75"))' in config
+    assert "--max-requests ${GUNICORN_MAX_REQUESTS:-5000}" in procfile
+    assert "--max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-500}" in procfile
+    assert 'max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "5000"))' in config
+    assert 'max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "500"))' in config
     assert "max_requests = 0" not in config
 
 
@@ -1286,7 +1298,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260818-performance-crm" in page.data
+    assert b"20260819-performance-crm-2" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"

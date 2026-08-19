@@ -15,6 +15,7 @@
   const originalTitle = document.title;
   const tabId = sessionStorage.getItem("chat_tab_id") || crypto.randomUUID();
   let bootstrapSequence = 0;
+  let bootstrapInFlight = null;
   let unreadRevision = 0;
   let connectionHideTimer;
   let connectionDegradedTimer;
@@ -113,20 +114,24 @@
     } finally { clearTimeout(timer); }
   }
 
-  async function bootstrap() {
+  function bootstrap() {
+    if (bootstrapInFlight) return bootstrapInFlight;
     const sequence = ++bootstrapSequence;
     const revision = unreadRevision;
-    try {
-      const data = await request("/api/chat/bootstrap");
-      if (sequence !== bootstrapSequence) return;
-      Object.assign(state, { me: data.current_user_id, conversations: data.conversations,
-        colleagues: data.colleagues, onlineCount: data.online_users_count });
-      if (revision === unreadRevision) state.unread = data.unread;
-      render(); clearNotice();
-      const saved = Number(sessionStorage.getItem("ic-chat-current"));
-      if (!state.current && saved && state.conversations.some((item) => item.id === saved)) openConversation(saved, false);
-      else markRead();
-    } catch (error) { notice(`Connexion au chat impossible : ${error.message}`, bootstrap); }
+    bootstrapInFlight = (async () => {
+      try {
+        const data = await request("/api/chat/bootstrap");
+        if (sequence !== bootstrapSequence) return;
+        Object.assign(state, { me: data.current_user_id, conversations: data.conversations,
+          colleagues: data.colleagues, onlineCount: data.online_users_count });
+        if (revision === unreadRevision) state.unread = data.unread;
+        render(); clearNotice();
+        const saved = Number(sessionStorage.getItem("ic-chat-current"));
+        if (!state.current && saved && state.conversations.some((item) => item.id === saved)) openConversation(saved, false);
+        else markRead();
+      } catch (error) { notice(`Connexion au chat impossible : ${error.message}`, bootstrap); }
+    })().finally(() => { bootstrapInFlight = null; });
+    return bootstrapInFlight;
   }
 
   function appendMessage(message, beforeElement = null) {
@@ -230,7 +235,7 @@
   }
 
   async function heartbeat() {
-    try { const data = await request("/api/chat/presence", { method: "POST", body: JSON.stringify({ tab_id: tabId }) }); state.onlineCount = data.online_users_count; $(".ic-online").textContent = `${state.onlineCount} en ligne`; await bootstrap(); }
+    try { const data = await request("/api/chat/presence", { method: "POST", body: JSON.stringify({ tab_id: tabId }) }); state.onlineCount = data.online_users_count; $(".ic-online").textContent = `${state.onlineCount} en ligne`; }
     catch (error) { notice(`Présence indisponible : ${error.message}`, heartbeat); }
   }
 
@@ -260,7 +265,7 @@
       socket.on("connect", () => {
         initialConnectionExpired = false;
         console.info("[CRM CHAT] connecté", { socketId: socket.id, transport: socket.io.engine.transport.name });
-        connection("connected", "Chat connecté"); heartbeat(); bootstrap().then(markRead);
+        connection("connected", "Chat connecté"); heartbeat(); if (state.me) markRead(); else bootstrap().then(markRead);
       });
       socket.on("disconnect", (reason) => {
         console.info("[CRM CHAT] déconnexion", { reason });
@@ -277,7 +282,7 @@
         if (!initialConnectionExpired) connection("reconnecting", "Déconnecté — reconnexion en cours…");
       });
       socket.io.on("reconnect", () => connection("connected", "Chat connecté"));
-      socket.on("presence:changed", (payload) => { const user = state.colleagues.find((item) => item.id === payload.user_id); if (user) { user.online = payload.online; user.last_seen_at = payload.last_seen_at; bootstrap(); } });
+      socket.on("presence:changed", (payload) => { const user = state.colleagues.find((item) => item.id === payload.user_id); if (user) { user.online = payload.online; user.last_seen_at = payload.last_seen_at; render(); } });
       socket.on("chat:conversation_created", bootstrap);
       socket.on("chat:unread_changed", (data) => {
         unreadRevision += 1;
@@ -337,7 +342,7 @@
 
   if (localStorage.getItem("ic-chat-open") === "1") setOpen(true);
   connection("connecting", "Connexion au chat…");
-  heartbeat(); setInterval(heartbeat, 20000);
+  setInterval(heartbeat, 20000);
   bootstrap().finally(initSocket);
   window.__integraleChat = true;
 })();

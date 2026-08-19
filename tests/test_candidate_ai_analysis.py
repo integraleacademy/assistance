@@ -213,18 +213,44 @@ def test_get_never_calls_ai_and_authentication_is_required(tmp_path, monkeypatch
     assert anonymous.post(f"/api/crm/contacts/{contact['id']}/ai-analysis", json={}).status_code == 302
 
 
-def test_contact_page_replaces_summary_and_starts_candidate_analysis_automatically():
+def test_ai_route_never_blocks_on_live_vae_tracking(tmp_path, monkeypatch):
+    client = logged_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "fake")
+    contact = client.post(
+        "/api/crm/contacts", json={"formation": "DESP"}
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"formation": "DESP", "desp_type": "VAE"},
+    )
+    monkeypatch.setattr(
+        application.requests,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("appel Gestion Stagiaires inattendu")
+        ),
+    )
+    monkeypatch.setattr(
+        application, "generate_candidate_ai_analysis", lambda context: valid_result()
+    )
+    url = f"/api/crm/contacts/{contact['id']}/ai-analysis"
+
+    assert client.post(url, json={}).status_code == 200
+    assert client.get(url).status_code == 200
+
+
+def test_contact_page_loads_saved_analysis_without_generating_automatically():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
     assert "Synthèse du dossier" not in crm_js
     assert crm_js.count('id="candidateAiCard"') == 1
     assert "async function loadCandidateAi(c)" in crm_js
-    automatic_call = (
-        "api(`/api/crm/contacts/${c.id}/ai-analysis`,"
-        "{method:'POST',body:JSON.stringify({force:false})})"
-    )
-    assert automatic_call in crm_js
+    loader = crm_js.split("async function loadCandidateAi(c)", 1)[1].split(
+        "function bindContact", 1
+    )[0]
+    assert "api(`/api/crm/contacts/${c.id}/ai-analysis`)" in loader
+    assert "method:'POST'" not in loader
     assert "loadCandidateAi(c);" in crm_js
 
     contact_sidebar = crm_js.split('<aside class="contact-side-column">', 1)[1].split(

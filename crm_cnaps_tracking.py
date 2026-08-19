@@ -174,7 +174,7 @@ def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=N
                 "Authorization": f"Bearer {api_token}",
                 "Accept": "application/json",
             },
-            timeout=float(os.getenv("GESTION_STAGIAIRES_CNAPS_TIMEOUT", "30")),
+            timeout=float(os.getenv("GESTION_STAGIAIRES_CNAPS_TIMEOUT", "8")),
         )
         remote = response.json() if getattr(response, "content", b"") else {}
     except (requests.RequestException, ValueError, TypeError) as exc:
@@ -204,7 +204,7 @@ def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=N
                 gestion_stagiaires_link_existing_url(), json=payload,
                 headers={"Authorization": f"Bearer {api_token}", "Accept": "application/json",
                          "Content-Type": "application/json"},
-                timeout=float(os.getenv("GESTION_STAGIAIRES_CNAPS_TIMEOUT", "30")))
+                timeout=float(os.getenv("GESTION_STAGIAIRES_CNAPS_TIMEOUT", "8")))
             linked = linked_response.json() if getattr(linked_response, "content", b"") else {}
         except (requests.RequestException, ValueError, TypeError) as exc:
             app.logger.warning("Gestion Stagiaires indisponible (%s)", type(exc).__name__)

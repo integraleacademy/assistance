@@ -196,3 +196,15 @@ def test_http_read_notifies_every_socket_for_the_same_user():
         events = socket.get_received("/chat")
         unread = [event["args"][0]["unread"] for event in events if event["name"] == "chat:unread_changed"]
         assert unread and unread[-1]["1"] == 0
+
+
+def test_chat_heartbeat_does_not_trigger_repeated_bootstraps():
+    source = open(application.app.root_path + "/static/chat.js", encoding="utf-8").read()
+    heartbeat = source.split("async function heartbeat()", 1)[1].split(
+        "function initSocket", 1
+    )[0]
+
+    assert "bootstrap()" not in heartbeat
+    assert "bootstrapInFlight" in source
+    assert "heartbeat(); setInterval(heartbeat, 20000)" not in source
+    assert 'socket.on("presence:changed"' in source
