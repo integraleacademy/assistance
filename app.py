@@ -7012,7 +7012,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260818-performance-crm"
+CRM_ASSET_VERSION = "20260819-performance-crm-2"
 
 
 def _crm_statuses(data=None):
@@ -9774,7 +9774,7 @@ _CRM_AI_ANALYSIS_LOCKS = {}
 _CRM_AI_ANALYSIS_LOCKS_GUARD = threading.Lock()
 
 
-def build_candidate_ai_context(contact_id, data=None, now=None):
+def build_candidate_ai_context(contact_id, data=None, now=None, *, fetch_live_vae=True):
     data = data or load_data()
     contact = _crm_contact(data, contact_id)
     if not contact:
@@ -9784,7 +9784,8 @@ def build_candidate_ai_context(contact_id, data=None, now=None):
     except Exception:
         wedof = []
     vae_tracking = None
-    if (str(contact.get("formation") or "").strip().upper() == "DESP"
+    if (fetch_live_vae
+            and str(contact.get("formation") or "").strip().upper() == "DESP"
             and str(contact.get("desp_type") or "").strip().upper() == "VAE"):
         try:
             from crm_cnaps_tracking import proxy_reglementaire
@@ -9818,7 +9819,11 @@ def get_candidate_ai_analysis_state(contact_id, data=None):
         return {"enabled": enabled, "status": "never_generated" if enabled else "unavailable",
             "stale": False, "result": None,
             "message": None if enabled else "Analyse IA indisponible : la configuration du service IA est manquante."}
-    stale = (stored.get("source_hash") != compute_candidate_ai_source_hash(build_candidate_ai_context(contact_id, data))
+    # L'affichage d'une analyse existante ne doit jamais déclencher un appel
+    # vers Gestion Stagiaires. Les données réglementaires déjà enregistrées
+    # dans le CRM suffisent à déterminer si l'analyse locale est périmée.
+    stale = (stored.get("source_hash") != compute_candidate_ai_source_hash(
+        build_candidate_ai_context(contact_id, data, fetch_live_vae=False))
              or stored.get("analysis_version") != AI_CANDIDATE_ANALYSIS_VERSION
              or stored.get("prompt_version") != AI_CANDIDATE_PROMPT_VERSION)
     return {"enabled": enabled, "status": "stale" if stale else "fresh", "stale": stale,
@@ -11315,6 +11320,9 @@ def crm_contact_calendly_appointments(contact_id):
         lookup = {"method": "local", "processed_events": 0}
         lookup_warning = ""
         fetched_payloads = []
+        refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {
+            "1", "true", "yes", "oui",
+        }
         state = data.get("crm_calendly") or {}
         can_lookup_by_email = bool(
             _calendly_token()
@@ -11322,7 +11330,10 @@ def crm_contact_calendly_appointments(contact_id):
             and state.get("organization")
             and _crm_normalize_email(contact.get("mail"))
         )
-        if can_lookup_by_email:
+        # La fiche affiche instantanément le cache local alimenté par les
+        # webhooks/synchronisations. Une recherche Calendly distante (qui peut
+        # prendre plusieurs secondes) n'est faite qu'après clic sur Actualiser.
+        if refresh_requested and can_lookup_by_email:
             try:
                 fetched_payloads, lookup = _crm_calendly_fetch_contact_appointments(
                     data,
@@ -12818,6 +12829,58 @@ def crm_convert_contact(contact_id):
     return jsonify({"contact": contact, "url": str(remote["url"])})
 
 
+_CRM_REGLEMENTAIRE_CACHE = {}
+_CRM_REGLEMENTAIRE_CACHE_LOCK = threading.RLock()
+_CRM_REGLEMENTAIRE_REQUEST_LOCKS = {}
+_CRM_REGLEMENTAIRE_REQUEST_LOCKS_GUARD = threading.Lock()
+
+
+def _crm_reglementaire_cache_key(contact):
+    """Invalidate the short-lived cache when identity/training changes."""
+    return (
+        os.path.abspath(DATA_FILE),
+        str(contact.get("id") or ""),
+        str(contact.get("updated_at") or ""),
+        str(contact.get("formation") or ""),
+        str(contact.get("desp_type") or ""),
+        str(contact.get("prenom") or ""),
+        str(contact.get("nom") or ""),
+        str(contact.get("mail") or ""),
+        str(contact.get("telephone") or ""),
+    )
+
+
+def _crm_reglementaire_cache_ttl():
+    try:
+        return max(15.0, float(os.getenv("CRM_REGLEMENTAIRE_CACHE_TTL", "300")))
+    except (TypeError, ValueError):
+        return 300.0
+
+
+def _crm_reglementaire_cached(contact):
+    key = _crm_reglementaire_cache_key(contact)
+    with _CRM_REGLEMENTAIRE_CACHE_LOCK:
+        cached = _CRM_REGLEMENTAIRE_CACHE.get(key)
+        if not cached:
+            return None
+        if time.monotonic() - cached["stored_at"] > _crm_reglementaire_cache_ttl():
+            _CRM_REGLEMENTAIRE_CACHE.pop(key, None)
+            return None
+        payload = copy.deepcopy(cached["payload"])
+        payload["cached"] = True
+        return payload, cached["status_code"]
+
+
+def _crm_store_reglementaire_cache(contact, payload, status_code):
+    key = _crm_reglementaire_cache_key(contact)
+    with _CRM_REGLEMENTAIRE_CACHE_LOCK:
+        _CRM_REGLEMENTAIRE_CACHE[key] = {
+            "payload": copy.deepcopy(payload),
+            "status_code": status_code,
+            "stored_at": time.monotonic(),
+        }
+
+
 @app.route("/api/crm/contacts/<contact_id>/reglementaire")
 @login_required
 def crm_contact_reglementaire(contact_id):
@@ -12826,36 +12889,60 @@ def crm_contact_reglementaire(contact_id):
     contact = _crm_contact(data, contact_id)
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
-    from crm_cnaps_tracking import proxy_reglementaire, scoring_snapshot_from_remote
-    remote = proxy_reglementaire(app, contact, http_get=requests.get)
-    response = remote[0] if isinstance(remote, tuple) else remote
-    status_code = remote[1] if isinstance(remote, tuple) else response.status_code
-    payload = response.get_json(silent=True) or {}
-    snapshots = data.setdefault("crm_cnaps_scoring_snapshots", {})
-    previous = snapshots.get(str(contact_id))
-    if status_code == 200 or (status_code == 404 and payload.get("reason") == "cnaps_not_found"):
-        snapshot = scoring_snapshot_from_remote(payload, http_status=status_code)
-        old_score = calculate_candidate_integration_score(contact, previous)
-        snapshots[str(contact_id)] = snapshot
-        new_score = calculate_candidate_integration_score(contact, snapshot)
-        if not previous or previous.get("normalized_status") != snapshot.get("normalized_status"):
-            labels = {"accepted": "Accepté", "transmitted": "Transmis", "in_review": "En instruction", "registered": "Enregistré", "refused": "Refusé", "no_result": "Aucun résultat", "unknown": "Inconnu"}
-            if snapshot["normalized_status"] == "accepted":
-                title = "Autorisation CNAPS acceptée"
-            else:
-                title = f"Suivi CNAPS passé de {labels.get((previous or {}).get('normalized_status'), 'Inconnu')} à {labels[snapshot['normalized_status']]}"
-            _crm_activity(contact, "score", title)
-        if old_score.get("level") != new_score.get("level"):
-            _crm_activity(contact, "score", f"Score d’intégration passé de {old_score.get('score')} à {new_score.get('score')} : {new_score.get('label')}")
-        save_data(data)
-        payload["integration_score"] = new_score
-        payload["scoring_snapshot"] = snapshot
+    refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {
+        "1", "true", "yes", "oui",
+    }
+    if not refresh_requested:
+        cached = _crm_reglementaire_cached(contact)
+        if cached:
+            return jsonify(cached[0]), cached[1]
+
+    with _CRM_REGLEMENTAIRE_REQUEST_LOCKS_GUARD:
+        lock = _CRM_REGLEMENTAIRE_REQUEST_LOCKS.setdefault(contact_id, threading.Lock())
+    with lock:
+        # Plusieurs onglets peuvent ouvrir la même fiche au même instant. Le
+        # premier fait l'appel distant, les suivants réutilisent son résultat.
+        data = load_data()
+        contact = _crm_contact(data, contact_id)
+        if not contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        if not refresh_requested:
+            cached = _crm_reglementaire_cached(contact)
+            if cached:
+                return jsonify(cached[0]), cached[1]
+
+        from crm_cnaps_tracking import proxy_reglementaire, scoring_snapshot_from_remote
+        remote = proxy_reglementaire(app, contact, http_get=requests.get)
+        response = remote[0] if isinstance(remote, tuple) else remote
+        status_code = remote[1] if isinstance(remote, tuple) else response.status_code
+        payload = response.get_json(silent=True) or {}
+        snapshots = data.setdefault("crm_cnaps_scoring_snapshots", {})
+        previous = snapshots.get(str(contact_id))
+        if status_code == 200 or (status_code == 404 and payload.get("reason") == "cnaps_not_found"):
+            snapshot = scoring_snapshot_from_remote(payload, http_status=status_code)
+            old_score = calculate_candidate_integration_score(contact, previous)
+            snapshots[str(contact_id)] = snapshot
+            new_score = calculate_candidate_integration_score(contact, snapshot)
+            if not previous or previous.get("normalized_status") != snapshot.get("normalized_status"):
+                labels = {"accepted": "Accepté", "transmitted": "Transmis", "in_review": "En instruction", "registered": "Enregistré", "refused": "Refusé", "no_result": "Aucun résultat", "unknown": "Inconnu"}
+                if snapshot["normalized_status"] == "accepted":
+                    title = "Autorisation CNAPS acceptée"
+                else:
+                    title = f"Suivi CNAPS passé de {labels.get((previous or {}).get('normalized_status'), 'Inconnu')} à {labels[snapshot['normalized_status']]}"
+                _crm_activity(contact, "score", title)
+            if old_score.get("level") != new_score.get("level"):
+                _crm_activity(contact, "score", f"Score d’intégration passé de {old_score.get('score')} à {new_score.get('score')} : {new_score.get('label')}")
+            save_data(data)
+            payload["integration_score"] = new_score
+            payload["scoring_snapshot"] = snapshot
+            payload["cached"] = False
+            _crm_store_reglementaire_cache(contact, payload, status_code)
+            return jsonify(payload), status_code
+        # Une panne distante ne détruit jamais le dernier fait réussi.
+        if previous:
+            payload["integration_score"] = calculate_candidate_integration_score(contact, previous)
+            payload["scoring_snapshot"] = {**previous, "refresh_failed": True}
         return jsonify(payload), status_code
-    # Une panne distante ne détruit jamais le dernier fait réussi.
-    if previous:
-        payload["integration_score"] = calculate_candidate_integration_score(contact, previous)
-        payload["scoring_snapshot"] = {**previous, "refresh_failed": True}
-    return jsonify(payload), status_code
 
 
 @app.route("/api/crm/reformuler", methods=["POST"])
@@ -12913,7 +13000,9 @@ def crm_candidate_ai_analysis(contact_id):
         lock = _CRM_AI_ANALYSIS_LOCKS.setdefault(contact_id, threading.Lock())
     with lock:
         data = load_data()
-        context = build_candidate_ai_context(contact_id, data)
+        # Une génération IA est déjà une opération longue : elle ne doit pas
+        # ajouter un second appel réseau synchrone vers Gestion Stagiaires.
+        context = build_candidate_ai_context(contact_id, data, fetch_live_vae=False)
         meaningful = (any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
             "recent_notes_untrusted", "recent_activities_untrusted", "wedof", "vae_tracking_read_only"))
             or bool(context.get("appointments", {}).get("total_count")))
@@ -13458,6 +13547,14 @@ def compress_crm_json(response):
     response.headers["Content-Encoding"] = "gzip"
     response.headers["Content-Length"] = str(len(compressed))
     response.headers["Vary"] = "Accept-Encoding"
+    return response
+
+
+@app.after_request
+def cache_versioned_static_assets(response):
+    """Versioned assets are immutable and must not generate a 304 per page."""
+    if request.path.startswith("/static/") and request.args.get("v"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return response
 
 

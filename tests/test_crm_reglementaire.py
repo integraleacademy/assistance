@@ -66,6 +66,30 @@ def test_app_entrypoint_calls_stagiaires_by_permanent_crm_id(tmp_path, monkeypat
     assert all(secret not in result.data for secret in (b"top-secret", b"public_token", b"trainee_token", b"api_token", b"authorization"))
 
 
+def test_reglementaire_reuses_cache_and_manual_refresh_bypasses_it(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    lead = vae_contact(test_client, formation="APS")
+    configure(monkeypatch)
+    calls = []
+
+    def fake_get(*args, **kwargs):
+        calls.append((args, kwargs))
+        return response(200, {"found": True, "cnaps": {"status": "TRANSMIS"}})
+
+    monkeypatch.setattr(application.requests, "get", fake_get)
+    url = f"/api/crm/contacts/{lead['id']}/reglementaire"
+
+    first = test_client.get(url)
+    cached = test_client.get(url)
+    refreshed = test_client.get(f"{url}?refresh=1")
+
+    assert first.status_code == cached.status_code == refreshed.status_code == 200
+    assert first.get_json()["cached"] is False
+    assert cached.get_json()["cached"] is True
+    assert refreshed.get_json()["cached"] is False
+    assert len(calls) == 2
+
+
 def test_production_entrypoint_installs_same_proxy(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch, production.app)
     lead = vae_contact(test_client)
@@ -278,10 +302,13 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     assert "const isDespVae=" in javascript
     assert "['APS','A3P']" in javascript
     assert "needsCnaps(c)&&!isDespVae(c)" in javascript
-    assert javascript.count("/reglementaire`") == 1
+    assert javascript.count("/reglementaire${") == 1
+    assert "force?'?refresh=1':''" in javascript
     assert "actionDates=vae.action_dates||{}" in javascript
     assert "scotia=vae.scotia||{}" in javascript
     assert "button.onclick=()=>loadReglementaire(c,true)" in javascript
+    assert "if(regulatorySection.open)loadReglementaireOnce()" in javascript
+    assert "if(selected.id==='contactVaeTab')loadReglementaireOnce()" in javascript
     assert "dossier.multiple_dossiers===true" in javascript
     assert "result.code||vae.status_code" in javascript
     assert "renderVaeDisplayError(c)" in javascript
@@ -380,4 +407,4 @@ process.stdout.write(JSON.stringify({{valid,unknownTone,missing,invalid:panel.in
     assert rendered["missing"].count("—") >= 2
     assert "Statut SCOTIA" in rendered["missing"] and "Commentaire SCOTIA" in rendered["missing"]
     assert "Date non disponible" in rendered["invalid"]
-    assert javascript.count("/reglementaire`") == 1
+    assert javascript.count("/reglementaire${") == 1
