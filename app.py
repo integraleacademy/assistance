@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, redirect, abort, jsonify
+from flask import Flask, render_template, request, send_file, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil, gzip
 import html as html_module
@@ -34,6 +34,11 @@ from candidate_ai_analysis import (
     build_candidate_ai_fallback,
     classify_calendly_appointment, compute_candidate_ai_source_hash,
     finalize_candidate_ai_analysis, validate_candidate_ai_analysis,
+)
+from crm_exports import (
+    CRM_EXPORT_DEFINITIONS,
+    build_crm_export_workbook,
+    crm_export_filename,
 )
 
 SALESFORCE_URL = "https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8&orgId=00DJ9000000PT9F"
@@ -7012,7 +7017,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260819-performance-crm-2"
+CRM_ASSET_VERSION = "20260820-crm-exports-1"
 
 
 def _crm_statuses(data=None):
@@ -10980,7 +10985,7 @@ def crm_contact_wedof_refresh(contact_id):
 @app.route("/crm/<section>")
 @login_required
 def crm(section):
-    if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "notifications", "modeles"}:
+    if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "notifications", "modeles", "exports"}:
         abort(404)
     user = current_user()
     # A browser session can outlive the account configuration that created it.
@@ -11004,6 +11009,29 @@ def crm(section):
         ],
         asset_version=CRM_ASSET_VERSION,
     )
+
+
+@app.get("/api/crm/exports/<export_key>")
+@login_required
+def crm_export_excel(export_key):
+    """Télécharge les inscrits d'une formation dans un classeur Excel."""
+    if export_key not in CRM_EXPORT_DEFINITIONS:
+        abort(404)
+    data = load_data()
+    output = build_crm_export_workbook(data.get("crm_contacts", []), export_key)
+    response = send_file(
+        output,
+        as_attachment=True,
+        download_name=crm_export_filename(export_key),
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.route("/CRM", defaults={"section": "accueil"})

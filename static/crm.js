@@ -65,6 +65,28 @@ function listActivityCounts(contact){const stored=contact.activity_counts||{},fu
 function listActivityBadges(contact){const counts=listActivityCounts(contact),badges=[['appointments','rdv','RDV téléphonique'],['relances','relance','relance'],['emails','mail','mail'],['sms','sms','SMS']].filter(([key])=>counts[key]>0);if(!badges.length)return'<span class="workspace-activity-empty">Aucune activité</span>';return`<div class="workspace-activity-tags">${badges.map(([key,tone,label])=>`<span class="workspace-activity-tag ${tone}"><strong>${counts[key]}</strong> ${label}${counts[key]>1&&key!=='sms'?'s':''}</span>`).join('')}</div>`}
 function table(list,{selectable=false}={}){const selectionHead=selectable?'<th class="lead-select-cell"><input type="checkbox" id="leadSelectAll" aria-label="Sélectionner toutes les pistes affichées"></th>':'',selectionCell=contact=>selectable?`<td class="lead-select-cell"><input type="checkbox" data-lead-select="${esc(contact.id)}" aria-label="Sélectionner ${esc(displayName(contact))}" ${selectedLeadIds.has(String(contact.id))?'checked':''}></td>`:'',columns=`<colgroup>${selectable?'<col class="crm-col-select">':''}<col class="crm-col-contact"><col class="crm-col-origin"><col class="crm-col-activities"><col class="crm-col-formation"><col class="crm-col-score"><col class="crm-col-location"><col class="crm-col-status"><col class="crm-col-updated"></colgroup>`;return `<div class="card table-card"><div class="table-wrap"><table class="crm-activity-table">${columns}<thead><tr>${selectionHead}<th>CONTACT</th><th>ORIGINE</th><th>ACTIVITÉS</th><th>FORMATION</th><th>SCORE</th><th>LIEU</th><th>STATUT</th><th>DERNIÈRE MODIFICATION</th></tr></thead><tbody>${list.length?list.map(c=>`<tr data-id="${c.id}">${selectionCell(c)}<td><div class="person"><span class="avatar">${initials(c)}</span><div><b>${esc(displayName(c))}</b><small>${esc(c.mail||c.telephone||'Coordonnées à compléter')}</small></div></div></td><td>${listOriginBadge(c)}</td><td>${listActivityBadges(c)}</td><td>${esc(c.formation)}</td><td>${scoreBadge(c)}</td><td>${esc(c.lieu)}</td><td>${contactPipelineStatuses(c).map(badge).join(' ')}</td><td>${fmt(c.updated_at)}</td></tr>`).join(''):`<tr><td colspan="${selectable?9:8}" class="empty">Aucun contact dans cette vue.<br>Créez votre première piste pour commencer.</td></tr>`}</tbody></table></div></div>`}
 const dashboardPeriods={week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'};
+const crmExportDefinitions=[
+ {key:'a3p',title:'Fichier A3P',formation:'A3P'},
+ {key:'aps',title:'Fichier APS',formation:'APS'},
+ {key:'desp-initial',title:'Fichier DESP initial',formation:'DESP initial'},
+ {key:'desp-vae',title:'Fichier DESP VAE',formation:'DESP VAE'},
+ {key:'ssiap',title:'Fichier SSIAP',formation:'SSIAP 1'},
+ {key:'chauffeur-vtc',title:'Fichier Chauffeur VTC',formation:'Chauffeur VTC'},
+];
+function crmExportKey(contact){
+ const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleUpperCase('fr-FR').replace(/[^A-Z0-9]+/g,' ').trim(),formation=normalize(contact.formation),despType=normalize(contact.desp_type),combined=`${formation} ${despType}`;
+ if(formation.includes('DESP')||formation.includes('DIRIGEANT'))return combined.includes('VAE')?'desp-vae':'desp-initial';
+ if(formation.includes('A3P'))return'a3p';
+ if(formation.split(' ').includes('APS'))return'aps';
+ if(formation.includes('SSIAP'))return'ssiap';
+ if(formation.includes('VTC'))return'chauffeur-vtc';
+ return'';
+}
+const dashboardExportButton=`<div class="dashboard-home-actions"><a class="dashboard-export-button" id="dashboardExportsButton" href="/crm/exports"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2"/></svg><span>Exports</span></a></div>`;
+function exportsPage(){
+ const converted=contacts.filter(contact=>contact.statut==='Converti');
+ return header('DONNÉES CRM','Exports','Téléchargez les inscriptions par formation dans un fichier Excel prêt à utiliser.')+`<div class="exports-toolbar"><a class="exports-back" href="/crm">← Retour à l’accueil</a><span>${converted.length} inscrit${converted.length>1?'s':''} dans le CRM</span></div><section class="exports-rule"><span>✓</span><div><b>Uniquement les inscrits</b><p>Chaque fichier contient seulement les personnes dont le statut CRM est « Converti ».</p></div></section><section class="exports-grid">${crmExportDefinitions.map(definition=>{const count=converted.filter(contact=>crmExportKey(contact)===definition.key).length;return`<article class="export-card"><div class="export-file-icon"><b>XLS</b><span>X</span></div><div class="export-card-copy"><span>EXPORT EXCEL</span><h2>${esc(definition.title)}</h2><p>${count} personne${count>1?'s':''} inscrite${count>1?'s':''} · ${esc(definition.formation)}</p></div><a href="/api/crm/exports/${encodeURIComponent(definition.key)}" class="export-download-button" aria-label="Télécharger ${esc(definition.title)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2"/></svg>Télécharger</a></article>`}).join('')}</section>`;
+}
 const dashboardDate=value=>{const date=new Date(value);return Number.isNaN(date.getTime())?null:date};
 const dashboardContactDate=contact=>dashboardDate(contact.created_at||contact.received_at||contact.updated_at);
 function dashboardFullRange(period,offset=0){
@@ -716,7 +738,8 @@ function deleteCrmDatabaseModal(){adminToolsMenuElement?.classList.remove('open'
 let integrationTimer;function scheduleContactIntegrations(c){clearTimeout(integrationTimer);integrationTimer=setTimeout(()=>{loadCalendlyAppointments(c,true);refreshFundingBadges(c)},300)}
 function render(){
  document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===C.section));updateLeadCount();
- if(C.section==='accueil'){page.innerHTML=dashboard();bindDashboard();return}
+ if(C.section==='accueil'){page.innerHTML=dashboard();bindDashboard();document.querySelector('.page-title')?.insertAdjacentHTML('afterend',dashboardExportButton);return}
+ if(C.section==='exports'){page.innerHTML=exportsPage();return}
  if(C.section==='calendrier')return calendarPage();
  if(C.section==='pistes'){page.innerHTML=listPage(C.section);bindList(C.section);bindRows();return}
  if(C.section==='relances'&&window.CRMWorkspace)return CRMWorkspace.remindersPage(workspaceContext());
