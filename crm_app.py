@@ -9,6 +9,7 @@ from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_import import register_salesforce_import
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
 from crm_salesforce_scope_guardrails import (
+    disable_legacy_salesforce_import,
     enforce_salesforce_scope_route,
     install_salesforce_scope_guardrails,
 )
@@ -39,6 +40,10 @@ serialize_salesforce_writes(
 enforce_salesforce_scope_route(
     app,
     request=legacy_app.request,
+    jsonify_fn=legacy_app.jsonify,
+)
+disable_legacy_salesforce_import(
+    app,
     jsonify_fn=legacy_app.jsonify,
 )
 register_cnaps_tracking_proxy(
