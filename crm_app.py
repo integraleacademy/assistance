@@ -2,6 +2,7 @@
 
 import app as legacy_app
 import crm_salesforce_migration as salesforce_migration
+import crm_salesforce_tasks_import as salesforce_tasks_import
 
 from crm_cnaps_tracking import register_cnaps_tracking_proxy
 from crm_google_ads import register_google_ads_offline_conversions
@@ -15,7 +16,9 @@ from crm_salesforce_scope_guardrails import (
     install_salesforce_scope_guardrails,
 )
 from crm_salesforce_status_guardrails import install_salesforce_status_guardrails
-from crm_salesforce_tasks_import import register_salesforce_tasks_import
+from crm_salesforce_tasks_report_guardrails import (
+    install_salesforce_tasks_report_guardrails,
+)
 from crm_salesforce_transaction_guardrails import serialize_salesforce_writes
 from secretariat_followup_patch import register_secretariat_followup_patch
 
@@ -49,7 +52,8 @@ disable_legacy_salesforce_import(
     app,
     jsonify_fn=legacy_app.jsonify,
 )
-register_salesforce_tasks_import(
+install_salesforce_tasks_report_guardrails(salesforce_tasks_import)
+salesforce_tasks_import.register_salesforce_tasks_import(
     app,
     current_user_fn=legacy_app.current_user,
     load_data_fn=legacy_app.load_data,
