@@ -1,8 +1,9 @@
 """Périmètre métier définitif de la migration Salesforce.
 
 La migration destinée à la sortie de Salesforce ne reprend que les pistes dont
-la date de création appartient à l'année civile 2026 en France. Les formations
-BTS et CAP sont exclues, quel que soit leur libellé précis.
+la date de création appartient à l'année civile 2026 en France. Les pistes
+disqualifiées ainsi que les formations BTS et CAP sont exclues avant tout
+rapprochement avec les fiches du CRM.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import pytz
 
 MIGRATION_YEAR = 2026
 EXCLUDED_FORMATION_FAMILIES = ("BTS", "CAP")
+EXCLUDED_STATUS_LABELS = ("Disqualifié",)
 _PARIS_TZ = pytz.timezone("Europe/Paris")
 _FORMATION_FIELDS = (
     "Type_de_formation__c",
@@ -25,6 +27,12 @@ _FORMATION_FIELDS = (
     "Formation",
     "Company",
     "Société",
+    "Société/Compte",
+)
+_STATUS_FIELDS = (
+    "Status",
+    "Statut",
+    "Statut de la piste",
 )
 _BTS_SHORT_LABELS = ("mos", "mco", "ndrc", "ci", "pi", "cg")
 _CAP_SHORT_LABELS = (
@@ -34,10 +42,20 @@ _CAP_SHORT_LABELS = (
     "cuisine",
     "patisserie",
 )
+_DISQUALIFIED_STATUS_ALIASES = {
+    "disqualifie",
+    "unqualified",
+    "closed not converted",
+    "closed lost",
+}
 
 
 def _source_formation(migration_module, row: dict[str, Any]) -> str:
     return migration_module._row_value(row, *_FORMATION_FIELDS)
+
+
+def _source_status(migration_module, row: dict[str, Any]) -> str:
+    return migration_module._row_value(row, *_STATUS_FIELDS)
 
 
 def _starts_with_training_label(value: str, labels: tuple[str, ...]) -> bool:
@@ -58,6 +76,12 @@ def _is_excluded_formation(migration_module, value: Any) -> bool:
         _starts_with_training_label(without_year, _BTS_SHORT_LABELS)
         or _starts_with_training_label(without_year, _CAP_SHORT_LABELS)
     )
+
+
+def _is_disqualified(migration_module, row: dict[str, Any]) -> bool:
+    """Refuse les variantes françaises et anglaises d'une piste disqualifiée."""
+    status = migration_module._fold(_source_status(migration_module, row))
+    return status in _DISQUALIFIED_STATUS_ALIASES
 
 
 def _created_in_migration_year(migration_module, row: dict[str, Any]) -> bool:
@@ -96,6 +120,12 @@ def filter_salesforce_scope(
             stats["skipped_other_year"] += 1
             continue
 
+        # Priorité au statut : une piste disqualifiée n'est jamais importée,
+        # même lorsqu'elle appartient aussi à une formation BTS ou CAP.
+        if _is_disqualified(migration_module, row):
+            stats["skipped_disqualified"] += 1
+            continue
+
         if _is_excluded_formation(
             migration_module,
             _source_formation(migration_module, row),
@@ -109,7 +139,7 @@ def filter_salesforce_scope(
 
 
 def install_salesforce_scope_guardrails(migration_module) -> None:
-    """Applique le périmètre 2026 hors BTS/CAP au moteur de migration complet."""
+    """Applique le périmètre 2026 hors disqualifiés, BTS et CAP."""
     if getattr(migration_module, "_scope_guardrails_installed", False):
         return
 
@@ -133,6 +163,8 @@ def install_salesforce_scope_guardrails(migration_module) -> None:
         result["excluded_formation_families"] = list(
             EXCLUDED_FORMATION_FAMILIES
         )
+        result["excluded_statuses"] = list(EXCLUDED_STATUS_LABELS)
+        result.setdefault("skipped_disqualified", 0)
         return result
 
     migration_module._prepare_complete_rows = scoped_prepare
@@ -165,7 +197,7 @@ def enforce_salesforce_scope_route(
             return jsonify_fn({
                 "error": (
                     "Cette migration est limitée aux pistes créées en 2026, "
-                    "hors formations BTS et CAP."
+                    "hors pistes disqualifiées et formations BTS/CAP."
                 )
             }), 400
 
@@ -210,8 +242,8 @@ def disable_legacy_salesforce_import(
         return jsonify_fn({
             "error": (
                 "L'ancien import Salesforce 2025 est désactivé. Utilisez "
-                "« Importer Salesforce 2026 » : seules les pistes 2026 hors "
-                "BTS et CAP sont autorisées."
+                "« Importer Salesforce 2026 » : seules les pistes 2026 non "
+                "disqualifiées et hors BTS/CAP sont autorisées."
             )
         }), 410
 
