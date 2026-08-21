@@ -6,11 +6,13 @@
 
   button.textContent = '⇩ Importer Salesforce 2026';
 
+  const formatNumber = value => new Intl.NumberFormat('fr-FR').format(Number(value || 0));
+
   const replaceText = root => {
     if (!root) return;
     const replacements = [
-      [/Migration complète — toutes les années et toutes les formations/g, 'Pistes créées en 2026 — BTS et CAP exclus'],
-      [/Migration complète/g, 'Migration Salesforce 2026 — hors BTS et CAP'],
+      [/Migration complète — toutes les années et toutes les formations/g, 'Pistes 2026 — disqualifiées, TEST APS, BTS et CAP exclus'],
+      [/Migration complète/g, 'Migration Salesforce 2026 — hors disqualifiées, TEST APS, BTS et CAP'],
       [/hors 2025 ignorées/g, 'hors 2026 ignorées'],
       [/Ancien import — uniquement 2025 avec les exclusions historiques/g, 'Mode non disponible'],
     ];
@@ -24,6 +26,57 @@
       node.nodeValue = value;
       node = walker.nextNode();
     }
+  };
+
+  const enhancePreview = payload => {
+    const preview = document.querySelector('#salesforcePreview');
+    if (!preview || !payload || typeof payload !== 'object') return;
+
+    const disqualifiedCount = Number(payload.skipped_disqualified || 0);
+    const testCount = Number(payload.skipped_test || 0);
+    let banner = preview.querySelector('#salesforceExcludedSummary');
+    if (!disqualifiedCount && !testCount) {
+      if (banner) banner.remove();
+      return;
+    }
+
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'salesforceExcludedSummary';
+      banner.className = 'integration-banner success';
+      banner.style.marginTop = '16px';
+      const firstSummary = preview.querySelector('.integration-banner.success');
+      if (firstSummary) firstSummary.insertAdjacentElement('afterend', banner);
+      else preview.prepend(banner);
+    }
+
+    const labels = [];
+    if (disqualifiedCount) {
+      labels.push(`${formatNumber(disqualifiedCount)} piste${disqualifiedCount > 1 ? 's' : ''} disqualifiée${disqualifiedCount > 1 ? 's' : ''} exclue${disqualifiedCount > 1 ? 's' : ''}`);
+    }
+    if (testCount) {
+      labels.push(`${formatNumber(testCount)} fiche TEST APS exclue${testCount > 1 ? 's' : ''}`);
+    }
+    banner.innerHTML = `
+      <div>
+        <b>${labels.join(' · ')}</b>
+        <span>Ces fiches ont été détectées dans le fichier Salesforce et ne seront jamais créées ni mises à jour dans le CRM.</span>
+      </div>`;
+  };
+
+  // Le résultat JSON contient les décomptes exacts. Le script principal reste
+  // inchangé ; on enrichit simplement son aperçu une fois la réponse reçue.
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const response = await nativeFetch(...args);
+    const url = typeof args[0] === 'string' ? args[0] : String(args[0]?.url || '');
+    if (url.includes('/api/crm/migrate-salesforce')) {
+      response.clone().json().then(payload => {
+        window.setTimeout(() => enhancePreview(payload), 0);
+        window.setTimeout(() => enhancePreview(payload), 100);
+      }).catch(() => {});
+    }
+    return response;
   };
 
   button.addEventListener('click', () => {
@@ -59,7 +112,7 @@
 
       const firstBannerText = modalRoot.querySelector('.integration-banner span');
       if (firstBannerText) {
-        firstBannerText.innerHTML = 'Exporte les <b>Pistes / Leads</b> avec leurs lignes de détail. Le CRM conservera uniquement celles créées en <b>2026</b> et écartera automatiquement toutes les formations <b>BTS</b> et <b>CAP</b>.';
+        firstBannerText.innerHTML = 'Exporte les <b>Pistes / Leads</b> avec leurs lignes de détail. Le CRM conservera uniquement celles créées en <b>2026</b> et écartera automatiquement les pistes <b>disqualifiées</b>, la fiche <b>TEST APS</b> ainsi que toutes les formations <b>BTS</b> et <b>CAP</b>.';
       }
 
       const fields = fileInput.closest('.fields');
@@ -71,7 +124,7 @@
         notice.innerHTML = `
           <div>
             <b>Périmètre verrouillé</b>
-            <span>Uniquement les pistes créées du 1er janvier au 31 décembre 2026. Les BTS et CAP ne seront jamais importés, même s'ils figurent dans le fichier.</span>
+            <span>Uniquement les pistes créées du 1er janvier au 31 décembre 2026. Les pistes disqualifiées, TEST APS, les BTS et les CAP ne seront jamais importés, même s'ils figurent dans le fichier.</span>
           </div>`;
         fields.parentNode.insertBefore(notice, fields);
       }

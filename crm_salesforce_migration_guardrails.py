@@ -62,6 +62,8 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
         aliases = {
             "agent de protection physique des personnes": "A3P",
             "agent de prevention et de securite": "APS",
+            "septembre aps": "APS",
+            "test aps": "APS",
         }
         return aliases.get(folded) or original_formation(value)
 
