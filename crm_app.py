@@ -6,6 +6,9 @@ import crm_salesforce_tasks_import as salesforce_tasks_import
 
 from crm_cnaps_tracking import register_cnaps_tracking_proxy
 from crm_google_ads import register_google_ads_offline_conversions
+from crm_salesforce_anomaly_followups_import import (
+    register_salesforce_anomaly_followups_import,
+)
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_import import register_salesforce_import
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
@@ -54,6 +57,14 @@ disable_legacy_salesforce_import(
 )
 install_salesforce_tasks_report_guardrails(salesforce_tasks_import)
 salesforce_tasks_import.register_salesforce_tasks_import(
+    app,
+    current_user_fn=legacy_app.current_user,
+    load_data_fn=legacy_app.load_data,
+    login_required_fn=legacy_app.login_required,
+    save_data_fn=legacy_app.save_data,
+    transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
+)
+register_salesforce_anomaly_followups_import(
     app,
     current_user_fn=legacy_app.current_user,
     load_data_fn=legacy_app.load_data,
