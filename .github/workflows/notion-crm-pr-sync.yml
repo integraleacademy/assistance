@@ -10,7 +10,9 @@ permissions:
 jobs:
   sync:
     name: Mettre à jour le statut Notion
-    if: startsWith(github.event.pull_request.head.ref, 'agent/notion-crm-')
+    if: >-
+      startsWith(github.event.pull_request.head.ref, 'agent/notion-crm-') &&
+      contains(github.event.pull_request.body, '<!-- notion-page-id:')
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
