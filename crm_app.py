@@ -15,6 +15,7 @@ from crm_salesforce_scope_guardrails import (
     install_salesforce_scope_guardrails,
 )
 from crm_salesforce_status_guardrails import install_salesforce_status_guardrails
+from crm_salesforce_tasks_import import register_salesforce_tasks_import
 from crm_salesforce_transaction_guardrails import serialize_salesforce_writes
 from secretariat_followup_patch import register_secretariat_followup_patch
 
@@ -47,6 +48,14 @@ enforce_salesforce_scope_route(
 disable_legacy_salesforce_import(
     app,
     jsonify_fn=legacy_app.jsonify,
+)
+register_salesforce_tasks_import(
+    app,
+    current_user_fn=legacy_app.current_user,
+    load_data_fn=legacy_app.load_data,
+    login_required_fn=legacy_app.login_required,
+    save_data_fn=legacy_app.save_data,
+    transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
 )
 register_cnaps_tracking_proxy(
     app,
