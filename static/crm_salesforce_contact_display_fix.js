@@ -47,6 +47,41 @@
     });
   };
 
+  let applyingStoredLocation = false;
+
+  const ensureStoredLocation = (select, contact) => {
+    if (!select || !contact || applyingStoredLocation) return;
+    const expected = canonicalLocation(contact.lieu);
+    if (!expected) return;
+
+    const matchingOption = [...select.options].find(option => (
+      canonicalLocation(option.value || option.textContent) === expected
+    ));
+
+    applyingStoredLocation = true;
+    try {
+      if (matchingOption) {
+        if (select.value !== matchingOption.value) {
+          matchingOption.selected = true;
+          select.value = matchingOption.value;
+        }
+      } else {
+        // Le formulaire historique ne proposait que les centres possédant une
+        // session configurée. Un lieu valide comme Paris disparaissait alors
+        // et le premier centre disponible (souvent Auvergne) était affiché.
+        const option = document.createElement('option');
+        option.value = expected;
+        option.textContent = `${expected} — lieu enregistré`;
+        option.dataset.storedLocation = '1';
+        option.selected = true;
+        select.prepend(option);
+        select.value = expected;
+      }
+    } finally {
+      applyingStoredLocation = false;
+    }
+  };
+
   const installOnForm = () => {
     const form = document.querySelector('#contactForm');
     if (!form || form.dataset.salesforceLocationDisplayFix === '1') return;
@@ -56,12 +91,16 @@
     form.dataset.salesforceLocationDisplayFix = '1';
     const canonical = canonicalLocation(contact.lieu);
     if (canonical && canonical !== contact.lieu) {
-      // Le formulaire historique compare les lieux caractère par caractère.
-      // Canonicaliser avant de relancer son calcul évite que « Côte d'Azur »
-      // soit remplacé visuellement par le premier centre, souvent Auvergne.
       contact.lieu = canonical;
-      const formation = form.querySelector('[name="formation"]');
-      if (formation) formation.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    const locationSelect = form.querySelector('[name="lieu"]');
+    ensureStoredLocation(locationSelect, contact);
+    if (locationSelect) {
+      const locationObserver = new MutationObserver(() => {
+        ensureStoredLocation(locationSelect, currentContact() || contact);
+      });
+      locationObserver.observe(locationSelect, { childList: true, subtree: true });
     }
 
     const sessionSelect = form.querySelector('[name="dates_formation"]');

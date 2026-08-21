@@ -24,6 +24,7 @@ SECONDARY_STATUS_ALIASES = {
     "fin ft en cours": "Financement FT en cours",
     "financement ft en cours": "Financement FT en cours",
     "financement ft refuse": "Financement FT refusé",
+    "c2p": "C2P en cours",
     "c2p en cours": "C2P en cours",
 }
 
@@ -38,6 +39,8 @@ FOLLOWUP_SECONDARY_SOURCES = {
     "def mobilite",
     "fin ft en cours",
     "financement ft en cours",
+    "c2p",
+    "c2p en cours",
 }
 
 FUNDING_STATUS_BY_SECONDARY = {
