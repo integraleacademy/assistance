@@ -50,8 +50,13 @@ def install_salesforce_status_guardrails(migration_module) -> None:
     original_status = migration_module._normalized_status
     original_map_row = migration_module._map_row
 
+    def folded_phrase(value: Any) -> str:
+        folded = migration_module._fold(value)
+        folded = migration_module.re.sub(r"['’]+", " ", folded)
+        return " ".join(folded.split())
+
     def source_status(row: dict[str, Any]) -> str:
-        return migration_module._fold(migration_module._row_value(
+        return folded_phrase(migration_module._row_value(
             row, "Status", "Statut",
         ))
 
@@ -76,7 +81,7 @@ def install_salesforce_status_guardrails(migration_module) -> None:
         primary = migration_module._normalized_status(row)
         mapped["statut"] = primary
 
-        raw_funding_status = migration_module._fold(
+        raw_funding_status = folded_phrase(
             mapped.get("statut_demande_financement_ft")
         )
         normalized_funding_status = FUNDING_STATUS_ALIASES.get(
