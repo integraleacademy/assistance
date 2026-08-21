@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 GITHUB_API_BASE = "https://api.github.com"
+CHATGPT_API_BASE = "https://api.chatgpt.com/v1"
 NOTION_VERSION = "2026-03-11"
 DEFAULT_DATA_SOURCE_ID = "7f12fe92-dbc4-40c8-af4e-77578b5dbfc0"
 AUTOMATION_VERSION = "notion-crm-v1"
@@ -212,3 +213,5 @@ def _truncate(text: str, limit: int, note: str) -> str:
         return value
     suffix = f"\n\n> {note}\n"
     return value[: max(0, limit - len(suffix))].rstrip() + suffix
+
+

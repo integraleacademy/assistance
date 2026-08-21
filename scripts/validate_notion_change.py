@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -13,10 +14,12 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 FORBIDDEN_EXACT = {
+    ".codex",
     ".gitattributes",
     ".gitignore",
     ".gitmodules",
     "AGENTS.md",
+    "AGENTS.override.md",
     "Dockerfile",
     "Procfile",
     "data.json",
@@ -31,22 +34,26 @@ FORBIDDEN_EXACT = {
     "setup.cfg",
     "setup.py",
     "yarn.lock",
+    "scripts/apply_notion_patch.py",
     "scripts/validate_notion_change.py",
     "scripts/stage_notion_changes.py",
 }
 FORBIDDEN_PREFIXES = (
+    ".agents/",
+    ".codex/",
     ".github/",
     ".git/",
     "notion_crm_lib/",
 )
+FORBIDDEN_BASENAMES = {"AGENTS.md", "AGENTS.override.md"}
 FORBIDDEN_NAME_PATTERNS = (
     re.compile(r"(^|/)\.env($|\.)", re.IGNORECASE),
     re.compile(r"\.(pem|key|p12|pfx)$", re.IGNORECASE),
     re.compile(r"(^|/)(id_rsa|id_ed25519)$", re.IGNORECASE),
 )
 PRODUCT_SUFFIXES = {".py", ".js", ".html", ".css"}
-MAX_CHANGED_FILES = 40
-MAX_CHANGED_LINES = 6_000
+MAX_CHANGED_FILES = 30
+MAX_CHANGED_LINES = 2_500
 GENERATED_PATH_PARTS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 
 
@@ -91,9 +98,6 @@ def changed_paths(base: str = "main") -> list[str]:
     paths |= _git_paths("diff", "--name-only", "--diff-filter=ACMRD")
     paths |= _git_paths("diff", "--cached", "--name-only", "--diff-filter=ACMRD")
     paths |= _git_paths("ls-files", "--others", "--exclude-standard")
-    paths.discard(".codex-notion-task.md")
-    paths.discard(".codex-notion-metadata.json")
-    paths.discard(".codex-final-message.md")
     return sorted(
         path
         for path in paths
@@ -103,15 +107,33 @@ def changed_paths(base: str = "main") -> list[str]:
     )
 
 
+def normalize_path(raw_path: str) -> str:
+    path = str(raw_path).replace("\\", "/")
+    while path.startswith("./"):
+        path = path[2:]
+    parts = Path(path).parts
+    if (
+        not path
+        or path.startswith("/")
+        or path.startswith("../")
+        or ".." in parts
+        or any(part in {".git", ".codex", ".agents"} for part in parts)
+    ):
+        raise ValidationError(f"Chemin de fichier invalide : {raw_path!r}")
+    if any(ord(char) < 32 for char in path):
+        raise ValidationError(f"Caractère de contrôle interdit dans le chemin : {raw_path!r}")
+    return path
+
+
 def validate_paths(paths: Iterable[str]) -> list[str]:
     normalized: list[str] = []
     for raw_path in paths:
-        path = str(raw_path).replace("\\", "/")
-        while path.startswith("./"):
-            path = path[2:]
-        if not path or path.startswith("../") or "/../" in path:
-            raise ValidationError(f"Chemin de fichier invalide : {raw_path!r}")
-        if path in FORBIDDEN_EXACT or any(path.startswith(prefix) for prefix in FORBIDDEN_PREFIXES):
+        path = normalize_path(raw_path)
+        if (
+            path in FORBIDDEN_EXACT
+            or Path(path).name in FORBIDDEN_BASENAMES
+            or any(path.startswith(prefix) for prefix in FORBIDDEN_PREFIXES)
+        ):
             raise ValidationError(f"Codex n'est pas autorisé à modifier : {path}")
         if any(pattern.search(path) for pattern in FORBIDDEN_NAME_PATTERNS):
             raise ValidationError(f"Fichier sensible interdit : {path}")
@@ -167,6 +189,21 @@ def diff_line_count(base: str, paths: Iterable[str]) -> tuple[int, list[str]]:
     return total, sorted(set(binary))
 
 
+def validate_file_types(paths: Iterable[str]) -> None:
+    for path in paths:
+        candidate = Path(path)
+        if candidate.is_symlink():
+            raise ValidationError(f"Les liens symboliques sont interdits : {path}")
+
+    summaries = [
+        run(("git", "diff", "--summary"), check=False).stdout,
+        run(("git", "diff", "--cached", "--summary"), check=False).stdout,
+    ]
+    summary = "\n".join(summaries)
+    if re.search(r"\b(?:create|delete|old|new) mode (?:120000|160000)\b", summary):
+        raise ValidationError("Les liens symboliques et sous-modules sont interdits.")
+
+
 def is_product_file(path: str) -> bool:
     if path.startswith("tests/") or path.startswith("docs/"):
         return False
@@ -182,13 +219,28 @@ def existing_files(paths: Iterable[str], suffix: str | None = None) -> list[str]
     for path in paths:
         if suffix and not path.endswith(suffix):
             continue
-        if Path(path).is_file():
+        if Path(path).is_file() and not Path(path).is_symlink():
             result.append(path)
     return result
 
 
-def validate(base: str = "main", *, run_tests: bool = True) -> list[str]:
+def write_manifest(path: str, files: Sequence[str]) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps({"version": 1, "paths": list(files)}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def validate(
+    base: str = "main",
+    *,
+    run_tests: bool = True,
+    manifest_path: str | None = None,
+) -> list[str]:
     paths = validate_paths(changed_paths(base))
+    validate_file_types(paths)
     total_lines, binary = diff_line_count(base, paths)
     if binary:
         raise ValidationError(
@@ -220,12 +272,19 @@ def validate(base: str = "main", *, run_tests: bool = True) -> list[str]:
     python_files = existing_files(paths, ".py")
     if python_files:
         result = subprocess.run(
-            [sys.executable, "-m", "py_compile", *python_files],
+            [
+                sys.executable,
+                "-I",
+                "-X",
+                "pycache_prefix=/tmp/notion-crm-pycache",
+                "-m",
+                "py_compile",
+                *python_files,
+            ],
             check=False,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={**os.environ, "PYTHONPYCACHEPREFIX": "/tmp/notion-crm-pycache"},
         )
         if result.returncode != 0:
             raise ValidationError(result.stderr.strip() or "Compilation Python échouée")
@@ -246,6 +305,9 @@ def validate(base: str = "main", *, run_tests: bool = True) -> list[str]:
         if result.returncode != 0:
             raise ValidationError("Les tests ciblés ont échoué.")
 
+    if manifest_path:
+        write_manifest(manifest_path, paths)
+
     print("Fichiers validés :")
     for path in paths:
         print(f"- {path}")
@@ -257,9 +319,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="main")
     parser.add_argument("--skip-tests", action="store_true")
+    parser.add_argument("--write-manifest")
     args = parser.parse_args(argv)
     try:
-        validate(args.base, run_tests=not args.skip_tests)
+        validate(
+            args.base,
+            run_tests=not args.skip_tests,
+            manifest_path=args.write_manifest,
+        )
     except ValidationError as exc:
         print(f"ERREUR DE VALIDATION : {exc}", file=sys.stderr)
         return 1

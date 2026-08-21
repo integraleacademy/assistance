@@ -36,16 +36,21 @@ jobs:
       - name: Installer le client HTTP
         run: python -m pip install --disable-pip-version-check requests
 
-      - name: Vérifier la configuration
+      - name: Vérifier la configuration minimale
+        id: configuration
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          if [ -z "$NOTION_API_TOKEN" ]; then
-            echo "::error::Ajoutez le secret GitHub NOTION_API_TOKEN avant d'activer l'automatisation."
-            exit 1
+          if [ -z "$NOTION_API_TOKEN" ] || [ -z "$OPENAI_API_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Automatisation Notion CRM inactive : ajoutez NOTION_API_TOKEN et OPENAI_API_KEY dans les secrets GitHub."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Prendre en charge les pages Notion prêtes
+        if: steps.configuration.outputs.configured == 'true'
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
           NOTION_DATA_SOURCE_ID: 7f12fe92-dbc4-40c8-af4e-77578b5dbfc0
@@ -53,4 +58,6 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           MAX_TASKS: "3"
+          CHATGPT_WORKSPACE_AGENT_TOKEN: ${{ secrets.CHATGPT_WORKSPACE_AGENT_TOKEN }}
+          CHATGPT_WORKSPACE_AGENT_TRIGGER_ID: ${{ secrets.CHATGPT_WORKSPACE_AGENT_TRIGGER_ID }}
         run: python notion_crm_automation.py queue

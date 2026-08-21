@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from .clients import GitHubClient, NotionClient
+from .clients import GitHubClient, NotionClient, WorkspaceAgentClient
 from .core import AutomationError, DEFAULT_DATA_SOURCE_ID, dashed_page_id
 from .service import process_queue, render_codex_prompt, tracking_properties
 
@@ -30,12 +30,26 @@ def command_queue(args: argparse.Namespace) -> int:
     )
     run_url = str(args.run_url or os.environ.get("GITHUB_RUN_URL") or "")
     max_tasks = int(args.max_tasks or os.environ.get("MAX_TASKS") or 3)
+
+    agent_token = str(os.environ.get("CHATGPT_WORKSPACE_AGENT_TOKEN") or "").strip()
+    agent_trigger_id = str(os.environ.get("CHATGPT_WORKSPACE_AGENT_TRIGGER_ID") or "").strip()
+    workspace_agent = None
+    if agent_token and agent_trigger_id:
+        workspace_agent = WorkspaceAgentClient(agent_token, agent_trigger_id)
+    elif agent_token or agent_trigger_id:
+        print(
+            "Avertissement : configurez à la fois CHATGPT_WORKSPACE_AGENT_TOKEN et "
+            "CHATGPT_WORKSPACE_AGENT_TRIGGER_ID pour créer les conversations ChatGPT Work.",
+            file=sys.stderr,
+        )
+
     result = process_queue(
         notion,
         github,
         data_source_id=data_source_id,
         run_url=run_url,
         max_tasks=max(1, min(max_tasks, 10)),
+        workspace_agent=workspace_agent,
     )
     return 1 if result["failures"] else 0
 
@@ -74,6 +88,8 @@ def command_update(args: argparse.Namespace) -> int:
         branch=args.branch,
         run_url=args.run_url,
         report=report,
+        chatgpt_url=args.chatgpt_url,
+        chatgpt_run_id=args.chatgpt_run_id,
         error=args.error,
         clear_error=bool(args.clear_error),
     )
@@ -118,6 +134,8 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument("--run-url")
     update_parser.add_argument("--report")
     update_parser.add_argument("--report-file")
+    update_parser.add_argument("--chatgpt-url")
+    update_parser.add_argument("--chatgpt-run-id")
     update_parser.add_argument("--error")
     update_parser.add_argument("--clear-error", action="store_true")
     update_parser.add_argument("--comment")
@@ -138,3 +156,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("Interrompu.", file=sys.stderr)
         return 130
+

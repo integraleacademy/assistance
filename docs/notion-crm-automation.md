@@ -8,13 +8,11 @@ Lorsqu’une page de la base Notion **🧠 Mon cerveau** respecte les trois cond
 - `Plateforme = CRM` ;
 - `Statut = À faire` ;
 
-GitHub la prend en charge dans les cinq minutes. Le titre, le contenu complet de la page, ses propriétés métier et ses commentaires de niveau page sont copiés dans une issue GitHub. Codex travaille ensuite sur une branche isolée, exécute les contrôles et crée une pull request brouillon.
+GitHub la prend en charge dans les cinq minutes. Le titre, le contenu complet de la page, ses propriétés métier et les commentaires Notion ouverts accessibles à l’intégration sont copiés dans une issue GitHub. Codex prépare ensuite une proposition de code et GitHub crée une pull request brouillon après validation.
 
 L’application CRM de production n’est pas sollicitée par cette automatisation : tout s’exécute dans GitHub Actions.
 
 ## Champs Notion utilisés
-
-Les propriétés techniques suivantes ont été ajoutées à la base :
 
 | Propriété | Usage |
 | --- | --- |
@@ -23,6 +21,8 @@ Les propriétés techniques suivantes ont été ajoutées à la base :
 | `Branche GitHub` | branche dédiée à la demande |
 | `Run GitHub` | exécution GitHub Actions en cours ou en erreur |
 | `Compte rendu IA` | résumé final fourni par Codex |
+| `Conversation ChatGPT` | lien vers la conversation ChatGPT Work créée par le Workspace Agent, lorsqu’il est activé |
+| `Run Agent ChatGPT` | identifiant du run Workspace Agent en bêta |
 | `Erreur automatisation` | motif précis d’un blocage |
 | `ID automatisation` | verrou anti-doublon |
 | `Dernier traitement IA` | date du dernier passage de l’automatisation |
@@ -32,11 +32,14 @@ Les propriétés techniques suivantes ont été ajoutées à la base :
 1. La page passe sur `À faire`.
 2. Le workflow planifié la réserve et place son statut sur `En cours`.
 3. Une issue GitHub est créée avec le texte original et un marqueur Notion unique.
-4. Codex analyse le dépôt et réalise le changement sur `agent/notion-crm-<identifiant>`.
-5. Le validateur bloque les fichiers sensibles, exige un test et exécute les contrôles ciblés.
-6. Une pull request brouillon est créée et son lien est écrit dans Notion.
-7. Une fusion manuelle place automatiquement la page Notion sur `Terminé`.
-8. Une fermeture sans fusion ou un échec place la page sur `En attente` avec le détail du problème.
+4. Lorsque l’option Workspace Agent est configurée, la même copie figée est envoyée à ChatGPT Work et le lien de conversation est enregistré dans Notion.
+5. Un premier runner prépare le prompt Codex et vérifie qu’aucune PR n’existe déjà.
+6. Un deuxième runner exécute Codex sans jeton GitHub ni Notion. Codex travaille sur une copie isolée et retourne uniquement un patch textuel structuré.
+7. Un troisième runner, sans aucun secret, applique le patch puis exécute les contrôles et tests ciblés.
+8. Un quatrième runner propre réapplique exactement le même patch, effectue une validation statique, crée le commit, pousse la branche et ouvre une PR brouillon.
+9. Un dernier runner, basé uniquement sur `main`, renvoie le lien et le compte rendu dans Notion.
+10. Une fusion manuelle place automatiquement la page Notion sur `Terminé`.
+11. Une fermeture sans fusion ou un échec place la page sur `En attente` avec le détail du problème.
 
 Aucune fusion automatique n’est configurée.
 
@@ -67,9 +70,25 @@ Ajouter dans les secrets GitHub du dépôt :
 OPENAI_API_KEY
 ```
 
-Cette clé est transmise uniquement à l’action officielle `openai/codex-action`. Codex fonctionne avec le profil d’autorisation `:workspace`, sans accès réseau direct et sans accès au jeton GitHub utilisé ensuite pour pousser la branche.
+Cette clé est transmise uniquement à l’action officielle `openai/codex-action`, épinglée sur un commit vérifié. Codex utilise le profil `:workspace`, sans réseau direct. Son runner termine immédiatement après l’action Codex et n’obtient jamais les jetons GitHub ou Notion.
 
-### 3. Autoriser la création de pull requests par GitHub Actions
+### 3. Activer la conversation ChatGPT Work — facultatif
+
+Cette partie nécessite que **Workspace Agents** soit disponible dans l’espace ChatGPT concerné. Elle n’est pas obligatoire pour que Codex prépare les pull requests.
+
+1. Créer et publier un Workspace Agent nommé par exemple **Développeur CRM — Intégrale Academy**.
+2. Lui ajouter un canal API et récupérer l’identifiant public `agtch_...`.
+3. Créer un token d’accès Workspace Agent limité au périmètre Workspace Agents.
+4. Ajouter dans les secrets GitHub :
+
+```text
+CHATGPT_WORKSPACE_AGENT_TRIGGER_ID
+CHATGPT_WORKSPACE_AGENT_TOKEN
+```
+
+À chaque demande, l’API reçoit la copie figée du titre, du contenu, des commentaires et des liens Notion/GitHub. Elle renvoie immédiatement un lien de conversation, enregistré dans `Conversation ChatGPT`. L’automatisation utilise aussi une clé d’idempotence basée sur l’identifiant Notion pour éviter les doublons. La réponse de l’agent n’est pas utilisée pour modifier le dépôt : la PR reste préparée par le workflow Codex isolé.
+
+### 4. Autoriser la création de pull requests par GitHub Actions
 
 Dans les paramètres Actions du dépôt :
 
@@ -88,36 +107,41 @@ Droits nécessaires sur le seul dépôt `integraleacademy/assistance` : contenu 
 
 ### `.github/workflows/notion-crm-queue.yml`
 
-Interroge Notion toutes les cinq minutes. Il ne prend que trois demandes à la fois et utilise un verrou de concurrence afin d’éviter les doublons.
+Interroge Notion toutes les cinq minutes. Il ne prend que trois demandes à la fois et utilise un verrou de concurrence afin d’éviter les doublons. Tant que `NOTION_API_TOKEN` et `OPENAI_API_KEY` ne sont pas présents, il reste volontairement inactif sans générer une erreur toutes les cinq minutes. Le déclenchement ChatGPT Work est facultatif.
 
 ### `.github/workflows/notion-crm-implement.yml`
 
-Transforme l’issue en mission Codex, protège les secrets, valide le diff, crée le commit, pousse la branche puis ouvre la pull request brouillon.
+Sépare la préparation, Codex, les tests, la publication et la synchronisation Notion dans des jobs et runners distincts. Les permissions GitHub sont accordées uniquement au job de publication.
 
 ### `.github/workflows/notion-crm-pr-sync.yml`
 
-Synchronise la fermeture ou la fusion de la pull request vers Notion.
+Synchronise la fermeture ou la fusion de la pull request vers Notion depuis une copie propre de `main`.
 
 ## Sécurité
 
 Le contenu Notion est traité comme une spécification non fiable. Il ne peut pas autoriser Codex à :
 
 - lire ou exposer des secrets ;
-- modifier les workflows, `notion_crm_automation.py`, `notion_crm_lib/` ou les garde-fous ;
+- modifier les workflows, les instructions d’agent ou le moteur de l’automatisation ;
 - intervenir sur `data.json` ou des données de production ;
+- modifier les dépendances ou les fichiers de déploiement ;
 - utiliser le réseau ;
+- écrire dans `.git`, créer des hooks ou modifier l’historique ;
 - fusionner une pull request ;
 - élargir le périmètre hors du CRM.
 
-Le workflow n’enregistre les identifiants GitHub qu’après la fin de l’étape Codex. Les fichiers temporaires contenant la demande et le compte rendu ne sont jamais commités. Avant de lancer Codex, GitHub fige également une copie des scripts de validation hors de l’espace de travail modifiable ; c’est cette copie immuable qui contrôle le diff et choisit les fichiers à indexer.
+Le patch est limité à 30 fichiers, 2 500 lignes et 400 000 caractères. Les binaires, liens symboliques, sous-modules, renommages Git, chemins sortant du dépôt et fichiers sensibles sont refusés avant application.
+
+Les tests s’exécutent dans un job sans secret. Le job de publication réapplique le patch sur un runner neuf, n’exécute pas les tests ou le code modifié, désactive tous les hooks Git et n’expose le jeton GitHub qu’au moment du push et de la création de la PR. La synchronisation Notion s’exécute encore sur un autre runner, depuis `main`, afin qu’un nouveau module ajouté par le patch ne puisse pas intercepter le jeton Notion.
 
 ## Relancer une demande
 
 Une demande en erreur conserve son issue ou sa pull request pour le diagnostic. Après correction du problème de configuration :
 
 1. fermer la pull request défectueuse lorsqu’elle existe ;
-2. vider `ID automatisation`, `Tâche GitHub`, `PR GitHub`, `Branche GitHub` et `Erreur automatisation` dans Notion ;
-3. remettre le statut sur `À faire`.
+2. supprimer la branche technique résiduelle lorsqu’elle existe ;
+3. vider `ID automatisation`, `Tâche GitHub`, `PR GitHub`, `Branche GitHub` et `Erreur automatisation` dans Notion ;
+4. remettre le statut sur `À faire`.
 
 Elle sera reprise lors du prochain passage du workflow planifié.
 

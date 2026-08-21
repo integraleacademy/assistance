@@ -11,6 +11,7 @@ import requests
 
 from .core import (
     AutomationError,
+    CHATGPT_API_BASE,
     GITHUB_API_BASE,
     MAX_COMMENT_CONTENT_CHARS,
     NOTION_API_BASE,
@@ -245,3 +246,52 @@ class GitHubClient:
             expected=(204,),
             json={"event_type": event_type, "client_payload": dict(payload)},
         )
+
+
+
+
+class WorkspaceAgentClient:
+    """Déclenche facultativement une conversation ChatGPT Workspace Agent."""
+
+    def __init__(self, token: str, trigger_id: str) -> None:
+        if not token:
+            raise AutomationError("Le jeton Workspace Agent est absent.")
+        if not re.fullmatch(r"agtch_[A-Za-z0-9_-]+", trigger_id or ""):
+            raise AutomationError(f"Identifiant de déclencheur Workspace Agent invalide : {trigger_id!r}")
+        self.trigger_id = trigger_id
+        self.api = JsonApiClient(
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "User-Agent": "IntegraleAcademy-NotionCRM/1.0",
+            }
+        )
+
+    def trigger(
+        self,
+        *,
+        input_text: str,
+        conversation_key: str,
+        idempotency_key: str,
+    ) -> dict[str, str]:
+        payload = self.api.json(
+            "POST",
+            f"{CHATGPT_API_BASE}/workspace_agents/{self.trigger_id}/trigger",
+            expected=(202,),
+            headers={
+                "OpenAI-Beta": "workspace_agent_runs=v1",
+                "Idempotency-Key": idempotency_key,
+            },
+            json={
+                "conversation_key": conversation_key,
+                "input": input_text,
+            },
+        )
+        conversation_url = str(payload.get("conversation_url") or "")
+        run_id = str(payload.get("agent_trigger_run_id") or "")
+        if not conversation_url:
+            raise AutomationError("ChatGPT Workspace Agent n'a pas renvoyé de lien de conversation.")
+        return {
+            "conversation_url": conversation_url,
+            "run_id": run_id,
+        }
