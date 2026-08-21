@@ -85,6 +85,20 @@ def test_converted_date_is_normalized_for_a_converted_lead():
     assert contact["salesforce_converted_at_raw"] == "21/08/2026 09:15"
 
 
+def test_converted_date_without_converted_flag_is_kept_only_for_audit():
+    contact = _prepared(
+        CreatedDate="20/08/2026 10:00",
+        Status="New",
+        ConvertedDate="21/08/2026 09:15",
+    )
+
+    assert contact["statut"] == "Nouveaux"
+    assert contact["converted_at"] == ""
+    assert contact["salesforce_converted_at"] == ""
+    assert contact["salesforce_converted_at_raw"] == "21/08/2026 09:15"
+    assert contact["salesforce_converted_date_without_flag"] is True
+
+
 def test_invalid_created_date_keeps_a_valid_crm_timestamp_and_raw_audit():
     contact = _prepared(CreatedDate="date inconnue")
     parsed = dt.datetime.fromisoformat(contact["created_at"])
