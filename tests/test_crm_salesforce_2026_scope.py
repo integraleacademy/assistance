@@ -67,7 +67,9 @@ def test_bts_and_cap_are_excluded_whatever_the_precise_label():
     rows = [
         _row("a3p", "2026-05-10T10:00:00Z", "A3P"),
         _row("bts", "2026-05-10T10:00:00Z", "BTS MOS 2026"),
+        _row("mos-short", "2026-05-10T10:00:00Z", "MOS 2026"),
         _row("cap-aepe", "2026-05-10T10:00:00Z", "CAP AEPE"),
+        _row("pastry-short", "2026-05-10T10:00:00Z", "Pâtisserie 2026"),
         _row("cap-company", "2026-05-10T10:00:00Z", "", Company="CAP Cuisine"),
         _row(
             "capacity",
@@ -80,7 +82,7 @@ def test_bts_and_cap_are_excluded_whatever_the_precise_label():
 
     assert result["prepared_rows"] == 2
     assert result["created"] == 2
-    assert result["skipped_formation"] == 3
+    assert result["skipped_formation"] == 5
     assert result["formation_counts"] == {
         "A3P": 1,
         "Capacité professionnelle sécurité": 1,
