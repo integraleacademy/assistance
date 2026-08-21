@@ -66,6 +66,11 @@ FORBIDDEN_PATCH_MARKERS = (
     "old mode 160000",
     "Subproject commit ",
 )
+HUNK_HEADER_RE = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+    r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? "
+    r"@@(?P<context>.*?)(?P<newline>\n?)$"
+)
 
 
 class PatchError(RuntimeError):
@@ -156,6 +161,71 @@ def parse_codex_result(raw: str) -> tuple[str, str]:
     return patch, report[:MAX_REPORT_CHARS].strip()
 
 
+def repair_hunk_counts(patch: str) -> tuple[str, bool]:
+    """Répare uniquement les compteurs de lignes des en-têtes ``@@``.
+
+    Les modèles peuvent produire un diff dont le contenu est complet mais dont
+    les compteurs ``-a,b +c,d`` ne correspondent plus au nombre réel de lignes,
+    notamment sur les gros fichiers JavaScript minifiés. Git qualifie alors le
+    patch de « corrupt patch » avant même de vérifier son contenu. Recalculer
+    ces compteurs ne change ni les chemins ni les lignes proposées ; toutes les
+    validations de sécurité et ``git apply --check`` restent ensuite appliquées.
+    """
+
+    lines = str(patch or "").splitlines(keepends=True)
+    repaired = False
+    index = 0
+
+    while index < len(lines):
+        match = HUNK_HEADER_RE.match(lines[index])
+        if not match:
+            index += 1
+            continue
+
+        body_index = index + 1
+        old_count = 0
+        new_count = 0
+        while body_index < len(lines):
+            line = lines[body_index]
+            if line.startswith("diff --git ") or line.startswith("@@ "):
+                break
+            if line.startswith("\\"):
+                body_index += 1
+                continue
+            if not line:
+                break
+            prefix = line[0]
+            if prefix == " ":
+                old_count += 1
+                new_count += 1
+            elif prefix == "-":
+                old_count += 1
+            elif prefix == "+":
+                new_count += 1
+            else:
+                # Une ligne sans préfixe de diff est une autre corruption que
+                # ce réparateur volontairement limité ne doit pas masquer.
+                break
+            body_index += 1
+
+        if body_index == index + 1:
+            index += 1
+            continue
+
+        newline = match.group("newline")
+        context = match.group("context")
+        corrected = (
+            f"@@ -{match.group('old_start')},{old_count} "
+            f"+{match.group('new_start')},{new_count} @@{context}{newline}"
+        )
+        if corrected != lines[index]:
+            lines[index] = corrected
+            repaired = True
+        index = body_index
+
+    return "".join(lines), repaired
+
+
 def inspect_patch(patch_file: Path) -> list[str]:
     patch = patch_file.read_text(encoding="utf-8")
     for marker in FORBIDDEN_PATCH_MARKERS:
@@ -201,9 +271,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         raw_result = Path(args.result_file).read_text(encoding="utf-8")
         patch, report = parse_codex_result(raw_result)
+        patch, repaired = repair_hunk_counts(patch)
         patch_file = Path(args.patch_output)
         patch_file.write_text(patch, encoding="utf-8")
         Path(args.report_output).write_text(report, encoding="utf-8")
+        if repaired:
+            print(
+                "Les compteurs de lignes du diff Codex ont été réparés avant validation.",
+                file=sys.stderr,
+            )
         paths = inspect_patch(patch_file)
         apply_patch(patch_file, paths)
     except (OSError, UnicodeError, PatchError) as exc:
