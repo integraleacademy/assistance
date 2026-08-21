@@ -8,6 +8,7 @@ from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
 from crm_salesforce_scope_guardrails import (
     MIGRATION_YEAR,
+    disable_legacy_salesforce_import,
     enforce_salesforce_scope_route,
     install_salesforce_scope_guardrails,
 )
@@ -107,8 +108,8 @@ def test_deleted_rows_remain_counted_as_deleted_before_scope_filtering():
 
 
 class _FakeApp:
-    def __init__(self, view):
-        self.view_functions = {"crm_migrate_salesforce": view}
+    def __init__(self, endpoint, view):
+        self.view_functions = {endpoint: view}
 
 
 def _jsonify(payload):
@@ -116,7 +117,7 @@ def _jsonify(payload):
 
 
 def test_route_rejects_the_old_2025_mode():
-    app = _FakeApp(lambda: "ok")
+    app = _FakeApp("crm_migrate_salesforce", lambda: "ok")
     request = SimpleNamespace(form={"mode": "legacy_2025"})
 
     enforce_salesforce_scope_route(
@@ -133,7 +134,7 @@ def test_route_rejects_the_old_2025_mode():
 
 
 def test_route_accepts_complete_mode_with_2026_date_bounds():
-    app = _FakeApp(lambda: "ok")
+    app = _FakeApp("crm_migrate_salesforce", lambda: "ok")
     request = SimpleNamespace(form={
         "mode": "complete",
         "created_from": "2026-01-01",
@@ -150,7 +151,7 @@ def test_route_accepts_complete_mode_with_2026_date_bounds():
 
 
 def test_route_rejects_a_date_filter_outside_2026():
-    app = _FakeApp(lambda: "ok")
+    app = _FakeApp("crm_migrate_salesforce", lambda: "ok")
     request = SimpleNamespace(form={
         "mode": "complete",
         "created_from": "2025-01-01",
@@ -165,3 +166,19 @@ def test_route_rejects_a_date_filter_outside_2026():
     payload, status = app.view_functions["crm_migrate_salesforce"]()
     assert status == 400
     assert "2026" in payload["error"]
+
+
+def test_legacy_import_endpoint_is_disabled_in_the_production_entrypoint():
+    app = _FakeApp("crm_import_salesforce", lambda: "legacy")
+
+    disable_legacy_salesforce_import(
+        app,
+        jsonify_fn=_jsonify,
+    )
+
+    payload, status = app.view_functions["crm_import_salesforce"]()
+    assert status == 410
+    assert "désactivé" in payload["error"]
+    assert "2026" in payload["error"]
+    assert "BTS" in payload["error"]
+    assert "CAP" in payload["error"]
