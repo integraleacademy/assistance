@@ -54,7 +54,7 @@ jobs:
               handle.write(f'page_id={page_id}\n')
           PY
 
-      - name: Marquer la demande comme terminée après fusion
+      - name: Marquer la demande comme publiée après fusion
         if: github.event.pull_request.merged == true
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
@@ -65,12 +65,12 @@ jobs:
         run: |
           python notion_crm_automation.py update \
             --page-id "$PAGE_ID" \
-            --status "Terminé" \
+            --status "Publié" \
             --pr-url "$PR_URL" \
             --branch "$BRANCH" \
             --run-url "$RUN_URL" \
             --clear-error \
-            --comment "✅ La pull request a été fusionnée. La demande CRM est terminée : $PR_URL"
+            --comment "✅ La pull request a été fusionnée et publiée dans la branche principale : $PR_URL"
 
       - name: Remettre en attente après fermeture sans fusion
         if: github.event.pull_request.merged != true
