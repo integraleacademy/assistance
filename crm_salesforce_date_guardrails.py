@@ -69,6 +69,10 @@ def install_salesforce_date_guardrails(migration_module) -> None:
     def mapped_row(row: dict[str, Any]) -> dict[str, Any]:
         mapped = original_map_row(row)
         now = dt.datetime.now(_PARIS_TZ).isoformat()
+        is_converted = (
+            mapped.get("statut") == "Converti"
+            or bool(mapped.get("salesforce_is_converted"))
+        )
         definitions = (
             (
                 ("CreatedDate", "Date de création"),
@@ -93,8 +97,17 @@ def install_salesforce_date_guardrails(migration_module) -> None:
             raw = migration_module._row_value(row, *aliases)
             if not raw:
                 continue
-            parsed = parse_datetime(raw)
             mapped[f"{salesforce_field}_raw"] = raw
+
+            if crm_field == "converted_at" and not is_converted:
+                # On conserve la valeur source pour audit, mais elle ne doit pas
+                # transformer indirectement une piste non convertie en inscrit.
+                mapped[crm_field] = ""
+                mapped[salesforce_field] = ""
+                mapped["salesforce_converted_date_without_flag"] = True
+                continue
+
+            parsed = parse_datetime(raw)
             if parsed is not None:
                 normalized = parsed.isoformat()
                 mapped[crm_field] = normalized
