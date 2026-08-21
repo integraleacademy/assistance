@@ -8,6 +8,10 @@ from crm_google_ads import register_google_ads_offline_conversions
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_import import register_salesforce_import
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
+from crm_salesforce_scope_guardrails import (
+    enforce_salesforce_scope_route,
+    install_salesforce_scope_guardrails,
+)
 from crm_salesforce_status_guardrails import install_salesforce_status_guardrails
 from crm_salesforce_transaction_guardrails import serialize_salesforce_writes
 from secretariat_followup_patch import register_secretariat_followup_patch
@@ -19,6 +23,7 @@ register_salesforce_import(app)
 install_salesforce_migration_guardrails(salesforce_migration)
 install_salesforce_status_guardrails(salesforce_migration)
 install_salesforce_date_guardrails(salesforce_migration)
+install_salesforce_scope_guardrails(salesforce_migration)
 salesforce_migration.register_salesforce_migration(
     app,
     current_user_fn=legacy_app.current_user,
@@ -30,6 +35,11 @@ serialize_salesforce_writes(
     app,
     request=legacy_app.request,
     transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
+)
+enforce_salesforce_scope_route(
+    app,
+    request=legacy_app.request,
+    jsonify_fn=legacy_app.jsonify,
 )
 register_cnaps_tracking_proxy(
     app,
