@@ -171,7 +171,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.existing_pr_url == ''
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: read
     outputs:
@@ -214,7 +214,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           permission-profile: ":workspace"
           prompt-file: /tmp/notion-crm-task.md
-          effort: high
+          effort: medium
           safety-strategy: drop-sudo
           allow-bots: true
           output-schema: |
