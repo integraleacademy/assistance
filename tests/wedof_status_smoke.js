@@ -20,6 +20,9 @@ assert.equal(wedofMainStatusLabel({state:'validated',history:[{state:'waitingAcc
 assert.equal(wedofFranceTravailStatus({state:'accepted'}), '');
 assert.equal(wedofFranceTravailStatus({state:'accepted',history:{waitingAcceptationDate:'2026-08-11'}}), 'acceptee');
 assert.equal(wedofFranceTravailStatus({state:'refused',history:[{state:'waitingAcceptation'}]}), 'refusee');
+assert.equal(wedofFranceTravailStatus({status:'rejected'}), 'refusee');
+assert.equal(wedofFranceTravailStatus({registrationState:'validated',events:{changes:[{details:{registrationState:'waitingAcceptation'}}]}}), 'refusee');
+assert.equal(wedofFranceTravailStatus({registrationState:'validated',events:{changes:[{details:{state:'validated'}}]}}), '');
 assert.equal(wedofFranceTravailStatus({state:'cancelled',history:{waitingAcceptationDate:'2026-08-11'}}), 'annulee');
 
 console.log('WEDOF France Travail status mapping: OK');

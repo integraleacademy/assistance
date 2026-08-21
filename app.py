@@ -10797,23 +10797,28 @@ def _wedof_france_travail_status(payload):
     state = normalize(payload.get("state") or payload.get("status")
                       or payload.get("registrationState"))
     history = payload.get("history") or payload.get("stateHistory") or payload.get("events") or []
-    if isinstance(history, dict):
-        history_values = [*history.keys(), *history.values()]
-    elif isinstance(history, list):
-        history_values = []
-        for event in history:
-            if isinstance(event, dict):
-                history_values.extend([*event.keys(), *event.values()])
-            else:
-                history_values.append(event)
-    else:
-        history_values = [history]
-    had_instruction = state == "waitingacceptation" or any(
-        "waitingacceptation" in normalize(value) for value in history_values)
-    if not had_instruction:
-        return ""
+
+    def history_values(value):
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                yield key
+                yield from history_values(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                yield from history_values(nested)
+        else:
+            yield value
+
+    # Un refus explicite est une preuve suffisante en lui-même, y compris
+    # lorsque WEDOF ne fournit pas l'historique de l'instruction FT.
     if re.search(r"refus|reject", state):
         return "refusee"
+    had_instruction = state == "waitingacceptation" or any(
+        "waitingacceptation" in normalize(value)
+        for value in history_values(history)
+    )
+    if not had_instruction:
+        return ""
     if re.search(r"cancel|annul|abandon", state):
         return "annulee"
     if state in {"accepted", "intraining", "terminated", "servicedonedeclared",
