@@ -83,7 +83,7 @@ def test_exact_french_report_headers_are_mapped_to_canonical_fields():
     assert contact["dates_formation"] == "Septembre"
 
 
-def test_disqualified_and_bts_rows_are_excluded_before_import():
+def test_disqualified_bts_and_test_aps_rows_are_excluded_before_import():
     migration = _fresh_migration()
     raw = _report(
         '"Nicolas";"Mille";"APR";"nicolas@example.com";"";'
@@ -94,6 +94,10 @@ def test_disqualified_and_bts_rows_are_excluded_before_import():
         '"CLEMENT VAILLANT";"";"";"";"";"";'
         '"Nouveau";"0";"03/01/2026";"20/08/2026";'
         '"00Qbts";"0611111111";""',
+        '"Cassandre";"MENARD";"TEST APS";"cassandre@integraleacademy.com";"";'
+        '"CLEMENT VAILLANT";"";"";"";"";"";'
+        '"Qualifié";"1";"13/07/2026";"13/07/2026";'
+        '"00Qtestaps";"0743582264";""',
         '"Léa";"Active";"APR";"lea@example.com";"Calendly";'
         '"CLEMENT VAILLANT";"A3P";"";"Oui";"OUI";"Septembre";'
         '"A relancer";"0";"04/01/2026";"20/08/2026";'
@@ -103,13 +107,32 @@ def test_disqualified_and_bts_rows_are_excluded_before_import():
     rows = migration.parse_compatible_csv(raw, max_csv_bytes=MAX_BYTES)
     result = migration.import_complete_rows([], rows, dry_run=True)
 
-    assert result["csv_rows"] == 3
+    assert result["csv_rows"] == 4
     assert result["prepared_rows"] == 1
     assert result["created"] == 1
     assert result["skipped_disqualified"] == 1
     assert result["skipped_formation"] == 1
+    assert result["skipped_test"] == 1
+    assert result["excluded_test_labels"] == ["TEST APS"]
     assert result["status_counts"] == {"A relancer": 1}
     assert result["formation_counts"] == {"A3P": 1}
+
+
+def test_a_real_aps_formation_is_not_excluded_as_test_data():
+    migration = _fresh_migration()
+    raw = _report(
+        '"Lina";"APS";"Particulier";"aps@example.com";"";'
+        '"CLEMENT VAILLANT";"APS";"";"";"";"";'
+        '"Nouveau";"0";"05/01/2026";"20/08/2026";'
+        '"00Qrealaps";"0633333333";""'
+    )
+
+    rows = migration.parse_compatible_csv(raw, max_csv_bytes=MAX_BYTES)
+    result = migration.import_complete_rows([], rows, dry_run=True)
+
+    assert result["created"] == 1
+    assert result["skipped_test"] == 0
+    assert result["formation_counts"] == {"APS": 1}
 
 
 def test_abbreviated_france_travail_status_is_mapped_as_secondary():
