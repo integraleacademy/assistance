@@ -12,7 +12,7 @@ GITHUB_API_BASE = "https://api.github.com"
 CHATGPT_API_BASE = "https://api.chatgpt.com/v1"
 NOTION_VERSION = "2026-03-11"
 DEFAULT_DATA_SOURCE_ID = "7f12fe92-dbc4-40c8-af4e-77578b5dbfc0"
-AUTOMATION_VERSION = "notion-crm-v1"
+AUTOMATION_VERSION = "notion-crm-v2"
 MAX_GITHUB_BODY_CHARS = 60_000
 MAX_NOTION_PROPERTY_CHARS = 1_900
 MAX_PAGE_CONTENT_CHARS = 45_000
@@ -20,7 +20,10 @@ MAX_COMMENT_CONTENT_CHARS = 10_000
 
 TRIGGER_DOMAIN = "Développement web"
 TRIGGER_PLATFORM = "CRM"
-TRIGGER_STATUS = "À faire"
+TRIGGER_STATUS = "Prêt à coder"
+LEGACY_TRIGGER_STATUS = "À faire"
+WORK_PREPARED_PROPERTY = "Préparation Work terminée"
+WORK_PREPARED_AT_PROPERTY = "Préparé par Work le"
 
 NOTION_PAGE_ID_RE = re.compile(r"<!--\s*notion-page-id:\s*([0-9a-fA-F-]{32,36})\s*-->")
 NOTION_PAGE_URL_RE = re.compile(r"<!--\s*notion-page-url:\s*(https?://[^\s]+)\s*-->")
@@ -190,14 +193,34 @@ def page_title(page: Mapping[str, Any]) -> str:
 
 
 def is_eligible_page(page: Mapping[str, Any]) -> bool:
-    """Vérifie le déclencheur métier exact et l'absence de prise en charge."""
+    """Vérifie la validation Work, le déclencheur métier et l'absence de verrou."""
+
+    properties = page.get("properties")
+    if not isinstance(properties, Mapping):
+        return False
 
     automation_id = page_property(page, "ID automatisation")
-    return (
+    base_match = (
         page_property(page, "Domaine") == TRIGGER_DOMAIN
         and page_property(page, "Plateforme") == TRIGGER_PLATFORM
-        and page_property(page, "Statut") == TRIGGER_STATUS
         and not automation_id.strip()
+    )
+    if not base_match:
+        return False
+
+    has_work_gate = (
+        WORK_PREPARED_PROPERTY in properties
+        or WORK_PREPARED_AT_PROPERTY in properties
+    )
+    if not has_work_gate:
+        # Compatibilité avec les tests et les anciennes bases qui ne possèdent
+        # pas encore les deux propriétés de préparation Work.
+        return page_property(page, "Statut") == LEGACY_TRIGGER_STATUS
+
+    return (
+        page_property(page, "Statut") == TRIGGER_STATUS
+        and page_property(page, WORK_PREPARED_PROPERTY) == "Oui"
+        and bool(page_property(page, WORK_PREPARED_AT_PROPERTY).strip())
     )
 
 
