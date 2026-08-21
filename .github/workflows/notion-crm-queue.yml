@@ -6,8 +6,10 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
   issues: write
+  pull-requests: read
 
 concurrency:
   group: notion-crm-queue
@@ -15,7 +17,7 @@ concurrency:
 
 jobs:
   queue:
-    name: Détecter les demandes CRM à faire
+    name: Détecter la prochaine demande CRM prête
     if: github.repository == 'integraleacademy/assistance'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -49,15 +51,60 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Prendre en charge les pages Notion prêtes
+      - name: Vérifier qu'aucun traitement ou PR CRM n'est déjà actif
+        id: active_work
         if: steps.configuration.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+        run: |
+          ACTIVE_RUN_URL="$(
+            gh api \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/notion-crm-implement.yml/runs?per_page=50" \
+              --jq '.workflow_runs | map(select(.status != "completed")) | .[0].html_url // ""'
+          )"
+
+          ACTIVE_PR_URL="$(
+            gh api \
+              "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+              --jq 'map(select(.head.ref | startswith("agent/notion-crm-"))) | .[0].html_url // ""'
+          )"
+
+          if [ -n "$ACTIVE_RUN_URL" ]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "url=$ACTIVE_RUN_URL" >> "$GITHUB_OUTPUT"
+            echo "::notice::Une demande CRM est déjà en cours de préparation : $ACTIVE_RUN_URL"
+            {
+              echo "### File Notion CRM en attente"
+              echo
+              echo "Un traitement Codex est déjà en cours : $ACTIVE_RUN_URL"
+              echo
+              echo "Les autres demandes restent sur **Prêt à coder** et seront prises automatiquement après sa fin puis la clôture de sa PR."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$ACTIVE_PR_URL" ]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "url=$ACTIVE_PR_URL" >> "$GITHUB_OUTPUT"
+            echo "::notice::Une pull request Notion CRM est encore ouverte : $ACTIVE_PR_URL"
+            {
+              echo "### File Notion CRM en attente"
+              echo
+              echo "Une pull request Notion CRM est encore ouverte : $ACTIVE_PR_URL"
+              echo
+              echo "Aucune nouvelle demande ne sera lancée avant sa fusion ou sa fermeture."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+            echo "url=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prendre en charge la prochaine page Notion prête
+        if: steps.configuration.outputs.configured == 'true' && steps.active_work.outputs.active != 'true'
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
           NOTION_DATA_SOURCE_ID: 7f12fe92-dbc4-40c8-af4e-77578b5dbfc0
           GITHUB_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          MAX_TASKS: "3"
+          MAX_TASKS: "1"
           CHATGPT_WORKSPACE_AGENT_TOKEN: ${{ secrets.CHATGPT_WORKSPACE_AGENT_TOKEN }}
           CHATGPT_WORKSPACE_AGENT_TRIGGER_ID: ${{ secrets.CHATGPT_WORKSPACE_AGENT_TRIGGER_ID }}
         run: python notion_crm_automation.py queue
