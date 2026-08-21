@@ -1,0 +1,324 @@
+name: Notion CRM - préparer la PR avec Codex
+
+on:
+  repository_dispatch:
+    types: [notion_crm_task]
+  workflow_dispatch:
+    inputs:
+      notion_page_id:
+        description: Identifiant UUID de la page Notion
+        required: true
+        type: string
+      issue_number:
+        description: Numéro de l'issue GitHub créée par la file d'attente
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: notion-crm-${{ github.event.client_payload.notion_page_id || inputs.notion_page_id }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    name: Implémenter la demande CRM
+    if: github.repository == 'integraleacademy/assistance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NOTION_PAGE_ID: ${{ github.event.client_payload.notion_page_id || inputs.notion_page_id }}
+      ISSUE_NUMBER: ${{ github.event.client_payload.issue_number || inputs.issue_number }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Récupérer la branche principale
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Préparer Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances avant le bac à sable Codex
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest
+
+      - name: Vérifier les secrets obligatoires
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$NOTION_API_TOKEN" ]; then
+            echo "::error::Le secret NOTION_API_TOKEN est absent."
+            exit 1
+          fi
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Le secret OPENAI_API_KEY est absent."
+            exit 1
+          fi
+
+      - name: Construire la mission Codex depuis l'issue
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          case "$ISSUE_NUMBER" in
+            ''|*[!0-9]*)
+              echo "::error::Numéro d'issue invalide : $ISSUE_NUMBER"
+              exit 1
+              ;;
+          esac
+
+          python notion_crm_automation.py render-prompt \
+            --issue-number "$ISSUE_NUMBER" \
+            --output .codex-notion-task.md \
+            --metadata-output .codex-notion-metadata.json
+
+          printf '%s\n' \
+            '.codex-notion-task.md' \
+            '.codex-notion-metadata.json' \
+            '.codex-final-message.md' >> .git/info/exclude
+
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          metadata = json.loads(Path('.codex-notion-metadata.json').read_text(encoding='utf-8'))
+          expected = re.sub(r'[^0-9a-f]', '', os.environ['NOTION_PAGE_ID'].casefold())
+          actual = re.sub(r'[^0-9a-f]', '', metadata['page_id'].casefold())
+          if len(expected) != 32 or expected != actual:
+              raise SystemExit('L’identifiant Notion de l’événement ne correspond pas à celui de l’issue.')
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          title = ' '.join(metadata['task_title'].split())[:220]
+          with output.open('a', encoding='utf-8') as handle:
+              handle.write(f"page_id={metadata['page_id']}\n")
+              handle.write(f"branch={metadata['branch']}\n")
+              handle.write(f"notion_url={metadata.get('page_url', '')}\n")
+              handle.write(f"issue_url={metadata.get('issue_url', '')}\n")
+              handle.write('title<<__TITLE__\n')
+              handle.write(title + '\n')
+              handle.write('__TITLE__\n')
+          PY
+
+      - name: Chercher une PR déjà ouverte
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          PR_URL="$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --head "$BRANCH" \
+            --state open \
+            --limit 1 \
+            --json url \
+            --jq '.[0].url // ""')"
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Rattacher une PR déjà existante à Notion
+        if: steps.existing.outputs.url != ''
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          PR_URL: ${{ steps.existing.outputs.url }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          python notion_crm_automation.py update \
+            --page-id "$NOTION_PAGE_ID" \
+            --status "En cours" \
+            --pr-url "$PR_URL" \
+            --branch "$BRANCH" \
+            --run-url "$RUN_URL" \
+            --clear-error \
+            --comment "🤖 Une pull request existe déjà pour cette demande : $PR_URL"
+
+      - name: Créer ou reprendre la branche technique
+        id: branch
+        if: steps.existing.outputs.url == ''
+        env:
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch --no-tags origin "$BRANCH:$BRANCH"
+            git switch "$BRANCH"
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+          else
+            git switch -c "$BRANCH"
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Signaler le démarrage dans Notion
+        if: steps.existing.outputs.url == ''
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          python notion_crm_automation.py update \
+            --page-id "$NOTION_PAGE_ID" \
+            --status "En cours" \
+            --branch "$BRANCH" \
+            --run-url "$RUN_URL" \
+            --clear-error \
+            --comment "🤖 Codex analyse maintenant la demande et prépare les modifications sur la branche $BRANCH."
+
+      - name: Implémenter avec Codex
+        id: codex
+        if: steps.existing.outputs.url == '' && steps.branch.outputs.reuse != 'true'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ":workspace"
+          prompt-file: .codex-notion-task.md
+          output-file: .codex-final-message.md
+          effort: high
+          safety-strategy: drop-sudo
+          allow-bots: true
+
+      - name: Publier le compte rendu Codex
+        if: steps.codex.outcome == 'success'
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          GH_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+        run: |
+          if [ -s .codex-final-message.md ]; then
+            python notion_crm_automation.py update \
+              --page-id "$NOTION_PAGE_ID" \
+              --status "En cours" \
+              --run-url "$RUN_URL" \
+              --report-file .codex-final-message.md \
+              --comment "🧠 Compte rendu de l'analyse et de l'implémentation Codex :" \
+              --comment-file .codex-final-message.md
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body-file .codex-final-message.md
+          fi
+
+      - name: Retirer les fichiers temporaires de la mission
+        if: steps.existing.outputs.url == ''
+        run: rm -f .codex-notion-task.md .codex-notion-metadata.json .codex-final-message.md
+
+      - name: Valider le changement et les tests ciblés
+        if: steps.existing.outputs.url == ''
+        run: python scripts/validate_notion_change.py --base main
+
+      - name: Indexer uniquement les fichiers validés
+        if: steps.existing.outputs.url == '' && steps.branch.outputs.reuse != 'true'
+        run: python scripts/stage_notion_changes.py --base main
+
+      - name: Créer le commit technique
+        if: steps.existing.outputs.url == '' && steps.branch.outputs.reuse != 'true'
+        env:
+          TASK_TITLE: ${{ steps.prepare.outputs.title }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "CRM : $TASK_TITLE"
+
+      - name: Publier la branche
+        if: steps.existing.outputs.url == '' && steps.branch.outputs.reuse != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          gh auth setup-git
+          git push origin "HEAD:refs/heads/$BRANCH"
+
+      - name: Créer la pull request brouillon
+        id: pull_request
+        if: steps.existing.outputs.url == ''
+        env:
+          GH_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+          TASK_TITLE: ${{ steps.prepare.outputs.title }}
+          NOTION_URL: ${{ steps.prepare.outputs.notion_url }}
+          ISSUE_URL: ${{ steps.prepare.outputs.issue_url }}
+          PAGE_ID: ${{ steps.prepare.outputs.page_id }}
+        run: |
+          cat > /tmp/notion-crm-pr-body.md <<EOF
+          ## Demande
+
+          Implémente la demande Notion **$TASK_TITLE**.
+
+          - Page Notion : $NOTION_URL
+          - Tâche GitHub : $ISSUE_URL
+          - Run Codex : $RUN_URL
+
+          ## Sécurité
+
+          - pull request créée en brouillon ;
+          - aucune fusion automatique ;
+          - modifications contrôlées par le validateur du dépôt ;
+          - tests ciblés exécutés avant publication.
+
+          Closes #$ISSUE_NUMBER
+
+          <!-- notion-page-id: $PAGE_ID -->
+          <!-- notion-page-url: $NOTION_URL -->
+          <!-- automation-version: notion-crm-v1 -->
+          EOF
+
+          PR_URL="$(gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head "$BRANCH" \
+            --draft \
+            --title "$TASK_TITLE" \
+            --body-file /tmp/notion-crm-pr-body.md)"
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "✅ Codex a préparé une pull request brouillon : $PR_URL"
+
+      - name: Enregistrer la PR dans Notion
+        if: steps.pull_request.outputs.url != ''
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          PR_URL: ${{ steps.pull_request.outputs.url }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          python notion_crm_automation.py update \
+            --page-id "$NOTION_PAGE_ID" \
+            --status "En cours" \
+            --pr-url "$PR_URL" \
+            --branch "$BRANCH" \
+            --run-url "$RUN_URL" \
+            --clear-error \
+            --comment "✅ La pull request brouillon est prête : $PR_URL"
+
+      - name: Reporter un échec dans Notion
+        if: failure() && steps.prepare.outputs.page_id != ''
+        continue-on-error: true
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+        run: |
+          python notion_crm_automation.py update \
+            --page-id "$NOTION_PAGE_ID" \
+            --status "En attente" \
+            --run-url "$RUN_URL" \
+            --error "Le workflow GitHub/Codex a échoué. Consultez le run pour connaître l'étape concernée : $RUN_URL" \
+            --comment "⚠️ La préparation automatique de la PR a échoué. Détail : $RUN_URL"
+
+      - name: Commenter l'issue en cas d'échec
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+        run: |
+          if [[ "$ISSUE_NUMBER" =~ ^[0-9]+$ ]]; then
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "⚠️ Le workflow Codex a échoué : $RUN_URL"
+          fi
