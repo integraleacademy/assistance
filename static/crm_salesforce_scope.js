@@ -167,7 +167,7 @@
         notice.innerHTML = `
           <div>
             <b>Périmètre verrouillé — objectif 0 Nouveau</b>
-            <span>Les 37 « Open - Not Contacted » sans formation, la fiche interne Cassandre MENARD, TEST APS, les disqualifiés, BTS et CAP sont exclus. Les 9 dossiers à deuxième statut restent dans « A relancer ».</span>
+            <span>Les pistes « Open - Not Contacted » sans formation, la fiche interne Cassandre MENARD, TEST APS, les disqualifiés, BTS et CAP sont exclus. Les dossiers à deuxième statut restent dans « A relancer ».</span>
           </div>`;
         fields.parentNode.insertBefore(notice, fields);
       }
