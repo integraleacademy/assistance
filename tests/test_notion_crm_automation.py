@@ -214,6 +214,8 @@ def test_validator_blocks_automation_and_sensitive_paths() -> None:
     with pytest.raises(validator.ValidationError):
         validator.validate_paths(["requirements.txt"])
     with pytest.raises(validator.ValidationError):
+        validator.validate_paths([".gitmodules"])
+    with pytest.raises(validator.ValidationError):
         validator.validate_paths(["notion_crm_lib/service.py"])
     with pytest.raises(validator.ValidationError):
         validator.validate_paths(["../outside.txt"])

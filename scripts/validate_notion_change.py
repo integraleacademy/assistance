@@ -13,14 +13,24 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 FORBIDDEN_EXACT = {
+    ".gitattributes",
     ".gitignore",
+    ".gitmodules",
     "AGENTS.md",
     "Dockerfile",
     "Procfile",
     "data.json",
     "notion_crm_automation.py",
+    "package-lock.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pyproject.toml",
+    "pytest.ini",
     "render.yaml",
     "requirements.txt",
+    "setup.cfg",
+    "setup.py",
+    "yarn.lock",
     "scripts/validate_notion_change.py",
     "scripts/stage_notion_changes.py",
 }

@@ -109,7 +109,7 @@ Le contenu Notion est traité comme une spécification non fiable. Il ne peut pa
 - fusionner une pull request ;
 - élargir le périmètre hors du CRM.
 
-Le workflow n’enregistre les identifiants GitHub qu’après la fin de l’étape Codex. Les fichiers temporaires contenant la demande et le compte rendu ne sont jamais commités.
+Le workflow n’enregistre les identifiants GitHub qu’après la fin de l’étape Codex. Les fichiers temporaires contenant la demande et le compte rendu ne sont jamais commités. Avant de lancer Codex, GitHub fige également une copie des scripts de validation hors de l’espace de travail modifiable ; c’est cette copie immuable qui contrôle le diff et choisit les fichiers à indexer.
 
 ## Relancer une demande
 

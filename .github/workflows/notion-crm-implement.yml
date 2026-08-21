@@ -53,6 +53,13 @@ jobs:
           python -m pip install --disable-pip-version-check -r requirements.txt
           python -m pip install --disable-pip-version-check pytest
 
+      - name: Figer les garde-fous hors de l’espace modifiable par Codex
+        id: guard
+        run: |
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "validator_b64=$(base64 -w0 scripts/validate_notion_change.py)" >> "$GITHUB_OUTPUT"
+          echo "stager_b64=$(base64 -w0 scripts/stage_notion_changes.py)" >> "$GITHUB_OUTPUT"
+
       - name: Vérifier les secrets obligatoires
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
@@ -210,13 +217,31 @@ jobs:
         if: steps.existing.outputs.url == ''
         run: rm -f .codex-notion-task.md .codex-notion-metadata.json .codex-final-message.md
 
-      - name: Valider le changement et les tests ciblés
+      - name: Valider le changement avec la copie immuable des garde-fous
         if: steps.existing.outputs.url == ''
-        run: python scripts/validate_notion_change.py --base main
+        env:
+          BASE_SHA: ${{ steps.guard.outputs.base_sha }}
+          REUSE_BRANCH: ${{ steps.branch.outputs.reuse }}
+          VALIDATOR_B64: ${{ steps.guard.outputs.validator_b64 }}
+          STAGER_B64: ${{ steps.guard.outputs.stager_b64 }}
+        run: |
+          if [ "$REUSE_BRANCH" != "true" ] && [ "$(git rev-parse HEAD)" != "$BASE_SHA" ]; then
+            echo "::error::Codex a modifié l’historique Git ou créé un commit, ce qui est interdit."
+            exit 1
+          fi
+          rm -rf /tmp/notion-crm-guard
+          mkdir -p /tmp/notion-crm-guard
+          printf '%s' "$VALIDATOR_B64" | base64 --decode > /tmp/notion-crm-guard/validate_notion_change.py
+          printf '%s' "$STAGER_B64" | base64 --decode > /tmp/notion-crm-guard/stage_notion_changes.py
+          chmod 500 /tmp/notion-crm-guard
+          chmod 400 /tmp/notion-crm-guard/*.py
+          python /tmp/notion-crm-guard/validate_notion_change.py --base "$BASE_SHA"
 
       - name: Indexer uniquement les fichiers validés
         if: steps.existing.outputs.url == '' && steps.branch.outputs.reuse != 'true'
-        run: python scripts/stage_notion_changes.py --base main
+        env:
+          BASE_SHA: ${{ steps.guard.outputs.base_sha }}
+        run: python /tmp/notion-crm-guard/stage_notion_changes.py --base "$BASE_SHA"
 
       - name: Créer le commit technique
         if: steps.existing.outputs.url == '' && steps.branch.outputs.reuse != 'true'
