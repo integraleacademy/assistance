@@ -14,6 +14,7 @@ from crm_salesforce_anomaly_followups_import import (
     register_salesforce_anomaly_followups_import,
 )
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
+from crm_salesforce_existing_repair import register_salesforce_existing_repair
 from crm_salesforce_import import register_salesforce_import
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
 from crm_salesforce_report_guardrails import install_salesforce_report_guardrails
@@ -60,6 +61,15 @@ enforce_salesforce_scope_route(
 disable_legacy_salesforce_import(
     app,
     jsonify_fn=legacy_app.jsonify,
+)
+register_salesforce_existing_repair(
+    app,
+    migration_module=salesforce_migration,
+    current_user_fn=legacy_app.current_user,
+    load_data_fn=legacy_app.load_data,
+    login_required_fn=legacy_app.login_required,
+    save_data_fn=legacy_app.save_data,
+    transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
 )
 install_salesforce_tasks_report_guardrails(salesforce_tasks_import)
 salesforce_tasks_import.register_salesforce_tasks_import(
