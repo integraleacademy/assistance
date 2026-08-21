@@ -28,13 +28,23 @@ def _mapped(status, **extra):
     return mapped[0]
 
 
-def test_secondary_salesforce_statuses_use_secondary_field():
+def test_active_secondary_salesforce_statuses_are_followups():
     expected = {
         "POEI": "POEI",
         "Session FT": "Marché FT",
         "Marché FT": "Marché FT",
         "Def MOB": "Def MOB",
         "Financement FT en cours": "Financement FT en cours",
+    }
+    for source, secondary in expected.items():
+        contact = _mapped(source)
+        assert contact["statut"] == "A relancer"
+        assert contact["statut_secondaire"] == secondary
+        assert contact["statut_secondaire_source"] == "salesforce_migration"
+
+
+def test_other_secondary_statuses_keep_their_secondary_field():
+    expected = {
         "Financement FT refusé": "Financement FT refusé",
         "C2P en cours": "C2P en cours",
     }
@@ -49,6 +59,7 @@ def test_funding_secondary_statuses_also_set_funding_code():
     in_progress = _mapped("Financement FT en cours")
     refused = _mapped("Financement FT refusé")
 
+    assert in_progress["statut"] == "A relancer"
     assert in_progress["statut_demande_financement_ft"] == "en_cours_instruction"
     assert refused["statut_demande_financement_ft"] == "refusee"
 

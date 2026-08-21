@@ -2,8 +2,9 @@
 
 La migration destinée à la sortie de Salesforce ne reprend que les pistes dont
 la date de création appartient à l'année civile 2026 en France. Les pistes
-disqualifiées, la piste de test ``TEST APS`` ainsi que les formations BTS et
-CAP sont exclues avant tout rapprochement avec les fiches du CRM.
+disqualifiées, les pistes « Open - Not Contacted » sans formation exploitable,
+les fiches internes ou de test ainsi que les formations BTS et CAP sont exclues
+avant tout rapprochement avec les fiches du CRM.
 """
 
 from __future__ import annotations
@@ -21,15 +22,22 @@ MIGRATION_YEAR = 2026
 EXCLUDED_FORMATION_FAMILIES = ("BTS", "CAP")
 EXCLUDED_STATUS_LABELS = ("Disqualifié",)
 EXCLUDED_TEST_LABELS = ("TEST APS",)
+EXCLUDED_INTERNAL_RECORDS = ("Cassandre MENARD",)
+EXCLUDED_OPEN_WITHOUT_FORMATION_LABELS = (
+    "Open - Not Contacted sans formation",
+)
 _PARIS_TZ = pytz.timezone("Europe/Paris")
-_FORMATION_FIELDS = (
+_EXPLICIT_FORMATION_FIELDS = (
     "Type_de_formation__c",
     "Type de formation",
     "Formation",
+)
+_COMPANY_FIELDS = (
     "Company",
     "Société",
     "Société/Compte",
 )
+_FORMATION_FIELDS = (*_EXPLICIT_FORMATION_FIELDS, *_COMPANY_FIELDS)
 _STATUS_FIELDS = (
     "Status",
     "Statut",
@@ -49,7 +57,21 @@ _DISQUALIFIED_STATUS_ALIASES = {
     "closed not converted",
     "closed lost",
 }
+_OPEN_NOT_CONTACTED_ALIASES = {
+    "open not contacted",
+}
 _EXCLUDED_TEST_ALIASES = {"test aps"}
+_EXCLUDED_INTERNAL_SALESFORCE_IDS = {
+    # Fiche Calendly interne de Cassandre MENARD présente dans l'export réel.
+    "00QSa00000ZsDiU",
+}
+_NO_FORMATION_PLACEHOLDERS = {
+    "",
+    "company placeholder",
+    "particulier",
+    "integrale academy",
+    "integrale securite formations",
+}
 
 
 def _source_formation(migration_module, row: dict[str, Any]) -> str:
@@ -58,6 +80,16 @@ def _source_formation(migration_module, row: dict[str, Any]) -> str:
 
 def _source_status(migration_module, row: dict[str, Any]) -> str:
     return migration_module._row_value(row, *_STATUS_FIELDS)
+
+
+def _source_salesforce_id(migration_module, row: dict[str, Any]) -> str:
+    return migration_module._row_value(
+        row,
+        "Id",
+        "ID de piste",
+        "Lead ID",
+        "Salesforce ID",
+    )
 
 
 def _starts_with_training_label(value: str, labels: tuple[str, ...]) -> bool:
@@ -93,6 +125,39 @@ def _is_excluded_test_record(migration_module, row: dict[str, Any]) -> bool:
             migration_module._row_value(row, field)
         ) in _EXCLUDED_TEST_ALIASES
         for field in _FORMATION_FIELDS
+    )
+
+
+def _is_excluded_internal_record(migration_module, row: dict[str, Any]) -> bool:
+    """Écarte uniquement la fiche Salesforce interne validée par la direction."""
+    return _source_salesforce_id(
+        migration_module,
+        row,
+    ) in _EXCLUDED_INTERNAL_SALESFORCE_IDS
+
+
+def _has_usable_formation(migration_module, row: dict[str, Any]) -> bool:
+    """Distingue une vraie formation d'un libellé Salesforce générique."""
+    explicit = migration_module._fold(migration_module._row_value(
+        row,
+        *_EXPLICIT_FORMATION_FIELDS,
+    ))
+    if explicit and explicit not in _NO_FORMATION_PLACEHOLDERS:
+        return True
+
+    company = migration_module._fold(migration_module._row_value(
+        row,
+        *_COMPANY_FIELDS,
+    ))
+    return bool(company and company not in _NO_FORMATION_PLACEHOLDERS)
+
+
+def _is_open_without_formation(migration_module, row: dict[str, Any]) -> bool:
+    """Écarte les anciennes pistes Calendly sans formation identifiable."""
+    status = migration_module._fold(_source_status(migration_module, row))
+    return (
+        status in _OPEN_NOT_CONTACTED_ALIASES
+        and not _has_usable_formation(migration_module, row)
     )
 
 
@@ -138,11 +203,15 @@ def filter_salesforce_scope(
             stats["skipped_disqualified"] += 1
             continue
 
-        # La fiche de test réelle du fichier transmis est exclue explicitement.
-        # La comparaison est exacte après normalisation : une vraie formation
-        # APS n'est donc jamais concernée.
+        # La fiche TEST APS du fichier transmis est exclue explicitement.
         if _is_excluded_test_record(migration_module, row):
             stats["skipped_test"] += 1
+            continue
+
+        # La fiche Calendly interne de Cassandre est exclue par son identifiant
+        # Salesforce exact afin de ne jamais viser une homonyme légitime.
+        if _is_excluded_internal_record(migration_module, row):
+            stats["skipped_internal"] += 1
             continue
 
         if _is_excluded_formation(
@@ -152,13 +221,20 @@ def filter_salesforce_scope(
             stats["skipped_formation"] += 1
             continue
 
+        # Les 37 anciennes pistes « Open - Not Contacted » du rapport réel ne
+        # contiennent aucune formation exploitable : elles ne doivent pas créer
+        # artificiellement des fiches « Nouveaux » dans le nouveau CRM.
+        if _is_open_without_formation(migration_module, row):
+            stats["skipped_open_without_formation"] += 1
+            continue
+
         retained.append(row)
 
     return retained, dict(stats)
 
 
 def install_salesforce_scope_guardrails(migration_module) -> None:
-    """Applique le périmètre 2026 hors disqualifiés, TEST APS, BTS et CAP."""
+    """Applique le périmètre 2026 validé à la migration Salesforce."""
     if getattr(migration_module, "_scope_guardrails_installed", False):
         return
 
@@ -184,8 +260,14 @@ def install_salesforce_scope_guardrails(migration_module) -> None:
         )
         result["excluded_statuses"] = list(EXCLUDED_STATUS_LABELS)
         result["excluded_test_labels"] = list(EXCLUDED_TEST_LABELS)
+        result["excluded_internal_records"] = list(EXCLUDED_INTERNAL_RECORDS)
+        result["excluded_open_without_formation"] = list(
+            EXCLUDED_OPEN_WITHOUT_FORMATION_LABELS
+        )
         result.setdefault("skipped_disqualified", 0)
         result.setdefault("skipped_test", 0)
+        result.setdefault("skipped_internal", 0)
+        result.setdefault("skipped_open_without_formation", 0)
         return result
 
     migration_module._prepare_complete_rows = scoped_prepare
@@ -218,7 +300,8 @@ def enforce_salesforce_scope_route(
             return jsonify_fn({
                 "error": (
                     "Cette migration est limitée aux pistes créées en 2026, "
-                    "hors pistes disqualifiées, TEST APS et formations BTS/CAP."
+                    "hors pistes disqualifiées, pistes sans formation, fiches "
+                    "internes/de test et formations BTS/CAP."
                 )
             }), 400
 
@@ -263,8 +346,8 @@ def disable_legacy_salesforce_import(
         return jsonify_fn({
             "error": (
                 "L'ancien import Salesforce 2025 est désactivé. Utilisez "
-                "« Importer Salesforce 2026 » : seules les pistes 2026 non "
-                "disqualifiées, hors TEST APS et hors BTS/CAP sont autorisées."
+                "« Importer Salesforce 2026 » : seules les pistes 2026 du "
+                "périmètre validé sont autorisées."
             )
         }), 410
 

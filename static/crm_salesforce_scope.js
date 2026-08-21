@@ -11,8 +11,8 @@
   const replaceText = root => {
     if (!root) return;
     const replacements = [
-      [/Migration complète — toutes les années et toutes les formations/g, 'Pistes 2026 — disqualifiées, TEST APS, BTS et CAP exclus'],
-      [/Migration complète/g, 'Migration Salesforce 2026 — hors disqualifiées, TEST APS, BTS et CAP'],
+      [/Migration complète — toutes les années et toutes les formations/g, 'Pistes 2026 — périmètre validé, objectif 0 Nouveau'],
+      [/Migration complète/g, 'Migration Salesforce 2026 — objectif 0 Nouveau'],
       [/hors 2025 ignorées/g, 'hors 2026 ignorées'],
       [/Ancien import — uniquement 2025 avec les exclusions historiques/g, 'Mode non disponible'],
     ];
@@ -34,34 +34,77 @@
 
     const disqualifiedCount = Number(payload.skipped_disqualified || 0);
     const testCount = Number(payload.skipped_test || 0);
-    let banner = preview.querySelector('#salesforceExcludedSummary');
-    if (!disqualifiedCount && !testCount) {
-      if (banner) banner.remove();
-      return;
+    const internalCount = Number(payload.skipped_internal || 0);
+    const openWithoutFormationCount = Number(payload.skipped_open_without_formation || 0);
+    const newCount = Number(payload.status_counts?.Nouveaux || 0);
+
+    let excludedBanner = preview.querySelector('#salesforceExcludedSummary');
+    const hasExclusions = Boolean(
+      disqualifiedCount
+      || testCount
+      || internalCount
+      || openWithoutFormationCount
+    );
+    if (!hasExclusions) {
+      if (excludedBanner) excludedBanner.remove();
+    } else {
+      if (!excludedBanner) {
+        excludedBanner = document.createElement('div');
+        excludedBanner.id = 'salesforceExcludedSummary';
+        excludedBanner.className = 'integration-banner success';
+        excludedBanner.style.marginTop = '16px';
+        const firstSummary = preview.querySelector('.integration-banner.success');
+        if (firstSummary) firstSummary.insertAdjacentElement('afterend', excludedBanner);
+        else preview.prepend(excludedBanner);
+      }
+
+      const labels = [];
+      if (disqualifiedCount) {
+        labels.push(`${formatNumber(disqualifiedCount)} disqualifiée${disqualifiedCount > 1 ? 's' : ''}`);
+      }
+      if (openWithoutFormationCount) {
+        labels.push(`${formatNumber(openWithoutFormationCount)} Open - Not Contacted sans formation`);
+      }
+      if (internalCount) {
+        labels.push(`${formatNumber(internalCount)} fiche interne Cassandre`);
+      }
+      if (testCount) {
+        labels.push(`${formatNumber(testCount)} fiche TEST APS`);
+      }
+      excludedBanner.innerHTML = `
+        <div>
+          <b>Exclusions confirmées : ${labels.join(' · ')}</b>
+          <span>Ces fiches ne seront jamais créées ni mises à jour dans le CRM. Les BTS et CAP restent également exclus et sont comptés dans « formations exclues ».</span>
+        </div>`;
     }
 
-    if (!banner) {
-      banner = document.createElement('div');
-      banner.id = 'salesforceExcludedSummary';
-      banner.className = 'integration-banner success';
-      banner.style.marginTop = '16px';
-      const firstSummary = preview.querySelector('.integration-banner.success');
-      if (firstSummary) firstSummary.insertAdjacentElement('afterend', banner);
-      else preview.prepend(banner);
+    let statusBanner = preview.querySelector('#salesforceZeroNewSummary');
+    if (!statusBanner) {
+      statusBanner = document.createElement('div');
+      statusBanner.id = 'salesforceZeroNewSummary';
+      statusBanner.style.marginTop = '16px';
+      const excluded = preview.querySelector('#salesforceExcludedSummary');
+      if (excluded) excluded.insertAdjacentElement('afterend', statusBanner);
+      else preview.prepend(statusBanner);
     }
 
-    const labels = [];
-    if (disqualifiedCount) {
-      labels.push(`${formatNumber(disqualifiedCount)} piste${disqualifiedCount > 1 ? 's' : ''} disqualifiée${disqualifiedCount > 1 ? 's' : ''} exclue${disqualifiedCount > 1 ? 's' : ''}`);
+    const confirm = document.querySelector('#salesforceConfirm');
+    if (newCount === 0) {
+      statusBanner.className = 'integration-banner success';
+      statusBanner.innerHTML = `
+        <div>
+          <b>Objectif atteint : 0 fiche « Nouveau »</b>
+          <span>Les dossiers Session FT, Def MOB, POEI et Financement FT en cours sont classés « A relancer » tout en conservant leur deuxième statut.</span>
+        </div>`;
+    } else {
+      statusBanner.className = 'integration-banner warning';
+      statusBanner.innerHTML = `
+        <div>
+          <b>Attention : ${formatNumber(newCount)} fiche${newCount > 1 ? 's' : ''} « Nouveau » reste${newCount > 1 ? 'nt' : ''}</b>
+          <span>L’import est bloqué par sécurité. Vérifie le fichier ou le mapping avant de confirmer.</span>
+        </div>`;
+      if (confirm) confirm.disabled = true;
     }
-    if (testCount) {
-      labels.push(`${formatNumber(testCount)} fiche TEST APS exclue${testCount > 1 ? 's' : ''}`);
-    }
-    banner.innerHTML = `
-      <div>
-        <b>${labels.join(' · ')}</b>
-        <span>Ces fiches ont été détectées dans le fichier Salesforce et ne seront jamais créées ni mises à jour dans le CRM.</span>
-      </div>`;
   };
 
   // Le résultat JSON contient les décomptes exacts. Le script principal reste
@@ -112,7 +155,7 @@
 
       const firstBannerText = modalRoot.querySelector('.integration-banner span');
       if (firstBannerText) {
-        firstBannerText.innerHTML = 'Exporte les <b>Pistes / Leads</b> avec leurs lignes de détail. Le CRM conservera uniquement celles créées en <b>2026</b> et écartera automatiquement les pistes <b>disqualifiées</b>, la fiche <b>TEST APS</b> ainsi que toutes les formations <b>BTS</b> et <b>CAP</b>.';
+        firstBannerText.innerHTML = 'Le CRM conservera uniquement le périmètre validé : pistes 2026 non disqualifiées, avec une formation exploitable, hors fiches internes/de test, BTS et CAP. Les dossiers Session FT, Def MOB, POEI et Financement FT en cours seront classés <b>A relancer</b> avec leur deuxième statut.';
       }
 
       const fields = fileInput.closest('.fields');
@@ -123,8 +166,8 @@
         notice.style.marginBottom = '18px';
         notice.innerHTML = `
           <div>
-            <b>Périmètre verrouillé</b>
-            <span>Uniquement les pistes créées du 1er janvier au 31 décembre 2026. Les pistes disqualifiées, TEST APS, les BTS et les CAP ne seront jamais importés, même s'ils figurent dans le fichier.</span>
+            <b>Périmètre verrouillé — objectif 0 Nouveau</b>
+            <span>Les pistes « Open - Not Contacted » sans formation, la fiche interne Cassandre MENARD, TEST APS, les disqualifiés, BTS et CAP sont exclus. Les dossiers à deuxième statut restent dans « A relancer ».</span>
           </div>`;
         fields.parentNode.insertBefore(notice, fields);
       }
