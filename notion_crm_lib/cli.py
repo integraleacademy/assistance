@@ -13,6 +13,7 @@ from .clients import GitHubClient, NotionClient, WorkspaceAgentClient
 from .core import AutomationError, DEFAULT_DATA_SOURCE_ID, dashed_page_id
 from .service import process_queue, render_codex_prompt, tracking_properties
 
+
 def env_required(name: str) -> str:
     value = str(os.environ.get(name) or "").strip()
     if not value:
@@ -156,4 +157,3 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("Interrompu.", file=sys.stderr)
         return 130
-
