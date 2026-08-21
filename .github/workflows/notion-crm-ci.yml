@@ -1,0 +1,91 @@
+name: Notion CRM - vérifier l'automatisation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/notion-crm-*.yml"
+      - "AGENTS.md"
+      - "docs/notion-crm-automation.md"
+      - "notion_crm_automation.py"
+      - "notion_crm_lib/**"
+      - "scripts/apply_notion_patch.py"
+      - "scripts/stage_notion_changes.py"
+      - "scripts/validate_notion_change.py"
+      - "tests/test_notion_crm_automation.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notion-crm-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Tests et validation statique
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Préparer Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer uniquement les dépendances de validation
+        run: python -m pip install --disable-pip-version-check pytest requests pyyaml
+
+      - name: Exécuter les tests de l'automatisation
+        run: python -m pytest -q tests/test_notion_crm_automation.py
+
+      - name: Vérifier la compilation Python
+        run: |
+          python -m py_compile \
+            notion_crm_automation.py \
+            notion_crm_lib/*.py \
+            scripts/apply_notion_patch.py \
+            scripts/stage_notion_changes.py \
+            scripts/validate_notion_change.py \
+            tests/test_notion_crm_automation.py
+
+      - name: Vérifier la structure des workflows
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          expected_jobs = {
+              ".github/workflows/notion-crm-ci.yml": {"verify"},
+              ".github/workflows/notion-crm-implement.yml": {
+                  "prepare",
+                  "codex",
+                  "test",
+                  "publish",
+                  "notify",
+              },
+              ".github/workflows/notion-crm-pr-sync.yml": {"sync"},
+              ".github/workflows/notion-crm-queue.yml": {"queue"},
+          }
+
+          for filename, jobs in expected_jobs.items():
+              payload = yaml.load(Path(filename).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+              assert isinstance(payload, dict), filename
+              assert "on" in payload, f"Déclencheur absent : {filename}"
+              actual_jobs = set((payload.get("jobs") or {}).keys())
+              assert actual_jobs == jobs, (filename, actual_jobs, jobs)
+              print(f"{filename}: {len(actual_jobs)} job(s) valide(s)")
+          PY
+
+      - name: Vérifier le diff Git
+        run: |
+          git fetch --no-tags origin main
+          git diff --check origin/main...HEAD
