@@ -135,7 +135,7 @@ def test_a_real_aps_formation_is_not_excluded_as_test_data():
     assert result["formation_counts"] == {"APS": 1}
 
 
-def test_abbreviated_france_travail_status_is_mapped_as_secondary():
+def test_abbreviated_france_travail_status_is_mapped_as_secondary_followup():
     migration = _fresh_migration()
     raw = _report(
         '"Lina";"FT";"APR";"ft@example.com";"";'
@@ -152,6 +152,6 @@ def test_abbreviated_france_travail_status_is_mapped_as_secondary():
     )
     contact = mapped[0]
 
-    assert contact["statut"] == "Nouveaux"
+    assert contact["statut"] == "A relancer"
     assert contact["statut_secondaire"] == "Financement FT en cours"
     assert contact["statut_demande_financement_ft"] == "en_cours_instruction"
