@@ -31,16 +31,6 @@ FUNDING_STATUS_BY_SECONDARY = {
     "Financement FT refusé": "refusee",
 }
 
-FUNDING_STATUS_ALIASES = {
-    "en cours instruction": "en_cours_instruction",
-    "en cours d instruction": "en_cours_instruction",
-    "en cours d examen": "en_cours_instruction",
-    "instruction en cours": "en_cours_instruction",
-    "refuse": "refusee",
-    "refusee": "refusee",
-    "rejected": "refusee",
-}
-
 
 def install_salesforce_status_guardrails(migration_module) -> None:
     """Sépare les étapes principales des marqueurs secondaires du CRM."""
@@ -54,6 +44,27 @@ def install_salesforce_status_guardrails(migration_module) -> None:
         folded = migration_module._fold(value)
         folded = migration_module.re.sub(r"['’]+", " ", folded)
         return " ".join(folded.split())
+
+    def normalize_funding_status(value: Any) -> str:
+        """Produit les mêmes codes internes que la synchronisation WEDOF."""
+        raw = folded_phrase(value)
+        if not raw:
+            return ""
+        if "annul" in raw or "abandon" in raw or "cancel" in raw:
+            return "annulee"
+        if any(term in raw for term in ("accepte", "accorde", "valide", "approved")):
+            return "acceptee"
+        if "refus" in raw or "reject" in raw:
+            return "refusee"
+        if any(term in raw for term in ("instruction", "en cours", "en attente", "pending")):
+            return "en_cours_instruction"
+        if any(term in raw for term in ("transmis", "envoye", "depose", "submitted")):
+            return "transmise"
+        if any(term in raw for term in ("a preparer", "pas encore depose", "to prepare")):
+            return "a_preparer"
+        if any(term in raw for term in ("aucune demande", "pas de demande", "no request", "none")):
+            return "aucune_demande"
+        return ""
 
     def source_status(row: dict[str, Any]) -> str:
         return folded_phrase(migration_module._row_value(
@@ -81,11 +92,8 @@ def install_salesforce_status_guardrails(migration_module) -> None:
         primary = migration_module._normalized_status(row)
         mapped["statut"] = primary
 
-        raw_funding_status = folded_phrase(
+        normalized_funding_status = normalize_funding_status(
             mapped.get("statut_demande_financement_ft")
-        )
-        normalized_funding_status = FUNDING_STATUS_ALIASES.get(
-            raw_funding_status
         )
         if normalized_funding_status:
             mapped["statut_demande_financement_ft"] = normalized_funding_status
