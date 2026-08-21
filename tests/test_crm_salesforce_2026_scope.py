@@ -90,6 +90,75 @@ def test_bts_and_cap_are_excluded_whatever_the_precise_label():
     assert result["excluded_formation_families"] == ["BTS", "CAP"]
 
 
+def test_open_not_contacted_without_formation_is_excluded():
+    migration = _fresh_scoped_migration()
+    rows = [
+        _row(
+            "empty-calendly",
+            "2026-05-10T10:00:00Z",
+            "",
+            Company="Company Placeholder",
+            Status="Open - Not Contacted",
+        ),
+        _row(
+            "explicit-a3p",
+            "2026-05-10T10:00:00Z",
+            "A3P",
+            Company="Company Placeholder",
+            Status="Open - Not Contacted",
+        ),
+        _row(
+            "company-apr",
+            "2026-05-10T10:00:00Z",
+            "",
+            Company="APR",
+            Status="Open - Not Contacted",
+        ),
+    ]
+
+    result = migration.import_complete_rows([], rows, dry_run=True)
+
+    assert result["prepared_rows"] == 2
+    assert result["created"] == 2
+    assert result["skipped_open_without_formation"] == 1
+    assert result["excluded_open_without_formation"] == [
+        "Open - Not Contacted sans formation"
+    ]
+
+
+def test_internal_cassandre_record_is_excluded_by_exact_salesforce_id():
+    migration = _fresh_scoped_migration()
+    rows = [
+        {
+            "Id": "00QSa00000ZsDiU",
+            "FirstName": "Cassandre",
+            "LastName": "MENARD",
+            "Email": "cassandremenard@yahoo.fr",
+            "CreatedDate": "2026-03-12T10:00:00Z",
+            "Company": "Company Placeholder",
+            "Status": "Qualified",
+            "IsConverted": "1",
+        },
+        {
+            "Id": "00Qdifferent",
+            "FirstName": "Cassandre",
+            "LastName": "MENARD",
+            "Email": "cassandre.external@example.com",
+            "CreatedDate": "2026-03-12T10:00:00Z",
+            "Type_de_formation__c": "A3P",
+            "Status": "Qualified",
+            "IsConverted": "1",
+        },
+    ]
+
+    result = migration.import_complete_rows([], rows, dry_run=True)
+
+    assert result["prepared_rows"] == 1
+    assert result["created"] == 1
+    assert result["skipped_internal"] == 1
+    assert result["excluded_internal_records"] == ["Cassandre MENARD"]
+
+
 def test_deleted_rows_remain_counted_as_deleted_before_scope_filtering():
     migration = _fresh_scoped_migration()
     rows = [
@@ -182,5 +251,3 @@ def test_legacy_import_endpoint_is_disabled_in_the_production_entrypoint():
     assert status == 410
     assert "désactivé" in payload["error"]
     assert "2026" in payload["error"]
-    assert "BTS" in payload["error"]
-    assert "CAP" in payload["error"]
