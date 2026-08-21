@@ -10,7 +10,7 @@ install_salesforce_migration_guardrails(migration)
 install_salesforce_status_guardrails(migration)
 
 
-def _mapped(status):
+def _mapped(status, **extra):
     rows = [{
         "Id": f"00Q-{status}",
         "FirstName": "Lina",
@@ -18,6 +18,7 @@ def _mapped(status):
         "Email": f"{status.replace(' ', '-')}@example.com",
         "Status": status,
         "CreatedDate": "2026-08-20T10:00:00Z",
+        **extra,
     }]
     mapped, _ = migration._prepare_complete_rows(
         rows,
@@ -50,6 +51,27 @@ def test_funding_secondary_statuses_also_set_funding_code():
 
     assert in_progress["statut_demande_financement_ft"] == "en_cours_instruction"
     assert refused["statut_demande_financement_ft"] == "refusee"
+
+
+def test_french_funding_field_is_normalized_even_without_secondary_status():
+    contact = _mapped(
+        "New",
+        Statut_financement_FT__c="En cours d'instruction",
+    )
+
+    assert contact["statut"] == "Nouveaux"
+    assert contact["statut_demande_financement_ft"] == "en_cours_instruction"
+    assert contact["statut_demande_financement_ft_source"] == (
+        "salesforce_migration"
+    )
+
+
+def test_converted_flag_takes_priority_over_an_old_secondary_status():
+    contact = _mapped("POEI", IsConverted="1")
+
+    assert contact["statut"] == "Converti"
+    assert not contact.get("statut_secondaire")
+    assert contact["salesforce_is_converted"] is True
 
 
 def test_every_primary_status_is_valid_for_crm():
