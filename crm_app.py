@@ -6,6 +6,10 @@ import crm_salesforce_tasks_import as salesforce_tasks_import
 
 from crm_cnaps_tracking import register_cnaps_tracking_proxy
 from crm_google_ads import register_google_ads_offline_conversions
+from crm_location_normalization import (
+    install_crm_location_normalization,
+    install_salesforce_location_guardrails,
+)
 from crm_salesforce_anomaly_followups_import import (
     register_salesforce_anomaly_followups_import,
 )
@@ -27,12 +31,14 @@ from secretariat_followup_patch import register_secretariat_followup_patch
 
 
 app = legacy_app.app
+install_crm_location_normalization(legacy_app)
 register_secretariat_followup_patch(legacy_app)
 register_salesforce_import(app)
 install_salesforce_migration_guardrails(salesforce_migration)
 install_salesforce_status_guardrails(salesforce_migration)
 install_salesforce_date_guardrails(salesforce_migration)
 install_salesforce_report_guardrails(salesforce_migration)
+install_salesforce_location_guardrails(salesforce_migration)
 install_salesforce_scope_guardrails(salesforce_migration)
 salesforce_migration.register_salesforce_migration(
     app,
