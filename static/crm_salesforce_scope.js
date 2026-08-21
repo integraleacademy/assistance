@@ -107,6 +107,68 @@
     }
   };
 
+  const installVisibleMergeMode = fileInput => {
+    const protectInput = document.querySelector('#salesforceProtectCrm');
+    if (!protectInput || document.querySelector('#salesforceMergeModeField')) return;
+
+    const originalField = protectInput.closest('.field');
+    if (originalField) originalField.style.setProperty('display', 'none', 'important');
+
+    const field = document.createElement('div');
+    field.id = 'salesforceMergeModeField';
+    field.className = 'field full';
+    field.innerHTML = `
+      <label for="salesforceMergeMode"><b>Comment traiter les différences entre Salesforce et le CRM ?</b></label>
+      <select id="salesforceMergeMode">
+        <option value="safe">Conserver les informations déjà présentes dans le CRM</option>
+        <option value="salesforce">Corriger les fiches avec les valeurs Salesforce</option>
+      </select>
+      <small class="field-help" id="salesforceMergeModeHelp"></small>
+      <div id="salesforceMergeModeWarning" class="integration-banner warning" style="display:none;margin-top:12px">
+        <div>
+          <b>Salesforce deviendra prioritaire</b>
+          <span>Les champs renseignés dans Salesforce, notamment la formation, le lieu, les dates souhaitées, l’origine, le CPF et France Travail, remplaceront les valeurs différentes du CRM. Les relances, activités, commentaires et identifiants internes resteront conservés.</span>
+        </div>
+      </div>`;
+
+    const fileField = fileInput.closest('.field');
+    if (fileField) fileField.insertAdjacentElement('afterend', field);
+    else fileInput.insertAdjacentElement('afterend', field);
+
+    const select = field.querySelector('#salesforceMergeMode');
+    const help = field.querySelector('#salesforceMergeModeHelp');
+    const warning = field.querySelector('#salesforceMergeModeWarning');
+    const confirm = document.querySelector('#salesforceConfirm');
+
+    const refresh = () => {
+      const salesforcePriority = select.value === 'salesforce';
+      help.textContent = salesforcePriority
+        ? 'À utiliser pour remettre les fiches exactement comme dans Salesforce lorsque le CRM contient des valeurs différentes.'
+        : 'Mode prudent : Salesforce complète uniquement les champs vides et ne remplace pas les informations déjà présentes.';
+      warning.style.display = salesforcePriority ? '' : 'none';
+      if (confirm && !confirm.disabled) {
+        confirm.textContent = salesforcePriority
+          ? 'Corriger les fiches depuis Salesforce'
+          : 'Importer les pistes';
+      }
+    };
+
+    select.value = protectInput.checked ? 'safe' : 'salesforce';
+    refresh();
+    select.addEventListener('change', () => {
+      protectInput.checked = select.value === 'safe';
+      protectInput.dispatchEvent(new Event('change', { bubbles: true }));
+      window.setTimeout(refresh, 0);
+      window.setTimeout(refresh, 150);
+    });
+
+    const preview = document.querySelector('#salesforcePreview');
+    if (preview) {
+      const observer = new MutationObserver(refresh);
+      observer.observe(preview, { childList: true, subtree: true });
+    }
+  };
+
   // Le résultat JSON contient les décomptes exacts. Le script principal reste
   // inchangé ; on enrichit simplement son aperçu une fois la réponse reçue.
   const nativeFetch = window.fetch.bind(window);
@@ -149,6 +211,8 @@
         const field = toInput.closest('.field');
         if (field) field.style.setProperty('display', 'none', 'important');
       }
+
+      installVisibleMergeMode(fileInput);
 
       const heading = modalRoot.querySelector('h2, h3');
       if (heading) heading.textContent = 'Importer les pistes Salesforce 2026';
