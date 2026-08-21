@@ -26,16 +26,38 @@ _FORMATION_FIELDS = (
     "Company",
     "Société",
 )
+_BTS_SHORT_LABELS = ("mos", "mco", "ndrc", "ci", "pi", "cg")
+_CAP_SHORT_LABELS = (
+    "aepe",
+    "boulangerie",
+    "coiffure",
+    "cuisine",
+    "patisserie",
+)
 
 
 def _source_formation(migration_module, row: dict[str, Any]) -> str:
     return migration_module._row_value(row, *_FORMATION_FIELDS)
 
 
+def _starts_with_training_label(value: str, labels: tuple[str, ...]) -> bool:
+    return any(value == label or value.startswith(f"{label} ") for label in labels)
+
+
 def _is_excluded_formation(migration_module, value: Any) -> bool:
-    """Reconnaît BTS/CAP comme mots complets, sans exclure « capacité » notamment."""
+    """Reconnaît les familles BTS/CAP, y compris leurs libellés abrégés."""
     folded = migration_module._fold(value)
-    return bool(re.search(r"(?:^|\s)(?:bts|cap)(?:\s|$)", folded))
+    if re.search(r"(?:^|\s)(?:bts|cap)(?:\s|$)", folded):
+        return True
+
+    # Les anciennes listes Salesforce utilisent parfois seulement « MOS »,
+    # « MCO », « AEPE » ou « Pâtisserie », sans préfixe BTS/CAP.
+    without_year = re.sub(r"(?:^|\s)20\d{2}(?:\s|$)", " ", folded)
+    without_year = re.sub(r"\s+", " ", without_year).strip()
+    return (
+        _starts_with_training_label(without_year, _BTS_SHORT_LABELS)
+        or _starts_with_training_label(without_year, _CAP_SHORT_LABELS)
+    )
 
 
 def _created_in_migration_year(migration_module, row: dict[str, Any]) -> bool:
