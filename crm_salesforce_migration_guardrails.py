@@ -9,6 +9,7 @@ pourraient pas être retrouvées lors d'un second import.
 from __future__ import annotations
 
 import hashlib
+from collections import defaultdict
 from typing import Any
 
 
@@ -17,11 +18,21 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
     if getattr(migration_module, "_guardrails_installed", False):
         return
 
+    original_phone = migration_module._phone
     original_formation = migration_module._normalized_formation
     original_map_row = migration_module._map_row
     original_prepare = migration_module._prepare_complete_rows
     original_match = migration_module._match
     original_signature = migration_module._contacts_signature
+
+    def guarded_phone(value: Any) -> str:
+        digits = migration_module.re.sub(r"\D", "", migration_module._text(value))
+        if digits.startswith("00"):
+            digits = digits[2:]
+        # Salesforce et les formulaires exportent parfois +33 (0)6…
+        if digits.startswith("330") and len(digits) == 12:
+            digits = f"33{digits[3:]}"
+        return original_phone(digits)
 
     def guarded_formation(value: Any) -> str:
         folded = migration_module._fold(value)
@@ -67,6 +78,144 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
             mapped["received_at"] = mapped.get("created_at")
         return mapped
 
+    def guarded_deduplicate(rows: list[dict[str, Any]]):
+        """Regroupe uniquement les doublons dont l'identité est cohérente."""
+        if len(rows) < 2:
+            for row in rows:
+                sfid = migration_module._text(row.get("salesforce_id"))
+                row["salesforce_ids"] = [sfid] if sfid else []
+            return rows, 0, 0
+
+        parent = list(range(len(rows)))
+
+        def find(index: int) -> int:
+            while parent[index] != index:
+                parent[index] = parent[parent[index]]
+                index = parent[index]
+            return index
+
+        def union(left: int, right: int) -> None:
+            left, right = find(left), find(right)
+            if left != right:
+                parent[right] = left
+
+        # L'identifiant Salesforce est la seule clé autorisée sans comparaison
+        # de nom. Les autres rapprochements sont faits ensuite, groupe par groupe.
+        seen_salesforce: dict[str, int] = {}
+        for index, row in enumerate(rows):
+            sfid = migration_module._text(row.get("salesforce_id"))
+            if not sfid:
+                continue
+            previous = seen_salesforce.get(sfid)
+            if previous is None:
+                seen_salesforce[sfid] = index
+            else:
+                union(previous, index)
+
+        initial_groups: dict[int, list[int]] = defaultdict(list)
+        for index in range(len(rows)):
+            initial_groups[find(index)].append(index)
+
+        conflicts = 0
+        row_conflicts: dict[int, set[str]] = defaultdict(set)
+        group_names: dict[int, str] = {}
+        for root, indices in initial_groups.items():
+            names = {
+                migration_module._name_key(rows[index])
+                for index in indices
+                if migration_module._name_key(rows[index])
+            }
+            if len(names) == 1:
+                group_names[root] = next(iter(names))
+            elif len(names) > 1:
+                conflicts += len(names) - 1
+                reason = "Même identifiant Salesforce associé à plusieurs identités dans le fichier."
+                for index in indices:
+                    row_conflicts[index].add(reason)
+                group_names[root] = ""
+            else:
+                group_names[root] = ""
+
+        # Détecte d'abord les coordonnées partagées par plusieurs identités afin
+        # de bloquer toutes les lignes concernées, et pas seulement la seconde.
+        contact_groups: dict[tuple[str, str], dict[str, set[int]]] = defaultdict(
+            lambda: defaultdict(set)
+        )
+        representatives: dict[int, int] = {
+            root: indices[0] for root, indices in initial_groups.items()
+        }
+        for root, indices in initial_groups.items():
+            name = group_names[root]
+            if not name:
+                continue
+            values = {
+                ("email", migration_module._email(rows[index].get("mail")))
+                for index in indices
+            } | {
+                ("phone", migration_module._phone(rows[index].get("telephone")))
+                for index in indices
+            }
+            for kind, value in values:
+                if value:
+                    contact_groups[(kind, value)][name].add(root)
+
+        for (kind, _value), names in contact_groups.items():
+            if len(names) <= 1:
+                continue
+            conflicts += len(names) - 1
+            reason = (
+                "Adresse e-mail partagée par plusieurs identités dans le fichier."
+                if kind == "email"
+                else "Téléphone partagé par plusieurs identités dans le fichier."
+            )
+            for roots in names.values():
+                for root in roots:
+                    for index in initial_groups[root]:
+                        row_conflicts[index].add(reason)
+
+        # Les clés non conflictuelles peuvent être regroupées, mais seulement si
+        # le nom normalisé est strictement identique.
+        for names in contact_groups.values():
+            if len(names) != 1:
+                continue
+            roots = list(next(iter(names.values())))
+            for root in roots[1:]:
+                union(representatives[roots[0]], representatives[root])
+
+        final_groups: dict[int, list[int]] = defaultdict(list)
+        for index in range(len(rows)):
+            final_groups[find(index)].append(index)
+
+        prepared: list[dict[str, Any]] = []
+        for indices in final_groups.values():
+            ordered = sorted(
+                (rows[index] for index in indices),
+                key=lambda item: migration_module._parse_datetime(
+                    item.get("salesforce_last_modified_at")
+                ) or migration_module.dt.datetime.min.replace(
+                    tzinfo=migration_module.pytz.UTC
+                ),
+                reverse=True,
+            )
+            winner = dict(ordered[0])
+            ids: list[str] = []
+            for item in ordered:
+                sfid = migration_module._text(item.get("salesforce_id"))
+                if sfid and sfid not in ids:
+                    ids.append(sfid)
+                migration_module._merge_source_rows(winner, item)
+            winner["salesforce_ids"] = ids
+            reasons = sorted({
+                reason
+                for index in indices
+                for reason in row_conflicts.get(index, set())
+            })
+            if reasons:
+                winner["_salesforce_source_conflict"] = " ".join(reasons)
+            prepared.append(winner)
+
+        return prepared, len(rows) - len(prepared), conflicts
+
     def guarded_prepare(*args, **kwargs):
         prepared, stats = original_prepare(*args, **kwargs)
         valid = []
@@ -91,6 +240,11 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
         return valid, stats
 
     def guarded_match(row, by_sf, by_email, by_phone, *, deduplicate: bool):
+        source_conflict = migration_module._text(
+            row.get("_salesforce_source_conflict")
+        )
+        if source_conflict:
+            return None, "", source_conflict
         contact, method, reason = original_match(
             row, by_sf, by_email, by_phone, deduplicate=deduplicate,
         )
@@ -122,8 +276,10 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
         ]
         return hashlib.sha256(f"{base}|{identity!r}".encode()).hexdigest()
 
+    migration_module._phone = guarded_phone
     migration_module._normalized_formation = guarded_formation
     migration_module._map_row = guarded_map_row
+    migration_module._deduplicate = guarded_deduplicate
     migration_module._prepare_complete_rows = guarded_prepare
     migration_module._match = guarded_match
     migration_module._contacts_signature = guarded_signature
