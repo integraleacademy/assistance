@@ -623,6 +623,54 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
     assert refused["statut_secondaire"] == "Financement FT refusé"
 
 
+def test_explicit_ft_rejection_without_history_updates_secondary_timeline(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    rejected_folder = folder(
+        "ft-rejected", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    rejected_folder["state"] = "rejected"
+    rejected_folder.pop("history")
+    application._wedof_store_page(
+        [rejected_folder], application.load_data(), 1,
+    )
+
+    result = next(
+        row for row in client.get("/api/crm/contacts").get_json()
+        if row["id"] == contact["id"]
+    )
+
+    assert result["statut_demande_financement_ft"] == "refusee"
+    assert result["statut_secondaire"] == "Financement FT refusé"
+    update = next(
+        row for row in client.get(
+            f"/api/crm/contacts/updates?contact_id={contact['id']}"
+        ).get_json()["contacts"]
+        if row["id"] == contact["id"]
+    )
+    assert update["statut_demande_financement_ft"] == "refusee"
+    assert update["statut_secondaire"] == "Financement FT refusé"
+
+
+def test_ft_status_reads_nested_wedof_history():
+    payload = {
+        "registrationState": "validated",
+        "events": {
+            "changes": [
+                {"details": {"registrationState": "waitingAcceptation"}},
+            ],
+        },
+    }
+
+    assert application._wedof_france_travail_status(payload) == "refusee"
+    assert application._wedof_france_travail_status({
+        "registrationState": "validated",
+        "events": {"changes": [{"details": {"state": "validated"}}]},
+    }) == ""
+
+
 def test_collaborative_updates_endpoint_returns_a_small_payload(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
