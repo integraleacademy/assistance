@@ -8,6 +8,7 @@ from crm_google_ads import register_google_ads_offline_conversions
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_import import register_salesforce_import
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
+from crm_salesforce_report_guardrails import install_salesforce_report_guardrails
 from crm_salesforce_scope_guardrails import (
     disable_legacy_salesforce_import,
     enforce_salesforce_scope_route,
@@ -24,6 +25,7 @@ register_salesforce_import(app)
 install_salesforce_migration_guardrails(salesforce_migration)
 install_salesforce_status_guardrails(salesforce_migration)
 install_salesforce_date_guardrails(salesforce_migration)
+install_salesforce_report_guardrails(salesforce_migration)
 install_salesforce_scope_guardrails(salesforce_migration)
 salesforce_migration.register_salesforce_migration(
     app,
