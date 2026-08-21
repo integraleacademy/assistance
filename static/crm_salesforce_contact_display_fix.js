@@ -41,7 +41,9 @@
   const cleanStoredSessionLabel = select => {
     if (!select) return;
     [...select.options].forEach(option => {
-      option.textContent = option.textContent.replace(/\s+—\s+réponse META\s*$/i, '');
+      const current = option.textContent || '';
+      const cleaned = current.replace(/\s+—\s+réponse META\s*$/i, '');
+      if (cleaned !== current) option.textContent = cleaned;
     });
   };
 
