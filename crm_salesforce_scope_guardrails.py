@@ -2,8 +2,8 @@
 
 La migration destinée à la sortie de Salesforce ne reprend que les pistes dont
 la date de création appartient à l'année civile 2026 en France. Les pistes
-disqualifiées ainsi que les formations BTS et CAP sont exclues avant tout
-rapprochement avec les fiches du CRM.
+disqualifiées, la piste de test ``TEST APS`` ainsi que les formations BTS et
+CAP sont exclues avant tout rapprochement avec les fiches du CRM.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import pytz
 MIGRATION_YEAR = 2026
 EXCLUDED_FORMATION_FAMILIES = ("BTS", "CAP")
 EXCLUDED_STATUS_LABELS = ("Disqualifié",)
+EXCLUDED_TEST_LABELS = ("TEST APS",)
 _PARIS_TZ = pytz.timezone("Europe/Paris")
 _FORMATION_FIELDS = (
     "Type_de_formation__c",
@@ -48,6 +49,7 @@ _DISQUALIFIED_STATUS_ALIASES = {
     "closed not converted",
     "closed lost",
 }
+_EXCLUDED_TEST_ALIASES = {"test aps"}
 
 
 def _source_formation(migration_module, row: dict[str, Any]) -> str:
@@ -82,6 +84,16 @@ def _is_disqualified(migration_module, row: dict[str, Any]) -> bool:
     """Refuse les variantes françaises et anglaises d'une piste disqualifiée."""
     status = migration_module._fold(_source_status(migration_module, row))
     return status in _DISQUALIFIED_STATUS_ALIASES
+
+
+def _is_excluded_test_record(migration_module, row: dict[str, Any]) -> bool:
+    """Écarte uniquement le libellé de test explicite, sans viser les vrais APS."""
+    return any(
+        migration_module._fold(
+            migration_module._row_value(row, field)
+        ) in _EXCLUDED_TEST_ALIASES
+        for field in _FORMATION_FIELDS
+    )
 
 
 def _created_in_migration_year(migration_module, row: dict[str, Any]) -> bool:
@@ -126,6 +138,13 @@ def filter_salesforce_scope(
             stats["skipped_disqualified"] += 1
             continue
 
+        # La fiche de test réelle du fichier transmis est exclue explicitement.
+        # La comparaison est exacte après normalisation : une vraie formation
+        # APS n'est donc jamais concernée.
+        if _is_excluded_test_record(migration_module, row):
+            stats["skipped_test"] += 1
+            continue
+
         if _is_excluded_formation(
             migration_module,
             _source_formation(migration_module, row),
@@ -139,7 +158,7 @@ def filter_salesforce_scope(
 
 
 def install_salesforce_scope_guardrails(migration_module) -> None:
-    """Applique le périmètre 2026 hors disqualifiés, BTS et CAP."""
+    """Applique le périmètre 2026 hors disqualifiés, TEST APS, BTS et CAP."""
     if getattr(migration_module, "_scope_guardrails_installed", False):
         return
 
@@ -164,7 +183,9 @@ def install_salesforce_scope_guardrails(migration_module) -> None:
             EXCLUDED_FORMATION_FAMILIES
         )
         result["excluded_statuses"] = list(EXCLUDED_STATUS_LABELS)
+        result["excluded_test_labels"] = list(EXCLUDED_TEST_LABELS)
         result.setdefault("skipped_disqualified", 0)
+        result.setdefault("skipped_test", 0)
         return result
 
     migration_module._prepare_complete_rows = scoped_prepare
@@ -197,7 +218,7 @@ def enforce_salesforce_scope_route(
             return jsonify_fn({
                 "error": (
                     "Cette migration est limitée aux pistes créées en 2026, "
-                    "hors pistes disqualifiées et formations BTS/CAP."
+                    "hors pistes disqualifiées, TEST APS et formations BTS/CAP."
                 )
             }), 400
 
@@ -243,7 +264,7 @@ def disable_legacy_salesforce_import(
             "error": (
                 "L'ancien import Salesforce 2025 est désactivé. Utilisez "
                 "« Importer Salesforce 2026 » : seules les pistes 2026 non "
-                "disqualifiées et hors BTS/CAP sont autorisées."
+                "disqualifiées, hors TEST APS et hors BTS/CAP sont autorisées."
             )
         }), 410
 
