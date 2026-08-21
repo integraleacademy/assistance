@@ -14,6 +14,26 @@ from .core import AutomationError, DEFAULT_DATA_SOURCE_ID, dashed_page_id
 from .service import process_queue, render_codex_prompt, tracking_properties
 
 
+UPDATE_STATUSES = (
+    "À faire",
+    "À valider",
+    "Prêt à coder",
+    "En cours",
+    "PR disponible",
+    "En attente",
+    "Terminé",
+    "Publié",
+)
+
+
+def effective_update_status(status: str | None, pr_url: str | None) -> str | None:
+    """Distingue le développement en cours d'une PR déjà prête à relire."""
+
+    if status == "En cours" and str(pr_url or "").strip():
+        return "PR disponible"
+    return status
+
+
 def env_required(name: str) -> str:
     value = str(os.environ.get(name) or "").strip()
     if not value:
@@ -82,7 +102,7 @@ def command_update(args: argparse.Namespace) -> int:
         file_comment = Path(args.comment_file).read_text(encoding="utf-8")
         comment = f"{comment}\n\n{file_comment}".strip() if comment else file_comment
     properties = tracking_properties(
-        status=args.status,
+        status=effective_update_status(args.status, args.pr_url),
         automation_id=args.automation_id,
         issue_url=args.issue_url,
         pr_url=args.pr_url,
@@ -127,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser("update", help="Synchroniser l'état technique vers Notion")
     update_parser.add_argument("--page-id", required=True)
-    update_parser.add_argument("--status", choices=("À faire", "En cours", "En attente", "Terminé"))
+    update_parser.add_argument("--status", choices=UPDATE_STATUSES)
     update_parser.add_argument("--automation-id")
     update_parser.add_argument("--issue-url")
     update_parser.add_argument("--pr-url")
