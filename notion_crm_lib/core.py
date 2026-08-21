@@ -213,5 +213,3 @@ def _truncate(text: str, limit: int, note: str) -> str:
         return value
     suffix = f"\n\n> {note}\n"
     return value[: max(0, limit - len(suffix))].rstrip() + suffix
-
-
