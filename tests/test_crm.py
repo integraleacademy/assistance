@@ -764,6 +764,27 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
     assert refused.get_json()["statut_secondaire"] == "Financement FT refusé"
 
 
+def test_primary_pipeline_places_in_progress_after_scheduled_appointment():
+    statuses = application._crm_statuses({})
+
+    scheduled_index = statuses.index("RDV programmé")
+    assert statuses[scheduled_index:scheduled_index + 3] == [
+        "RDV programmé", "En cours", "Prochain RDV inscription",
+    ]
+
+
+def test_custom_primary_pipeline_repositions_in_progress_without_duplicate():
+    statuses = application._crm_statuses({
+        "crm_statuses": [
+            "Nouveaux", "En cours", "Blocage", "RDV programmé",
+            "Prochain RDV inscription", "En cours",
+        ],
+    })
+
+    assert statuses.count("En cours") == 1
+    assert statuses.index("En cours") == statuses.index("RDV programmé") + 1
+
+
 @pytest.mark.parametrize("status", application.CRM_STATUSES)
 def test_each_manually_selected_primary_status_survives_refresh(
         tmp_path, monkeypatch, status):
@@ -1298,7 +1319,7 @@ def test_crm_pages_and_templates(tmp_path, monkeypatch):
     assert b"iaconnectcrm.png" in page.data
     assert b"favicon_32x32.png" in page.data
     assert b'id="manageStatusesTop"' in page.data
-    assert b"20260820-crm-exports-1" in page.data
+    assert b"20260821-crm-timeline-1" in page.data
     response = c.post("/api/crm/templates", json={"type": "email", "nom": "Bienvenue", "sujet": "Bonjour", "contenu": "<p>Bienvenue</p>"})
     assert response.status_code == 201
     assert c.get("/api/crm/templates").get_json()["email"][0]["nom"] == "Bienvenue"

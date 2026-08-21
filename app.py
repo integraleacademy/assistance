@@ -6999,7 +6999,7 @@ def lookup_hebergement():
 
 
 CRM_STATUSES = [
-    "Nouveaux", "Blocage", "RDV programmé", "Prochain RDV inscription",
+    "Nouveaux", "Blocage", "RDV programmé", "En cours", "Prochain RDV inscription",
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
@@ -7017,7 +7017,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260820-crm-exports-1"
+CRM_ASSET_VERSION = "20260821-crm-timeline-1"
 
 
 def _crm_statuses(data=None):
@@ -7031,6 +7031,13 @@ def _crm_statuses(data=None):
         if (label and label not in clean and label not in CRM_RESERVED_STATUSES
                 and label not in CRM_SECONDARY_ONLY_STATUSES):
             clean.append(label)
+    if "En cours" in clean:
+        clean.remove("En cours")
+    insertion_index = (
+        clean.index("RDV programmé") + 1
+        if "RDV programmé" in clean else len(clean)
+    )
+    clean.insert(insertion_index, "En cours")
     clean.extend(status for status in CRM_STATUSES if status in CRM_RESERVED_STATUSES)
     return clean
 
