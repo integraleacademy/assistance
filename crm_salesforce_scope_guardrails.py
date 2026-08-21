@@ -164,3 +164,34 @@ def enforce_salesforce_scope_route(
 
     app.view_functions[endpoint] = scoped_view
     setattr(app, marker, True)
+
+
+def disable_legacy_salesforce_import(
+    app,
+    *,
+    jsonify_fn,
+    endpoint: str = "crm_import_salesforce",
+) -> None:
+    """Bloque l'ancienne route 2025 afin qu'elle ne contourne pas le périmètre."""
+    marker = f"_{endpoint}_disabled_for_2026_migration"
+    if getattr(app, marker, False):
+        return
+
+    view = app.view_functions.get(endpoint)
+    if view is None:
+        raise RuntimeError(
+            "L'ancienne route Salesforce doit être enregistrée avant sa désactivation."
+        )
+
+    @wraps(view)
+    def disabled_view(*args, **kwargs):
+        return jsonify_fn({
+            "error": (
+                "L'ancien import Salesforce 2025 est désactivé. Utilisez "
+                "« Importer Salesforce 2026 » : seules les pistes 2026 hors "
+                "BTS et CAP sont autorisées."
+            )
+        }), 410
+
+    app.view_functions[endpoint] = disabled_view
+    setattr(app, marker, True)
