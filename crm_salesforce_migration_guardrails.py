@@ -19,7 +19,10 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
         return
 
     original_phone = migration_module._phone
+    original_row_value = migration_module._row_value
     original_formation = migration_module._normalized_formation
+    original_origin = migration_module._normalized_origin
+    original_status = migration_module._normalized_status
     original_map_row = migration_module._map_row
     original_prepare = migration_module._prepare_complete_rows
     original_match = migration_module._match
@@ -34,6 +37,26 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
             digits = f"33{digits[3:]}"
         return original_phone(digits)
 
+    def guarded_row_value(row: dict[str, Any], *names: str) -> str:
+        value = original_row_value(row, *names)
+        if value:
+            return value
+        folded_values: dict[str, Any] = {}
+        prefixes = ("piste ", "lead ", "leads ", "prospect ", "piste de vente ")
+        for key, candidate in row.items():
+            if key is None or not migration_module._text(candidate):
+                continue
+            folded = migration_module._fold(key)
+            folded_values.setdefault(folded, candidate)
+            for prefix in prefixes:
+                if folded.startswith(prefix):
+                    folded_values.setdefault(folded[len(prefix):].strip(), candidate)
+        for name in names:
+            candidate = folded_values.get(migration_module._fold(name))
+            if migration_module._text(candidate):
+                return migration_module._text(candidate)
+        return ""
+
     def guarded_formation(value: Any) -> str:
         folded = migration_module._fold(value)
         aliases = {
@@ -42,6 +65,30 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
         }
         return aliases.get(folded) or original_formation(value)
 
+    def guarded_origin(row: dict[str, Any]) -> str:
+        raw = migration_module._fold(migration_module._row_value(
+            row, "Origine__c", "LeadSource", "Origine", "Source de la piste",
+        ))
+        aliases = {
+            "web": "Site internet",
+            "google adwords": "Google Ads",
+            "facebook ads": "Meta",
+            "instagram ads": "Meta",
+            "meta ads": "Meta",
+        }
+        return aliases.get(raw) or original_origin(row)
+
+    def guarded_status(row: dict[str, Any]) -> str:
+        raw = migration_module._fold(migration_module._row_value(
+            row, "Status", "Statut",
+        ))
+        aliases = {
+            "closed converted": "Converti",
+            "ferme converti": "Converti",
+            "cloture converti": "Converti",
+        }
+        return aliases.get(raw) or original_status(row)
+
     def guarded_map_row(row: dict[str, Any]) -> dict[str, Any]:
         mapped = original_map_row(row)
         owner = migration_module._row_value(
@@ -49,12 +96,15 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
             "OwnerName", "Owner Name", "Owner.Name", "Owner: Full Name",
             "Lead Owner", "Lead Owner: Full Name",
             "Propriétaire de la piste", "Nom complet du propriétaire",
+            "Propriétaire de la piste: Nom complet",
+            "Propriétaire: Nom complet", "Nom complet du propriétaire de la piste",
         )
         if owner:
             mapped["commercial"] = owner
             mapped["salesforce_owner"] = owner
         owner_id = migration_module._row_value(
             row, "OwnerId", "Owner ID", "ID du propriétaire",
+            "Propriétaire de la piste: ID utilisateur",
         )
         if owner_id:
             mapped["salesforce_owner_id"] = owner_id
@@ -277,7 +327,10 @@ def install_salesforce_migration_guardrails(migration_module) -> None:
         return hashlib.sha256(f"{base}|{identity!r}".encode()).hexdigest()
 
     migration_module._phone = guarded_phone
+    migration_module._row_value = guarded_row_value
     migration_module._normalized_formation = guarded_formation
+    migration_module._normalized_origin = guarded_origin
+    migration_module._normalized_status = guarded_status
     migration_module._map_row = guarded_map_row
     migration_module._deduplicate = guarded_deduplicate
     migration_module._prepare_complete_rows = guarded_prepare
