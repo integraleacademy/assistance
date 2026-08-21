@@ -78,7 +78,7 @@ def test_work_gate_still_rejects_locked_pages() -> None:
     assert not is_eligible_page(page)
 
 
-def test_notion_query_uses_ready_to_code_status() -> None:
+def test_notion_query_requires_complete_work_preparation() -> None:
     class FakeApi:
         def __init__(self) -> None:
             self.payload: dict[str, Any] = {}
@@ -93,8 +93,20 @@ def test_notion_query_uses_ready_to_code_status() -> None:
 
     assert client.query_ready_pages(DEFAULT_DATA_SOURCE_ID, page_size=3) == []
     filters = fake_api.payload["json"]["filter"]["and"]
-    status_filter = next(item for item in filters if item.get("property") == "Statut")
-    assert status_filter == {
+
+    assert {
         "property": "Statut",
         "select": {"equals": "Prêt à coder"},
-    }
+    } in filters
+    assert {
+        "property": WORK_PREPARED_PROPERTY,
+        "checkbox": {"equals": True},
+    } in filters
+    assert {
+        "property": WORK_PREPARED_AT_PROPERTY,
+        "date": {"is_not_empty": True},
+    } in filters
+    assert {
+        "property": "ID automatisation",
+        "rich_text": {"is_empty": True},
+    } in filters

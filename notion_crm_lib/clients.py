@@ -19,10 +19,13 @@ from .core import (
     TRIGGER_DOMAIN,
     TRIGGER_PLATFORM,
     TRIGGER_STATUS,
+    WORK_PREPARED_AT_PROPERTY,
+    WORK_PREPARED_PROPERTY,
     _safe_issue_title,
     compact_page_id,
     split_text,
 )
+
 
 class JsonApiClient:
     """Client HTTP JSON avec reprise sur les erreurs temporaires."""
@@ -115,6 +118,8 @@ class NotionClient:
                     {"property": "Domaine", "select": {"equals": TRIGGER_DOMAIN}},
                     {"property": "Plateforme", "select": {"equals": TRIGGER_PLATFORM}},
                     {"property": "Statut", "select": {"equals": TRIGGER_STATUS}},
+                    {"property": WORK_PREPARED_PROPERTY, "checkbox": {"equals": True}},
+                    {"property": WORK_PREPARED_AT_PROPERTY, "date": {"is_not_empty": True}},
                     {"property": "ID automatisation", "rich_text": {"is_empty": True}},
                 ]
             },
@@ -246,8 +251,6 @@ class GitHubClient:
             expected=(204,),
             json={"event_type": event_type, "client_payload": dict(payload)},
         )
-
-
 
 
 class WorkspaceAgentClient:
