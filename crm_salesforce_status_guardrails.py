@@ -31,6 +31,16 @@ FUNDING_STATUS_BY_SECONDARY = {
     "Financement FT refusé": "refusee",
 }
 
+FUNDING_STATUS_ALIASES = {
+    "en cours instruction": "en_cours_instruction",
+    "en cours d instruction": "en_cours_instruction",
+    "en cours d examen": "en_cours_instruction",
+    "instruction en cours": "en_cours_instruction",
+    "refuse": "refusee",
+    "refusee": "refusee",
+    "rejected": "refusee",
+}
+
 
 def install_salesforce_status_guardrails(migration_module) -> None:
     """Sépare les étapes principales des marqueurs secondaires du CRM."""
@@ -45,7 +55,14 @@ def install_salesforce_status_guardrails(migration_module) -> None:
             row, "Status", "Statut",
         ))
 
+    def source_is_converted(row: dict[str, Any]) -> bool:
+        return migration_module._truthy(migration_module._row_value(
+            row, "IsConverted", "Converti", "Est converti",
+        ))
+
     def normalized_primary_status(row: dict[str, Any]) -> str:
+        if source_is_converted(row):
+            return "Converti"
         raw = source_status(row)
         if raw in SECONDARY_STATUS_ALIASES:
             return "Nouveaux"
@@ -56,14 +73,28 @@ def install_salesforce_status_guardrails(migration_module) -> None:
         mapped = original_map_row(row)
         raw = source_status(row)
         secondary = SECONDARY_STATUS_ALIASES.get(raw)
-        mapped["statut"] = migration_module._normalized_status(row)
-        if secondary:
+        primary = migration_module._normalized_status(row)
+        mapped["statut"] = primary
+
+        raw_funding_status = migration_module._fold(
+            mapped.get("statut_demande_financement_ft")
+        )
+        normalized_funding_status = FUNDING_STATUS_ALIASES.get(
+            raw_funding_status
+        )
+        if normalized_funding_status:
+            mapped["statut_demande_financement_ft"] = normalized_funding_status
+            mapped["statut_demande_financement_ft_source"] = (
+                "salesforce_migration"
+            )
+
+        # Une piste convertie reste avant tout une inscription. Son ancienne
+        # étape Salesforce ne doit pas la faire réapparaître parmi les pistes.
+        if secondary and primary != "Converti":
             mapped["statut_secondaire"] = secondary
             mapped["statut_secondaire_source"] = "salesforce_migration"
             funding_status = FUNDING_STATUS_BY_SECONDARY.get(secondary)
-            if funding_status and not migration_module._text(
-                mapped.get("statut_demande_financement_ft")
-            ):
+            if funding_status:
                 mapped["statut_demande_financement_ft"] = funding_status
                 mapped["statut_demande_financement_ft_source"] = (
                     "salesforce_migration"
