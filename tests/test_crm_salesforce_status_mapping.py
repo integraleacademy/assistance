@@ -66,6 +66,24 @@ def test_french_funding_field_is_normalized_even_without_secondary_status():
     )
 
 
+def test_all_funding_states_use_the_same_codes_as_the_crm():
+    expected = {
+        "Demande acceptée": "acceptee",
+        "Dossier refusé": "refusee",
+        "Instruction en cours": "en_cours_instruction",
+        "Demande transmise": "transmise",
+        "À préparer": "a_preparer",
+        "Aucune demande": "aucune_demande",
+        "Dossier annulé par le candidat": "annulee",
+    }
+    for source, code in expected.items():
+        contact = _mapped("New", Statut_financement_FT__c=source)
+        assert contact["statut_demande_financement_ft"] == code
+        assert contact["statut_demande_financement_ft_source"] == (
+            "salesforce_migration"
+        )
+
+
 def test_converted_flag_takes_priority_over_an_old_secondary_status():
     contact = _mapped("POEI", IsConverted="1")
 
