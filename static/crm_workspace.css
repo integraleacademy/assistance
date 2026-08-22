@@ -37,6 +37,8 @@
 .contact-flag-control button[data-contact-flag="red"].active{background:#ffe7e3;color:#b42318}
 .contact-flag-control button[data-contact-flag=""].active{background:#eef1f5;color:#344054}
 @media(max-width:680px){
+ .contact-flag-badge.is-list{min-height:26px;padding:3px 6px;font-size:10px}
+ .contact-flag-badge.is-header{min-height:32px;padding:5px 8px;font-size:12px}
  .contact-flag-control{width:100%;flex-wrap:wrap}
  .contact-flag-control>span{width:100%;padding:3px 6px}
  .contact-flag-control button{flex:1}
