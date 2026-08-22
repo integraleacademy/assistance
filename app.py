@@ -7142,7 +7142,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260821-crm-timeline-1"
+CRM_ASSET_VERSION = "20260822-ft-refusal-notifications-1"
 
 
 def _crm_statuses(data=None):
@@ -10655,6 +10655,18 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
             if not isinstance(folder, dict) or not folder.get("externalId"):
                 continue
             stable_id = str(folder["externalId"])
+            previous_funding_status = ""
+            previous_resource = db.execute("""
+                SELECT payload_json FROM wedof_resources
+                WHERE resource_type='registrationFolder' AND stable_id=?
+            """, (stable_id,)).fetchone()
+            if previous_resource:
+                try:
+                    previous_funding_status = _wedof_france_travail_status(
+                        json.loads(previous_resource["payload_json"])
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    previous_funding_status = ""
             crm_payload = _wedof_contact_payload(folder, data)
             payload_json = json.dumps(folder, ensure_ascii=False, separators=(",", ":"))
             remote_date = next((str(folder.get(key)) for key in (
@@ -10748,6 +10760,15 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                         match_method=excluded.match_method,
                         updated_at=excluded.updated_at
                 """, (contact["id"], stable_id, attendee_id, method, now, now))
+                current_funding_status = _wedof_france_travail_status(folder)
+                if (current_funding_status == "refusee"
+                        and previous_funding_status != "refusee"
+                        and contact.get("statut_demande_financement_ft_source")
+                        != CRM_MANUAL_STATUS_SOURCE):
+                    _crm_add_funding_refusal_notifications(
+                        data, contact, stable_id,
+                    )
+                    crm_changed = True
                 linked_folders += 1
         state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
         if total_count is not None:
@@ -12958,6 +12979,31 @@ def _crm_add_mention_notifications(data, text, contact, publication, *, kind="me
             "contact_id": contact["id"],
             "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
             "publication_id": publication["id"],
+        })
+
+
+def _crm_add_funding_refusal_notifications(data, contact, stable_id):
+    """Alerte chaque compte CRM une fois lors d'un nouveau refus WEDOF."""
+    contact_name = " ".join(
+        part for part in [contact.get("prenom"), contact.get("nom")]
+        if str(part or "").strip()
+    ).strip() or "Piste sans nom"
+    notifications = data.setdefault("crm_notifications", [])
+    for user in USERS.values():
+        recipient_email = str(user.get("email") or "").strip()
+        if not recipient_email:
+            continue
+        notifications.insert(0, {
+            "id": str(uuid.uuid4()),
+            "recipient_email": recipient_email,
+            "author": "France Travail",
+            "date": _crm_now(),
+            "kind": "funding_refused",
+            "text": f"Le financement France Travail de {contact_name} a été refusé.",
+            "read": False,
+            "contact_id": contact["id"],
+            "contact_name": contact_name,
+            "source_wedof_folder_id": stable_id,
         })
 
 
