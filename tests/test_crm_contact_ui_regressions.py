@@ -318,3 +318,17 @@ def test_calendly_refreshes_silently_after_cached_contact_render():
     assert "cached.appointments||[]" in javascript
     assert "lookup_warning:error.message" in javascript
     assert "if(button&&manual){button.disabled=false" in javascript
+
+
+def test_global_search_only_indexes_visible_contact_fields_and_ranks_names_first():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "const normalizeGlobalSearch=value=>" in javascript
+    assert "normalize('NFD')" in javascript
+    assert "const contactSearchFields=c=>[c.prenom,c.nom,c.mail,c.telephone,c.formation,c.lieu,c.statut]" in javascript
+    assert "Object.values(c)" not in javascript
+    assert "function contactSearchRank(c,q)" in javascript
+    assert "crmActiveContacts().filter(c=>searchable(c).includes(q))" in javascript
+    assert "contactSearchRank(a,q)-contactSearchRank(b,q)" in javascript
+    assert "filter(contact=>contact&&!contact.archived_at)" in javascript
+    assert "normalizeGlobalSearch(label).includes(q)" in javascript
