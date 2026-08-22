@@ -10,6 +10,9 @@ from crm_location_normalization import (
     install_crm_location_normalization,
     install_salesforce_location_guardrails,
 )
+from crm_pipeline_status_consistency import (
+    install_crm_pipeline_status_consistency,
+)
 from crm_salesforce_anomaly_followups_import import (
     register_salesforce_anomaly_followups_import,
 )
@@ -33,12 +36,16 @@ from crm_salesforce_status_guardrails import install_salesforce_status_guardrail
 from crm_salesforce_tasks_report_guardrails import (
     install_salesforce_tasks_report_guardrails,
 )
+from crm_salesforce_tasks_status_guardrails import (
+    install_salesforce_tasks_status_guardrails,
+)
 from crm_salesforce_transaction_guardrails import serialize_salesforce_writes
 from secretariat_followup_patch import register_secretariat_followup_patch
 
 
 app = legacy_app.app
 install_crm_location_normalization(legacy_app)
+install_crm_pipeline_status_consistency(legacy_app)
 register_secretariat_followup_patch(legacy_app)
 register_salesforce_import(app)
 install_salesforce_migration_guardrails(salesforce_migration)
@@ -79,6 +86,7 @@ register_salesforce_existing_repair(
     transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
 )
 install_salesforce_tasks_report_guardrails(salesforce_tasks_import)
+install_salesforce_tasks_status_guardrails(salesforce_tasks_import)
 register_salesforce_old_followups_import(
     app,
     migration_module=salesforce_migration,
