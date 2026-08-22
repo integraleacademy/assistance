@@ -275,3 +275,16 @@ def test_programmed_appointment_date_is_rendered_under_pipeline_status():
     assert "day:'2-digit',month:'2-digit',year:'numeric'" in crm_js
     assert "contactPipelineStatusMarkup(c)" in crm_js
     assert ".pipeline-appointment-date" in crm_css
+
+
+def test_dashboard_and_pipeline_explain_their_distinct_scopes():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "const crmActiveContacts=()=>contacts.filter(contact=>!contact.archived_at)" in javascript
+    assert "const dashboardContactsIn=range=>crmActiveContacts().filter" in javascript
+    assert "Pistes créées sur la période" in javascript
+    assert "Évolution des pistes créées" in javascript
+    assert "const activeContacts=crmActiveContacts();let list=[...activeContacts]" in javascript
+    assert "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length" in javascript
+    assert "function bindList(type){let base=crmActiveContacts().filter" in javascript
+    assert "dashboardKpi('Nouvelles pistes'" not in javascript
