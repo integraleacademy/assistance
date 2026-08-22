@@ -228,8 +228,8 @@ function enhanceContactWithCompleteness(contact,ctx){
  enhanceContact(contact,ctx);
  const contactTitle=document.querySelector('.contact-identity .contact-title-line h1');
  if(contactTitle&&!contactTitle.querySelector('.contact-flag-badge')){
-  const journey=contactTitle.querySelector('small'),flagBadge=contactFlagBadge(contact,'header');
-  if(flagBadge)(journey||contactTitle).insertAdjacentHTML(journey?'beforebegin':'beforeend',flagBadge);
+  const flagBadge=contactFlagBadge(contact,'header');
+  if(flagBadge)contactTitle.insertAdjacentHTML('afterbegin',flagBadge);
  }
  const quickActions=document.querySelector('.contact-quick-actions');
  if(quickActions&&!quickActions.querySelector('.contact-flag-control')){
