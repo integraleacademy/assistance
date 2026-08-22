@@ -660,7 +660,7 @@ def test_pipeline_financing_stages_follow_real_funding_request_status():
     assert "if(fundingStatus==='en_cours_instruction')statuses.add('Financement FT en cours')" in crm_js
     assert "if(fundingStatus==='refusee')statuses.add('Financement FT refusé')" in crm_js
     assert "const contactHasPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status)" in crm_js
-    assert "contacts.filter(c=>contactHasPipelineStatus(c,s)).length" in crm_js
+    assert "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length" in crm_js
     assert "list.filter(c=>contactHasPipelineStatus(c,statusFilter))" in crm_js
     assert "!statusFilter||contactHasPipelineStatus(c,statusFilter)" in crm_js
 
@@ -1757,7 +1757,8 @@ def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
     assert email_preview["sujet"] == (
         "Dossier de Lina — Agent de protection physique des personnes (A3P)"
     )
-    assert "Bonjour Lina Martin" in email_preview["html"]
+    assert email_preview["contenu"] == "<p>Bonjour Lina Martin</p>"
+    assert "Bonjour <strong>Lina</strong>" in email_preview["html"]
     assert "{{ prenom }}" not in email_preview["html"]
     assert sms.status_code == 200
     sms_preview = sms.get_json()
