@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
 
@@ -906,3 +907,76 @@ def test_route_access_control_and_all_error_responses_hide_secret(tmp_path, monk
     response = admin.post("/api/crm/wedof/sync")
     assert response.status_code == 503
     assert SECRET.encode() not in response.data
+
+
+def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    ft_folder = folder(
+        "ft-notification", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    ft_folder["state"] = "waitingAcceptation"
+    ft_folder["history"] = [{"state": "waitingAcceptation"}]
+    application._wedof_store_page(
+        [ft_folder], application.load_data(), 1,
+    )
+
+    ft_folder["state"] = "validated"
+    application._wedof_store_page(
+        [ft_folder], application.load_data(), 1,
+    )
+
+    stored = application.load_data()
+    alerts = [
+        item for item in stored["crm_notifications"]
+        if item.get("kind") == "funding_refused"
+    ]
+    assert sorted(item["recipient_email"] for item in alerts) == sorted(
+        application.USERS
+    )
+    assert {item["contact_id"] for item in alerts} == {contact["id"]}
+    assert {item["source_wedof_folder_id"] for item in alerts} == {
+        "ft-notification"
+    }
+    assert all("Lina MARTIN" in item["text"] for item in alerts)
+
+    own_alerts = [
+        item for item in client.get("/api/crm/notifications").get_json()
+        if item.get("kind") == "funding_refused"
+    ]
+    assert len(own_alerts) == 1
+    assert own_alerts[0]["read"] is False
+
+    application._wedof_store_page(
+        [ft_folder], application.load_data(), 1,
+    )
+    assert len([
+        item for item in application.load_data()["crm_notifications"]
+        if item.get("kind") == "funding_refused"
+    ]) == len(application.USERS)
+
+    ft_folder["state"] = "waitingAcceptation"
+    application._wedof_store_page(
+        [ft_folder], application.load_data(), 1,
+    )
+    ft_folder["state"] = "validated"
+    application._wedof_store_page(
+        [ft_folder], application.load_data(), 1,
+    )
+    assert len([
+        item for item in application.load_data()["crm_notifications"]
+        if item.get("kind") == "funding_refused"
+    ]) == 2 * len(application.USERS)
+
+
+def test_ft_refusal_notification_ui_is_system_only():
+    source = (
+        Path(__file__).resolve().parents[1] / "static" / "crm.js"
+    ).read_text(encoding="utf-8")
+
+    assert "n.kind==='funding_refused'" in source
+    assert "action:'a signalé un refus de financement'" in source
+    assert "reply:false" in source
+    assert "presentation.reply?" in source
