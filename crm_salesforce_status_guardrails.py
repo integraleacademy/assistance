@@ -9,6 +9,7 @@ PRIMARY_STATUSES = {
     "Nouveaux",
     "Blocage",
     "RDV programmé",
+    "En cours",
     "Prochain RDV inscription",
     "A relancer",
     "Disqualifié",
@@ -26,21 +27,6 @@ SECONDARY_STATUS_ALIASES = {
     "financement ft refuse": "Financement FT refusé",
     "c2p": "C2P en cours",
     "c2p en cours": "C2P en cours",
-}
-
-# Ces étapes représentent des dossiers qui doivent rester dans la file de
-# travail commerciale. Elles utilisent donc « A relancer » comme statut
-# principal, tout en conservant leur deuxième statut métier.
-FOLLOWUP_SECONDARY_SOURCES = {
-    "poei",
-    "session ft",
-    "marche ft",
-    "def mob",
-    "def mobilite",
-    "fin ft en cours",
-    "financement ft en cours",
-    "c2p",
-    "c2p en cours",
 }
 
 FUNDING_STATUS_BY_SECONDARY = {
@@ -97,10 +83,10 @@ def install_salesforce_status_guardrails(migration_module) -> None:
         if source_is_converted(row):
             return "Converti"
         raw = source_status(row)
-        if raw in FOLLOWUP_SECONDARY_SOURCES:
-            return "A relancer"
         if raw in SECONDARY_STATUS_ALIASES:
-            return "Nouveaux"
+            # POEI, C2P, Marché FT, Def MOB, etc. décrivent l'avancement
+            # métier. Sans tâche de relance importée, le dossier est « En cours ».
+            return "En cours"
         status = original_status(row)
         return status if status in PRIMARY_STATUSES else "Nouveaux"
 
