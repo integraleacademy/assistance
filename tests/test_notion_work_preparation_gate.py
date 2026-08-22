@@ -114,13 +114,15 @@ def test_notion_query_requires_complete_work_preparation() -> None:
     } in filters
 
 
-def test_night_batch_blocks_only_an_active_implementation_run() -> None:
+def test_night_batch_fills_up_to_three_parallel_implementation_slots() -> None:
     workflow = Path(".github/workflows/notion-crm-queue.yml").read_text(encoding="utf-8")
 
     assert 'actions/workflows/notion-crm-implement.yml/runs?per_page=50' in workflow
     assert 'pulls?state=open' not in workflow
-    assert 'Les pull requests déjà ouvertes ne bloquent plus la file' in workflow
-    assert 'MAX_TASKS: "1"' in workflow
+    assert 'MAX_CONCURRENT: "3"' in workflow
+    assert 'available_slots=$AVAILABLE' in workflow
+    assert 'MAX_TASKS: ${{ steps.capacity.outputs.available_slots }}' in workflow
+    assert 'Les PR déjà ouvertes ne consomment aucun créneau' in workflow
 
 
 def test_queue_restarts_immediately_after_an_implementation_finishes() -> None:
