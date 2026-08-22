@@ -125,8 +125,8 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
 
 def test_contact_header_displays_all_activity_counters_including_zero():
-    crm_js = read("static/crm.js")
-    crm_css = read("static/crm.css")
+    crm_js = CRM_JS.read_text(encoding="utf-8")
+    crm_css = CRM_CSS.read_text(encoding="utf-8")
 
     assert "function contactHeaderActivitySummary(contact)" in crm_js
     assert "const counts=listActivityCounts(contact)" in crm_js
