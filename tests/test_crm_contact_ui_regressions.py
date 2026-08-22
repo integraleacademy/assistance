@@ -122,3 +122,10 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
     assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
+
+
+def test_calendly_booking_error_keeps_modal_retry_available():
+    crm_js = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
+
+    assert "catch(e){toast(e.message,true);bookButton.disabled=false" in crm_js
+    assert "bookButton.textContent='Confirmer le rendez-vous'" in crm_js
