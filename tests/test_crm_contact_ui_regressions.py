@@ -74,7 +74,7 @@ def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
 
-    assert "const contactSheetUrl=id=>`/crm/contacts?fiche=${encodeURIComponent(id)}`" in javascript
+    assert "const contactSheetUrl=(id,section=C.section)=>" in javascript
     assert "window.open(contactSheetUrl(id),'_blank','noopener')" in javascript
     assert "C.section==='pistes'&&row.closest('#resultTable')" in javascript
     assert "link.target='_blank';link.rel='noopener'" in javascript
@@ -84,6 +84,53 @@ def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
     assert "event.button!==1" in javascript
     assert ".global-results a" in stylesheet
     assert "Cette fiche n’existe plus ou n’est plus accessible." in javascript
+
+
+def test_contact_back_navigation_preserves_the_safe_source_section():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    helpers = javascript[
+        javascript.index("const contactReturnSection="):
+        javascript.index("function openContactInNewTab")
+    ]
+    script = f"""
+const C={{section:'contacts'}};
+const location={{search:''}};
+let activeWedofContactId='42';
+let rendered=0;
+let pushed='';
+const history={{pushState:(_state,_title,url)=>{{pushed=url}}}};
+const render=()=>{{rendered+=1}};
+{helpers}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+assert(contactSheetUrl('a/b ?', 'pistes')==='/crm/contacts?fiche=a%2Fb%20%3F&retour=pistes','encoded pistes URL');
+assert(contactSheetUrl('a/b ?', 'contacts')==='/crm/contacts?fiche=a%2Fb%20%3F','encoded contacts URL');
+assert(contactReturnSection('?fiche=42&retour=pistes','contacts')==='pistes','pistes return parameter');
+assert(contactReturnSection('', 'pistes')==='pistes','pistes section fallback');
+assert(contactReturnSection('?retour=https://example.com','contacts')==='contacts','reject arbitrary return');
+assert(contactListUrl('pistes')==='/crm/pistes','pistes list URL');
+assert(contactListUrl('contacts')==='/crm/contacts','contacts list URL');
+assert(contactBackLabel('pistes')==='Toutes les pistes','pistes label');
+assert(contactBackLabel('contacts')==='Tous les contacts','contacts label');
+returnToContactList('pistes');
+assert(activeWedofContactId==='','clear active contact');
+assert(C.section==='pistes','activate pistes section');
+assert(pushed==='/crm/pistes','push pistes URL');
+assert(rendered===1,'render pistes list once');
+console.log('CRM contact return navigation: OK');
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM contact return navigation: OK" in completed.stdout
+    assert "const returnSection=contactReturnSection()" in javascript
+    assert "contactSheetUrl(id,returnSection)" in javascript
+    assert "contactBackLabel(returnSection)" in javascript
+    assert "backList.onclick=()=>returnToContactList(returnSection)" in javascript
 
 
 def test_relaunch_template_is_available_for_every_formation():
