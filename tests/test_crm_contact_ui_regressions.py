@@ -288,3 +288,18 @@ def test_dashboard_and_pipeline_explain_their_distinct_scopes():
     assert "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length" in javascript
     assert "function bindList(type){let base=crmActiveContacts().filter" in javascript
     assert "dashboardKpi('Nouvelles pistes'" not in javascript
+
+
+def test_bulk_messages_preview_and_offer_every_compatible_template():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    assert "modelPool=[...(isMail?templates.automatic_email||[]:[])" in javascript
+    assert "new Map(modelPool.map(template=>[String(template.id),template]))" in javascript
+    assert 'id="previewBulkMessage">Prévisualiser' in javascript
+    assert 'id="bulkMessagePreview" hidden' in javascript
+    assert "eligible[0].id}/message-preview" in javascript
+    assert "previewFrame.srcdoc=smsPreviewHtml(messageField.value)" in javascript
+    assert "previewRoot.hidden=false" in javascript
+    assert "previewButton.disabled=true;try{" in javascript
+    assert ".bulk-message-preview" in stylesheet

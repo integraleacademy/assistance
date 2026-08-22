@@ -469,3 +469,7 @@ body.sidebar-collapsed main{margin-left:76px}
 .pipeline-status-stack{display:flex;align-items:flex-start;gap:5px;flex-wrap:wrap}
 .pipeline-appointment-date{display:block;flex-basis:100%;margin-top:2px;color:#596b84;font-size:9px;font-weight:750;white-space:nowrap}
 @media(max-width:700px){.pipeline-appointment-date{font-size:8px}}
+
+.bulk-message-preview{margin-top:16px;padding:14px;border:1px solid #dbe4f2;border-radius:12px;background:#f8faff}
+.bulk-message-preview p{margin:0 0 10px;color:#334155;font-size:13px;font-weight:700}
+.bulk-message-preview .message-preview-frame{min-height:360px;background:#fff}
