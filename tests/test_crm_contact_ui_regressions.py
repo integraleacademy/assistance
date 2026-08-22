@@ -3,6 +3,7 @@ from pathlib import Path
 
 CRM_JS = Path(__file__).parents[1] / "static" / "crm.js"
 CRM_TITLE_JS = Path(__file__).parents[1] / "static" / "crm_title.js"
+CRM_APPOINTMENT_STATE_JS = Path(__file__).parents[1] / "static" / "crm_appointment_state.js"
 CRM_CSS = Path(__file__).parents[1] / "static" / "crm.css"
 CRM_TEMPLATE = Path(__file__).parents[1] / "templates" / "crm.html"
 APP_PY = Path(__file__).parents[1] / "app.py"
@@ -382,3 +383,29 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
     assert 'CRM_ASSET_VERSION = "20260822-contact-tab-title-1"' in backend
+
+def test_programmed_appointment_date_refresh_is_wired_across_tabs():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    appointment_state = CRM_APPOINTMENT_STATE_JS.read_text(encoding="utf-8")
+    template = CRM_TEMPLATE.read_text(encoding="utf-8")
+    backend = APP_PY.read_text(encoding="utf-8")
+
+    assert "window.CRMAppointmentState.dateLabel(c.id,crmAppointments)" in javascript
+    assert "replaceContactAppointments(c.id,appointments);" in javascript
+    assert "updateVisibleAppointmentData();" in javascript
+    assert 'data-crm-cell="activities"' in javascript
+    assert 'data-crm-cell="status"' in javascript
+    assert "Array.isArray(snapshot.appointments)" in javascript
+    assert "CRMAppointmentState.signature(snapshot.appointments)" in javascript
+    assert '"appointments": appointments' in backend[
+        backend.index("def crm_contact_updates():"):
+        backend.index('@app.delete("/api/crm/database")')
+    ]
+    assert template.index("filename='crm_appointment_state.js'") < template.index(
+        "filename='crm.js'"
+    )
+    assert "filename='crm_appointment_state.js',v=asset_version" in template
+    assert "replaceContact" in appointment_state
+    assert "nextAppointment" in appointment_state
+    assert 'CRM_ASSET_VERSION = "20260822-calendly-list-sync-1"' in backend
+
