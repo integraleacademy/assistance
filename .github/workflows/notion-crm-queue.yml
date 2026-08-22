@@ -92,6 +92,8 @@ jobs:
         if: steps.configuration.outputs.configured == 'true' && steps.active_work.outputs.active != 'true'
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MEDIA_MODEL: gpt-5.6-luna
           NOTION_DATA_SOURCE_ID: 7f12fe92-dbc4-40c8-af4e-77578b5dbfc0
           GITHUB_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
