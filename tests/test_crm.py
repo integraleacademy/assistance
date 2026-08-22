@@ -1757,7 +1757,7 @@ def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
     assert email_preview["sujet"] == (
         "Dossier de Lina — Agent de protection physique des personnes (A3P)"
     )
-    assert email_preview["contenu"] == "<p>Bonjour Lina Martin</p>"
+    assert email_preview["contenu"] == "<p>Bonjour Lina MARTIN</p>"
     assert "Bonjour <strong>Lina</strong>" in email_preview["html"]
     assert "{{ prenom }}" not in email_preview["html"]
     assert sms.status_code == 200
