@@ -1717,6 +1717,14 @@ def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
             "telephone": "0612345678",
         },
     ).get_json()
+    template = c.post(
+        "/api/crm/templates",
+        json={
+            "type": "sms",
+            "nom": "Relance groupée",
+            "contenu": "Bonjour {{ prenom }}, formation {{ formation }}.",
+        },
+    ).get_json()
     unexpected_delivery = lambda *args, **kwargs: pytest.fail(
         "La prévisualisation ne doit appeler aucun fournisseur d’envoi"
     )
@@ -1725,6 +1733,7 @@ def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
     before = application.load_data()
     before_contact = application._crm_contact(before, contact["id"])
     before_activities = list(before_contact.get("activities", []))
+    before_templates = list(before.get("crm_sms_templates", []))
 
     email = c.post(
         f"/api/crm/contacts/{contact['id']}/message-preview",
@@ -1738,7 +1747,7 @@ def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
         f"/api/crm/contacts/{contact['id']}/message-preview",
         json={
             "type": "sms",
-            "contenu": "Bonjour {{ prenom }}, formation {{ formation }}.",
+            "contenu": template["contenu"],
         },
     )
 
@@ -1768,6 +1777,7 @@ def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
     after = application.load_data()
     after_contact = application._crm_contact(after, contact["id"])
     assert after_contact.get("activities", []) == before_activities
+    assert after.get("crm_sms_templates", []) == before_templates
 
 def test_crm_email_dynamic_dates_come_from_upcoming_admin_sessions(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
