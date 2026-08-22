@@ -13410,6 +13410,7 @@ def crm_candidate_ai_analysis(contact_id):
         # ajouter un second appel réseau synchrone vers Gestion Stagiaires.
         context = build_candidate_ai_context(contact_id, data, fetch_live_vae=False)
         meaningful = (any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
+            "regulatory_declarations_read_only", "meta_form_answers_untrusted",
             "recent_notes_untrusted", "recent_activities_untrusted", "wedof", "vae_tracking_read_only"))
             or bool(context.get("appointments", {}).get("total_count")))
         if not meaningful:
