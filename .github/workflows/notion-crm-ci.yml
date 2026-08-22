@@ -50,14 +50,15 @@ jobs:
               ".github/workflows/notion-crm-pr-sync.yml": {"sync"},
               ".github/workflows/notion-crm-work-pr-ci.yml": {"validate"},
               ".github/workflows/notion-crm-refresh-open-prs.yml": {"refresh"},
-              ".github/workflows/notion-crm-auto-merge.yml": {"merge"},
               ".github/workflows/notion-crm-legacy-pr-publish.yml": {"inspect", "test", "publish"},
+              ".github/workflows/notion-crm-work-pr-publish.yml": {"inspect", "test", "publish"},
           }
           obsolete = [
               ".github/workflows/notion-crm-queue.yml",
               ".github/workflows/notion-crm-implement.yml",
               ".github/workflows/notion-crm-technical-recovery.yml",
               ".github/workflows/notion-crm-timeout-coordinator.yml",
+              ".github/workflows/notion-crm-auto-merge.yml",
           ]
 
           for filename, jobs in expected_jobs.items():
@@ -69,7 +70,7 @@ jobs:
               print(f"{filename}: OK")
 
           for filename in obsolete:
-              assert not Path(filename).exists(), f"Ancien workflow Codex encore présent : {filename}"
+              assert not Path(filename).exists(), f"Ancien workflow encore présent : {filename}"
               print(f"{filename}: supprimé")
           PY
 
