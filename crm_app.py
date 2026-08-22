@@ -20,6 +20,9 @@ from crm_salesforce_genuine_new_guardrails import (
 )
 from crm_salesforce_import import register_salesforce_import
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
+from crm_salesforce_old_followups_import import (
+    register_salesforce_old_followups_import,
+)
 from crm_salesforce_report_guardrails import install_salesforce_report_guardrails
 from crm_salesforce_scope_guardrails import (
     disable_legacy_salesforce_import,
@@ -76,6 +79,16 @@ register_salesforce_existing_repair(
     transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
 )
 install_salesforce_tasks_report_guardrails(salesforce_tasks_import)
+register_salesforce_old_followups_import(
+    app,
+    migration_module=salesforce_migration,
+    tasks_module=salesforce_tasks_import,
+    current_user_fn=legacy_app.current_user,
+    load_data_fn=legacy_app.load_data,
+    login_required_fn=legacy_app.login_required,
+    save_data_fn=legacy_app.save_data,
+    transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
+)
 salesforce_tasks_import.register_salesforce_tasks_import(
     app,
     current_user_fn=legacy_app.current_user,
