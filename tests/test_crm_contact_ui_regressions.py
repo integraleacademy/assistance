@@ -2,7 +2,10 @@ from pathlib import Path
 
 
 CRM_JS = Path(__file__).parents[1] / "static" / "crm.js"
+CRM_TITLE_JS = Path(__file__).parents[1] / "static" / "crm_title.js"
 CRM_CSS = Path(__file__).parents[1] / "static" / "crm.css"
+CRM_TEMPLATE = Path(__file__).parents[1] / "templates" / "crm.html"
+APP_PY = Path(__file__).parents[1] / "app.py"
 
 
 def test_calendly_refresh_keeps_cached_appointments_and_formats_paris_sync_time():
@@ -356,3 +359,26 @@ def test_global_search_only_indexes_visible_contact_fields_and_ranks_names_first
     assert "contactSearchRank(a,q)-contactSearchRank(b,q)" in javascript
     assert "filter(contact=>contact&&!contact.archived_at)" in javascript
     assert "normalizeGlobalSearch(label).includes(q)" in javascript
+
+
+
+def test_contact_document_title_is_wired_to_real_contact_navigation():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    title_javascript = CRM_TITLE_JS.read_text(encoding="utf-8")
+    template = CRM_TEMPLATE.read_text(encoding="utf-8")
+    backend = APP_PY.read_text(encoding="utf-8")
+
+    assert "const formatFirstName=window.CRMDocumentTitle.formatFirstName" in javascript
+    assert "const displayName=window.CRMDocumentTitle.displayName" in javascript
+    assert "window.CRMDocumentTitle.applyContact(c);" in javascript
+    assert "if(!c){window.CRMDocumentTitle.reset();" in javascript
+    render_body = javascript[
+        javascript.index("function render(){"):
+        javascript.index("async function init(){")
+    ]
+    assert "window.CRMDocumentTitle.reset();" in render_body
+    assert "titleForContact" in title_javascript
+    assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
+    assert "filename='crm_title.js',v=asset_version" in template
+    assert "filename='crm.js',v=asset_version" in template
+    assert 'CRM_ASSET_VERSION = "20260822-contact-tab-title-1"' in backend
