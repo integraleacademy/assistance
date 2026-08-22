@@ -1702,6 +1702,73 @@ def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
     assert "integraleacademy.com" in html
 
 
+
+def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
+    tmp_path, monkeypatch
+):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={
+            "prenom": "Lina",
+            "nom": "Martin",
+            "formation": "A3P",
+            "mail": "lina@example.com",
+            "telephone": "0612345678",
+        },
+    ).get_json()
+    unexpected_delivery = lambda *args, **kwargs: pytest.fail(
+        "La prévisualisation ne doit appeler aucun fournisseur d’envoi"
+    )
+    monkeypatch.setattr(application, "send_email_html", unexpected_delivery)
+    monkeypatch.setattr(application, "send_sms", unexpected_delivery)
+    before = application.load_data()
+    before_contact = application._crm_contact(before, contact["id"])
+    before_activities = list(before_contact.get("activities", []))
+
+    email = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={
+            "type": "email",
+            "sujet": "Dossier de {{ prenom }} — {{ formation }}",
+            "contenu": "<p>Bonjour {{ prenom }} {{ nom }}</p>",
+        },
+    )
+    sms = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={
+            "type": "sms",
+            "contenu": "Bonjour {{ prenom }}, formation {{ formation }}.",
+        },
+    )
+
+    assert email.status_code == 200
+    email_preview = email.get_json()
+    assert email_preview["type"] == "email"
+    assert email_preview["sujet"] == (
+        "Dossier de Lina — Agent de protection physique des personnes (A3P)"
+    )
+    assert "Bonjour Lina Martin" in email_preview["html"]
+    assert "{{ prenom }}" not in email_preview["html"]
+    assert sms.status_code == 200
+    sms_preview = sms.get_json()
+    assert sms_preview == {
+        "type": "sms",
+        "sujet": "",
+        "contenu": (
+            "Bonjour Lina, formation "
+            "Agent de protection physique des personnes (A3P)."
+        ),
+    }
+    assert c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={"type": "push", "contenu": "Test"},
+    ).status_code == 400
+
+    after = application.load_data()
+    after_contact = application._crm_contact(after, contact["id"])
+    assert after_contact.get("activities", []) == before_activities
+
 def test_crm_email_dynamic_dates_come_from_upcoming_admin_sessions(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     data = application.load_data()
