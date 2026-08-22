@@ -119,13 +119,21 @@ function dashboardRanges(){
 }
 const dashboardInRange=(value,range)=>{const date=dashboardDate(value);return !!date&&date>=range.start&&date<range.end};
 const dashboardContactsIn=range=>contacts.filter(contact=>{const date=dashboardContactDate(contact);return !!date&&date>=range.start&&date<range.end});
-function dashboardOrigin(contact){
- const raw=String(contact.origine||contact.source||'').trim();
- if(contact.meta_source&&Object.keys(contact.meta_source).length||/\b(meta|facebook|instagram)\b/i.test(`${raw} ${contact.source_detail||''}`))return'META';
- return raw||'Non renseignée';
+const crmOriginFilterValues=['META','Google Ads','Site internet','Bouche à oreilles','Mon Compte Formation','Secrétariat','Simulateur VAE','Autre'];
+const crmOriginKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr-FR').replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+function canonicalCrmOrigin(contact){
+ const raw=String(contact.origine||contact.source||'').trim(),details=`${raw} ${contact.source||''} ${contact.source_detail||''}`,normalized=crmOriginKey(details),gclid=String(contact.gclid||contact.formulaire?.gclid||'').trim();
+ if(contact.meta_source&&Object.keys(contact.meta_source).length||/\b(meta|facebook|instagram)\b/i.test(details))return'META';
+ if(gclid||normalized.includes('google'))return'Google Ads';
+ if(normalized.includes('wedof')||normalized.includes('cpf')||normalized.includes('compte formation'))return'Mon Compte Formation';
+ if(normalized.includes('simulateur')&&normalized.includes('vae'))return'Simulateur VAE';
+ if(normalized.includes('secretariat'))return'Secrétariat';
+ if(normalized.includes('bouche')&&normalized.includes('oreille'))return'Bouche à oreilles';
+ if(normalized.includes('site internet')||normalized.includes('site web')||normalized==='site')return'Site internet';
+ return'Autre';
 }
-const crmOriginFilterValues=['META','Google Ads','Google','Site internet','Simulateur VAE','Réseaux sociaux','CPF','Mon Compte Formation','FT','POEI','Secrétariat','Ajout manuel','Calendly','Téléphone','Salesforce','Autre'];
-function leadOriginFilterOptions(list){const observed=list.map(dashboardOrigin).filter(Boolean);return[...new Set([...crmOriginFilterValues,...observed])].sort((a,b)=>a.localeCompare(b,'fr'))}
+function dashboardOrigin(contact){return canonicalCrmOrigin(contact)}
+function leadOriginFilterOptions(){return[...crmOriginFilterValues]}
 const dashboardHasContact=contact=>(contact.activities||[]).some(activity=>contactContactActivityKinds.has(activity.kind))||crmAppointments.some(appointment=>String(appointment.contact_id)===String(contact.id)&&appointment.response_status==='answered');
 const dashboardHasAppointment=contact=>crmAppointments.some(appointment=>String(appointment.contact_id)===String(contact.id)&&appointment.status!=='canceled');
 const dashboardRate=(numerator,denominator)=>denominator?Math.round(numerator/denominator*100):0;
