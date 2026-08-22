@@ -1,0 +1,179 @@
+name: Notion CRM - récupérer les erreurs techniques
+
+on:
+  workflow_run:
+    workflows: ["Notion CRM - préparer la PR avec Codex"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notion-crm-technical-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Remettre le premier échec technique dans la file
+    if: >-
+      github.repository == 'integraleacademy/assistance' &&
+      github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Préparer Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Installer le client HTTP
+        run: python -m pip install --disable-pip-version-check requests
+
+      - name: Reclasser l'échec technique
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          NOTION_DATA_SOURCE_ID: 7f12fe92-dbc4-40c8-af4e-77578b5dbfc0
+          COMPLETED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import os
+          import time
+          from typing import Any
+
+          import requests
+
+          token = os.environ.get("NOTION_API_TOKEN", "").strip()
+          source_id = os.environ.get("NOTION_DATA_SOURCE_ID", "").replace("-", "")
+          run_url = os.environ.get("COMPLETED_RUN_URL", "").strip()
+          if not token or len(source_id) != 32 or not run_url:
+              raise SystemExit("Configuration de récupération technique incomplète.")
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Notion-Version": "2026-03-11",
+              "Content-Type": "application/json",
+              "User-Agent": "IntegraleAcademy-NotionCRM-TechnicalRecovery/1.0",
+          }
+
+          def request(method: str, url: str, *, expected=(200,), **kwargs: Any) -> requests.Response:
+              response = requests.request(method, url, headers=headers, timeout=(10, 45), **kwargs)
+              if response.status_code not in set(expected):
+                  raise RuntimeError(
+                      f"{method} {url}: HTTP {response.status_code} — {response.text[:1000]}"
+                  )
+              return response
+
+          def query_page() -> dict[str, Any] | None:
+              payload = {
+                  "filter": {
+                      "and": [
+                          {"property": "Plateforme", "select": {"equals": "CRM"}},
+                          {"property": "Run GitHub", "url": {"equals": run_url}},
+                      ]
+                  },
+                  "page_size": 1,
+              }
+              data = request(
+                  "POST",
+                  f"https://api.notion.com/v1/data_sources/{source_id}/query",
+                  json=payload,
+              ).json()
+              results = data.get("results", [])
+              return results[0] if results and isinstance(results[0], dict) else None
+
+          def prop(page: dict[str, Any], name: str) -> dict[str, Any]:
+              value = page.get("properties", {}).get(name, {})
+              return value if isinstance(value, dict) else {}
+
+          def select(page: dict[str, Any], name: str) -> str:
+              value = prop(page, name).get("select")
+              return str(value.get("name") or "") if isinstance(value, dict) else ""
+
+          def checkbox(page: dict[str, Any], name: str) -> bool:
+              return bool(prop(page, name).get("checkbox"))
+
+          def rich_text(page: dict[str, Any], name: str) -> str:
+              items = prop(page, name).get("rich_text")
+              if not isinstance(items, list):
+                  return ""
+              return "".join(
+                  str(item.get("plain_text") or "")
+                  for item in items
+                  if isinstance(item, dict)
+              ).strip()
+
+          # Le job notify du workflow terminé écrit d'abord le détail dans Notion.
+          # On attend quelques secondes pour éviter une course entre workflow_run et l'API Notion.
+          page = None
+          for _ in range(6):
+              page = query_page()
+              if page and select(page, "Statut") == "En attente":
+                  break
+              time.sleep(5)
+
+          if not page:
+              print("Aucune page CRM liée au run terminé.")
+              raise SystemExit(0)
+
+          page_id = str(page.get("id") or "")
+          status = select(page, "Statut")
+          prepared = checkbox(page, "Préparation Work terminée")
+          already_retried = checkbox(page, "Retry timeout effectué")
+          automation_id = rich_text(page, "ID automatisation")
+          previous_error = rich_text(page, "Erreur automatisation")
+
+          # En attente reste réservé aux vrais blocages humains. Un premier incident
+          # de l'étape GitHub/Codex/tests est remis automatiquement dans la file,
+          # en réutilisant l'issue existante. Le coordinateur différé lancera ce retry
+          # seulement après les demandes normales Prêt à coder.
+          if (
+              page_id
+              and status == "En attente"
+              and prepared
+              and automation_id.startswith("issue:")
+              and not already_retried
+          ):
+              request(
+                  "PATCH",
+                  f"https://api.notion.com/v1/pages/{page_id.replace('-', '')}",
+                  json={
+                      "properties": {
+                          "Statut": {"select": {"name": "Prêt à coder"}},
+                          "Retry timeout effectué": {"checkbox": True},
+                          "Erreur automatisation": {"rich_text": []},
+                      }
+                  },
+              )
+              detail = previous_error or "Échec technique du workflow GitHub/Codex."
+              request(
+                  "POST",
+                  "https://api.notion.com/v1/comments",
+                  json={
+                      "parent": {"page_id": page_id.replace("-", "")},
+                      "rich_text": [
+                          {
+                              "type": "text",
+                              "text": {
+                                  "content": (
+                                      "🔁 Incident technique récupéré automatiquement. "
+                                      "La demande repasse en Prêt à coder et sera retentée une fois, "
+                                      "après les demandes normales.\n\n"
+                                      f"Incident précédent : {detail[:1200]}"
+                                  )
+                              },
+                          }
+                      ],
+                  },
+              )
+              print(f"Échec technique reclassé automatiquement pour {page_id}.")
+          elif already_retried:
+              print(
+                  "La demande a déjà bénéficié de son retry automatique ; "
+                  "le second échec reste visible pour éviter une boucle infinie."
+              )
+          else:
+              print("La page n'est pas un échec technique récupérable automatiquement.")
+          PY
