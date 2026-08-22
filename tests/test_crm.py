@@ -415,7 +415,7 @@ def test_contact_completeness_uses_the_real_conditional_requirements():
         assert marker in workspace_js
     assert "enhanceContact:enhanceContactWithCompleteness" in workspace_js
     assert "refreshContactCompleteness(draft)" in workspace_js
-    assert "details.missing.slice(0,3)" in workspace_js
+    assert "details.missing.join(', ')" in workspace_js
     assert "contactCompletenessDetails(contact).percent" in workspace_js
 
 
@@ -913,7 +913,7 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
     assert ".tracking-card:popover-open" in open(
         application.app.root_path + "/static/crm.css", encoding="utf-8"
     ).read()
-    assert "'Secrétariat','Ajout manuel','Autre'" in crm_js
+    assert "'Secrétariat','Formulaire abandonné','Ajout manuel','Autre'" in crm_js
 
 
 def test_tracking_card_is_displayed_above_publications():
@@ -2148,7 +2148,7 @@ def test_crm_regulatory_and_funding_dependencies_are_present():
     assert 'data-show="cpf-yes"' in script
     assert 'data-show="identity-created"' in script
     assert 'data-show="ft-yes"' in script
-    assert 'wedofLoaded=true;loadWedof(c)' in script
+    assert "loadWedof(c,{refresh:true})" in script
 
 
 def test_leads_can_be_filtered_by_an_exact_training_session():
@@ -2162,3 +2162,105 @@ def test_leads_can_be_filtered_by_an_exact_training_session():
     assert "c.formation===session[0]" in crm_js
     assert "(c.lieu||'')===session[1]" in crm_js
     assert 'id="filterResultCount"' in crm_js
+
+
+def test_abandoned_information_form_creates_one_internal_crm_lead(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda fields: None)
+    monkeypatch.setattr(
+        application, "envoyer_mail_formulaire_formation_abandonne",
+        lambda record, fields: True,
+    )
+    monkeypatch.setattr(
+        application, "envoyer_sms_formulaire_formation_abandonne",
+        lambda record, fields: True,
+    )
+    payload = {
+        "form_id": "draft-abandoned-1",
+        "status": "abandoned",
+        "fields": {
+            "prenom": "Lina", "nom": "Martin",
+            "mail": "lina@example.com", "telephone": "06 12 34 56 78",
+            "formation": "APS", "centre": "paris",
+            "dates": "Session septembre", "gclid": "gclid-test",
+        },
+    }
+
+    assert c.post("/api/demande-informations-formations/autosave", json=payload).status_code == 204
+    assert c.post("/api/demande-informations-formations/autosave", json=payload).status_code == 204
+
+    data = application.load_data()
+    assert len(data["crm_contacts"]) == 1
+    contact = data["crm_contacts"][0]
+    assert contact["statut"] == "Nouveaux"
+    assert contact["origine"] == "Formulaire abandonné"
+    assert contact["gclid"] == "gclid-test"
+    assert contact["dates_formation"] == "Session septembre"
+    assert [item["title"] for item in contact["activities"]].count(
+        "Formulaire abandonné détecté"
+    ) == 1
+    draft = data["formulaires_abandonnes"][0]
+    assert draft["crm_abandoned_contact_id"] == contact["id"]
+
+
+def test_completed_form_enriches_abandoned_contact_without_changing_origin(tmp_path, monkeypatch):
+    client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "current_user", lambda: {"name": "Test"})
+    data = application.load_data()
+    fields = {
+        "prenom": "Lina", "nom": "Martin",
+        "mail": "lina@example.com", "telephone": "06 12 34 56 78",
+        "formation": "APS", "centre": "paris",
+    }
+    record = {"form_id": "draft-abandoned-2", "fields": fields}
+    abandoned = application._crm_create_or_match_abandoned_form_contact(
+        data, record, fields, "22/08/2026 14:00",
+    )
+    completed_fields = {
+        **fields, "dates": "Session octobre",
+        "cpf_consulte": "OUI", "cpf_montant": "1200",
+        "gclid": "gclid-completed",
+    }
+    matched = application._crm_create_contact_from_information_request(
+        data, completed_fields, "request-completed-2", "DEVIS-2", "/devis/2",
+    )
+
+    assert matched["id"] == abandoned["id"]
+    assert matched["origine"] == "Formulaire abandonné"
+    assert matched["dates_formation"] == "Session octobre"
+    assert matched["cpf"] == "OUI"
+    assert matched["gclid"] == "gclid-completed"
+    assert len(data["crm_contacts"]) == 1
+
+
+def test_crm_creation_survives_salesforce_failure_for_abandoned_form(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        application, "creer_piste_salesforce",
+        lambda fields: (_ for _ in ()).throw(RuntimeError("Salesforce indisponible")),
+    )
+    monkeypatch.setattr(
+        application, "envoyer_mail_formulaire_formation_abandonne",
+        lambda record, fields: False,
+    )
+    monkeypatch.setattr(
+        application, "envoyer_sms_formulaire_formation_abandonne",
+        lambda record, fields: False,
+    )
+
+    response = c.post(
+        "/api/demande-informations-formations/autosave",
+        json={
+            "form_id": "draft-abandoned-3", "status": "abandoned",
+            "fields": {
+                "prenom": "Nadia", "nom": "Durand",
+                "mail": "nadia@example.com", "telephone": "0611223344",
+            },
+        },
+    )
+
+    assert response.status_code == 204
+    data = application.load_data()
+    assert len(data["crm_contacts"]) == 1
+    assert data["crm_contacts"][0]["origine"] == "Formulaire abandonné"
+    assert "Salesforce indisponible" in data["formulaires_abandonnes"][0]["salesforce_abandoned_error"]
