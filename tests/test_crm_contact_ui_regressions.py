@@ -39,6 +39,28 @@ def test_contact_header_displays_the_scheduled_relaunch_date_explicitly():
     assert "day:'2-digit',month:'2-digit',year:'numeric'" in javascript
 
 
+def test_contact_header_score_uses_server_contract_and_refreshes_with_card():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    assert 'id="contactHeaderScore"' in javascript
+    assert 'aria-label="Score d’intégration"' in javascript
+    assert "score.score!==null&&score.score!==undefined&&score.score!==''" in javascript
+    assert "Score indisponible" in javascript
+    for state in ("ready", "action_required", "blocked"):
+        assert state in javascript
+        assert f".contact-score-status.{state}" in stylesheet
+    score_renderer = javascript[
+        javascript.index("function renderIntegrationScore(c){"):
+        javascript.index("const aiTiming=", javascript.index("function renderIntegrationScore(c){"))
+    ]
+    assert "renderContactHeaderScore(c);" in score_renderer
+    assert "const score=c.integration_score" in score_renderer
+    assert ".contact-header-score{display:flex" in stylesheet
+    assert "flex-wrap:wrap" in stylesheet
+    assert "@media(max-width:650px)" in stylesheet
+
+
 def test_activity_log_only_displays_contact_communications_and_delegates_more():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
