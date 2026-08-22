@@ -80,6 +80,7 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
 
     assert created.status_code == 200
     assert created.get_json()["contact_id"] == contact["id"]
+    assert application.load_data()["crm_calendly"]["last_sync_at"]
     appointments = client.get(
         f"/api/crm/contacts/{contact['id']}/calendly/appointments"
     ).get_json()["appointments"]
@@ -505,6 +506,9 @@ def test_full_sync_imports_every_event_and_keeps_unmatched_appointments(tmp_path
 
     assert response.status_code == 200
     assert response.get_json()["complete"] is True
+    sync_state = application.load_data()["crm_calendly"]
+    assert sync_state["last_sync_at"]
+    assert sync_state["last_full_sync_at"] == sync_state["last_sync_at"]
     stored = application.load_data()["crm_calendly_appointments"]
     assert len(stored) == 2
     assert {item["event_type_uri"] for item in stored} == {
@@ -582,6 +586,7 @@ def test_contact_appointments_are_fetched_directly_by_email(tmp_path, monkeypatc
     }
     assert len(result["appointments"]) == 1
     assert result["appointments"][0]["contact_id"] == contact["id"]
+    assert result["integration"]["last_sync_at"]
     updated_contact = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert updated_contact["statut"] == "RDV programmé"
     assert [path for _, path, _ in calls] == [
@@ -687,6 +692,11 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
     ]
     for marker in required_markers:
         assert marker in crm_js
+    assert "Promise.race" not in crm_js
+    assert "La recherche Calendly a pris trop de temps" not in crm_js
+    assert "Les rendez-vous déjà enregistrés restent affichés." in crm_js
+    assert 'id="retryCalendlyLookup"' in crm_js
+    assert "integration.last_sync_at||new Date().toISOString()" not in crm_js
     assert "rendez-vous traités" not in crm_js
     assert "appointment-row" not in crm_js
     assert "grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))" in crm_css
