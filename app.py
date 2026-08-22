@@ -8466,23 +8466,15 @@ def _crm_upsert_calendly_appointment(
         or previous_status != appointment.get("status")
         or previous_start != appointment.get("start_time")
     )
-    status_changed = False
-    if (
-        contact
-        and classify_calendly_appointment(appointment, datetime.datetime.now(pytz.timezone("Europe/Paris"))) in {"upcoming", "in_progress"}
-        and contact.get("statut") not in CRM_RESERVED_STATUSES
-        and contact.get("statut") != "RDV programmé"
-    ):
-        old_status = contact.get("statut") or "Nouveaux"
-        contact["statut"] = "RDV programmé"
-        status_changed = True
-        if record_activity:
-            _crm_activity(
-                contact,
-                "statut",
-                "Statut : RDV programmé",
-                f"Ancien statut : {old_status}",
-            )
+    old_status = (contact.get("statut") or "Nouveaux") if contact else ""
+    status_changed = bool(contact and _crm_sync_contact_calendly_status(data, contact))
+    if contact and status_changed and record_activity:
+        _crm_activity(
+            contact,
+            "statut",
+            f"Statut : {contact['statut']}",
+            f"Ancien statut : {old_status}",
+        )
     if contact and record_activity and changed:
         if appointment.get("status") == "canceled":
             title = "Rendez-vous Calendly annulé"
@@ -8501,18 +8493,33 @@ def _crm_upsert_calendly_appointment(
 
 
 def _crm_sync_contact_calendly_status(data, contact):
-    """Keep the pipeline aligned with active Calendly appointments already cached."""
+    """Align the pipeline with active appointments and open follow-ups.
+
+    Final statuses always win. ``A relancer`` also keeps its historical
+    priority when an appointment is later synchronized. Conversely, an open
+    follow-up repairs any other non-final status when no active appointment is
+    left, notably stale ``RDV programmé`` values after a cancellation.
+    """
     now = datetime.datetime.now(pytz.timezone("Europe/Paris"))
     has_active_appointment = any(
         item.get("contact_id") == contact.get("id")
         and classify_calendly_appointment(item, now) in {"upcoming", "in_progress"}
         for item in data.get("crm_calendly_appointments", [])
     )
-    if (not has_active_appointment
-            or contact.get("statut") == "RDV programmé"
-            or contact.get("statut") in CRM_RESERVED_STATUSES):
+    current_status = contact.get("statut") or "Nouveaux"
+    if current_status in {"Disqualifié", "Converti"}:
         return False
-    contact["statut"] = "RDV programmé"
+    if has_active_appointment:
+        if current_status in {"A relancer", "RDV programmé"}:
+            return False
+        next_status = "RDV programmé"
+    elif contact.get("relance_date"):
+        if current_status == "A relancer":
+            return False
+        next_status = "A relancer"
+    else:
+        return False
+    contact["statut"] = next_status
     contact["updated_at"] = _crm_now()
     return True
 
@@ -11949,6 +11956,8 @@ def _crm_prepare_contacts(data):
             changed = True
         if _crm_ensure_relances(existing):
             changed = True
+        if _crm_sync_contact_calendly_status(data, existing):
+            changed = True
         prenom = _crm_format_first_name(existing.get("prenom"))
         nom = _crm_format_last_name(existing.get("nom"))
         if (prenom, nom) != (existing.get("prenom", ""), existing.get("nom", "")):
@@ -12823,6 +12832,8 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     if (determinants.intersection(payload)
             and (old_amount != new_amount or provisional_score.get("personal_remainder_applicable") is not True)):
         contact["reste_a_charge_perso"] = ""
+    _crm_calendly_relink_appointments(data, contact)
+    _crm_sync_contact_calendly_status(data, contact)
     contact["prenom"] = _crm_format_first_name(contact.get("prenom"))
     contact["nom"] = _crm_format_last_name(contact.get("nom"))
     statuses = _crm_statuses(data)
@@ -12867,7 +12878,6 @@ def _crm_patch_contact_locked(data, contact, contact_id):
             _crm_activity(contact, "score", "Le dossier présente maintenant un blocage de financement")
         elif old_score.get("operational_status") == "blocked" and new_score.get("operational_status") == "ready":
             _crm_activity(contact, "score", "Le blocage de financement a été levé")
-    _crm_calendly_relink_appointments(data, contact)
     contact["updated_at"] = _crm_now()
     save_data(data)
     return jsonify(_crm_contact_detail_response(contact, data))

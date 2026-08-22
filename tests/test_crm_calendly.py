@@ -91,6 +91,13 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     assert scheduled_contact["statut"] == "RDV programmé"
     assert any(activity["title"] == "Statut : RDV programmé" for activity in scheduled_contact["activities"])
 
+    with_follow_up = client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"relance_date": "2099-09-03"},
+    ).get_json()
+    assert with_follow_up["statut"] == "RDV programmé"
+    assert with_follow_up["relance_date"] == "2099-09-03"
+
     canceled_payload = calendly_payload(status="canceled")
     canceled_payload["cancellation"] = {"reason": "Indisponible"}
     canceled = signed_webhook(client, monkeypatch, "invitee.canceled", canceled_payload)
@@ -103,6 +110,13 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     assert appointments[0]["status"] == "canceled"
     updated_contact = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert updated_contact["activities"][0]["title"] == "Rendez-vous Calendly annulé"
+    assert updated_contact["statut"] == "A relancer"
+    assert updated_contact["relance_date"] == "2099-09-03"
+    assert any(
+        activity["title"] == "Statut : A relancer"
+        and activity["detail"] == "Ancien statut : RDV programmé"
+        for activity in updated_contact["activities"]
+    )
 
 
 def test_upcoming_appointment_does_not_replace_a_manually_scheduled_follow_up(tmp_path, monkeypatch):
