@@ -5,20 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/notion-crm-*.yml"
-      - "AGENTS.md"
-      - "docs/notion-crm-automation.md"
-      - "docs/chatgpt-work-crm-preparation.md"
       - "notion_crm_automation.py"
       - "notion_crm_lib/**"
-      - "scripts/apply_notion_patch.py"
-      - "scripts/stage_notion_changes.py"
-      - "scripts/validate_notion_change.py"
-      - "tests/test_notion_crm_automation.py"
-      - "tests/test_notion_media_analysis.py"
-      - "tests/test_notion_patch_repair.py"
-      - "tests/test_notion_work_first_prompt.py"
-      - "tests/test_notion_work_preparation_gate.py"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,9 +17,9 @@ concurrency:
 
 jobs:
   verify:
-    name: Tests et validation statique
+    name: Vérifier le mode Work direct
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - name: Récupérer le dépôt
@@ -44,35 +32,14 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-          cache: pip
 
-      - name: Installer uniquement les dépendances de validation
-        run: python -m pip install --disable-pip-version-check pytest requests pyyaml
+      - name: Installer YAML
+        run: python -m pip install --disable-pip-version-check pyyaml
 
-      - name: Exécuter les tests de l'automatisation
-        run: |
-          python -m pytest -q \
-            tests/test_notion_crm_automation.py \
-            tests/test_notion_media_analysis.py \
-            tests/test_notion_patch_repair.py \
-            tests/test_notion_work_first_prompt.py \
-            tests/test_notion_work_preparation_gate.py
+      - name: Vérifier la compilation Python encore utilisée par la synchro Notion
+        run: python -m py_compile notion_crm_automation.py notion_crm_lib/*.py
 
-      - name: Vérifier la compilation Python
-        run: |
-          python -m py_compile \
-            notion_crm_automation.py \
-            notion_crm_lib/*.py \
-            scripts/apply_notion_patch.py \
-            scripts/stage_notion_changes.py \
-            scripts/validate_notion_change.py \
-            tests/test_notion_crm_automation.py \
-            tests/test_notion_media_analysis.py \
-            tests/test_notion_patch_repair.py \
-            tests/test_notion_work_first_prompt.py \
-            tests/test_notion_work_preparation_gate.py
-
-      - name: Vérifier la structure des workflows
+      - name: Vérifier les workflows conservés
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -80,16 +47,16 @@ jobs:
 
           expected_jobs = {
               ".github/workflows/notion-crm-ci.yml": {"verify"},
-              ".github/workflows/notion-crm-implement.yml": {
-                  "prepare",
-                  "codex",
-                  "test",
-                  "publish",
-                  "notify",
-              },
               ".github/workflows/notion-crm-pr-sync.yml": {"sync"},
-              ".github/workflows/notion-crm-queue.yml": {"queue"},
+              ".github/workflows/notion-crm-work-pr-ci.yml": {"validate"},
+              ".github/workflows/notion-crm-refresh-open-prs.yml": {"refresh"},
           }
+          obsolete = [
+              ".github/workflows/notion-crm-queue.yml",
+              ".github/workflows/notion-crm-implement.yml",
+              ".github/workflows/notion-crm-technical-recovery.yml",
+              ".github/workflows/notion-crm-timeout-coordinator.yml",
+          ]
 
           for filename, jobs in expected_jobs.items():
               payload = yaml.load(Path(filename).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
@@ -97,7 +64,11 @@ jobs:
               assert "on" in payload, f"Déclencheur absent : {filename}"
               actual_jobs = set((payload.get("jobs") or {}).keys())
               assert actual_jobs == jobs, (filename, actual_jobs, jobs)
-              print(f"{filename}: {len(actual_jobs)} job(s) valide(s)")
+              print(f"{filename}: OK")
+
+          for filename in obsolete:
+              assert not Path(filename).exists(), f"Ancien workflow Codex encore présent : {filename}"
+              print(f"{filename}: supprimé")
           PY
 
       - name: Vérifier le diff Git
