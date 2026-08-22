@@ -293,7 +293,8 @@ def test_programmed_appointment_date_is_rendered_under_pipeline_status():
     assert "nextProgrammedAppointmentDate" in crm_js
     assert "contactHasPipelineStatus(c,'RDV programmé')" in crm_js
     assert "['canceled','cancelled']" in crm_js
-    assert "row.start>now" in crm_js
+    assert "appointments.find(row=>row.start>=now)||appointments[appointments.length-1]" in crm_js
+    assert "'Date du RDV non renseignée'" in crm_js
     assert "timeZone:'Europe/Paris'" in crm_js
     assert "day:'2-digit',month:'2-digit',year:'numeric'" in crm_js
     assert "contactPipelineStatusMarkup(c)" in crm_js
