@@ -214,3 +214,10 @@ def test_contact_completeness_modal_lists_every_missing_requirement():
     assert "completeness-modal-field" in css
     assert "@media(max-width:680px)" in css
     assert " et ${remaining} autre" not in workspace
+
+
+def test_calendly_booking_error_keeps_modal_retry_available():
+    crm_js = CRM_JS.read_text(encoding="utf-8")
+
+    assert "catch(e){toast(e.message,true);bookButton.disabled=false" in crm_js
+    assert "bookButton.textContent='Confirmer le rendez-vous'" in crm_js
