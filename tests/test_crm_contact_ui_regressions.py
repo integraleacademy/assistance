@@ -122,3 +122,18 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
     assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
+
+
+def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
+    workspace = (ROOT / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "crm_workspace.css").read_text(encoding="utf-8")
+
+    assert "data-contact-flag" in workspace
+    assert "qualification_flag:value" in workspace
+    assert 'id="workspaceFlag"' in workspace
+    assert 'id="workspaceSort"' in workspace
+    assert "flagRank={green:0,'':1,red:2}" in workspace
+    assert "contactFlagBadge(contact)" in workspace
+    assert ".contact-flag-badge.green" in css
+    assert ".contact-flag-badge.red" in css
+    assert "@media(max-width:680px)" in css
