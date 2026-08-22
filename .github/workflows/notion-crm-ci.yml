@@ -51,6 +51,7 @@ jobs:
               ".github/workflows/notion-crm-work-pr-ci.yml": {"validate"},
               ".github/workflows/notion-crm-refresh-open-prs.yml": {"refresh"},
               ".github/workflows/notion-crm-auto-merge.yml": {"merge"},
+              ".github/workflows/notion-crm-legacy-pr-publish.yml": {"inspect", "test", "publish"},
           }
           obsolete = [
               ".github/workflows/notion-crm-queue.yml",
