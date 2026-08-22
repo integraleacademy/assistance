@@ -31,16 +31,17 @@ def _fresh_migration():
     return module
 
 
-def _row(identifier, status, email=None, formation="A3P"):
+def _row(identifier, status, email=None, formation="A3P", **extra):
     return {
         "Id": identifier,
         "FirstName": "Lina",
         "LastName": identifier,
         "Email": email or f"{identifier}@example.com",
-        "Phone": f"060000{identifier[-4:].zfill(4)}",
+        "Phone": "0600000000",
         "Status": status,
         "CreatedDate": "2026-08-20T10:00:00Z",
         "Type_de_formation__c": formation,
+        **extra,
     }
 
 
