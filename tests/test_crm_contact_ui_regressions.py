@@ -195,8 +195,16 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert 'id="workspaceSort"' in workspace
     assert "flagRank={green:0,'':1,red:2}" in workspace
     assert "contactFlagBadge(contact)" in workspace
+    assert 'class="contact-flag-icon"' in workspace
+    assert 'role="img"' in workspace
+    assert 'aria-label="${label}"' in workspace
+    assert 'title="${label}"' in workspace
+    assert "['green','red'].includes(flag)" in workspace
+    assert "contactTitle.querySelector('small')" in workspace
+    assert "contactTitle.querySelector('.contact-flag-badge')" in workspace
     assert ".contact-flag-badge.green" in css
     assert ".contact-flag-badge.red" in css
+    assert ".contact-flag-icon" in css
     assert "@media(max-width:680px)" in css
 
 def test_contact_header_displays_all_activity_counters_including_zero():
