@@ -28,37 +28,31 @@ def _mapped(status, **extra):
     return mapped[0]
 
 
-def test_active_secondary_salesforce_statuses_are_followups():
+def test_secondary_salesforce_statuses_are_in_progress_without_a_task():
     expected = {
         "POEI": "POEI",
         "Session FT": "Marché FT",
         "Marché FT": "Marché FT",
         "Def MOB": "Def MOB",
         "Financement FT en cours": "Financement FT en cours",
+        "Financement FT refusé": "Financement FT refusé",
         "C2P": "C2P en cours",
         "C2P en cours": "C2P en cours",
     }
     for source, secondary in expected.items():
         contact = _mapped(source)
-        assert contact["statut"] == "A relancer"
+        assert contact["statut"] == "En cours"
         assert contact["statut_secondaire"] == secondary
         assert contact["statut_secondaire_source"] == "salesforce_migration"
-
-
-def test_other_secondary_statuses_keep_their_secondary_field():
-    contact = _mapped("Financement FT refusé")
-
-    assert contact["statut"] == "Nouveaux"
-    assert contact["statut_secondaire"] == "Financement FT refusé"
-    assert contact["statut_secondaire_source"] == "salesforce_migration"
 
 
 def test_funding_secondary_statuses_also_set_funding_code():
     in_progress = _mapped("Financement FT en cours")
     refused = _mapped("Financement FT refusé")
 
-    assert in_progress["statut"] == "A relancer"
+    assert in_progress["statut"] == "En cours"
     assert in_progress["statut_demande_financement_ft"] == "en_cours_instruction"
+    assert refused["statut"] == "En cours"
     assert refused["statut_demande_financement_ft"] == "refusee"
 
 
@@ -106,6 +100,7 @@ def test_every_primary_status_is_valid_for_crm():
         "New",
         "Blocage",
         "RDV programmé",
+        "En cours",
         "Prochain RDV inscription",
         "Working - Contacted",
         "Unqualified",
@@ -118,6 +113,7 @@ def test_every_primary_status_is_valid_for_crm():
         "Nouveaux",
         "Blocage",
         "RDV programmé",
+        "En cours",
         "Prochain RDV inscription",
         "A relancer",
         "Disqualifié",
