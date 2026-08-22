@@ -11,7 +11,8 @@ jobs:
   sync:
     name: Mettre à jour le statut Notion
     if: >-
-      startsWith(github.event.pull_request.head.ref, 'agent/notion-crm-') &&
+      (startsWith(github.event.pull_request.head.ref, 'agent/notion-crm-') ||
+       startsWith(github.event.pull_request.head.ref, 'work/notion-crm-')) &&
       contains(github.event.pull_request.body, '<!-- notion-page-id:')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -72,7 +73,7 @@ jobs:
             --clear-error \
             --comment "✅ La pull request a été fusionnée et publiée dans la branche principale : $PR_URL"
 
-      - name: Remettre en attente après fermeture sans fusion
+      - name: Signaler une fermeture sans fusion
         if: github.event.pull_request.merged != true
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
@@ -88,4 +89,4 @@ jobs:
             --branch "$BRANCH" \
             --run-url "$RUN_URL" \
             --error "La pull request a été fermée sans être fusionnée." \
-            --comment "⚠️ La pull request a été fermée sans fusion. La demande repasse en attente : $PR_URL"
+            --comment "⚠️ La pull request a été fermée sans fusion. Une décision humaine est nécessaire : $PR_URL"
