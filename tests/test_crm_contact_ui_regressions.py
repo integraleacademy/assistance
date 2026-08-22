@@ -203,6 +203,7 @@ def test_overdue_reminder_metric_filters_rows_and_is_keyboard_accessible():
 
 
 def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
+    crm_js = CRM_JS.read_text(encoding="utf-8")
     workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
     css = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
 
@@ -219,6 +220,14 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert "['green','red'].includes(flag)" in workspace
     assert "contactTitle.querySelector('small')" in workspace
     assert "contactTitle.querySelector('.contact-flag-badge')" in workspace
+    assert "function listQualificationFlag(contact)" in crm_js
+    assert "${listQualificationFlag(c)}" in crm_js
+    assert 'class="contact-flag-badge is-list ${flag}"' in crm_js
+    assert "contactFlagBadge(contact,'header')" in workspace
+    assert 'class="contact-flag-label"' in workspace
+    assert ".contact-flag-badge.is-list" in css
+    assert ".contact-flag-badge.is-header" in css
+    assert ".contact-flag-badge.is-header .contact-flag-icon" in css
     assert ".contact-flag-badge.green" in css
     assert ".contact-flag-badge.red" in css
     assert ".contact-flag-icon" in css
