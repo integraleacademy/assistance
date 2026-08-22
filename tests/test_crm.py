@@ -415,7 +415,7 @@ def test_contact_completeness_uses_the_real_conditional_requirements():
         assert marker in workspace_js
     assert "enhanceContact:enhanceContactWithCompleteness" in workspace_js
     assert "refreshContactCompleteness(draft)" in workspace_js
-    assert "details.missing.slice(0,3)" in workspace_js
+    assert "details.missing.join(', ')" in workspace_js
     assert "contactCompletenessDetails(contact).percent" in workspace_js
 
 
@@ -913,7 +913,7 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
     assert ".tracking-card:popover-open" in open(
         application.app.root_path + "/static/crm.css", encoding="utf-8"
     ).read()
-    assert "'Secrétariat','Ajout manuel','Autre'" in crm_js
+    assert "'Secrétariat','Formulaire abandonné','Ajout manuel','Autre'" in crm_js
 
 
 def test_tracking_card_is_displayed_above_publications():
@@ -2148,7 +2148,7 @@ def test_crm_regulatory_and_funding_dependencies_are_present():
     assert 'data-show="cpf-yes"' in script
     assert 'data-show="identity-created"' in script
     assert 'data-show="ft-yes"' in script
-    assert 'wedofLoaded=true;loadWedof(c)' in script
+    assert "loadWedof(c,{refresh:true})" in script
 
 
 def test_leads_can_be_filtered_by_an_exact_training_session():
@@ -2205,6 +2205,7 @@ def test_abandoned_information_form_creates_one_internal_crm_lead(tmp_path, monk
 
 def test_completed_form_enriches_abandoned_contact_without_changing_origin(tmp_path, monkeypatch):
     client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "current_user", lambda: {"name": "Test"})
     data = application.load_data()
     fields = {
         "prenom": "Lina", "nom": "Martin",
