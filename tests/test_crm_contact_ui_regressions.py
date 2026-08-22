@@ -286,4 +286,5 @@ def test_dashboard_and_pipeline_explain_their_distinct_scopes():
     assert "Évolution des pistes créées" in javascript
     assert "const activeContacts=crmActiveContacts();let list=[...activeContacts]" in javascript
     assert "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length" in javascript
+    assert "function bindList(type){let base=crmActiveContacts().filter" in javascript
     assert "dashboardKpi('Nouvelles pistes'" not in javascript
