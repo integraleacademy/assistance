@@ -15,6 +15,22 @@ def test_contact_appointment_modal_uses_scoped_explicit_controls():
     assert "dialog.querySelector('.modal-body').innerHTML" in javascript
 
 
+def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    assert "const contactSheetUrl=id=>`/crm/contacts?fiche=${encodeURIComponent(id)}`" in javascript
+    assert "window.open(contactSheetUrl(id),'_blank','noopener')" in javascript
+    assert "C.section==='pistes'&&row.closest('#resultTable')" in javascript
+    assert "link.target='_blank';link.rel='noopener'" in javascript
+    assert "new MutationObserver(prepareGlobalContactLinks)" in javascript
+    assert "event.target.closest('a[data-global-id]')" in javascript
+    assert "event.target.closest('input,button,select,textarea,label,a')" in javascript
+    assert "event.button!==1" in javascript
+    assert ".global-results a" in stylesheet
+    assert "Cette fiche n’existe plus ou n’est plus accessible." in javascript
+
+
 def test_relaunch_template_is_available_for_every_formation():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
