@@ -32,12 +32,13 @@ def _fresh_migration():
 
 
 def _row(identifier, status, email=None, formation="A3P", **extra):
+    phone_suffix = sum(ord(character) for character in identifier) % 10000
     return {
         "Id": identifier,
         "FirstName": "Lina",
         "LastName": identifier,
         "Email": email or f"{identifier}@example.com",
-        "Phone": "0600000000",
+        "Phone": f"060000{phone_suffix:04d}",
         "Status": status,
         "CreatedDate": "2026-08-20T10:00:00Z",
         "Type_de_formation__c": formation,
@@ -54,6 +55,7 @@ def test_genuine_french_and_english_new_statuses_are_allowed():
 
     result = migration.import_complete_rows([], rows, dry_run=True)
 
+    assert result["created"] == 2
     assert result["status_counts"] == {"Nouveaux": 2}
     assert result["new_status_source_counts"] == {
         "Nouveau": 1,
