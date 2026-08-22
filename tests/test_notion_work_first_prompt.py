@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from notion_crm_lib.work_first import compact_codex_prompt
 
 
@@ -59,6 +61,9 @@ Texte technique.
     assert "Ne pas casser RDV programmé" in prompt
     assert "Je veux que la carte Calendly soit plus fiable" in prompt
     assert "Passe directement à l'implémentation ciblée" in prompt
+    assert "Modifie directement les fichiers du workspace" in prompt
+    assert "Ne fabrique pas de diff Git dans ta réponse finale" in prompt
+    assert "`patch`" not in prompt
 
 
 def test_work_first_prompt_falls_back_without_work_specification() -> None:
@@ -101,3 +106,14 @@ Moderniser la fiche.
     assert "document.pdf" not in prompt
     assert "[capture jointe analysée séparément]" in prompt
     assert "[document joint analysé séparément]" in prompt
+
+
+def test_workflow_captures_workspace_instead_of_requesting_patch_output() -> None:
+    workflow = Path(".github/workflows/notion-crm-implement.yml").read_text(encoding="utf-8")
+
+    assert "Implémenter directement dans le workspace" in workflow
+    assert "Capturer et valider le workspace Codex" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/download-artifact@v5" in workflow
+    assert '"patch": {"type": "string"' not in workflow
+    assert "git', 'diff', '--cached', '--binary'" in workflow
