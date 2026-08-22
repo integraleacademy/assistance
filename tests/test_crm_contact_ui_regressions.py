@@ -122,3 +122,20 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
     assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
+
+
+def test_contact_header_displays_all_activity_counters_including_zero():
+    crm_js = read("static/crm.js")
+    crm_css = read("static/crm.css")
+
+    assert "function contactHeaderActivitySummary(contact)" in crm_js
+    assert "const counts=listActivityCounts(contact)" in crm_js
+    assert "['RDV total',counts.appointments]" in crm_js
+    assert "['RDV réalisés',completedAppointments]" in crm_js
+    assert "['E-mails',counts.emails]" in crm_js
+    assert "['SMS',counts.sms]" in crm_js
+    assert "['Relances',counts.relances]" in crm_js
+    assert "${contactHeaderActivitySummary(c)}" in crm_js
+    assert "filter(a=>a.kind==='calendly').length} RDV réalisés" not in crm_js
+    assert ".contact-activity-summary" in crm_css
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in crm_css
