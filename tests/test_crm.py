@@ -294,6 +294,37 @@ def test_development_support_rewrites_and_creates_notion_page(tmp_path, monkeypa
     assert "Clément VAILLANT" in children_text
 
 
+def test_development_support_creates_notion_page_when_ai_is_unavailable(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOTION_API_TOKEN", "notion-test")
+    monkeypatch.setattr(
+        application, "_crm_ai",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("service indisponible")),
+    )
+    calls = {}
+
+    def fake_post(url, **kwargs):
+        calls.update(kwargs)
+        return SimpleNamespace(
+            status_code=201,
+            json=lambda: {"url": "https://www.notion.so/fallback-page"},
+        )
+
+    monkeypatch.setattr(application.requests, "post", fake_post)
+    actions = "Ajouter un bouton de validation et conserver toute la demande originale."
+    response = c.post("/api/crm/development-support", json={
+        "platform": "CRM",
+        "page_url": "https://example.com/crm/pistes",
+        "actions": actions,
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["ai_rewritten"] is False
+    children_text = json.dumps(calls["json"]["children"], ensure_ascii=False)
+    assert "Demande à reformuler" in children_text
+    assert actions in children_text
+
+
 def test_development_support_reports_missing_notion_connection(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     monkeypatch.delenv("NOTION_API_TOKEN", raising=False)
