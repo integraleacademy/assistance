@@ -9114,6 +9114,7 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         external_id=demande_id,
     )
     if matched:
+        completed_already_recorded = matched.get("source_demande_id") == demande_id
         safe_fields = (
             "formation", "lieu", "dates_formation", "cpf", "cpf_montant",
             "carte_pro", "titre_sejour", "garde_vue", "antecedents",
@@ -9134,6 +9135,14 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         _crm_apply_information_request_attribution(matched, fields)
         if preserve_abandoned_origin:
             matched["origine"] = original_origin or ABANDONED_FORM_LABEL
+        if preserve_abandoned_origin and not completed_already_recorded:
+            matched.setdefault("activities", []).extend(
+                copy.deepcopy(contact.get("activities") or [])
+            )
+            matched["source_demande_id"] = demande_id
+            matched["source_devis_id"] = devis_id
+            matched["formulaire"] = dict(fields)
+            matched["updated_at"] = now
     return matched
 
 
