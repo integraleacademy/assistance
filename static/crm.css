@@ -457,3 +457,10 @@ body.sidebar-collapsed main{margin-left:76px}
 
 /* Les liens de fiches gardent l'apparence des lignes et résultats existants. */
 .person:is(a){color:inherit;text-decoration:none}.global-results a{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border-radius:8px;background:#fff;color:inherit;text-align:left;text-decoration:none;cursor:pointer}.global-results a:hover{background:#f3f7ff}.global-results a>span:last-child{min-width:0}
+
+/* Compteurs d'activité de l'entête de fiche contact. */
+.contact-activity-summary{display:flex;flex:1 0 100%;align-items:stretch;gap:7px;flex-wrap:wrap;margin-top:2px}
+.contact-activity-pill{display:grid;grid-template-columns:auto 1fr;align-items:baseline;gap:5px;min-width:104px;padding:6px 9px;border:1px solid #dce5f2;border-radius:9px;background:#f8faff;color:#52637b}
+.contact-activity-pill strong{color:#1d3150;font:800 13px Manrope}
+.contact-activity-pill small{font-size:10px;font-weight:700;white-space:nowrap}
+@media(max-width:650px){.contact-activity-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.contact-activity-pill{min-width:0}.contact-activity-pill:last-child{grid-column:1/-1}}
