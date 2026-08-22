@@ -14,7 +14,7 @@ global.document={title:'Titre serveur'};
 require(process.argv[1]);
 const titles=global.CRMDocumentTitle;
 
-assert.equal(titles.displayName({prenom:'  éLODIE-anne  ',nom:"  d'angelo  "}), "Élodie-Anne D'ANGELO");
+assert.equal(titles.displayName({prenom:'  éLODIE-anne   marie  ',nom:"  d'angelo   du pont  "}), "Élodie-Anne Marie D'ANGELO DU PONT");
 assert.equal(titles.displayName({prenom:'clement',nom:'dupont'}), 'Clément DUPONT');
 assert.equal(titles.titleForContact({prenom:'jean',nom:'dupont'}), 'Jean DUPONT - Intégrale CRM');
 assert.equal(titles.applyContact({prenom:'marie-claire',nom:'de la tour'}), 'Marie-Claire DE LA TOUR - Intégrale CRM');
