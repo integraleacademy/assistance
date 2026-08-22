@@ -481,6 +481,43 @@ process.stdout.write(JSON.stringify(rendered));
     assert rendered["sorted"] == [25, 10, None]
 
 
+def test_flag_badges_render_in_business_order_for_search_and_lead_score():
+    crm_js = open(
+        application.app.root_path + "/static/crm.js", encoding="utf-8"
+    ).read()
+    flag_code = crm_js[
+        crm_js.index("function listQualificationFlag(contact)"):
+        crm_js.index("const dashboardPeriods=")
+    ]
+    node_script = f"""
+const esc=value=>String(value??'').replace(/[&<>'"]/g,character=>character);
+const displayName=contact=>[contact.prenom,contact.nom].filter(Boolean).join(' ')||'Sans nom';
+const scoreBadge=contact=>`<span class="score-badge">${{contact.score??'Non calculable'}}</span>`;
+{flag_code}
+const rendered={{
+  green:listQualificationFlag({{qualification_flag:'green'}}),
+  redName:globalContactName({{qualification_flag:'red',prenom:'Lina',nom:'Martin'}}),
+  greenScore:leadScoreCell({{qualification_flag:'green',score:72}}),
+  emptyScore:leadScoreCell({{qualification_flag:'',score:null}}),
+  legacyScore:leadScoreCell({{score:25}})
+}};
+process.stdout.write(JSON.stringify(rendered));
+"""
+    completed = subprocess.run(
+        ["node", "-e", node_script], check=True, capture_output=True, text=True
+    )
+    rendered = json.loads(completed.stdout)
+
+    assert "Green Flag" in rendered["green"]
+    assert 'role="img"' in rendered["green"]
+    assert rendered["redName"].index("Red Flag") < rendered["redName"].index("Lina Martin")
+    assert rendered["greenScore"].index("Green Flag") < rendered["greenScore"].index("72")
+    assert "contact-flag-badge" not in rendered["emptyScore"]
+    assert "Non calculable" in rendered["emptyScore"]
+    assert "contact-flag-badge" not in rendered["legacyScore"]
+    assert "25" in rendered["legacyScore"]
+
+
 def test_pistes_support_selection_and_individualized_bulk_messages():
     root = application.app.root_path
     crm_js = open(root + "/static/crm.js", encoding="utf-8").read()

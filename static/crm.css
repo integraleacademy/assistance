@@ -475,3 +475,7 @@ body.sidebar-collapsed main{margin-left:76px}
 .bulk-message-preview .message-preview-frame{min-height:360px;background:#fff;transition:opacity .15s ease}
 .bulk-message-preview[aria-busy="true"] .message-preview-frame{opacity:.35}
 .bulk-message-preview[aria-busy="true"] p{color:#55709b}
+
+.crm-score-cell{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.global-search-contact-name{display:flex;align-items:center;gap:6px;min-width:0}
+.global-search-contact-name b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

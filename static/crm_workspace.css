@@ -62,3 +62,7 @@
  .completeness-modal{width:calc(100vw - 16px);max-height:94vh}
  .contact-completeness small{white-space:normal}
 }
+
+.contact-title-line h1>.contact-flag-badge:first-child{margin-left:0;margin-right:8px}
+.crm-score-cell .contact-flag-badge.is-list,.global-search-contact-name .contact-flag-badge.is-list{margin:0}
+.global-search-contact-name .contact-flag-badge.is-list{min-height:24px;padding:3px 6px;font-size:9px}
