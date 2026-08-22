@@ -32,12 +32,12 @@ const contactPipelineStatuses=c=>{
 const contactHasPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status);
 const nextProgrammedAppointmentDate=c=>{
  if(!contactHasPipelineStatus(c,'RDV programmé'))return'';
- const now=Date.now(),appointment=crmAppointments
+ const now=Date.now(),appointments=crmAppointments
   .filter(item=>String(item.contact_id)===String(c.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase()))
   .map(item=>({item,start:Date.parse(item.start_time)}))
-  .filter(row=>Number.isFinite(row.start)&&row.start>now)
-  .sort((a,b)=>a.start-b.start)[0];
- return appointment?new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(appointment.start)):'';
+  .filter(row=>Number.isFinite(row.start))
+  .sort((a,b)=>a.start-b.start),appointment=appointments.find(row=>row.start>=now)||appointments[appointments.length-1];
+ return appointment?new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(appointment.start)):'Date du RDV non renseignée';
 };
 const contactPipelineStatusMarkup=c=>{
  const appointmentDate=nextProgrammedAppointmentDate(c);
