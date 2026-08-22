@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import gzip
 import json
+import subprocess
 import threading
 import time
 
@@ -309,6 +310,47 @@ def test_pistes_can_filter_by_origin_and_sort_by_score():
     assert "function sortLeadsByScore(list,direction)" in crm_js
     assert "if(first===null)return 1" in crm_js
     assert "direction==='asc'?first-second:second-first" in crm_js
+
+
+def test_pistes_score_badge_keeps_numeric_blocked_score_and_special_markers():
+    crm_js = open(
+        application.app.root_path + "/static/crm.js", encoding="utf-8"
+    ).read()
+    scoring_code = crm_js[
+        crm_js.index("const shortScoreLabel="):crm_js.index("const vaeEligibilityQuestions=")
+    ]
+    node_script = f"""
+const esc=value=>String(value??'').replace(/[&<>'"]/g,character=>character);
+{scoring_code}
+const score=(value,status='blocked',extra={{}})=>({{
+  integration_score:{{score:value,level:'fragile',operational_status:status,...extra}}
+}});
+const rendered={{
+  blocked:scoreBadge(score(25)),
+  zero:scoreBadge(score(0)),
+  missing:[null,undefined,'','invalide'].map(value=>scoreBadge(score(value))),
+  ready:scoreBadge(score(75,'ready')),
+  regulatory:scoreBadge(score(25,'blocked',{{
+    regulatory_applicable:true,regulatory_status:'accepted',regulatory_label:'Accepté'
+  }})),
+  vae:scoreBadge({{vae_eligibility:{{score:80}},...score(25)}}),
+  sorted:sortLeadsByScore([score(null),score(10),score(25)],'desc')
+    .map(contact=>contact.integration_score.score)
+}};
+process.stdout.write(JSON.stringify(rendered));
+"""
+    completed = subprocess.run(
+        ["node", "-e", node_script], check=True, capture_output=True, text=True
+    )
+    rendered = json.loads(completed.stdout)
+
+    assert "25 — Bloqué" in rendered["blocked"]
+    assert "0 — Bloqué" in rendered["zero"]
+    assert all("Non calculable" in badge for badge in rendered["missing"])
+    assert "75 — Fragile" in rendered["ready"]
+    assert "25 — Bloqué" in rendered["regulatory"] and "score-shield accepted" in rendered["regulatory"]
+    assert "VAE 80 %" in rendered["vae"] and "Bloqué" not in rendered["vae"]
+    assert rendered["sorted"] == [25, 10, None]
 
 
 def test_pistes_support_selection_and_individualized_bulk_messages():
