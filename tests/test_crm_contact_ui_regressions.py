@@ -374,7 +374,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert "if(!c){window.CRMDocumentTitle.reset();" in javascript
     render_body = javascript[
         javascript.index("function render(){"):
-        javascript.index("async function init(){"),
+        javascript.index("async function init(){")
     ]
     assert "window.CRMDocumentTitle.reset();" in render_body
     assert "titleForContact" in title_javascript
