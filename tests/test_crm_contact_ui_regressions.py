@@ -122,3 +122,18 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
     assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
+
+
+def test_contact_completeness_modal_lists_every_missing_requirement():
+    workspace = (ROOT / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "crm_workspace.css").read_text(encoding="utf-8")
+
+    assert "Compléter les éléments" in workspace
+    assert "details.missing.join(', ')" in workspace
+    assert "completenessGroups" in workspace
+    assert "data-completeness-key" in workspace
+    assert "Object.fromEntries(new FormData(modalForm))" in workspace
+    assert "item.key==='next_action'" in workspace
+    assert "completeness-modal-field" in css
+    assert "@media(max-width:680px)" in css
+    assert " et ${remaining} autre" not in workspace
