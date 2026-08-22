@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Notion CRM - préparer la PR avec Codex"]
+    types: [completed]
 
 permissions:
   actions: read
@@ -80,6 +83,8 @@ jobs:
               echo "### Mode lot nocturne actif"
               echo
               echo "Aucun traitement Codex n'est en cours. Les pull requests déjà ouvertes ne bloquent plus la file : la prochaine demande **Prêt à coder** peut démarrer."
+              echo
+              echo "La fin d'un traitement Codex relance désormais cette file immédiatement ; le cron toutes les 5 minutes reste un filet de sécurité."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
