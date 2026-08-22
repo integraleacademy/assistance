@@ -17,6 +17,7 @@ from .core import (
     unique_branch_name_for_page,
 )
 from .service import process_queue, render_codex_prompt, tracking_properties
+from .work_first import compact_codex_prompt
 
 
 UPDATE_STATUSES = (
@@ -88,9 +89,14 @@ def command_queue(args: argparse.Namespace) -> int:
 def command_render_prompt(args: argparse.Namespace) -> int:
     github = GitHubClient(env_required("GITHUB_TOKEN"), env_required("GITHUB_REPOSITORY"))
     issue = github.get_issue(int(args.issue_number))
-    prompt, metadata = render_codex_prompt(issue)
+    fallback_prompt, metadata = render_codex_prompt(issue)
     metadata = dict(metadata)
     metadata["branch"] = unique_branch_name_for_page(metadata["page_id"])
+    prompt = compact_codex_prompt(
+        issue,
+        fallback_prompt=fallback_prompt,
+        metadata=metadata,
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(prompt, encoding="utf-8")
