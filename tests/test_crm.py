@@ -2120,3 +2120,59 @@ def test_leads_can_be_filtered_by_an_exact_training_session():
     assert "c.formation===session[0]" in crm_js
     assert "(c.lieu||'')===session[1]" in crm_js
     assert 'id="filterResultCount"' in crm_js
+
+
+def test_contact_qualification_flag_is_validated_persisted_and_logged(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    original_status = contact["statut"]
+
+    initial = c.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert initial["qualification_flag"] == ""
+
+    updated = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"qualification_flag": "green"},
+    )
+    assert updated.status_code == 200
+    payload = updated.get_json()
+    assert payload["qualification_flag"] == "green"
+    assert payload["statut"] == original_status
+    assert not payload.get("relance_date")
+    assert any(
+        item["title"] == "Qualification : Green Flag"
+        for item in payload["activities"]
+    )
+
+    invalid = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"qualification_flag": "blue"},
+    )
+    assert invalid.status_code == 400
+    assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["qualification_flag"] == "green"
+
+    removed = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"qualification_flag": ""},
+    )
+    assert removed.get_json()["qualification_flag"] == ""
+
+
+def test_contact_merge_only_inherits_source_flag_when_target_is_empty(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    target = c.post("/api/crm/contacts", json={"prenom": "Cible"}).get_json()
+    source = c.post("/api/crm/contacts", json={"prenom": "Source"}).get_json()
+    c.patch(
+        f"/api/crm/contacts/{source['id']}",
+        json={"qualification_flag": "red"},
+    )
+
+    merged = c.post(
+        "/api/crm/contacts/merge",
+        json={"target_id": target["id"], "source_id": source["id"]},
+    )
+    assert merged.status_code == 200
+    assert merged.get_json()["contact"]["qualification_flag"] == "red"
