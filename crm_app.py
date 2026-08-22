@@ -15,6 +15,9 @@ from crm_salesforce_anomaly_followups_import import (
 )
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_existing_repair import register_salesforce_existing_repair
+from crm_salesforce_genuine_new_guardrails import (
+    install_salesforce_genuine_new_guardrails,
+)
 from crm_salesforce_import import register_salesforce_import
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
 from crm_salesforce_report_guardrails import install_salesforce_report_guardrails
@@ -41,6 +44,7 @@ install_salesforce_date_guardrails(salesforce_migration)
 install_salesforce_report_guardrails(salesforce_migration)
 install_salesforce_location_guardrails(salesforce_migration)
 install_salesforce_scope_guardrails(salesforce_migration)
+install_salesforce_genuine_new_guardrails(salesforce_migration)
 salesforce_migration.register_salesforce_migration(
     app,
     current_user_fn=legacy_app.current_user,
