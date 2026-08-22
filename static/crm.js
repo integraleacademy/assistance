@@ -1,4 +1,4 @@
-const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],crmAppointments=[],crmSettings={},statusFilter='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='month',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
+const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],crmAppointments=[],crmSettings={},statusFilter='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='month',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='',activeCalendlyContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
 const esc=s=>String(s??'').replace(/rendez-vouss/gi,'rendez-vous').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const api=async(url,opt={})=>{const{timeout=20000,...requestOptions}=opt,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{const r=await fetch(url,{headers:{'Content-Type':'application/json'},...requestOptions,signal:requestOptions.signal||controller.signal});if(!r.ok){const payload=await r.json().catch(()=>({})),error=Error(payload.error||'Une erreur est survenue');error.status=r.status;error.reason=payload.reason;throw error}return r.status===204?null:r.json()}catch(error){if(error.name==='AbortError')throw Error('Le serveur met trop de temps à répondre. Réessayez dans quelques secondes.');throw error}finally{clearTimeout(timer)}};
 const toast=(m,bad=false)=>{const t=document.querySelector('#toast');t.textContent=m;t.style.cssText=`position:fixed;right:25px;bottom:25px;background:${bad?'#b42336':'#153565'};color:white;padding:12px 18px;border-radius:9px;z-index:200;opacity:1`;setTimeout(()=>t.style.opacity=0,2500)};
@@ -615,6 +615,8 @@ function renderCalendlyAppointments(c,items,integration){
     box.innerHTML=`<div class="integration-banner warning"><div><b>Clé de signature manquante</b><span>Ajoutez CALENDLY_WEBHOOK_SIGNING_KEY dans Render.</span></div></div>`;
   }else if(!integration.connected){
     box.innerHTML=`<div class="integration-banner"><div><b>Calendly est prêt à être relié</b><span>Activez l’import de tous les rendez-vous et l’écoute en temps réel.</span></div>${C.is_admin?'<button class="btn blue" id="setupCalendlyBtn">Activer Calendly</button>':''}</div>`;
+  }else if(integration.refresh_in_progress){
+    box.innerHTML='<div class="integration-banner success compact"><div><b>Calendly : actualisation en cours…</b><span>Les rendez-vous déjà synchronisés restent visibles.</span></div></div>';
   }else{
     box.innerHTML=`<div class="integration-banner success compact"><div><b>Calendly synchronisé ${relativeSync(integration.last_sync_at)}</b><span>Synchronisation automatique active</span></div></div>`;
   }
@@ -622,23 +624,35 @@ function renderCalendlyAppointments(c,items,integration){
   const setup=document.querySelector('#setupCalendlyBtn');
   if(setup)setup.onclick=()=>setupCalendly(c);
   const sync=document.querySelector('#syncCalendlyBtn');
-  if(sync)sync.style.display=C.is_admin&&integration.connected?'inline-flex':'none';
+  if(sync){sync.style.display=C.is_admin&&integration.connected?'inline-flex':'none';sync.disabled=!!integration.refresh_in_progress;sync.textContent=integration.refresh_in_progress?'Actualisation…':'↻ Actualiser'}
   const emptyBook=document.querySelector('#emptyCalendlyBook');
   if(emptyBook)emptyBook.onclick=()=>calendlyModal(c);
   bindAppointmentResponseControls(ordered,()=>renderCalendlyAppointments(c,ordered,integration));
 }
+async function refreshCalendlyOnOpen(c,cached){
+  try{
+    const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments?refresh=1`,{timeout:60000});
+    if(activeCalendlyContactId!==String(c.id))return;
+    renderCalendlyAppointments(c,result.appointments||[],result.integration||{});
+  }catch(error){
+    if(activeCalendlyContactId!==String(c.id))return;
+    renderCalendlyAppointments(c,cached.appointments||[],{...(cached.integration||{}),lookup_warning:error.message});
+  }
+}
 async function loadCalendlyAppointments(c,manual=false){
+  activeCalendlyContactId=String(c.id);
   const button=document.querySelector('#syncCalendlyBtn'),list=document.querySelector('#appointmentList');
   if(button&&manual){button.disabled=true;button.textContent='Recherche…'}
   try{
     const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments${manual?'?refresh=1':''}`,manual?{timeout:60000}:{});
-    renderCalendlyAppointments(c,result.appointments||[],result.integration||{});
+    renderCalendlyAppointments(c,result.appointments||[],manual?result.integration||{}:{...(result.integration||{}),refresh_in_progress:true});
+    if(!manual)refreshCalendlyOnOpen(c,result);
   }catch(e){
     if(manual){
       const box=document.querySelector('#calendlyIntegration');
       if(box){box.querySelector('.calendly-lookup-warning')?.remove();box.insertAdjacentHTML('beforeend',`<div class="integration-banner warning calendly-lookup-warning"><div><b>Actualisation Calendly impossible</b><span>${esc(e.message)} Les rendez-vous déjà enregistrés restent affichés.</span></div><button class="btn" id="retryCalendlyLookup" type="button">Réessayer</button></div>`);document.querySelector('#retryCalendlyLookup').onclick=()=>loadCalendlyAppointments(c,true)}
     }else if(list)list.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;
-  }finally{if(button){button.disabled=false;button.textContent='↻ Actualiser'}}
+  }finally{if(button&&manual){button.disabled=false;button.textContent='↻ Actualiser'}}
 }
 async function setupCalendly(c){
   const button=document.querySelector('#setupCalendlyBtn');
