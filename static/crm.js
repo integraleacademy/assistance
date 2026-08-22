@@ -652,7 +652,7 @@ async function loadCalendlyAppointments(c,manual=false){
       const box=document.querySelector('#calendlyIntegration');
       if(box){box.querySelector('.calendly-lookup-warning')?.remove();box.insertAdjacentHTML('beforeend',`<div class="integration-banner warning calendly-lookup-warning"><div><b>Actualisation Calendly impossible</b><span>${esc(e.message)} Les rendez-vous déjà enregistrés restent affichés.</span></div><button class="btn" id="retryCalendlyLookup" type="button">Réessayer</button></div>`);document.querySelector('#retryCalendlyLookup').onclick=()=>loadCalendlyAppointments(c,true)}
     }else if(list)list.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;
-  }finally{if(button){button.disabled=false;button.textContent='↻ Actualiser'}}
+  }finally{if(button&&manual){button.disabled=false;button.textContent='↻ Actualiser'}}
 }
 async function setupCalendly(c){
   const button=document.querySelector('#setupCalendlyBtn');
