@@ -3,6 +3,8 @@ name: Notion CRM - actualiser les PR ouvertes
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -107,8 +109,9 @@ jobs:
 
           # Une seule PR est autorisée à avancer : la plus ancienne encore ouverte.
           # Le publieur correspondant exécute lui-même ses tests puis fusionne sans
-          # dépendre d'un workflow_run intermédiaire. Sa fusion déclenche ce workflow
-          # à nouveau et fait avancer la PR suivante.
+          # dépendre d'un workflow_run intermédiaire. Sa fusion redéclenche ensuite
+          # explicitement ce workflow ; le cron toutes les 5 minutes reste un filet
+          # de sécurité si GitHub supprime un événement généré par GITHUB_TOKEN.
           first="${prs[0]}"
           first_number="${first%%|*}"
           first_branch="${first#*|}"
