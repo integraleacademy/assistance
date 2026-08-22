@@ -7291,10 +7291,25 @@ def _calendly_context_from_data(data):
     return context
 
 
-def _calendly_route_error(exc):
+def _calendly_route_error(exc, *, action=""):
     if isinstance(exc, RuntimeError) and not isinstance(exc, CalendlyAPIError):
-        return jsonify({"error": str(exc)}), 503
-    return jsonify({"error": str(exc)}), 502
+        payload = {"error": str(exc)}
+        if action:
+            payload["stage"] = action
+        return jsonify(payload), 503
+    message = str(exc)
+    if action and isinstance(exc, CalendlyAPIError):
+        guidance = ""
+        if "invalid argument" in message.casefold():
+            guidance = (
+                " Vérifiez le type de rendez-vous, le créneau, le fuseau horaire, "
+                "le numéro de téléphone et les réponses obligatoires."
+            )
+        message = f"Calendly a refusé {action} : {message}.{guidance}".replace("..", ".")
+    payload = {"error": message}
+    if action:
+        payload["stage"] = action
+    return jsonify(payload), 502
 
 
 def _crm_normalize_email(value):
@@ -8599,12 +8614,12 @@ def _calendly_phone_number(value):
     if digits.startswith("00"):
         digits = digits[2:]
     if len(digits) == 10 and digits.startswith("0"):
-        return f"+33{digits[1:]}"
-    if digits.startswith("33"):
-        return f"+{digits}"
-    if raw.startswith("+") and 8 <= len(digits) <= 15:
-        return f"+{digits}"
-    return raw
+        digits = f"33{digits[1:]}"
+    if digits.startswith("33") or raw.startswith("+"):
+        normalized = f"+{digits}"
+        if re.fullmatch(r"\+[1-9]\d{7,14}", normalized):
+            return normalized
+    return ""
 
 
 def _calendly_booking_location(event_type, requested_location, contact):
@@ -11130,7 +11145,10 @@ def crm_contact_wedof(contact_id):
     data = load_data()
     if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
-    return jsonify({"resources": _wedof_contact_resources(contact_id, data)})
+    return jsonify({
+        "resources": _wedof_contact_resources(contact_id, data),
+        "status": _wedof_status_payload(test_connection=False),
+    })
 
 
 @app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
@@ -11512,6 +11530,7 @@ def crm_contact_calendly_appointments(contact_id):
     if request.method == "GET":
         lookup = {"method": "local", "processed_events": 0}
         lookup_warning = ""
+        lookup_succeeded = False
         fetched_payloads = []
         refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {
             "1", "true", "yes", "oui",
@@ -11532,6 +11551,7 @@ def crm_contact_calendly_appointments(contact_id):
                     data,
                     contact,
                 )
+                lookup_succeeded = True
             except (CalendlyAPIError, RuntimeError) as exc:
                 lookup_warning = str(exc)
 
@@ -11552,6 +11572,9 @@ def crm_contact_calendly_appointments(contact_id):
         if _crm_calendly_relink_appointments(latest_data, latest_contact):
             changed = True
         if _crm_sync_contact_calendly_status(latest_data, latest_contact):
+            changed = True
+        if lookup_succeeded:
+            latest_data.setdefault("crm_calendly", {})["last_sync_at"] = _crm_now()
             changed = True
         if changed:
             save_data(latest_data)
@@ -11574,10 +11597,18 @@ def crm_contact_calendly_appointments(contact_id):
     event_type_uri = str(payload.get("event_type") or "").strip()
     event_type_uuid = _calendly_resource_uuid(event_type_uri, "event_types")
     start_time = str(payload.get("start_time") or "").strip()
+    timezone = str(payload.get("timezone") or "Europe/Paris").strip()
     if not event_type_uuid or not start_time:
         return jsonify({"error": "Choisissez un type de rendez-vous et un horaire."}), 400
     if not _crm_normalize_email(contact.get("mail")):
         return jsonify({"error": "Ajoutez l'adresse e-mail de la personne avant de planifier le rendez-vous."}), 400
+    try:
+        parsed_start = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        if parsed_start.tzinfo is None:
+            raise ValueError
+        pytz.timezone(timezone)
+    except (ValueError, pytz.UnknownTimeZoneError):
+        return jsonify({"error": "Le créneau ou le fuseau horaire du rendez-vous est invalide."}), 400
 
     try:
         event_type = (
@@ -11607,13 +11638,10 @@ def crm_contact_calendly_appointments(contact_id):
                 part for part in [contact.get("prenom"), contact.get("nom")] if str(part or "").strip()
             ).strip() or contact.get("mail"),
             "email": contact.get("mail"),
-            "timezone": str(payload.get("timezone") or "Europe/Paris"),
+            "timezone": timezone,
         }
-        phone = _calendly_phone_number(contact.get("telephone"))
-        if phone.startswith("+"):
-            invitee["text_reminder_number"] = phone
         booking_body = {
-            "event_type": event_type_uri,
+            "event_type": event_type.get("uri") or event_type_uri,
             "start_time": start_time,
             "invitee": invitee,
             "tracking": {
@@ -11675,7 +11703,7 @@ def crm_contact_calendly_appointments(contact_id):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except (CalendlyAPIError, RuntimeError) as exc:
-        return _calendly_route_error(exc)
+        return _calendly_route_error(exc, action="la création du rendez-vous")
 
 
 @app.route("/api/crm/calendly/sync", methods=["POST"])
@@ -11770,6 +11798,7 @@ def crm_calendly_webhook():
         source="webhook",
         record_activity=True,
     )
+    data.setdefault("crm_calendly", {})["last_sync_at"] = _crm_now()
     save_data(data)
     return jsonify({
         "ok": True,
