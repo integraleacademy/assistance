@@ -20,11 +20,16 @@
 @media(max-width:600px){.reminder-date-toolbar{grid-template-columns:1fr;align-items:stretch}.reminder-date-navigation{display:grid;grid-template-columns:36px minmax(0,1fr) 36px}.reminder-date-navigation label{min-width:0}.reminder-date-navigation input{width:100%}.reminder-date-navigation #reminderToday{grid-column:1/-1}.reminder-date-context{grid-column:auto;grid-row:auto;text-align:center}.reminder-date-toolbar>#reminderShowAll{width:100%}}
 
 
-.contact-flag-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:7px;border-radius:6px;vertical-align:-4px}
-.contact-flag-icon{width:15px;height:15px;fill:currentColor}
-.contact-flag-badge.green{color:#147a4b;background:#e8f8ef}
-.contact-flag-badge.red{color:#b42318;background:#fff0ee}
-.contact-title-line h1 .contact-flag-badge{margin-right:3px}
+.contact-flag-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:7px;border-radius:7px;vertical-align:-5px;font-weight:800;line-height:1;white-space:nowrap}
+.contact-flag-icon{width:16px;height:16px;fill:currentColor;flex:0 0 auto}
+.contact-flag-label{display:none}
+.contact-flag-badge.green{color:#0b6b3a;background:#dff5e9;border:1px solid #9bd9b8}
+.contact-flag-badge.red{color:#a32118;background:#ffe7e3;border:1px solid #f2aaa2}
+.contact-flag-badge.is-list{width:auto;height:auto;min-height:28px;margin-left:9px;padding:4px 8px;gap:5px;border-radius:8px;vertical-align:middle;font-size:11px}
+.contact-flag-badge.is-list .contact-flag-label,.contact-flag-badge.is-header .contact-flag-label{display:inline}
+.contact-flag-badge.is-header{width:auto;height:auto;min-height:34px;margin:0 5px 0 9px;padding:6px 10px;gap:6px;border-radius:9px;vertical-align:middle;font-size:13px;box-shadow:0 1px 2px rgba(16,44,92,.1)}
+.contact-flag-badge.is-header .contact-flag-icon{width:20px;height:20px}
+.contact-title-line h1 .contact-flag-badge{margin-right:5px}
 .contact-flag-control{display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--border,#dfe3ea);border-radius:10px;background:var(--card,#fff)}
 .contact-flag-control>span{padding:0 6px;color:var(--muted,#667085);font-size:11px;font-weight:750;text-transform:uppercase}
 .contact-flag-control button{border:0;border-radius:7px;padding:7px 9px;background:transparent;color:inherit;cursor:pointer}
