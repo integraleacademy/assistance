@@ -7142,7 +7142,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260822-calendly-list-sync-1"
+CRM_ASSET_VERSION = "20260822-bulk-preview-contract-1"
 
 
 def _crm_statuses(data=None):
@@ -13814,17 +13814,33 @@ def crm_send_message(contact_id):
 @app.route("/api/crm/contacts/<contact_id>/message-preview", methods=["POST"])
 @login_required
 def crm_message_preview(contact_id):
-    """Render the exact branded HTML used when an e-mail is sent."""
+    """Resolve a message exactly as it will be sent, without side effects."""
     data = load_data()
     contact = _crm_contact(data, contact_id)
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
     payload = request.get_json(silent=True) or {}
-    body = _crm_resolve_message_variables(
-        payload.get("contenu", ""), contact, html=True, data_store=data
-    )
-    html = _crm_email_html(body, contact)
-    return jsonify({"html": html})
+    kind = str(payload.get("type") or "email").strip().lower()
+    raw_body = str(payload.get("contenu") or "")
+    if kind == "email":
+        subject = _crm_resolve_message_variables(
+            payload.get("sujet", ""), contact, data_store=data
+        )
+        body = _crm_resolve_message_variables(
+            raw_body, contact, html=True, data_store=data
+        )
+        return jsonify({
+            "type": kind,
+            "sujet": subject,
+            "contenu": body,
+            "html": _crm_email_html(body, contact),
+        })
+    if kind == "sms":
+        body = _crm_resolve_message_variables(
+            raw_body, contact, data_store=data
+        )
+        return jsonify({"type": kind, "sujet": "", "contenu": body})
+    return jsonify({"error": "Type invalide"}), 400
 
 
 @app.route("/api/crm/test-email", methods=["POST"])

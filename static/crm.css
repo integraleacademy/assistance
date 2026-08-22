@@ -472,4 +472,6 @@ body.sidebar-collapsed main{margin-left:76px}
 
 .bulk-message-preview{margin-top:16px;padding:14px;border:1px solid #dbe4f2;border-radius:12px;background:#f8faff}
 .bulk-message-preview p{margin:0 0 10px;color:#334155;font-size:13px;font-weight:700}
-.bulk-message-preview .message-preview-frame{min-height:360px;background:#fff}
+.bulk-message-preview .message-preview-frame{min-height:360px;background:#fff;transition:opacity .15s ease}
+.bulk-message-preview[aria-busy="true"] .message-preview-frame{opacity:.35}
+.bulk-message-preview[aria-busy="true"] p{color:#55709b}
