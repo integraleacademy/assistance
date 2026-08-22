@@ -18,6 +18,16 @@ def test_calendly_refresh_keeps_cached_appointments_and_formats_paris_sync_time(
     assert ".calendly-lookup-warning .btn" in stylesheet
 
 
+def test_wedof_cache_is_preloaded_and_refreshes_without_a_modal():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "loadWedof(c,{refresh:true})" in javascript
+    assert "const wedofContactIsCurrent=c=>activeWedofContactId===String(c.id)" in javascript
+    assert "if(!wedofContactIsCurrent(c))return" in javascript
+    assert "modal('Actualisation WEDOF en cours'" not in javascript
+    assert "Les données en cache restent affichées." in javascript
+
+
 def test_contact_appointment_modal_uses_scoped_explicit_controls():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
