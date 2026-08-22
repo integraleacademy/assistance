@@ -28,6 +28,20 @@ def test_wedof_cache_is_preloaded_and_refreshes_without_a_modal():
     assert "Les données en cache restent affichées." in javascript
 
 
+
+def test_wedof_display_translates_known_english_business_values():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "refusedByAttendee:'Refusé par le participant'" in javascript
+    assert "cancelledByAttendee:'Annulé par le participant'" in javascript
+    assert "refusedByTrainingOrganization:'Refusé par l’organisme de formation'" in javascript
+    assert "const wedofLabelKey=" in javascript
+    assert "wedofLabelsByCode[wedofLabelKey(raw)]" in javascript
+    assert "typeof v==='string'?wedofLabel(v)" in javascript
+    assert "esc(wedofValue(x.name||x))" in javascript
+    assert "esc(wedofValue(v))" in javascript
+    assert "JSON.stringify(p,null,2)" in javascript
+
 def test_contact_appointment_modal_uses_scoped_explicit_controls():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
