@@ -120,3 +120,12 @@ def test_night_batch_blocks_only_an_active_implementation_run() -> None:
     assert 'pulls?state=open' not in workflow
     assert 'Les pull requests déjà ouvertes ne bloquent plus la file' in workflow
     assert 'MAX_TASKS: "1"' in workflow
+
+
+def test_queue_restarts_immediately_after_an_implementation_finishes() -> None:
+    workflow = Path(".github/workflows/notion-crm-queue.yml").read_text(encoding="utf-8")
+
+    assert 'workflow_run:' in workflow
+    assert 'workflows: ["Notion CRM - préparer la PR avec Codex"]' in workflow
+    assert 'types: [completed]' in workflow
+    assert 'cron: "*/5 * * * *"' in workflow
