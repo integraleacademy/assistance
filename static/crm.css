@@ -464,3 +464,8 @@ body.sidebar-collapsed main{margin-left:76px}
 .contact-activity-pill strong{color:#1d3150;font:800 13px Manrope}
 .contact-activity-pill small{font-size:10px;font-weight:700;white-space:nowrap}
 @media(max-width:650px){.contact-activity-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.contact-activity-pill{min-width:0}.contact-activity-pill:last-child{grid-column:1/-1}}
+
+
+.pipeline-status-stack{display:flex;align-items:flex-start;gap:5px;flex-wrap:wrap}
+.pipeline-appointment-date{display:block;flex-basis:100%;margin-top:2px;color:#596b84;font-size:9px;font-weight:750;white-space:nowrap}
+@media(max-width:700px){.pipeline-appointment-date{font-size:8px}}

@@ -236,3 +236,17 @@ def test_calendly_booking_error_keeps_modal_retry_available():
 
     assert "catch(e){toast(e.message,true);bookButton.disabled=false" in crm_js
     assert "bookButton.textContent='Confirmer le rendez-vous'" in crm_js
+
+
+def test_programmed_appointment_date_is_rendered_under_pipeline_status():
+    crm_js = CRM_JS.read_text(encoding="utf-8")
+    crm_css = CRM_CSS.read_text(encoding="utf-8")
+
+    assert "nextProgrammedAppointmentDate" in crm_js
+    assert "contactHasPipelineStatus(c,'RDV programmé')" in crm_js
+    assert "['canceled','cancelled']" in crm_js
+    assert "row.start>now" in crm_js
+    assert "timeZone:'Europe/Paris'" in crm_js
+    assert "day:'2-digit',month:'2-digit',year:'numeric'" in crm_js
+    assert "contactPipelineStatusMarkup(c)" in crm_js
+    assert ".pipeline-appointment-date" in crm_css
