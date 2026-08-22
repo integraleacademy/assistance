@@ -199,4 +199,3 @@ def test_contact_header_displays_all_activity_counters_including_zero():
     assert "filter(a=>a.kind==='calendly').length} RDV réalisés" not in crm_js
     assert ".contact-activity-summary" in crm_css
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in crm_css
-
