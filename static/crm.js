@@ -10,7 +10,8 @@ const contactInStore=id=>contacts.find(contact=>String(contact.id)===String(id))
 const contactSheetUrl=id=>`/crm/contacts?fiche=${encodeURIComponent(id)}`;
 function openContactInNewTab(id){const opened=window.open(contactSheetUrl(id),'_blank','noopener');if(opened)opened.opener=null}
 function mergeContactInStore(id,values){const stored=contactInStore(id);if(stored)Object.assign(stored,values);return stored}
-const relativeSync=value=>{if(!value)return'pas encore synchronisé';const seconds=Math.max(0,Math.round((Date.now()-new Date(value).getTime())/1000));if(seconds<60)return'il y a moins d’une minute';if(seconds<3600)return`il y a ${Math.floor(seconds/60)} min`;return`aujourd’hui à ${new Date(value).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`};
+const parisDateKey=value=>{const date=new Date(value),parts=Number.isNaN(date.getTime())?[]:new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);return ['year','month','day'].map(type=>parts.find(part=>part.type===type)?.value||'').join('-')};
+const relativeSync=value=>{if(!value)return'pas encore synchronisé';const date=new Date(value);if(Number.isNaN(date.getTime()))return'pas encore synchronisé';const time=new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit'}).format(date),isToday=parisDateKey(date)===parisDateKey(new Date()),seconds=Math.max(0,Math.round((Date.now()-date.getTime())/1000));if(isToday&&seconds<60)return'il y a moins d’une minute';if(isToday&&seconds<3600)return`il y a ${Math.floor(seconds/60)} min`;if(isToday)return`aujourd’hui à ${time}`;const day=new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',day:'2-digit',month:'2-digit',year:'numeric'}).format(date);return`le ${day} à ${time}`};
 const contactContactActivityKinds=new Set(['appel','email','sms']);
 const contactLastContact=c=>{
  const activityContacts=(c.activities||[]).filter(a=>contactContactActivityKinds.has(a.kind)&&a.date).map(a=>({date:a.date}));
@@ -585,7 +586,7 @@ function renderCalendlyAppointments(c,items,integration){
   }else if(!integration.connected){
     box.innerHTML=`<div class="integration-banner"><div><b>Calendly est prêt à être relié</b><span>Activez l’import de tous les rendez-vous et l’écoute en temps réel.</span></div>${C.is_admin?'<button class="btn blue" id="setupCalendlyBtn">Activer Calendly</button>':''}</div>`;
   }else{
-    box.innerHTML=`<div class="integration-banner success compact"><div><b>Calendly synchronisé ${relativeSync(integration.last_sync_at||new Date().toISOString())}</b><span>Synchronisation automatique active</span></div></div>`;
+    box.innerHTML=`<div class="integration-banner success compact"><div><b>Calendly synchronisé ${relativeSync(integration.last_sync_at)}</b><span>Synchronisation automatique active</span></div></div>`;
   }
   if(integration.lookup_warning)box.insertAdjacentHTML('beforeend',`<div class="integration-banner warning"><div><b>Recherche Calendly incomplète</b><span>${esc(integration.lookup_warning)}</span></div></div>`);
   const setup=document.querySelector('#setupCalendlyBtn');
@@ -599,13 +600,14 @@ function renderCalendlyAppointments(c,items,integration){
 async function loadCalendlyAppointments(c,manual=false){
   const button=document.querySelector('#syncCalendlyBtn'),list=document.querySelector('#appointmentList');
   if(button&&manual){button.disabled=true;button.textContent='Recherche…'}
-  if(list&&manual)list.innerHTML=`<div class="activity-empty">Recherche des rendez-vous de ${esc(c.prenom||'cette personne')}…</div>`;
-  const timeout=new Promise((_,reject)=>setTimeout(()=>reject(Error('La recherche Calendly a pris trop de temps. Cliquez sur Actualiser pour réessayer.')),15000));
   try{
-    const result=await Promise.race([api(`/api/crm/contacts/${c.id}/calendly/appointments${manual?'?refresh=1':''}`),timeout]);
+    const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments${manual?'?refresh=1':''}`,manual?{timeout:60000}:{});
     renderCalendlyAppointments(c,result.appointments||[],result.integration||{});
   }catch(e){
-    if(list)list.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;
+    if(manual){
+      const box=document.querySelector('#calendlyIntegration');
+      if(box){box.querySelector('.calendly-lookup-warning')?.remove();box.insertAdjacentHTML('beforeend',`<div class="integration-banner warning calendly-lookup-warning"><div><b>Actualisation Calendly impossible</b><span>${esc(e.message)} Les rendez-vous déjà enregistrés restent affichés.</span></div><button class="btn" id="retryCalendlyLookup" type="button">Réessayer</button></div>`);document.querySelector('#retryCalendlyLookup').onclick=()=>loadCalendlyAppointments(c,true)}
+    }else if(list)list.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;
   }finally{if(button){button.disabled=false;button.textContent='↻ Actualiser'}}
 }
 async function setupCalendly(c){

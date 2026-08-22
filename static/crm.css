@@ -144,6 +144,7 @@
 .integration-banner.success b:before{content:"";display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#19a57f;box-shadow:0 0 0 3px #19a57f19;vertical-align:1px}
 .integration-banner.warning{border-color:#f2dfb6;background:#fffaf0}
 .integration-banner.warning b{color:#9b6b12}
+.calendly-lookup-warning .btn{flex:none}
 .integration-banner+.integration-banner{margin-top:8px}
 
 /* Fenêtre de réservation Calendly. */
