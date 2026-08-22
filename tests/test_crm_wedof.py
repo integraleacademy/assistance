@@ -103,6 +103,70 @@ def test_concurrent_sync_returns_without_starting_a_second_scan():
     assert result["created_contacts"] == 0
 
 
+def test_contact_wedof_returns_empty_cache_and_status_without_remote_check(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    monkeypatch.setenv("WEDOF_API_KEY", SECRET)
+    monkeypatch.setattr(
+        application, "_wedof_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("cache reading must not call WEDOF")
+        ),
+    )
+
+    response = client.get(f"/api/crm/contacts/{contact['id']}/wedof")
+
+    assert response.status_code == 200
+    assert response.get_json()["resources"] == []
+    assert response.get_json()["status"]["configured"] is True
+
+
+def test_contact_refresh_reuses_in_progress_sync_and_keeps_cached_resources(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    application._wedof_store_page(
+        [folder("cached-folder", "lina@example.test")],
+        application.load_data(), 1,
+    )
+    application._WEDOF_SYNC_LOCK.acquire()
+    try:
+        response = client.post(
+            f"/api/crm/contacts/{contact['id']}/wedof/refresh"
+        )
+    finally:
+        application._WEDOF_SYNC_LOCK.release()
+
+    assert response.status_code == 200
+    assert response.get_json()["sync"]["in_progress"] is True
+    assert response.get_json()["resources"][0]["stable_id"] == "cached-folder"
+
+
+def test_contact_refresh_error_does_not_erase_cached_resources(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    application._wedof_store_page(
+        [folder("cached-folder", "lina@example.test")],
+        application.load_data(), 1,
+    )
+    monkeypatch.setattr(
+        application, "_wedof_sync",
+        lambda: (_ for _ in ()).throw(application.WedofAPIError("indisponible")),
+    )
+
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh"
+    )
+
+    assert response.status_code == 503
+    cached = client.get(
+        f"/api/crm/contacts/{contact['id']}/wedof"
+    ).get_json()["resources"]
+    assert cached[0]["stable_id"] == "cached-folder"
+
+
 def test_api_key_header_and_errors_never_leak_secret(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     monkeypatch.setenv("WEDOF_API_KEY", SECRET)
