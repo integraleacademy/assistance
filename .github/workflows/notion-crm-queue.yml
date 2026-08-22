@@ -1,6 +1,8 @@
 name: Notion CRM - file d'attente
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
