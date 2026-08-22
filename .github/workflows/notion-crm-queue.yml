@@ -9,7 +9,6 @@ permissions:
   actions: read
   contents: write
   issues: write
-  pull-requests: read
 
 concurrency:
   group: notion-crm-queue
@@ -51,7 +50,7 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Vérifier qu'aucun traitement ou PR CRM n'est déjà actif
+      - name: Vérifier qu'aucun traitement CRM n'est déjà actif
         id: active_work
         if: steps.configuration.outputs.configured == 'true'
         env:
@@ -63,12 +62,6 @@ jobs:
               --jq '.workflow_runs | map(select(.status != "completed")) | .[0].html_url // ""'
           )"
 
-          ACTIVE_PR_URL="$(
-            gh api \
-              "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
-              --jq 'map(select(.head.ref | startswith("agent/notion-crm-"))) | .[0].html_url // ""'
-          )"
-
           if [ -n "$ACTIVE_RUN_URL" ]; then
             echo "active=true" >> "$GITHUB_OUTPUT"
             echo "url=$ACTIVE_RUN_URL" >> "$GITHUB_OUTPUT"
@@ -78,22 +71,16 @@ jobs:
               echo
               echo "Un traitement Codex est déjà en cours : $ACTIVE_RUN_URL"
               echo
-              echo "Les autres demandes restent sur **Prêt à coder** et seront prises automatiquement après sa fin puis la clôture de sa PR."
-            } >> "$GITHUB_STEP_SUMMARY"
-          elif [ -n "$ACTIVE_PR_URL" ]; then
-            echo "active=true" >> "$GITHUB_OUTPUT"
-            echo "url=$ACTIVE_PR_URL" >> "$GITHUB_OUTPUT"
-            echo "::notice::Une pull request Notion CRM est encore ouverte : $ACTIVE_PR_URL"
-            {
-              echo "### File Notion CRM en attente"
-              echo
-              echo "Une pull request Notion CRM est encore ouverte : $ACTIVE_PR_URL"
-              echo
-              echo "Aucune nouvelle demande ne sera lancée avant sa fusion ou sa fermeture."
+              echo "Les autres demandes restent sur **Prêt à coder**. Dès que ce traitement atteint **PR disponible** ou se termine en erreur, la demande suivante pourra démarrer, même si des PR précédentes restent ouvertes."
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "active=false" >> "$GITHUB_OUTPUT"
             echo "url=" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Mode lot nocturne actif"
+              echo
+              echo "Aucun traitement Codex n'est en cours. Les pull requests déjà ouvertes ne bloquent plus la file : la prochaine demande **Prêt à coder** peut démarrer."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Prendre en charge la prochaine page Notion prête

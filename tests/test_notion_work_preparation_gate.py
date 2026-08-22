@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from notion_crm_lib.clients import NotionClient
@@ -110,3 +111,12 @@ def test_notion_query_requires_complete_work_preparation() -> None:
         "property": "ID automatisation",
         "rich_text": {"is_empty": True},
     } in filters
+
+
+def test_night_batch_blocks_only_an_active_implementation_run() -> None:
+    workflow = Path(".github/workflows/notion-crm-queue.yml").read_text(encoding="utf-8")
+
+    assert 'actions/workflows/notion-crm-implement.yml/runs?per_page=50' in workflow
+    assert 'pulls?state=open' not in workflow
+    assert 'Les pull requests déjà ouvertes ne bloquent plus la file' in workflow
+    assert 'MAX_TASKS: "1"' in workflow
