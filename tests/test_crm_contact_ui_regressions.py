@@ -236,10 +236,13 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert 'aria-label="${label}"' in workspace
     assert 'title="${label}"' in workspace
     assert "['green','red'].includes(flag)" in workspace
-    assert "contactTitle.querySelector('small')" in workspace
+    assert "contactTitle.insertAdjacentHTML('afterbegin',flagBadge)" in workspace
     assert "contactTitle.querySelector('.contact-flag-badge')" in workspace
     assert "function listQualificationFlag(contact)" in crm_js
     assert "${listQualificationFlag(c)}" in crm_js
+    assert "<td>${leadScoreCell(c)}</td>" in crm_js
+    assert "<span>${globalContactName(c)}<small>" in crm_js
+    assert "<b>${esc(displayName(c))}</b>${listQualificationFlag(c)}" not in crm_js
     assert 'class="contact-flag-badge is-list ${flag}"' in crm_js
     assert "contactFlagBadge(contact,'header')" in workspace
     assert 'class="contact-flag-label"' in workspace
@@ -250,6 +253,10 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert ".contact-flag-badge.red" in css
     assert ".contact-flag-icon" in css
     assert "@media(max-width:680px)" in css
+    template = (Path(__file__).parents[1] / "templates" / "crm.html").read_text(encoding="utf-8")
+    assert "filename=\'crm.css\',v=asset_version" in template
+    assert "filename=\'crm_workspace.css\',v=asset_version" in template
+    assert "filename=\'crm_workspace.js\',v=asset_version" in template
 
 def test_contact_header_displays_all_activity_counters_including_zero():
     crm_js = CRM_JS.read_text(encoding="utf-8")
@@ -389,7 +396,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260822-bulk-preview-contract-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260822-flag-visibility-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -414,4 +421,4 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260822-bulk-preview-contract-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260822-flag-visibility-1"' in backend
