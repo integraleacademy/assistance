@@ -239,7 +239,8 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert "contactTitle.insertAdjacentHTML('afterbegin',flagBadge)" in workspace
     assert "contactTitle.querySelector('.contact-flag-badge')" in workspace
     assert "function listQualificationFlag(contact)" in crm_js
-    assert "${listQualificationFlag(c)}" in crm_js
+    assert "${listQualificationFlag(contact)}${scoreBadge(contact)}" in crm_js
+    assert "${listQualificationFlag(contact)}<b>${esc(displayName(contact))}" in crm_js
     assert "<td>${leadScoreCell(c)}</td>" in crm_js
     assert "<span>${globalContactName(c)}<small>" in crm_js
     assert "<b>${esc(displayName(c))}</b>${listQualificationFlag(c)}" not in crm_js
