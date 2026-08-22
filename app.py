@@ -12393,7 +12393,7 @@ def _crm_notion_rich_text(value):
 
 def _crm_development_support_page(platform, page_url, original_actions, rewritten_actions):
     user = current_user() or {}
-    subject = re.sub(r"^[#*\\-\\s]+", "", str(rewritten_actions).splitlines()[0]).strip()
+    subject = re.sub(r"^[#*\\s-]+", "", str(rewritten_actions).splitlines()[0]).strip()
     title = f"{platform} — {subject or original_actions}"[:100]
     paragraph = lambda value: {"object": "block", "type": "paragraph",
         "paragraph": {"rich_text": _crm_notion_rich_text(value)}}
