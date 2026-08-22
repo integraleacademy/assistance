@@ -10978,7 +10978,10 @@ def crm_contact_wedof(contact_id):
     data = load_data()
     if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
-    return jsonify({"resources": _wedof_contact_resources(contact_id, data)})
+    return jsonify({
+        "resources": _wedof_contact_resources(contact_id, data),
+        "status": _wedof_status_payload(test_connection=False),
+    })
 
 
 @app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
