@@ -44,6 +44,7 @@ def test_scheduled_relance_keeps_or_sets_followup_status():
 
 def test_completed_relance_returns_secondary_case_to_in_progress():
     contact = _contact(
+        relance_date="2026-09-04",
         relances=[{
             "scheduled_date": "2026-09-04",
             "status": "answered",
@@ -53,6 +54,7 @@ def test_completed_relance_returns_secondary_case_to_in_progress():
     assert contact_has_scheduled_relance(contact) is False
     assert normalize_contact_pipeline_status(contact) is True
     assert contact["statut"] == "En cours"
+    assert contact["relance_date"] == ""
 
 
 def test_legacy_relance_date_is_considered_a_real_followup():
