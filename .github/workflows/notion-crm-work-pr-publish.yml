@@ -235,6 +235,23 @@ jobs:
             --clear-error \
             --comment "✅ La pull request #${PR_NUMBER} a été testée, fusionnée et publiée automatiquement."
 
+          python - <<'PY'
+          import os
+          import requests
+
+          response = requests.patch(
+              f"https://api.notion.com/v1/pages/{os.environ['PAGE_ID']}",
+              headers={
+                  "Authorization": f"Bearer {os.environ['NOTION_API_TOKEN']}",
+                  "Notion-Version": "2022-06-28",
+                  "Content-Type": "application/json",
+              },
+              json={"properties": {"Publié en bas": {"checkbox": True}}},
+              timeout=20,
+          )
+          response.raise_for_status()
+          PY
+
       - name: Lancer immédiatement la PR CRM suivante
         env:
           GH_TOKEN: ${{ github.token }}
