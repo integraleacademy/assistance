@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   queue:
-    name: Détecter la prochaine demande CRM prête
+    name: Remplir les créneaux de développement CRM
     if: github.repository == 'integraleacademy/assistance'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -55,43 +55,48 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Vérifier qu'aucun traitement CRM n'est déjà actif
-        id: active_work
+      - name: Calculer les créneaux Codex disponibles
+        id: capacity
         if: steps.configuration.outputs.configured == 'true'
         env:
           GH_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
+          MAX_CONCURRENT: "3"
         run: |
-          ACTIVE_RUN_URL="$(
+          ACTIVE_COUNT="$(
             gh api \
               "repos/$GITHUB_REPOSITORY/actions/workflows/notion-crm-implement.yml/runs?per_page=50" \
-              --jq '.workflow_runs | map(select(.status != "completed")) | .[0].html_url // ""'
+              --jq '[.workflow_runs[] | select(.status != "completed")] | length'
           )"
 
-          if [ -n "$ACTIVE_RUN_URL" ]; then
-            echo "active=true" >> "$GITHUB_OUTPUT"
-            echo "url=$ACTIVE_RUN_URL" >> "$GITHUB_OUTPUT"
-            echo "::notice::Une demande CRM est déjà en cours de préparation : $ACTIVE_RUN_URL"
-            {
-              echo "### File Notion CRM en attente"
-              echo
-              echo "Un traitement Codex est déjà en cours : $ACTIVE_RUN_URL"
-              echo
-              echo "Les autres demandes restent sur **Prêt à coder**. Dès que ce traitement atteint **PR disponible** ou se termine en erreur, la demande suivante pourra démarrer, même si des PR précédentes restent ouvertes."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "active=false" >> "$GITHUB_OUTPUT"
-            echo "url=" >> "$GITHUB_OUTPUT"
-            {
-              echo "### Mode lot nocturne actif"
-              echo
-              echo "Aucun traitement Codex n'est en cours. Les pull requests déjà ouvertes ne bloquent plus la file : la prochaine demande **Prêt à coder** peut démarrer."
-              echo
-              echo "La fin d'un traitement Codex relance désormais cette file immédiatement ; le cron toutes les 5 minutes reste un filet de sécurité."
-            } >> "$GITHUB_STEP_SUMMARY"
+          case "$ACTIVE_COUNT" in
+            ''|*[!0-9]*) ACTIVE_COUNT=0 ;;
+          esac
+
+          AVAILABLE=$((MAX_CONCURRENT - ACTIVE_COUNT))
+          if [ "$AVAILABLE" -lt 0 ]; then
+            AVAILABLE=0
           fi
 
-      - name: Prendre en charge la prochaine page Notion prête
-        if: steps.configuration.outputs.configured == 'true' && steps.active_work.outputs.active != 'true'
+          echo "active_count=$ACTIVE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "available_slots=$AVAILABLE" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Capacité de la file CRM"
+            echo
+            echo "- Codex actifs ou en attente de runner : **$ACTIVE_COUNT / $MAX_CONCURRENT**"
+            echo "- Créneaux disponibles : **$AVAILABLE**"
+            echo
+            if [ "$AVAILABLE" -gt 0 ]; then
+              echo "La file peut prendre jusqu'à **$AVAILABLE** demande(s) \`Prêt à coder\` pendant ce passage."
+            else
+              echo "Les trois créneaux sont occupés. Les demandes restantes restent sur **Prêt à coder** jusqu'à la libération d'un créneau."
+            fi
+            echo
+            echo "Les PR déjà ouvertes ne consomment aucun créneau et ne bloquent jamais la file."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remplir les créneaux libres avec les prochaines demandes
+        if: steps.configuration.outputs.configured == 'true' && fromJSON(steps.capacity.outputs.available_slots || '0') > 0
         env:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -100,7 +105,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.CRM_AUTOMATION_GITHUB_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          MAX_TASKS: "1"
+          MAX_TASKS: ${{ steps.capacity.outputs.available_slots }}
           CHATGPT_WORKSPACE_AGENT_TOKEN: ${{ secrets.CHATGPT_WORKSPACE_AGENT_TOKEN }}
           CHATGPT_WORKSPACE_AGENT_TRIGGER_ID: ${{ secrets.CHATGPT_WORKSPACE_AGENT_TRIGGER_ID }}
         run: python notion_crm_automation.py queue
