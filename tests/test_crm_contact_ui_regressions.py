@@ -317,3 +317,4 @@ def test_calendly_refreshes_silently_after_cached_contact_render():
     assert "Calendly : actualisation en cours…" in javascript
     assert "cached.appointments||[]" in javascript
     assert "lookup_warning:error.message" in javascript
+    assert "if(button&&manual){button.disabled=false" in javascript
