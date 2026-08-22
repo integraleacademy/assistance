@@ -68,9 +68,15 @@ def dashed_page_id(page_id: str) -> str:
 
 
 def branch_name_for_page(page_id: str) -> str:
-    """Construit le nom de branche déterministe d'une demande Notion."""
+    """Construit l'ancien nom court, conservé pour compatibilité interne."""
 
     return f"agent/notion-crm-{compact_page_id(page_id)[:12]}"
+
+
+def unique_branch_name_for_page(page_id: str) -> str:
+    """Construit un nom de branche réellement unique à partir de l'UUID Notion complet."""
+
+    return f"agent/notion-crm-{compact_page_id(page_id)}"
 
 
 def split_text(value: str, limit: int = 2_000) -> list[str]:
