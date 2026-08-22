@@ -3,6 +3,7 @@ name: Notion CRM - vérifier les PR Work
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +15,11 @@ concurrency:
 jobs:
   validate:
     name: Contrôler la modification CRM préparée par Work
-    if: startsWith(github.head_ref, 'work/notion-crm-')
+    if: >-
+      startsWith(github.head_ref, 'work/notion-crm-') ||
+      startsWith(github.head_ref, 'agent/notion-crm-') ||
+      startsWith(github.ref_name, 'work/notion-crm-') ||
+      startsWith(github.ref_name, 'agent/notion-crm-')
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
