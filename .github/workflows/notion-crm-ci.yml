@@ -16,6 +16,7 @@ on:
       - "tests/test_notion_crm_automation.py"
       - "tests/test_notion_media_analysis.py"
       - "tests/test_notion_patch_repair.py"
+      - "tests/test_notion_work_first_prompt.py"
       - "tests/test_notion_work_preparation_gate.py"
   workflow_dispatch:
 
@@ -54,6 +55,7 @@ jobs:
             tests/test_notion_crm_automation.py \
             tests/test_notion_media_analysis.py \
             tests/test_notion_patch_repair.py \
+            tests/test_notion_work_first_prompt.py \
             tests/test_notion_work_preparation_gate.py
 
       - name: Vérifier la compilation Python
@@ -67,6 +69,7 @@ jobs:
             tests/test_notion_crm_automation.py \
             tests/test_notion_media_analysis.py \
             tests/test_notion_patch_repair.py \
+            tests/test_notion_work_first_prompt.py \
             tests/test_notion_work_preparation_gate.py
 
       - name: Vérifier la structure des workflows
