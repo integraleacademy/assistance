@@ -34,3 +34,22 @@
  .contact-flag-control>span{width:100%;padding:3px 6px}
  .contact-flag-control button{flex:1}
 }
+
+
+.contact-completeness-action{align-self:flex-start;margin-top:10px}
+.completeness-modal{width:min(760px,calc(100vw - 28px));max-height:min(88vh,860px)}
+.completeness-modal .modal-body{overflow:auto}
+.completeness-modal-intro{margin:0 0 16px;color:var(--muted,#667085)}
+.completeness-modal-form{display:grid;gap:16px}
+.completeness-modal-group{border:1px solid var(--border,#dfe3ea);border-radius:12px;padding:14px;background:var(--card,#fff)}
+.completeness-modal-group h3{margin:0 0 12px;font-size:15px}
+.completeness-modal-field{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(220px,1.2fr);gap:14px;align-items:center;padding:9px 0}
+.completeness-modal-field+.completeness-modal-field{border-top:1px solid var(--border,#e8ebf0)}
+.completeness-modal-field>label{font-weight:650}
+.completeness-control input,.completeness-control select{width:100%;box-sizing:border-box}
+.completeness-control .binary-choice{margin:0}
+@media(max-width:680px){
+ .completeness-modal-field{grid-template-columns:1fr;gap:7px}
+ .completeness-modal{width:calc(100vw - 16px);max-height:94vh}
+ .contact-completeness small{white-space:normal}
+}
