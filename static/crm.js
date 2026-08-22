@@ -32,13 +32,23 @@ const contactPipelineStatuses=c=>{
 const contactHasPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status);
 const nextProgrammedAppointmentDate=c=>{
  if(!contactHasPipelineStatus(c,'RDV programmé'))return'';
- const now=Date.now(),appointments=crmAppointments
-  .filter(item=>String(item.contact_id)===String(c.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase()))
-  .map(item=>({item,start:Date.parse(item.start_time)}))
-  .filter(row=>Number.isFinite(row.start))
-  .sort((a,b)=>a.start-b.start),appointment=appointments.find(row=>row.start>=now)||appointments[appointments.length-1];
- return appointment?new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(appointment.start)):'Date du RDV non renseignée';
+ return window.CRMAppointmentState.dateLabel(c.id,crmAppointments);
 };
+function replaceContactAppointments(contactId,appointments){
+ crmAppointments=window.CRMAppointmentState.replaceContact(crmAppointments,contactId,appointments);
+ const contact=contactInStore(contactId);
+ if(contact)contact.activity_counts={...(contact.activity_counts||{}),appointments:window.CRMAppointmentState.contactAppointments(contactId,crmAppointments).length};
+}
+function updateVisibleAppointmentData(){
+ document.querySelectorAll('#resultTable tr[data-id]').forEach(row=>{
+  const contact=contactInStore(row.dataset.id);
+  if(!contact)return;
+  const activities=row.querySelector('[data-crm-cell="activities"]');
+  const status=row.querySelector('[data-crm-cell="status"]');
+  if(activities)activities.innerHTML=listActivityBadges(contact);
+  if(status)status.innerHTML=contactPipelineStatusMarkup(contact);
+ });
+}
 const contactPipelineStatusMarkup=c=>{
  const appointmentDate=nextProgrammedAppointmentDate(c);
  return `<div class="pipeline-status-stack">${contactPipelineStatuses(c).map(badge).join(' ')}${appointmentDate?`<small class="pipeline-appointment-date">${esc(appointmentDate)}</small>`:''}</div>`;
@@ -90,7 +100,7 @@ function contactHeaderActivitySummary(contact){
  return `<div class="contact-activity-summary" role="list" aria-label="Activité du contact">${items.map(([label,value])=>`<span class="contact-activity-pill" role="listitem"><strong>${value}</strong><small>${label}</small></span>`).join('')}</div>`;
 }
 function listQualificationFlag(contact){const flag=contact.qualification_flag||'';if(!['green','red'].includes(flag))return'';const label=flag==='green'?'Green Flag':'Red Flag';return `<span class="contact-flag-badge is-list ${flag}" role="img" aria-label="${label}" title="${label}"><svg class="contact-flag-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 3v18M6 4h11l-2.5 4L17 12H6z"/></svg><span class="contact-flag-label">${label}</span></span>`}
-function table(list,{selectable=false}={}){const selectionHead=selectable?'<th class="lead-select-cell"><input type="checkbox" id="leadSelectAll" aria-label="Sélectionner toutes les pistes affichées"></th>':'',selectionCell=contact=>selectable?`<td class="lead-select-cell"><input type="checkbox" data-lead-select="${esc(contact.id)}" aria-label="Sélectionner ${esc(displayName(contact))}" ${selectedLeadIds.has(String(contact.id))?'checked':''}></td>`:'',columns=`<colgroup>${selectable?'<col class="crm-col-select">':''}<col class="crm-col-contact"><col class="crm-col-origin"><col class="crm-col-activities"><col class="crm-col-formation"><col class="crm-col-score"><col class="crm-col-location"><col class="crm-col-status"><col class="crm-col-updated"></colgroup>`;return `<div class="card table-card"><div class="table-wrap"><table class="crm-activity-table">${columns}<thead><tr>${selectionHead}<th>CONTACT</th><th>ORIGINE</th><th>ACTIVITÉS</th><th>FORMATION</th><th>SCORE</th><th>LIEU</th><th>STATUT</th><th>DERNIÈRE MODIFICATION</th></tr></thead><tbody>${list.length?list.map(c=>`<tr data-id="${c.id}">${selectionCell(c)}<td><div class="person"><span class="avatar">${initials(c)}</span><div><b>${esc(displayName(c))}</b>${listQualificationFlag(c)}<small>${esc(c.mail||c.telephone||'Coordonnées à compléter')}</small></div></div></td><td>${listOriginBadge(c)}</td><td>${listActivityBadges(c)}</td><td>${esc(c.formation)}</td><td>${scoreBadge(c)}</td><td>${esc(c.lieu)}</td><td>${contactPipelineStatusMarkup(c)}</td><td>${fmt(c.updated_at)}</td></tr>`).join(''):`<tr><td colspan="${selectable?9:8}" class="empty">Aucun contact dans cette vue.<br>Créez votre première piste pour commencer.</td></tr>`}</tbody></table></div></div>`}
+function table(list,{selectable=false}={}){const selectionHead=selectable?'<th class="lead-select-cell"><input type="checkbox" id="leadSelectAll" aria-label="Sélectionner toutes les pistes affichées"></th>':'',selectionCell=contact=>selectable?`<td class="lead-select-cell"><input type="checkbox" data-lead-select="${esc(contact.id)}" aria-label="Sélectionner ${esc(displayName(contact))}" ${selectedLeadIds.has(String(contact.id))?'checked':''}></td>`:'',columns=`<colgroup>${selectable?'<col class="crm-col-select">':''}<col class="crm-col-contact"><col class="crm-col-origin"><col class="crm-col-activities"><col class="crm-col-formation"><col class="crm-col-score"><col class="crm-col-location"><col class="crm-col-status"><col class="crm-col-updated"></colgroup>`;return `<div class="card table-card"><div class="table-wrap"><table class="crm-activity-table">${columns}<thead><tr>${selectionHead}<th>CONTACT</th><th>ORIGINE</th><th>ACTIVITÉS</th><th>FORMATION</th><th>SCORE</th><th>LIEU</th><th>STATUT</th><th>DERNIÈRE MODIFICATION</th></tr></thead><tbody>${list.length?list.map(c=>`<tr data-id="${c.id}">${selectionCell(c)}<td><div class="person"><span class="avatar">${initials(c)}</span><div><b>${esc(displayName(c))}</b>${listQualificationFlag(c)}<small>${esc(c.mail||c.telephone||'Coordonnées à compléter')}</small></div></div></td><td>${listOriginBadge(c)}</td><td data-crm-cell="activities">${listActivityBadges(c)}</td><td>${esc(c.formation)}</td><td>${scoreBadge(c)}</td><td>${esc(c.lieu)}</td><td data-crm-cell="status">${contactPipelineStatusMarkup(c)}</td><td>${fmt(c.updated_at)}</td></tr>`).join(''):`<tr><td colspan="${selectable?9:8}" class="empty">Aucun contact dans cette vue.<br>Créez votre première piste pour commencer.</td></tr>`}</tbody></table></div></div>`}
 const dashboardPeriods={week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'};
 const crmExportDefinitions=[
  {key:'a3p',title:'Fichier A3P',formation:'A3P'},
@@ -638,7 +648,10 @@ async function refreshCalendlyOnOpen(c,cached){
   try{
     const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments?refresh=1`,{timeout:60000});
     if(activeCalendlyContactId!==String(c.id))return;
-    renderCalendlyAppointments(c,result.appointments||[],result.integration||{});
+    const appointments=result.appointments||[];
+    replaceContactAppointments(c.id,appointments);
+    updateVisibleAppointmentData();
+    renderCalendlyAppointments(c,appointments,result.integration||{});
   }catch(error){
     if(activeCalendlyContactId!==String(c.id))return;
     renderCalendlyAppointments(c,cached.appointments||[],{...(cached.integration||{}),lookup_warning:error.message});
@@ -650,7 +663,10 @@ async function loadCalendlyAppointments(c,manual=false){
   if(button&&manual){button.disabled=true;button.textContent='Recherche…'}
   try{
     const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments${manual?'?refresh=1':''}`,manual?{timeout:60000}:{});
-    renderCalendlyAppointments(c,result.appointments||[],manual?result.integration||{}:{...(result.integration||{}),refresh_in_progress:true});
+    const appointments=result.appointments||[];
+    replaceContactAppointments(c.id,appointments);
+    updateVisibleAppointmentData();
+    renderCalendlyAppointments(c,appointments,manual?result.integration||{}:{...(result.integration||{}),refresh_in_progress:true});
     if(!manual)refreshCalendlyOnOpen(c,result);
   }catch(e){
     if(manual){
@@ -856,5 +872,40 @@ globalSearch.onkeydown=e=>{if(e.key==='Enter'){C.section='contacts';history.push
 // des contacts a réellement changé.
 const CRM_REFRESH_INTERVAL_MS=60000;let crmRefreshTimer=null,crmRefreshInFlight=false;
 function scheduleCrmRefresh(delay=CRM_REFRESH_INTERVAL_MS){clearTimeout(crmRefreshTimer);crmRefreshTimer=setTimeout(refreshCrmSnapshot,delay)}
-async function refreshCrmSnapshot(){if(document.hidden||crmRefreshInFlight){scheduleCrmRefresh();return}crmRefreshInFlight=true;try{const id=new URLSearchParams(location.search).get('fiche'),suffix=id?`?contact_id=${encodeURIComponent(id)}`:'',snapshot=await api(`/api/crm/contacts/updates${suffix}`),updates=snapshot.contacts||[],knownIds=new Set(contacts.map(contact=>String(contact.id))),membershipChanged=updates.length!==contacts.length||updates.some(contact=>!knownIds.has(String(contact.id)));if(membershipChanged){const detailed=new Map(contacts.filter(contact=>!contact._summary).map(contact=>[String(contact.id),contact])),fresh=await api(`/api/crm/contacts?section=${encodeURIComponent(C.section)}`);contacts=fresh.map(summary=>{const detail=detailed.get(String(summary.id));if(!detail)return summary;const merged={...summary,...detail};delete merged._summary;return merged})}else updates.forEach(update=>mergeContactInStore(update.id,update));if(snapshot.selected)mergeContactInStore(snapshot.selected.id,snapshot.selected);updateLeadCount();const current=id?contactInStore(id):null;if(current){const feedRoot=document.querySelector('#activityFeed'),pubRoot=document.querySelector('#publicationFeed');if(feedRoot)feedRoot.innerHTML=feed(current);if(pubRoot){pubRoot.innerHTML=publications(current);bindPublicationFeed(current,pubRoot)}}}catch(_){/* Une coupure réseau ne doit pas interrompre la saisie. */}finally{crmRefreshInFlight=false;scheduleCrmRefresh()}}
+async function refreshCrmSnapshot(){
+ if(document.hidden||crmRefreshInFlight){scheduleCrmRefresh();return}
+ crmRefreshInFlight=true;
+ try{
+  const id=new URLSearchParams(location.search).get('fiche');
+  const suffix=id?`?contact_id=${encodeURIComponent(id)}`:'';
+  const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
+  const updates=snapshot.contacts||[];
+  const hasAppointments=Array.isArray(snapshot.appointments);
+  const appointmentsChanged=hasAppointments&&window.CRMAppointmentState.signature(snapshot.appointments)!==window.CRMAppointmentState.signature(crmAppointments);
+  if(appointmentsChanged)crmAppointments=snapshot.appointments;
+  const knownIds=new Set(contacts.map(contact=>String(contact.id)));
+  const membershipChanged=updates.length!==contacts.length||updates.some(contact=>!knownIds.has(String(contact.id)));
+  if(membershipChanged){
+   const detailed=new Map(contacts.filter(contact=>!contact._summary).map(contact=>[String(contact.id),contact]));
+   const fresh=await api(`/api/crm/contacts?section=${encodeURIComponent(C.section)}`);
+   contacts=fresh.map(summary=>{
+    const detail=detailed.get(String(summary.id));
+    if(!detail)return summary;
+    const merged={...summary,...detail};
+    delete merged._summary;
+    return merged;
+   });
+  }else updates.forEach(update=>mergeContactInStore(update.id,update));
+  if(snapshot.selected)mergeContactInStore(snapshot.selected.id,snapshot.selected);
+  updateLeadCount();
+  updateVisibleAppointmentData();
+  const current=id?contactInStore(id):null;
+  if(current){
+   const feedRoot=document.querySelector('#activityFeed'),pubRoot=document.querySelector('#publicationFeed');
+   if(feedRoot)feedRoot.innerHTML=feed(current);
+   if(pubRoot){pubRoot.innerHTML=publications(current);bindPublicationFeed(current,pubRoot)}
+  }
+ }catch(_){/* Une coupure réseau ne doit pas interrompre la saisie. */}
+ finally{crmRefreshInFlight=false;scheduleCrmRefresh()}
+}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(crmRefreshTimer);refreshCrmSnapshot()}});scheduleCrmRefresh();
