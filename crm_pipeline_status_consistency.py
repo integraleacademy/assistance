@@ -25,6 +25,14 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _structured_relances(contact: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        relance
+        for relance in (contact.get("relances") or [])
+        if isinstance(relance, dict)
+    ]
+
+
 def contact_has_secondary_pipeline(contact: dict[str, Any]) -> bool:
     """Indique si la fiche possède une deuxième timeline métier."""
     if _text(contact.get("statut_secondaire")):
@@ -36,13 +44,18 @@ def contact_has_secondary_pipeline(contact: dict[str, Any]) -> bool:
 
 def contact_has_scheduled_relance(contact: dict[str, Any]) -> bool:
     """Détecte une prochaine relance réelle, y compris les anciennes fiches."""
-    for relance in contact.get("relances") or []:
-        if not isinstance(relance, dict):
-            continue
+    structured = _structured_relances(contact)
+    for relance in structured:
         status = _text(relance.get("status"))
         scheduled_date = _text(relance.get("scheduled_date"))
         if status in SCHEDULED_RELANCE_STATUSES and scheduled_date:
             return True
+
+    if structured:
+        # Lorsqu'un historique détaillé existe, il est la source de vérité. Une
+        # ancienne valeur ``relance_date`` ne doit pas maintenir artificiellement
+        # la fiche dans « A relancer » après réponse ou annulation.
+        return False
 
     # Compatibilité avec les fiches historiques qui possèdent uniquement le
     # champ synthétique ``relance_date`` sans entrée détaillée dans ``relances``.
@@ -60,16 +73,25 @@ def normalize_contact_pipeline_status(contact: dict[str, Any]) -> bool:
         # ne doivent jamais être remplacés automatiquement.
         return False
 
-    target = (
-        "A relancer"
-        if contact_has_scheduled_relance(contact)
-        else "En cours"
-    )
-    if current == target:
-        return False
+    has_scheduled = contact_has_scheduled_relance(contact)
+    target = "A relancer" if has_scheduled else "En cours"
+    changed = False
 
-    contact["statut"] = target
-    return True
+    if current != target:
+        contact["statut"] = target
+        changed = True
+
+    if (
+        not has_scheduled
+        and _structured_relances(contact)
+        and _text(contact.get("relance_date"))
+    ):
+        # Élimine les dates synthétiques résiduelles lorsque toutes les relances
+        # détaillées ont déjà été traitées ou annulées.
+        contact["relance_date"] = ""
+        changed = True
+
+    return changed
 
 
 def normalize_crm_pipeline_statuses(data: dict[str, Any]) -> int:
