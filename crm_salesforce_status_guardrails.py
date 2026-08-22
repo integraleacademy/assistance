@@ -29,6 +29,11 @@ SECONDARY_STATUS_ALIASES = {
     "c2p en cours": "C2P en cours",
 }
 
+PRIMARY_IN_PROGRESS_ALIASES = {
+    "en cours",
+    "in progress",
+}
+
 FUNDING_STATUS_BY_SECONDARY = {
     "Financement FT en cours": "en_cours_instruction",
     "Financement FT refusé": "refusee",
@@ -83,6 +88,8 @@ def install_salesforce_status_guardrails(migration_module) -> None:
         if source_is_converted(row):
             return "Converti"
         raw = source_status(row)
+        if raw in PRIMARY_IN_PROGRESS_ALIASES:
+            return "En cours"
         if raw in SECONDARY_STATUS_ALIASES:
             # POEI, C2P, Marché FT, Def MOB, etc. décrivent l'avancement
             # métier. Sans tâche de relance importée, le dossier est « En cours ».
