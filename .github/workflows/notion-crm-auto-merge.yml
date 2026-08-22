@@ -8,7 +8,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  statuses: read
 
 concurrency:
   group: notion-crm-auto-merge
@@ -76,15 +75,11 @@ jobs:
           compare_json="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${RUN_BRANCH}")"
           behind_by="$(printf '%s' "$compare_json" | jq -r '.behind_by // 999')"
 
+          # Le compare GitHub est la source de vérité : behind_by=0 prouve que la
+          # branche contient le main courant. Un statut custom séparé est redondant
+          # et pouvait disparaître lorsqu'un correctif Work créait un nouveau SHA.
           if [ "$behind_by" != "0" ]; then
             echo "PR #$pr_number en retard de $behind_by commit(s) sur main : attente de l'actualisation automatique."
-            exit 0
-          fi
-
-          base_status="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_sha}/status" \
-            --jq '[.statuses[] | select(.context == "Notion CRM / base à jour") | .state][0] // ""')"
-          if [ "$base_status" != "success" ]; then
-            echo "PR #$pr_number non confirmée à jour avec main : $base_status"
             exit 0
           fi
 
