@@ -8702,6 +8702,7 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     _crm_ensure_relances(contact)
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
+    response.setdefault("qualification_flag", "")
     # Le statut WEDOF est calculé une seule fois pour toute la liste des contacts
     # puis injecté ici. Ne jamais relire toute la base WEDOF depuis cette fonction :
     # elle est appelée une fois par piste et transformerait la requête en N × M.
@@ -11819,6 +11820,7 @@ CRM_CONTACT_SUMMARY_FIELDS = (
     "converted_at", "status_changed_at", "disqualification_reason",
     "disqualification_detail", "reactivation_date", "created_at",
     "received_at", "updated_at", "commentaires", "wedof_status",
+    "qualification_flag",
 )
 CRM_CONTACT_ACTIVITY_KINDS = {"appel", "email", "sms"}
 CRM_ACTIVITY_SECTIONS = {"notifications", "fil-actu"}
@@ -11905,6 +11907,7 @@ def _crm_contact_summary_response(contact, data, *, funding_status=None,
         for key in CRM_CONTACT_SUMMARY_FIELDS
         if key in contact
     }
+    summary["qualification_flag"] = str(contact.get("qualification_flag") or "")
     if (funding_status
             and contact.get("statut_demande_financement_ft_source")
             != CRM_MANUAL_STATUS_SOURCE):
@@ -12409,10 +12412,17 @@ def _crm_patch_contact_locked(data, contact, contact_id):
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "statut_secondaire", "commercial", "tags", "prix_vente", "cout_estime",
-               "disqualification_reason", "disqualification_detail", "reactivation_date", "archived_at"}
+               "disqualification_reason", "disqualification_detail", "reactivation_date", "archived_at",
+               "qualification_flag"}
+    if "qualification_flag" in payload:
+        qualification_flag = str(payload.get("qualification_flag") or "").strip().lower()
+        if qualification_flag not in {"", "green", "red"}:
+            return jsonify({"error": "La qualification doit être vide, green ou red."}), 400
+        payload["qualification_flag"] = qualification_flag
     old_status = contact.get("statut")
     old_secondary_status = contact.get("statut_secondaire", "")
     old_origin = contact.get("origine", "")
+    old_qualification_flag = str(contact.get("qualification_flag") or "")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
     old_score = calculate_candidate_integration_score(contact, snapshot)
     if "cpf_montant" in payload:
@@ -12518,6 +12528,15 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         secondary_label = contact.get("statut_secondaire") or "retiré"
         _crm_activity(contact, "statut", f"Deuxième statut : {secondary_label}",
                       f"Ancien deuxième statut : {old_secondary_status or 'aucun'}")
+    new_qualification_flag = str(contact.get("qualification_flag") or "")
+    if new_qualification_flag != old_qualification_flag:
+        labels = {"": "Aucun flag", "green": "Green Flag", "red": "Red Flag"}
+        _crm_activity(
+            contact,
+            "qualification",
+            f"Qualification : {labels[new_qualification_flag]}",
+            f"Ancienne qualification : {labels.get(old_qualification_flag, 'Aucun flag')}",
+        )
     new_score = calculate_candidate_integration_score(contact, snapshot)
     if old_score.get("level") and new_score.get("level") != old_score.get("level"):
         _crm_activity(contact, "score", f"Score d’intégration passé de {old_score['score']} à {new_score['score']} : {new_score['label']}")
