@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 
 CRM_JS = Path(__file__).parents[1] / "static" / "crm.js"
@@ -36,6 +37,7 @@ def test_wedof_cache_is_preloaded_and_refreshes_without_a_modal():
 def test_wedof_display_translates_known_english_business_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
+    assert "rejectedWithoutTitulaireSuite:\'Refusé sans suite par le titulaire\'" in javascript
     assert "refusedByAttendee:'Refusé par le participant'" in javascript
     assert "cancelledByAttendee:'Annulé par le participant'" in javascript
     assert "refusedByTrainingOrganization:'Refusé par l’organisme de formation'" in javascript
@@ -45,6 +47,18 @@ def test_wedof_display_translates_known_english_business_values():
     assert "esc(wedofValue(x.name||x))" in javascript
     assert "esc(wedofValue(v))" in javascript
     assert "JSON.stringify(p,null,2)" in javascript
+
+
+def test_wedof_business_labels_and_statuses_execute_in_javascript():
+    completed = subprocess.run(
+        ["node", "tests/wedof_status_smoke.js"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "WEDOF France Travail status mapping: OK" in completed.stdout
+
 
 def test_contact_appointment_modal_uses_scoped_explicit_controls():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -397,7 +411,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260822-flag-visibility-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260822-wedof-titulaire-suite-fr-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -422,4 +436,4 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260822-flag-visibility-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260822-wedof-titulaire-suite-fr-1"' in backend
