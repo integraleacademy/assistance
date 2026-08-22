@@ -186,8 +186,8 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
 
 def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
-    workspace = (ROOT / "static" / "crm_workspace.js").read_text(encoding="utf-8")
-    css = (ROOT / "static" / "crm_workspace.css").read_text(encoding="utf-8")
+    workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+    css = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
 
     assert "data-contact-flag" in workspace
     assert "qualification_flag:value" in workspace
