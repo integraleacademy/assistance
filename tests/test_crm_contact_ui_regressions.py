@@ -327,12 +327,17 @@ def test_bulk_messages_preview_and_offer_every_compatible_template():
     assert "modelPool=[...(isMail?templates.automatic_email||[]:[])" in javascript
     assert "new Map(modelPool.map(template=>[String(template.id),template]))" in javascript
     assert 'id="previewBulkMessage">Prévisualiser' in javascript
-    assert 'id="bulkMessagePreview" hidden' in javascript
-    assert "eligible[0].id}/message-preview" in javascript
-    assert "previewFrame.srcdoc=smsPreviewHtml(messageField.value)" in javascript
+    assert 'id="bulkMessagePreview" aria-live="polite" aria-busy="false" hidden' in javascript
+    assert "contact.id}/message-preview" in javascript
+    assert "JSON.stringify({type,contenu:messageField.value" in javascript
+    assert "result.sujet||'Sans objet'" in javascript
+    assert "previewFrame.srcdoc=smsPreviewHtml(result.contenu)" in javascript
+    assert "bulkPreviewRequest" in javascript
+    assert "requestId!==bulkPreviewRequest" in javascript
+    assert "Préparation de l’aperçu pour" in javascript
     assert "previewRoot.hidden=false" in javascript
-    assert "previewButton.disabled=true;try{" in javascript
     assert ".bulk-message-preview" in stylesheet
+    assert '.bulk-message-preview[aria-busy="true"]' in stylesheet
 
 
 def test_calendly_refreshes_silently_after_cached_contact_render():
@@ -384,7 +389,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260822-calendly-list-sync-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260822-bulk-preview-contract-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -409,4 +414,4 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260822-calendly-list-sync-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260822-bulk-preview-contract-1"' in backend
