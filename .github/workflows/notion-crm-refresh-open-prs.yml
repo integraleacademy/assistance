@@ -3,6 +3,8 @@ name: Notion CRM - actualiser les PR ouvertes
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -77,15 +79,6 @@ jobs:
                 git diff --check origin/main...HEAD
                 git push origin "HEAD:refs/heads/${branch}"
                 echo "PR #${number} actualisée automatiquement."
-
-                # Les nouvelles PR Work utilisent ce CI directement. Pour les anciennes
-                # PR créées par github-actions[bot], GitHub peut marquer le run pull_request
-                # en action_required ; un workflow dédié, lancé depuis main, les prend en charge.
-                if [[ "$branch" == work/notion-crm-* ]]; then
-                  gh workflow run notion-crm-work-pr-ci.yml \
-                    --repo "$GITHUB_REPOSITORY" \
-                    --ref "$branch"
-                fi
               fi
 
               gh api \
@@ -114,16 +107,24 @@ jobs:
             echo "::endgroup::"
           done
 
-          # Pont de migration : si la plus ancienne PR restante provient de l'ancien
-          # système github-actions[bot], la tester et la publier depuis un workflow
-          # dispatché sur main. Sa fusion déclenchera ce workflow à nouveau et fera
-          # avancer automatiquement la PR historique suivante.
+          # Une seule PR est autorisée à avancer : la plus ancienne encore ouverte.
+          # Le publieur correspondant exécute lui-même ses tests puis fusionne sans
+          # dépendre d'un workflow_run intermédiaire. Sa fusion redéclenche ensuite
+          # explicitement ce workflow ; le cron toutes les 5 minutes reste un filet
+          # de sécurité si GitHub supprime un événement généré par GITHUB_TOKEN.
           first="${prs[0]}"
           first_number="${first%%|*}"
           first_branch="${first#*|}"
+
           if [[ "$first_branch" == agent/notion-crm-* ]]; then
-            echo "Déclenchement du traitement historique pour la PR #${first_number}."
+            echo "Déclenchement du publieur historique pour la PR #${first_number}."
             gh workflow run notion-crm-legacy-pr-publish.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f pr_number="$first_number"
+          elif [[ "$first_branch" == work/notion-crm-* ]]; then
+            echo "Déclenchement du publieur Work pour la PR #${first_number}."
+            gh workflow run notion-crm-work-pr-publish.yml \
               --repo "$GITHUB_REPOSITORY" \
               --ref main \
               -f pr_number="$first_number"

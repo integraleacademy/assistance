@@ -80,6 +80,7 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
 
     assert created.status_code == 200
     assert created.get_json()["contact_id"] == contact["id"]
+    assert application.load_data()["crm_calendly"]["last_sync_at"]
     appointments = client.get(
         f"/api/crm/contacts/{contact['id']}/calendly/appointments"
     ).get_json()["appointments"]
@@ -450,7 +451,7 @@ def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_
 
     assert response.status_code == 201
     assert captured["location"] == {"kind": "outbound_call", "location": "+33612345678"}
-    assert captured["invitee"]["text_reminder_number"] == "+33612345678"
+    assert "text_reminder_number" not in captured["invitee"]
     assert captured["questions_and_answers"] == [{
         "question": "Votre projet",
         "answer": "Formation APS",
@@ -505,6 +506,9 @@ def test_full_sync_imports_every_event_and_keeps_unmatched_appointments(tmp_path
 
     assert response.status_code == 200
     assert response.get_json()["complete"] is True
+    sync_state = application.load_data()["crm_calendly"]
+    assert sync_state["last_sync_at"]
+    assert sync_state["last_full_sync_at"] == sync_state["last_sync_at"]
     stored = application.load_data()["crm_calendly_appointments"]
     assert len(stored) == 2
     assert {item["event_type_uri"] for item in stored} == {
@@ -582,6 +586,7 @@ def test_contact_appointments_are_fetched_directly_by_email(tmp_path, monkeypatc
     }
     assert len(result["appointments"]) == 1
     assert result["appointments"][0]["contact_id"] == contact["id"]
+    assert result["integration"]["last_sync_at"]
     updated_contact = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert updated_contact["statut"] == "RDV programmé"
     assert [path for _, path, _ in calls] == [
@@ -687,6 +692,11 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
     ]
     for marker in required_markers:
         assert marker in crm_js
+    assert "Promise.race" not in crm_js
+    assert "La recherche Calendly a pris trop de temps" not in crm_js
+    assert "Les rendez-vous déjà enregistrés restent affichés." in crm_js
+    assert 'id="retryCalendlyLookup"' in crm_js
+    assert "integration.last_sync_at||new Date().toISOString()" not in crm_js
     assert "rendez-vous traités" not in crm_js
     assert "appointment-row" not in crm_js
     assert "grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))" in crm_css
@@ -716,3 +726,90 @@ def test_no_answer_updates_the_in_memory_contact_without_refresh():
         crm_js = source.read()
 
     assert "if(contact&&updated.contact)Object.assign(contact,updated.contact)" in crm_js
+
+
+def test_booking_rejects_invalid_outbound_phone_before_calling_invitees(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "lina@example.com", "telephone": "123"},
+    )
+    calls = []
+
+    def fake_calendly(method, path, **kwargs):
+        calls.append((method, path))
+        if method == "GET" and path == "/event_types/TYPE1":
+            return {"resource": {
+                "uri": "https://api.calendly.com/event_types/TYPE1",
+                "name": "Appel découverte",
+                "active": True,
+                "duration": 30,
+                "locations": [{"kind": "outbound_call"}],
+                "custom_questions": [],
+            }}
+        raise AssertionError(f"Unexpected Calendly call: {method} {path}")
+
+    monkeypatch.setattr(application, "_calendly_request", fake_calendly)
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments",
+        json={
+            "event_type": "https://api.calendly.com/event_types/TYPE1",
+            "start_time": "2099-08-12T08:00:00Z",
+            "timezone": "Europe/Paris",
+            "location": {"kind": "outbound_call", "location": "123"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert "numéro de téléphone" in response.get_json()["error"]
+    assert ("POST", "/invitees") not in calls
+
+
+def test_booking_invalid_argument_returns_actionable_retry_error(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "lina@example.com", "telephone": "06 12 34 56 78"},
+    )
+
+    def fake_calendly(method, path, **kwargs):
+        if method == "GET" and path == "/event_types/TYPE1":
+            return {"resource": {
+                "uri": "https://api.calendly.com/event_types/TYPE1",
+                "name": "Appel découverte",
+                "active": True,
+                "duration": 30,
+                "locations": [{"kind": "outbound_call"}],
+                "custom_questions": [],
+            }}
+        if method == "POST" and path == "/invitees":
+            assert "text_reminder_number" not in kwargs["json_body"]["invitee"]
+            raise application.CalendlyAPIError(
+                400,
+                {"title": "Invalid Argument", "message": "The supplied parameters are invalid."},
+            )
+        raise AssertionError(f"Unexpected Calendly call: {method} {path}")
+
+    monkeypatch.setattr(application, "_calendly_request", fake_calendly)
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments",
+        json={
+            "event_type": "https://api.calendly.com/event_types/TYPE1",
+            "start_time": "2099-08-12T08:00:00Z",
+            "timezone": "Europe/Paris",
+            "location": {"kind": "outbound_call", "location": "06 12 34 56 78"},
+        },
+    )
+
+    assert response.status_code == 502
+    payload = response.get_json()
+    assert payload["stage"] == "la création du rendez-vous"
+    assert "Vérifiez le type de rendez-vous" in payload["error"]

@@ -1,0 +1,244 @@
+name: Notion CRM - publier les PR Work
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Numéro de la PR Work à valider puis publier
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: notion-crm-work-pr-publish
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Vérifier la PR Work prioritaire
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr_number: ${{ steps.meta.outputs.pr_number }}
+      head_ref: ${{ steps.meta.outputs.head_ref }}
+      head_sha: ${{ steps.meta.outputs.head_sha }}
+      page_id: ${{ steps.meta.outputs.page_id }}
+    steps:
+      - name: Vérifier le périmètre et l'ordre
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PR: ${{ inputs.pr_number }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          requested_pr="${INPUT_PR:-${EVENT_PR:-}}"
+          case "$requested_pr" in
+            ''|*[!0-9]*)
+              echo "::error::Numéro de PR invalide : $requested_pr"
+              exit 1
+              ;;
+          esac
+
+          pr_json="$(gh pr view "$requested_pr" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json number,state,baseRefName,headRefName,headRefOid,body,isDraft)"
+
+          state="$(printf '%s' "$pr_json" | jq -r '.state')"
+          base="$(printf '%s' "$pr_json" | jq -r '.baseRefName')"
+          head_ref="$(printf '%s' "$pr_json" | jq -r '.headRefName')"
+          head_sha="$(printf '%s' "$pr_json" | jq -r '.headRefOid')"
+          body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
+
+          if [ "$state" != "OPEN" ] || [ "$base" != "main" ]; then
+            echo "PR #$requested_pr hors périmètre."
+            exit 0
+          fi
+          if [[ "$head_ref" != work/notion-crm-* ]]; then
+            echo "PR #$requested_pr non Work : $head_ref"
+            exit 0
+          fi
+          if [[ "$body" != *"<!-- notion-page-id:"* ]]; then
+            echo "::error::PR #$requested_pr sans marqueur Notion."
+            exit 1
+          fi
+
+          page_id="$(printf '%s\n' "$body" | sed -nE 's/.*<!--[[:space:]]*notion-page-id:[[:space:]]*([0-9a-fA-F-]{32,36})[[:space:]]*-->.*/\1/p' | head -n 1)"
+          if [ -z "$page_id" ]; then
+            echo "::error::Impossible d'extraire la page Notion de la PR #$requested_pr."
+            exit 1
+          fi
+
+          first_number="$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --base main \
+            --limit 100 \
+            --json number,headRefName,body \
+            --jq '[.[] | select((.headRefName | startswith("work/notion-crm-")) or (.headRefName | startswith("agent/notion-crm-"))) | select((.body // "") | contains("<!-- notion-page-id:")) | .number] | sort | .[0] // empty')"
+
+          if [ -n "$first_number" ] && [ "$requested_pr" != "$first_number" ]; then
+            echo "PR #$requested_pr attend : la PR #$first_number doit être traitée avant."
+            exit 0
+          fi
+
+          echo "pr_number=$requested_pr" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "page_id=$page_id" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Tester la PR Work sans droit d'écriture
+    needs: inspect
+    if: needs.inspect.outputs.head_sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Récupérer exactement la PR
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.inspect.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Préparer Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest
+
+      - name: Vérifier que la branche contient le dernier main
+        run: |
+          git fetch --no-tags origin main
+          behind="$(git rev-list --count HEAD..origin/main)"
+          if [ "$behind" != "0" ]; then
+            echo "::error::La PR est encore en retard de $behind commit(s) sur main."
+            exit 1
+          fi
+
+      - name: Figer le validateur depuis main puis tester la PR
+        run: |
+          git show origin/main:scripts/validate_notion_change.py > /tmp/validate_notion_change.py
+          chmod 500 /tmp/validate_notion_change.py
+          python -I /tmp/validate_notion_change.py --base origin/main
+          git diff --check origin/main...HEAD
+
+  publish:
+    name: Publier la PR Work validée
+    needs: [inspect, test]
+    if: needs.inspect.outputs.head_sha != '' && needs.test.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Récupérer le moteur de synchronisation depuis main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Préparer Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Installer le client HTTP Notion
+        run: python -m pip install --disable-pip-version-check requests
+
+      - name: Revérifier puis fusionner sans jamais forcer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.inspect.outputs.pr_number }}
+          EXPECTED_HEAD: ${{ needs.inspect.outputs.head_sha }}
+          HEAD_REF: ${{ needs.inspect.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+
+          current="$(gh pr view "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json state,headRefOid,isDraft \
+            --jq '[.state,.headRefOid,.isDraft] | @tsv')"
+          state="$(printf '%s' "$current" | cut -f1)"
+          current_head="$(printf '%s' "$current" | cut -f2)"
+          is_draft="$(printf '%s' "$current" | cut -f3)"
+
+          if [ "$state" != "OPEN" ]; then
+            echo "PR #$PR_NUMBER déjà fermée."
+            exit 0
+          fi
+          if [ "$current_head" != "$EXPECTED_HEAD" ]; then
+            echo "::error::La tête de la PR #$PR_NUMBER a changé après les tests."
+            exit 1
+          fi
+
+          first_number="$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --base main \
+            --limit 100 \
+            --json number,headRefName,body \
+            --jq '[.[] | select((.headRefName | startswith("work/notion-crm-")) or (.headRefName | startswith("agent/notion-crm-"))) | select((.body // "") | contains("<!-- notion-page-id:")) | .number] | sort | .[0] // empty')"
+          if [ -n "$first_number" ] && [ "$PR_NUMBER" != "$first_number" ]; then
+            echo "::error::L'ordre a changé : la PR #$first_number doit être publiée avant #$PR_NUMBER."
+            exit 1
+          fi
+
+          behind="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${HEAD_REF}" --jq '.behind_by')"
+          if [ "$behind" != "0" ]; then
+            echo "::error::La PR #$PR_NUMBER n'est plus à jour avec main."
+            exit 1
+          fi
+
+          if [ "$is_draft" = "true" ]; then
+            gh pr ready "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+          fi
+
+          gh pr merge "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --merge \
+            --delete-branch
+
+          echo "PR Work #$PR_NUMBER fusionnée après validation complète."
+
+      - name: Marquer immédiatement la demande comme publiée dans Notion
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          PAGE_ID: ${{ needs.inspect.outputs.page_id }}
+          PR_NUMBER: ${{ needs.inspect.outputs.pr_number }}
+          HEAD_REF: ${{ needs.inspect.outputs.head_ref }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python notion_crm_automation.py update \
+            --page-id "$PAGE_ID" \
+            --status "Publié" \
+            --pr-url "https://github.com/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}" \
+            --branch "$HEAD_REF" \
+            --run-url "$RUN_URL" \
+            --clear-error \
+            --comment "✅ La pull request #${PR_NUMBER} a été testée, fusionnée et publiée automatiquement."
+
+      - name: Lancer immédiatement la PR CRM suivante
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run notion-crm-refresh-open-prs.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
