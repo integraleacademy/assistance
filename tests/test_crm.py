@@ -210,6 +210,103 @@ def test_administration_menu_displays_brevo_sms_balance():
     assert "const brevoCreditsToSms=" in crm_js
     assert "Math.floor(numericCredits/4.5)" in crm_js
     assert "Solde Brevo : ${formattedCredits}" in crm_js
+    assert 'id="developmentSupportBtn"' in template
+    assert "function developmentSupportModal()" in crm_js
+    assert "api('/api/crm/development-support'" in crm_js
+    assert 'name="platform"' in crm_js
+    assert 'name="page_url"' in crm_js
+    assert 'name="actions"' in crm_js
+
+
+def test_development_support_is_admin_only(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    with c.session_transaction() as session:
+        session["user_email"] = "cassandre@integraleacademy.com"
+
+    response = c.post("/api/crm/development-support", json={
+        "platform": "CRM",
+        "page_url": "https://example.com/crm/pistes",
+        "actions": "Ajouter un bouton clairement décrit dans la liste.",
+    })
+
+    assert response.status_code == 403
+
+
+def test_development_support_validates_platform_url_and_description(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+
+    response = c.post("/api/crm/development-support", json={
+        "platform": "Autre",
+        "page_url": "javascript:alert(1)",
+        "actions": "Trop court",
+    })
+
+    assert response.status_code == 400
+    assert "plateforme" in response.get_json()["error"].lower()
+
+
+def test_development_support_rewrites_and_creates_notion_page(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOTION_API_TOKEN", "notion-test")
+    monkeypatch.setattr(
+        application, "_crm_ai",
+        lambda system, prompt, max_tokens=500: (
+            "Objectif : faciliter la qualification.\n"
+            "Modifications demandées : ajouter le contrôle.\n"
+            "Critères observables : le bouton est visible."
+        ),
+    )
+    calls = {}
+
+    def fake_post(url, **kwargs):
+        calls["url"] = url
+        calls.update(kwargs)
+        return SimpleNamespace(
+            status_code=201,
+            json=lambda: {
+                "id": "new-page",
+                "url": "https://www.notion.so/new-page",
+            },
+        )
+
+    monkeypatch.setattr(application.requests, "post", fake_post)
+    response = c.post("/api/crm/development-support", json={
+        "platform": "Gestion stagiaires",
+        "page_url": "https://example.com/stagiaires/42",
+        "actions": "Ajouter un bouton de validation et afficher un message de confirmation.",
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["url"] == "https://www.notion.so/new-page"
+    assert calls["url"] == "https://api.notion.com/v1/pages"
+    assert calls["headers"]["Authorization"] == "Bearer notion-test"
+    notion = calls["json"]
+    assert notion["parent"]["data_source_id"] == application.CRM_NOTION_DATA_SOURCE_ID
+    properties = notion["properties"]
+    assert properties["Domaine"]["select"]["name"] == "Développement web"
+    assert properties["Plateforme"]["select"]["name"] == "Gestion stagiaires"
+    assert properties["Statut"]["select"]["name"] == "À traiter"
+    assert properties["Type"]["select"]["name"] == "À faire"
+    children_text = json.dumps(notion["children"], ensure_ascii=False)
+    assert "faciliter la qualification" in children_text
+    assert "Ajouter un bouton de validation" in children_text
+    assert "https://example.com/stagiaires/42" in children_text
+    assert "Clément VAILLANT" in children_text
+
+
+def test_development_support_reports_missing_notion_connection(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.delenv("NOTION_API_TOKEN", raising=False)
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "Demande reformulée")
+
+    response = c.post("/api/crm/development-support", json={
+        "platform": "CRM",
+        "page_url": "https://example.com/crm/pistes",
+        "actions": "Ajouter un bouton clairement décrit dans la liste.",
+    })
+
+    assert response.status_code == 503
+    assert "Notion" in response.get_json()["error"]
 
 
 def test_global_search_closes_when_clicking_outside():
