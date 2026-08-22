@@ -198,3 +198,41 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert ".contact-flag-badge.green" in css
     assert ".contact-flag-badge.red" in css
     assert "@media(max-width:680px)" in css
+
+def test_contact_header_displays_all_activity_counters_including_zero():
+    crm_js = CRM_JS.read_text(encoding="utf-8")
+    crm_css = CRM_CSS.read_text(encoding="utf-8")
+
+    assert "function contactHeaderActivitySummary(contact)" in crm_js
+    assert "const counts=listActivityCounts(contact)" in crm_js
+    assert "['RDV total',counts.appointments]" in crm_js
+    assert "['RDV réalisés',completedAppointments]" in crm_js
+    assert "['E-mails',counts.emails]" in crm_js
+    assert "['SMS',counts.sms]" in crm_js
+    assert "['Relances',counts.relances]" in crm_js
+    assert "${contactHeaderActivitySummary(c)}" in crm_js
+    assert "filter(a=>a.kind==='calendly').length} RDV réalisés" not in crm_js
+    assert ".contact-activity-summary" in crm_css
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in crm_css
+
+
+def test_contact_completeness_modal_lists_every_missing_requirement():
+    workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+    css = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
+
+    assert "Compléter les éléments" in workspace
+    assert "details.missing.join(', ')" in workspace
+    assert "completenessGroups" in workspace
+    assert "data-completeness-key" in workspace
+    assert "Object.fromEntries(new FormData(modalForm))" in workspace
+    assert "item.key==='next_action'" in workspace
+    assert "completeness-modal-field" in css
+    assert "@media(max-width:680px)" in css
+    assert " et ${remaining} autre" not in workspace
+
+
+def test_calendly_booking_error_keeps_modal_retry_available():
+    crm_js = CRM_JS.read_text(encoding="utf-8")
+
+    assert "catch(e){toast(e.message,true);bookButton.disabled=false" in crm_js
+    assert "bookButton.textContent='Confirmer le rendez-vous'" in crm_js
