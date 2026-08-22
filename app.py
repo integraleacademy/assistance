@@ -12391,7 +12391,8 @@ def _crm_notion_rich_text(value):
     ] or [{"type": "text", "text": {"content": ""}}]
 
 
-def _crm_development_support_page(\n        platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True):
+def _crm_development_support_page(
+        platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True):
     user = current_user() or {}
     subject = re.sub(r"^[#*\\s-]+", "", str(rewritten_actions).splitlines()[0]).strip()
     title = f"{platform} — {subject or original_actions}"[:100]
