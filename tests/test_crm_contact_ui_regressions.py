@@ -303,3 +303,17 @@ def test_bulk_messages_preview_and_offer_every_compatible_template():
     assert "previewRoot.hidden=false" in javascript
     assert "previewButton.disabled=true;try{" in javascript
     assert ".bulk-message-preview" in stylesheet
+
+
+def test_calendly_refreshes_silently_after_cached_contact_render():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "activeCalendlyContactId=''" in javascript
+    assert "async function refreshCalendlyOnOpen(c,cached)" in javascript
+    assert "calendly/appointments?refresh=1" in javascript
+    assert "refresh_in_progress:true" in javascript
+    assert "if(!manual)refreshCalendlyOnOpen(c,result)" in javascript
+    assert "activeCalendlyContactId!==String(c.id)" in javascript
+    assert "Calendly : actualisation en cours…" in javascript
+    assert "cached.appointments||[]" in javascript
+    assert "lookup_warning:error.message" in javascript
