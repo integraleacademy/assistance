@@ -1992,25 +1992,148 @@ def _envoyer_mail_formulaire_abandonne_depuis_demande(demande: dict, fields: dic
     return ok
 
 
-def _declencher_relance_formulaire_abandonne(record: dict, fields: dict, now_str: str) -> dict:
-    result = {"salesforce": False, "mail": False, "sms": False, "skipped": False}
+def _crm_create_or_match_abandoned_form_contact(data, record, fields, now_str):
+    """Create one internal CRM lead for an eligible abandoned public form."""
+    external_id = str(record.get("form_id") or record.get("id") or "").strip()
+    if not external_id or not _has_required_abandoned_form_contact_fields(fields):
+        return None
+
+    existing_request = next((
+        item for item in data.get("crm_inbound_requests", [])
+        if item.get("source") == ABANDONED_DEMANDE_SOURCE
+        and item.get("external_id") == external_id
+    ), None)
+    formation_key = str(fields.get("formation") or "").strip()
+    formation = {
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
+        "VTC": "Chauffeur VTC",
+    }.get(formation_key, formation_key)
+    centre_key = str(fields.get("centre") or "").strip()
+    lieu = {
+        "paris": "Paris", "cote_azur": "Côte d’Azur",
+        "auvergne": "Auvergne", "aurillac": "Auvergne",
+    }.get(centre_key, centre_key)
+    tracking = _crm_google_ads_tracking_fields(fields)
+    identifier_type, identifier = _crm_information_request_google_ads_identifier(fields)
+    now = _crm_now()
+    contact = {
+        "id": str(uuid.uuid4()),
+        "prenom": _crm_format_first_name(fields.get("prenom")),
+        "nom": _crm_format_last_name(fields.get("nom")),
+        "telephone": str(fields.get("telephone") or "").strip(),
+        "mail": str(fields.get("mail") or "").strip(),
+        "formation": formation, "lieu": lieu, "statut": "Nouveaux",
+        "dates_formation": str(fields.get("dates") or "").strip(),
+        "cpf": str(fields.get("cpf_consulte") or "").strip(),
+        "cpf_montant": normalize_cpf_amount(fields.get("cpf_montant")),
+        "carte_pro": str(fields.get("cnaps_ok") or "").strip(),
+        "titre_sejour": str(fields.get("titre_sejour") or "").strip(),
+        "garde_vue": str(fields.get("garde_vue") or "").strip(),
+        "antecedents": str(fields.get("garde_vue") or "").strip(),
+        "desp_type": "VAE" if formation_key == "DESP_VAE" else (
+            "INITIAL" if formation_key == "DESP_INIT" else ""
+        ),
+        "identite_creation": str(fields.get("identite_numerique") or "").strip(),
+        "identite_ok": "",
+        "financement_ft": str(fields.get("france_travail") or "").strip(),
+        "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
+        "reste_a_charge_perso": str(fields.get("financement_perso") or "").strip(),
+        "inscrit_ft": "", "commentaires": "", "relance_date": "",
+        "origine": ABANDONED_FORM_LABEL,
+        "gclid": tracking["gclid"], "wbraid": tracking["wbraid"],
+        "gbraid": tracking["gbraid"],
+        "google_ads_identifier": identifier,
+        "google_ads_identifier_type": identifier_type,
+        "created_at": now, "updated_at": now, "activities": [],
+        "source": ABANDONED_DEMANDE_SOURCE,
+        "source_form_id": external_id,
+        "formulaire": dict(fields),
+        "source_history": [{
+            "origin": ABANDONED_FORM_LABEL,
+            "source": ABANDONED_DEMANDE_SOURCE,
+            "external_id": external_id,
+            "date": now,
+        }],
+    }
+    detail = " · ".join(filter(None, [
+        f"Formation : {formation}" if formation else "",
+        f"Lieu : {lieu}" if lieu else "",
+        f"Session : {contact['dates_formation']}" if contact["dates_formation"] else "",
+    ])) or "Coordonnées complètes enregistrées."
+    _crm_activity(
+        contact, "creation", "Formulaire abandonné détecté", detail,
+    )
+    matched, inbound, created = find_or_create_crm_contact(
+        data, fields, ABANDONED_DEMANDE_SOURCE,
+        proposed_contact=contact, external_id=external_id,
+    )
+    if matched and not created and not existing_request:
+        _crm_activity(
+            matched, "inbound_request", "Formulaire abandonné détecté", detail,
+        )
+        history = matched.setdefault("source_history", [])
+        if not any(
+            item.get("source") == ABANDONED_DEMANDE_SOURCE
+            and item.get("external_id") == external_id
+            for item in history
+        ):
+            history.append({
+                "origin": ABANDONED_FORM_LABEL,
+                "source": ABANDONED_DEMANDE_SOURCE,
+                "external_id": external_id,
+                "date": now,
+            })
+    if matched:
+        record["crm_abandoned_contact_id"] = matched.get("id")
+        record["crm_abandoned_created_at"] = (
+            record.get("crm_abandoned_created_at") or now_str
+        )
+    elif inbound:
+        record["crm_abandoned_review_id"] = inbound.get("id")
+        record["crm_abandoned_review_at"] = (
+            record.get("crm_abandoned_review_at") or now_str
+        )
+    return matched
+
+
+def _declencher_relance_formulaire_abandonne(
+    data: dict, record: dict, fields: dict, now_str: str,
+) -> dict:
+    result = {"crm": False, "salesforce": False, "mail": False, "sms": False, "skipped": False}
     if not _has_required_abandoned_form_contact_fields(fields):
         result["skipped"] = True
         record["abandoned_automation_skipped_at"] = now_str
         record["abandoned_automation_skip_reason"] = "Coordonnées incomplètes"
         return result
 
+    try:
+        result["crm"] = bool(
+            _crm_create_or_match_abandoned_form_contact(data, record, fields, now_str)
+        )
+        record.pop("crm_abandoned_error", None)
+    except Exception as exc:
+        record["crm_abandoned_error"] = f"{now_str} · {exc}"
+
     if not record.get("salesforce_abandoned_sent_at"):
-        creer_piste_salesforce(_abandoned_training_form_salesforce_payload(fields))
-        record["salesforce_abandoned_sent_at"] = now_str
-        record["salesforce_abandoned_status"] = ABANDONED_FORM_LABEL
-        result["salesforce"] = True
+        try:
+            creer_piste_salesforce(_abandoned_training_form_salesforce_payload(fields))
+            record["salesforce_abandoned_sent_at"] = now_str
+            record["salesforce_abandoned_status"] = ABANDONED_FORM_LABEL
+            result["salesforce"] = True
+        except Exception as exc:
+            record["salesforce_abandoned_error"] = f"{now_str} · {exc}"
 
     if not record.get("abandoned_mail_sent_at"):
-        result["mail"] = envoyer_mail_formulaire_formation_abandonne(record, fields)
+        try:
+            result["mail"] = envoyer_mail_formulaire_formation_abandonne(record, fields)
+        except Exception as exc:
+            record["abandoned_mail_error"] = f"{now_str} · {exc}"
 
     if not record.get("abandoned_sms_sent_at"):
-        result["sms"] = envoyer_sms_formulaire_formation_abandonne(record, fields)
+        try:
+            result["sms"] = envoyer_sms_formulaire_formation_abandonne(record, fields)
+        except Exception as exc:
+            record["abandoned_sms_error"] = f"{now_str} · {exc}"
 
     record["auto_abandoned_sent_at"] = record.get("auto_abandoned_sent_at") or now_str
     record["abandoned_automation_status"] = "Relance automatique déclenchée"
@@ -2040,7 +2163,8 @@ def _formulaire_abandonne_doit_declencher_relance(record: dict, now_dt=None) -> 
         return False
 
     if (
-        record.get("salesforce_abandoned_sent_at")
+        (record.get("crm_abandoned_contact_id") or record.get("crm_abandoned_review_id"))
+        and record.get("salesforce_abandoned_sent_at")
         and record.get("abandoned_mail_sent_at")
         and record.get("abandoned_sms_sent_at")
     ):
@@ -2072,7 +2196,7 @@ def _declencher_relances_formulaires_abandonnes_eligibles(data: dict) -> bool:
         draft["auto_abandoned_trigger_reason"] = (
             "Formulaire abandonné détecté automatiquement après inactivité"
         )
-        _declencher_relance_formulaire_abandonne(draft, draft.get("fields") or {}, now_str)
+        _declencher_relance_formulaire_abandonne(data, draft, draft.get("fields") or {}, now_str)
         changed = True
 
     return changed
@@ -4160,7 +4284,7 @@ def autosave_demande_informations_formations():
     if status == "abandoned":
         draft_entry["abandoned_at"] = draft_entry.get("abandoned_at") or now_str
         draft_entry["abandoned_status"] = ABANDONED_FORM_LABEL
-        _declencher_relance_formulaire_abandonne(draft_entry, cleaned_fields, now_str)
+        _declencher_relance_formulaire_abandonne(data, draft_entry, cleaned_fields, now_str)
 
     save_data(data)
     return ("", 204)
@@ -4822,10 +4946,11 @@ def relancer_formulaire_abandonne_admin_devis(formulaire_id):
 
     if draft:
         draft["manual_abandoned_sent_at"] = now_str
-        _declencher_relance_formulaire_abandonne(draft, fields, now_str)
+        _declencher_relance_formulaire_abandonne(data, draft, fields, now_str)
         mail_ok = bool(draft.get("abandoned_mail_sent_at"))
         sms_ok = bool(draft.get("abandoned_sms_sent_at"))
     else:
+        _crm_create_or_match_abandoned_form_contact(data, demande, fields, now_str)
         if not demande.get("salesforce_abandoned_sent_at"):
             creer_piste_salesforce(_abandoned_training_form_salesforce_payload(fields))
         demande["salesforce_abandoned_sent_at"] = demande.get("salesforce_abandoned_sent_at") or now_str
@@ -8989,7 +9114,26 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         external_id=demande_id,
     )
     if matched:
+        safe_fields = (
+            "formation", "lieu", "dates_formation", "cpf", "cpf_montant",
+            "carte_pro", "titre_sejour", "garde_vue", "antecedents",
+            "desp_type", "identite_creation", "financement_ft",
+            "refus_ft_perso", "reste_a_charge_perso",
+        )
+        for key in safe_fields:
+            if _crm_is_empty(matched.get(key)) and not _crm_is_empty(contact.get(key)):
+                matched[key] = contact[key]
+        preserve_abandoned_origin = (
+            matched.get("source") == ABANDONED_DEMANDE_SOURCE
+            or any(
+                item.get("source") == ABANDONED_DEMANDE_SOURCE
+                for item in matched.get("source_history", [])
+            )
+        )
+        original_origin = matched.get("origine")
         _crm_apply_information_request_attribution(matched, fields)
+        if preserve_abandoned_origin:
+            matched["origine"] = original_origin or ABANDONED_FORM_LABEL
     return matched
 
 
