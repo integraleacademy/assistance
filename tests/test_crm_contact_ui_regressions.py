@@ -292,15 +292,17 @@ def test_calendly_booking_error_keeps_modal_retry_available():
 
 def test_programmed_appointment_date_is_rendered_under_pipeline_status():
     crm_js = CRM_JS.read_text(encoding="utf-8")
+    appointment_state = CRM_APPOINTMENT_STATE_JS.read_text(encoding="utf-8")
     crm_css = CRM_CSS.read_text(encoding="utf-8")
 
     assert "nextProgrammedAppointmentDate" in crm_js
     assert "contactHasPipelineStatus(c,'RDV programmé')" in crm_js
-    assert "['canceled','cancelled']" in crm_js
-    assert "appointments.find(row=>row.start>=now)||appointments[appointments.length-1]" in crm_js
-    assert "'Date du RDV non renseignée'" in crm_js
-    assert "timeZone:'Europe/Paris'" in crm_js
-    assert "day:'2-digit',month:'2-digit',year:'numeric'" in crm_js
+    assert "window.CRMAppointmentState.dateLabel(c.id,crmAppointments)" in crm_js
+    assert "['canceled','cancelled']" in appointment_state
+    assert "ordered.find(row=>row.start>=now)" in appointment_state
+    assert "'Date du RDV non renseignée'" in appointment_state
+    assert "timeZone:'Europe/Paris'" in appointment_state
+    assert "day:'2-digit',month:'2-digit',year:'numeric'" in appointment_state
     assert "contactPipelineStatusMarkup(c)" in crm_js
     assert ".pipeline-appointment-date" in crm_css
 
@@ -382,7 +384,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260822-contact-tab-title-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260822-calendly-list-sync-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -408,4 +410,3 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
     assert 'CRM_ASSET_VERSION = "20260822-calendly-list-sync-1"' in backend
-
