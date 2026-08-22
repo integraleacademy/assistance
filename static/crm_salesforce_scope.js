@@ -94,7 +94,7 @@
       statusBanner.innerHTML = `
         <div>
           <b>Objectif atteint : 0 fiche « Nouveau »</b>
-          <span>Les dossiers Session FT, Def MOB, POEI et Financement FT en cours sont classés « A relancer » tout en conservant leur deuxième statut.</span>
+          <span>Les dossiers Session FT, Def MOB, POEI, C2P et financement FT conservent leur deuxième statut. Sans relance programmée, leur statut principal est « En cours » ; ils passent à « A relancer » uniquement lorsqu’une vraie relance existe.</span>
         </div>`;
     } else {
       statusBanner.className = 'integration-banner warning';
@@ -219,7 +219,7 @@
 
       const firstBannerText = modalRoot.querySelector('.integration-banner span');
       if (firstBannerText) {
-        firstBannerText.innerHTML = 'Le CRM conservera uniquement le périmètre validé : pistes 2026 non disqualifiées, avec une formation exploitable, hors fiches internes/de test, BTS et CAP. Les dossiers Session FT, Def MOB, POEI et Financement FT en cours seront classés <b>A relancer</b> avec leur deuxième statut.';
+        firstBannerText.innerHTML = 'Le CRM conservera uniquement le périmètre validé : pistes 2026 non disqualifiées, avec une formation exploitable, hors fiches internes/de test, BTS et CAP. Les dossiers Session FT, Def MOB, POEI, C2P et financement FT seront classés <b>En cours</b> tant qu’aucune relance n’est programmée, tout en conservant leur deuxième statut.';
       }
 
       const fields = fileInput.closest('.fields');
@@ -231,7 +231,7 @@
         notice.innerHTML = `
           <div>
             <b>Périmètre verrouillé — objectif 0 Nouveau</b>
-            <span>Les pistes « Open - Not Contacted » sans formation, la fiche interne Cassandre MENARD, TEST APS, les disqualifiés, BTS et CAP sont exclus. Les dossiers à deuxième statut restent dans « A relancer ».</span>
+            <span>Les pistes « Open - Not Contacted » sans formation, la fiche interne Cassandre MENARD, TEST APS, les disqualifiés, BTS et CAP sont exclus. Une deuxième timeline place le dossier « En cours » ; « A relancer » est réservé aux fiches ayant une relance réellement planifiée.</span>
           </div>`;
         fields.parentNode.insertBefore(notice, fields);
       }

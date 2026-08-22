@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 GITHUB_API_BASE = "https://api.github.com"
 CHATGPT_API_BASE = "https://api.chatgpt.com/v1"
+OPENAI_API_BASE = "https://api.openai.com/v1"
 NOTION_VERSION = "2026-03-11"
 DEFAULT_DATA_SOURCE_ID = "7f12fe92-dbc4-40c8-af4e-77578b5dbfc0"
 AUTOMATION_VERSION = "notion-crm-v2"
@@ -17,6 +18,8 @@ MAX_GITHUB_BODY_CHARS = 60_000
 MAX_NOTION_PROPERTY_CHARS = 1_900
 MAX_PAGE_CONTENT_CHARS = 45_000
 MAX_COMMENT_CONTENT_CHARS = 10_000
+MAX_MEDIA_ATTACHMENTS = 8
+MAX_MEDIA_ANALYSIS_CHARS = 8_000
 
 TRIGGER_DOMAIN = "Développement web"
 TRIGGER_PLATFORM = "CRM"
@@ -34,6 +37,17 @@ class AutomationError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class MediaAttachment:
+    """Média Notion réellement exploitable par l'analyse multimodale."""
+
+    kind: str
+    url: str
+    caption: str = ""
+    source: str = "page"
+    filename: str = ""
+
+
+@dataclass(frozen=True)
 class PageSnapshot:
     """Version figée d'une demande Notion au moment de sa prise en charge."""
 
@@ -43,6 +57,8 @@ class PageSnapshot:
     properties: Mapping[str, Any]
     content: str
     comments: Sequence[str]
+    attachments: Sequence[MediaAttachment] = field(default_factory=tuple)
+    media_analysis: str = ""
 
 
 def utc_now_iso() -> str:
@@ -68,9 +84,15 @@ def dashed_page_id(page_id: str) -> str:
 
 
 def branch_name_for_page(page_id: str) -> str:
-    """Construit le nom de branche déterministe d'une demande Notion."""
+    """Construit l'ancien nom court, conservé pour compatibilité interne."""
 
     return f"agent/notion-crm-{compact_page_id(page_id)[:12]}"
+
+
+def unique_branch_name_for_page(page_id: str) -> str:
+    """Construit un nom de branche réellement unique à partir de l'UUID Notion complet."""
+
+    return f"agent/notion-crm-{compact_page_id(page_id)}"
 
 
 def split_text(value: str, limit: int = 2_000) -> list[str]:
@@ -213,8 +235,6 @@ def is_eligible_page(page: Mapping[str, Any]) -> bool:
         or WORK_PREPARED_AT_PROPERTY in properties
     )
     if not has_work_gate:
-        # Compatibilité avec les tests et les anciennes bases qui ne possèdent
-        # pas encore les deux propriétés de préparation Work.
         return page_property(page, "Statut") == LEGACY_TRIGGER_STATUS
 
     return (

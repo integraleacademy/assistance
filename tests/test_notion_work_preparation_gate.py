@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from notion_crm_lib.clients import NotionClient
@@ -9,6 +10,7 @@ from notion_crm_lib.core import (
     WORK_PREPARED_AT_PROPERTY,
     WORK_PREPARED_PROPERTY,
     is_eligible_page,
+    unique_branch_name_for_page,
 )
 
 PAGE_ID = "3c26e0d1-a86e-8192-9950-cdf229ada797"
@@ -110,3 +112,31 @@ def test_notion_query_requires_complete_work_preparation() -> None:
         "property": "ID automatisation",
         "rich_text": {"is_empty": True},
     } in filters
+
+
+def test_night_batch_blocks_only_an_active_implementation_run() -> None:
+    workflow = Path(".github/workflows/notion-crm-queue.yml").read_text(encoding="utf-8")
+
+    assert 'actions/workflows/notion-crm-implement.yml/runs?per_page=50' in workflow
+    assert 'pulls?state=open' not in workflow
+    assert 'Les pull requests déjà ouvertes ne bloquent plus la file' in workflow
+    assert 'MAX_TASKS: "1"' in workflow
+
+
+def test_queue_restarts_immediately_after_an_implementation_finishes() -> None:
+    workflow = Path(".github/workflows/notion-crm-queue.yml").read_text(encoding="utf-8")
+
+    assert 'workflow_run:' in workflow
+    assert 'workflows: ["Notion CRM - préparer la PR avec Codex"]' in workflow
+    assert 'types: [completed]' in workflow
+    assert 'cron: "*/5 * * * *"' in workflow
+
+
+def test_full_page_id_prevents_branch_collisions() -> None:
+    first = "3c06e0d1-a86e-80b7-870e-d1445c5c9996"
+    second = "3c06e0d1-a86e-80d5-92dc-da3951db2819"
+
+    assert first.replace("-", "")[:12] == second.replace("-", "")[:12]
+    assert unique_branch_name_for_page(first) != unique_branch_name_for_page(second)
+    assert unique_branch_name_for_page(first).endswith(first.replace("-", ""))
+    assert unique_branch_name_for_page(second).endswith(second.replace("-", ""))

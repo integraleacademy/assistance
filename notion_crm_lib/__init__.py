@@ -1,5 +1,11 @@
 """API publique de l’automatisation Notion CRM."""
 
-from .clients import GitHubClient, JsonApiClient, NotionClient, WorkspaceAgentClient
+from .clients import (
+    GitHubClient,
+    JsonApiClient,
+    NotionClient,
+    OpenAIMediaClient,
+    WorkspaceAgentClient,
+)
 from .core import *  # noqa: F401,F403
 from .service import *  # noqa: F401,F403

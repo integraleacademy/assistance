@@ -5,6 +5,7 @@ from pathlib import Path
 
 import crm_salesforce_migration as migration_template
 from crm_location_normalization import install_salesforce_location_guardrails
+from crm_pipeline_status_consistency import normalize_contact_pipeline_status
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_existing_repair import repair_existing_salesforce_rows
 from crm_salesforce_migration_guardrails import install_salesforce_migration_guardrails
@@ -79,6 +80,9 @@ def test_historical_c2p_lead_corrects_existing_contact_without_creation():
         contacts,
         _salesforce_eric(),
     )
+    # La sauvegarde CRM applique ensuite la règle globale : une vraie relance
+    # programmée conserve le statut principal « A relancer ».
+    normalize_contact_pipeline_status(contacts[0])
 
     assert result["created"] == 0
     assert result["matched"] == 1
