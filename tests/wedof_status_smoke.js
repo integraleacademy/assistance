@@ -4,12 +4,21 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('static/crm.js', 'utf8');
 const start = source.indexOf('const wedofLabels=');
-const end = source.indexOf('function updateFundingBadges', start);
+const end = source.indexOf('function wedofCategory', start);
 assert.ok(start >= 0 && end > start, 'Bloc WEDOF introuvable');
 
 const context = {};
-vm.runInNewContext(`${source.slice(start, end)}\nglobalThis.helpers={wedofFranceTravailStatus,wedofMainStatusLabel};`, context);
-const {wedofFranceTravailStatus, wedofMainStatusLabel} = context.helpers;
+vm.runInNewContext(`${source.slice(start, end)}\nglobalThis.helpers={wedofLabel,wedofValue,wedofFranceTravailStatus,wedofMainStatusLabel};`, context);
+const {wedofLabel, wedofValue, wedofFranceTravailStatus, wedofMainStatusLabel} = context.helpers;
+
+const rejectedWithoutTitulaireSuite = 'Refusé sans suite par le titulaire';
+assert.equal(wedofLabel('Rejected Without Titulaire Suite'), rejectedWithoutTitulaireSuite);
+assert.equal(wedofLabel('rejectedWithoutTitulaireSuite'), rejectedWithoutTitulaireSuite);
+assert.equal(wedofLabel('REJECTED_WITHOUT_TITULAIRE_SUITE'), rejectedWithoutTitulaireSuite);
+assert.equal(wedofLabel('rejected-without-titulaire-suite'), rejectedWithoutTitulaireSuite);
+assert.equal(wedofLabel('futureUnknownStatus'), 'Future Unknown Status');
+assert.equal(wedofValue(['rejected_without_titulaire_suite', 'accepted']), `${rejectedWithoutTitulaireSuite}, Accepté`);
+assert.equal(wedofValue({reason:'Rejected Without Titulaire Suite'}), rejectedWithoutTitulaireSuite);
 
 assert.equal(wedofFranceTravailStatus({state:'waitingAcceptation'}), 'en_cours_instruction');
 assert.equal(wedofMainStatusLabel({state:'waitingAcceptation'}), 'En cours d’instruction France Travail');
