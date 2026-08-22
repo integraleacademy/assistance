@@ -125,17 +125,97 @@ function enhanceContact(contact,ctx){const form=document.querySelector('#contact
 function refreshContactCompleteness(contact){
  const details=contactCompletenessDetails(contact),card=document.querySelector('.contact-completeness');
  if(!card)return;
- const value=card.querySelector('b'),bar=card.querySelector('i span'),summary=card.querySelector('small');
+ const value=card.querySelector('b'),bar=card.querySelector('i span'),summary=card.querySelector('small'),action=card.querySelector('.contact-completeness-action');
  if(value)value.textContent=`${details.percent} %`;
  if(bar)bar.style.width=`${details.percent}%`;
  if(summary){
-  const visible=details.missing.slice(0,3),remaining=details.missing.length-visible.length;
-  summary.textContent=details.missing.length?`À compléter : ${visible.join(', ')}${remaining?` et ${remaining} autre${remaining>1?'s':''}`:''}`:'Toutes les informations obligatoires sont présentes.';
-  summary.title=details.missing.join(', ');
+  summary.textContent=details.missing.length?`À compléter : ${details.missing.join(', ')}`:'Toutes les informations obligatoires sont présentes.';
+  summary.title='';
  }
+ if(action){
+  action.hidden=!details.missing.length;
+  action.disabled=!details.missing.length;
+  action.textContent=details.missing.length?`Compléter les éléments (${details.missing.length})`:'Dossier complet';
+ }
+}
+const completenessGroups=[
+ {title:'Identité et contact',keys:['prenom','nom','telephone','mail']},
+ {title:'Formation',keys:['formation','lieu','dates_formation','desp_type']},
+ {title:'Financement',keys:['cpf','cpf_montant','identite_creation','identite_ok','financement_ft','statut_demande_financement_ft','refus_ft_perso','inscrit_ft','reste_a_charge_perso']},
+ {title:'Suivi',keys:['origine','next_action']},
+ {title:'Réglementaire',keys:['carte_pro','titre_sejour','titre_sejour_cnaps','garde_vue','antecedents','compte_cnaps','integration_dracar']},
+];
+function openCompletenessModal(contact,ctx){
+ const details=contactCompletenessDetails(contact),missing=details.requirements.filter(item=>!item.complete);
+ if(!missing.length)return ctx.toast('Le dossier est déjà complet.');
+ const sections=completenessGroups.map(group=>{
+  const rows=missing.filter(item=>group.keys.includes(item.key));
+  return rows.length?`<section class="completeness-modal-group"><h3>${ctx.esc(group.title)}</h3>${rows.map(item=>`<div class="completeness-modal-field" data-completeness-key="${ctx.esc(item.key)}"><label>${ctx.esc(item.label)}</label><div class="completeness-control"></div></div>`).join('')}</section>`:'';
+ }).join('');
+ ctx.modal('Compléter les éléments',`<p class="completeness-modal-intro">Tous les éléments manquants du dossier sont regroupés ci-dessous.</p><form id="completenessForm" class="completeness-modal-form">${sections}</form>`,`<button class="btn" id="cancelCompleteness">Annuler</button><button class="btn blue" id="saveCompleteness">Enregistrer les modifications</button>`,'completeness-modal');
+ const sourceForm=document.querySelector('#contactForm'),modalForm=document.querySelector('#completenessForm');
+ missing.forEach(item=>{
+  const target=modalForm.querySelector(`[data-completeness-key="${item.key}"] .completeness-control`);
+  if(!target)return;
+  if(item.key==='next_action'){
+   target.innerHTML='<button type="button" class="btn completeness-relance">Planifier une relance</button>';
+   target.querySelector('button').onclick=()=>{ctx.closeModal();document.querySelector('#reminderBtn')?.click()};
+   return;
+  }
+  const controls=[...sourceForm.querySelectorAll(`[name="${item.key}"]`)];
+  if(!controls.length){
+   target.innerHTML='<small>Ce champ est disponible dans le formulaire principal.</small>';
+   return;
+  }
+  const choice=controls[0].closest('.binary-choice');
+  if(choice){
+   const clone=choice.cloneNode(true);
+   clone.querySelectorAll('[id]').forEach(node=>node.removeAttribute('id'));
+   target.appendChild(clone);
+  }else{
+   const clone=controls[0].cloneNode(true);
+   clone.removeAttribute('id');
+   clone.removeAttribute('hidden');
+   target.appendChild(clone);
+  }
+ });
+ const close=()=>ctx.closeModal();
+ document.querySelector('#cancelCompleteness').onclick=close;
+ const dialog=document.querySelector('.completeness-modal');
+ dialog?.addEventListener('keydown',event=>{if(event.key==='Escape')close()});
+ modalForm.querySelector('input,select,button')?.focus();
+ document.querySelector('#saveCompleteness').onclick=async()=>{
+  const values=Object.fromEntries(new FormData(modalForm)),payload={};
+  missing.forEach(item=>{
+   if(item.key==='next_action'||!(item.key in values))return;
+   const value=values[item.key];
+   if(hasValue(value)&&String(value)!==String(contact[item.key]??''))payload[item.key]=value;
+  });
+  if(!Object.keys(payload).length)return ctx.toast('Aucune nouvelle valeur à enregistrer.',true);
+  const save=document.querySelector('#saveCompleteness'),cancel=document.querySelector('#cancelCompleteness');
+  save.disabled=true;cancel.disabled=true;save.textContent='Enregistrement…';
+  try{
+   const updated=await ctx.api(`/api/crm/contacts/${contact.id}`,{method:'PATCH',body:JSON.stringify(payload)});
+   Object.assign(contact,updated);
+   ctx.closeModal();
+   ctx.showContact(contact.id);
+   ctx.toast('Dossier mis à jour');
+  }catch(error){
+   save.disabled=false;cancel.disabled=false;save.textContent='Enregistrer les modifications';
+   ctx.toast(error.message,true);
+  }
+ };
 }
 function enhanceContactWithCompleteness(contact,ctx){
  enhanceContact(contact,ctx);
+ const card=document.querySelector('.contact-completeness');
+ if(card&&!card.querySelector('.contact-completeness-action')){
+  const action=document.createElement('button');
+  action.type='button';
+  action.className='btn contact-completeness-action';
+  action.onclick=()=>openCompletenessModal(contact,ctx);
+  card.appendChild(action);
+ }
  refreshContactCompleteness(contact);
  document.querySelector('#contactForm')?.addEventListener('input',event=>{
   const form=event.currentTarget,draft={...contact,...Object.fromEntries(new FormData(form))};
