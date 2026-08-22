@@ -2143,6 +2143,112 @@ def test_legacy_relance_date_is_migrated_without_being_duplicated(tmp_path, monk
     assert second["relances"][0]["source"] == "legacy"
 
 
+def test_scheduling_a_relance_without_active_appointment_repairs_pipeline_status(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"statut": "RDV programmé"},
+    )
+
+    response = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"relance_date": "2099-09-03"},
+    )
+
+    assert response.status_code == 200
+    updated = response.get_json()
+    assert updated["statut"] == "A relancer"
+    assert updated["relance_date"] == "2099-09-03"
+    assert updated["relances"][0]["status"] == "scheduled"
+    assert updated["activities"][0]["title"] == "Statut : A relancer"
+    assert updated["activities"][0]["detail"] == "Ancien statut : RDV programmé"
+
+
+def test_active_calendly_appointment_keeps_programmed_status_with_a_relance(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "statut": "En cours"},
+    ).get_json()
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [{
+        "id": "future-rdv",
+        "contact_id": contact["id"],
+        "status": "active",
+        "start_time": "2099-09-02T10:00:00+02:00",
+        "end_time": "2099-09-02T10:30:00+02:00",
+    }]
+    application.save_data(data)
+
+    response = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"relance_date": "2099-09-03"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["statut"] == "RDV programmé"
+
+
+@pytest.mark.parametrize("appointment", [
+    {
+        "id": "past-rdv", "status": "active",
+        "start_time": "2020-09-02T10:00:00+02:00",
+        "end_time": "2020-09-02T10:30:00+02:00",
+    },
+    {
+        "id": "cancelled-rdv", "status": "canceled",
+        "start_time": "2099-09-02T10:00:00+02:00",
+        "end_time": "2099-09-02T10:30:00+02:00",
+    },
+    {"id": "undated-rdv", "status": "active", "start_time": ""},
+])
+def test_non_active_appointment_does_not_hide_a_scheduled_relance(
+        tmp_path, monkeypatch, appointment):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "statut": "RDV programmé"},
+    ).get_json()
+    data = application.load_data()
+    stored = next(row for row in data["crm_contacts"] if row["id"] == contact["id"])
+    stored["statut"] = "RDV programmé"
+    stored["relance_date"] = "2099-09-03"
+    stored["relances"] = []
+    data["crm_calendly_appointments"] = [{**appointment, "contact_id": contact["id"]}]
+    application.save_data(data)
+
+    prepared = c.get(f"/api/crm/contacts/{contact['id']}")
+
+    assert prepared.status_code == 200
+    assert prepared.get_json()["statut"] == "A relancer"
+    persisted = application.load_data()
+    repaired = next(row for row in persisted["crm_contacts"] if row["id"] == contact["id"])
+    assert repaired["statut"] == "A relancer"
+    assert repaired["relance_date"] == "2099-09-03"
+
+
+@pytest.mark.parametrize("final_status", ["Disqualifié", "Converti"])
+def test_open_relance_never_overwrites_a_final_pipeline_status(
+        tmp_path, monkeypatch, final_status):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"statut": final_status},
+    )
+
+    response = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"relance_date": "2099-09-03"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["statut"] == final_status
+
+
 def test_crm_uses_admin_formation_sessions(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     data = application.load_data()
