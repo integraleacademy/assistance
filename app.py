@@ -12391,7 +12391,7 @@ def _crm_notion_rich_text(value):
     ] or [{"type": "text", "text": {"content": ""}}]
 
 
-def _crm_development_support_page(platform, page_url, original_actions, rewritten_actions):
+def _crm_development_support_page(\n        platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True):
     user = current_user() or {}
     subject = re.sub(r"^[#*\\s-]+", "", str(rewritten_actions).splitlines()[0]).strip()
     title = f"{platform} — {subject or original_actions}"[:100]
@@ -12413,7 +12413,7 @@ def _crm_development_support_page(platform, page_url, original_actions, rewritte
             "Type": {"type": "select", "select": {"name": "À faire"}},
         },
         "children": [
-            heading("Demande reformulée par l’IA"),
+            heading("Demande reformulée par l’IA" if ai_rewritten else "Demande à reformuler"),
             paragraph(rewritten_actions),
             heading("Page concernée"),
             paragraph(page_url),
@@ -12443,6 +12443,7 @@ def crm_development_support():
     if len(actions) < 20 or len(actions) > 6_000:
         return jsonify({"error": "Détaillez les actions à mener entre 20 et 6 000 caractères."}), 400
 
+    ai_rewritten = True
     try:
         rewritten = _crm_ai(
             "Tu reformules une demande interne de développement sans inventer, "
@@ -12453,14 +12454,17 @@ def crm_development_support():
             max_tokens=700,
         )
     except Exception as exc:
-        print(f"Support développement — reformulation impossible : {exc}", flush=True)
-        return jsonify({"error": "La reformulation IA est momentanément indisponible."}), 503
+        # La collecte de la demande reste prioritaire : une panne IA ne doit pas
+        # faire perdre la saisie. Work pourra reformuler le texte lors du traitement.
+        print(f"Support développement — reformulation différée : {exc}", flush=True)
+        rewritten = actions
+        ai_rewritten = False
 
     token = os.getenv("NOTION_API_TOKEN")
     if not token:
         return jsonify({"error": "La connexion Notion du CRM n’est pas configurée."}), 503
     notion_payload = _crm_development_support_page(
-        platform, page_url, actions, rewritten)
+        platform, page_url, actions, rewritten, ai_rewritten=ai_rewritten)
     try:
         response = requests.post(
             "https://api.notion.com/v1/pages",
@@ -12481,7 +12485,11 @@ def crm_development_support():
     except (requests.RequestException, RuntimeError, ValueError) as exc:
         print(f"Support développement — création Notion impossible : {exc}", flush=True)
         return jsonify({"error": "La demande n’a pas pu être créée dans Notion."}), 503
-    return jsonify({"url": notion_url, "title": notion_payload["properties"]["Pensée"]["title"][0]["text"]["content"]}), 201
+    return jsonify({
+        "url": notion_url,
+        "title": notion_payload["properties"]["Pensée"]["title"][0]["text"]["content"],
+        "ai_rewritten": ai_rewritten,
+    }), 201
 
 
 @app.post("/api/crm/statuses")
