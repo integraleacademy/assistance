@@ -5,6 +5,29 @@ CRM_JS = Path(__file__).parents[1] / "static" / "crm.js"
 CRM_CSS = Path(__file__).parents[1] / "static" / "crm.css"
 
 
+def test_calendly_refresh_keeps_cached_appointments_and_formats_paris_sync_time():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    assert "manual?{timeout:60000}:{}" in javascript
+    assert "if(list&&manual)list.innerHTML" not in javascript
+    assert "Europe/Paris" in javascript
+    assert "parisDateKey(date)===parisDateKey(new Date())" in javascript
+    assert "return`le ${day} à ${time}`" in javascript
+    assert "if(Number.isNaN(date.getTime()))return'pas encore synchronisé'" in javascript
+    assert ".calendly-lookup-warning .btn" in stylesheet
+
+
+def test_wedof_cache_is_preloaded_and_refreshes_without_a_modal():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "loadWedof(c,{refresh:true})" in javascript
+    assert "const wedofContactIsCurrent=c=>activeWedofContactId===String(c.id)" in javascript
+    assert "if(!wedofContactIsCurrent(c))return" in javascript
+    assert "modal('Actualisation WEDOF en cours'" not in javascript
+    assert "Les données en cache restent affichées." in javascript
+
+
 def test_contact_appointment_modal_uses_scoped_explicit_controls():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
@@ -13,6 +36,22 @@ def test_contact_appointment_modal_uses_scoped_explicit_controls():
     assert "const bookButton=dialog.querySelector('#calBook')" in javascript
     assert "calCancel.onclick" not in javascript
     assert "dialog.querySelector('.modal-body').innerHTML" in javascript
+
+
+def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    assert "const contactSheetUrl=id=>`/crm/contacts?fiche=${encodeURIComponent(id)}`" in javascript
+    assert "window.open(contactSheetUrl(id),'_blank','noopener')" in javascript
+    assert "C.section==='pistes'&&row.closest('#resultTable')" in javascript
+    assert "link.target='_blank';link.rel='noopener'" in javascript
+    assert "new MutationObserver(prepareGlobalContactLinks)" in javascript
+    assert "event.target.closest('a[data-global-id]')" in javascript
+    assert "event.target.closest('input,button,select,textarea,label,a')" in javascript
+    assert "event.button!==1" in javascript
+    assert ".global-results a" in stylesheet
+    assert "Cette fiche n’existe plus ou n’est plus accessible." in javascript
 
 
 def test_relaunch_template_is_available_for_every_formation():
@@ -145,7 +184,6 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
     assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
 
-
 def test_contact_header_displays_all_activity_counters_including_zero():
     crm_js = CRM_JS.read_text(encoding="utf-8")
     crm_css = CRM_CSS.read_text(encoding="utf-8")
@@ -161,3 +199,4 @@ def test_contact_header_displays_all_activity_counters_including_zero():
     assert "filter(a=>a.kind==='calendly').length} RDV réalisés" not in crm_js
     assert ".contact-activity-summary" in crm_css
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in crm_css
+
