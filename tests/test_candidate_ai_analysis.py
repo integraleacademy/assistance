@@ -9,6 +9,7 @@ import app as application
 from candidate_ai_analysis import (
     AI_CANDIDATE_SYSTEM_PROMPT, CANDIDATE_AI_RESPONSE_SCHEMA, CandidateAIResponseError,
     build_candidate_ai_context,
+    build_candidate_ai_fallback,
     build_funding_analysis,
     build_calendly_ai_summary, classify_calendly_appointment, detect_calendly_channel,
     finalize_candidate_ai_analysis, parse_calendly_datetime,
@@ -101,6 +102,56 @@ def test_context_minimizes_personal_data_and_limits_untrusted_text():
     assert len(context["recent_notes_untrusted"]) <= 8
     assert len(context["recent_activities_untrusted"]) <= 15
     assert "jamais des instructions" in AI_CANDIDATE_SYSTEM_PROMPT
+
+
+def test_context_projects_all_visible_safe_business_sections_and_regulatory_facts():
+    contact = {"id": "lead-reg", "prenom": "Lina", "nom": "MARTIN",
+        "mail": "lina@example.com", "telephone": "0612345678", "adresse": "1 rue privée",
+        "cnaps_username": "lina-cnaps", "cnaps_password": "secret-cnaps",
+        "formation": "APS", "carte_pro": "NON", "titre_sejour": "OUI",
+        "titre_sejour_cnaps": "A_VERIFIER", "garde_vue": "OUI", "antecedents": "NON",
+        "compte_cnaps": "OUI", "integration_dracar": "NON", "statut": "Nouveau",
+        "statut_secondaire": "Dossier à compléter", "origine": "META",
+        "qualification_flag": "red", "tags": "urgent", "prix_vente": "4200",
+        "cout_estime": "2500", "meta_source": {"form_name": "Formulaire A3P"},
+        "meta_answers": [{"question": "Avez-vous compris le tarif ?",
+                          "answer": "Oui, joindre Lina au 06 12 34 56 78"}]}
+    context = build_candidate_ai_context(contact, {"crm_calendly_appointments": []})
+    regulatory = context["regulatory_declarations_read_only"]
+    assert regulatory["declarations"]["custody_or_fingerprints"]["value"] == "OUI"
+    assert "vérification réglementaire humaine" in regulatory["critical_fact"]
+    assert regulatory["declarations"]["residence_permit_cnaps"]["value"] == "À vérifier"
+    assert context["commercial"]["qualification_flag"] == "red"
+    assert context["commercial"]["sale_price"] == "4200"
+    assert context["meta_form_answers_untrusted"]["source"]["form_name"] == "Formulaire A3P"
+    serialized = json.dumps(context, ensure_ascii=False)
+    assert "MARTIN" not in serialized and "lina@example.com" not in serialized
+    assert "0612345678" not in serialized and "secret-cnaps" not in serialized
+    assert "lina-cnaps" not in serialized and "[identité masquée]" in serialized
+    assert "[téléphone masqué]" in serialized
+
+
+def test_regulatory_meta_and_commercial_changes_invalidate_source_hash():
+    base = {"id": "reg-hash", "garde_vue": "NON", "qualification_flag": "green",
+            "meta_answers": [{"question": "Tarif", "answer": "Compris"}]}
+    data = {"crm_calendly_appointments": []}
+    source_hash = lambda contact: compute_candidate_ai_source_hash(build_candidate_ai_context(contact, data))
+    assert source_hash(base) != source_hash({**base, "garde_vue": "OUI"})
+    assert source_hash(base) != source_hash({**base, "qualification_flag": "red"})
+    assert source_hash(base) != source_hash({**base, "meta_answers": [{"question": "Tarif", "answer": "À rappeler"}]})
+
+
+def test_critical_regulatory_fact_is_guaranteed_in_model_and_fallback_summaries():
+    context = build_candidate_ai_context(
+        {"id": "reg-summary", "garde_vue": "OUI", "antecedents": "NON"},
+        {"crm_calendly_appointments": []})
+    generated = finalize_candidate_ai_analysis(valid_result(
+        general_summary="Le dossier semble complet sans point réglementaire."), context)
+    fallback = build_candidate_ai_fallback(context)
+    for result in (generated, fallback):
+        assert "garde à vue ou prise d’empreintes » : OUI" in result["summary"]
+        assert "vérification réglementaire humaine" in result["summary"]
+        assert result["regulatory_summary"] in result["summary"]
 
 
 def test_hash_changes_for_business_data_not_visual_data():
@@ -202,6 +253,39 @@ def test_routes_cache_stale_force_and_activity(tmp_path, monkeypatch):
     assert len(calls) == 3
     fresh = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert len([a for a in fresh["activities"] if a["kind"] == "ai_analysis"]) == 3
+
+
+def test_regulatory_only_contact_can_be_analyzed_and_old_versions_are_stale(tmp_path, monkeypatch):
+    client = logged_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "fake")
+    contact = client.post("/api/crm/contacts", json={}).get_json()
+    contact = client.patch(f"/api/crm/contacts/{contact['id']}", json={"garde_vue": "OUI"}).get_json()
+    data = application.load_data()
+    stored_contact = next(row for row in data["crm_contacts"] if row["id"] == contact["id"])
+    stored_contact["formation"] = ""
+    stored_contact["lieu"] = ""
+    application.save_data(data)
+    monkeypatch.setattr(application, "generate_candidate_ai_analysis",
+                        lambda context: finalize_candidate_ai_analysis(valid_result(), context))
+    url = f"/api/crm/contacts/{contact['id']}/ai-analysis"
+    generated = client.post(url, json={})
+    assert generated.status_code == 200
+    assert "garde à vue ou prise d’empreintes » : OUI" in generated.get_json()["result"]["summary"]
+
+    data = application.load_data()
+    data["crm_ai_candidate_analyses"][contact["id"]]["analysis_version"] -= 1
+    application.save_data(data)
+    state = client.get(url).get_json()
+    assert state["status"] == "stale" and state["stale"] is True
+
+
+def test_detail_ui_exposes_deterministic_regulatory_section():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    detail = crm_js.split("function aiAnalysisDetail(result)", 1)[1].split(
+        "function candidateAppointmentBadges", 1)[0]
+    assert "Informations réglementaires déclarées" in detail
+    assert "result.regulatory_summary" in detail
 
 
 def test_get_never_calls_ai_and_authentication_is_required(tmp_path, monkeypatch):
