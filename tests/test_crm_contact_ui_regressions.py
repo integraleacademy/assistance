@@ -185,6 +185,23 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
     assert "pipelineOverviewStatuses().map(s=>" in javascript
 
 
+def test_overdue_reminder_metric_filters_rows_and_is_keyboard_accessible():
+    workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+    css = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
+
+    assert 'id="reminderOverdue"' in workspace
+    assert 'role="button" tabindex="0" aria-pressed="false"' in workspace
+    assert "overdueOnly?isOverdue(contact)" in workspace
+    assert "dateLabel.textContent=overdueOnly?'Relances en retard'" in workspace
+    assert "overdueMetric.setAttribute('aria-pressed',String(overdueOnly))" in workspace
+    assert "const toggleOverdue=()=>{overdueOnly=!overdueOnly;showAll=false;renderRows()}" in workspace
+    assert "event.key==='Enter'||event.key===' '" in workspace
+    assert "selectedDate=today;showAll=false;overdueOnly=false" in workspace
+    assert "selectedDate=dateInput.value;showAll=false;overdueOnly=false" in workspace
+    assert ".workspace-metrics article.metric-action:focus-visible" in css
+    assert ".workspace-metrics article.metric-action.active" in css
+
+
 def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
     css = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
