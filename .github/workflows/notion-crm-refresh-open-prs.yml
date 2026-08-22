@@ -78,9 +78,14 @@ jobs:
                 git push origin "HEAD:refs/heads/${branch}"
                 echo "PR #${number} actualisée automatiquement."
 
-                gh workflow run notion-crm-work-pr-ci.yml \
-                  --repo "$GITHUB_REPOSITORY" \
-                  --ref "$branch"
+                # Les nouvelles PR Work utilisent ce CI directement. Pour les anciennes
+                # PR créées par github-actions[bot], GitHub peut marquer le run pull_request
+                # en action_required ; un workflow dédié, lancé depuis main, les prend en charge.
+                if [[ "$branch" == work/notion-crm-* ]]; then
+                  gh workflow run notion-crm-work-pr-ci.yml \
+                    --repo "$GITHUB_REPOSITORY" \
+                    --ref "$branch"
+                fi
               fi
 
               gh api \
@@ -108,3 +113,18 @@ jobs:
             git clean -fdx
             echo "::endgroup::"
           done
+
+          # Pont de migration : si la plus ancienne PR restante provient de l'ancien
+          # système github-actions[bot], la tester et la publier depuis un workflow
+          # dispatché sur main. Sa fusion déclenchera ce workflow à nouveau et fera
+          # avancer automatiquement la PR historique suivante.
+          first="${prs[0]}"
+          first_number="${first%%|*}"
+          first_branch="${first#*|}"
+          if [[ "$first_branch" == agent/notion-crm-* ]]; then
+            echo "Déclenchement du traitement historique pour la PR #${first_number}."
+            gh workflow run notion-crm-legacy-pr-publish.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f pr_number="$first_number"
+          fi
