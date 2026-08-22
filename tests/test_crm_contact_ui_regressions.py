@@ -5,6 +5,19 @@ CRM_JS = Path(__file__).parents[1] / "static" / "crm.js"
 CRM_CSS = Path(__file__).parents[1] / "static" / "crm.css"
 
 
+def test_calendly_refresh_keeps_cached_appointments_and_formats_paris_sync_time():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    assert "manual?{timeout:60000}:{}" in javascript
+    assert "if(list&&manual)list.innerHTML" not in javascript
+    assert "Europe/Paris" in javascript
+    assert "parisDateKey(date)===parisDateKey(new Date())" in javascript
+    assert "return`le ${day} à ${time}`" in javascript
+    assert "if(Number.isNaN(date.getTime()))return'pas encore synchronisé'" in javascript
+    assert ".calendly-lookup-warning .btn" in stylesheet
+
+
 def test_contact_appointment_modal_uses_scoped_explicit_controls():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
