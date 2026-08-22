@@ -10977,7 +10977,10 @@ def crm_contact_wedof(contact_id):
     data = load_data()
     if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
-    return jsonify({"resources": _wedof_contact_resources(contact_id, data)})
+    return jsonify({
+        "resources": _wedof_contact_resources(contact_id, data),
+        "status": _wedof_status_payload(test_connection=False),
+    })
 
 
 @app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
@@ -11359,6 +11362,7 @@ def crm_contact_calendly_appointments(contact_id):
     if request.method == "GET":
         lookup = {"method": "local", "processed_events": 0}
         lookup_warning = ""
+        lookup_succeeded = False
         fetched_payloads = []
         refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {
             "1", "true", "yes", "oui",
@@ -11379,6 +11383,7 @@ def crm_contact_calendly_appointments(contact_id):
                     data,
                     contact,
                 )
+                lookup_succeeded = True
             except (CalendlyAPIError, RuntimeError) as exc:
                 lookup_warning = str(exc)
 
@@ -11399,6 +11404,9 @@ def crm_contact_calendly_appointments(contact_id):
         if _crm_calendly_relink_appointments(latest_data, latest_contact):
             changed = True
         if _crm_sync_contact_calendly_status(latest_data, latest_contact):
+            changed = True
+        if lookup_succeeded:
+            latest_data.setdefault("crm_calendly", {})["last_sync_at"] = _crm_now()
             changed = True
         if changed:
             save_data(latest_data)
@@ -11617,6 +11625,7 @@ def crm_calendly_webhook():
         source="webhook",
         record_activity=True,
     )
+    data.setdefault("crm_calendly", {})["last_sync_at"] = _crm_now()
     save_data(data)
     return jsonify({
         "ok": True,
