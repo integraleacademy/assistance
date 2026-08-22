@@ -7142,7 +7142,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260822-contact-tab-title-1"
+CRM_ASSET_VERSION = "20260822-calendly-list-sync-1"
 
 
 def _crm_statuses(data=None):
@@ -12274,6 +12274,7 @@ def crm_contact_updates():
     """Retourne uniquement les données utiles au rafraîchissement collaboratif."""
     data = _crm_prepared_read_model()
     appointment_counts = _crm_appointment_counts_by_contact(data)
+    appointments = _crm_calendly_appointments_payload(data)["appointments"]
 
     summaries = [
         {
@@ -12299,7 +12300,7 @@ def crm_contact_updates():
             "activities": selected.get("activities", []),
             "publications": selected.get("publications", []),
         }
-    return jsonify({"contacts": summaries, "selected": selected_payload})
+    return jsonify({"contacts": summaries, "selected": selected_payload, "appointments": appointments})
 
 
 @app.delete("/api/crm/database")
