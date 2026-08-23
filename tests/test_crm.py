@@ -614,13 +614,27 @@ def test_workspace_bulk_actions_require_disqualification_reason_and_are_audited(
     for contact in result.get_json()["updated"]:
         assert contact["statut"] == "Disqualifié"
         assert contact["disqualification_reason"] == "Projet reporté"
+        assert contact["disqualification_detail"] == "Recontacter après la rentrée"
         assert contact["reactivation_date"] == "2027-01-15"
-        assert any("action groupée" in item.get("detail", "") for item in contact["activities"])
+        activity = next(
+            item for item in contact["activities"]
+            if item.get("title") == "Piste disqualifiée"
+        )
+        assert "Ancien statut : Nouveaux" in activity["detail"]
+        assert "Motif : Projet reporté" in activity["detail"]
+        assert "Précisions : Recontacter après la rentrée" in activity["detail"]
+        assert "Réactivation prévue : 2027-01-15" in activity["detail"]
 
     restored = c.patch("/api/crm/contacts/bulk", json={
         "ids": [first["id"]], "action": "status", "value": "Nouveaux",
     }).get_json()["updated"][0]
     assert restored["disqualification_reason"] == ""
+    assert restored["disqualification_detail"] == ""
+    assert any(
+        item.get("title") == "Piste disqualifiée"
+        and "Recontacter après la rentrée" in item.get("detail", "")
+        for item in restored["activities"]
+    )
 
 
 def test_workspace_archive_assignment_and_financial_fields_persist(tmp_path, monkeypatch):
