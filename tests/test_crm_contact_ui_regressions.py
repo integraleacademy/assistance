@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -749,7 +749,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -774,7 +774,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -836,7 +836,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -921,7 +921,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1020,7 +1020,7 @@ console.log('CRM Pistes completeness: OK');
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
 
 def test_pipeline_relance_date_only_announces_today_or_future():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1059,7 +1059,7 @@ console.log('CRM pipeline relance date: OK');
     assert "updateVisibleAppointmentData();" in javascript
     assert ".pipeline-relance-date.missing{color:#c23449}" in stylesheet
     assert ".pipeline-appointment-date,.pipeline-relance-date" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
 
 
 def test_contact_pipeline_uses_accessible_saas_stepper_without_changing_actions():
@@ -1115,4 +1115,43 @@ console.log('CRM SaaS pipeline: OK');
     assert ".timeline-scroll{scroll-snap-type:x proximity;padding-bottom:6px}" in stylesheet
     assert ".timeline-toggle{flex-basis:44px;width:44px;height:44px}" in stylesheet
     assert "clip-path:polygon(0 0,calc(100% - 12px)" not in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-disqualification-history-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
+
+
+def test_activity_journal_is_second_tab_before_wedof():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    application = APP_PY.read_text(encoding="utf-8")
+
+    subnav = javascript[
+        javascript.index('<div class="contact-subnav">'):
+        javascript.index('</nav><div class="funding-badges"')
+    ]
+    assert subnav.index('id="contactInfoTab"') < subnav.index('id="contactActivityTab"')
+    assert subnav.index('id="contactActivityTab"') < subnav.index('id="contactWedofTab"')
+    assert subnav.index('id="contactWedofTab"') < subnav.index('id="contactVaeTab"')
+    assert subnav.index('id="contactVaeTab"') < subnav.index('id="contactRelanceTab"')
+
+    logical_tabs = javascript[
+        javascript.index("const tabs=["):
+        javascript.index("const selectContactTab=")
+    ]
+    assert (
+        "const tabs=[contactInfoTab,contactActivityTab,contactWedofTab,"
+        "document.querySelector('#contactVaeTab'),"
+        "document.querySelector('#contactRelanceTab')].filter(Boolean);"
+    ) in logical_tabs
+
+    for tab_id, panel_id in (
+        ("contactInfoTab", "contactInfoPanel"),
+        ("contactActivityTab", "contactActivityPanel"),
+        ("contactWedofTab", "contactWedofPanel"),
+        ("contactVaeTab", "contactVaePanel"),
+        ("contactRelanceTab", "contactRelancePanel"),
+    ):
+        assert f'id="{tab_id}"' in subnav
+        assert f'aria-controls="{panel_id}"' in subnav
+        assert f'id="{panel_id}"' in javascript
+        assert f'aria-labelledby="{tab_id}"' in javascript
+
+    assert "loadWedof(c,{refresh:true})" in javascript
+    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
