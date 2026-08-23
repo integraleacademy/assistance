@@ -733,6 +733,13 @@ def test_cached_financer_refusal_repairs_stale_automatic_timeline(
     stale = next(row for row in data["crm_contacts"] if row["id"] == contact["id"])
     stale["statut_demande_financement_ft"] = "en_cours_instruction"
     stale["statut_secondaire"] = "Financement FT en cours"
+    stale["statut"] = "Nouveaux"
+    stale["relances"] = []
+    stale["relance_date"] = ""
+    stale["activities"] = [
+        activity for activity in stale.get("activities", [])
+        if activity.get("title") != "Relance France Travail planifiée"
+    ]
     application.save_data(data)
     notification_count = len(data["crm_notifications"])
 
@@ -744,7 +751,25 @@ def test_cached_financer_refusal_repairs_stale_automatic_timeline(
 
     assert repaired["statut_demande_financement_ft"] == "refusee"
     assert repaired["statut_secondaire"] == "Financement FT refusé"
+    assert repaired["statut"] == "A relancer"
+    scheduled = [
+        item for item in repaired["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert len(scheduled) == 1
+    assert scheduled[0]["source"] == "wedof_ft_refusal"
+    assert repaired["relance_date"] == scheduled[0]["scheduled_date"]
     assert len(application.load_data()["crm_notifications"]) == notification_count
+
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+    replayed = next(
+        row for row in application.load_data()["crm_contacts"]
+        if row["id"] == contact["id"]
+    )
+    assert len([
+        item for item in replayed["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
 
 
 def test_explicit_ft_rejection_without_history_updates_secondary_timeline(

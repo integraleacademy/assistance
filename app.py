@@ -11187,8 +11187,11 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                 if (current_funding_status == "refusee"
                         and contact.get("statut_demande_financement_ft_source")
                         != CRM_MANUAL_STATUS_SOURCE):
-                    if (contact.get("statut_demande_financement_ft")
-                            != "refusee"):
+                    stored_funding_was_refused = (
+                        contact.get("statut_demande_financement_ft")
+                        == "refusee"
+                    )
+                    if not stored_funding_was_refused:
                         contact["statut_demande_financement_ft"] = "refusee"
                         crm_changed = True
                     if (contact.get("statut_secondaire_source")
@@ -11201,12 +11204,15 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                         _crm_add_funding_refusal_notifications(
                             data, contact, stable_id,
                         )
-                        _crm_schedule_ft_refusal_relance(
+                        crm_changed = True
+                    if (not stored_funding_was_refused
+                            or previous_funding_status != "refusee"):
+                        _, relance_changed = _crm_schedule_ft_refusal_relance(
                             contact,
                             source="wedof_ft_refusal",
                             stable_id=stable_id,
                         )
-                        crm_changed = True
+                        crm_changed = relance_changed or crm_changed
                 linked_folders += 1
         state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
         if total_count is not None:
