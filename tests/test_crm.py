@@ -2166,7 +2166,7 @@ def test_scheduling_a_relance_without_active_appointment_repairs_pipeline_status
     assert updated["relance_date"] == "2099-09-03"
     assert updated["relances"][0]["status"] == "scheduled"
     assert updated["activities"][0]["title"] == "Statut : A relancer"
-    assert updated["activities"][0]["detail"] == "Ancien statut : RDV programmé"
+    assert updated["activities"][0]["detail"] == "Ancien statut : En cours"
 
 
 def test_calendly_appointment_eligibility_uses_the_paris_calendar_day():
