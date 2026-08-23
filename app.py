@@ -8396,6 +8396,7 @@ def _crm_calendly_relink_appointments(data, contact):
     if not email and not phone:
         return False
     changed = False
+    newly_linked_active = False
     for appointment in data.get("crm_calendly_appointments", []):
         assigned_contact = _crm_contact(data, appointment.get("contact_id"))
         same_email = bool(email) and (
@@ -8410,7 +8411,31 @@ def _crm_calendly_relink_appointments(data, contact):
         ):
             appointment["contact_id"] = contact.get("id")
             appointment["updated_at"] = _crm_now()
+            newly_linked_active = (
+                newly_linked_active
+                or _crm_calendly_appointment_is_today_or_future(appointment)
+            )
             changed = True
+
+    if (
+        newly_linked_active
+        and (contact.get("statut") or "Nouveaux")
+        not in {"Converti", "Disqualifié"}
+    ):
+        _, relance_changed = _crm_schedule_relance(
+            contact,
+            "",
+            source="calendly_appointment",
+            actor_name="Calendly",
+        )
+        status_changed = _crm_sync_contact_calendly_status(
+            data,
+            contact,
+            prefer_appointment=True,
+        )
+        if relance_changed and not status_changed:
+            contact["updated_at"] = _crm_now()
+        changed = changed or relance_changed or status_changed
     return changed
 
 
@@ -8423,6 +8448,52 @@ def _crm_calendly_datetime_label(value):
         return local.strftime("%d/%m/%Y à %H:%M")
     except (TypeError, ValueError):
         return str(value or "Date non renseignée")
+
+
+def _crm_calendly_booking_supersedes_active_relance(contact, appointment):
+    """Return whether an existing booking is newer than the open follow-up.
+
+    Full synchronizations replay appointments that may already be in the local
+    cache.  Comparing creation timestamps repairs pre-existing inconsistent
+    data without cancelling a follow-up deliberately created after booking.
+    Missing or malformed timestamps are left untouched rather than risking
+    destructive history changes.
+    """
+    booked_at = (
+        appointment.get("created_at")
+        or appointment.get("calendly_created_at")
+        or ""
+    )
+    try:
+        booked_at = datetime.datetime.fromisoformat(
+            str(booked_at).replace("Z", "+00:00")
+        )
+        if booked_at.tzinfo is None:
+            booked_at = pytz.UTC.localize(booked_at)
+        else:
+            booked_at = booked_at.astimezone(pytz.UTC)
+    except (TypeError, ValueError):
+        return False
+
+    _crm_ensure_relances(contact)
+    for relance in contact.get("relances", []):
+        if relance.get("status") != "scheduled":
+            continue
+        try:
+            created_at = datetime.datetime.fromisoformat(
+                str(relance.get("created_at") or "").replace("Z", "+00:00")
+            )
+            if created_at.tzinfo is None:
+                created_at = pytz.UTC.localize(created_at)
+            else:
+                created_at = created_at.astimezone(pytz.UTC)
+        except (TypeError, ValueError):
+            continue
+        # Equal second-resolution timestamps are ambiguous; preserving the
+        # follow-up is safer than cancelling a potentially later manual action.
+        if created_at < booked_at:
+            return True
+    return False
 
 
 def _crm_upsert_calendly_appointment(
@@ -8519,9 +8590,48 @@ def _crm_upsert_calendly_appointment(
         or previous_status != appointment.get("status")
         or previous_start != appointment.get("start_time")
     )
+    appointment_became_active = bool(
+        contact
+        and (contact.get("statut") or "Nouveaux")
+        not in {"Converti", "Disqualifié"}
+        and str(appointment.get("status") or "active").lower()
+        not in {"canceled", "cancelled"}
+        and (
+            not existing
+            or str(previous_status or "").lower() in {"canceled", "cancelled"}
+            or previous_start != appointment.get("start_time")
+            or _crm_calendly_booking_supersedes_active_relance(
+                contact,
+                appointment,
+            )
+        )
+        and _crm_calendly_appointment_is_today_or_future(appointment)
+    )
+    relance_changed = False
+    if appointment_became_active:
+        _, relance_changed = _crm_schedule_relance(
+            contact,
+            "",
+            source="calendly_appointment",
+            actor_name="Calendly",
+        )
+
     old_status = (contact.get("statut") or "Nouveaux") if contact else ""
-    status_changed = bool(contact and _crm_sync_contact_calendly_status(data, contact))
-    if contact and status_changed and record_activity:
+    status_changed = bool(
+        contact
+        and _crm_sync_contact_calendly_status(
+            data,
+            contact,
+            prefer_appointment=appointment_became_active,
+        )
+    )
+    pipeline_changed = relance_changed or status_changed
+    if (
+        contact
+        and pipeline_changed
+        and record_activity
+        and old_status != contact.get("statut")
+    ):
         _crm_activity(
             contact,
             "statut",
@@ -8540,7 +8650,7 @@ def _crm_upsert_calendly_appointment(
             f"{_crm_calendly_datetime_label(appointment.get('start_time'))}"
         )
         _crm_activity(contact, "calendly", title, detail)
-    if contact and (status_changed or (record_activity and changed)):
+    if contact and (pipeline_changed or (record_activity and changed)):
         contact["updated_at"] = now
     return appointment, contact
 
@@ -8548,6 +8658,8 @@ def _crm_upsert_calendly_appointment(
 def _crm_calendly_appointment_is_today_or_future(appointment, now=None):
     """Return whether a non-cancelled appointment is on/after today in Paris."""
     if str(appointment.get("status") or "active").lower() in {"canceled", "cancelled"}:
+        return False
+    if str(appointment.get("response_status") or "").lower() == "no_answer":
         return False
     start_time = str(appointment.get("start_time") or "").strip()
     if not start_time:
@@ -8573,14 +8685,19 @@ def _crm_calendly_appointment_is_today_or_future(appointment, now=None):
     return appointment_at.date() >= reference.date()
 
 
-def _crm_sync_contact_calendly_status(data, contact, now=None):
+def _crm_sync_contact_calendly_status(
+        data, contact, now=None, *, prefer_appointment=False):
     """Align the pipeline with current/future appointments and open follow-ups.
 
     The appointment rule is deliberately based on the calendar day in Paris:
     an appointment earlier today remains visible, but one from a previous day
-    does not. Final statuses always win and ``A relancer`` keeps its
-    historical priority. A stale ``RDV programmé`` without an eligible
-    appointment or follow-up is repaired to ``En cours``.
+    does not. Final statuses always win. The ingest path cancels the follow-ups
+    that existed when a booking becomes active; this reconciler never repeats
+    that side effect on later reads or synchronizations. Later follow-ups keep
+    their historical priority unless the appointment has just become active.
+    An appointment marked ``no_answer`` no longer wins over its J+2 follow-up. A stale
+    ``RDV programmé`` without an eligible appointment or follow-up is repaired
+    to ``En cours``.
     """
     has_active_appointment = any(
         item.get("contact_id") == contact.get("id")
@@ -8591,7 +8708,10 @@ def _crm_sync_contact_calendly_status(data, contact, now=None):
     if current_status in {"Disqualifié", "Converti"}:
         return False
     if has_active_appointment:
-        if current_status in {"A relancer", "RDV programmé"}:
+        if (
+            current_status == "RDV programmé"
+            or (current_status == "A relancer" and not prefer_appointment)
+        ):
             return False
         next_status = "RDV programmé"
     elif contact.get("relance_date"):
