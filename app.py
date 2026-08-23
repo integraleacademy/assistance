@@ -11891,6 +11891,20 @@ def crm_calendly_availability():
         return jsonify({
             "error": "La période de disponibilité Calendly ne peut pas dépasser 7 jours."
         }), 400
+    # Calendly exige une borne de début strictement future. La date envoyée
+    # par le navigateur peut déjà être passée de quelques millisecondes au
+    # moment où la requête atteint Calendly, donc gardons une petite marge.
+    minimum_start = (
+        datetime.datetime.now(datetime.timezone.utc)
+        + datetime.timedelta(minutes=1)
+    )
+    if available_end <= minimum_start:
+        return jsonify({
+            "error": "La période de disponibilité Calendly doit être située dans le futur."
+        }), 400
+    if available_start < minimum_start:
+        available_start = minimum_start
+        start_time = available_start.isoformat(timespec="seconds").replace("+00:00", "Z")
     try:
         response = _calendly_request(
             "GET",
