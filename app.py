@@ -8521,6 +8521,8 @@ def _crm_upsert_calendly_appointment(
     )
     appointment_became_active = bool(
         contact
+        and (contact.get("statut") or "Nouveaux")
+        not in {"Converti", "Disqualifié"}
         and str(appointment.get("status") or "active").lower()
         not in {"canceled", "cancelled"}
         and (
