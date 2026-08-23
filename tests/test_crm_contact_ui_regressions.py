@@ -127,6 +127,79 @@ console.log('CRM contact return navigation: OK');
     assert ".back-contact{display:inline-flex;align-items:center;" in stylesheet
     assert "text-decoration:none" in stylesheet
 
+
+def test_toast_is_left_visible_and_guards_status_saves():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+    template = CRM_TEMPLATE.read_text(encoding="utf-8")
+    backend = APP_PY.read_text(encoding="utf-8")
+    helpers = javascript[
+        javascript.index("let toastTimer"):
+        javascript.index("const initials=")
+    ]
+    script = f"""
+let scheduled=[];
+let cleared=[];
+const toastNode={{
+  textContent:'',
+  className:'toast',
+  attributes:{{}},
+  setAttribute(name,value){{this.attributes[name]=value}},
+  classList:{{remove(name){{toastNode.className=toastNode.className.split(' ').filter(value=>value!==name).join(' ')}}}}
+}};
+const document={{querySelector:selector=>selector==='#toast'?toastNode:null}};
+const window={{listeners:{{}},addEventListener(type,handler){{this.listeners[type]=handler}}}};
+const setTimeout=(callback,delay)=>{{scheduled.push({{callback,delay}});return scheduled.length}};
+const clearTimeout=id=>{{cleared.push(id)}};
+{helpers}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+toast('Statut enregistré');
+assert(toastNode.textContent==='Statut enregistré','success text');
+assert(toastNode.className.includes('is-success'),'success state');
+assert(toastNode.attributes.role==='status','success role');
+assert(scheduled.at(-1).delay===4500,'success remains readable');
+beginStatusSave('Enregistrement du statut…');
+assert(pendingStatusSaves===1,'pending save count');
+assert(toastNode.className.includes('is-pending'),'pending state');
+const pendingTimerCount=scheduled.length;
+const event={{prevented:false,returnValue:null,preventDefault(){{this.prevented=true}}}};
+window.listeners.beforeunload(event);
+assert(event.prevented&&event.returnValue==='','guard navigation while saving');
+assert(scheduled.length===pendingTimerCount,'pending toast remains visible');
+finishStatusSave('Statut enregistré');
+assert(pendingStatusSaves===0,'save guard released');
+assert(toastNode.className.includes('is-success'),'success replaces pending');
+const safeEvent={{prevented:false,preventDefault(){{this.prevented=true}}}};
+window.listeners.beforeunload(safeEvent);
+assert(!safeEvent.prevented,'navigation allowed after save');
+toast('Échec de sauvegarde',true);
+assert(toastNode.className.includes('is-error'),'error state');
+assert(toastNode.attributes.role==='alert','error role');
+assert(toastNode.attributes['aria-live']==='assertive','assertive error announcement');
+assert(scheduled.at(-1).delay===7000,'error remains readable');
+console.log('CRM save notifications: OK');
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM save notifications: OK" in completed.stdout
+    assert ".toast{position:fixed;left:272px" in stylesheet
+    assert "body.sidebar-collapsed .toast{left:100px" in stylesheet
+    assert "@media(max-width:1000px){.toast,body.sidebar-collapsed .toast{left:18px" in stylesheet
+    assert ".toast.is-pending" in stylesheet
+    assert "right:25px" not in javascript
+    assert '<div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">' in template
+    assert "beginStatusSave('Enregistrement du statut…')" in javascript
+    assert "finishStatusSave('Statut enregistré')" in javascript
+    assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
+    assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
+    assert 'CRM_ASSET_VERSION = "20260823-left-save-toast-1"' in backend
+
 def test_relaunch_template_is_available_for_every_formation():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
@@ -452,7 +525,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-contact-back-link-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-left-save-toast-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -477,4 +550,4 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-contact-back-link-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-left-save-toast-1"' in backend
