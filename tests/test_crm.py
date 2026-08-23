@@ -364,7 +364,7 @@ def test_dashboard_reports_meta_and_builds_origins_from_live_contacts():
     assert "return'META'" in crm_js
     assert "primaryOrigins=dashboardOriginGroups(current)" in crm_js
     assert "secondaryOrigins=dashboardOriginGroups(current,true)" in crm_js
-    assert "META n’est plus exclu" in crm_js
+    assert "function dashboardOrigin(contact){return canonicalCrmOrigin(contact)}" in crm_js
     assert "campaign_name" in crm_js
     assert "ad_name" in crm_js
     assert "sourceCounts=['Google','Site internet','Simulateur VAE'" not in crm_js
@@ -432,9 +432,9 @@ def test_pistes_can_filter_by_origin_and_sort_by_score():
     assert 'id="originFilter"' in crm_js
     assert 'aria-label="Filtrer selon l’origine"' in crm_js
     assert "crmOriginLabels(c).includes(origin)" in crm_js
-    assert 'id="scoreSort"' in crm_js
-    assert "Score : du plus grand au plus petit" in crm_js
-    assert "Score : du plus petit au plus grand" in crm_js
+    assert 'data-score-sort' in crm_js
+    assert "Trier les scores du plus grand au plus petit" in crm_js
+    assert "Trier les scores du plus petit au plus grand" in crm_js
     assert "function contactScoreValue(contact)" in crm_js
     assert "function sortLeadsByScore(list,direction)" in crm_js
     assert "if(first===null)return 1" in crm_js
