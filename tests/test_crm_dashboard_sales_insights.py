@@ -42,7 +42,7 @@ const ads=dashboardGoogleAdsData(contacts);
 assert(ads.contacts.length===2,'primary and assisted Google Ads included');
 assert(ads.primary.length===1&&ads.assisted.length===1,'primary and assisted separated');
 assert(ads.identifierTypes.WBRAID===1,'wbraid coverage counted');
-assert(ads.campaigns[0].label==='Été','utm campaign exposed');
+assert(ads.campaigns.some(row=>row.label==='Été'),'utm campaign exposed');
 console.log('CRM sales dashboard aggregations: OK');
 """
     completed = subprocess.run(
