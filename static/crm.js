@@ -671,7 +671,7 @@ function noAnswerRelanceModal(c,relance){
 }
 async function deleteRelance(c,relance,button){
   const meta=relanceDateMeta(relance.scheduled_date);
-  if(!confirm(`Supprimer la relance prévue le ${meta.long} ?\n\nElle disparaîtra des relances à venir et restera visible comme annulée dans l’historique.`))return;
+  if(!confirm(`Supprimer la relance prévue le ${meta.long} ?\n\nCette action est définitive : la relance ne sera conservée ni dans l’historique ni dans les compteurs.`))return;
   const previousLabel=button.textContent;
   button.disabled=true;
   button.textContent='Suppression…';

@@ -7137,7 +7137,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-timelines-legacy-1"
+CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -9567,18 +9567,19 @@ def _crm_complete_relance(contact, relance, status, *, note=""):
     return True
 
 
-def _crm_cancel_relance(contact, relance, *, reason="manual_delete"):
-    """Cancel one scheduled follow-up without deleting its audit history."""
+def _crm_delete_relance(contact, relance):
+    """Permanently remove one planned follow-up from this contact."""
     if relance.get("status") != "scheduled":
         return False
-    relance.update({
-        "status": "cancelled",
-        "completed_at": _crm_now(),
-        "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
-        "cancelled_reason": reason,
-    })
-    _crm_refresh_relance_date(contact)
-    return True
+    relances = contact.get("relances")
+    if not isinstance(relances, list):
+        return False
+    for index, item in enumerate(relances):
+        if item is relance:
+            del relances[index]
+            _crm_refresh_relance_date(contact)
+            return True
+    return False
 
 
 def _crm_create_contact_from_information_request(data, fields, demande_id, devis_id, devis_url):
@@ -13773,7 +13774,7 @@ def crm_log_call(contact_id):
 @login_required
 @_crm_serialized
 def crm_delete_relance(contact_id, relance_id):
-    """Cancel exactly one planned relance while preserving the CRM audit trail."""
+    """Permanently delete exactly one planned relance for this contact."""
     data = load_data()
     contact = _crm_contact(data, contact_id)
     if not contact:
@@ -13789,19 +13790,12 @@ def crm_delete_relance(contact_id, relance_id):
     if relance.get("status") != "scheduled":
         return jsonify({"error": "Seule une relance planifiée peut être supprimée"}), 409
 
-    scheduled_date = str(relance.get("scheduled_date") or "")
-    _crm_cancel_relance(contact, relance)
-    _crm_activity(
-        contact,
-        "relance",
-        "Relance supprimée",
-        f"Relance du {scheduled_date or 'jour non renseigné'} annulée",
-    )
+    _crm_delete_relance(contact, relance)
     contact["updated_at"] = _crm_now()
     save_data(data)
     return jsonify({
         "contact": _crm_contact_response(contact, data),
-        "relance": relance,
+        "deleted_relance_id": relance_id,
     })
 
 

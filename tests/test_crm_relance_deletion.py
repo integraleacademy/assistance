@@ -57,43 +57,45 @@ def _extract_js_function(source, name):
     raise AssertionError(f"Fonction JavaScript incomplète : {name}")
 
 
-def test_cancel_one_scheduled_relance_preserves_history_and_refreshes_next_date():
-    namespace = _load_python_functions("_crm_refresh_relance_date", "_crm_cancel_relance")
-    cancel = namespace["_crm_cancel_relance"]
+def test_delete_one_scheduled_relance_removes_it_and_refreshes_next_date():
+    namespace = _load_python_functions("_crm_refresh_relance_date", "_crm_delete_relance")
+    delete = namespace["_crm_delete_relance"]
     target = {"id": "r1", "status": "scheduled", "scheduled_date": "2026-08-24"}
     following = {"id": "r2", "status": "scheduled", "scheduled_date": "2026-08-26"}
     historical = {"id": "r0", "status": "answered", "scheduled_date": "2026-08-20"}
+    following_snapshot = dict(following)
+    historical_snapshot = dict(historical)
     contact = {"relance_date": "2026-08-24", "relances": [target, following, historical]}
 
-    assert cancel(contact, target) is True
-    assert target == {
-        "id": "r1",
-        "status": "cancelled",
-        "scheduled_date": "2026-08-24",
-        "completed_at": "2026-08-23T14:10:00+02:00",
-        "completed_by": "Camille",
-        "cancelled_reason": "manual_delete",
-    }
+    assert delete(contact, target) is True
+    assert target not in contact["relances"]
+    assert contact["relances"] == [following, historical]
+    assert following == following_snapshot
+    assert historical == historical_snapshot
     assert contact["relance_date"] == "2026-08-26"
-    assert following["status"] == "scheduled"
-    assert historical["status"] == "answered"
 
-
-def test_cancel_refuses_history_without_mutation_and_clears_last_planned_date():
-    namespace = _load_python_functions("_crm_refresh_relance_date", "_crm_cancel_relance")
-    cancel = namespace["_crm_cancel_relance"]
+def test_delete_refuses_history_or_foreign_object_and_clears_last_planned_date():
+    namespace = _load_python_functions("_crm_refresh_relance_date", "_crm_delete_relance")
+    delete = namespace["_crm_delete_relance"]
     completed = {"id": "done", "status": "answered", "scheduled_date": "2026-08-20"}
     snapshot = dict(completed)
-    assert cancel({"relance_date": "", "relances": [completed]}, completed) is False
+    assert delete({"relance_date": "", "relances": [completed]}, completed) is False
     assert completed == snapshot
+
+    stored = {"id": "kept", "status": "scheduled", "scheduled_date": "2026-08-25"}
+    foreign = {"id": "foreign", "status": "scheduled", "scheduled_date": "2026-08-25"}
+    foreign_contact = {"relance_date": "2026-08-25", "relances": [stored]}
+    assert delete(foreign_contact, foreign) is False
+    assert foreign_contact["relances"] == [stored]
+    assert foreign_contact["relance_date"] == "2026-08-25"
 
     last = {"id": "last", "status": "scheduled", "scheduled_date": "2026-08-25"}
     contact = {"relance_date": "2026-08-25", "relances": [last]}
-    assert cancel(contact, last) is True
+    assert delete(contact, last) is True
+    assert contact["relances"] == []
     assert contact["relance_date"] == ""
 
-
-def test_delete_route_is_targeted_authenticated_audited_and_persisted():
+def test_delete_route_is_targeted_authenticated_permanent_and_persisted():
     source = (ROOT / "app.py").read_text(encoding="utf-8")
     decorator = (
         '@app.delete("/api/crm/contacts/<contact_id>/relances/<relance_id>")\n'
@@ -109,18 +111,20 @@ def test_delete_route_is_targeted_authenticated_audited_and_persisted():
         '"Contact introuvable"}), 404',
         '"Relance introuvable pour ce contact"}), 404',
         '"Seule une relance planifiée peut être supprimée"}), 409',
-        '_crm_cancel_relance(contact, relance)',
-        '"Relance supprimée"',
-        'save_data(data)',
+        "_crm_delete_relance(contact, relance)",
+        "save_data(data)",
         '"contact": _crm_contact_response(contact, data)',
-        '"relance": relance',
+        '"deleted_relance_id": relance_id',
     ):
         assert expected in route
-
+    assert "_crm_activity(" not in route
+    assert '"relance": relance' not in route
 
 def test_frontend_confirms_calls_exact_delete_and_recovers_from_error():
     source = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
     function = _extract_js_function(source, "deleteRelance")
+    assert "Cette action est définitive : la relance ne sera conservée ni dans l’historique ni dans les compteurs." in function
+    assert "restera visible comme annulée" not in function
     harness = r"""
 const assert = require('assert');
 let allow = false;
@@ -193,4 +197,4 @@ def test_button_accessibility_responsive_style_and_cache_version():
     assert ".relance-delete:focus-visible" in css
     assert ".relance-delete:disabled" in css
     assert ".relance-item-controls{display:grid;grid-template-columns:1fr 1fr;width:100%" in css
-    assert 'CRM_ASSET_VERSION = "20260823-relance-delete-1"' in app
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in app
