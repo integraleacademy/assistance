@@ -827,6 +827,43 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
     assert refused["statut_secondaire"] == "Financement FT refusé"
 
 
+def test_financer_refusal_history_survives_later_cpf_acceptance(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    ft_folder = folder(
+        "ft-refused-then-accepted", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    ft_folder.update({
+        "state": "waitingAcceptation",
+        "history": [{"state": "waitingAcceptation"}],
+    })
+    application._wedof_store_page(
+        [ft_folder], application.load_data(), 1,
+    )
+
+    # Le candidat peut accepter de nouveau le dossier après le refus FT.
+    # Cela ne doit pas effacer la décision du financeur de la seconde timeline.
+    ft_folder.update({
+        "state": "accepted",
+        "history": {
+            "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
+            "acceptedDate": "2026-08-23T14:00:00+00:00",
+        },
+    })
+    application._wedof_store_page(
+        [ft_folder], application.load_data(), 1,
+    )
+
+    result = next(
+        row for row in client.get("/api/crm/contacts").get_json()
+        if row["id"] == contact["id"]
+    )
+    assert result["statut_demande_financement_ft"] == "refusee"
+    assert result["statut_secondaire"] == "Financement FT refusé"
+
+
 def test_cached_financer_refusal_repairs_stale_automatic_timeline(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
@@ -943,6 +980,13 @@ def test_ft_status_reads_nested_wedof_history():
         "history": {
             "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
             "refusedByOrganismDate": None,
+        },
+    }) == "refusee"
+    assert application._wedof_france_travail_status({
+        "state": "accepted",
+        "history": {
+            "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
+            "acceptedDate": "2026-08-23T14:00:00+00:00",
         },
     }) == "refusee"
     assert application._wedof_france_travail_status({
