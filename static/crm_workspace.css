@@ -108,3 +108,9 @@
  .workspace-origin-group{align-items:stretch;flex-direction:column}
  .workspace-origin-group .workspace-origin-badge{width:max-content;max-width:100%}
 }
+
+.contact-disqualification-summary{display:grid;gap:6px;margin:0 0 16px;padding:16px 18px;border:1px solid #fecaca;border-left:4px solid #dc2626;background:#fff7f7}
+.contact-disqualification-summary>span{font-size:11px;font-weight:800;letter-spacing:.08em;color:#b91c1c}
+.contact-disqualification-summary>b{color:#7f1d1d}
+.contact-disqualification-summary>p{margin:0;white-space:pre-wrap;color:#475569}
+.contact-disqualification-summary>small{color:#64748b}

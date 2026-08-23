@@ -362,8 +362,9 @@ def test_dashboard_reports_meta_and_builds_origins_from_live_contacts():
 
     assert "function dashboardOrigin(contact)" in crm_js
     assert "return'META'" in crm_js
-    assert "origins=dashboardGroup(current,dashboardOrigin)" in crm_js
-    assert "META n’est plus exclu" in crm_js
+    assert "primaryOrigins=dashboardOriginGroups(current)" in crm_js
+    assert "secondaryOrigins=dashboardOriginGroups(current,true)" in crm_js
+    assert "function dashboardOrigin(contact){return canonicalCrmOrigin(contact)}" in crm_js
     assert "campaign_name" in crm_js
     assert "ad_name" in crm_js
     assert "sourceCounts=['Google','Site internet','Simulateur VAE'" not in crm_js
@@ -430,10 +431,10 @@ def test_pistes_can_filter_by_origin_and_sort_by_score():
 
     assert 'id="originFilter"' in crm_js
     assert 'aria-label="Filtrer selon l’origine"' in crm_js
-    assert "dashboardOrigin(c)===origin" in crm_js
-    assert 'id="scoreSort"' in crm_js
-    assert "Score : du plus grand au plus petit" in crm_js
-    assert "Score : du plus petit au plus grand" in crm_js
+    assert "crmOriginLabels(c).includes(origin)" in crm_js
+    assert 'data-score-sort' in crm_js
+    assert "Trier les scores du plus grand au plus petit" in crm_js
+    assert "Trier les scores du plus petit au plus grand" in crm_js
     assert "function contactScoreValue(contact)" in crm_js
     assert "function sortLeadsByScore(list,direction)" in crm_js
     assert "if(first===null)return 1" in crm_js
@@ -614,13 +615,27 @@ def test_workspace_bulk_actions_require_disqualification_reason_and_are_audited(
     for contact in result.get_json()["updated"]:
         assert contact["statut"] == "Disqualifié"
         assert contact["disqualification_reason"] == "Projet reporté"
+        assert contact["disqualification_detail"] == "Recontacter après la rentrée"
         assert contact["reactivation_date"] == "2027-01-15"
-        assert any("action groupée" in item.get("detail", "") for item in contact["activities"])
+        activity = next(
+            item for item in contact["activities"]
+            if item.get("title") == "Piste disqualifiée"
+        )
+        assert "Ancien statut : Nouveaux" in activity["detail"]
+        assert "Motif : Projet reporté" in activity["detail"]
+        assert "Précisions : Recontacter après la rentrée" in activity["detail"]
+        assert "Réactivation prévue : 2027-01-15" in activity["detail"]
 
     restored = c.patch("/api/crm/contacts/bulk", json={
         "ids": [first["id"]], "action": "status", "value": "Nouveaux",
     }).get_json()["updated"][0]
     assert restored["disqualification_reason"] == ""
+    assert restored["disqualification_detail"] == ""
+    assert any(
+        item.get("title") == "Piste disqualifiée"
+        and "Recontacter après la rentrée" in item.get("detail", "")
+        for item in restored["activities"]
+    )
 
 
 def test_workspace_archive_assignment_and_financial_fields_persist(tmp_path, monkeypatch):
@@ -976,7 +991,7 @@ def test_primary_pipeline_places_in_progress_after_scheduled_appointment():
 
     scheduled_index = statuses.index("RDV programmé")
     assert statuses[scheduled_index:scheduled_index + 3] == [
-        "RDV programmé", "En cours", "Prochain RDV inscription",
+        "RDV programmé", "En cours", "A relancer",
     ]
 
 
@@ -1084,16 +1099,17 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
     assert "'Secrétariat','Formulaire abandonné','Ajout manuel','Autre'" in crm_js
 
 
-def test_tracking_card_is_displayed_above_publications():
+def test_tracking_card_precedes_the_activity_tab_and_publications_stay_inside_it():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    main_column = crm_js.split('<div class="contact-main-column">', 1)[1].split(
-        '<aside class="contact-side-column">', 1
-    )[0]
-    assert main_column.index('id="trackingCard"') < main_column.index(
-        'class="card publications-card"'
+    assert crm_js.index('id="trackingCard"') < crm_js.index(
+        'id="contactActivityPanel"'
     )
+    activity_panel = crm_js.split('id="contactActivityPanel"', 1)[1].split(
+        'id="contactRelancePanel"', 1
+    )[0]
+    assert 'class="card publications-card"' in activity_panel
 
 
 def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
