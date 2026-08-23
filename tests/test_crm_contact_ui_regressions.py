@@ -847,4 +847,3 @@ console.log('CRM lead score sorting: OK');
     assert "min-height:44px" in stylesheet
     assert "20260823-score-sort-1" in application
     assert "20260823-mobile-responsive-1" not in application
-
