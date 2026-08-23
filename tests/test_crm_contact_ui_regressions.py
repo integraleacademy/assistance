@@ -200,7 +200,85 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
+
+def test_collapsed_sidebar_is_compact_accessible_and_persistent():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+    template = CRM_TEMPLATE.read_text(encoding="utf-8")
+    sidebar_state = (
+        Path(__file__).parents[1] / "static" / "crm_sidebar_state.js"
+    ).read_text(encoding="utf-8")
+    script = r"""
+require('./static/crm_sidebar_state.js');
+const state=globalThis.CRMSidebarState;
+const listeners={};
+const classes=new Set();
+const attributes={};
+const button={
+ textContent:'‹',
+ title:'Replier la barre latérale',
+ setAttribute:(name,value)=>{attributes[name]=value},
+ addEventListener:(name,handler)=>{listeners[name]=handler},
+};
+const document={
+ body:{classList:{
+  toggle:(name,enabled)=>enabled?classes.add(name):classes.delete(name),
+  contains:name=>classes.has(name),
+ }},
+ querySelector:selector=>selector==='#sidebarCollapse'?button:null,
+};
+const values=new Map([[state.STORAGE_KEY,'1']]);
+const storage={
+ getItem:key=>values.get(key)||null,
+ setItem:(key,value)=>values.set(key,value),
+};
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+const initialized=state.initialize(document,storage);
+assert(initialized.collapsed===true,'stored collapsed preference restored');
+assert(classes.has('sidebar-collapsed'),'collapsed class applied');
+assert(button.textContent==='›','expand direction shown while collapsed');
+assert(button.title==='Déplier la barre latérale','title describes the next action');
+assert(attributes['aria-label']==='Déplier la barre latérale','accessible label updated');
+assert(attributes['aria-expanded']==='false','collapsed state exposed');
+listeners.click();
+assert(!classes.has('sidebar-collapsed'),'click expands the sidebar');
+assert(values.get(state.STORAGE_KEY)==='0','expanded preference persisted');
+assert(button.textContent==='‹','collapse direction restored');
+assert(attributes['aria-expanded']==='true','expanded state exposed');
+const blockedStorage={getItem(){throw new Error('blocked')},setItem(){throw new Error('blocked')}};
+assert(state.initialize(document,blockedStorage)!==null,'blocked storage never prevents initialization');
+console.log('CRM sidebar state: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM sidebar state: OK" in completed.stdout
+    assert "window.CRMSidebarState?.initialize(document)" in javascript
+    assert "classList.toggle('sidebar-collapsed')" not in javascript
+    assert 'id="crmSidebar"' in template
+    assert 'class="brand-compact" aria-hidden="true">IA</span>' in template
+    assert 'aria-controls="crmSidebar" aria-expanded="true"' in template
+    for label in (
+        "Accueil", "Calendrier", "Notifications", "Fil actu", "Pistes",
+        "Relances", "Inscrits", "Disqualifiés", "Contacts", "Modèles",
+    ):
+        assert f'data-label="{label}"' in template
+    assert "filename='crm_sidebar_state.js',v=asset_version" in template
+    assert "body.sidebar-collapsed .brand img{display:none}" in stylesheet
+    assert "body.sidebar-collapsed .brand-compact{display:grid" in stylesheet
+    assert "body.sidebar-collapsed .nav-count{position:absolute" in stylesheet
+    assert "content:attr(data-label)" in stylesheet
+    assert "body.sidebar-collapsed .side-user form{display:block}" in stylesheet
+    assert "body.sidebar-collapsed main{margin-left:80px}" in stylesheet
+    assert "@media(max-width:1000px)" in stylesheet
+    assert "STORAGE_KEY='crm-sidebar-collapsed'" in sidebar_state
+
 
 def test_relaunch_template_is_available_for_every_formation():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -553,7 +631,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -578,7 +656,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -640,4 +718,4 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
