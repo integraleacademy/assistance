@@ -368,9 +368,14 @@ def test_existing_person_is_reused_for_cpf_folder(tmp_path, monkeypatch):
 
     assert result["created_contacts"] == 0
     assert len(stored["crm_contacts"]) == 1
-    assert stored["crm_contacts"][0]["id"] == contact["id"]
-    assert stored["crm_contacts"][0]["cpf"] == "OUI"
-    assert stored["crm_contacts"][0]["origine"] == "Mon Compte Formation"
+    stored_contact = stored["crm_contacts"][0]
+    assert stored_contact["id"] == contact["id"]
+    assert stored_contact["cpf"] == "OUI"
+    assert stored_contact["origine"] == "Ajout manuel"
+    assert any(
+        item.get("origin") == "Mon Compte Formation"
+        for item in stored_contact["source_history"]
+    )
 
 
 def test_existing_cpf_link_repairs_missing_origin(tmp_path, monkeypatch):
@@ -552,6 +557,19 @@ def test_contact_list_exposes_ft_instruction_even_with_scheduled_appointment_sta
         f"/api/crm/contacts/{contact['id']}",
         json={"statut": "RDV programmé"},
     )
+    paris_now = application.datetime.datetime.now(
+        application.pytz.timezone("Europe/Paris")
+    )
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [{
+        "id": "future-ft-appointment",
+        "contact_id": contact["id"],
+        "status": "active",
+        "start_time": (
+            paris_now + application.datetime.timedelta(days=1)
+        ).astimezone(application.pytz.UTC).isoformat(),
+    }]
+    application.save_data(data)
     ft_folder = folder("ft-folder", "lina@example.test")
     ft_folder["state"] = "waitingAcceptation"
     ft_folder["history"] = [{"state": "waitingAcceptation"}]
@@ -678,6 +696,7 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
 
     # WEDOF revient à « En attente d'acceptation du candidat » après le refus FT.
     ft_folder["state"] = "validated"
+    ft_folder.pop("history")
     application._wedof_store_page([ft_folder], application.load_data(), 1)
     refused = next(
         row for row in client.get("/api/crm/contacts").get_json()
@@ -686,6 +705,71 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
 
     assert refused["statut_demande_financement_ft"] == "refusee"
     assert refused["statut_secondaire"] == "Financement FT refusé"
+
+
+def test_cached_financer_refusal_repairs_stale_automatic_timeline(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    ft_folder = folder(
+        "ft-cached-refusal", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    ft_folder["state"] = "waitingAcceptation"
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    ft_folder["state"] = "validated"
+    ft_folder["history"] = {
+        "validatedDate": "2026-08-23T13:30:00+00:00",
+        "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
+        "refusedByOrganismDate": None,
+    }
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    # Reproduit une fiche restée sur l'ancien état alors que le cache WEDOF
+    # contient déjà le refus : la synchronisation suivante doit la réparer
+    # sans dépendre de l'ouverture de la fiche.
+    data = application.load_data()
+    stale = next(row for row in data["crm_contacts"] if row["id"] == contact["id"])
+    stale["statut_demande_financement_ft"] = "en_cours_instruction"
+    stale["statut_secondaire"] = "Financement FT en cours"
+    stale["statut"] = "Nouveaux"
+    stale["relances"] = []
+    stale["relance_date"] = ""
+    stale["activities"] = [
+        activity for activity in stale.get("activities", [])
+        if activity.get("title") != "Relance France Travail planifiée"
+    ]
+    application.save_data(data)
+    notification_count = len(data["crm_notifications"])
+
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+    repaired = next(
+        row for row in application.load_data()["crm_contacts"]
+        if row["id"] == contact["id"]
+    )
+
+    assert repaired["statut_demande_financement_ft"] == "refusee"
+    assert repaired["statut_secondaire"] == "Financement FT refusé"
+    assert repaired["statut"] == "A relancer"
+    scheduled = [
+        item for item in repaired["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert len(scheduled) == 1
+    assert scheduled[0]["source"] == "wedof_ft_refusal"
+    assert repaired["relance_date"] == scheduled[0]["scheduled_date"]
+    assert len(application.load_data()["crm_notifications"]) == notification_count
+
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+    replayed = next(
+        row for row in application.load_data()["crm_contacts"]
+        if row["id"] == contact["id"]
+    )
+    assert len([
+        item for item in replayed["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
 
 
 def test_explicit_ft_rejection_without_history_updates_secondary_timeline(
@@ -733,6 +817,17 @@ def test_ft_status_reads_nested_wedof_history():
     assert application._wedof_france_travail_status({
         "registrationState": "validated",
         "events": {"changes": [{"details": {"state": "validated"}}]},
+    }) == ""
+    assert application._wedof_france_travail_status({
+        "state": "validated",
+        "history": {
+            "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
+            "refusedByOrganismDate": None,
+        },
+    }) == "refusee"
+    assert application._wedof_france_travail_status({
+        "state": "validated",
+        "history": {"refusedByFinancerDate": None},
     }) == ""
 
 
@@ -942,6 +1037,30 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     }
     assert all("Lina MARTIN" in item["text"] for item in alerts)
 
+    refused_contact = next(
+        item for item in stored["crm_contacts"]
+        if item["id"] == contact["id"]
+    )
+    today = application.datetime.datetime.now(
+        application.pytz.timezone("Europe/Paris")
+    ).date().isoformat()
+    scheduled_relances = [
+        item for item in refused_contact["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert refused_contact["statut"] == "A relancer"
+    assert refused_contact["statut_secondaire"] == "Financement FT refusé"
+    assert refused_contact["relance_date"] == today
+    assert len(scheduled_relances) == 1
+    assert scheduled_relances[0]["scheduled_date"] == today
+    assert scheduled_relances[0]["source"] == "wedof_ft_refusal"
+    assert scheduled_relances[0]["created_by"] == "France Travail"
+    assert scheduled_relances[0]["source_wedof_folder_id"] == "ft-notification"
+    assert len([
+        item for item in refused_contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 1
+
     own_alerts = [
         item for item in client.get("/api/crm/notifications").get_json()
         if item.get("kind") == "funding_refused"
@@ -952,10 +1071,23 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
+    replayed = application.load_data()
     assert len([
-        item for item in application.load_data()["crm_notifications"]
+        item for item in replayed["crm_notifications"]
         if item.get("kind") == "funding_refused"
     ]) == len(application.USERS)
+    replayed_contact = next(
+        item for item in replayed["crm_contacts"]
+        if item["id"] == contact["id"]
+    )
+    assert len([
+        item for item in replayed_contact["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
+    assert len([
+        item for item in replayed_contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 1
 
     ft_folder["state"] = "waitingAcceptation"
     application._wedof_store_page(
@@ -965,10 +1097,23 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
+    final_data = application.load_data()
     assert len([
-        item for item in application.load_data()["crm_notifications"]
+        item for item in final_data["crm_notifications"]
         if item.get("kind") == "funding_refused"
     ]) == 2 * len(application.USERS)
+    final_contact = next(
+        item for item in final_data["crm_contacts"]
+        if item["id"] == contact["id"]
+    )
+    assert len([
+        item for item in final_contact["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
+    assert len([
+        item for item in final_contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 1
 
 
 def test_ft_refusal_notification_ui_is_system_only():

@@ -165,9 +165,15 @@ def test_registration_queues_only_real_conversion_activity(monkeypatch):
     app = FakeApp()
     persisted = {"crm_contacts": []}
 
-    def activity(contact, kind, title, detail="", preview=""):
+    def activity(contact, kind, title, detail="", preview="", **options):
         contact.setdefault("activities", []).append(
-            {"kind": kind, "title": title, "detail": detail, "preview": preview}
+            {
+                "kind": kind,
+                "title": title,
+                "detail": detail,
+                "preview": preview,
+                **options,
+            }
         )
 
     def load_data():
@@ -190,8 +196,14 @@ def test_registration_queues_only_real_conversion_activity(monkeypatch):
     mod.register_google_ads_offline_conversions(legacy)
 
     contact = {"id": "1", "statut": "Converti", "activities": []}
-    legacy._crm_activity(contact, "email", "E-mail envoyé")
+    legacy._crm_activity(
+        contact,
+        "email",
+        "E-mail envoyé",
+        author_name="France Travail",
+    )
     assert mod.GOOGLE_ADS_STATE_KEY not in contact
+    assert contact["activities"][0]["author_name"] == "France Travail"
 
     legacy._crm_activity(contact, "statut", "Statut : Converti")
     assert contact[mod.GOOGLE_ADS_STATE_KEY]["status"] == "pending"

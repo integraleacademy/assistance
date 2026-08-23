@@ -9179,11 +9179,20 @@ def _crm_contact_detail_response(contact, data=None, regulatory_snapshot=None,
     return response
 
 
-def _crm_activity(contact, kind, title, detail="", preview=""):
+def _crm_activity(
+        contact, kind, title, detail="", preview="", author_name=None):
+    if not author_name:
+        try:
+            author_name = (current_user() or {}).get(
+                "name", "Équipe Intégrale"
+            )
+        except RuntimeError:
+            # Les synchronisations WEDOF s'exécutent aussi hors requête Flask.
+            author_name = "Équipe Intégrale"
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
         "title": title, "detail": detail, "preview": preview,
-        "author": (current_user() or {}).get("name", "Équipe Intégrale"),
+        "author": author_name,
     })
 
 
@@ -9315,11 +9324,16 @@ def _crm_ensure_relances(contact):
     return changed
 
 
-def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_relance_id=None):
+def _crm_schedule_relance(
+        contact, scheduled_date, *, source="manual", parent_relance_id=None,
+        actor_name=None):
     """Schedule one next action while preserving previous attempts as history."""
     scheduled_date = _crm_relance_date(scheduled_date)
     _crm_ensure_relances(contact)
     now = _crm_now()
+    actor_name = actor_name or (current_user() or {}).get(
+        "name", "Équipe Intégrale"
+    )
     active = [item for item in contact["relances"] if item.get("status") == "scheduled"]
 
     if not scheduled_date:
@@ -9327,7 +9341,7 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
             item.update({
                 "status": "cancelled",
                 "completed_at": now,
-                "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+                "completed_by": actor_name,
             })
         _crm_refresh_relance_date(contact)
         return None, bool(active)
@@ -9340,7 +9354,7 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
         item.update({
             "status": "reprogrammed",
             "completed_at": now,
-            "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+            "completed_by": actor_name,
         })
         changed = True
 
@@ -9350,7 +9364,7 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
             "scheduled_date": scheduled_date,
             "status": "scheduled",
             "created_at": now,
-            "created_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+            "created_by": actor_name,
             "source": source,
         }
         if parent_relance_id:
@@ -9361,6 +9375,59 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
     if _crm_refresh_relance_date(contact):
         changed = True
     return same, changed
+
+
+def _crm_schedule_ft_refusal_relance(
+        contact, *, source, stable_id="", now=None):
+    """Planifie la relance du jour lors d'un nouveau refus France Travail."""
+    if contact.get("statut") in {"Converti", "Disqualifié"}:
+        return None, False
+
+    paris = pytz.timezone("Europe/Paris")
+    current = now or datetime.datetime.now(paris)
+    if current.tzinfo is None:
+        current = paris.localize(current)
+    else:
+        current = current.astimezone(paris)
+    scheduled_date = current.date().isoformat()
+    actor_name = "France Travail" if source == "wedof_ft_refusal" else None
+    planned, changed = _crm_schedule_relance(
+        contact,
+        scheduled_date,
+        source=source,
+        actor_name=actor_name,
+    )
+
+    metadata = {
+        "funding_refusal_source": source,
+    }
+    if stable_id:
+        metadata["source_wedof_folder_id"] = str(stable_id)
+    for key, value in metadata.items():
+        if planned.get(key) != value:
+            planned[key] = value
+            changed = True
+
+    if contact.get("statut") != "A relancer":
+        contact["statut"] = "A relancer"
+        changed = True
+
+    if changed:
+        display_date = current.strftime("%d/%m/%Y")
+        detail = (
+            "Financement France Travail refusé. "
+            f"Relance prévue le {display_date}."
+        )
+        if stable_id:
+            detail += f" Dossier WEDOF : {stable_id}."
+        _crm_activity(
+            contact,
+            "relance",
+            "Relance France Travail planifiée",
+            detail,
+            author_name=actor_name,
+        )
+    return planned, changed
 
 
 def _crm_complete_relance(contact, relance, status, *, note=""):
@@ -11103,15 +11170,49 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                         match_method=excluded.match_method,
                         updated_at=excluded.updated_at
                 """, (contact["id"], stable_id, attendee_id, method, now, now))
-                current_funding_status = _wedof_france_travail_status(folder)
+                previous_status_evidence = previous_funding_status
+                if (not previous_status_evidence
+                        and contact.get("statut_demande_financement_ft_source")
+                        != CRM_MANUAL_STATUS_SOURCE
+                        and str(contact.get("source_wedof_folder_id") or "")
+                        == stable_id):
+                    # Répare aussi les dossiers dont le retour à ``validated``
+                    # a déjà remplacé le payload d'instruction dans le cache.
+                    previous_status_evidence = str(
+                        contact.get("statut_demande_financement_ft") or ""
+                    ).strip()
+                current_funding_status = _wedof_france_travail_status(
+                    folder, previous_status=previous_status_evidence,
+                )
                 if (current_funding_status == "refusee"
-                        and previous_funding_status != "refusee"
                         and contact.get("statut_demande_financement_ft_source")
                         != CRM_MANUAL_STATUS_SOURCE):
-                    _crm_add_funding_refusal_notifications(
-                        data, contact, stable_id,
+                    stored_funding_was_refused = (
+                        contact.get("statut_demande_financement_ft")
+                        == "refusee"
                     )
-                    crm_changed = True
+                    if not stored_funding_was_refused:
+                        contact["statut_demande_financement_ft"] = "refusee"
+                        crm_changed = True
+                    if (contact.get("statut_secondaire_source")
+                            != CRM_MANUAL_STATUS_SOURCE
+                            and contact.get("statut_secondaire")
+                            != "Financement FT refusé"):
+                        contact["statut_secondaire"] = "Financement FT refusé"
+                        crm_changed = True
+                    if previous_funding_status != "refusee":
+                        _crm_add_funding_refusal_notifications(
+                            data, contact, stable_id,
+                        )
+                        crm_changed = True
+                    if (not stored_funding_was_refused
+                            or previous_funding_status != "refusee"):
+                        _, relance_changed = _crm_schedule_ft_refusal_relance(
+                            contact,
+                            source="wedof_ft_refusal",
+                            stable_id=stable_id,
+                        )
+                        crm_changed = relance_changed or crm_changed
                 linked_folders += 1
         state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
         if total_count is not None:
@@ -11330,7 +11431,7 @@ def _wedof_contact_resources(contact_id, data=None):
     return resources
 
 
-def _wedof_france_travail_status(payload):
+def _wedof_france_travail_status(payload, previous_status=""):
     """Déduit le statut FT d'un dossier WEDOF sans dépendre du statut commercial."""
     normalize = lambda value: re.sub(r"[^a-z0-9]", "", unicodedata.normalize(
         "NFD", str(value or "")).encode("ascii", "ignore").decode().lower())
@@ -11341,22 +11442,39 @@ def _wedof_france_travail_status(payload):
     def history_values(value):
         if isinstance(value, dict):
             for key, nested in value.items():
+                if nested in (None, "", False) or nested in ([], {}):
+                    continue
                 yield key
                 yield from history_values(nested)
         elif isinstance(value, (list, tuple)):
             for nested in value:
                 yield from history_values(nested)
-        else:
+        elif value not in (None, "", False):
             yield value
+
+    history_markers = {
+        normalize(value) for value in history_values(history) if value
+    }
 
     # Un refus explicite est une preuve suffisante en lui-même, y compris
     # lorsque WEDOF ne fournit pas l'historique de l'instruction FT.
     if re.search(r"refus|reject", state):
         return "refusee"
-    had_instruction = state == "waitingacceptation" or any(
-        "waitingacceptation" in normalize(value)
-        for value in history_values(history)
+    history_has_financer_refusal = any(
+        ("financer" in marker or "financeur" in marker)
+        and ("refus" in marker or "reject" in marker)
+        for marker in history_markers
     )
+    had_instruction = (
+        str(previous_status or "").strip() == "en_cours_instruction"
+        or state == "waitingacceptation"
+        or any(
+            "waitingacceptation" in marker
+            for marker in history_markers
+        )
+    )
+    if state == "validated" and history_has_financer_refusal:
+        return "refusee"
     if not had_instruction:
         return ""
     if re.search(r"cancel|annul|abandon", state):
@@ -13173,6 +13291,9 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         payload["qualification_flag"] = qualification_flag
     old_status = contact.get("statut")
     old_secondary_status = contact.get("statut_secondaire", "")
+    old_funding_status = str(
+        contact.get("statut_demande_financement_ft") or ""
+    ).strip()
     old_origin = contact.get("origine", "")
     old_qualification_flag = str(contact.get("qualification_flag") or "")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
@@ -13241,6 +13362,14 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         elif old_secondary_status in {"Financement FT en cours", "Financement FT refusé"}:
             contact["statut_secondaire"] = ""
             contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
+    new_funding_status = str(
+        contact.get("statut_demande_financement_ft") or ""
+    ).strip()
+    if new_funding_status == "refusee" and old_funding_status != "refusee":
+        _crm_schedule_ft_refusal_relance(
+            contact,
+            source="manual_ft_refusal",
+        )
     secondary_statuses = {"", *CRM_SECONDARY_STATUSES}
     if contact.get("statut_secondaire", "") not in secondary_statuses:
         contact["statut_secondaire"] = ""
