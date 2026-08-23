@@ -7137,7 +7137,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"
+CRM_ASSET_VERSION = "20260823-disqualification-history-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -13010,8 +13010,28 @@ def crm_contacts_bulk():
             if contact.get("statut") != "Disqualifié":
                 contact["disqualification_reason"] = ""
                 contact["disqualification_detail"] = ""
-            _crm_activity(contact, "statut", f"Statut : {contact['statut']}",
-                          f"Ancien statut : {old_status} · action groupée")
+            if contact.get("statut") == "Disqualifié":
+                activity_details = [
+                    f"Ancien statut : {old_status or 'Non renseigné'}",
+                    f"Motif : {contact.get('disqualification_reason')}",
+                ]
+                if contact.get("disqualification_detail"):
+                    activity_details.append(
+                        f"Précisions : {contact['disqualification_detail']}"
+                    )
+                if contact.get("reactivation_date"):
+                    activity_details.append(
+                        f"Réactivation prévue : {contact['reactivation_date']}"
+                    )
+                _crm_activity(
+                    contact, "statut", "Piste disqualifiée",
+                    " · ".join(activity_details),
+                )
+            else:
+                _crm_activity(
+                    contact, "statut", f"Statut : {contact['statut']}",
+                    f"Ancien statut : {old_status} · action groupée",
+                )
         contact["updated_at"] = _crm_now()
         updated.append(_crm_contact_response(contact, data))
     save_data(data)
