@@ -7124,13 +7124,13 @@ def lookup_hebergement():
 
 
 CRM_STATUSES = [
-    "Nouveaux", "Blocage", "RDV programmé", "En cours", "Prochain RDV inscription",
+    "Nouveaux", "Blocage", "RDV programmé", "En cours",
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
 CRM_SECONDARY_STATUSES = (
-    "Financement FT en cours", "Financement FT refusé", "Def MOB", "POEI",
-    "C2P en cours", "Marché FT",
+    "Prochain RDV inscription", "Financement FT en cours",
+    "Financement FT refusé", "Def MOB", "POEI", "C2P en cours", "Marché FT",
 )
 CRM_SECONDARY_ONLY_STATUSES = set(CRM_SECONDARY_STATUSES) | {"Session FT"}
 CRM_FT_SECONDARY_BY_STATUS = {
@@ -7142,7 +7142,17 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-pistes-completeness-1"
+CRM_ASSET_VERSION = "20260823-timeline-registration-1"
+
+
+def _crm_migrate_registration_appointment_status(contact):
+    """Déplace sans perte l'ancienne étape principale vers la seconde timeline."""
+    if contact.get("statut") != "Prochain RDV inscription":
+        return False
+    contact["statut"] = "En cours"
+    if not contact.get("statut_secondaire"):
+        contact["statut_secondaire"] = "Prochain RDV inscription"
+    return True
 
 
 def _crm_statuses(data=None):
@@ -11940,6 +11950,8 @@ def _crm_prepare_contacts(data):
     automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
 
     for existing in data.get("crm_contacts", []):
+        if _crm_migrate_registration_appointment_status(existing):
+            changed = True
         if _crm_backfill_information_request_attribution(existing):
             changed = True
         if _crm_workspace_backfill(existing):
