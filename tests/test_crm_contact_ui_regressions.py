@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-left-save-toast-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
 
 def test_relaunch_template_is_available_for_every_formation():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -527,7 +527,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-left-save-toast-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -552,4 +552,66 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-left-save-toast-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
+
+def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    backend = APP_PY.read_text(encoding="utf-8")
+    refresh_helpers = javascript[
+        javascript.index("const CRM_REFRESH_INTERVAL_MS="):
+        javascript.index("function scheduleCrmRefresh")
+    ]
+    script = """
+const document={hidden:false};
+const C={section:'pistes',is_admin:true};
+const calls=[];
+const api=async(url,options)=>{calls.push([url,options]);return{}};
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+""" + refresh_helpers + """
+(async()=>{
+ assert(await refreshPipelineAppointments(1000)===true,'first Pistes refresh runs');
+ assert(calls.length===1,'one sync request');
+ assert(calls[0][0]==='/api/crm/calendly/sync','existing global sync endpoint');
+ assert(calls[0][1].method==='POST','sync uses POST');
+ assert(calls[0][1].timeout===60000,'sync has a bounded timeout');
+ assert(JSON.parse(calls[0][1].body).restart===true,'sync refreshes the latest Calendly batch');
+ assert(await refreshPipelineAppointments(2000)===false,'fresh sync is throttled');
+ assert(calls.length===1,'throttled refresh does not call the API');
+ assert(await refreshPipelineAppointments(301001)===true,'stale sync runs again');
+ assert(calls.length===2,'five-minute refresh calls the API again');
+ pipelineAppointmentRefreshInFlight=true;
+ assert(await refreshPipelineAppointments(700000)===false,'concurrent sync is prevented');
+ pipelineAppointmentRefreshInFlight=false;
+ lastPipelineAppointmentRefreshAt=0;
+ C.section='contacts';
+ assert(await refreshPipelineAppointments(800000)===false,'other CRM sections do not sync');
+ C.section='pistes';
+ C.is_admin=false;
+ assert(await refreshPipelineAppointments(800000)===false,'non-admin users do not call the protected endpoint');
+ C.is_admin=true;
+ document.hidden=true;
+ assert(await refreshPipelineAppointments(800000)===false,'hidden tabs do not sync');
+ console.log('CRM Pistes Calendly refresh: OK');
+})().catch(error=>{console.error(error);process.exit(1)});
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM Pistes Calendly refresh: OK" in completed.stdout
+    assert "if(!fiche&&C.section==='pistes')refreshCrmSnapshot()" in javascript
+    refresh_body = javascript[
+        javascript.index("async function refreshCrmSnapshot()"):
+        javascript.index("document.addEventListener('visibilitychange'")
+    ]
+    assert "if(!id)await refreshPipelineAppointments();" in refresh_body
+    assert refresh_body.index("if(!id)await refreshPipelineAppointments();") < refresh_body.index(
+        "const snapshot=await api("
+    )
+    assert "updateVisibleAppointmentData();" in refresh_body
+    assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
+    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend

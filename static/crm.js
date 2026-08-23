@@ -873,7 +873,7 @@ function render(){
  if(window.CRMWorkspace){page.innerHTML=CRMWorkspace.listPage(C.section,workspaceContext());CRMWorkspace.bindList(C.section,workspaceContext());return}
  page.innerHTML=listPage(C.section);bindList(C.section);bindRows();
 }
-async function init(){try{const snapshot=await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`);contacts=snapshot.contacts||[];templates=snapshot.templates||{email:[],sms:[]};formationSessions=snapshot.formation_sessions||{};notifications=snapshot.notifications||[];crmAppointments=snapshot.appointments||[];crmSettings=snapshot.settings||{};updateNotificationCount();const fiche=new URLSearchParams(location.search).get('fiche');fiche?await showContact(fiche):render()}catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}}
+async function init(){try{const snapshot=await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`);contacts=snapshot.contacts||[];templates=snapshot.templates||{email:[],sms:[]};formationSessions=snapshot.formation_sessions||{};notifications=snapshot.notifications||[];crmAppointments=snapshot.appointments||[];crmSettings=snapshot.settings||{};updateNotificationCount();const fiche=new URLSearchParams(location.search).get('fiche');fiche?await showContact(fiche):render();if(!fiche&&C.section==='pistes')refreshCrmSnapshot()}catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}}
 function developmentSupportModal(){
  modal('Support développement',`<form id="developmentSupportForm" class="fields"><div class="field"><label for="developmentSupportPlatform">Plateforme concernée</label><select id="developmentSupportPlatform" name="platform" required><option value="CRM">CRM</option><option value="Gestion stagiaires">GESTION STAGIAIRES</option><option value="Site internet officiel">SITE OFFICIEL</option></select></div><div class="field full"><label for="developmentSupportUrl">URL de la page concernée</label><input id="developmentSupportUrl" name="page_url" type="url" value="${esc(location.href)}" maxlength="2000" required></div><div class="field full"><label for="developmentSupportActions">Actions à mener</label><textarea id="developmentSupportActions" name="actions" rows="8" minlength="20" maxlength="6000" placeholder="Décrivez précisément toutes les modifications et le résultat attendu." required></textarea><small>La demande sera reformulée par l’IA, puis le texte original sera aussi conservé dans Notion.</small></div></form>`,`<button class="btn" id="developmentSupportCancel">Annuler</button><button class="btn blue" id="developmentSupportSubmit">ENVOYER</button>`,'development-support-modal');
  const form=document.querySelector('#developmentSupportForm'),cancel=document.querySelector('#developmentSupportCancel'),submit=document.querySelector('#developmentSupportSubmit');
@@ -907,7 +907,21 @@ globalSearch.onkeydown=e=>{if(e.key==='Enter'){C.section='contacts';history.push
 // Synchronisation collaborative légère : une seule requête à la fois, uniquement
 // lorsque l'onglet est visible. Un rechargement complet n'a lieu que si la liste
 // des contacts a réellement changé.
-const CRM_REFRESH_INTERVAL_MS=60000;let crmRefreshTimer=null,crmRefreshInFlight=false;
+const CRM_REFRESH_INTERVAL_MS=60000,CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000;
+let crmRefreshTimer=null,crmRefreshInFlight=false,lastPipelineAppointmentRefreshAt=0,pipelineAppointmentRefreshInFlight=false;
+async function refreshPipelineAppointments(now=Date.now()){
+ if(C.section!=='pistes'||!C.is_admin||document.hidden||pipelineAppointmentRefreshInFlight)return false;
+ if(lastPipelineAppointmentRefreshAt&&now-lastPipelineAppointmentRefreshAt<CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS)return false;
+ pipelineAppointmentRefreshInFlight=true;
+ lastPipelineAppointmentRefreshAt=now;
+ try{
+  await api('/api/crm/calendly/sync',{method:'POST',body:JSON.stringify({restart:true}),timeout:60000});
+  return true;
+ }catch(error){
+  if(error.status!==409)console.warn('Actualisation Calendly de la liste impossible',error);
+  return false;
+ }finally{pipelineAppointmentRefreshInFlight=false}
+}
 function scheduleCrmRefresh(delay=CRM_REFRESH_INTERVAL_MS){clearTimeout(crmRefreshTimer);crmRefreshTimer=setTimeout(refreshCrmSnapshot,delay)}
 async function refreshCrmSnapshot(){
  if(document.hidden||crmRefreshInFlight){scheduleCrmRefresh();return}
@@ -915,6 +929,7 @@ async function refreshCrmSnapshot(){
  try{
   const id=new URLSearchParams(location.search).get('fiche');
   const suffix=id?`?contact_id=${encodeURIComponent(id)}`:'';
+  if(!id)await refreshPipelineAppointments();
   const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
   const updates=snapshot.contacts||[];
   const hasAppointments=Array.isArray(snapshot.appointments);
