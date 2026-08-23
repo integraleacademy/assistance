@@ -8,8 +8,8 @@ const end = source.indexOf('function wedofCategory', start);
 assert.ok(start >= 0 && end > start, 'Bloc WEDOF introuvable');
 
 const context = {};
-vm.runInNewContext(`${source.slice(start, end)}\nglobalThis.helpers={wedofLabel,wedofValue,wedofFranceTravailStatus,wedofMainStatusLabel};`, context);
-const {wedofLabel, wedofValue, wedofFranceTravailStatus, wedofMainStatusLabel} = context.helpers;
+vm.runInNewContext(`${source.slice(start, end)}\nglobalThis.helpers={wedofLabel,wedofValue,wedofFranceTravailStatus,wedofMainStatusLabel,wedofLatestResource,wedofFundingSummary};`, context);
+const {wedofLabel, wedofValue, wedofFranceTravailStatus, wedofMainStatusLabel, wedofLatestResource, wedofFundingSummary} = context.helpers;
 
 const rejectedWithoutTitulaireSuite = 'Refusé sans suite par le titulaire';
 assert.equal(wedofLabel('Rejected Without Titulaire Suite'), rejectedWithoutTitulaireSuite);
@@ -33,5 +33,23 @@ assert.equal(wedofFranceTravailStatus({status:'rejected'}), 'refusee');
 assert.equal(wedofFranceTravailStatus({registrationState:'validated',events:{changes:[{details:{registrationState:'waitingAcceptation'}}]}}), 'refusee');
 assert.equal(wedofFranceTravailStatus({registrationState:'validated',events:{changes:[{details:{state:'validated'}}]}}), '');
 assert.equal(wedofFranceTravailStatus({state:'cancelled',history:{waitingAcceptationDate:'2026-08-11'}}), 'annulee');
+assert.equal(wedofFranceTravailStatus({state:'accepted',history:{refusedByFinancerDate:'2026-08-23'}}), 'refusee');
+assert.equal(wedofFranceTravailStatus({state:'validated',history:{refusedByFinancerDate:null}}), '');
 
-console.log('WEDOF France Travail status mapping: OK');
+const williamFolders = [
+  {stable_id:'40609198536',payload:{state:'serviceDoneValidated',createdAt:'2025-11-25T07:41:00+01:00'}},
+  {stable_id:'401684627811',payload:{state:'validated',createdAt:'2026-08-19T13:55:00+02:00',history:{refusedByFinancerDate:'2026-08-23T13:35:00+02:00'}}},
+];
+assert.equal(wedofLatestResource(williamFolders).stable_id, '401684627811');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(wedofFundingSummary(williamFolders))),
+  {latest:williamFolders[1],cpf:'validated',ft:'refusee'},
+);
+
+const serverMarkedLatest = [
+  {stable_id:'newer-sync-but-historical',payload:{state:'serviceDoneValidated',createdAt:'2026-08-20'}},
+  {stable_id:'server-authoritative',is_latest:true,payload:{state:'validated',createdAt:'2026-08-19'}},
+];
+assert.equal(wedofLatestResource(serverMarkedLatest).stable_id, 'server-authoritative');
+
+console.log('WEDOF France Travail status mapping: OK · latest folder only');
