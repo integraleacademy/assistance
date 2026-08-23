@@ -99,6 +99,22 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     assert with_follow_up["statut"] == "RDV programmé"
     assert with_follow_up["relance_date"] == "2099-09-03"
 
+    replayed = signed_webhook(
+        client,
+        monkeypatch,
+        "invitee.created",
+        calendly_payload(),
+    )
+    assert replayed.status_code == 200
+    after_replay = client.get(
+        f"/api/crm/contacts/{contact['id']}"
+    ).get_json()
+    assert after_replay["statut"] == "RDV programmé"
+    assert after_replay["relance_date"] == "2099-09-03"
+    assert [
+        item["status"] for item in after_replay["relances"]
+    ] == ["scheduled"]
+
     canceled_payload = calendly_payload(status="canceled")
     canceled_payload["cancellation"] = {"reason": "Indisponible"}
     canceled = signed_webhook(client, monkeypatch, "invitee.canceled", canceled_payload)
