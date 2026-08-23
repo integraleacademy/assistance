@@ -342,6 +342,42 @@ def test_answered_followup_is_sent_only_when_the_call_is_logged(tmp_path, monkey
     assert client.get(f"/api/crm/contacts/{contact['id']}").get_json()["activities"][0]["detail"] == "Échange concluant."
 
 
+def test_cached_appointment_replaces_follow_up_when_later_linked_to_contact(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"statut": "A relancer", "relance_date": "2099-08-10"},
+    )
+
+    cached = signed_webhook(
+        client,
+        monkeypatch,
+        "invitee.created",
+        calendly_payload(email="rattachement@example.com"),
+    )
+    assert cached.status_code == 200
+    assert cached.get_json()["contact_id"] is None
+
+    linked = client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "rattachement@example.com"},
+    ).get_json()
+
+    assert linked["statut"] == "RDV programmé"
+    assert linked["relance_date"] == ""
+    assert linked["relances"][0]["status"] == "cancelled"
+    appointments = client.get(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments"
+    ).get_json()["appointments"]
+    assert len(appointments) == 1
+    assert appointments[0]["contact_id"] == contact["id"]
+
+
 def test_webhook_keeps_an_unmatched_appointment_without_creating_a_lead(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
 
