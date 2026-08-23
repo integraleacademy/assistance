@@ -132,6 +132,8 @@ def test_cnaps_form_requires_no_card_email_and_docs_aut(tmp_path, monkeypatch):
 
 
 def test_cnaps_form_frontend_contract():
+    with open(application.app.root_path + "/app.py", encoding="utf-8") as source:
+        backend = source.read()
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         script = source.read()
     with open(application.app.root_path + "/static/crm.css", encoding="utf-8") as source:
@@ -143,5 +145,7 @@ def test_cnaps_form_frontend_contract():
     assert "Formulaire envoyé le ${sentOn}" in script
     assert "day:'2-digit',month:'2-digit',year:'numeric'" in script
     assert "cnapsFormButton.disabled=false" in script
+    assert "const cnapsPayload=Object.fromEntries(new FormData(form))" in script
+    assert '@login_required\n@_crm_serialized\ndef crm_send_cnaps_form' in backend
     assert ".cnaps-form-send.is-sent" in styles
     assert "background:var(--green)" in styles
