@@ -569,8 +569,8 @@ body.sidebar-collapsed main{margin-left:80px}
 /* Responsive transversal : shell, navigation, zones tactiles et contenus larges. */
 .sidebar-backdrop{display:none}
 img,svg,video,canvas,iframe{max-width:100%}
-.table-wrap,.timeline,.pipeline-board,.workspace-saved{max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
-.table-wrap:focus-visible,.timeline:focus-visible,.pipeline-board:focus-visible{outline:3px solid #356ae633;outline-offset:2px}
+.table-wrap,.timeline-scroll,.timeline,.pipeline-board,.workspace-saved{max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+.table-wrap:focus-visible,.timeline-scroll:focus-visible,.timeline:focus-visible,.pipeline-board:focus-visible{outline:3px solid #356ae633;outline-offset:2px}
 @media(max-width:1000px){
  body.sidebar-mobile-open{overflow:hidden;touch-action:none}
  .sidebar{width:min(320px,86vw);height:100dvh;max-height:100dvh;overflow-y:auto;overscroll-behavior:contain;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom));box-shadow:18px 0 50px #07142838}
@@ -607,8 +607,8 @@ img,svg,video,canvas,iframe{max-width:100%}
  .contact-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
  .contact-actions>.btn,.contact-actions>button{min-height:44px;white-space:normal}
  .actions-menu{position:fixed;inset:auto 8px max(8px,env(safe-area-inset-bottom));width:auto;max-height:70dvh;overflow:auto}
- .timeline{scroll-snap-type:x proximity;padding-bottom:14px}
- .timeline button{min-height:44px;scroll-snap-align:start}
+ .timeline-scroll{scroll-snap-type:x proximity;padding-bottom:6px}
+ .pipeline-step{min-height:64px;scroll-snap-align:start}
  .table-wrap{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
  .table-wrap table{width:max-content;min-width:100%}
  th,td{white-space:nowrap}
