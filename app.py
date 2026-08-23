@@ -8541,7 +8541,12 @@ def _crm_upsert_calendly_appointment(
 
     old_status = (contact.get("statut") or "Nouveaux") if contact else ""
     status_changed = bool(
-        contact and _crm_sync_contact_calendly_status(data, contact)
+        contact
+        and _crm_sync_contact_calendly_status(
+            data,
+            contact,
+            prefer_appointment=appointment_became_active,
+        )
     )
     pipeline_changed = relance_changed or status_changed
     if (
@@ -8603,15 +8608,17 @@ def _crm_calendly_appointment_is_today_or_future(appointment, now=None):
     return appointment_at.date() >= reference.date()
 
 
-def _crm_sync_contact_calendly_status(data, contact, now=None):
+def _crm_sync_contact_calendly_status(
+        data, contact, now=None, *, prefer_appointment=False):
     """Align the pipeline with current/future appointments and open follow-ups.
 
     The appointment rule is deliberately based on the calendar day in Paris:
     an appointment earlier today remains visible, but one from a previous day
     does not. Final statuses always win. The ingest path cancels the follow-ups
     that existed when a booking becomes active; this reconciler never repeats
-    that side effect on later reads or synchronizations. An appointment marked
-    ``no_answer`` no longer wins over its J+2 follow-up. A stale
+    that side effect on later reads or synchronizations. Later follow-ups keep
+    their historical priority unless the appointment has just become active.
+    An appointment marked ``no_answer`` no longer wins over its J+2 follow-up. A stale
     ``RDV programmé`` without an eligible appointment or follow-up is repaired
     to ``En cours``.
     """
@@ -8624,7 +8631,10 @@ def _crm_sync_contact_calendly_status(data, contact, now=None):
     if current_status in {"Disqualifié", "Converti"}:
         return False
     if has_active_appointment:
-        if current_status == "RDV programmé":
+        if (
+            current_status == "RDV programmé"
+            or (current_status == "A relancer" and not prefer_appointment)
+        ):
             return False
         next_status = "RDV programmé"
     elif contact.get("relance_date"):
