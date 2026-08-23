@@ -73,7 +73,7 @@ def test_cnaps_form_sends_named_template_and_persists_success(tmp_path, monkeypa
     assert stored["cnaps_form_sent_at"] == "2026-08-23T18:30:00+00:00"
     assert template["usage_count"] == 2
     assert template["last_used_at"] == stored["cnaps_form_sent_at"]
-    assert [activity["titre"] for activity in stored["activities"]].count(
+    assert [activity["title"] for activity in stored["activities"]].count(
         "E-mail « Docs AUT » envoyé"
     ) == 2
 
@@ -90,7 +90,7 @@ def test_cnaps_form_failure_never_persists_a_false_success(tmp_path, monkeypatch
     stored = next(item for item in data["crm_contacts"] if item["id"] == contact["id"])
     assert "cnaps_form_sent_at" not in stored
     assert not any(
-        activity.get("titre") == "E-mail « Docs AUT » envoyé"
+        activity.get("title") == "E-mail « Docs AUT » envoyé"
         for activity in stored.get("activities", [])
     )
     assert data["crm_email_templates"][0]["usage_count"] == 0
