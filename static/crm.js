@@ -73,9 +73,41 @@ const contactPipelineStatusMarkup=c=>{
  return `<div class="pipeline-status-stack">${contactPipelineStatuses(c).map(badge).join(' ')}${appointmentDate?`<small class="pipeline-appointment-date">${esc(appointmentDate)}</small>`:''}${relanceMarkup}</div>`;
 };
 const pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])];
-const timelineButtons=(statuses,current,kind)=>statuses.map((status,index)=>`<button type="button" data-${kind}-step="${esc(status)}" class="${status===current?'current':index<statuses.indexOf(current)?'done':''}">${esc(status)}</button>`).join('');
-const secondaryTimelineRow=current=>`<div class="timeline-row"><div class="timeline timeline-secondary">${timelineButtons(SECONDARY_STATUSES,current,'secondary')}</div><button type="button" class="timeline-toggle timeline-remove" id="removeSecondaryTimeline" aria-label="Retirer la deuxième timeline" title="Retirer la deuxième timeline">−</button></div>`;
-const contactTimelines=c=>`<div class="timelines"><div class="timeline-row"><div class="timeline timeline-primary">${timelineButtons(S,c.statut,'primary')}</div>${c.statut_secondaire?'':`<button type="button" class="timeline-toggle timeline-add" id="addSecondaryTimeline" aria-label="Ajouter une deuxième timeline" title="Ajouter une deuxième timeline">+</button>`}</div>${c.statut_secondaire?secondaryTimelineRow(c.statut_secondaire):''}</div>`;
+function timelineProgressDetails(statuses,current){
+ const index=statuses.indexOf(current),total=statuses.length;
+ return{index,total,progress:index<0||total<2?0:Math.round(index/(total-1)*100),summary:index<0?'Aucune étape sélectionnée':`Étape ${index+1} sur ${total}`};
+}
+const timelineButtons=(statuses,current,kind)=>{
+ const details=timelineProgressDetails(statuses,current);
+ return statuses.map((status,index)=>{
+  const state=index===details.index?'current':details.index>=0&&index<details.index?'done':'upcoming';
+  const stateLabel=state==='current'?'étape actuelle':state==='done'?'étape terminée':'étape à venir';
+  return `<button type="button" data-${kind}-step="${esc(status)}" class="pipeline-step ${state}"${state==='current'?' aria-current="step"':''} aria-label="${esc(status)} — ${stateLabel}"><span class="pipeline-step-marker" aria-hidden="true">${state==='done'?'✓':index+1}</span><span class="pipeline-step-label">${esc(status)}</span></button>`;
+ }).join('');
+};
+const timelineTrack=(statuses,current,kind,label)=>{
+ const details=timelineProgressDetails(statuses,current),columns=Math.max(statuses.length,1);
+ return `<section class="pipeline-stage-card pipeline-stage-${kind}" data-timeline-kind="${kind}"><header class="pipeline-stage-head"><span class="pipeline-stage-title"><i aria-hidden="true"></i>${esc(label)}</span><small data-timeline-summary>${details.summary}</small></header><div class="timeline-scroll" tabindex="0" role="group" aria-label="${esc(label)}"><div class="timeline timeline-${kind}" style="--pipeline-columns:${columns}"><span class="pipeline-line" aria-hidden="true"><span style="width:${details.progress}%"></span></span>${timelineButtons(statuses,current,kind)}</div></div></section>`;
+};
+function syncTimelineState(timeline,statuses,current){
+ if(!timeline)return;
+ const details=timelineProgressDetails(statuses,current);
+ timeline.querySelector('.pipeline-line span')?.style.setProperty('width',`${details.progress}%`);
+ const summary=timeline.closest('.pipeline-stage-card')?.querySelector('[data-timeline-summary]');
+ if(summary)summary.textContent=details.summary;
+ timeline.querySelectorAll('.pipeline-step').forEach((step,index)=>{
+  const state=index===details.index?'current':details.index>=0&&index<details.index?'done':'upcoming',label=step.dataset.primaryStep||step.dataset.secondaryStep||'';
+  step.classList.toggle('current',state==='current');
+  step.classList.toggle('done',state==='done');
+  step.classList.toggle('upcoming',state==='upcoming');
+  if(state==='current')step.setAttribute('aria-current','step');else step.removeAttribute('aria-current');
+  step.setAttribute('aria-label',`${label} — ${state==='current'?'étape actuelle':state==='done'?'étape terminée':'étape à venir'}`);
+  const marker=step.querySelector('.pipeline-step-marker');
+  if(marker)marker.textContent=state==='done'?'✓':String(index+1);
+ });
+}
+const secondaryTimelineRow=current=>`<div class="timeline-row">${timelineTrack(SECONDARY_STATUSES,current,'secondary','Suivi complémentaire')}<button type="button" class="timeline-toggle timeline-remove" id="removeSecondaryTimeline" aria-label="Retirer la deuxième timeline" title="Retirer la deuxième timeline">−</button></div>`;
+const contactTimelines=c=>`<div class="timelines"><div class="timeline-row">${timelineTrack(S,c.statut,'primary','Pipeline commercial')}${c.statut_secondaire?'':`<button type="button" class="timeline-toggle timeline-add" id="addSecondaryTimeline" aria-label="Ajouter une deuxième timeline" title="Ajouter une deuxième timeline">+</button>`}</div>${c.statut_secondaire?secondaryTimelineRow(c.statut_secondaire):''}</div>`;
 function updateLeadCount(){const count=contacts.filter(c=>c.statut==='Nouveaux').length;if(leadCount)leadCount.textContent=count}
 const fmt=d=>d?new Intl.DateTimeFormat('fr-FR',{dateStyle:'medium',timeStyle:'short'}).format(new Date(d)):'—';
 const mentionAliases=()=>new Map((C.team||[]).map(member=>[String(member.first_name||'').toLocaleLowerCase('fr-FR'),member]));
@@ -443,7 +475,7 @@ function bindContact(c,initialTab='contactInfoTab'){
 	  const regulatorySection=document.querySelector('[data-show=reglementaire]');if(regulatorySection)regulatorySection.addEventListener('toggle',()=>{if(regulatorySection.open)loadReglementaireOnce()});
   refreshSessions();
   form.oninput=e=>{conditional();if(['formation','desp_type'].includes(e.target.name)){c.formation=form.formation.value;c.desp_type=form.desp_type.value;refreshSessions()}if(e.target.name==='lieu'){c.lieu=form.lieu.value;refreshSessions()}saveState.textContent='Enregistrement…';clearTimeout(timer);timer=setTimeout(async()=>{try{const previousSecondary=c.statut_secondaire||'',payload=Object.fromEntries(new FormData(form));if(payload.statut_demande_financement_ft===String(c.statut_demande_financement_ft||''))delete payload.statut_demande_financement_ft;const updated=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify(payload)});Object.assign(c,updated);if((c.statut_secondaire||'')!==previousSecondary){showContact(c.id);toast('Deuxième timeline mise à jour automatiquement');return}form.prenom.value=c.prenom;form.nom.value=c.nom;saveState.textContent='✓ Enregistré';renderIntegrationScore(c);const savedRemainder=form.querySelector('[name=reste_a_charge_perso]:checked');if(!c.reste_a_charge_perso&&savedRemainder)savedRemainder.checked=false;conditional();if(['cpf','financement_ft','statut_demande_financement_ft'].includes(e.target.name))refreshFundingBadges(c);if(['mail','telephone'].includes(e.target.name))scheduleContactIntegrations(c)}catch(e){saveState.textContent='Erreur';toast(e.message,true)}},550)};
-  document.querySelectorAll('[data-primary-step]').forEach(b=>b.onclick=async()=>{if(b.dataset.primaryStep==='A relancer')return relaunchModal(c);if(b.dataset.primaryStep==='Converti')return openRegistrationDraft(c);const next=b.dataset.primaryStep;if(next===c.statut)return;statusSaveControls().forEach(step=>step.disabled=true);beginStatusSave('Enregistrement du statut…');try{Object.assign(c,await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut:next})}));document.querySelectorAll('[data-primary-step]').forEach((step,i)=>{step.classList.toggle('current',step.dataset.primaryStep===c.statut);step.classList.toggle('done',i<S.indexOf(c.statut))});const statusBadge=document.querySelector('.contact-title-line .badge');if(statusBadge)statusBadge.outerHTML=badge(c.statut);finishStatusSave('Statut enregistré')}catch(e){finishStatusSave(e.message,true)}finally{statusSaveControls().forEach(step=>step.disabled=false)}});
+  document.querySelectorAll('[data-primary-step]').forEach(b=>b.onclick=async()=>{if(b.dataset.primaryStep==='A relancer')return relaunchModal(c);if(b.dataset.primaryStep==='Converti')return openRegistrationDraft(c);const next=b.dataset.primaryStep;if(next===c.statut)return;statusSaveControls().forEach(step=>step.disabled=true);beginStatusSave('Enregistrement du statut…');try{Object.assign(c,await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut:next})}));syncTimelineState(document.querySelector('.timeline-primary'),S,c.statut);const statusBadge=document.querySelector('.contact-title-line .badge');if(statusBadge)statusBadge.outerHTML=badge(c.statut);finishStatusSave('Statut enregistré')}catch(e){finishStatusSave(e.message,true)}finally{statusSaveControls().forEach(step=>step.disabled=false)}});
   const saveSecondaryStatus=async next=>{statusSaveControls().forEach(button=>button.disabled=true);beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…');try{const updated=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut_secondaire:next})});Object.assign(c,updated);mergeContactInStore(c.id,updated);showContact(c.id);finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')}catch(e){statusSaveControls().forEach(button=>button.disabled=false);finishStatusSave(e.message,true)}};
   const bindSecondaryTimeline=()=>{document.querySelectorAll('[data-secondary-step]').forEach(button=>button.onclick=()=>saveSecondaryStatus(button.dataset.secondaryStep));const removeSecondary=document.querySelector('#removeSecondaryTimeline');if(removeSecondary)removeSecondary.onclick=()=>c.statut_secondaire?saveSecondaryStatus(''):showContact(c.id)};
   bindSecondaryTimeline();
