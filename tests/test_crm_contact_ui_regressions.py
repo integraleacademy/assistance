@@ -992,7 +992,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-activity-tab-order-1" in application
+    assert "20260823-reminder-period-filters-1" in application
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
