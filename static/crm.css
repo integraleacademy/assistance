@@ -375,12 +375,50 @@ details.form-section>summary>h3{display:flex;align-items:center;gap:9px;margin:0
 /* Fiche candidat orientée action et synchronisations silencieuses. */
 :root{--muted:#5f6d82;--line:#d9e0ea}
 body{font-size:15px}
-.sidebar-collapse{border:1px solid #dbe2ed;background:#fff;color:#42536d;border-radius:9px;width:34px;height:34px;cursor:pointer}
-body.sidebar-collapsed .sidebar{width:76px;padding-inline:10px}
-body.sidebar-collapsed .brand img{width:48px;object-fit:cover;object-position:left}
-body.sidebar-collapsed .sidebar nav a{font-size:0;justify-content:center}
-body.sidebar-collapsed .sidebar nav p,.sidebar-collapsed .side-user div,.sidebar-collapsed .side-user form{display:none}
-body.sidebar-collapsed main{margin-left:76px}
+.sidebar,.sidebar .brand,main{transition:width .2s ease,margin-left .2s ease,padding .2s ease}
+.brand-compact{display:none}
+.sidebar-collapse{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid #dbe2ed;border-radius:10px;background:#fff;color:#42536d;font:800 22px/1 Manrope;cursor:pointer;transition:background .16s ease,color .16s ease,border-color .16s ease}
+.sidebar-collapse:hover,.sidebar-collapse:focus-visible{border-color:#b8c8e2;background:#edf3ff;color:var(--blue);outline:2px solid #a9c3f4;outline-offset:2px}
+body.sidebar-collapsed .sidebar{width:80px;padding:20px 10px}
+body.sidebar-collapsed .brand{justify-content:center;height:52px;padding:0 0 18px}
+body.sidebar-collapsed .brand img{display:none}
+body.sidebar-collapsed .brand-compact{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:linear-gradient(145deg,#f9c74f,#eaa424);color:#102b58;box-shadow:0 8px 22px #071a3c55;font:900 15px Manrope;letter-spacing:-.03em}
+body.sidebar-collapsed .sidebar nav{min-width:0}
+body.sidebar-collapsed .sidebar nav p{height:1px;margin:14px 9px 10px;background:#ffffff1f;color:transparent;font-size:0}
+body.sidebar-collapsed .sidebar nav a{position:relative;justify-content:center;gap:0;height:44px;margin:4px 0;padding:0;border-radius:12px;font-size:0}
+body.sidebar-collapsed .sidebar nav a i{width:24px;font-size:21px}
+body.sidebar-collapsed .sidebar nav a .nav-icon{width:21px;height:21px}
+body.sidebar-collapsed .sidebar nav a.active{background:#ffffff18;box-shadow:none}
+body.sidebar-collapsed .sidebar nav a.active::before{content:'';position:absolute;left:-10px;top:10px;width:3px;height:24px;border-radius:0 4px 4px 0;background:#f4b83d}
+body.sidebar-collapsed .sidebar nav a::after{content:attr(data-label);position:absolute;left:calc(100% + 12px);top:50%;z-index:40;padding:7px 10px;border-radius:8px;background:#10233f;color:#fff;box-shadow:0 8px 24px #10233f38;font:700 12px 'DM Sans';letter-spacing:0;line-height:1;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%);transition:opacity .14s ease,transform .14s ease}
+body.sidebar-collapsed .sidebar nav a:hover::after,body.sidebar-collapsed .sidebar nav a:focus-visible::after{opacity:1;transform:translate(0,-50%)}
+body.sidebar-collapsed .sidebar nav a:focus-visible{outline:2px solid #8bb8ff;outline-offset:2px}
+body.sidebar-collapsed .nav-count{position:absolute;top:2px;right:1px;display:grid;place-items:center;min-width:18px;height:18px;margin:0;padding:0 4px;border:2px solid #102b58;border-radius:10px;font-size:9px;line-height:1}
+body.sidebar-collapsed .nav-count[hidden]{display:none}
+body.sidebar-collapsed .side-user{flex-direction:column;justify-content:center;gap:8px;padding:16px 0 0}
+body.sidebar-collapsed .side-user>span{width:38px;height:38px;border-radius:11px}
+body.sidebar-collapsed .side-user div{display:none}
+body.sidebar-collapsed .side-user form{display:block}
+body.sidebar-collapsed .side-user button{width:38px;height:34px}
+body.sidebar-collapsed main{margin-left:80px}
+@media(max-width:1000px){
+ .sidebar-collapse{display:none}
+ body.sidebar-collapsed .sidebar{width:248px;padding:24px 16px}
+ body.sidebar-collapsed .brand{justify-content:flex-start;height:auto;padding:0 8px 25px}
+ body.sidebar-collapsed .brand img{display:block;width:100%;max-width:190px;height:auto;object-fit:contain}
+ body.sidebar-collapsed .brand-compact{display:none}
+ body.sidebar-collapsed .sidebar nav p{height:auto;margin:20px 12px 9px;background:transparent;color:#7186a8;font-size:10px}
+ body.sidebar-collapsed .sidebar nav a{justify-content:flex-start;gap:12px;height:auto;margin:3px 0;padding:11px 12px;border-radius:9px;font-size:14px}
+ body.sidebar-collapsed .sidebar nav a i{width:20px;font-size:19px}
+ body.sidebar-collapsed .sidebar nav a .nav-icon{width:19px;height:19px}
+ body.sidebar-collapsed .sidebar nav a::before,body.sidebar-collapsed .sidebar nav a::after{display:none}
+ body.sidebar-collapsed .nav-count{position:static;display:inline-block;min-width:0;height:auto;margin-left:auto;padding:2px 7px;border:0;border-radius:12px;font-size:11px;line-height:normal}
+ body.sidebar-collapsed .nav-count[hidden]{display:none}
+ body.sidebar-collapsed .side-user{flex-direction:row;justify-content:flex-start;gap:10px;padding:18px 8px 0}
+ body.sidebar-collapsed .side-user>span{width:34px;height:34px;border-radius:9px}
+ body.sidebar-collapsed .side-user div,body.sidebar-collapsed .side-user form{display:block}
+ body.sidebar-collapsed main{margin-left:0}
+}
 .admin-tools{position:relative;margin-left:auto}.admin-tools+.primary{margin-left:0}
 .admin-tools-menu{display:none;position:absolute;right:0;top:calc(100% + 8px);min-width:210px;padding:7px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 14px 35px #17203322;z-index:30}.admin-tools-menu.open{display:grid}.admin-tools-menu button{border:0;background:#fff;padding:10px;text-align:left;border-radius:7px;color:var(--ink);font:600 13px 'DM Sans';cursor:pointer}.admin-tools-menu button:hover{background:#edf3ff;color:var(--blue)}
 .admin-sms-credits{display:grid;gap:3px;margin-bottom:5px;padding:11px 10px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px}.admin-sms-credits b{color:var(--green);font:800 14px Manrope}.admin-sms-credits small{max-width:250px;color:var(--muted);font-size:9px;line-height:1.4}.admin-sms-credits b.error{max-width:230px;color:var(--red);font:600 11px 'DM Sans';line-height:1.35}
@@ -493,3 +531,5 @@ body.sidebar-collapsed main{margin-left:76px}
 .crm-score-cell{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .global-search-contact-name{display:flex;align-items:center;gap:6px;min-width:0}
 .global-search-contact-name b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+@media(prefers-reduced-motion:reduce){.sidebar,.sidebar .brand,main,.sidebar-collapse,body.sidebar-collapsed .sidebar nav a::after{transition:none}}
