@@ -88,7 +88,9 @@ def test_compact_api_exposes_tracking_without_the_full_form():
         backend.index("def _crm_contact_summaries_payload")
     ]
 
-    assert "for key in CRM_GOOGLE_ADS_TRACKING_KEYS" in summary
+    assert "for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS" in summary
+    assert "key: bool(contact.get(key) or form.get(key))" in summary
+    assert "key not in CRM_GOOGLE_ADS_IDENTIFIER_KEYS" in summary
     assert 'summary["google_ads_tracking"] = google_ads_tracking' in summary
     assert 'summary["formulaire"]' not in summary
     assert 'CRM_ASSET_VERSION = "20260823-sales-dashboard-1"' in backend
