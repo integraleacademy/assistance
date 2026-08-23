@@ -43,6 +43,16 @@ const nextProgrammedAppointmentDate=c=>{
  if(!contactHasPipelineStatus(c,'RDV programmé'))return'';
  return window.CRMAppointmentState.dateLabel(c.id,crmAppointments);
 };
+function relanceStatusDetails(c,today=parisDateKey(new Date())){
+ if(!contactPipelineStatuses(c).includes('A relancer'))return null;
+ const value=String(c.relance_date||'').trim(),parts=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if(parts){
+  const parsed=new Date(`${value}T12:00:00Z`);
+  if(!Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===value&&value>=today)return{tone:'scheduled',label:`Relance prévue le ${parts[3]}/${parts[2]}/${parts[1]}`};
+ }
+ return{tone:'missing',label:'Aucune relance prévue'};
+}
+function contactRelanceStatusMarkup(c){const details=relanceStatusDetails(c);return details?`<small class="pipeline-relance-date ${details.tone==='missing'?'missing':''}">${esc(details.label)}</small>`:''}
 function replaceContactAppointments(contactId,appointments){
  crmAppointments=window.CRMAppointmentState.replaceContact(crmAppointments,contactId,appointments);
  const contact=contactInStore(contactId);
@@ -59,8 +69,8 @@ function updateVisibleAppointmentData(){
  });
 }
 const contactPipelineStatusMarkup=c=>{
- const appointmentDate=nextProgrammedAppointmentDate(c);
- return `<div class="pipeline-status-stack">${contactPipelineStatuses(c).map(badge).join(' ')}${appointmentDate?`<small class="pipeline-appointment-date">${esc(appointmentDate)}</small>`:''}</div>`;
+ const appointmentDate=nextProgrammedAppointmentDate(c),relanceMarkup=contactRelanceStatusMarkup(c);
+ return `<div class="pipeline-status-stack">${contactPipelineStatuses(c).map(badge).join(' ')}${appointmentDate?`<small class="pipeline-appointment-date">${esc(appointmentDate)}</small>`:''}${relanceMarkup}</div>`;
 };
 const pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])];
 const timelineButtons=(statuses,current,kind)=>statuses.map((status,index)=>`<button type="button" data-${kind}-step="${esc(status)}" class="${status===current?'current':index<statuses.indexOf(current)?'done':''}">${esc(status)}</button>`).join('');
