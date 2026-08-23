@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -637,7 +637,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -662,7 +662,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -724,7 +724,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -809,7 +809,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -851,5 +851,55 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-sidebar-favicon-1" in application
+    assert "20260823-pistes-completeness-1" in application
     assert "20260823-mobile-responsive-1" not in application
+
+def test_pistes_replaces_location_column_with_shared_completeness():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+    stylesheet = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
+    application = APP_PY.read_text(encoding="utf-8")
+    helpers = workspace[
+        workspace.index("const normalize=value=>"):
+        workspace.index("const hasContact=contact=>")
+    ]
+    script = helpers + r\"\"\"
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+const base={
+ prenom:'Ada',nom:'Lovelace',telephone:'0600000000',mail:'ada@example.test',
+ formation:'SSIAP 1',lieu:'Paris',dates_formation:'Septembre',origine:'Site internet',
+ statut:'Converti',cpf:'Non',identite_creation:'Non',financement_ft:'Non',
+ statut_demande_financement_ft:'non_demandee',inscrit_ft:'Non'
+};
+assert(contactCompleteness({})===0,'an empty historical record is deterministic');
+assert(contactCompleteness(base)===100,'a complete standard record reaches 100 percent');
+const desp={...base,formation:'DESP'};
+assert(contactCompleteness(desp)<100,'DESP requires its conditional journey');
+assert(contactCompleteness({...desp,desp_type:'VAE'})===100,'DESP journey completes the record');
+const cpf={...base,cpf:'Oui'};
+assert(contactCompleteness(cpf)<100,'CPF amount is conditional');
+assert(contactCompleteness({...cpf,cpf_montant:'1200'})===100,'CPF amount completes the record');
+console.log('CRM Pistes completeness: OK');
+\"\"\"
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM Pistes completeness: OK" in completed.stdout
+    assert "function leadCompletenessValue(contact)" in javascript
+    assert "window.CRMWorkspace?.contactCompleteness?.(contact)" in javascript
+    assert 'role=\"progressbar\"' in javascript
+    assert 'aria-valuenow=\"${percent}\"' in javascript
+    assert "showCompleteness?'COMPLÉTUDE':'LIEU'" in javascript
+    assert "showCompleteness?leadCompletenessCell(c):esc(c.lieu)" in javascript
+    assert "crm-list-location" in javascript
+    assert "showCompleteness:isLeads" in javascript
+    assert "CRMWorkspace={listPage" in workspace
+    assert "contactCompleteness,contactCompletenessDetails" in workspace
+    assert ".workspace-completeness" in stylesheet
+    assert ".crm-list-completeness" in stylesheet
+    assert 'CRM_ASSET_VERSION = \"20260823-pistes-completeness-1\"' in application
