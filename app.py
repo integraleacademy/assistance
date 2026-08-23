@@ -11473,7 +11473,10 @@ def _wedof_france_travail_status(payload, previous_status=""):
             for marker in history_markers
         )
     )
-    if state == "validated" and history_has_financer_refusal:
+    # Le statut commercial du dossier peut ensuite redevenir ``accepted``
+    # lorsque le candidat le valide de nouveau. La preuve de refus du financeur
+    # reste néanmoins valable pour la seconde timeline de ce même dossier.
+    if history_has_financer_refusal:
         return "refusee"
     if not had_instruction:
         return ""
