@@ -368,9 +368,14 @@ def test_existing_person_is_reused_for_cpf_folder(tmp_path, monkeypatch):
 
     assert result["created_contacts"] == 0
     assert len(stored["crm_contacts"]) == 1
-    assert stored["crm_contacts"][0]["id"] == contact["id"]
-    assert stored["crm_contacts"][0]["cpf"] == "OUI"
-    assert stored["crm_contacts"][0]["origine"] == "Mon Compte Formation"
+    stored_contact = stored["crm_contacts"][0]
+    assert stored_contact["id"] == contact["id"]
+    assert stored_contact["cpf"] == "OUI"
+    assert stored_contact["origine"] == "Ajout manuel"
+    assert any(
+        item.get("origin") == "Mon Compte Formation"
+        for item in stored_contact["source_history"]
+    )
 
 
 def test_existing_cpf_link_repairs_missing_origin(tmp_path, monkeypatch):
@@ -552,6 +557,19 @@ def test_contact_list_exposes_ft_instruction_even_with_scheduled_appointment_sta
         f"/api/crm/contacts/{contact['id']}",
         json={"statut": "RDV programmé"},
     )
+    paris_now = application.datetime.datetime.now(
+        application.pytz.timezone("Europe/Paris")
+    )
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [{
+        "id": "future-ft-appointment",
+        "contact_id": contact["id"],
+        "status": "active",
+        "start_time": (
+            paris_now + application.datetime.timedelta(days=1)
+        ).astimezone(application.pytz.UTC).isoformat(),
+    }]
+    application.save_data(data)
     ft_folder = folder("ft-folder", "lina@example.test")
     ft_folder["state"] = "waitingAcceptation"
     ft_folder["history"] = [{"state": "waitingAcceptation"}]
