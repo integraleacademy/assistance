@@ -2071,18 +2071,13 @@ def _crm_create_or_match_abandoned_form_contact(data, record, fields, now_str):
         _crm_activity(
             matched, "inbound_request", "Formulaire abandonné détecté", detail,
         )
-        history = matched.setdefault("source_history", [])
-        if not any(
-            item.get("source") == ABANDONED_DEMANDE_SOURCE
-            and item.get("external_id") == external_id
-            for item in history
-        ):
-            history.append({
-                "origin": ABANDONED_FORM_LABEL,
-                "source": ABANDONED_DEMANDE_SOURCE,
-                "external_id": external_id,
-                "date": now,
-            })
+        _crm_record_origin(
+            matched,
+            ABANDONED_FORM_LABEL,
+            source=ABANDONED_DEMANDE_SOURCE,
+            external_id=external_id,
+            date=now,
+        )
     if matched:
         record["crm_abandoned_contact_id"] = matched.get("id")
         record["crm_abandoned_created_at"] = (
@@ -8969,6 +8964,27 @@ def _crm_record_origin(contact, origin, *, source="", external_id="",
             ),
         }
 
+    # Historical imports and repeated webhooks may contain several entries
+    # for the same visible origin. Collapse them while retaining the earliest
+    # position and enriching it with any context found later.
+    deduplicated = []
+    by_origin = {}
+    for item in history:
+        item_origin = origin_for(item)
+        marker = _crm_origin_key(item_origin)
+        if not marker:
+            continue
+        if marker not in by_origin:
+            item["origin"] = item_origin
+            by_origin[marker] = item
+            deduplicated.append(item)
+            continue
+        existing = by_origin[marker]
+        for key in ("source", "external_id", "campaign", "ad", "form", "date"):
+            if not existing.get(key) and item.get(key):
+                existing[key] = item[key]
+    history = deduplicated
+
     primary_index = next(
         (index for index, item in enumerate(history)
          if _crm_origin_key(origin_for(item)) == _crm_origin_key(current_primary)),
@@ -11009,11 +11025,16 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                     crm_changed = True
                 # Répare aussi les pistes créées ou rapprochées avant que leur
                 # provenance WEDOF soit enregistrée dans le CRM.
-                if (_wedof_is_cpf_folder(folder)
-                        and contact.get("origine") != "Mon Compte Formation"):
-                    contact["origine"] = "Mon Compte Formation"
-                    contact["updated_at"] = _crm_now()
-                    crm_changed = True
+                if _wedof_is_cpf_folder(folder):
+                    if _crm_record_origin(
+                        contact,
+                        "Mon Compte Formation",
+                        source="wedof_cpf",
+                        external_id=stable_id,
+                        date=_crm_now(),
+                    ):
+                        contact["updated_at"] = _crm_now()
+                        crm_changed = True
                 _, _, attendee_id = _wedof_attendee_values(folder)
                 db.execute("""
                     INSERT INTO wedof_contact_links
