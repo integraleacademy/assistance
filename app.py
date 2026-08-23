@@ -14604,6 +14604,46 @@ def _crm_email_html(body, contact):
     )
 
 
+@app.route("/api/crm/contacts/<contact_id>/cnaps-form", methods=["POST"])
+@login_required
+def crm_send_cnaps_form(contact_id):
+    """Send the configured Docs AUT e-mail and remember only successful deliveries."""
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    if str(contact.get("carte_pro") or "").strip().upper() != "NON":
+        return jsonify({"error": "Le formulaire CNAPS est réservé aux personnes sans carte professionnelle."}), 409
+    recipient = str(contact.get("mail") or "").strip()
+    if not recipient:
+        return jsonify({"error": "Renseignez l’adresse e-mail du contact avant l’envoi."}), 409
+    template = _crm_named_template(data, "email", "Docs AUT")
+    if not template:
+        return jsonify({"error": "Le modèle e-mail « Docs AUT » est introuvable dans /crm/modeles."}), 409
+
+    body = _crm_resolve_message_variables(
+        template.get("contenu"), contact, html=True, data_store=data
+    )
+    subject = _crm_resolve_message_variables(
+        template.get("sujet") or "Docs AUT", contact, data_store=data
+    )
+    branded = _crm_email_html(body, contact)
+    plain = html_module.unescape(
+        re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+    ).strip()
+    if not send_email_html(recipient, subject, plain, branded):
+        return jsonify({"error": "L’envoi du formulaire a échoué. Vérifiez la configuration et l’adresse e-mail."}), 502
+
+    sent_at = _crm_now()
+    _crm_activity(contact, "email", "E-mail « Docs AUT » envoyé", subject, branded)
+    template["usage_count"] = int(template.get("usage_count") or 0) + 1
+    template["last_used_at"] = sent_at
+    contact["cnaps_form_sent_at"] = sent_at
+    contact["updated_at"] = sent_at
+    save_data(data)
+    return jsonify(contact)
+
+
 @app.route("/api/crm/contacts/<contact_id>/message", methods=["POST"])
 @login_required
 def crm_send_message(contact_id):
