@@ -8520,8 +8520,13 @@ def _crm_upsert_calendly_appointment(
         or previous_start != appointment.get("start_time")
     )
     old_status = (contact.get("statut") or "Nouveaux") if contact else ""
-    status_changed = bool(contact and _crm_sync_contact_calendly_status(data, contact))
-    if contact and status_changed and record_activity:
+    pipeline_changed = bool(contact and _crm_sync_contact_calendly_status(data, contact))
+    if (
+        contact
+        and pipeline_changed
+        and record_activity
+        and old_status != contact.get("statut")
+    ):
         _crm_activity(
             contact,
             "statut",
@@ -8540,7 +8545,7 @@ def _crm_upsert_calendly_appointment(
             f"{_crm_calendly_datetime_label(appointment.get('start_time'))}"
         )
         _crm_activity(contact, "calendly", title, detail)
-    if contact and (status_changed or (record_activity and changed)):
+    if contact and (pipeline_changed or (record_activity and changed)):
         contact["updated_at"] = now
     return appointment, contact
 
@@ -8578,9 +8583,10 @@ def _crm_sync_contact_calendly_status(data, contact, now=None):
 
     The appointment rule is deliberately based on the calendar day in Paris:
     an appointment earlier today remains visible, but one from a previous day
-    does not. Final statuses always win and ``A relancer`` keeps its
-    historical priority. A stale ``RDV programmé`` without an eligible
-    appointment or follow-up is repaired to ``En cours``.
+    does not. Final statuses always win. A current/future appointment replaces
+    open follow-ups as the next action; the cancelled follow-ups remain in the
+    audit history. A stale ``RDV programmé`` without an eligible appointment
+    or follow-up is repaired to ``En cours``.
     """
     has_active_appointment = any(
         item.get("contact_id") == contact.get("id")
@@ -8591,8 +8597,16 @@ def _crm_sync_contact_calendly_status(data, contact, now=None):
     if current_status in {"Disqualifié", "Converti"}:
         return False
     if has_active_appointment:
-        if current_status in {"A relancer", "RDV programmé"}:
-            return False
+        _, relance_changed = _crm_schedule_relance(
+            contact,
+            "",
+            source="calendly_appointment",
+            actor_name="Calendly",
+        )
+        if current_status == "RDV programmé":
+            if relance_changed:
+                contact["updated_at"] = _crm_now()
+            return relance_changed
         next_status = "RDV programmé"
     elif contact.get("relance_date"):
         if current_status == "A relancer":
