@@ -9181,9 +9181,14 @@ def _crm_contact_detail_response(contact, data=None, regulatory_snapshot=None,
 
 def _crm_activity(
         contact, kind, title, detail="", preview="", author_name=None):
-    author_name = author_name or (current_user() or {}).get(
-        "name", "Équipe Intégrale"
-    )
+    if not author_name:
+        try:
+            author_name = (current_user() or {}).get(
+                "name", "Équipe Intégrale"
+            )
+        except RuntimeError:
+            # Les synchronisations WEDOF s'exécutent aussi hors requête Flask.
+            author_name = "Équipe Intégrale"
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
         "title": title, "detail": detail, "preview": preview,
