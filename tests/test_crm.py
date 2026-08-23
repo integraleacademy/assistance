@@ -983,7 +983,37 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
         json={"statut_demande_financement_ft": "refusee"},
     )
     assert refused.status_code == 200
-    assert refused.get_json()["statut_secondaire"] == "Financement FT refusé"
+    refused_contact = refused.get_json()
+    today = application.datetime.datetime.now(
+        application.pytz.timezone("Europe/Paris")
+    ).date().isoformat()
+    assert refused_contact["statut_secondaire"] == "Financement FT refusé"
+    assert refused_contact["statut"] == "A relancer"
+    assert refused_contact["relance_date"] == today
+    scheduled = [
+        item for item in refused_contact["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert len(scheduled) == 1
+    assert scheduled[0]["scheduled_date"] == today
+    assert scheduled[0]["source"] == "manual_ft_refusal"
+    assert any(
+        item.get("title") == "Relance France Travail planifiée"
+        for item in refused_contact["activities"]
+    )
+
+    replayed = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut_demande_financement_ft": "refusee"},
+    ).get_json()
+    assert len([
+        item for item in replayed["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
+    assert len([
+        item for item in replayed["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 1
 
 
 def test_primary_pipeline_places_in_progress_after_scheduled_appointment():
@@ -1071,6 +1101,14 @@ def test_manual_ft_refusal_updates_real_status_and_beats_stale_wedof_state(
     ).get_json()
     assert saved["statut_secondaire"] == "Financement FT refusé"
     assert saved["statut_demande_financement_ft"] == "refusee"
+    assert saved["statut"] == "A relancer"
+    assert saved["relance_date"] == application.datetime.datetime.now(
+        application.pytz.timezone("Europe/Paris")
+    ).date().isoformat()
+    assert len([
+        item for item in saved["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
 
     refreshed = next(
         contact for contact in c.get("/api/crm/contacts").get_json()
@@ -1078,6 +1116,77 @@ def test_manual_ft_refusal_updates_real_status_and_beats_stale_wedof_state(
     )
     assert refreshed["statut_secondaire"] == "Financement FT refusé"
     assert refreshed["statut_demande_financement_ft"] == "refusee"
+    assert refreshed["statut"] == "A relancer"
+    assert refreshed["relance_date"] == saved["relance_date"]
+
+
+@pytest.mark.parametrize("final_status", ["Converti", "Disqualifié"])
+def test_ft_refusal_does_not_reopen_a_finalized_contact(
+        tmp_path, monkeypatch, final_status):
+    c = client(tmp_path, monkeypatch)
+    created = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Final", "nom": final_status},
+    ).get_json()
+    finalized = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut": final_status},
+    )
+    assert finalized.status_code == 200
+
+    refused = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut_demande_financement_ft": "refusee"},
+    )
+    assert refused.status_code == 200
+    contact = refused.get_json()
+    assert contact["statut"] == final_status
+    assert contact["statut_secondaire"] == "Financement FT refusé"
+    assert not [
+        item for item in contact["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert not [
+        item for item in contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]
+
+
+def test_a_new_ft_refusal_on_another_day_reprograms_the_follow_up():
+    paris = application.pytz.timezone("Europe/Paris")
+    contact = {
+        "id": "ft-cycle",
+        "prenom": "Cycle",
+        "nom": "FT",
+        "statut": "Nouveaux",
+        "relances": [],
+        "activities": [],
+    }
+
+    first, first_changed = application._crm_schedule_ft_refusal_relance(
+        contact,
+        source="wedof_ft_refusal",
+        stable_id="folder-cycle",
+        now=paris.localize(application.datetime.datetime(2026, 8, 23, 10)),
+    )
+    second, second_changed = application._crm_schedule_ft_refusal_relance(
+        contact,
+        source="wedof_ft_refusal",
+        stable_id="folder-cycle",
+        now=paris.localize(application.datetime.datetime(2026, 8, 24, 10)),
+    )
+
+    assert first_changed is True
+    assert second_changed is True
+    assert first["status"] == "reprogrammed"
+    assert first["scheduled_date"] == "2026-08-23"
+    assert second["status"] == "scheduled"
+    assert second["scheduled_date"] == "2026-08-24"
+    assert contact["relance_date"] == "2026-08-24"
+    assert len([
+        item for item in contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 2
 
 
 def test_pipeline_table_displays_every_status_held_by_a_contact():
