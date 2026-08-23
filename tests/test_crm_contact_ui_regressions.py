@@ -1087,4 +1087,3 @@ def test_publications_are_grouped_below_the_activity_journal():
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
     assert ".contact-activity-panel .publications-card{margin-bottom:0}" in stylesheet
     assert 'CRM_ASSET_VERSION = "20260823-publications-activity-1"' in backend
-
