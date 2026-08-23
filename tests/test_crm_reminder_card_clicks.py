@@ -18,7 +18,7 @@ def test_reminder_cards_open_from_free_space_and_keyboard_without_hijacking_cont
         javascript.index("function remindersPage")
     ]
     script = f"""
-{{helpers}}
+{helpers}
 const opened=[];
 const ctx={{showContact:(id,tab)=>opened.push([id,tab])}};
 const contact={{id:'contact-42'}};
