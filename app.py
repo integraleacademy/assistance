@@ -11492,10 +11492,55 @@ def _wedof_france_travail_status(payload, previous_status=""):
     return "en_cours_instruction"
 
 
-def _wedof_effective_funding_status(statuses):
-    """Retient l'état du dossier WEDOF le plus récemment modifié."""
-    clean = [str(status or "").strip() for status in statuses if status]
-    return clean[0] if clean else ""
+def _wedof_folder_recency_key(payload, *, fallback="", stable_id=""):
+    """Classe un dossier par sa création, jamais par sa dernière modification."""
+    raw_created = next((payload.get(key) for key in (
+        "createdAt", "createdOn", "dateCreated", "creationDate",
+    ) if payload.get(key)), None)
+
+    def timestamp(value):
+        try:
+            parsed = datetime.datetime.fromisoformat(
+                str(value or "").strip().replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError):
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+        return parsed.timestamp()
+
+    created_at = timestamp(raw_created)
+    fallback_at = timestamp(fallback)
+    raw_id = str(stable_id or "")
+    numeric_id = int(raw_id) if raw_id.isdigit() else -1
+    return (
+        1 if created_at is not None else 0,
+        created_at if created_at is not None else (
+            fallback_at if fallback_at is not None else float("-inf")
+        ),
+        numeric_id,
+        raw_id,
+    )
+
+
+def _wedof_effective_funding_status(
+        statuses, *, fallback_status="", fallback_folder_id=""):
+    """Retient exclusivement l'état du dossier WEDOF créé le plus récemment."""
+    clean = [
+        (recency, str(status or "").strip(), str(stable_id or ""))
+        for recency, status, stable_id in statuses
+    ]
+    if not clean:
+        return ""
+    _, status, stable_id = max(clean, key=lambda item: item[0])
+    if (not status
+            and str(fallback_status or "").strip() == "refusee"
+            and (stable_id == str(fallback_folder_id or "")
+                 or len(clean) == 1)):
+        # Le payload ``validated`` peut perdre son historique après un refus.
+        # Conserver alors la dernière preuve persistée de ce même dossier.
+        return str(fallback_status or "").strip()
+    return status
 
 
 def _wedof_funding_statuses_by_contact(data):
@@ -11545,8 +11590,7 @@ def _wedof_funding_statuses_by_contact(data):
                    l.contact_id AS linked_contact_id
             FROM wedof_resources r LEFT JOIN wedof_contact_links l
               ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-            ORDER BY COALESCE(NULLIF(r.remote_date, ''), r.synced_at) DESC,
-                     r.synced_at DESC, r.stable_id DESC
+            ORDER BY r.synced_at DESC, r.stable_id DESC
         """)
 
         # Itérer sur le curseur plutôt que fetchall() garde un seul gros JSON
@@ -11561,20 +11605,32 @@ def _wedof_funding_statuses_by_contact(data):
                 )
                 continue
             funding_status = _wedof_france_travail_status(payload)
-            if not funding_status:
-                continue
+            recency = _wedof_folder_recency_key(
+                payload,
+                fallback=row["remote_date"] or row["synced_at"],
+                stable_id=row["stable_id"],
+            )
             target_ids = set()
             linked_contact_id = str(row["linked_contact_id"] or "")
             if linked_contact_id in known_contact_ids:
                 target_ids.add(linked_contact_id)
             target_ids.update(contacts_by_name.get(_wedof_attendee_name(payload), []))
             for target_id in target_ids:
-                statuses_by_contact.setdefault(target_id, []).append(funding_status)
+                statuses_by_contact.setdefault(target_id, []).append(
+                    (recency, funding_status, row["stable_id"])
+                )
 
-    result = {
-        contact_id: _wedof_effective_funding_status(statuses)
-        for contact_id, statuses in statuses_by_contact.items()
+    contacts_by_id = {
+        str(contact.get("id") or ""): contact for contact in contacts
     }
+    result = {}
+    for contact_id, statuses in statuses_by_contact.items():
+        contact = contacts_by_id.get(contact_id, {})
+        result[contact_id] = _wedof_effective_funding_status(
+            statuses,
+            fallback_status=contact.get("statut_demande_financement_ft"),
+            fallback_folder_id=contact.get("source_wedof_folder_id"),
+        )
     with _WEDOF_FUNDING_CACHE_LOCK:
         _WEDOF_FUNDING_CACHE_KEY = (_wedof_db_signature(), identity_signature)
         _WEDOF_FUNDING_CACHE_VALUE = dict(result)
@@ -12406,7 +12462,7 @@ def _crm_prepare_contacts(data):
 
         contact_id = str(existing.get("id") or "")
         live_funding_status = wedof_funding_statuses.get(contact_id)
-        if (live_funding_status
+        if (contact_id in wedof_funding_statuses
                 and existing.get("statut_demande_financement_ft_source")
                 != CRM_MANUAL_STATUS_SOURCE
                 and existing.get("statut_demande_financement_ft") != live_funding_status):
