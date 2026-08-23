@@ -6,6 +6,7 @@ ROOT = Path(__file__).parents[1]
 APP_PY = ROOT / "app.py"
 CRM_JS = ROOT / "static" / "crm.js"
 CRM_CSS = ROOT / "static" / "crm.css"
+CRM_ORIGIN_COMPAT = ROOT / "static" / "crm_dashboard_origins.js"
 
 
 def test_origin_dashboard_keeps_all_primary_rows_and_deduplicates_secondaries():
@@ -110,3 +111,11 @@ def test_sales_dashboard_panels_are_responsive_and_actionable():
     assert "@media(max-width:900px)" in stylesheet
     assert "@media(max-width:650px)" in stylesheet
     assert 'href="/crm/relances"' in CRM_JS.read_text(encoding="utf-8")
+
+
+def test_dashboard_origin_compatibility_asset_no_longer_monkey_patches_rendering():
+    compatibility = CRM_ORIGIN_COMPAT.read_text(encoding="utf-8")
+
+    assert "dashboard = function" not in compatibility
+    assert "dashboardKpi = function" not in compatibility
+    assert "intentionally kept for cached templates" in compatibility
