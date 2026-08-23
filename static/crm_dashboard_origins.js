@@ -2,13 +2,10 @@
   'use strict';
 
   const originalDashboard = dashboard;
-  const originalDashboardOrigin = dashboardOrigin;
   const originalDashboardKpi = dashboardKpi;
 
-  dashboardOrigin = function normalizedDashboardOrigin(contact) {
-    const gclid = String(contact.gclid || contact.formulaire?.gclid || '').trim();
-    return gclid ? 'Google Ads' : originalDashboardOrigin(contact);
-  };
+  // Origin ordering is now normalized by crmOriginLabels. A late GCLID is an
+  // attribution detail and must not replace an earlier primary origin.
 
   dashboardKpi = function dashboardKpiWithoutMeta(label, ...args) {
     return label === 'Pistes META' ? '' : originalDashboardKpi(label, ...args);
