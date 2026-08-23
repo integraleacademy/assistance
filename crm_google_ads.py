@@ -802,9 +802,14 @@ def register_google_ads_offline_conversions(legacy_app: Any) -> None:
             uploader_cache["uploader"] = GoogleAdsUploader(config)
         return uploader_cache["uploader"]
 
-    def patched_crm_activity(contact: MutableMapping[str, Any], kind: str, title: str,
-                             detail: str = "", preview: str = "") -> Any:
-        result = original_activity(contact, kind, title, detail, preview)
+    def patched_crm_activity(
+            contact: MutableMapping[str, Any], kind: str, title: str,
+            detail: str = "", preview: str = "", **activity_options: Any) -> Any:
+        # Keep this decorator transparent when the CRM activity API gains an
+        # optional audit field (for example the explicit WEDOF actor).
+        result = original_activity(
+            contact, kind, title, detail, preview, **activity_options
+        )
         if _is_conversion_activity(kind, title):
             try:
                 queue_google_ads_conversion(contact)
