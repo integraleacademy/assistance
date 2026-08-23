@@ -16,6 +16,7 @@ from crm_pipeline_status_consistency import (
 from crm_salesforce_anomaly_followups_import import (
     register_salesforce_anomaly_followups_import,
 )
+from crm_salesforce_chatter_import import register_salesforce_chatter_import
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_existing_repair import register_salesforce_existing_repair
 from crm_salesforce_genuine_new_guardrails import (
@@ -79,6 +80,14 @@ disable_legacy_salesforce_import(
 register_salesforce_existing_repair(
     app,
     migration_module=salesforce_migration,
+    current_user_fn=legacy_app.current_user,
+    load_data_fn=legacy_app.load_data,
+    login_required_fn=legacy_app.login_required,
+    save_data_fn=legacy_app.save_data,
+    transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
+)
+register_salesforce_chatter_import(
+    app,
     current_user_fn=legacy_app.current_user,
     load_data_fn=legacy_app.load_data,
     login_required_fn=legacy_app.login_required,
