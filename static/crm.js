@@ -60,11 +60,14 @@ function relanceStatusDetails(c,today=parisDateKey(new Date())){
  const value=String(c.relance_date||'').trim(),parts=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
  if(parts){
   const parsed=new Date(`${value}T12:00:00Z`);
-  if(!Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===value&&value>=today)return{tone:'scheduled',label:`Relance prévue le ${parts[3]}/${parts[2]}/${parts[1]}`};
+  if(!Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===value){
+   if(value<today)return{tone:'overdue',label:`Relance en retard depuis le ${parts[3]}/${parts[2]}/${parts[1]}`};
+   return{tone:'scheduled',label:`Relance prévue le ${parts[3]}/${parts[2]}/${parts[1]}`};
+  }
  }
  return{tone:'missing',label:'Aucune relance prévue'};
 }
-function contactRelanceStatusMarkup(c){const details=relanceStatusDetails(c);return details?`<small class="pipeline-relance-date ${details.tone==='missing'?'missing':''}">${esc(details.label)}</small>`:''}
+function contactRelanceStatusMarkup(c){const details=relanceStatusDetails(c);return details?`<small class="pipeline-relance-date ${details.tone==='scheduled'?'':details.tone}">${esc(details.label)}</small>`:''}
 function replaceContactAppointments(contactId,appointments){
  crmAppointments=window.CRMAppointmentState.replaceContact(crmAppointments,contactId,appointments);
  const contact=contactInStore(contactId);
