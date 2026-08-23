@@ -8396,6 +8396,7 @@ def _crm_calendly_relink_appointments(data, contact):
     if not email and not phone:
         return False
     changed = False
+    newly_linked_active = False
     for appointment in data.get("crm_calendly_appointments", []):
         assigned_contact = _crm_contact(data, appointment.get("contact_id"))
         same_email = bool(email) and (
@@ -8410,7 +8411,31 @@ def _crm_calendly_relink_appointments(data, contact):
         ):
             appointment["contact_id"] = contact.get("id")
             appointment["updated_at"] = _crm_now()
+            newly_linked_active = (
+                newly_linked_active
+                or _crm_calendly_appointment_is_today_or_future(appointment)
+            )
             changed = True
+
+    if (
+        newly_linked_active
+        and (contact.get("statut") or "Nouveaux")
+        not in {"Converti", "Disqualifié"}
+    ):
+        _, relance_changed = _crm_schedule_relance(
+            contact,
+            "",
+            source="calendly_appointment",
+            actor_name="Calendly",
+        )
+        status_changed = _crm_sync_contact_calendly_status(
+            data,
+            contact,
+            prefer_appointment=True,
+        )
+        if relance_changed and not status_changed:
+            contact["updated_at"] = _crm_now()
+        changed = changed or relance_changed or status_changed
     return changed
 
 
