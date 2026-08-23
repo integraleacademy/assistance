@@ -942,6 +942,30 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     }
     assert all("Lina MARTIN" in item["text"] for item in alerts)
 
+    refused_contact = next(
+        item for item in stored["crm_contacts"]
+        if item["id"] == contact["id"]
+    )
+    today = application.datetime.datetime.now(
+        application.pytz.timezone("Europe/Paris")
+    ).date().isoformat()
+    scheduled_relances = [
+        item for item in refused_contact["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert refused_contact["statut"] == "A relancer"
+    assert refused_contact["statut_secondaire"] == "Financement FT refusé"
+    assert refused_contact["relance_date"] == today
+    assert len(scheduled_relances) == 1
+    assert scheduled_relances[0]["scheduled_date"] == today
+    assert scheduled_relances[0]["source"] == "wedof_ft_refusal"
+    assert scheduled_relances[0]["created_by"] == "France Travail"
+    assert scheduled_relances[0]["source_wedof_folder_id"] == "ft-notification"
+    assert len([
+        item for item in refused_contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 1
+
     own_alerts = [
         item for item in client.get("/api/crm/notifications").get_json()
         if item.get("kind") == "funding_refused"
@@ -952,10 +976,23 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
+    replayed = application.load_data()
     assert len([
-        item for item in application.load_data()["crm_notifications"]
+        item for item in replayed["crm_notifications"]
         if item.get("kind") == "funding_refused"
     ]) == len(application.USERS)
+    replayed_contact = next(
+        item for item in replayed["crm_contacts"]
+        if item["id"] == contact["id"]
+    )
+    assert len([
+        item for item in replayed_contact["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
+    assert len([
+        item for item in replayed_contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 1
 
     ft_folder["state"] = "waitingAcceptation"
     application._wedof_store_page(
@@ -965,10 +1002,23 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
+    final_data = application.load_data()
     assert len([
-        item for item in application.load_data()["crm_notifications"]
+        item for item in final_data["crm_notifications"]
         if item.get("kind") == "funding_refused"
     ]) == 2 * len(application.USERS)
+    final_contact = next(
+        item for item in final_data["crm_contacts"]
+        if item["id"] == contact["id"]
+    )
+    assert len([
+        item for item in final_contact["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
+    assert len([
+        item for item in final_contact["activities"]
+        if item.get("title") == "Relance France Travail planifiée"
+    ]) == 1
 
 
 def test_ft_refusal_notification_ui_is_system_only():
