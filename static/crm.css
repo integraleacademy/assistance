@@ -533,3 +533,73 @@ body.sidebar-collapsed main{margin-left:80px}
 .global-search-contact-name b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 @media(prefers-reduced-motion:reduce){.sidebar,.sidebar .brand,main,.sidebar-collapse,body.sidebar-collapsed .sidebar nav a::after{transition:none}}
+
+
+/* Responsive transversal : shell, navigation, zones tactiles et contenus larges. */
+.sidebar-backdrop{display:none}
+img,svg,video,canvas,iframe{max-width:100%}
+.table-wrap,.timeline,.pipeline-board,.workspace-saved{max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+.table-wrap:focus-visible,.timeline:focus-visible,.pipeline-board:focus-visible{outline:3px solid #356ae633;outline-offset:2px}
+@media(max-width:1000px){
+ body.sidebar-mobile-open{overflow:hidden;touch-action:none}
+ .sidebar{width:min(320px,86vw);height:100dvh;max-height:100dvh;overflow-y:auto;overscroll-behavior:contain;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom));box-shadow:18px 0 50px #07142838}
+ .sidebar.open{transform:translateX(0)}
+ .sidebar-backdrop{position:fixed;inset:0;z-index:19;display:block;border:0;background:#0714288f;cursor:pointer}
+ .sidebar-backdrop[hidden]{display:none}
+ .sidebar-collapse{display:none}
+ .menu-toggle{display:grid;place-items:center;flex:none;min-width:44px;width:44px;height:44px;font-size:19px;cursor:pointer}
+}
+@media(max-width:650px){
+ main{width:100%;min-width:0;overflow-x:hidden}
+ header{position:relative;top:auto;height:auto;min-height:64px;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px}
+ header .search{display:flex;order:20;width:100%;min-width:0;padding:10px 12px}
+ header .search input{width:100%;min-width:0}
+ header .search kbd{display:none}
+ header .icon-btn{display:grid;place-items:center;flex:none;min-width:44px;width:44px;height:44px}
+ header .primary{flex:1 1 150px;min-height:44px;margin-left:0;padding:10px 12px}
+ header .admin-tools{position:static;flex:1 1 170px;min-width:0}
+ header .admin-tools>.btn{width:100%;min-height:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ header .admin-tools-menu{position:fixed;inset:64px 8px auto;width:auto;max-height:calc(100dvh - 76px);overflow:auto}
+ .page{min-width:0;padding:18px 12px max(24px,env(safe-area-inset-bottom))}
+ .page-title,.card-head,.contact-head{min-width:0;flex-wrap:wrap;gap:10px}
+ .page-title>div,.contact-head>div,.card-head>div{min-width:0}
+ .page-title h1,.contact-head h1{overflow-wrap:anywhere}
+ .page-title .btn,.page-title .primary{min-height:44px}
+ .card,.stat,.form-card,.table-card{max-width:100%;min-width:0}
+ .card-head,.card-body,.form-card,.feed{padding-left:14px;padding-right:14px}
+ .filters{align-items:stretch}
+ .filters>input,.filters>select,.filters>.btn,.filters>button{width:100%;min-width:0;min-height:44px}
+ .filters input{min-width:0}
+ .fields{gap:13px}
+ .field input,.field select,.field textarea,.btn,button,input,select{max-width:100%}
+ .field input,.field select,.filters input,.filters select{min-height:44px}
+ .contact-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .contact-actions>.btn,.contact-actions>button{min-height:44px;white-space:normal}
+ .actions-menu{position:fixed;inset:auto 8px max(8px,env(safe-area-inset-bottom));width:auto;max-height:70dvh;overflow:auto}
+ .timeline{scroll-snap-type:x proximity;padding-bottom:14px}
+ .timeline button{min-height:44px;scroll-snap-align:start}
+ .table-wrap{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+ .table-wrap table{width:max-content;min-width:100%}
+ th,td{white-space:nowrap}
+ td .person,td .person small{white-space:normal}
+ .modal-bg{place-items:end center;padding:8px;padding-bottom:max(8px,env(safe-area-inset-bottom))}
+ .modal{display:flex;flex-direction:column;width:100%;max-width:none;max-height:calc(100dvh - 16px);overflow:hidden;border-radius:16px 16px 10px 10px}
+ .modal-head{flex:none;padding:15px 16px}
+ .modal-head h2{min-width:0;font-size:17px;overflow-wrap:anywhere}
+ .modal-head .close{display:grid;place-items:center;min-width:44px;width:44px;height:44px}
+ .modal-body{min-height:0;overflow:auto;padding:16px;-webkit-overflow-scrolling:touch}
+ .modal-foot{flex:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px 16px}
+ .modal-foot>.btn,.modal-foot>button{width:100%;min-height:44px;white-space:normal}
+ .message-modal,.preview-modal,.calendly-modal,.relaunch-modal{width:100%}
+ .message-modal .modal-body{padding:16px}
+ .message-modal textarea,.modal textarea{min-height:120px}
+ .template-row{align-items:flex-start;flex-wrap:wrap}
+ .template-row .btn,.template-preview{min-height:44px}
+ .binary-choice label{min-height:44px}
+ .relaunch-date{align-items:stretch;flex-direction:column}
+ .relaunch-date input{width:100%;min-height:44px}
+}
+@media(max-width:390px){
+ .contact-actions,.modal-foot{grid-template-columns:1fr}
+ .page-title h1,.contact-head h1{font-size:23px}
+}

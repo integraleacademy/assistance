@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-mobile-responsive-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -631,7 +631,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-mobile-responsive-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -656,7 +656,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-mobile-responsive-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -718,4 +718,89 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-sidebar-rail-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-mobile-responsive-1"' in backend
+
+
+def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+    workspace_stylesheet = (
+        Path(__file__).parents[1] / "static" / "crm_workspace.css"
+    ).read_text(encoding="utf-8")
+    template = CRM_TEMPLATE.read_text(encoding="utf-8")
+    backend = APP_PY.read_text(encoding="utf-8")
+    script = r"""
+require('./static/crm_sidebar_state.js');
+const state=globalThis.CRMSidebarState;
+const bodyClasses=new Set();
+const sidebarClasses=new Set();
+const documentListeners={};
+const menuListeners={};
+const backdropListeners={};
+const navListeners={};
+const menuAttributes={};
+const backdropAttributes={};
+const classList=values=>({
+ toggle:(name,enabled)=>enabled?values.add(name):values.delete(name),
+ contains:name=>values.has(name),
+});
+const navLink={addEventListener:(name,handler)=>{navListeners[name]=handler}};
+const sidebar={classList:classList(sidebarClasses),querySelectorAll:selector=>selector==='a[data-nav]'?[navLink]:[]};
+const menu={
+ setAttribute:(name,value)=>{menuAttributes[name]=value},
+ addEventListener:(name,handler)=>{menuListeners[name]=handler},
+};
+const backdrop={
+ hidden:true,
+ setAttribute:(name,value)=>{backdropAttributes[name]=value},
+ addEventListener:(name,handler)=>{backdropListeners[name]=handler},
+};
+const document={
+ body:{classList:classList(bodyClasses)},
+ querySelector:selector=>({
+  '#crmSidebar':sidebar,
+  '#menuToggle':menu,
+  '#sidebarBackdrop':backdrop,
+ }[selector]||null),
+ addEventListener:(name,handler)=>{documentListeners[name]=handler},
+};
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+const initialized=state.initialize(document,null);
+assert(initialized!==null,'responsive controller initializes');
+menuListeners.click();
+assert(sidebarClasses.has('open'),'menu opens the mobile drawer');
+assert(bodyClasses.has('sidebar-mobile-open'),'background scrolling is locked');
+assert(backdrop.hidden===false,'backdrop becomes interactive');
+assert(menuAttributes['aria-expanded']==='true','open state is announced');
+backdropListeners.click();
+assert(!sidebarClasses.has('open'),'backdrop closes the drawer');
+menuListeners.click();
+documentListeners.keydown({key:'Escape'});
+assert(!sidebarClasses.has('open'),'Escape closes the drawer');
+menuListeners.click();
+navListeners.click();
+assert(!sidebarClasses.has('open'),'navigation closes the drawer');
+assert(menuAttributes['aria-expanded']==='false','closed state is announced');
+assert(backdropAttributes['aria-hidden']==='true','closed backdrop is hidden accessibly');
+console.log('CRM mobile responsive shell: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM mobile responsive shell: OK" in completed.stdout
+    assert 'id="menuToggle" aria-label="Ouvrir le menu" aria-controls="crmSidebar" aria-expanded="false"' in template
+    assert 'id="sidebarBackdrop"' in template
+    assert "menuToggleButton.addEventListener('click'" not in javascript
+    assert "window.CRMSidebarState?.initialize(document)" in javascript
+    assert "body.sidebar-mobile-open{overflow:hidden;touch-action:none}" in stylesheet
+    assert "header .search{display:flex;order:20;width:100%" in stylesheet
+    assert ".table-wrap{overflow-x:auto;overflow-y:hidden" in stylesheet
+    assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
+    assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
+    assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
+    assert 'CRM_ASSET_VERSION = "20260823-mobile-responsive-1"' in backend
