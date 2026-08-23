@@ -14606,6 +14606,7 @@ def _crm_email_html(body, contact):
 
 @app.route("/api/crm/contacts/<contact_id>/cnaps-form", methods=["POST"])
 @login_required
+@_crm_serialized
 def crm_send_cnaps_form(contact_id):
     """Send the configured Docs AUT e-mail and remember only successful deliveries."""
     data = load_data()
