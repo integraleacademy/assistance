@@ -1,4 +1,5 @@
 const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['Prochain RDV inscription','POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Prochain RDV inscription','Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],crmAppointments=[],crmSettings={},statusFilter='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='month',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='',activeCalendlyContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
+const CALENDLY_AVAILABILITY_WINDOW_DAYS=7;
 const esc=s=>String(s??'').replace(/rendez-vouss/gi,'rendez-vous').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const api=async(url,opt={})=>{const{timeout=20000,...requestOptions}=opt,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{const r=await fetch(url,{headers:{'Content-Type':'application/json'},...requestOptions,signal:requestOptions.signal||controller.signal});if(!r.ok){const payload=await r.json().catch(()=>({})),error=Error(payload.error||'Une erreur est survenue');error.status=r.status;error.reason=payload.reason;throw error}return r.status===204?null:r.json()}catch(error){if(error.name==='AbortError')throw Error('Le serveur met trop de temps à répondre. Réessayez dans quelques secondes.');throw error}finally{clearTimeout(timer)}};
 let toastTimer,pendingStatusSaves=0;
@@ -884,7 +885,7 @@ async function calendlyModal(c){
     if(!types.length)throw Error(`Aucun type de rendez-vous Calendly actif ne correspond à la formation ${c.formation||'renseignée'}.`);
     let rangeStart=new Date(),selectedStart='',selectedType=types[0];
     rangeStart.setHours(0,0,0,0);
-    dialog.querySelector('.modal-body').innerHTML=`<div class="calendly-booking-grid"><section><div class="field"><label>Type de rendez-vous</label><select id="calEventType">${types.map((t,i)=>`<option value="${i}">${esc(t.name)}${t.duration?` · ${t.duration} min`:''}${t.profile?.name?` · ${esc(t.profile.name)}`:''}</option>`).join('')}</select></div><div id="calTypeInfo"></div><div class="availability-nav"><button class="btn" id="calPrev">← 14 jours</button><b id="calRange"></b><button class="btn" id="calNext">14 jours →</button></div><div id="calSlots" class="cal-slots"><div class="activity-empty">Chargement des disponibilités…</div></div></section><aside><div class="booking-person"><span class="avatar">${initials(c)}</span><div><b>${esc(displayName(c))}</b><small>${esc(c.mail)}${c.telephone?` · ${esc(c.telephone)}`:''}</small></div></div><div id="calLocationFields"></div><div class="fields calendly-questions" id="calQuestions"></div></aside></div>`;
+    dialog.querySelector('.modal-body').innerHTML=`<div class="calendly-booking-grid"><section><div class="field"><label>Type de rendez-vous</label><select id="calEventType">${types.map((t,i)=>`<option value="${i}">${esc(t.name)}${t.duration?` · ${t.duration} min`:''}${t.profile?.name?` · ${esc(t.profile.name)}`:''}</option>`).join('')}</select></div><div id="calTypeInfo"></div><div class="availability-nav"><button class="btn" id="calPrev">← 7 jours</button><b id="calRange"></b><button class="btn" id="calNext">7 jours →</button></div><div id="calSlots" class="cal-slots"><div class="activity-empty">Chargement des disponibilités…</div></div></section><aside><div class="booking-person"><span class="avatar">${initials(c)}</span><div><b>${esc(displayName(c))}</b><small>${esc(c.mail)}${c.telephone?` · ${esc(c.telephone)}`:''}</small></div></div><div id="calLocationFields"></div><div class="fields calendly-questions" id="calQuestions"></div></aside></div>`;
     const typeSelect=document.querySelector('#calEventType'),slots=document.querySelector('#calSlots'),rangeLabel=document.querySelector('#calRange');
     const renderLocationFields=()=>{
       const root=document.querySelector('#calLocationFields'),locations=selectedType.locations||[];
@@ -908,7 +909,7 @@ async function calendlyModal(c){
     const loadSlots=async()=>{
       selectedStart='';bookButton.disabled=true;slots.innerHTML='<div class="activity-empty">Chargement des disponibilités…</div>';
       const today=new Date();today.setHours(0,0,0,0);document.querySelector('#calPrev').disabled=rangeStart<=today;
-      const end=new Date(rangeStart);end.setDate(end.getDate()+14);
+      const end=new Date(rangeStart);end.setDate(end.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS);
       const actualStart=rangeStart<=today?new Date():rangeStart;
       rangeLabel.textContent=`${rangeStart.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} – ${new Date(end.getTime()-86400000).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}`;
       try{
@@ -919,8 +920,8 @@ async function calendlyModal(c){
       }catch(e){slots.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`}
     };
     typeSelect.onchange=renderType;
-    document.querySelector('#calPrev').onclick=()=>{rangeStart.setDate(rangeStart.getDate()-14);const today=new Date();today.setHours(0,0,0,0);if(rangeStart<today)rangeStart=today;loadSlots()};
-    document.querySelector('#calNext').onclick=()=>{rangeStart.setDate(rangeStart.getDate()+14);loadSlots()};
+    document.querySelector('#calPrev').onclick=()=>{rangeStart.setDate(rangeStart.getDate()-CALENDLY_AVAILABILITY_WINDOW_DAYS);const today=new Date();today.setHours(0,0,0,0);if(rangeStart<today)rangeStart=today;loadSlots()};
+    document.querySelector('#calNext').onclick=()=>{rangeStart.setDate(rangeStart.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS);loadSlots()};
     bookButton.onclick=async()=>{
       if(!selectedStart)return toast('Choisissez un horaire.',true);
       const answers={};document.querySelectorAll('[data-question-position]').forEach(field=>{answers[field.dataset.questionPosition]=field.multiple?[...field.selectedOptions].map(x=>x.value):field.value});
