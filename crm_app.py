@@ -16,6 +16,7 @@ from crm_pipeline_status_consistency import (
 from crm_salesforce_anomaly_followups_import import (
     register_salesforce_anomaly_followups_import,
 )
+from crm_salesforce_chatter_history import register_salesforce_chatter_history
 from crm_salesforce_chatter_import import register_salesforce_chatter_import
 from crm_salesforce_date_guardrails import install_salesforce_date_guardrails
 from crm_salesforce_existing_repair import register_salesforce_existing_repair
@@ -121,6 +122,11 @@ register_salesforce_chatter_import(
     login_required_fn=legacy_app.login_required,
     save_data_fn=legacy_app.save_data,
     transaction_lock=legacy_app._CRM_RECONCILIATION_LOCK,
+)
+register_salesforce_chatter_history(
+    app,
+    load_data_fn=legacy_app.load_data,
+    login_required_fn=legacy_app.login_required,
 )
 register_cnaps_tracking_proxy(
     app,
