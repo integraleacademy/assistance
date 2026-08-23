@@ -358,7 +358,7 @@ def test_contact_supports_a_removable_secondary_timeline():
     assert 'id="removeSecondaryTimeline"' in javascript
     assert "statut_secondaire:next" in javascript
     assert "Deuxième statut enregistré" in javascript
-    assert ".pipeline-stage-secondary .timeline{--pipeline-accent:#7652b5" in stylesheet
+    assert ".timeline-secondary button.current{background:var(--purple);color:#fff}" in stylesheet
     assert ".pipeline-step.current .pipeline-step-marker" in stylesheet
 
 
