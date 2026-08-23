@@ -49,9 +49,9 @@ def test_cnaps_form_sends_named_template_and_persists_success(tmp_path, monkeypa
         lambda *args: deliveries.append(args) or True,
     )
     timestamps = iter((
-        "2026-08-23T17:19:59+00:00",
         "2026-08-23T17:20:00+00:00",
-        "2026-08-23T18:29:59+00:00",
+        "2026-08-23T17:20:00+00:00",
+        "2026-08-23T18:30:00+00:00",
         "2026-08-23T18:30:00+00:00",
     ))
     monkeypatch.setattr(application, "_crm_now", lambda: next(timestamps))
