@@ -108,7 +108,14 @@ def test_cnaps_form_requires_no_card_email_and_docs_aut(tmp_path, monkeypatch):
 
     test_client.patch(
         f"/api/crm/contacts/{contact['id']}",
-        json={"carte_pro": "NON"},
+        json={"carte_pro": "NON", "formation": "DESP"},
+    )
+    wrong_formation = test_client.post(f"/api/crm/contacts/{contact['id']}/cnaps-form")
+    assert wrong_formation.status_code == 409
+
+    test_client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"formation": "APS"},
     )
     missing_template = test_client.post(f"/api/crm/contacts/{contact['id']}/cnaps-form")
     assert missing_template.status_code == 409
