@@ -264,7 +264,7 @@
 
 /* Fiche contact : hiérarchie visuelle, coordonnées directes et repères de section. */
 .crm-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.back-contact{margin-bottom:12px;border:0;background:transparent;color:#5f6f86;padding-left:0}
+.back-contact{display:inline-flex;align-items:center;margin-bottom:12px;border:0;background:transparent;color:#5f6f86;padding-left:0;text-decoration:none}
 .back-contact:hover{color:var(--blue)}
 .contact-identity{min-width:0;flex:1}.contact-title-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.contact-title-line .badge{font-size:10px}
 .contact-coordinates{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}.contact-coordinates a,.missing-coordinate{display:inline-flex;align-items:center;gap:7px;min-width:0;padding:7px 10px;border:1px solid #e1e7f0;border-radius:9px;background:#f8faff;color:#51627a;font-size:11px;text-decoration:none;transition:.18s ease}.contact-coordinates a:hover{border-color:#b6c8ee;background:#eef4ff;color:#2459cf;transform:translateY(-1px)}.contact-coordinates .crm-icon{flex:none;width:14px;height:14px}.missing-coordinate{border-style:dashed;color:#929dad}
