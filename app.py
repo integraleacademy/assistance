@@ -12419,10 +12419,15 @@ def _crm_contact_summary_response(contact, data, *, funding_status=None,
     form = contact.get("formulaire")
     form = form if isinstance(form, dict) else {}
     google_ads_tracking = {
+        key: bool(contact.get(key) or form.get(key))
+        for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS
+    }
+    google_ads_tracking.update({
         key: str(contact.get(key) or form.get(key) or "").strip()
         for key in CRM_GOOGLE_ADS_TRACKING_KEYS
-        if contact.get(key) or form.get(key)
-    }
+        if key not in CRM_GOOGLE_ADS_IDENTIFIER_KEYS
+        and (contact.get(key) or form.get(key))
+    })
     summary["google_ads_tracking"] = google_ads_tracking
     # Les relances restent disponibles sur la vue dédiée, mais les e-mails,
     # aperçus HTML, réponses META et autres champs lourds ne partent plus ici.
