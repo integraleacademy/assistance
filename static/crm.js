@@ -474,8 +474,41 @@ function bindPublicationFeed(c,root=document){
  if(c){const more=root.querySelector('#publicationMore');if(more)more.onclick=()=>{const expanded=more.textContent.includes('Masquer');root.innerHTML=publications(c,!expanded);bindPublicationFeed(c,root)}}
 }
 const visibleActivityKinds=new Set(['appel','email','sms','calendly','erreur']);
-function feed(c,expanded=false){const activities=(c.activities||[]).filter(a=>visibleActivityKinds.has(a.kind)),visible=expanded?activities:activities.slice(0,5);return visible.map(a=>{const sms=a.kind==='sms',preview=a.preview?`data-preview="${encodeURIComponent(a.preview)}"`:a.has_preview?`data-preview-id="${esc(a.id)}"`:'';return`<div class="feed-item"><span class="feed-icon">${a.kind==='appel'?'☎':a.kind==='email'?'✉':sms?'▣':'◷'}</span><div><b>${esc(a.title)}</b>${sms?'':`<p>${esc(a.detail)}</p>`}<time>${fmt(a.date)} · ${esc(a.author||'Équipe Intégrale')}</time>${preview?`<br><a class="preview-link" ${preview}>${sms?'Voir le SMS':'Prévisualiser'}</a>`:''}</div></div>`}).join('')+(activities.length>5?`<button class="btn feed-more" id="feedMore">${expanded?'Voir moins':`Voir plus (${activities.length-5})`}</button>`:'')||'<div class="empty">Aucune communication enregistrée</div>'}
+function feed(c,expanded=false){
+  const activities=(c.activities||[]).filter(a=>visibleActivityKinds.has(a.kind)),visible=expanded?activities:activities.slice(0,5);
+  return visible.map(a=>{
+    const sms=a.kind==='sms',preview=a.preview?`data-preview="${encodeURIComponent(a.preview)}"`:a.has_preview?`data-preview-id="${esc(a.id)}"`:'',editable=a.kind==='appel';
+    return`<div class="feed-item" data-activity-id="${esc(a.id)}"><span class="feed-icon">${a.kind==='appel'?'☎':a.kind==='email'?'✉':sms?'▣':'◷'}</span><div><div class="feed-item-head"><b>${esc(a.title)}</b>${editable?`<button class="feed-edit-call" type="button" data-edit-call="${esc(a.id)}" aria-label="Modifier le compte-rendu de l’appel">Modifier</button>`:''}</div>${sms?'':`<p>${esc(a.detail)}</p>`}<time>${fmt(a.date)} · ${esc(a.author||'Équipe Intégrale')}</time>${a.edited_at?`<small class="feed-edited">Modifié ${fmt(a.edited_at)} · ${esc(a.edited_by||'Équipe Intégrale')}</small>`:''}${preview?`<br><a class="preview-link" ${preview}>${sms?'Voir le SMS':'Prévisualiser'}</a>`:''}</div></div>`
+  }).join('')+(activities.length>5?`<button class="btn feed-more" id="feedMore">${expanded?'Voir moins':`Voir plus (${activities.length-5})`}</button>`:'')||'<div class="empty">Aucune communication enregistrée</div>'
+}
 async function openActivityPreview(c,link){if(link.dataset.preview){previewModal(decodeURIComponent(link.dataset.preview));return}const activityId=link.dataset.previewId;if(!activityId)return;link.setAttribute('aria-busy','true');const old=link.textContent;link.textContent='Chargement…';try{const result=await api(`/api/crm/contacts/${encodeURIComponent(c.id)}/activities/${encodeURIComponent(activityId)}/preview`);previewModal(result.preview)}catch(e){toast(e.message,true)}finally{link.removeAttribute('aria-busy');link.textContent=old}}
+function editCallActivityModal(c,activity,onSaved){
+  modal('Modifier l’appel consigné',`<div class="field"><label for="editCallNote">Compte-rendu</label><textarea id="editCallNote" placeholder="Corrigez le compte-rendu de l’appel…">${esc(activity.detail||'')}</textarea><small class="edit-call-help">La date et l’auteur d’origine sont conservés. L’ancien texte reste dans l’historique d’édition.</small></div>`,`<button class="btn" id="cancelEditCall" type="button">Annuler</button><button class="btn blue" id="saveEditCall" type="button">Enregistrer</button>`,'edit-call-modal');
+  cancelEditCall.onclick=closeModal;
+  saveEditCall.onclick=async()=>{
+    const commentaire=editCallNote.value.trim();
+    if(!commentaire)return toast('Saisissez un compte-rendu',true);
+    saveEditCall.disabled=true;
+    cancelEditCall.disabled=true;
+    editCallNote.disabled=true;
+    saveEditCall.textContent='Enregistrement…';
+    try{
+      const result=await api(`/api/crm/contacts/${encodeURIComponent(c.id)}/activities/${encodeURIComponent(activity.id)}`,{method:'PATCH',body:JSON.stringify({commentaire})});
+      Object.assign(c,result.contact);
+      mergeContactInStore(c.id,result.contact);
+      closeModal();
+      if(onSaved)onSaved();
+      toast(result.changed?'Appel modifié':'Aucune modification');
+    }catch(error){
+      saveEditCall.disabled=false;
+      cancelEditCall.disabled=false;
+      editCallNote.disabled=false;
+      saveEditCall.textContent='Enregistrer';
+      toast(`L’appel n’a pas pu être modifié : ${error.message}`,true);
+    }
+  };
+  editCallNote.focus();
+}
 function sessionKeys(c){const formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','Chauffeur VTC':'VTC'}[c.formation]||(c.formation==='DESP'?(c.desp_type==='VAE'?'DESP_VAE':'DESP_INIT'):'');return {formation,centre:{'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'}[c.lieu]||''}}
 function renderIntegrationScore(c){
  renderContactHeaderScore(c);
@@ -536,7 +569,7 @@ function bindContact(c,initialTab='contactInfoTab'){
   const toggleTracking=()=>{if(trackingCard.matches(':popover-open'))trackingCard.hidePopover();else{trackingCard.setAttribute('popover','auto');trackingCard.showPopover()}};
   trackingCard.addEventListener('toggle',event=>reflectTrackingState(event.newState==='open'));trackingExpand.onclick=toggleTracking;
   rephraseComments.onclick=async()=>{const field=document.querySelector('[name=commentaires]');if(!field.value.trim())return toast('Saisissez d’abord un commentaire',true);rephraseComments.disabled=true;try{field.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:field.value})})).texte;field.dispatchEvent(new Event('input',{bubbles:true}))}catch(e){toast(e.message,true)}finally{rephraseComments.disabled=false}};
-  let activityExpanded=false;activityFeed.onclick=event=>{const more=event.target.closest('#feedMore');if(more){activityExpanded=!activityExpanded;const current=contacts.find(item=>item.id===c.id)||c;activityFeed.innerHTML=feed(current,activityExpanded);return}const preview=event.target.closest('[data-preview],[data-preview-id]');if(preview)openActivityPreview(c,preview)};
+  let activityExpanded=false;const renderActivityFeed=()=>{const current=contacts.find(item=>item.id===c.id)||c;activityFeed.innerHTML=feed(current,activityExpanded)};activityFeed.onclick=event=>{const more=event.target.closest('#feedMore');if(more){activityExpanded=!activityExpanded;renderActivityFeed();return}const edit=event.target.closest('[data-edit-call]');if(edit){const current=contacts.find(item=>item.id===c.id)||c,activity=(current.activities||[]).find(item=>item.id===edit.dataset.editCall);if(activity)editCallActivityModal(current,activity,renderActivityFeed);return}const preview=event.target.closest('[data-preview],[data-preview-id]');if(preview)openActivityPreview(c,preview)};
   let timer;
   const form=document.querySelector('#contactForm');
   const refreshSessions=()=>{const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','Chauffeur VTC':'VTC'}[form.formation.value]||(form.formation.value==='DESP'?(form.desp_type.value==='VAE'?'DESP_VAE':'DESP_INIT'):'');const available=Object.entries(formationSessions).filter(([,v])=>(v[formation]||[]).length);form.lieu.innerHTML=available.map(([key])=>`<option value="${centreLabels[key]||key}" ${c.lieu===(centreLabels[key]||key)?'selected':''}>${centreLabels[key]||key}</option>`).join('')||'<option value="">Aucun lieu disponible</option>';if(![...form.lieu.options].some(o=>o.selected)&&form.lieu.options.length)form.lieu.options[0].selected=true;const centre={'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'}[form.lieu.value],rows=formationSessions[centre]?.[formation]||[],storedSession=String(c.dates_formation||'').trim(),storedOption=storedSession&&!rows.some(r=>r.label===storedSession)?`<option value="${esc(storedSession)}" selected>${esc(storedSession)} — réponse META</option>`:'';form.dates_formation.innerHTML=`<option value="">— Sélectionner une session —</option>${storedOption}`+rows.map(r=>`<option value="${esc(r.label)}" ${storedSession===r.label?'selected':''}>${esc(r.label)}${r.badge?' — '+esc(r.badge):''}</option>`).join('');sessionHelp.textContent=rows.length?'Sessions configurées dans l’administration.':'Aucune session disponible pour cette formation et ce lieu.'};
