@@ -8450,6 +8450,52 @@ def _crm_calendly_datetime_label(value):
         return str(value or "Date non renseignée")
 
 
+def _crm_calendly_booking_supersedes_active_relance(contact, appointment):
+    """Return whether an existing booking is newer than the open follow-up.
+
+    Full synchronizations replay appointments that may already be in the local
+    cache.  Comparing creation timestamps repairs pre-existing inconsistent
+    data without cancelling a follow-up deliberately created after booking.
+    Missing or malformed timestamps are left untouched rather than risking
+    destructive history changes.
+    """
+    booked_at = (
+        appointment.get("created_at")
+        or appointment.get("calendly_created_at")
+        or ""
+    )
+    try:
+        booked_at = datetime.datetime.fromisoformat(
+            str(booked_at).replace("Z", "+00:00")
+        )
+        if booked_at.tzinfo is None:
+            booked_at = pytz.UTC.localize(booked_at)
+        else:
+            booked_at = booked_at.astimezone(pytz.UTC)
+    except (TypeError, ValueError):
+        return False
+
+    _crm_ensure_relances(contact)
+    for relance in contact.get("relances", []):
+        if relance.get("status") != "scheduled":
+            continue
+        try:
+            created_at = datetime.datetime.fromisoformat(
+                str(relance.get("created_at") or "").replace("Z", "+00:00")
+            )
+            if created_at.tzinfo is None:
+                created_at = pytz.UTC.localize(created_at)
+            else:
+                created_at = created_at.astimezone(pytz.UTC)
+        except (TypeError, ValueError):
+            continue
+        # Equal second-resolution timestamps are ambiguous; preserving the
+        # follow-up is safer than cancelling a potentially later manual action.
+        if created_at < booked_at:
+            return True
+    return False
+
+
 def _crm_upsert_calendly_appointment(
     data,
     payload,
@@ -8554,6 +8600,10 @@ def _crm_upsert_calendly_appointment(
             not existing
             or str(previous_status or "").lower() in {"canceled", "cancelled"}
             or previous_start != appointment.get("start_time")
+            or _crm_calendly_booking_supersedes_active_relance(
+                contact,
+                appointment,
+            )
         )
         and _crm_calendly_appointment_is_today_or_future(appointment)
     )
