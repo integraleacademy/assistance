@@ -691,3 +691,13 @@ img,svg,video,canvas,iframe{max-width:100%}
  .sales-priority-grid{padding-left:0;padding-right:0}
  .analytics-origin-table td:first-child{min-width:125px}
 }
+
+
+/* Envoi du formulaire CNAPS depuis la fiche prospect. */
+.cnaps-form-action{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px;border:1px solid #bce8d9;border-radius:11px;background:#f2fbf7}
+.cnaps-form-send{min-width:154px;border-color:var(--green);background:var(--green);color:#fff}
+.cnaps-form-send:hover{filter:brightness(.96)}
+.cnaps-form-send.is-sent{border-color:#98a2b3;background:#98a2b3;color:#fff}
+.cnaps-form-send:disabled{cursor:wait;opacity:.7}
+#cnapsFormStatus{color:#4b596d;font-size:12px;font-weight:700}
+@media(max-width:650px){.cnaps-form-action{align-items:stretch}.cnaps-form-send{width:100%}#cnapsFormStatus{width:100%;text-align:center}}
