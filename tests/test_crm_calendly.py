@@ -94,9 +94,9 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
 
     with_follow_up = client.patch(
         f"/api/crm/contacts/{contact['id']}",
-        json={"relance_date": "2099-09-03"},
+        json={"statut": "A relancer", "relance_date": "2099-09-03"},
     ).get_json()
-    assert with_follow_up["statut"] == "RDV programmé"
+    assert with_follow_up["statut"] == "A relancer"
     assert with_follow_up["relance_date"] == "2099-09-03"
 
     replayed = signed_webhook(
@@ -109,7 +109,7 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     after_replay = client.get(
         f"/api/crm/contacts/{contact['id']}"
     ).get_json()
-    assert after_replay["statut"] == "RDV programmé"
+    assert after_replay["statut"] == "A relancer"
     assert after_replay["relance_date"] == "2099-09-03"
     assert [
         item["status"] for item in after_replay["relances"]
