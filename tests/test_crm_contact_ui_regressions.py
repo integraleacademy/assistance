@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -778,7 +778,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -803,7 +803,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -865,7 +865,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -950,7 +950,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -992,7 +992,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-timelines-legacy-1" in application
+    assert "20260824-relance-permanent-delete-1" in application
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
@@ -1049,7 +1049,7 @@ console.log('CRM Pistes completeness: OK');
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
 
 def test_pipeline_relance_date_distinguishes_overdue_scheduled_and_missing():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1091,7 +1091,7 @@ console.log('CRM pipeline relance date: OK');
     assert ".pipeline-relance-date.overdue{color:#c23449;font-weight:800}" in stylesheet
     assert ".pipeline-relance-date.missing{color:#7b8798}" in stylesheet
     assert ".pipeline-appointment-date,.pipeline-relance-date" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
 
 def test_contact_pipeline_restores_compact_chevrons_without_changing_actions():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1139,7 +1139,7 @@ console.log('CRM compact timeline: OK');
     assert ".pipeline-stage-card" not in stylesheet
     assert ".pipeline-line>span" not in stylesheet
     assert ".pipeline-step-marker" not in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
 
 
 def test_activity_journal_is_second_tab_before_wedof():
@@ -1178,4 +1178,4 @@ def test_activity_journal_is_second_tab_before_wedof():
         assert f'aria-labelledby="{tab_id}"' in javascript
 
     assert "loadWedof(c,{refresh:true})" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
