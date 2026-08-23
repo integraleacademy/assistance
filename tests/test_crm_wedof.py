@@ -627,7 +627,7 @@ def test_contact_list_decodes_each_wedof_folder_only_once(tmp_path, monkeypatch)
     assert statuses[second["id"]] == "en_cours_instruction"
 
 
-def test_latest_wedof_folder_status_wins_with_multiple_linked_folders(
+def test_most_recent_created_wedof_folder_status_wins_with_multiple_links(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
@@ -638,7 +638,10 @@ def test_latest_wedof_folder_status_wins_with_multiple_linked_folders(
     )
     older_instruction.update({
         "state": "waitingAcceptation",
-        "updatedAt": "2026-08-20T10:00:00+00:00",
+        "createdAt": "2026-08-12T10:00:00+00:00",
+        # Une modification plus récente ne doit pas rendre cet ancien dossier
+        # prioritaire par rapport à un dossier créé après lui.
+        "updatedAt": "2026-08-24T10:00:00+00:00",
         "history": [{"state": "waitingAcceptation"}],
     })
     latest_refusal = folder(
@@ -647,6 +650,7 @@ def test_latest_wedof_folder_status_wins_with_multiple_linked_folders(
     )
     latest_refusal.update({
         "state": "validated",
+        "createdAt": "2026-08-19T10:00:00+00:00",
         "updatedAt": "2026-08-23T13:35:00+00:00",
         "history": {
             "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
@@ -676,7 +680,8 @@ def test_newer_ft_instruction_wins_over_an_older_refused_folder(
     )
     older_refusal.update({
         "state": "validated",
-        "updatedAt": "2026-08-20T10:00:00+00:00",
+        "createdAt": "2026-08-12T10:00:00+00:00",
+        "updatedAt": "2026-08-24T10:00:00+00:00",
         "history": {
             "refusedByFinancerDate": "2026-08-20T10:00:00+00:00",
         },
@@ -687,6 +692,7 @@ def test_newer_ft_instruction_wins_over_an_older_refused_folder(
     )
     latest_instruction.update({
         "state": "waitingAcceptation",
+        "createdAt": "2026-08-19T10:00:00+00:00",
         "updatedAt": "2026-08-23T13:35:00+00:00",
         "history": [{"state": "waitingAcceptation"}],
     })
@@ -699,6 +705,46 @@ def test_newer_ft_instruction_wins_over_an_older_refused_folder(
     result = next(item for item in listed if item["id"] == contact["id"])
     assert result["statut_demande_financement_ft"] == "en_cours_instruction"
     assert result["statut_secondaire"] == "Financement FT en cours"
+
+
+def test_latest_created_folder_without_ft_request_clears_an_older_instruction(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    older_instruction = folder(
+        "older-ft-instruction", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    older_instruction.update({
+        "state": "waitingAcceptation",
+        "createdAt": "2026-08-12T10:00:00+00:00",
+        "history": [{"state": "waitingAcceptation"}],
+    })
+    application._wedof_store_page(
+        [older_instruction], application.load_data(), 1,
+    )
+    instructed = client.get("/api/crm/contacts").get_json()
+    assert next(
+        item for item in instructed if item["id"] == contact["id"]
+    )["statut_demande_financement_ft"] == "en_cours_instruction"
+
+    latest_without_ft = folder(
+        "latest-without-ft", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    latest_without_ft.update({
+        "state": "accepted",
+        "createdAt": "2026-08-19T10:00:00+00:00",
+        "history": [{"state": "accepted"}],
+    })
+    application._wedof_store_page(
+        [latest_without_ft], application.load_data(), 1,
+    )
+
+    listed = client.get("/api/crm/contacts").get_json()
+    result = next(item for item in listed if item["id"] == contact["id"])
+    assert result["statut_demande_financement_ft"] == ""
+    assert result["statut_secondaire"] == ""
 
 
 def test_linked_contact_does_not_scan_unrelated_wedof_names(tmp_path, monkeypatch):
