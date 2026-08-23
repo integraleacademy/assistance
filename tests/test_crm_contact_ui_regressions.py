@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -656,17 +656,64 @@ def test_calendly_refreshes_silently_after_cached_contact_render():
 
 def test_global_search_only_indexes_visible_contact_fields_and_ranks_names_first():
     javascript = CRM_JS.read_text(encoding="utf-8")
+    backend = APP_PY.read_text(encoding="utf-8")
 
     assert "const normalizeGlobalSearch=value=>" in javascript
     assert "normalize('NFD')" in javascript
+    assert "const normalizePhoneSearch=value=>" in javascript
+    assert "const phoneSearchQuery=value=>" in javascript
     assert "const contactSearchFields=c=>[c.prenom,c.nom,c.mail,c.telephone,c.formation,c.lieu,c.statut]" in javascript
     assert "Object.values(c)" not in javascript
     assert "function contactSearchRank(c,q)" in javascript
-    assert "crmActiveContacts().filter(c=>searchable(c).includes(q))" in javascript
+    assert "crmActiveContacts().filter(c=>contactMatchesSearch(c,q))" in javascript
+    assert "&&contactMatchesSearch(c,q)" in javascript
     assert "contactSearchRank(a,q)-contactSearchRank(b,q)" in javascript
     assert "filter(contact=>contact&&!contact.archived_at)" in javascript
     assert "normalizeGlobalSearch(label).includes(q)" in javascript
+    assert "contactCoordinateSummary(c)" in javascript
+    assert '"id", "prenom", "nom", "telephone", "mail"' in backend
 
+
+def test_phone_search_normalizes_french_formats_and_preserves_text_search():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    helpers = javascript[
+        javascript.index("const normalizeGlobalSearch=value=>"):
+        javascript.index("const prepareGlobalContactLinks=")
+    ]
+    script = f"""
+const displayName=contact=>[contact.prenom,contact.nom].filter(Boolean).join(' ');
+{helpers}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+const contact={{
+  prenom:'Élodie',
+  nom:'Martin',
+  mail:'elodie@example.test',
+  telephone:'06 12-34.56 78',
+  formation:'APS',
+  lieu:'Paris',
+  statut:'Nouveau'
+}};
+assert(normalizePhoneSearch('+33 (0)6 12 34 56 78')==='0612345678','+33 (0) normalization');
+assert(normalizePhoneSearch('0033 6 12 34 56 78')==='0612345678','0033 normalization');
+assert(contactMatchesSearch(contact,'0612345678'),'compact local number');
+assert(contactMatchesSearch(contact,'+33 6 12 34 56 78'),'international number');
+assert(contactMatchesSearch(contact,'0033612345678'),'international 00 number');
+assert(contactMatchesSearch(contact,'3456'),'partial phone number');
+assert(!contactMatchesSearch(contact,'0699999999'),'different phone number');
+assert(contactMatchesSearch(contact,'elodie'),'accent-insensitive name');
+assert(contactMatchesSearch(contact,'example.test'),'email search');
+assert(contactSearchRank(contact,'0612345678')===0,'exact canonical phone ranking');
+assert(contactSearchRank(contact,'0612')===1,'phone prefix ranking');
+console.log('CRM telephone search normalization: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM telephone search normalization: OK" in completed.stdout
 
 
 def test_contact_document_title_is_wired_to_real_contact_navigation():
@@ -677,18 +724,18 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
 
     assert "const formatFirstName=window.CRMDocumentTitle.formatFirstName" in javascript
     assert "const displayName=window.CRMDocumentTitle.displayName" in javascript
-    assert "window.CRMDocumentTitle.applyContact(c);" in javascript
-    assert "if(!c){window.CRMDocumentTitle.reset();" in javascript
+    assert "window.CRMDocumentTitle.applyContact(c,C.section,C.page_label);" in javascript
+    assert "if(!c){window.CRMDocumentTitle.applySection(C.section,C.page_label);" in javascript
     render_body = javascript[
         javascript.index("function render(){"):
         javascript.index("async function init(){")
     ]
-    assert "window.CRMDocumentTitle.reset();" in render_body
+    assert "window.CRMDocumentTitle.applySection(C.section,C.page_label);" in render_body
     assert "titleForContact" in title_javascript
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -713,7 +760,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -775,7 +822,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -860,7 +907,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -902,7 +949,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-pipeline-saas-1" in application
+    assert "20260823-phone-search-normalization-1" in application
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
@@ -959,7 +1006,7 @@ console.log('CRM Pistes completeness: OK');
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in application
 
 def test_pipeline_relance_date_only_announces_today_or_future():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -998,7 +1045,7 @@ console.log('CRM pipeline relance date: OK');
     assert "updateVisibleAppointmentData();" in javascript
     assert ".pipeline-relance-date.missing{color:#c23449}" in stylesheet
     assert ".pipeline-appointment-date,.pipeline-relance-date" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in application
 
 
 def test_contact_pipeline_uses_accessible_saas_stepper_without_changing_actions():
@@ -1054,4 +1101,4 @@ console.log('CRM SaaS pipeline: OK');
     assert ".timeline-scroll{scroll-snap-type:x proximity;padding-bottom:6px}" in stylesheet
     assert ".timeline-toggle{flex-basis:44px;width:44px;height:44px}" in stylesheet
     assert "clip-path:polygon(0 0,calc(100% - 12px)" not in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-phone-search-normalization-1"' in application
