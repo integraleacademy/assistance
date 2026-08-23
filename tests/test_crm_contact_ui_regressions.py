@@ -615,4 +615,3 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
     assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
-
