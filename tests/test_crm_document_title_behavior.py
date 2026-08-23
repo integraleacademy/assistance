@@ -33,6 +33,7 @@ Object.entries(sections).forEach(([section,label])=>{
 });
 assert.equal(titles.applySection('calendrier'), 'Calendrier - Intégrale CRM');
 assert.equal(global.document.title, 'Calendrier - Intégrale CRM');
+assert.equal(titles.titleForSection('pistes','Accueil'), 'Pistes - Intégrale CRM');
 assert.equal(titles.titleForSection('future-section','Page future'), 'Page future - Intégrale CRM');
 assert.equal(titles.displayName({prenom:'  éLODIE-anne   marie  ',nom:"  d'angelo   du pont  "}), "Élodie-Anne Marie D'ANGELO DU PONT");
 assert.equal(titles.displayName({prenom:'clement',nom:'dupont'}), 'Clément DUPONT');
