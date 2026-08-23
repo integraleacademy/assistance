@@ -1178,9 +1178,11 @@ def test_a_new_ft_refusal_on_another_day_reprograms_the_follow_up():
 
     assert first_changed is True
     assert second_changed is True
-    assert first["status"] == "reprogrammed"
-    assert first["scheduled_date"] == "2026-08-23"
-    assert second["status"] == "scheduled"
+    relances_by_date = {
+        item["scheduled_date"]: item for item in contact["relances"]
+    }
+    assert relances_by_date["2026-08-23"]["status"] == "reprogrammed"
+    assert relances_by_date["2026-08-24"]["status"] == "scheduled"
     assert second["scheduled_date"] == "2026-08-24"
     assert contact["relance_date"] == "2026-08-24"
     assert len([
