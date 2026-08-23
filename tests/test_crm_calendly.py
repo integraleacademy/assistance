@@ -827,3 +827,69 @@ def test_booking_invalid_argument_returns_actionable_retry_error(tmp_path, monke
     payload = response.get_json()
     assert payload["stage"] == "la création du rendez-vous"
     assert "Vérifiez le type de rendez-vous" in payload["error"]
+
+
+
+def test_availability_forwards_a_seven_day_window(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    captured = {}
+
+    def fake_calendly(method, path, **kwargs):
+        captured.update({"method": method, "path": path, **kwargs})
+        return {"collection": [{
+            "status": "available",
+            "start_time": "2099-08-12T08:00:00Z",
+        }]}
+
+    monkeypatch.setattr(application, "_calendly_request", fake_calendly)
+    response = client.get(
+        "/api/crm/calendly/availability",
+        query_string={
+            "event_type": "https://api.calendly.com/event_types/TYPE1",
+            "start_time": "2099-08-12T00:00:00Z",
+            "end_time": "2099-08-19T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()[0]["start_time"] == "2099-08-12T08:00:00Z"
+    assert captured["method"] == "GET"
+    assert captured["path"] == "/event_type_available_times"
+    assert captured["params"]["start_time"] == "2099-08-12T00:00:00Z"
+    assert captured["params"]["end_time"] == "2099-08-19T00:00:00Z"
+
+
+def test_availability_rejects_windows_longer_than_seven_days(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        application,
+        "_calendly_request",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    response = client.get(
+        "/api/crm/calendly/availability",
+        query_string={
+            "event_type": "https://api.calendly.com/event_types/TYPE1",
+            "start_time": "2099-08-12T00:00:00Z",
+            "end_time": "2099-08-19T00:00:01Z",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "ne peut pas dépasser 7 jours" in response.get_json()["error"]
+    assert calls == []
+
+
+def test_calendly_booking_browser_uses_seven_day_windows():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "CALENDLY_AVAILABILITY_WINDOW_DAYS=7" in crm_js
+    assert 'id="calPrev">← 7 jours</button>' in crm_js
+    assert 'id="calNext">7 jours →</button>' in crm_js
+    assert "end.setDate(end.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
+    assert "rangeStart.setDate(rangeStart.getDate()-CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
+    assert "rangeStart.setDate(rangeStart.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
+    assert "14 jours" not in crm_js
