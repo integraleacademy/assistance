@@ -627,6 +627,80 @@ def test_contact_list_decodes_each_wedof_folder_only_once(tmp_path, monkeypatch)
     assert statuses[second["id"]] == "en_cours_instruction"
 
 
+def test_latest_wedof_folder_status_wins_with_multiple_linked_folders(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+
+    older_instruction = folder(
+        "older-ft-instruction", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    older_instruction.update({
+        "state": "waitingAcceptation",
+        "updatedAt": "2026-08-20T10:00:00+00:00",
+        "history": [{"state": "waitingAcceptation"}],
+    })
+    latest_refusal = folder(
+        "latest-ft-refusal", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    latest_refusal.update({
+        "state": "validated",
+        "updatedAt": "2026-08-23T13:35:00+00:00",
+        "history": {
+            "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
+        },
+    })
+
+    # L'ordre reçu sur une page WEDOF ne doit pas permettre à un ancien
+    # dossier encore en instruction de masquer le refus du dossier récent.
+    application._wedof_store_page(
+        [latest_refusal, older_instruction], application.load_data(), 1,
+    )
+
+    listed = client.get("/api/crm/contacts").get_json()
+    result = next(item for item in listed if item["id"] == contact["id"])
+    assert result["statut_demande_financement_ft"] == "refusee"
+    assert result["statut_secondaire"] == "Financement FT refusé"
+
+
+def test_newer_ft_instruction_wins_over_an_older_refused_folder(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+
+    older_refusal = folder(
+        "older-ft-refusal", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    older_refusal.update({
+        "state": "validated",
+        "updatedAt": "2026-08-20T10:00:00+00:00",
+        "history": {
+            "refusedByFinancerDate": "2026-08-20T10:00:00+00:00",
+        },
+    })
+    latest_instruction = folder(
+        "latest-ft-instruction", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    latest_instruction.update({
+        "state": "waitingAcceptation",
+        "updatedAt": "2026-08-23T13:35:00+00:00",
+        "history": [{"state": "waitingAcceptation"}],
+    })
+
+    application._wedof_store_page(
+        [older_refusal, latest_instruction], application.load_data(), 1,
+    )
+
+    listed = client.get("/api/crm/contacts").get_json()
+    result = next(item for item in listed if item["id"] == contact["id"])
+    assert result["statut_demande_financement_ft"] == "en_cours_instruction"
+    assert result["statut_secondaire"] == "Financement FT en cours"
+
+
 def test_linked_contact_does_not_scan_unrelated_wedof_names(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
