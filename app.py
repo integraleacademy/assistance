@@ -9179,11 +9179,15 @@ def _crm_contact_detail_response(contact, data=None, regulatory_snapshot=None,
     return response
 
 
-def _crm_activity(contact, kind, title, detail="", preview=""):
+def _crm_activity(
+        contact, kind, title, detail="", preview="", author_name=None):
+    author_name = author_name or (current_user() or {}).get(
+        "name", "Équipe Intégrale"
+    )
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
         "title": title, "detail": detail, "preview": preview,
-        "author": (current_user() or {}).get("name", "Équipe Intégrale"),
+        "author": author_name,
     })
 
 
@@ -9416,6 +9420,7 @@ def _crm_schedule_ft_refusal_relance(
             "relance",
             "Relance France Travail planifiée",
             detail,
+            author_name=actor_name,
         )
     return planned, changed
 
