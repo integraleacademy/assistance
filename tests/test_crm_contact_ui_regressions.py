@@ -608,7 +608,8 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
         javascript.index("async function refreshCrmSnapshot()"):
         javascript.index("document.addEventListener('visibilitychange'")
     ]
-    assert refresh_body.index("await refreshPipelineAppointments();") < refresh_body.index(
+    assert "if(!id)await refreshPipelineAppointments();" in refresh_body
+    assert refresh_body.index("if(!id)await refreshPipelineAppointments();") < refresh_body.index(
         "const snapshot=await api("
     )
     assert "updateVisibleAppointmentData();" in refresh_body
