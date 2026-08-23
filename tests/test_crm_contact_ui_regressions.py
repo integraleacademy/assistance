@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-score-sort-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -262,7 +262,10 @@ console.log('CRM sidebar state: OK');
     assert "window.CRMSidebarState?.initialize(document)" in javascript
     assert "classList.toggle('sidebar-collapsed')" not in javascript
     assert 'id="crmSidebar"' in template
-    assert 'class="brand-compact" aria-hidden="true">IA</span>' in template
+    assert template.count("filename='favicon_32x32.png',v=asset_version") == 2
+    assert 'class="brand-full" src="{{ url_for(\'static\',filename=\'iaconnectcrm.png\',v=asset_version) }}"' in template
+    assert 'class="brand-compact" src="{{ url_for(\'static\',filename=\'favicon_32x32.png\',v=asset_version) }}" alt="" aria-hidden="true">' in template
+    assert 'class="brand-compact" aria-hidden="true">IA</span>' not in template
     assert 'aria-controls="crmSidebar" aria-expanded="true"' in template
     for label in (
         "Accueil", "Calendrier", "Notifications", "Fil actu", "Pistes",
@@ -270,8 +273,11 @@ console.log('CRM sidebar state: OK');
     ):
         assert f'data-label="{label}"' in template
     assert "filename='crm_sidebar_state.js',v=asset_version" in template
-    assert "body.sidebar-collapsed .brand img{display:none}" in stylesheet
-    assert "body.sidebar-collapsed .brand-compact{display:grid" in stylesheet
+    assert "body.sidebar-collapsed .brand img{display:none}" not in stylesheet
+    assert "body.sidebar-collapsed .brand-full{display:none}" in stylesheet
+    assert "body.sidebar-collapsed .brand-compact{display:block;width:32px;height:32px" in stylesheet
+    assert "object-fit:contain" in stylesheet
+    assert "body.sidebar-collapsed .brand-full{display:block;width:100%;max-width:190px" in stylesheet
     assert "body.sidebar-collapsed .nav-count{position:absolute" in stylesheet
     assert "content:attr(data-label)" in stylesheet
     assert "body.sidebar-collapsed .side-user form{display:block}" in stylesheet
@@ -631,7 +637,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-score-sort-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -656,7 +662,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-score-sort-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -718,7 +724,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-score-sort-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -803,7 +809,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-score-sort-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-sidebar-favicon-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -845,5 +851,5 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-score-sort-1" in application
+    assert "20260823-sidebar-favicon-1" in application
     assert "20260823-mobile-responsive-1" not in application
