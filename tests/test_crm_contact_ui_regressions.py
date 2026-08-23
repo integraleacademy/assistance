@@ -656,17 +656,64 @@ def test_calendly_refreshes_silently_after_cached_contact_render():
 
 def test_global_search_only_indexes_visible_contact_fields_and_ranks_names_first():
     javascript = CRM_JS.read_text(encoding="utf-8")
+    backend = APP_PY.read_text(encoding="utf-8")
 
     assert "const normalizeGlobalSearch=value=>" in javascript
     assert "normalize('NFD')" in javascript
+    assert "const normalizePhoneSearch=value=>" in javascript
+    assert "const phoneSearchQuery=value=>" in javascript
     assert "const contactSearchFields=c=>[c.prenom,c.nom,c.mail,c.telephone,c.formation,c.lieu,c.statut]" in javascript
     assert "Object.values(c)" not in javascript
     assert "function contactSearchRank(c,q)" in javascript
-    assert "crmActiveContacts().filter(c=>searchable(c).includes(q))" in javascript
+    assert "crmActiveContacts().filter(c=>contactMatchesSearch(c,q))" in javascript
+    assert "&&contactMatchesSearch(c,q)" in javascript
     assert "contactSearchRank(a,q)-contactSearchRank(b,q)" in javascript
     assert "filter(contact=>contact&&!contact.archived_at)" in javascript
     assert "normalizeGlobalSearch(label).includes(q)" in javascript
+    assert "contactCoordinateSummary(c)" in javascript
+    assert '"id", "prenom", "nom", "telephone", "mail"' in backend
 
+
+def test_phone_search_normalizes_french_formats_and_preserves_text_search():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    helpers = javascript[
+        javascript.index("const normalizeGlobalSearch=value=>"):
+        javascript.index("const prepareGlobalContactLinks=")
+    ]
+    script = f"""
+const displayName=contact=>[contact.prenom,contact.nom].filter(Boolean).join(' ');
+{helpers}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+const contact={{
+  prenom:'Élodie',
+  nom:'Martin',
+  mail:'elodie@example.test',
+  telephone:'06 12-34.56 78',
+  formation:'APS',
+  lieu:'Paris',
+  statut:'Nouveau'
+}};
+assert(normalizePhoneSearch('+33 (0)6 12 34 56 78')==='0612345678','+33 (0) normalization');
+assert(normalizePhoneSearch('0033 6 12 34 56 78')==='0612345678','0033 normalization');
+assert(contactMatchesSearch(contact,'0612345678'),'compact local number');
+assert(contactMatchesSearch(contact,'+33 6 12 34 56 78'),'international number');
+assert(contactMatchesSearch(contact,'0033612345678'),'international 00 number');
+assert(contactMatchesSearch(contact,'3456'),'partial phone number');
+assert(!contactMatchesSearch(contact,'0699999999'),'different phone number');
+assert(contactMatchesSearch(contact,'elodie'),'accent-insensitive name');
+assert(contactMatchesSearch(contact,'example.test'),'email search');
+assert(contactSearchRank(contact,'0612345678')===0,'exact canonical phone ranking');
+assert(contactSearchRank(contact,'0612')===1,'phone prefix ranking');
+console.log('CRM telephone search normalization: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM telephone search normalization: OK" in completed.stdout
 
 
 def test_contact_document_title_is_wired_to_real_contact_navigation():
