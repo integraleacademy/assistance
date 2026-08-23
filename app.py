@@ -9315,11 +9315,16 @@ def _crm_ensure_relances(contact):
     return changed
 
 
-def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_relance_id=None):
+def _crm_schedule_relance(
+        contact, scheduled_date, *, source="manual", parent_relance_id=None,
+        actor_name=None):
     """Schedule one next action while preserving previous attempts as history."""
     scheduled_date = _crm_relance_date(scheduled_date)
     _crm_ensure_relances(contact)
     now = _crm_now()
+    actor_name = actor_name or (current_user() or {}).get(
+        "name", "Équipe Intégrale"
+    )
     active = [item for item in contact["relances"] if item.get("status") == "scheduled"]
 
     if not scheduled_date:
@@ -9327,7 +9332,7 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
             item.update({
                 "status": "cancelled",
                 "completed_at": now,
-                "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+                "completed_by": actor_name,
             })
         _crm_refresh_relance_date(contact)
         return None, bool(active)
@@ -9340,7 +9345,7 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
         item.update({
             "status": "reprogrammed",
             "completed_at": now,
-            "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+            "completed_by": actor_name,
         })
         changed = True
 
@@ -9350,7 +9355,7 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
             "scheduled_date": scheduled_date,
             "status": "scheduled",
             "created_at": now,
-            "created_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+            "created_by": actor_name,
             "source": source,
         }
         if parent_relance_id:
@@ -9363,6 +9368,58 @@ def _crm_schedule_relance(contact, scheduled_date, *, source="manual", parent_re
     return same, changed
 
 
+def _crm_schedule_ft_refusal_relance(
+        contact, *, source, stable_id="", now=None):
+    """Planifie la relance du jour lors d'un nouveau refus France Travail."""
+    if contact.get("statut") in {"Converti", "Disqualifié"}:
+        return None, False
+
+    paris = pytz.timezone("Europe/Paris")
+    current = now or datetime.datetime.now(paris)
+    if current.tzinfo is None:
+        current = paris.localize(current)
+    else:
+        current = current.astimezone(paris)
+    scheduled_date = current.date().isoformat()
+    actor_name = "France Travail" if source == "wedof_ft_refusal" else None
+    planned, changed = _crm_schedule_relance(
+        contact,
+        scheduled_date,
+        source=source,
+        actor_name=actor_name,
+    )
+
+    metadata = {
+        "funding_refusal_source": source,
+    }
+    if stable_id:
+        metadata["source_wedof_folder_id"] = str(stable_id)
+    for key, value in metadata.items():
+        if planned.get(key) != value:
+            planned[key] = value
+            changed = True
+
+    if contact.get("statut") != "A relancer":
+        contact["statut"] = "A relancer"
+        changed = True
+
+    if changed:
+        display_date = current.strftime("%d/%m/%Y")
+        detail = (
+            "Financement France Travail refusé. "
+            f"Relance prévue le {display_date}."
+        )
+        if stable_id:
+            detail += f" Dossier WEDOF : {stable_id}."
+        _crm_activity(
+            contact,
+            "relance",
+            "Relance France Travail planifiée",
+            detail,
+        )
+    return planned, changed
+
+
 def _crm_complete_relance(contact, relance, status, *, note=""):
     """Close a scheduled follow-up exactly once and refresh the next action."""
     if status not in {"answered", "no_answer"}:
@@ -9372,7 +9429,7 @@ def _crm_complete_relance(contact, relance, status, *, note=""):
     relance.update({
         "status": status,
         "completed_at": _crm_now(),
-        "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+        "completed_by": actor_name,
     })
     if note:
         relance["note"] = note
@@ -9387,7 +9444,7 @@ def _crm_cancel_relance(contact, relance, *, reason="manual_delete"):
     relance.update({
         "status": "cancelled",
         "completed_at": _crm_now(),
-        "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
+        "completed_by": actor_name,
         "cancelled_reason": reason,
     })
     _crm_refresh_relance_date(contact)
@@ -11110,6 +11167,11 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                         != CRM_MANUAL_STATUS_SOURCE):
                     _crm_add_funding_refusal_notifications(
                         data, contact, stable_id,
+                    )
+                    _crm_schedule_ft_refusal_relance(
+                        contact,
+                        source="wedof_ft_refusal",
+                        stable_id=stable_id,
                     )
                     crm_changed = True
                 linked_folders += 1
@@ -13159,6 +13221,9 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         payload["qualification_flag"] = qualification_flag
     old_status = contact.get("statut")
     old_secondary_status = contact.get("statut_secondaire", "")
+    old_funding_status = str(
+        contact.get("statut_demande_financement_ft") or ""
+    ).strip()
     old_origin = contact.get("origine", "")
     old_qualification_flag = str(contact.get("qualification_flag") or "")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
@@ -13227,6 +13292,14 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         elif old_secondary_status in {"Financement FT en cours", "Financement FT refusé"}:
             contact["statut_secondaire"] = ""
             contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
+    new_funding_status = str(
+        contact.get("statut_demande_financement_ft") or ""
+    ).strip()
+    if new_funding_status == "refusee" and old_funding_status != "refusee":
+        _crm_schedule_ft_refusal_relance(
+            contact,
+            source="manual_ft_refusal",
+        )
     secondary_statuses = {"", *CRM_SECONDARY_STATUSES}
     if contact.get("statut_secondaire", "") not in secondary_statuses:
         contact["statut_secondaire"] = ""
