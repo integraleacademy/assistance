@@ -7137,7 +7137,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-relance-delete-1"
+CRM_ASSET_VERSION = "20260823-call-activity-edit-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -9185,6 +9185,35 @@ def _crm_activity(contact, kind, title, detail="", preview=""):
         "title": title, "detail": detail, "preview": preview,
         "author": (current_user() or {}).get("name", "Équipe Intégrale"),
     })
+
+
+def _crm_edit_call_activity(activity, detail):
+    """Update a call note while retaining every previous text as an audit trail."""
+    normalized = str(detail or "").strip()
+    if not normalized:
+        raise ValueError("Le compte-rendu de l’appel est requis")
+    if activity.get("kind") != "appel":
+        return False, "invalid_kind"
+    previous = str(activity.get("detail") or "").strip()
+    if previous == normalized:
+        return False, "unchanged"
+    now = _crm_now()
+    editor = (current_user() or {}).get("name", "Équipe Intégrale")
+    edits = activity.get("edits")
+    if not isinstance(edits, list):
+        edits = []
+        activity["edits"] = edits
+    edits.insert(0, {
+        "detail": previous,
+        "edited_at": now,
+        "edited_by": editor,
+    })
+    activity.update({
+        "detail": normalized,
+        "edited_at": now,
+        "edited_by": editor,
+    })
+    return True, "updated"
 
 
 CRM_RELANCE_STATUSES = {"scheduled", "answered", "no_answer", "reprogrammed", "cancelled"}
@@ -13223,6 +13252,44 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     contact["updated_at"] = _crm_now()
     save_data(data)
     return jsonify(_crm_contact_detail_response(contact, data))
+
+
+@app.patch("/api/crm/contacts/<contact_id>/activities/<activity_id>")
+@login_required
+@_crm_serialized
+def crm_edit_call_activity(contact_id, activity_id):
+    """Edit one logged call without replaying appointment or relance automations."""
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    activity = next(
+        (
+            item for item in contact.get("activities", [])
+            if isinstance(item, dict) and str(item.get("id")) == activity_id
+        ),
+        None,
+    )
+    if not activity:
+        return jsonify({"error": "Activité introuvable pour ce contact"}), 404
+    if activity.get("kind") != "appel":
+        return jsonify({"error": "Seuls les appels consignés peuvent être modifiés"}), 409
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Le corps JSON doit être un objet"}), 400
+    try:
+        changed, _ = _crm_edit_call_activity(activity, payload.get("commentaire"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if changed:
+        contact["updated_at"] = _crm_now()
+        save_data(data)
+    return jsonify({
+        "contact": _crm_contact_response(contact, data),
+        "activity": activity,
+        "changed": changed,
+    })
 
 
 @app.get("/api/crm/contacts/<contact_id>/activities/<activity_id>/preview")
