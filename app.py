@@ -7142,7 +7142,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-followup-date-1"
+CRM_ASSET_VERSION = "20260823-pipeline-saas-1"
 
 
 def _crm_migrate_registration_appointment_status(contact):
