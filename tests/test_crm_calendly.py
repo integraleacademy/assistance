@@ -889,7 +889,9 @@ def test_calendly_booking_browser_uses_seven_day_windows():
     assert "CALENDLY_AVAILABILITY_WINDOW_DAYS=7" in crm_js
     assert 'id="calPrev">← 7 jours</button>' in crm_js
     assert 'id="calNext">7 jours →</button>' in crm_js
-    assert "end.setDate(end.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
+    assert "windowEnd.setDate(windowEnd.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
+    assert "maxCalendlyEnd=new Date(actualStart.getTime()+CALENDLY_AVAILABILITY_WINDOW_DAYS*86400000)" in crm_js
+    assert "Math.min(windowEnd.getTime(),maxCalendlyEnd.getTime())" in crm_js
     assert "rangeStart.setDate(rangeStart.getDate()-CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
     assert "rangeStart.setDate(rangeStart.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
     assert "14 jours" not in crm_js
