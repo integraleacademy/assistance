@@ -64,8 +64,8 @@ def test_cnaps_form_sends_named_template_and_persists_success(tmp_path, monkeypa
     recipient, subject, plain, html_body = deliveries[0]
     assert recipient == "lina@example.com"
     assert subject == "Votre dossier Lina"
-    assert "Bonjour Lina, formation APS" in plain
-    assert "Bonjour Lina, formation APS" in html_body
+    assert "Bonjour Lina, formation Agent de prévention et de sécurité (APS)" in plain
+    assert "Bonjour Lina, formation Agent de prévention et de sécurité (APS)" in html_body
 
     data = application.load_data()
     stored = next(item for item in data["crm_contacts"] if item["id"] == contact["id"])
