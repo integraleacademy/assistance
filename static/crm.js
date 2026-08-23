@@ -929,7 +929,7 @@ async function refreshCrmSnapshot(){
  try{
   const id=new URLSearchParams(location.search).get('fiche');
   const suffix=id?`?contact_id=${encodeURIComponent(id)}`:'';
-  await refreshPipelineAppointments();
+  if(!id)await refreshPipelineAppointments();
   const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
   const updates=snapshot.contacts||[];
   const hasAppointments=Array.isArray(snapshot.appointments);
