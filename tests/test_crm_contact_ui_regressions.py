@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timeline-registration-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -344,6 +344,7 @@ def test_contact_supports_a_removable_secondary_timeline():
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
 
     for status in (
+        "Prochain RDV inscription",
         "Financement FT en cours",
         "Financement FT refusé",
         "Def MOB",
@@ -375,8 +376,57 @@ def test_opening_secondary_timeline_is_blank_and_does_not_save_a_status():
 def test_primary_timeline_excludes_secondary_only_steps():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
-    assert "PRIMARY_EXCLUDED_STATUSES=new Set(['POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé'])" in javascript
+    assert "PRIMARY_EXCLUDED_STATUSES=new Set(['Prochain RDV inscription','POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé'])" in javascript
     assert "S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status))" in javascript
+    assert "SECONDARY_STATUSES=['Prochain RDV inscription','Financement FT en cours'" in javascript
+
+def test_registration_appointment_moves_to_secondary_timeline_and_migrates_history():
+    backend = APP_PY.read_text(encoding="utf-8")
+    definitions = backend[
+        backend.index("CRM_STATUSES = ["):
+        backend.index("CALENDLY_API_BASE")
+    ]
+    namespace = {}
+    exec(definitions, namespace)
+
+    assert "Prochain RDV inscription" not in namespace["CRM_STATUSES"]
+    assert namespace["CRM_SECONDARY_STATUSES"][0] == "Prochain RDV inscription"
+    configured = {
+        "crm_statuses": [
+            "Nouveaux",
+            "Prochain RDV inscription",
+            "Étape personnalisée",
+            "A relancer",
+            "Disqualifié",
+            "Converti",
+        ]
+    }
+    statuses = namespace["_crm_statuses"](configured)
+    assert "Prochain RDV inscription" not in statuses
+    assert "Étape personnalisée" in statuses
+
+    migrate = namespace["_crm_migrate_registration_appointment_status"]
+    without_secondary = {
+        "statut": "Prochain RDV inscription",
+        "statut_secondaire": "",
+    }
+    assert migrate(without_secondary) is True
+    assert without_secondary == {
+        "statut": "En cours",
+        "statut_secondaire": "Prochain RDV inscription",
+    }
+
+    with_secondary = {
+        "statut": "Prochain RDV inscription",
+        "statut_secondaire": "Financement FT en cours",
+    }
+    assert migrate(with_secondary) is True
+    assert with_secondary == {
+        "statut": "En cours",
+        "statut_secondaire": "Financement FT en cours",
+    }
+    assert migrate(with_secondary) is False
+
 
 
 def test_contact_relance_tracking_is_actionable_and_visually_scoped():
@@ -637,7 +687,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timeline-registration-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -662,7 +712,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timeline-registration-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -724,7 +774,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timeline-registration-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -809,7 +859,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timeline-registration-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -851,7 +901,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-pistes-completeness-1" in application
+    assert "20260823-timeline-registration-1" in application
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
@@ -908,4 +958,4 @@ console.log('CRM Pistes completeness: OK');
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-timeline-registration-1"' in application
