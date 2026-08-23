@@ -106,6 +106,7 @@ function bindReminderCardNavigation(card,contact,ctx){
  card.onkeydown=event=>{if(reminderCardControl(event.target)||!['Enter',' '].includes(event.key))return;event.preventDefault();open()};
  return open;
 }
+function reminderPeriodMatches(contact,mode,selectedDate){return mode==='overdue'?isOverdue(contact):mode==='planned'||contact.relance_date===selectedDate}
 function remindersPage(ctx){
  const planned=ctx.contacts.filter(contact=>contact.statut==='A relancer'&&contact.relance_date&&!contact.archived_at);
  const history=ctx.contacts.flatMap(contact=>(contact.relances||[]).filter(item=>item.status!=='scheduled').map(item=>({contact,item})));
@@ -113,12 +114,12 @@ function remindersPage(ctx){
  const noAnswer=history.filter(row=>row.item.status==='no_answer').length;
  const today=dayKey(new Date());
  let selectedDate=today;
- let showAll=false,overdueOnly=false;
+ let periodMode='date';
  const longDate=value=>{
   const date=new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime())?value:date.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
  };
- ctx.page.innerHTML=ctx.header('SUIVI COMMERCIAL','Relances','Traitez immédiatement les retards, réponses et prochaines actions.')+`<div class="workspace-metrics"><article class="metric-action overdue-metric" id="reminderOverdue" role="button" tabindex="0" aria-pressed="false"><span>En retard</span><b>${planned.filter(isOverdue).length}</b><small>Afficher les relances échues</small></article><article><span>Aujourd’hui</span><b>${planned.filter(c=>c.relance_date===today).length}</b></article><article><span>Planifiées</span><b>${planned.length}</b></article><article><span>Taux de réponse</span><b>${answered+noAnswer?Math.round(answered/(answered+noAnswer)*100):0} %</b></article></div><section class="reminder-date-toolbar" aria-label="Choisir le jour des relances"><div class="reminder-date-navigation"><button class="btn reminder-date-arrow" id="reminderPreviousDay" type="button" aria-label="Jour précédent">‹</button><label for="workspaceReminderDate"><span>Date affichée</span><input id="workspaceReminderDate" type="date" value="${selectedDate}"></label><button class="btn reminder-date-arrow" id="reminderNextDay" type="button" aria-label="Jour suivant">›</button><button class="btn" id="reminderToday" type="button">Aujourd’hui</button></div><div class="reminder-date-context" aria-live="polite"><span id="reminderDateLabel"></span><b id="reminderDateCount"></b></div><button class="btn blue" id="reminderShowAll" type="button">Voir toutes les relances</button></section><section class="workspace-toolbar"><div class="workspace-search"><span>⌕</span><input id="reminderSearch" placeholder="Rechercher une personne…"></div><select id="reminderCommercial">${filterOptions(planned.map(c=>teamName(c,ctx.C)),'','Tous les commerciaux',ctx.esc)}</select><select id="reminderFormation">${filterOptions(planned.map(c=>c.formation),'','Toutes les formations',ctx.esc)}</select><select id="reminderOrigin">${filterOptions(planned.map(sourceLabel),'','Toutes les origines',ctx.esc)}</select></section><section class="reminder-command-list" id="reminderCommandList"></section>`;
+ ctx.page.innerHTML=ctx.header('SUIVI COMMERCIAL','Relances','Traitez immédiatement les retards, réponses et prochaines actions.')+`<div class="workspace-metrics"><article class="metric-action overdue-metric" id="reminderOverdue" role="button" tabindex="0" aria-pressed="false"><span>En retard</span><b>${planned.filter(isOverdue).length}</b><small>Afficher les relances échues</small></article><article class="metric-action today-metric" id="reminderTodayMetric" role="button" tabindex="0" aria-pressed="true"><span>Aujourd’hui</span><b>${planned.filter(c=>c.relance_date===today).length}</b><small>Afficher les relances du jour</small></article><article class="metric-action planned-metric" id="reminderPlanned" role="button" tabindex="0" aria-pressed="false"><span>Planifiées</span><b>${planned.length}</b><small>Afficher toutes les relances</small></article><article><span>Taux de réponse</span><b>${answered+noAnswer?Math.round(answered/(answered+noAnswer)*100):0} %</b></article></div><section class="reminder-date-toolbar" aria-label="Choisir le jour des relances"><div class="reminder-date-navigation"><button class="btn reminder-date-arrow" id="reminderPreviousDay" type="button" aria-label="Jour précédent">‹</button><label for="workspaceReminderDate"><span>Date affichée</span><input id="workspaceReminderDate" type="date" value="${selectedDate}"></label><button class="btn reminder-date-arrow" id="reminderNextDay" type="button" aria-label="Jour suivant">›</button><button class="btn" id="reminderToday" type="button">Aujourd’hui</button></div><div class="reminder-date-context" aria-live="polite"><span id="reminderDateLabel"></span><b id="reminderDateCount"></b></div><button class="btn blue" id="reminderShowAll" type="button">Voir toutes les relances</button></section><section class="workspace-toolbar"><div class="workspace-search"><span>⌕</span><input id="reminderSearch" placeholder="Rechercher une personne…"></div><select id="reminderCommercial">${filterOptions(planned.map(c=>teamName(c,ctx.C)),'','Tous les commerciaux',ctx.esc)}</select><select id="reminderFormation">${filterOptions(planned.map(c=>c.formation),'','Toutes les formations',ctx.esc)}</select><select id="reminderOrigin">${filterOptions(planned.map(sourceLabel),'','Toutes les origines',ctx.esc)}</select></section><section class="reminder-command-list" id="reminderCommandList"></section>`;
  const search=document.querySelector('#reminderSearch');
  const commercialFilter=document.querySelector('#reminderCommercial');
  const formationFilter=document.querySelector('#reminderFormation');
@@ -128,29 +129,40 @@ function remindersPage(ctx){
  const dateCount=document.querySelector('#reminderDateCount');
  const showAllButton=document.querySelector('#reminderShowAll');
  const overdueMetric=document.querySelector('#reminderOverdue');
+ const todayMetric=document.querySelector('#reminderTodayMetric');
+ const plannedMetric=document.querySelector('#reminderPlanned');
  const renderRows=()=>{
   const q=normalize(search.value),commercial=commercialFilter.value,formation=formationFilter.value,origin=originFilter.value;
-  const rows=planned.filter(contact=>(overdueOnly?isOverdue(contact):(showAll||contact.relance_date===selectedDate))&&(!q||normalize(ctx.displayName(contact)).includes(q))&&(!commercial||teamName(contact,ctx.C)===commercial)&&(!formation||contact.formation===formation)&&(!origin||sourceLabel(contact)===origin)).sort((a,b)=>a.relance_date.localeCompare(b.relance_date)||ctx.displayName(a).localeCompare(ctx.displayName(b),'fr'));
+  const rows=planned.filter(contact=>reminderPeriodMatches(contact,periodMode,selectedDate)&&(!q||normalize(ctx.displayName(contact)).includes(q))&&(!commercial||teamName(contact,ctx.C)===commercial)&&(!formation||contact.formation===formation)&&(!origin||sourceLabel(contact)===origin)).sort((a,b)=>a.relance_date.localeCompare(b.relance_date)||ctx.displayName(a).localeCompare(ctx.displayName(b),'fr'));
   const root=document.querySelector('#reminderCommandList');
   dateInput.value=selectedDate;
-  dateLabel.textContent=overdueOnly?'Relances en retard':showAll?'Toutes les relances planifiées':selectedDate===today?`Aujourd’hui · ${longDate(selectedDate)}`:longDate(selectedDate);
+  dateLabel.textContent=periodMode==='overdue'?'Relances en retard':periodMode==='planned'?'Toutes les relances planifiées':selectedDate===today?`Aujourd’hui · ${longDate(selectedDate)}`:longDate(selectedDate);
   dateCount.textContent=`${rows.length} relance${rows.length>1?'s':''}`;
-  showAllButton.textContent=showAll?'Voir la journée sélectionnée':'Voir toutes les relances';
-  overdueMetric.classList.toggle('active',overdueOnly);
-  overdueMetric.setAttribute('aria-pressed',String(overdueOnly));
-  const emptyMessage=overdueOnly?'Aucune relance en retard correspondant aux filtres.':showAll?'Aucune relance correspondant aux filtres.':`Aucune relance prévue le ${longDate(selectedDate)}.`;
+  showAllButton.textContent=periodMode==='planned'?'Voir la journée sélectionnée':'Voir toutes les relances';
+  const todayActive=periodMode==='date'&&selectedDate===today;
+  overdueMetric.classList.toggle('active',periodMode==='overdue');
+  overdueMetric.setAttribute('aria-pressed',String(periodMode==='overdue'));
+  todayMetric.classList.toggle('active',todayActive);
+  todayMetric.setAttribute('aria-pressed',String(todayActive));
+  plannedMetric.classList.toggle('active',periodMode==='planned');
+  plannedMetric.setAttribute('aria-pressed',String(periodMode==='planned'));
+  const emptyMessage=periodMode==='overdue'?'Aucune relance en retard correspondant aux filtres.':periodMode==='planned'?'Aucune relance correspondant aux filtres.':`Aucune relance prévue le ${longDate(selectedDate)}.`;
   root.innerHTML=rows.map(contact=>{const [label,tone]=reminderStatus(contact),relance=(contact.relances||[]).find(item=>item.status==='scheduled'&&item.scheduled_date===contact.relance_date);return`<article class="reminder-command ${tone}" data-reminder-contact="${contact.id}" role="link" tabindex="0" aria-label="Ouvrir le suivi des relances de ${ctx.esc(ctx.displayName(contact))}"><time><strong>${new Date(contact.relance_date+'T12:00:00').getDate()}</strong><span>${new Date(contact.relance_date+'T12:00:00').toLocaleDateString('fr-FR',{month:'short'})}</span></time><div><span class="reminder-tone">${label}</span><h3>${ctx.esc(ctx.displayName(contact))}</h3><p>${ctx.esc(contact.formation||'Formation à définir')} · ${ctx.esc(sourceLabel(contact))} · ${ctx.esc(teamName(contact,ctx.C))}</p><small>${(contact.relances||[]).filter(item=>item.status==='no_answer').length} tentative(s) sans réponse</small></div><div class="reminder-command-actions"><button class="btn success" data-reminder-answered>A répondu</button><button class="btn warning" data-reminder-no-answer ${relance?'':'disabled'}>Pas de réponse</button><button class="btn" data-reminder-reschedule>Reprogrammer</button><button class="btn" data-reminder-open>Ouvrir</button></div></article>`}).join('')||`<div class="empty">${ctx.esc(emptyMessage)}</div>`;
   root.querySelectorAll('[data-reminder-contact]').forEach(card=>{const contact=ctx.contacts.find(c=>c.id===card.dataset.reminderContact),relance=(contact.relances||[]).find(item=>item.status==='scheduled'&&item.scheduled_date===contact.relance_date),open=bindReminderCardNavigation(card,contact,ctx);card.querySelector('[data-reminder-open]').onclick=open;card.querySelector('[data-reminder-reschedule]').onclick=()=>ctx.relaunchModal(contact,{returnTab:'contactRelanceTab'});card.querySelector('[data-reminder-answered]').onclick=()=>ctx.callModal(contact,{relance,returnTab:'contactRelanceTab'});if(relance)card.querySelector('[data-reminder-no-answer]').onclick=()=>ctx.noAnswerRelanceModal(contact,relance)});
  };
- const moveDate=offset=>{const date=new Date(`${selectedDate}T12:00:00`);date.setDate(date.getDate()+offset);selectedDate=dayKey(date);showAll=false;overdueOnly=false;renderRows()};
+ const moveDate=offset=>{const date=new Date(`${selectedDate}T12:00:00`);date.setDate(date.getDate()+offset);selectedDate=dayKey(date);periodMode='date';renderRows()};
+ const showToday=()=>{selectedDate=today;periodMode='date';renderRows()};
+ const togglePlanned=()=>{periodMode=periodMode==='planned'?'date':'planned';renderRows()};
+ const toggleOverdue=()=>{periodMode=periodMode==='overdue'?'date':'overdue';renderRows()};
+ const bindMetricActivation=(metric,activate)=>{metric.onclick=activate;metric.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate()}}};
  document.querySelector('#reminderPreviousDay').onclick=()=>moveDate(-1);
  document.querySelector('#reminderNextDay').onclick=()=>moveDate(1);
- document.querySelector('#reminderToday').onclick=()=>{selectedDate=today;showAll=false;overdueOnly=false;renderRows()};
- dateInput.onchange=()=>{if(!dateInput.value)return;selectedDate=dateInput.value;showAll=false;overdueOnly=false;renderRows()};
- showAllButton.onclick=()=>{showAll=!showAll;overdueOnly=false;renderRows()};
- const toggleOverdue=()=>{overdueOnly=!overdueOnly;showAll=false;renderRows()};
- overdueMetric.onclick=toggleOverdue;
- overdueMetric.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleOverdue()}};
+ document.querySelector('#reminderToday').onclick=showToday;
+ dateInput.onchange=()=>{if(!dateInput.value)return;selectedDate=dateInput.value;periodMode='date';renderRows()};
+ showAllButton.onclick=togglePlanned;
+ bindMetricActivation(overdueMetric,toggleOverdue);
+ bindMetricActivation(todayMetric,showToday);
+ bindMetricActivation(plannedMetric,togglePlanned);
  [search,commercialFilter,formationFilter,originFilter].forEach(input=>input.oninput=renderRows);
  renderRows();
 }

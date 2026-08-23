@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -468,21 +468,50 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
     assert "pipelineOverviewStatuses().map(s=>" in javascript
 
 
-def test_overdue_reminder_metric_filters_rows_and_is_keyboard_accessible():
+def test_reminder_period_metrics_filter_rows_and_are_keyboard_accessible():
     workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
     css = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
+    helper = workspace[
+        workspace.index("function reminderPeriodMatches"):
+        workspace.index("function remindersPage")
+    ]
+    script = f"""
+const isOverdue=contact=>contact.relance_date<'2026-08-23';
+{helper}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+const overdue={{relance_date:'2026-08-22'}};
+const today={{relance_date:'2026-08-23'}};
+const future={{relance_date:'2026-08-24'}};
+assert(reminderPeriodMatches(overdue,'overdue','2026-08-23'),'overdue mode includes past reminders');
+assert(!reminderPeriodMatches(today,'overdue','2026-08-23'),'overdue mode excludes today');
+assert(reminderPeriodMatches(today,'date','2026-08-23'),'date mode includes the selected day');
+assert(!reminderPeriodMatches(future,'date','2026-08-23'),'date mode excludes other days');
+assert([overdue,today,future].every(contact=>reminderPeriodMatches(contact,'planned','2026-08-23')),'planned mode includes every scheduled reminder');
+console.log('CRM reminder period filters: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
+    assert "CRM reminder period filters: OK" in completed.stdout
     assert 'id="reminderOverdue"' in workspace
-    assert 'role="button" tabindex="0" aria-pressed="false"' in workspace
-    assert "overdueOnly?isOverdue(contact)" in workspace
-    assert "dateLabel.textContent=overdueOnly?'Relances en retard'" in workspace
-    assert "overdueMetric.setAttribute('aria-pressed',String(overdueOnly))" in workspace
-    assert "const toggleOverdue=()=>{overdueOnly=!overdueOnly;showAll=false;renderRows()}" in workspace
+    assert 'id="reminderTodayMetric"' in workspace
+    assert 'id="reminderPlanned"' in workspace
+    assert workspace.count('role="button" tabindex="0"') >= 3
+    assert "reminderPeriodMatches(contact,periodMode,selectedDate)" in workspace
+    assert "const showToday=()=>{selectedDate=today;periodMode='date';renderRows()}" in workspace
+    assert "const togglePlanned=()=>{periodMode=periodMode==='planned'?'date':'planned';renderRows()}" in workspace
+    assert "const toggleOverdue=()=>{periodMode=periodMode==='overdue'?'date':'overdue';renderRows()}" in workspace
+    assert "bindMetricActivation(todayMetric,showToday)" in workspace
+    assert "bindMetricActivation(plannedMetric,togglePlanned)" in workspace
     assert "event.key==='Enter'||event.key===' '" in workspace
-    assert "selectedDate=today;showAll=false;overdueOnly=false" in workspace
-    assert "selectedDate=dateInput.value;showAll=false;overdueOnly=false" in workspace
+    assert "selectedDate=dateInput.value;periodMode='date';renderRows()" in workspace
     assert ".workspace-metrics article.metric-action:focus-visible" in css
-    assert ".workspace-metrics article.metric-action.active" in css
+    assert ".workspace-metrics article.today-metric.active" in css
+    assert ".workspace-metrics article.planned-metric.active" in css
 
 
 def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
@@ -749,7 +778,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -774,7 +803,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -836,7 +865,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -921,7 +950,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -963,7 +992,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-activity-tab-order-1" in application
+    assert "20260823-reminder-period-filters-1" in application
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
@@ -1020,7 +1049,7 @@ console.log('CRM Pistes completeness: OK');
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in application
 
 def test_pipeline_relance_date_only_announces_today_or_future():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1059,7 +1088,7 @@ console.log('CRM pipeline relance date: OK');
     assert "updateVisibleAppointmentData();" in javascript
     assert ".pipeline-relance-date.missing{color:#c23449}" in stylesheet
     assert ".pipeline-appointment-date,.pipeline-relance-date" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in application
 
 
 def test_contact_pipeline_uses_accessible_saas_stepper_without_changing_actions():
@@ -1115,7 +1144,7 @@ console.log('CRM SaaS pipeline: OK');
     assert ".timeline-scroll{scroll-snap-type:x proximity;padding-bottom:6px}" in stylesheet
     assert ".timeline-toggle{flex-basis:44px;width:44px;height:44px}" in stylesheet
     assert "clip-path:polygon(0 0,calc(100% - 12px)" not in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in application
 
 
 def test_activity_journal_is_second_tab_before_wedof():
@@ -1154,4 +1183,4 @@ def test_activity_journal_is_second_tab_before_wedof():
         assert f'aria-labelledby="{tab_id}"' in javascript
 
     assert "loadWedof(c,{refresh:true})" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-activity-tab-order-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-reminder-period-filters-1"' in application
