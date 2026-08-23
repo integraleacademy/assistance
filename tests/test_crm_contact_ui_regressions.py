@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -358,8 +358,8 @@ def test_contact_supports_a_removable_secondary_timeline():
     assert 'id="removeSecondaryTimeline"' in javascript
     assert "statut_secondaire:next" in javascript
     assert "Deuxième statut enregistré" in javascript
-    assert ".pipeline-stage-secondary .timeline{--pipeline-accent:#7652b5" in stylesheet
-    assert ".pipeline-step.current .pipeline-step-marker" in stylesheet
+    assert ".timeline-secondary button.current{background:var(--purple);color:#fff}" in stylesheet
+    assert ".timeline-secondary button.done{background:#ceb9f3;color:#543285}" in stylesheet
 
 
 def test_opening_secondary_timeline_is_blank_and_does_not_save_a_status():
@@ -778,7 +778,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -803,7 +803,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -865,7 +865,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -950,7 +950,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -992,7 +992,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260823-overdue-relance-label-1" in application
+    assert "20260823-timelines-legacy-1" in application
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
@@ -1049,7 +1049,7 @@ console.log('CRM Pistes completeness: OK');
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
 
 def test_pipeline_relance_date_distinguishes_overdue_scheduled_and_missing():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1091,39 +1091,28 @@ console.log('CRM pipeline relance date: OK');
     assert ".pipeline-relance-date.overdue{color:#c23449;font-weight:800}" in stylesheet
     assert ".pipeline-relance-date.missing{color:#7b8798}" in stylesheet
     assert ".pipeline-appointment-date,.pipeline-relance-date" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
 
-def test_contact_pipeline_uses_accessible_saas_stepper_without_changing_actions():
+def test_contact_pipeline_restores_compact_chevrons_without_changing_actions():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
     application = APP_PY.read_text(encoding="utf-8")
     helper = javascript[
-        javascript.index("function timelineProgressDetails"):
-        javascript.index("const secondaryTimelineRow")
+        javascript.index("const timelineButtons"):
+        javascript.index("function updateLeadCount")
     ]
     script = r"""
 const esc=value=>String(value);
 """ + helper + r"""
 const assert=(condition,message)=>{if(!condition)throw new Error(message)};
 const statuses=['Nouveaux','Qualification personnalisée','RDV programmé','En cours'];
-const details=timelineProgressDetails(statuses,'Qualification personnalisée');
-assert(details.index===1&&details.total===4,'dynamic status order is preserved');
-assert(details.progress===33,'progress follows the current dynamic step');
-assert(details.summary==='Étape 2 sur 4','progress summary is explicit');
 const buttons=timelineButtons(statuses,'RDV programmé','primary');
-assert(buttons.includes('class="pipeline-step done"'),'completed steps have a state');
-assert(buttons.includes('>✓</span>'),'completed steps use a checkmark');
-assert(buttons.includes('class="pipeline-step current" aria-current="step"'),'current step is exposed accessibly');
-assert(buttons.includes('class="pipeline-step upcoming"'),'future steps have a state');
-assert(buttons.includes('data-primary-step="Qualification personnalisée"'),'custom statuses keep the business hook');
-const primary=timelineTrack(statuses,'RDV programmé','primary','Pipeline commercial');
-assert(primary.includes('Pipeline commercial'),'primary track is labelled');
-assert(primary.includes('width:67%'),'primary progress bar is rendered');
-const secondary=timelineTrack(['POEI','Marché FT'],'','secondary','Suivi complémentaire');
-assert(secondary.includes('pipeline-stage-secondary'),'secondary track has its own theme');
-assert(secondary.includes('Aucune étape sélectionnée'),'empty secondary track stays usable');
-assert(secondary.includes('data-secondary-step="POEI"'),'secondary business hook is preserved');
-console.log('CRM SaaS pipeline: OK');
+assert(buttons.includes('data-primary-step="Qualification personnalisée"'),'dynamic statuses keep the business hook');
+assert(buttons.includes('class="done"'),'completed steps keep their state');
+assert(buttons.includes('class="current"'),'current step keeps its state');
+assert(!buttons.includes('pipeline-step-marker'),'the SaaS numbered markers are removed');
+assert(!buttons.includes('aria-current="step"'),'the restored markup matches the compact legacy component');
+console.log('CRM compact timeline: OK');
 """
     completed = subprocess.run(
         ["node", "-e", script],
@@ -1133,20 +1122,24 @@ console.log('CRM SaaS pipeline: OK');
         text=True,
     )
 
-    assert "CRM SaaS pipeline: OK" in completed.stdout
-    assert "syncTimelineState(document.querySelector('.timeline-primary'),S,c.statut)" in javascript
+    assert "CRM compact timeline: OK" in completed.stdout
+    assert "syncTimelineState" not in javascript
+    assert "step.classList.toggle('current',step.dataset.primaryStep===c.statut)" in javascript
+    assert "step.classList.toggle('done',i<S.indexOf(c.statut))" in javascript
     assert "if(b.dataset.primaryStep==='A relancer')return relaunchModal(c)" in javascript
     assert "if(b.dataset.primaryStep==='Converti')return openRegistrationDraft(c)" in javascript
     assert "document.querySelectorAll('[data-secondary-step]')" in javascript
     assert "addSecondary.closest('.timeline-row').insertAdjacentHTML('afterend',secondaryTimelineRow(''))" in javascript
-    assert 'class="timeline-scroll" tabindex="0" role="group"' in javascript
-    assert ".pipeline-stage-card" in stylesheet
-    assert ".pipeline-line>span" in stylesheet
-    assert ".pipeline-step:focus-visible .pipeline-step-marker" in stylesheet
-    assert ".timeline-scroll{scroll-snap-type:x proximity;padding-bottom:6px}" in stylesheet
-    assert ".timeline-toggle{flex-basis:44px;width:44px;height:44px}" in stylesheet
-    assert "clip-path:polygon(0 0,calc(100% - 12px)" not in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in application
+    assert 'class="timeline timeline-primary"' in javascript
+    assert 'class="timeline timeline-secondary"' in javascript
+    assert ".timeline button{min-width:125px" in stylesheet
+    assert "clip-path:polygon(0 0,calc(100% - 12px)" in stylesheet
+    assert ".timeline-secondary button.current{background:var(--purple);color:#fff}" in stylesheet
+    assert ".timeline-toggle{flex:0 0 30px;width:30px;height:30px" in stylesheet
+    assert ".pipeline-stage-card" not in stylesheet
+    assert ".pipeline-line>span" not in stylesheet
+    assert ".pipeline-step-marker" not in stylesheet
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
 
 
 def test_activity_journal_is_second_tab_before_wedof():
@@ -1185,4 +1178,4 @@ def test_activity_journal_is_second_tab_before_wedof():
         assert f'aria-labelledby="{tab_id}"' in javascript
 
     assert "loadWedof(c,{refresh:true})" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-overdue-relance-label-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-timelines-legacy-1"' in application
