@@ -14612,8 +14612,9 @@ def crm_send_cnaps_form(contact_id):
     contact = _crm_contact(data, contact_id)
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
-    if str(contact.get("carte_pro") or "").strip().upper() != "NON":
-        return jsonify({"error": "Le formulaire CNAPS est réservé aux personnes sans carte professionnelle."}), 409
+    formation = str(contact.get("formation") or "").strip().upper()
+    if formation not in {"APS", "A3P"} or str(contact.get("carte_pro") or "").strip().upper() != "NON":
+        return jsonify({"error": "Le formulaire CNAPS est réservé aux pistes APS/A3P sans carte professionnelle."}), 409
     recipient = str(contact.get("mail") or "").strip()
     if not recipient:
         return jsonify({"error": "Renseignez l’adresse e-mail du contact avant l’envoi."}), 409
