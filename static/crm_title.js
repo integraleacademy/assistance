@@ -18,7 +18,7 @@ const SECTION_LABELS=Object.freeze({
 const formatFirstName=value=>String(value||'').trim().replace(/\s+/g,' ').toLocaleLowerCase('fr-FR').replace(/^clement$/u,'clément').replace(/(^|[\s'-])\p{L}/gu,match=>match.toLocaleUpperCase('fr-FR'));
 const formatLastName=value=>String(value||'').trim().replace(/\s+/g,' ').toLocaleUpperCase('fr-FR');
 const displayName=contact=>`${formatFirstName(contact?.prenom)} ${formatLastName(contact?.nom)}`.trim();
-const sectionLabel=(section,serverLabel='')=>String(serverLabel||SECTION_LABELS[section]||'').trim();
+const sectionLabel=(section,serverLabel='')=>String(SECTION_LABELS[section]||serverLabel||'').trim();
 const titleForSection=(section,serverLabel='')=>{
  const label=sectionLabel(section,serverLabel);
  return label?`${label} - Intégrale CRM`:DEFAULT_TITLE;
