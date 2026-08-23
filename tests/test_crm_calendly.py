@@ -1,3 +1,4 @@
+import datetime
 import hashlib
 import hmac
 import json
@@ -880,6 +881,37 @@ def test_availability_rejects_windows_longer_than_seven_days(tmp_path, monkeypat
     assert response.status_code == 400
     assert "ne peut pas dépasser 7 jours" in response.get_json()["error"]
     assert calls == []
+
+
+def test_availability_moves_a_stale_start_time_into_the_future(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    captured = {}
+    now = datetime.datetime.now(datetime.timezone.utc)
+    requested_end = now + datetime.timedelta(days=6)
+
+    def fake_calendly(method, path, **kwargs):
+        captured.update({"method": method, "path": path, **kwargs})
+        return {"collection": []}
+
+    monkeypatch.setattr(application, "_calendly_request", fake_calendly)
+    response = client.get(
+        "/api/crm/calendly/availability",
+        query_string={
+            "event_type": "https://api.calendly.com/event_types/TYPE1",
+            "start_time": (now - datetime.timedelta(seconds=5)).isoformat(),
+            "end_time": requested_end.isoformat(),
+        },
+    )
+
+    assert response.status_code == 200
+    forwarded_start = datetime.datetime.fromisoformat(
+        captured["params"]["start_time"].replace("Z", "+00:00")
+    )
+    assert forwarded_start > datetime.datetime.now(datetime.timezone.utc)
+    assert captured["params"]["end_time"] == requested_end.isoformat()
+    assert forwarded_start - now >= datetime.timedelta(seconds=50)
+    assert captured["method"] == "GET"
+    assert captured["path"] == "/event_type_available_times"
 
 
 def test_calendly_booking_browser_uses_seven_day_windows():
