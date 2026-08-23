@@ -909,9 +909,11 @@ async function calendlyModal(c){
     const loadSlots=async()=>{
       selectedStart='';bookButton.disabled=true;slots.innerHTML='<div class="activity-empty">Chargement des disponibilités…</div>';
       const today=new Date();today.setHours(0,0,0,0);document.querySelector('#calPrev').disabled=rangeStart<=today;
-      const end=new Date(rangeStart);end.setDate(end.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS);
+      const windowEnd=new Date(rangeStart);windowEnd.setDate(windowEnd.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS);
       const actualStart=rangeStart<=today?new Date():rangeStart;
-      rangeLabel.textContent=`${rangeStart.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} – ${new Date(end.getTime()-86400000).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}`;
+      const maxCalendlyEnd=new Date(actualStart.getTime()+CALENDLY_AVAILABILITY_WINDOW_DAYS*86400000);
+      const end=new Date(Math.min(windowEnd.getTime(),maxCalendlyEnd.getTime()));
+      rangeLabel.textContent=`${rangeStart.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} – ${new Date(windowEnd.getTime()-86400000).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}`;
       try{
         const times=await api(`/api/crm/calendly/availability?event_type=${encodeURIComponent(selectedType.uri)}&start_time=${encodeURIComponent(actualStart.toISOString())}&end_time=${encodeURIComponent(end.toISOString())}`);
         const groups={};times.forEach(slot=>{const day=new Date(slot.start_time).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});(groups[day]??=[]).push(slot)});
