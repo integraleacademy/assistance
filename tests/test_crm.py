@@ -1152,6 +1152,44 @@ def test_ft_refusal_does_not_reopen_a_finalized_contact(
     ]
 
 
+def test_ft_refusal_keeps_relance_priority_with_an_active_calendly_appointment(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    created = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin"},
+    ).get_json()
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [{
+        "id": "future-ft-appointment",
+        "contact_id": created["id"],
+        "status": "active",
+        "start_time": "2099-09-02T10:00:00+02:00",
+        "end_time": "2099-09-02T10:30:00+02:00",
+    }]
+    application.save_data(data)
+
+    programmed = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut": "RDV programmé"},
+    )
+    assert programmed.status_code == 200
+    assert programmed.get_json()["statut"] == "RDV programmé"
+
+    refused = c.patch(
+        f"/api/crm/contacts/{created['id']}",
+        json={"statut_demande_financement_ft": "refusee"},
+    )
+    assert refused.status_code == 200
+    contact = refused.get_json()
+    assert contact["statut"] == "A relancer"
+    assert contact["statut_secondaire"] == "Financement FT refusé"
+    assert len([
+        item for item in contact["relances"]
+        if item.get("status") == "scheduled"
+    ]) == 1
+
+
 def test_a_new_ft_refusal_on_another_day_reprograms_the_follow_up():
     paris = application.pytz.timezone("Europe/Paris")
     contact = {
