@@ -992,7 +992,10 @@ def test_custom_primary_pipeline_repositions_in_progress_without_duplicate():
     assert statuses.index("En cours") == statuses.index("RDV programmé") + 1
 
 
-@pytest.mark.parametrize("status", application.CRM_STATUSES)
+@pytest.mark.parametrize(
+    "status",
+    [status for status in application.CRM_STATUSES if status != "RDV programmé"],
+)
 def test_each_manually_selected_primary_status_survives_refresh(
         tmp_path, monkeypatch, status):
     c = client(tmp_path, monkeypatch)
@@ -2163,7 +2166,81 @@ def test_scheduling_a_relance_without_active_appointment_repairs_pipeline_status
     assert updated["relance_date"] == "2099-09-03"
     assert updated["relances"][0]["status"] == "scheduled"
     assert updated["activities"][0]["title"] == "Statut : A relancer"
-    assert updated["activities"][0]["detail"] == "Ancien statut : RDV programmé"
+    assert updated["activities"][0]["detail"] == "Ancien statut : En cours"
+
+
+def test_calendly_appointment_eligibility_uses_the_paris_calendar_day():
+    paris = application.pytz.timezone("Europe/Paris")
+    now = paris.localize(application.datetime.datetime(2026, 8, 23, 12, 0))
+
+    assert application._crm_calendly_appointment_is_today_or_future(
+        {"status": "active", "start_time": "2026-08-23T09:00:00+02:00"},
+        now,
+    )
+    assert not application._crm_calendly_appointment_is_today_or_future(
+        {"status": "active", "start_time": "2026-08-22T23:59:59+02:00"},
+        now,
+    )
+    assert not application._crm_calendly_appointment_is_today_or_future(
+        {"status": "canceled", "start_time": "2026-08-24T09:00:00+02:00"},
+        now,
+    )
+    assert not application._crm_calendly_appointment_is_today_or_future(
+        {"status": "active", "start_time": ""},
+        now,
+    )
+
+
+def test_programmed_status_keeps_an_appointment_earlier_today_and_repairs_yesterday():
+    paris = application.pytz.timezone("Europe/Paris")
+    now = paris.localize(application.datetime.datetime(2026, 8, 23, 12, 0))
+    contact = {"id": "contact-1", "statut": "RDV programmé"}
+
+    today = {"crm_calendly_appointments": [{
+        "contact_id": "contact-1",
+        "status": "active",
+        "start_time": "2026-08-23T09:00:00+02:00",
+    }]}
+    assert not application._crm_sync_contact_calendly_status(today, contact, now)
+    assert contact["statut"] == "RDV programmé"
+
+    yesterday = {"crm_calendly_appointments": [{
+        "contact_id": "contact-1",
+        "status": "active",
+        "start_time": "2026-08-22T18:00:00+02:00",
+    }]}
+    assert application._crm_sync_contact_calendly_status(yesterday, contact, now)
+    assert contact["statut"] == "En cours"
+
+
+def test_contact_detail_persists_stale_programmed_status_as_in_progress(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "statut": "RDV programmé"},
+    ).get_json()
+    data = application.load_data()
+    stored = next(row for row in data["crm_contacts"] if row["id"] == contact["id"])
+    stored["statut"] = "RDV programmé"
+    stored["relance_date"] = ""
+    stored["relances"] = []
+    data["crm_calendly_appointments"] = [{
+        "id": "past-rdv",
+        "contact_id": contact["id"],
+        "status": "active",
+        "start_time": "2020-09-02T10:00:00+02:00",
+        "end_time": "2020-09-02T10:30:00+02:00",
+    }]
+    application.save_data(data)
+
+    prepared = c.get(f"/api/crm/contacts/{contact['id']}")
+
+    assert prepared.status_code == 200
+    assert prepared.get_json()["statut"] == "En cours"
+    persisted = application.load_data()
+    repaired = next(row for row in persisted["crm_contacts"] if row["id"] == contact["id"])
+    assert repaired["statut"] == "En cours"
 
 
 def test_active_calendly_appointment_keeps_programmed_status_with_a_relance(
