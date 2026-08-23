@@ -11493,10 +11493,8 @@ def _wedof_france_travail_status(payload, previous_status=""):
 
 
 def _wedof_effective_funding_status(statuses):
-    """Conserve la priorité historique : instruction active, puis état récent."""
+    """Retient l'état du dossier WEDOF le plus récemment modifié."""
     clean = [str(status or "").strip() for status in statuses if status]
-    if "en_cours_instruction" in clean:
-        return "en_cours_instruction"
     return clean[0] if clean else ""
 
 
@@ -11543,11 +11541,12 @@ def _wedof_funding_statuses_by_contact(data):
     statuses_by_contact = {}
     with _wedof_connect() as db:
         rows = db.execute("""
-            SELECT r.stable_id, r.payload_json,
+            SELECT r.stable_id, r.payload_json, r.remote_date, r.synced_at,
                    l.contact_id AS linked_contact_id
             FROM wedof_resources r LEFT JOIN wedof_contact_links l
               ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-            ORDER BY r.synced_at DESC
+            ORDER BY COALESCE(NULLIF(r.remote_date, ''), r.synced_at) DESC,
+                     r.synced_at DESC, r.stable_id DESC
         """)
 
         # Itérer sur le curseur plutôt que fetchall() garde un seul gros JSON
