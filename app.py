@@ -11170,24 +11170,43 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                         match_method=excluded.match_method,
                         updated_at=excluded.updated_at
                 """, (contact["id"], stable_id, attendee_id, method, now, now))
-                current_funding_status = _wedof_france_travail_status(folder)
+                previous_status_evidence = previous_funding_status
+                if (not previous_status_evidence
+                        and contact.get("statut_demande_financement_ft_source")
+                        != CRM_MANUAL_STATUS_SOURCE
+                        and str(contact.get("source_wedof_folder_id") or "")
+                        == stable_id):
+                    # Répare aussi les dossiers dont le retour à ``validated``
+                    # a déjà remplacé le payload d'instruction dans le cache.
+                    previous_status_evidence = str(
+                        contact.get("statut_demande_financement_ft") or ""
+                    ).strip()
+                current_funding_status = _wedof_france_travail_status(
+                    folder, previous_status=previous_status_evidence,
+                )
                 if (current_funding_status == "refusee"
-                        and previous_funding_status != "refusee"
                         and contact.get("statut_demande_financement_ft_source")
                         != CRM_MANUAL_STATUS_SOURCE):
-                    contact["statut_demande_financement_ft"] = "refusee"
+                    if (contact.get("statut_demande_financement_ft")
+                            != "refusee"):
+                        contact["statut_demande_financement_ft"] = "refusee"
+                        crm_changed = True
                     if (contact.get("statut_secondaire_source")
-                            != CRM_MANUAL_STATUS_SOURCE):
+                            != CRM_MANUAL_STATUS_SOURCE
+                            and contact.get("statut_secondaire")
+                            != "Financement FT refusé"):
                         contact["statut_secondaire"] = "Financement FT refusé"
-                    _crm_add_funding_refusal_notifications(
-                        data, contact, stable_id,
-                    )
-                    _crm_schedule_ft_refusal_relance(
-                        contact,
-                        source="wedof_ft_refusal",
-                        stable_id=stable_id,
-                    )
-                    crm_changed = True
+                        crm_changed = True
+                    if previous_funding_status != "refusee":
+                        _crm_add_funding_refusal_notifications(
+                            data, contact, stable_id,
+                        )
+                        _crm_schedule_ft_refusal_relance(
+                            contact,
+                            source="wedof_ft_refusal",
+                            stable_id=stable_id,
+                        )
+                        crm_changed = True
                 linked_folders += 1
         state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
         if total_count is not None:
@@ -11406,7 +11425,7 @@ def _wedof_contact_resources(contact_id, data=None):
     return resources
 
 
-def _wedof_france_travail_status(payload):
+def _wedof_france_travail_status(payload, previous_status=""):
     """Déduit le statut FT d'un dossier WEDOF sans dépendre du statut commercial."""
     normalize = lambda value: re.sub(r"[^a-z0-9]", "", unicodedata.normalize(
         "NFD", str(value or "")).encode("ascii", "ignore").decode().lower())
@@ -11417,22 +11436,39 @@ def _wedof_france_travail_status(payload):
     def history_values(value):
         if isinstance(value, dict):
             for key, nested in value.items():
+                if nested in (None, "", False) or nested in ([], {}):
+                    continue
                 yield key
                 yield from history_values(nested)
         elif isinstance(value, (list, tuple)):
             for nested in value:
                 yield from history_values(nested)
-        else:
+        elif value not in (None, "", False):
             yield value
+
+    history_markers = {
+        normalize(value) for value in history_values(history) if value
+    }
 
     # Un refus explicite est une preuve suffisante en lui-même, y compris
     # lorsque WEDOF ne fournit pas l'historique de l'instruction FT.
     if re.search(r"refus|reject", state):
         return "refusee"
-    had_instruction = state == "waitingacceptation" or any(
-        "waitingacceptation" in normalize(value)
-        for value in history_values(history)
+    history_has_financer_refusal = any(
+        ("financer" in marker or "financeur" in marker)
+        and ("refus" in marker or "reject" in marker)
+        for marker in history_markers
     )
+    had_instruction = (
+        str(previous_status or "").strip() == "en_cours_instruction"
+        or state == "waitingacceptation"
+        or any(
+            "waitingacceptation" in marker
+            for marker in history_markers
+        )
+    )
+    if state == "validated" and history_has_financer_refusal:
+        return "refusee"
     if not had_instruction:
         return ""
     if re.search(r"cancel|annul|abandon", state):

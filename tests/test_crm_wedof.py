@@ -696,6 +696,7 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
 
     # WEDOF revient à « En attente d'acceptation du candidat » après le refus FT.
     ft_folder["state"] = "validated"
+    ft_folder.pop("history")
     application._wedof_store_page([ft_folder], application.load_data(), 1)
     refused = next(
         row for row in client.get("/api/crm/contacts").get_json()
@@ -704,6 +705,46 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
 
     assert refused["statut_demande_financement_ft"] == "refusee"
     assert refused["statut_secondaire"] == "Financement FT refusé"
+
+
+def test_cached_financer_refusal_repairs_stale_automatic_timeline(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    ft_folder = folder(
+        "ft-cached-refusal", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    ft_folder["state"] = "waitingAcceptation"
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    ft_folder["state"] = "validated"
+    ft_folder["history"] = {
+        "validatedDate": "2026-08-23T13:30:00+00:00",
+        "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
+        "refusedByOrganismDate": None,
+    }
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    # Reproduit une fiche restée sur l'ancien état alors que le cache WEDOF
+    # contient déjà le refus : la synchronisation suivante doit la réparer
+    # sans dépendre de l'ouverture de la fiche.
+    data = application.load_data()
+    stale = next(row for row in data["crm_contacts"] if row["id"] == contact["id"])
+    stale["statut_demande_financement_ft"] = "en_cours_instruction"
+    stale["statut_secondaire"] = "Financement FT en cours"
+    application.save_data(data)
+    notification_count = len(data["crm_notifications"])
+
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+    repaired = next(
+        row for row in application.load_data()["crm_contacts"]
+        if row["id"] == contact["id"]
+    )
+
+    assert repaired["statut_demande_financement_ft"] == "refusee"
+    assert repaired["statut_secondaire"] == "Financement FT refusé"
+    assert len(application.load_data()["crm_notifications"]) == notification_count
 
 
 def test_explicit_ft_rejection_without_history_updates_secondary_timeline(
@@ -751,6 +792,17 @@ def test_ft_status_reads_nested_wedof_history():
     assert application._wedof_france_travail_status({
         "registrationState": "validated",
         "events": {"changes": [{"details": {"state": "validated"}}]},
+    }) == ""
+    assert application._wedof_france_travail_status({
+        "state": "validated",
+        "history": {
+            "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
+            "refusedByOrganismDate": None,
+        },
+    }) == "refusee"
+    assert application._wedof_france_travail_status({
+        "state": "validated",
+        "history": {"refusedByFinancerDate": None},
     }) == ""
 
 
