@@ -9429,7 +9429,7 @@ def _crm_complete_relance(contact, relance, status, *, note=""):
     relance.update({
         "status": status,
         "completed_at": _crm_now(),
-        "completed_by": actor_name,
+        "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
     })
     if note:
         relance["note"] = note
@@ -9444,7 +9444,7 @@ def _crm_cancel_relance(contact, relance, *, reason="manual_delete"):
     relance.update({
         "status": "cancelled",
         "completed_at": _crm_now(),
-        "completed_by": actor_name,
+        "completed_by": (current_user() or {}).get("name", "Équipe Intégrale"),
         "cancelled_reason": reason,
     })
     _crm_refresh_relance_date(contact)
