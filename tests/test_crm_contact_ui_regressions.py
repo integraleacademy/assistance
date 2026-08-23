@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
 
 def test_relaunch_template_is_available_for_every_formation():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -432,18 +432,44 @@ def test_programmed_appointment_date_is_rendered_under_pipeline_status():
     crm_js = CRM_JS.read_text(encoding="utf-8")
     appointment_state = CRM_APPOINTMENT_STATE_JS.read_text(encoding="utf-8")
     crm_css = CRM_CSS.read_text(encoding="utf-8")
+    script = r"""
+require('./static/crm_appointment_state.js');
+const state=globalThis.CRMAppointmentState;
+const now=Date.parse('2026-08-23T12:00:00+02:00');
+const appointments=[
+ {id:'yesterday',contact_id:'contact-1',status:'active',start_time:'2026-08-22T18:00:00+02:00'},
+ {id:'today-past',contact_id:'contact-1',status:'active',start_time:'2026-08-23T09:00:00+02:00'},
+ {id:'today-future',contact_id:'contact-1',status:'active',start_time:'2026-08-23T15:00:00+02:00'},
+ {id:'tomorrow',contact_id:'contact-1',status:'active',start_time:'2026-08-24T10:00:00+02:00'},
+ {id:'cancelled',contact_id:'contact-1',status:'canceled',start_time:'2026-08-23T13:00:00+02:00'},
+ {id:'undated',contact_id:'contact-1',status:'active',start_time:''},
+];
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+assert(state.nextAppointment('contact-1',appointments,now).id==='today-future','the next future appointment today wins');
+assert(state.dateLabel('contact-1',appointments,now)==='Prochain RDV le 23/08/2026','the label is explicit and formatted');
+const withoutFutureToday=appointments.filter(item=>item.id!=='today-future');
+assert(state.nextAppointment('contact-1',withoutFutureToday,now).id==='tomorrow','the next future day wins over an earlier appointment today');
+const todayOnly=withoutFutureToday.filter(item=>item.id!=='tomorrow');
+assert(state.nextAppointment('contact-1',todayOnly,now).id==='today-past','an appointment earlier on the same Paris day remains eligible');
+const pastOnly=appointments.filter(item=>['yesterday','cancelled','undated'].includes(item.id));
+assert(state.nextAppointment('contact-1',pastOnly,now)===null,'past-day, cancelled and undated appointments are ignored');
+assert(state.parisDayKey('2026-08-22T22:30:00Z')==='2026-08-23','the day boundary uses Europe/Paris');
+console.log('CRM appointment date state: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
+    assert "CRM appointment date state: OK" in completed.stdout
     assert "nextProgrammedAppointmentDate" in crm_js
     assert "contactHasPipelineStatus(c,'RDV programmé')" in crm_js
     assert "window.CRMAppointmentState.dateLabel(c.id,crmAppointments)" in crm_js
-    assert "['canceled','cancelled']" in appointment_state
-    assert "ordered.find(row=>row.start>=now)" in appointment_state
-    assert "'Date du RDV non renseignée'" in appointment_state
-    assert "timeZone:'Europe/Paris'" in appointment_state
-    assert "day:'2-digit',month:'2-digit',year:'numeric'" in appointment_state
     assert "contactPipelineStatusMarkup(c)" in crm_js
     assert ".pipeline-appointment-date" in crm_css
-
 
 def test_dashboard_and_pipeline_explain_their_distinct_scopes():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -527,7 +553,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -552,7 +578,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -614,4 +640,4 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260823-current-rdv-status-1"' in backend
