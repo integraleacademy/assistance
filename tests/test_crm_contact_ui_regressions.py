@@ -195,6 +195,8 @@ console.log('CRM save notifications: OK');
     assert "right:25px" not in javascript
     assert '<div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">' in template
     assert "beginStatusSave('Enregistrement du statut…')" in javascript
+    assert "const statusSaveControls=()=>document.querySelectorAll('[data-primary-step],[data-secondary-step],#addSecondaryTimeline,#removeSecondaryTimeline')" in javascript
+    assert "statusSaveControls().forEach(step=>step.disabled=true)" in javascript
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
