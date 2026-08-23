@@ -1046,9 +1046,11 @@ console.log('CRM SaaS pipeline: OK');
     assert "if(b.dataset.primaryStep==='Converti')return openRegistrationDraft(c)" in javascript
     assert "document.querySelectorAll('[data-secondary-step]')" in javascript
     assert "addSecondary.closest('.timeline-row').insertAdjacentHTML('afterend',secondaryTimelineRow(''))" in javascript
+    assert 'class="timeline-scroll" tabindex="0" role="group"' in javascript
     assert ".pipeline-stage-card" in stylesheet
     assert ".pipeline-line>span" in stylesheet
     assert ".pipeline-step:focus-visible .pipeline-step-marker" in stylesheet
+    assert ".timeline-scroll{scroll-snap-type:x proximity;padding-bottom:6px}" in stylesheet
     assert ".timeline-toggle{flex-basis:44px;width:44px;height:44px}" in stylesheet
     assert "clip-path:polygon(0 0,calc(100% - 12px)" not in stylesheet
     assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in application
