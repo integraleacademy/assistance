@@ -2,6 +2,8 @@
   const STYLE_ID = 'salesforceChatterHistoryStyles';
   const TAB_ID = 'contactSalesforceHistoryTab';
   const PANEL_ID = 'contactSalesforceHistoryPanel';
+  const cache = new Map();
+  const pending = new Map();
 
   const installStyles = () => {
     if (document.getElementById(STYLE_ID)) return;
@@ -28,14 +30,11 @@
     document.head.append(style);
   };
 
-  const currentContact = () => {
-    const id = new URLSearchParams(window.location.search).get('fiche');
-    if (!id) return null;
-    try {
-      return contacts.find(contact => String(contact.id) === String(id)) || null;
-    } catch (_error) {
-      return null;
-    }
+  const currentContactId = () => new URLSearchParams(window.location.search).get('fiche') || '';
+
+  const removeInstalled = () => {
+    document.getElementById(TAB_ID)?.remove();
+    document.getElementById(PANEL_ID)?.remove();
   };
 
   const initials = name => String(name || 'SF')
@@ -135,28 +134,52 @@
     panel.hidden = false;
   };
 
-  const install = () => {
+  const loadHistory = contactId => {
+    if (cache.has(contactId)) return Promise.resolve(cache.get(contactId));
+    if (pending.has(contactId)) return pending.get(contactId);
+
+    const request = fetch(`/api/crm/contacts/${encodeURIComponent(contactId)}/salesforce-chatter`, {
+      credentials: 'same-origin',
+    }).then(async response => {
+      if (response.status === 404) return { items: [], publication_count: 0, comment_count: 0 };
+      if (!response.ok) throw new Error(`Historique Salesforce indisponible (HTTP ${response.status}).`);
+      const payload = await response.json();
+      cache.set(contactId, payload);
+      return payload;
+    }).finally(() => pending.delete(contactId));
+
+    pending.set(contactId, request);
+    return request;
+  };
+
+  const renderHistoryTab = (contactId, payload) => {
+    if (currentContactId() !== contactId) return;
     const nav = document.querySelector('.contact-subnav .wedof-tabs');
     const activityPanel = document.querySelector('#contactActivityPanel');
-    const contact = currentContact();
-    if (!nav || !activityPanel || !contact) return;
+    if (!nav || !activityPanel) return;
 
-    const items = Array.isArray(contact.salesforce_chatter)
-      ? [...contact.salesforce_chatter].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+    const items = Array.isArray(payload?.items)
+      ? [...payload.items].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
       : [];
     if (!items.length) {
-      document.getElementById(TAB_ID)?.remove();
-      document.getElementById(PANEL_ID)?.remove();
+      removeInstalled();
       return;
     }
-    if (document.getElementById(TAB_ID)) return;
 
+    const existing = document.getElementById(TAB_ID);
+    if (existing?.dataset.contactId === contactId) return;
+    removeInstalled();
     installStyles();
-    const commentCount = items.reduce((total, item) => total + (item.comments || []).length, 0);
+
+    const commentCount = Number(payload.comment_count || items.reduce(
+      (total, item) => total + (item.comments || []).length,
+      0,
+    ));
     const tab = document.createElement('button');
     tab.className = 'wedof-tab';
     tab.id = TAB_ID;
     tab.type = 'button';
+    tab.dataset.contactId = contactId;
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-selected', 'false');
     tab.setAttribute('aria-controls', PANEL_ID);
@@ -169,6 +192,7 @@
     const panel = document.createElement('section');
     panel.className = 'wedof-panel';
     panel.id = PANEL_ID;
+    panel.dataset.contactId = contactId;
     panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', TAB_ID);
     panel.hidden = true;
@@ -202,6 +226,31 @@
         tab.setAttribute('aria-selected', 'false');
       }
     }, true);
+  };
+
+  const install = () => {
+    const contactId = currentContactId();
+    const nav = document.querySelector('.contact-subnav .wedof-tabs');
+    const activityPanel = document.querySelector('#contactActivityPanel');
+    if (!contactId || !nav || !activityPanel) {
+      if (!contactId) removeInstalled();
+      return;
+    }
+
+    const existing = document.getElementById(TAB_ID);
+    if (existing && existing.dataset.contactId !== contactId) removeInstalled();
+    if (document.getElementById(TAB_ID)?.dataset.contactId === contactId) return;
+
+    loadHistory(contactId)
+      .then(payload => renderHistoryTab(contactId, payload))
+      .catch(error => console.error(error));
+  };
+
+  window.CRMRefreshSalesforceChatterHistory = contactId => {
+    const id = String(contactId || currentContactId());
+    if (id) cache.delete(id);
+    removeInstalled();
+    install();
   };
 
   const observer = new MutationObserver(install);
