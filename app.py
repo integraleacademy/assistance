@@ -7137,7 +7137,20 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-sales-dashboard-1"
+CRM_ASSET_VERSION = "20260823-section-titles-1"
+CRM_PAGE_LABELS = {
+    "accueil": "Accueil",
+    "fil-actu": "Fil d’actualité",
+    "calendrier": "Calendrier",
+    "contacts": "Contacts",
+    "pistes": "Pistes",
+    "relances": "Relances",
+    "inscrits": "Inscrits",
+    "disqualifies": "Disqualifiés",
+    "notifications": "Notifications",
+    "modeles": "Modèles",
+    "exports": "Exports",
+}
 
 
 def _crm_migrate_registration_appointment_status(contact):
@@ -11477,7 +11490,7 @@ def crm_contact_wedof_refresh(contact_id):
 @app.route("/crm/<section>")
 @login_required
 def crm(section):
-    if section not in {"accueil", "fil-actu", "calendrier", "contacts", "pistes", "relances", "inscrits", "disqualifies", "notifications", "modeles", "exports"}:
+    if section not in CRM_PAGE_LABELS:
         abort(404)
     user = current_user()
     # A browser session can outlive the account configuration that created it.
@@ -11489,6 +11502,7 @@ def crm(section):
     return render_template(
         "crm.html",
         section=section,
+        page_title=CRM_PAGE_LABELS[section],
         statuses=_crm_statuses(load_data()),
         user=user,
         crm_team=[

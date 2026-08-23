@@ -395,8 +395,8 @@ async function showContact(id,initialTab='contactInfoTab'){
   activeWedofContactId=String(id);
   const returnSection=contactReturnSection();
   let c=contacts.find(x=>x.id===id);
-  if(!c){window.CRMDocumentTitle.reset();page.innerHTML='<div class="empty">Cette fiche n’existe plus ou n’est plus accessible.</div>';return}
-  window.CRMDocumentTitle.applyContact(c);
+  if(!c){window.CRMDocumentTitle.applySection(C.section,C.page_label);page.innerHTML='<div class="empty">Cette fiche n’existe plus ou n’est plus accessible.</div>';return}
+  window.CRMDocumentTitle.applyContact(c,C.section,C.page_label);
   if(c._summary){
     page.innerHTML='<div class="empty">Chargement de la fiche…</div>';
     try{
@@ -404,7 +404,7 @@ async function showContact(id,initialTab='contactInfoTab'){
       if(activeWedofContactId!==String(id))return;
       Object.assign(c,detail);
       delete c._summary;
-      window.CRMDocumentTitle.applyContact(c);
+      window.CRMDocumentTitle.applyContact(c,C.section,C.page_label);
     }catch(error){
       page.innerHTML=`<div class="empty">Impossible de charger la fiche.<br>${esc(error.message)}</div>`;
       return;
@@ -966,7 +966,7 @@ async function createContact(){modal('Créer une nouvelle piste',`<div class="fi
 function deleteCrmDatabaseModal(){adminToolsMenuElement?.classList.remove('open');adminToolsButton?.setAttribute('aria-expanded','false');modal('Supprimer la base de données',`<div class="database-delete-warning"><b>Cette action est irréversible.</b><p>Tous les prospects, toutes les pistes et leur historique CRM seront définitivement supprimés. Les autres données du site ne seront pas affectées.</p><label for="deleteCrmConfirmation">Saisissez <strong>SUPPRIMER</strong> pour confirmer</label><input id="deleteCrmConfirmation" autocomplete="off" placeholder="SUPPRIMER"></div>`,`<button class="btn" id="cancelDatabaseDelete">Annuler</button><button class="btn danger" id="confirmDatabaseDelete" disabled>Supprimer définitivement</button>`,'database-delete-modal');const confirmation=document.querySelector('#deleteCrmConfirmation'),submit=document.querySelector('#confirmDatabaseDelete');document.querySelector('#cancelDatabaseDelete').onclick=closeModal;confirmation.oninput=()=>{submit.disabled=confirmation.value.trim()!=='SUPPRIMER'};submit.onclick=async()=>{submit.disabled=true;submit.textContent='Suppression…';try{const result=await api('/api/crm/database',{method:'DELETE'});contacts=[];crmAppointments=[];notifications=[];localStorage.removeItem('crm-recent-searches');closeModal();C.section='accueil';history.pushState({},'',`/crm`);render();updateNotificationCount();toast(`${result.deleted_count} fiche${result.deleted_count>1?'s':''} supprimée${result.deleted_count>1?'s':''}`)}catch(e){submit.disabled=false;submit.textContent='Supprimer définitivement';toast(e.message,true)}};confirmation.focus()}
 let integrationTimer;function scheduleContactIntegrations(c){clearTimeout(integrationTimer);integrationTimer=setTimeout(()=>{loadCalendlyAppointments(c,true);refreshFundingBadges(c)},300)}
 function render(){
- window.CRMDocumentTitle.reset();
+ window.CRMDocumentTitle.applySection(C.section,C.page_label);
  document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===C.section));updateLeadCount();
  if(C.section==='accueil'){page.innerHTML=dashboard();bindDashboard();document.querySelector('.page-title')?.insertAdjacentHTML('afterend',dashboardExportButton);return}
  if(C.section==='exports'){page.innerHTML=exportsPage();return}
