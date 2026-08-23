@@ -7142,7 +7142,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-pipeline-calendly-refresh-1"
+CRM_ASSET_VERSION = "20260823-current-rdv-status-1"
 
 
 def _crm_statuses(data=None):
@@ -8492,18 +8492,46 @@ def _crm_upsert_calendly_appointment(
     return appointment, contact
 
 
-def _crm_sync_contact_calendly_status(data, contact):
-    """Align the pipeline with active appointments and open follow-ups.
+def _crm_calendly_appointment_is_today_or_future(appointment, now=None):
+    """Return whether a non-cancelled appointment is on/after today in Paris."""
+    if str(appointment.get("status") or "active").lower() in {"canceled", "cancelled"}:
+        return False
+    start_time = str(appointment.get("start_time") or "").strip()
+    if not start_time:
+        return False
+    try:
+        appointment_at = datetime.datetime.fromisoformat(
+            start_time.replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return False
 
-    Final statuses always win. ``A relancer`` also keeps its historical
-    priority when an appointment is later synchronized. Conversely, an open
-    follow-up repairs any other non-final status when no active appointment is
-    left, notably stale ``RDV programmé`` values after a cancellation.
+    paris = pytz.timezone("Europe/Paris")
+    if appointment_at.tzinfo is None:
+        appointment_at = paris.localize(appointment_at)
+    else:
+        appointment_at = appointment_at.astimezone(paris)
+
+    reference = now or datetime.datetime.now(paris)
+    if reference.tzinfo is None:
+        reference = paris.localize(reference)
+    else:
+        reference = reference.astimezone(paris)
+    return appointment_at.date() >= reference.date()
+
+
+def _crm_sync_contact_calendly_status(data, contact, now=None):
+    """Align the pipeline with current/future appointments and open follow-ups.
+
+    The appointment rule is deliberately based on the calendar day in Paris:
+    an appointment earlier today remains visible, but one from a previous day
+    does not. Final statuses always win and ``A relancer`` keeps its
+    historical priority. A stale ``RDV programmé`` without an eligible
+    appointment or follow-up is repaired to ``En cours``.
     """
-    now = datetime.datetime.now(pytz.timezone("Europe/Paris"))
     has_active_appointment = any(
         item.get("contact_id") == contact.get("id")
-        and classify_calendly_appointment(item, now) in {"upcoming", "in_progress"}
+        and _crm_calendly_appointment_is_today_or_future(item, now)
         for item in data.get("crm_calendly_appointments", [])
     )
     current_status = contact.get("statut") or "Nouveaux"
@@ -8517,6 +8545,8 @@ def _crm_sync_contact_calendly_status(data, contact):
         if current_status == "A relancer":
             return False
         next_status = "A relancer"
+    elif current_status == "RDV programmé":
+        next_status = "En cours"
     else:
         return False
     contact["statut"] = next_status
