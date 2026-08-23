@@ -87,7 +87,7 @@ const timelineButtons=(statuses,current,kind)=>{
 };
 const timelineTrack=(statuses,current,kind,label)=>{
  const details=timelineProgressDetails(statuses,current),columns=Math.max(statuses.length,1);
- return `<section class="pipeline-stage-card pipeline-stage-${kind}" data-timeline-kind="${kind}"><header class="pipeline-stage-head"><span class="pipeline-stage-title"><i aria-hidden="true"></i>${esc(label)}</span><small data-timeline-summary>${details.summary}</small></header><div class="timeline-scroll" tabindex="0" aria-label="${esc(label)}"><div class="timeline timeline-${kind}" style="--pipeline-columns:${columns}"><span class="pipeline-line" aria-hidden="true"><span style="width:${details.progress}%"></span></span>${timelineButtons(statuses,current,kind)}</div></div></section>`;
+ return `<section class="pipeline-stage-card pipeline-stage-${kind}" data-timeline-kind="${kind}"><header class="pipeline-stage-head"><span class="pipeline-stage-title"><i aria-hidden="true"></i>${esc(label)}</span><small data-timeline-summary>${details.summary}</small></header><div class="timeline-scroll" tabindex="0" role="group" aria-label="${esc(label)}"><div class="timeline timeline-${kind}" style="--pipeline-columns:${columns}"><span class="pipeline-line" aria-hidden="true"><span style="width:${details.progress}%"></span></span>${timelineButtons(statuses,current,kind)}</div></div></section>`;
 };
 function syncTimelineState(timeline,statuses,current){
  if(!timeline)return;
