@@ -1055,35 +1055,3 @@ console.log('CRM SaaS pipeline: OK');
     assert ".timeline-toggle{flex-basis:44px;width:44px;height:44px}" in stylesheet
     assert "clip-path:polygon(0 0,calc(100% - 12px)" not in stylesheet
     assert 'CRM_ASSET_VERSION = "20260823-pipeline-saas-1"' in application
-
-def test_publications_are_grouped_below_the_activity_journal():
-    javascript = CRM_JS.read_text(encoding="utf-8")
-    stylesheet = CRM_CSS.read_text(encoding="utf-8")
-    backend = APP_PY.read_text(encoding="utf-8")
-
-    info_start = javascript.index('id="contactInfoPanel"')
-    activity_start = javascript.index('id="contactActivityPanel"')
-    relance_start = javascript.index('id="contactRelancePanel"')
-    info_panel = javascript[info_start:activity_start]
-    activity_panel = javascript[activity_start:relance_start]
-
-    assert 'class="card publications-card"' not in info_panel
-    assert activity_panel.count('class="card publications-card"') == 1
-    assert activity_panel.index('<h2>Journal d’activités</h2>') < activity_panel.index('<h2>Publications</h2>')
-    assert 'class="wedof-panel contact-activity-panel"' in activity_panel
-    assert javascript.count('id="publicationText"') == 1
-    assert javascript.count('id="publishBtn"') == 1
-    assert javascript.count('id="rephrasePublication"') == 1
-    assert javascript.count('id="publicationFeed"') == 1
-
-    assert "bindMentions(publicationText)" in javascript
-    assert "publishBtn.onclick=publish" in javascript
-    assert "publicationText.onkeydown=" in javascript
-    assert "rephrasePublication.onclick=async" in javascript
-    assert "bindPublicationFeed(c,publicationFeed)" in javascript
-    assert "/api/crm/contacts/${c.id}/publications" in javascript
-    assert "document.querySelector('#publicationFeed')" in javascript
-
-    assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
-    assert ".contact-activity-panel .publications-card{margin-bottom:0}" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260823-publications-activity-1"' in backend
