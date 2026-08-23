@@ -2071,18 +2071,13 @@ def _crm_create_or_match_abandoned_form_contact(data, record, fields, now_str):
         _crm_activity(
             matched, "inbound_request", "Formulaire abandonné détecté", detail,
         )
-        history = matched.setdefault("source_history", [])
-        if not any(
-            item.get("source") == ABANDONED_DEMANDE_SOURCE
-            and item.get("external_id") == external_id
-            for item in history
-        ):
-            history.append({
-                "origin": ABANDONED_FORM_LABEL,
-                "source": ABANDONED_DEMANDE_SOURCE,
-                "external_id": external_id,
-                "date": now,
-            })
+        _crm_record_origin(
+            matched,
+            ABANDONED_FORM_LABEL,
+            source=ABANDONED_DEMANDE_SOURCE,
+            external_id=external_id,
+            date=now,
+        )
     if matched:
         record["crm_abandoned_contact_id"] = matched.get("id")
         record["crm_abandoned_created_at"] = (
@@ -7142,7 +7137,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-pipeline-saas-1"
+CRM_ASSET_VERSION = "20260823-multiple-origins-1"
 
 
 def _crm_migrate_registration_appointment_status(contact):
@@ -7437,6 +7432,41 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
         contacts.insert(0, contact); created = True; inbound["status"] = "created"
     if contact:
         inbound["contact_id"] = contact.get("id")
+        proposed = proposed_contact if isinstance(proposed_contact, dict) else {}
+        incoming_origin = (
+            proposed.get("origine") or payload.get("origine")
+            or CRM_ORIGIN_SOURCE_LABELS.get(source) or source
+        )
+        known_origin_keys = {
+            _crm_origin_key(_crm_canonical_origin(item.get("origin")))
+            for item in contact.get("source_history", [])
+            if isinstance(item, dict)
+        }
+        known_origin_keys.add(
+            _crm_origin_key(_crm_canonical_origin(contact.get("origine")))
+        )
+        meta_context = proposed.get("meta_source") or {}
+        origin_context = {
+            "campaign": meta_context.get("campaign_name", ""),
+            "ad": meta_context.get("ad_name", ""),
+            "form": meta_context.get("form_name", ""),
+        }
+        origin_added = _crm_record_origin(
+            contact,
+            incoming_origin,
+            source=source,
+            external_id=external_id,
+            context=origin_context,
+            date=now,
+        )
+        incoming_key = _crm_origin_key(_crm_canonical_origin(incoming_origin))
+        if origin_added and not created and incoming_key not in known_origin_keys:
+            _crm_activity(
+                contact,
+                "origine",
+                f"Origine secondaire : {_crm_canonical_origin(incoming_origin)}",
+                f"Origine principale conservée : {contact.get('origine') or 'Non renseignée'}",
+            )
         normalizers = {"mail": _crm_normalize_email, "telephone": _crm_normalize_phone,
                        "nom": _crm_normalize_name, "prenom": _crm_normalize_name}
         values = {"mail": payload.get("mail") or payload.get("email"), "telephone": payload.get("telephone"),
@@ -8836,6 +8866,185 @@ def _crm_information_request_is_google_ads(fields):
     }
 
 
+CRM_ORIGIN_SOURCE_LABELS = {
+    "assistant-secretariat": "Secrétariat",
+    "assistant_secretariat": "Secrétariat",
+    "simulateur_vae_desp": "Simulateur VAE",
+    "simulateur-eligibilite-vae-desp": "Simulateur VAE",
+    "wedof_cpf": "Mon Compte Formation",
+    "demande_formulaire_abandonne": "Formulaire abandonné",
+}
+
+
+def _crm_origin_key(value):
+    """Return an accent-insensitive key used to deduplicate CRM origins."""
+    normalized = unicodedata.normalize("NFKD", str(value or "").strip())
+    normalized = "".join(
+        character for character in normalized
+        if not unicodedata.combining(character)
+    )
+    return re.sub(r"[^a-z0-9]+", " ", normalized.casefold()).strip()
+
+
+def _crm_canonical_origin(value):
+    """Map persisted labels and technical sources to the CRM's visible origins."""
+    raw = str(value or "").strip()
+    key = _crm_origin_key(raw)
+    if not key:
+        return ""
+    if raw in CRM_ORIGIN_SOURCE_LABELS:
+        return CRM_ORIGIN_SOURCE_LABELS[raw]
+    if key in {"meta", "facebook", "instagram"} or key.startswith("meta "):
+        return "META"
+    if "google" in key or key in {"adwords", "googleads"}:
+        return "Google Ads"
+    if "wedof" in key or "compte formation" in key or key == "cpf":
+        return "Mon Compte Formation"
+    if "simulateur" in key and "vae" in key:
+        return "Simulateur VAE"
+    if "secretariat" in key:
+        return "Secrétariat"
+    if "bouche" in key and "oreille" in key:
+        return "Bouche à oreilles"
+    if key in {"site", "site web", "site internet", "demande infos formations"}:
+        return "Site internet"
+    if "formulaire" in key and "abandon" in key:
+        return "Formulaire abandonné"
+    if key == "ajout manuel":
+        return "Ajout manuel"
+    if key == "calendly":
+        return "Calendly"
+    if key == "poei":
+        return "POEI"
+    return raw
+
+
+def _crm_record_origin(contact, origin, *, source="", external_id="",
+                       context=None, date=None, make_primary=False):
+    """Persist one distinct origin while keeping the first detected as primary."""
+    if not isinstance(contact, dict):
+        return False
+    canonical = _crm_canonical_origin(origin)
+    if not canonical:
+        return False
+    before_origin = contact.get("origine")
+    before_history = copy.deepcopy(contact.get("source_history"))
+    history = contact.get("source_history")
+    if not isinstance(history, list):
+        history = []
+    history = [item for item in history if isinstance(item, dict)]
+
+    current_primary = _crm_canonical_origin(contact.get("origine"))
+    if make_primary or not current_primary:
+        current_primary = canonical
+        contact["origine"] = canonical
+
+    def origin_for(item):
+        return _crm_canonical_origin(item.get("origin") or item.get("origine"))
+
+    def build_entry(label, *, entry_source="", entry_external_id="",
+                    entry_context=None, entry_date=None):
+        details = entry_context if isinstance(entry_context, dict) else {}
+        return {
+            "origin": label,
+            "source": str(entry_source or details.get("source") or "").strip(),
+            "external_id": str(
+                entry_external_id or details.get("external_id") or ""
+            ).strip(),
+            "campaign": str(
+                details.get("campaign") or details.get("campaign_name") or ""
+            ).strip(),
+            "ad": str(details.get("ad") or details.get("ad_name") or "").strip(),
+            "form": str(
+                details.get("form") or details.get("form_name") or ""
+            ).strip(),
+            "date": (
+                entry_date or details.get("date") or details.get("received_at")
+                or contact.get("created_at") or _crm_now()
+            ),
+        }
+
+    # Historical imports and repeated webhooks may contain several entries
+    # for the same visible origin. Collapse them while retaining the earliest
+    # position and enriching it with any context found later.
+    deduplicated = []
+    by_origin = {}
+    for item in history:
+        item_origin = origin_for(item)
+        marker = _crm_origin_key(item_origin)
+        if not marker:
+            continue
+        if marker not in by_origin:
+            item["origin"] = item_origin
+            by_origin[marker] = item
+            deduplicated.append(item)
+            continue
+        existing = by_origin[marker]
+        for key in ("source", "external_id", "campaign", "ad", "form", "date"):
+            if not existing.get(key) and item.get(key):
+                existing[key] = item[key]
+    history = deduplicated
+
+    primary_index = next(
+        (index for index, item in enumerate(history)
+         if _crm_origin_key(origin_for(item)) == _crm_origin_key(current_primary)),
+        None,
+    )
+    if primary_index is None:
+        history.insert(0, build_entry(
+            current_primary,
+            entry_source=contact.get("source"),
+            entry_context=contact.get("meta_source"),
+            entry_date=contact.get("created_at"),
+        ))
+    elif primary_index:
+        history.insert(0, history.pop(primary_index))
+    history[0]["origin"] = current_primary
+
+    canonical_index = next(
+        (index for index, item in enumerate(history)
+         if _crm_origin_key(origin_for(item)) == _crm_origin_key(canonical)),
+        None,
+    )
+    if canonical_index is None:
+        history.append(build_entry(
+            canonical,
+            entry_source=source,
+            entry_external_id=external_id,
+            entry_context=context,
+            entry_date=date,
+        ))
+    else:
+        entry = history[canonical_index]
+        entry["origin"] = canonical
+        details = context if isinstance(context, dict) else {}
+        updates = {
+            "source": source or details.get("source"),
+            "external_id": external_id or details.get("external_id"),
+            "campaign": details.get("campaign") or details.get("campaign_name"),
+            "ad": details.get("ad") or details.get("ad_name"),
+            "form": details.get("form") or details.get("form_name"),
+            "date": date or details.get("date") or details.get("received_at"),
+        }
+        for key, value in updates.items():
+            if value and not entry.get(key):
+                entry[key] = str(value).strip() if key != "date" else value
+
+    if make_primary:
+        promoted_index = next(
+            index for index, item in enumerate(history)
+            if _crm_origin_key(origin_for(item)) == _crm_origin_key(canonical)
+        )
+        if promoted_index:
+            history.insert(0, history.pop(promoted_index))
+        contact["origine"] = canonical
+    contact["source_history"] = history
+    return (
+        contact.get("origine") != before_origin
+        or contact.get("source_history") != before_history
+    )
+
+
 def _crm_information_request_origin(fields):
     """Resolve the CRM origin without misclassifying secretariat submissions."""
     if str((fields or {}).get("source_secretariat") or "") == "1":
@@ -8844,7 +9053,7 @@ def _crm_information_request_origin(fields):
 
 
 def _crm_apply_information_request_attribution(contact, fields):
-    """Promote captured Google Ads attribution to the CRM contact."""
+    """Persist Google Ads metadata without replacing an earlier primary origin."""
     if not isinstance(fields, dict):
         return False
     if (
@@ -8866,8 +9075,34 @@ def _crm_apply_information_request_attribution(contact, fields):
     if identifier_type and contact.get("google_ads_identifier_type") != identifier_type:
         contact["google_ads_identifier_type"] = identifier_type
         changed = True
-    if contact.get("origine") != CRM_GOOGLE_ADS_ORIGIN:
-        contact["origine"] = CRM_GOOGLE_ADS_ORIGIN
+
+    # Old information-request records sometimes stored "Site internet" even
+    # though their original payload already contained a Google Ads identifier.
+    # Repair only that single-origin legacy case; on a reconciled contact Google
+    # Ads is appended as a secondary origin and never promoted.
+    existing_origins = {
+        _crm_origin_key(_crm_canonical_origin(item.get("origin")))
+        for item in contact.get("source_history", [])
+        if isinstance(item, dict) and item.get("origin")
+    }
+    legacy_primary_repair = (
+        contact.get("source") == "demande_infos_formations"
+        and _crm_canonical_origin(contact.get("origine")) == "Site internet"
+        and existing_origins.issubset({_crm_origin_key("Site internet")})
+    )
+    context = {
+        "campaign": normalized.get("utm_campaign", ""),
+        "ad": normalized.get("utm_content", ""),
+        "form": str(fields.get("form_name") or fields.get("form") or "").strip(),
+    }
+    if _crm_record_origin(
+        contact,
+        CRM_GOOGLE_ADS_ORIGIN,
+        source="demande_infos_formations",
+        external_id=contact.get("source_demande_id", ""),
+        context=context,
+        make_primary=legacy_primary_repair,
+    ):
         changed = True
     if changed:
         contact["updated_at"] = _crm_now()
@@ -10790,11 +11025,16 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                     crm_changed = True
                 # Répare aussi les pistes créées ou rapprochées avant que leur
                 # provenance WEDOF soit enregistrée dans le CRM.
-                if (_wedof_is_cpf_folder(folder)
-                        and contact.get("origine") != "Mon Compte Formation"):
-                    contact["origine"] = "Mon Compte Formation"
-                    contact["updated_at"] = _crm_now()
-                    crm_changed = True
+                if _wedof_is_cpf_folder(folder):
+                    if _crm_record_origin(
+                        contact,
+                        "Mon Compte Formation",
+                        source="wedof_cpf",
+                        external_id=stable_id,
+                        date=_crm_now(),
+                    ):
+                        contact["updated_at"] = _crm_now()
+                        crm_changed = True
                 _, _, attendee_id = _wedof_attendee_values(folder)
                 db.execute("""
                     INSERT INTO wedof_contact_links
@@ -11915,20 +12155,13 @@ def _crm_workspace_backfill(contact):
     if contact.get("statut") == "Converti" and not contact.get("converted_at"):
         contact["converted_at"] = contact.get("updated_at") or contact.get("created_at") or _crm_now()
         changed = True
-    history = contact.get("source_history")
-    if not isinstance(history, list):
-        history = []
-        contact["source_history"] = history
-        changed = True
-    if not history and (contact.get("origine") or contact.get("source")):
-        meta = contact.get("meta_source") or {}
-        history.append({
-            "origin": contact.get("origine") or contact.get("source") or "Non renseignée",
-            "campaign": meta.get("campaign_name", ""),
-            "ad": meta.get("ad_name", ""),
-            "form": meta.get("form_name", ""),
-            "date": meta.get("received_at") or contact.get("created_at") or _crm_now(),
-        })
+    if _crm_record_origin(
+        contact,
+        contact.get("origine") or contact.get("source"),
+        source=contact.get("source", ""),
+        context=contact.get("meta_source"),
+        date=contact.get("created_at"),
+    ):
         changed = True
     return changed
 
@@ -12069,7 +12302,7 @@ CRM_CONTACT_SUMMARY_FIELDS = (
     "statut", "statut_secondaire", "statut_demande_financement_ft",
     "statut_demande_financement_ft_source", "dates_formation", "cpf",
     "cpf_montant", "financement_ft", "reste_a_charge_perso", "desp_type",
-    "origine", "source", "source_detail", "commercial", "tags",
+    "origine", "source", "source_detail", "source_history", "commercial", "tags",
     "prix_vente", "cout_estime", "relance_date", "archived_at",
     "converted_at", "status_changed_at", "disqualification_reason",
     "disqualification_detail", "reactivation_date", "created_at",
@@ -12706,7 +12939,7 @@ def crm_contacts_merge():
             continue
         if not target.get(key) and value not in (None, "", [], {}):
             target[key] = value
-    for key in ("activities", "publications", "relances", "source_history", "meta_answers"):
+    for key in ("activities", "publications", "relances", "meta_answers"):
         merged = [*(target.get(key) or []), *(source.get(key) or [])]
         seen = set(); unique = []
         for item in merged:
@@ -12715,6 +12948,24 @@ def crm_contacts_merge():
                 continue
             seen.add(marker); unique.append(item)
         target[key] = unique
+    _crm_record_origin(
+        target, target.get("origine") or target.get("source"),
+        source=target.get("source", ""), date=target.get("created_at"),
+    )
+    _crm_record_origin(
+        target, source.get("origine") or source.get("source"),
+        source=source.get("source", ""), date=source.get("created_at"),
+    )
+    for origin_entry in source.get("source_history", []):
+        if isinstance(origin_entry, dict):
+            _crm_record_origin(
+                target,
+                origin_entry.get("origin") or origin_entry.get("origine"),
+                source=origin_entry.get("source", ""),
+                external_id=origin_entry.get("external_id", ""),
+                context=origin_entry,
+                date=origin_entry.get("date"),
+            )
     for appointment in data.get("crm_calendly_appointments", []):
         if str(appointment.get("contact_id")) == str(source.get("id")):
             appointment["contact_id"] = target.get("id")
@@ -12890,13 +13141,18 @@ def _crm_patch_contact_locked(data, contact, contact_id):
             contact["disqualification_detail"] = ""
         _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
     if contact.get("origine") != old_origin:
-        contact.setdefault("source_history", []).append({
-            "origin": contact.get("origine") or "Non renseignée",
-            "campaign": "",
-            "ad": "",
-            "form": "",
-            "date": _crm_now(),
-        })
+        changed_at = _crm_now()
+        if old_origin:
+            _crm_record_origin(
+                contact, old_origin, source="manual", date=changed_at,
+            )
+        _crm_record_origin(
+            contact,
+            contact.get("origine") or "Non renseignée",
+            source="manual",
+            date=changed_at,
+            make_primary=True,
+        )
         _crm_activity(contact, "origine", f"Origine : {contact.get('origine') or 'Non renseignée'}",
                       f"Ancienne origine : {old_origin or 'Non renseignée'}")
     if contact.get("statut_secondaire", "") != old_secondary_status:
