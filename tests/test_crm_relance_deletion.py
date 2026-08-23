@@ -23,7 +23,10 @@ def _load_python_functions(*names):
 
 
 def _extract_js_function(source, name):
-    start = source.index(f"function {name}(")
+    marker = f"function {name}("
+    start = source.index(marker)
+    if source[max(0, start - 6):start] == "async ":
+        start -= 6
     brace = source.index("{", start)
     depth = 0
     quote = None
