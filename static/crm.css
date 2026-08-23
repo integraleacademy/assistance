@@ -381,8 +381,8 @@ body{font-size:15px}
 .sidebar-collapse:hover,.sidebar-collapse:focus-visible{border-color:#b8c8e2;background:#edf3ff;color:var(--blue);outline:2px solid #a9c3f4;outline-offset:2px}
 body.sidebar-collapsed .sidebar{width:80px;padding:20px 10px}
 body.sidebar-collapsed .brand{justify-content:center;height:52px;padding:0 0 18px}
-body.sidebar-collapsed .brand img{display:none}
-body.sidebar-collapsed .brand-compact{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:linear-gradient(145deg,#f9c74f,#eaa424);color:#102b58;box-shadow:0 8px 22px #071a3c55;font:900 15px Manrope;letter-spacing:-.03em}
+body.sidebar-collapsed .brand-full{display:none}
+body.sidebar-collapsed .brand-compact{display:block;width:32px;height:32px;max-width:none;object-fit:contain;border-radius:8px;box-shadow:0 8px 22px #071a3c55}
 body.sidebar-collapsed .sidebar nav{min-width:0}
 body.sidebar-collapsed .sidebar nav p{height:1px;margin:14px 9px 10px;background:#ffffff1f;color:transparent;font-size:0}
 body.sidebar-collapsed .sidebar nav a{position:relative;justify-content:center;gap:0;height:44px;margin:4px 0;padding:0;border-radius:12px;font-size:0}
@@ -405,7 +405,7 @@ body.sidebar-collapsed main{margin-left:80px}
  .sidebar-collapse{display:none}
  body.sidebar-collapsed .sidebar{width:248px;padding:24px 16px}
  body.sidebar-collapsed .brand{justify-content:flex-start;height:auto;padding:0 8px 25px}
- body.sidebar-collapsed .brand img{display:block;width:100%;max-width:190px;height:auto;object-fit:contain}
+ body.sidebar-collapsed .brand-full{display:block;width:100%;max-width:190px;height:auto;object-fit:contain}
  body.sidebar-collapsed .brand-compact{display:none}
  body.sidebar-collapsed .sidebar nav p{height:auto;margin:20px 12px 9px;background:transparent;color:#7186a8;font-size:10px}
  body.sidebar-collapsed .sidebar nav a{justify-content:flex-start;gap:12px;height:auto;margin:3px 0;padding:11px 12px;border-radius:9px;font-size:14px}
