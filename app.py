@@ -8519,8 +8519,31 @@ def _crm_upsert_calendly_appointment(
         or previous_status != appointment.get("status")
         or previous_start != appointment.get("start_time")
     )
+    appointment_became_active = bool(
+        contact
+        and str(appointment.get("status") or "active").lower()
+        not in {"canceled", "cancelled"}
+        and (
+            not existing
+            or str(previous_status or "").lower() in {"canceled", "cancelled"}
+            or previous_start != appointment.get("start_time")
+        )
+        and _crm_calendly_appointment_is_today_or_future(appointment)
+    )
+    relance_changed = False
+    if appointment_became_active:
+        _, relance_changed = _crm_schedule_relance(
+            contact,
+            "",
+            source="calendly_appointment",
+            actor_name="Calendly",
+        )
+
     old_status = (contact.get("statut") or "Nouveaux") if contact else ""
-    pipeline_changed = bool(contact and _crm_sync_contact_calendly_status(data, contact))
+    status_changed = bool(
+        contact and _crm_sync_contact_calendly_status(data, contact)
+    )
+    pipeline_changed = relance_changed or status_changed
     if (
         contact
         and pipeline_changed
@@ -8554,6 +8577,8 @@ def _crm_calendly_appointment_is_today_or_future(appointment, now=None):
     """Return whether a non-cancelled appointment is on/after today in Paris."""
     if str(appointment.get("status") or "active").lower() in {"canceled", "cancelled"}:
         return False
+    if str(appointment.get("response_status") or "").lower() == "no_answer":
+        return False
     start_time = str(appointment.get("start_time") or "").strip()
     if not start_time:
         return False
@@ -8583,10 +8608,12 @@ def _crm_sync_contact_calendly_status(data, contact, now=None):
 
     The appointment rule is deliberately based on the calendar day in Paris:
     an appointment earlier today remains visible, but one from a previous day
-    does not. Final statuses always win. A current/future appointment replaces
-    open follow-ups as the next action; the cancelled follow-ups remain in the
-    audit history. A stale ``RDV programmé`` without an eligible appointment
-    or follow-up is repaired to ``En cours``.
+    does not. Final statuses always win. The ingest path cancels the follow-ups
+    that existed when a booking becomes active; this reconciler never repeats
+    that side effect on later reads or synchronizations. An appointment marked
+    ``no_answer`` no longer wins over its J+2 follow-up. A stale
+    ``RDV programmé`` without an eligible appointment or follow-up is repaired
+    to ``En cours``.
     """
     has_active_appointment = any(
         item.get("contact_id") == contact.get("id")
@@ -8597,16 +8624,8 @@ def _crm_sync_contact_calendly_status(data, contact, now=None):
     if current_status in {"Disqualifié", "Converti"}:
         return False
     if has_active_appointment:
-        _, relance_changed = _crm_schedule_relance(
-            contact,
-            "",
-            source="calendly_appointment",
-            actor_name="Calendly",
-        )
         if current_status == "RDV programmé":
-            if relance_changed:
-                contact["updated_at"] = _crm_now()
-            return relance_changed
+            return False
         next_status = "RDV programmé"
     elif contact.get("relance_date"):
         if current_status == "A relancer":
