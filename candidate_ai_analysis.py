@@ -554,7 +554,12 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
         if cleaned and cleaned not in notes: notes.append(cleaned)
         if len(notes) == 8: break
     wedof = []
-    for resource in (wedof_resources or [])[:3]:
+    resources = wedof_resources or []
+    latest_wedof = next(
+        (resource for resource in resources if resource.get("is_latest") is True),
+        resources[0] if resources else None,
+    )
+    for resource in [latest_wedof] if latest_wedof else []:
         payload = resource.get("payload") or {}
         wedof.append(_pick(payload, {"status": "state", "updated_at": "updatedOn", "funding": "billingState", "blockers": "blockers"}))
     training_label = formation.get("label") or formation.get("code")
