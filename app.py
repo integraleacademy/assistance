@@ -7137,7 +7137,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-multiple-origins-1"
+CRM_ASSET_VERSION = "20260823-sales-dashboard-1"
 
 
 def _crm_migrate_registration_appointment_status(contact):
@@ -12413,6 +12413,22 @@ def _crm_contact_summary_response(contact, data, *, funding_status=None,
     # Ces deux objets sont petits et servent au tableau de bord d'acquisition.
     summary["meta_source"] = contact.get("meta_source") or {}
     summary["vae_eligibility"] = contact.get("vae_eligibility")
+    # Le tableau de bord Google Ads reçoit uniquement les clés d'attribution
+    # utiles. Le formulaire complet, potentiellement volumineux, reste réservé
+    # à la fiche détaillée.
+    form = contact.get("formulaire")
+    form = form if isinstance(form, dict) else {}
+    google_ads_tracking = {
+        key: bool(contact.get(key) or form.get(key))
+        for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS
+    }
+    google_ads_tracking.update({
+        key: str(contact.get(key) or form.get(key) or "").strip()
+        for key in CRM_GOOGLE_ADS_TRACKING_KEYS
+        if key not in CRM_GOOGLE_ADS_IDENTIFIER_KEYS
+        and (contact.get(key) or form.get(key))
+    })
+    summary["google_ads_tracking"] = google_ads_tracking
     # Les relances restent disponibles sur la vue dédiée, mais les e-mails,
     # aperçus HTML, réponses META et autres champs lourds ne partent plus ici.
     summary["relances"] = contact.get("relances", [])
