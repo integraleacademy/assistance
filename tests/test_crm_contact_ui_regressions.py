@@ -863,7 +863,7 @@ def test_pistes_replaces_location_column_with_shared_completeness():
         workspace.index("const normalize=value=>"):
         workspace.index("const hasContact=contact=>")
     ]
-    script = helpers + r\"\"\"
+    script = helpers + r"""
 const assert=(condition,message)=>{if(!condition)throw new Error(message)};
 const base={
  prenom:'Ada',nom:'Lovelace',telephone:'0600000000',mail:'ada@example.test',
@@ -879,8 +879,14 @@ assert(contactCompleteness({...desp,desp_type:'VAE'})===100,'DESP journey comple
 const cpf={...base,cpf:'Oui'};
 assert(contactCompleteness(cpf)<100,'CPF amount is conditional');
 assert(contactCompleteness({...cpf,cpf_montant:'1200'})===100,'CPF amount completes the record');
+const ft={...base,financement_ft:'Oui'};
+assert(contactCompleteness(ft)<100,'France Travail personal fallback is conditional');
+assert(contactCompleteness({...ft,refus_ft_perso:'Non'})===100,'France Travail fallback completes the record');
+const aps={...base,formation:'APS',carte_pro:'Non'};
+assert(contactCompleteness(aps)<100,'APS without a professional card requires CNAPS answers');
+assert(contactCompleteness({...aps,titre_sejour:'Non',titre_sejour_cnaps:'Non concerné',garde_vue:'Non',antecedents:'Non',compte_cnaps:'Non'})===100,'CNAPS answers complete the record');
 console.log('CRM Pistes completeness: OK');
-\"\"\"
+"""
     completed = subprocess.run(
         ["node", "-e", script],
         cwd=Path(__file__).parents[1],
@@ -892,8 +898,8 @@ console.log('CRM Pistes completeness: OK');
     assert "CRM Pistes completeness: OK" in completed.stdout
     assert "function leadCompletenessValue(contact)" in javascript
     assert "window.CRMWorkspace?.contactCompleteness?.(contact)" in javascript
-    assert 'role=\"progressbar\"' in javascript
-    assert 'aria-valuenow=\"${percent}\"' in javascript
+    assert 'role="progressbar"' in javascript
+    assert 'aria-valuenow="${percent}"' in javascript
     assert "showCompleteness?'COMPLÉTUDE':'LIEU'" in javascript
     assert "showCompleteness?leadCompletenessCell(c):esc(c.lieu)" in javascript
     assert "crm-list-location" in javascript
@@ -902,4 +908,4 @@ console.log('CRM Pistes completeness: OK');
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = \"20260823-pistes-completeness-1\"' in application
+    assert 'CRM_ASSET_VERSION = "20260823-pistes-completeness-1"' in application
