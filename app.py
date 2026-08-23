@@ -7137,7 +7137,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260823-call-activity-edit-1"
+CRM_ASSET_VERSION = "20260823-calendly-seven-day-window-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -11870,6 +11870,27 @@ def crm_calendly_availability():
         return jsonify({"error": "Type de rendez-vous Calendly invalide."}), 400
     if not start_time or not end_time:
         return jsonify({"error": "La période de disponibilité est incomplète."}), 400
+    try:
+        available_start = datetime.datetime.fromisoformat(
+            start_time.replace("Z", "+00:00")
+        )
+        available_end = datetime.datetime.fromisoformat(
+            end_time.replace("Z", "+00:00")
+        )
+        if available_start.tzinfo is None or available_end.tzinfo is None:
+            raise ValueError
+    except ValueError:
+        return jsonify({
+            "error": "La période de disponibilité doit contenir des dates ISO 8601 avec fuseau horaire."
+        }), 400
+    if available_end <= available_start:
+        return jsonify({
+            "error": "La fin de la période de disponibilité doit être postérieure à son début."
+        }), 400
+    if available_end - available_start > datetime.timedelta(days=7):
+        return jsonify({
+            "error": "La période de disponibilité Calendly ne peut pas dépasser 7 jours."
+        }), 400
     try:
         response = _calendly_request(
             "GET",
