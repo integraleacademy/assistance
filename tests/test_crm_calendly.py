@@ -187,6 +187,54 @@ def test_upcoming_appointment_replaces_and_cancels_a_scheduled_follow_up(tmp_pat
     ]
 
 
+def test_full_sync_repairs_follow_up_created_before_cached_booking(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "mail": "lina@example.com",
+            "statut": "A relancer",
+            "relance_date": "2099-08-10",
+        },
+    )
+
+    data = application.load_data()
+    stored_contact = next(
+        item for item in data["crm_contacts"] if item["id"] == contact["id"]
+    )
+    stored_contact["relances"][0]["created_at"] = "2099-08-01T08:00:00+00:00"
+    payload = calendly_payload()
+    data["crm_calendly_appointments"] = [{
+        "id": "cached-before-deployment",
+        "contact_id": contact["id"],
+        "invitee_uri": payload["uri"],
+        "event_uri": payload["event"],
+        "invitee_email": payload["email"],
+        "status": "active",
+        "start_time": payload["scheduled_event"]["start_time"],
+        "calendly_created_at": "2099-08-03T08:00:00Z",
+        "created_at": "2099-08-03T08:00:00+00:00",
+    }]
+    application.save_data(data)
+
+    replayed = signed_webhook(
+        client,
+        monkeypatch,
+        "invitee.created",
+        payload,
+    )
+
+    assert replayed.status_code == 200
+    repaired = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert repaired["statut"] == "RDV programmé"
+    assert repaired["relance_date"] == ""
+    assert repaired["relances"][0]["status"] == "cancelled"
+
+
 def test_upcoming_appointment_preserves_final_statuses_and_relances(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
 
