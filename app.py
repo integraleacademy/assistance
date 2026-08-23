@@ -11428,6 +11428,19 @@ def _wedof_contact_resources(contact_id, data=None):
             "synced_at": row["synced_at"], "attendee_id": attendee_id,
             "match_method": match_method,
         })
+    # Toutes les vues CPF/FT doivent partager la même source de vérité : le
+    # dossier créé le plus récemment. Les autres restent consultables comme
+    # historique, mais ne doivent jamais participer aux statuts calculés.
+    resources.sort(
+        key=lambda resource: _wedof_folder_recency_key(
+            resource["payload"],
+            fallback=resource.get("remote_date") or resource.get("synced_at"),
+            stable_id=resource.get("stable_id"),
+        ),
+        reverse=True,
+    )
+    for index, resource in enumerate(resources):
+        resource["is_latest"] = index == 0
     return resources
 
 

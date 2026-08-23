@@ -549,6 +549,37 @@ def test_unique_normalized_phone_matching(tmp_path, monkeypatch):
     assert resources[0]["match_method"] == "phone"
 
 
+def test_contact_wedof_marks_only_latest_created_folder_as_authoritative(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    latest = folder("401684627811", "lina@example.test")
+    latest.update({
+        "state": "validated",
+        "createdAt": "2026-08-19T13:55:00+02:00",
+        "updatedAt": "2026-08-19T13:55:00+02:00",
+    })
+    historical = folder("40609198536", "lina@example.test")
+    historical.update({
+        "state": "serviceDoneValidated",
+        "createdAt": "2025-11-25T07:41:00+01:00",
+        # Même resynchronisé après le nouveau dossier, il reste historique.
+        "updatedAt": "2026-08-23T16:40:00+02:00",
+    })
+
+    application._wedof_store_page(
+        [latest, historical], application.load_data(), 1,
+    )
+    resources = client.get(
+        f"/api/crm/contacts/{contact['id']}/wedof"
+    ).get_json()["resources"]
+
+    assert [resource["stable_id"] for resource in resources] == [
+        "401684627811", "40609198536",
+    ]
+    assert [resource["is_latest"] for resource in resources] == [True, False]
+
+
 def test_contact_list_exposes_ft_instruction_even_with_scheduled_appointment_status(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)

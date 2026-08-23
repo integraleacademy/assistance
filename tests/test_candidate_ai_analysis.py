@@ -163,6 +163,26 @@ def test_hash_changes_for_business_data_not_visual_data():
     assert first != compute_candidate_ai_source_hash(build_candidate_ai_context({**base, "formation": "A3P"}, data))
 
 
+def test_context_uses_only_the_latest_wedof_folder():
+    resources = [
+        {"payload": {
+            "state": "serviceDoneValidated", "billingState": "paid",
+        }},
+        {"is_latest": True, "payload": {
+            "state": "validated", "billingState": "notBillable",
+        }},
+    ]
+
+    context = build_candidate_ai_context(
+        {"id": "latest-cpf"}, {"crm_calendly_appointments": []},
+        wedof_resources=resources,
+    )
+
+    assert context["wedof"] == [{
+        "status": "validated", "funding": "notBillable",
+    }]
+
+
 def test_context_includes_all_visible_vae_tracking_facts_and_changes_hash():
     contact = {"id": "vae-1", "formation": "DESP", "desp_type": "VAE"}
     data = {"crm_calendly_appointments": []}
