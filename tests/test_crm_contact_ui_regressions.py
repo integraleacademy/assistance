@@ -88,6 +88,7 @@ def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
 
 def test_contact_back_navigation_preserves_the_safe_source_section():
     javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
     helpers = javascript[
         javascript.index("const contactReturnSection="):
         javascript.index("function openContactInNewTab")
@@ -95,11 +96,6 @@ def test_contact_back_navigation_preserves_the_safe_source_section():
     script = f"""
 const C={{section:'contacts'}};
 const location={{search:''}};
-let activeWedofContactId='42';
-let rendered=0;
-let pushed='';
-const history={{pushState:(_state,_title,url)=>{{pushed=url}}}};
-const render=()=>{{rendered+=1}};
 {helpers}
 const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
 assert(contactSheetUrl('a/b ?', 'pistes')==='/crm/contacts?fiche=a%2Fb%20%3F&retour=pistes','encoded pistes URL');
@@ -111,11 +107,8 @@ assert(contactListUrl('pistes')==='/crm/pistes','pistes list URL');
 assert(contactListUrl('contacts')==='/crm/contacts','contacts list URL');
 assert(contactBackLabel('pistes')==='Toutes les pistes','pistes label');
 assert(contactBackLabel('contacts')==='Tous les contacts','contacts label');
-returnToContactList('pistes');
-assert(activeWedofContactId==='','clear active contact');
-assert(C.section==='pistes','activate pistes section');
-assert(pushed==='/crm/pistes','push pistes URL');
-assert(rendered===1,'render pistes list once');
+assert(contactBackLink('pistes')==='<a class="btn back-contact" id="backList" href="/crm/pistes">← Toutes les pistes</a>','native pistes link');
+assert(contactBackLink('contacts')==='<a class="btn back-contact" id="backList" href="/crm/contacts">← Tous les contacts</a>','native contacts link');
 console.log('CRM contact return navigation: OK');
 """
 
@@ -129,9 +122,10 @@ console.log('CRM contact return navigation: OK');
     assert "CRM contact return navigation: OK" in completed.stdout
     assert "const returnSection=contactReturnSection()" in javascript
     assert "contactSheetUrl(id,returnSection)" in javascript
-    assert "contactBackLabel(returnSection)" in javascript
-    assert "backList.onclick=()=>returnToContactList(returnSection)" in javascript
-
+    assert "contactBackLink(returnSection)" in javascript
+    assert "backList.onclick" not in javascript
+    assert ".back-contact{display:inline-flex;align-items:center;" in stylesheet
+    assert "text-decoration:none" in stylesheet
 
 def test_relaunch_template_is_available_for_every_formation():
     javascript = CRM_JS.read_text(encoding="utf-8")
