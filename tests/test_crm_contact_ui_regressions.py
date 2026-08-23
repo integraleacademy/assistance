@@ -359,7 +359,7 @@ def test_contact_supports_a_removable_secondary_timeline():
     assert "statut_secondaire:next" in javascript
     assert "Deuxième statut enregistré" in javascript
     assert ".timeline-secondary button.current{background:var(--purple);color:#fff}" in stylesheet
-    assert ".pipeline-step.current .pipeline-step-marker" in stylesheet
+    assert ".timeline-secondary button.done{background:#ceb9f3;color:#543285}" in stylesheet
 
 
 def test_opening_secondary_timeline_is_blank_and_does_not_save_a_status():
