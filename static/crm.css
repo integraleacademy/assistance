@@ -603,3 +603,13 @@ img,svg,video,canvas,iframe{max-width:100%}
  .contact-actions,.modal-foot{grid-template-columns:1fr}
  .page-title h1,.contact-head h1{font-size:23px}
 }
+
+.crm-score-heading{padding:0}
+.crm-score-sort{display:flex;align-items:center;justify-content:flex-start;gap:7px;width:100%;min-height:44px;padding:10px 16px;border:0;background:transparent;color:inherit;font:inherit;font-weight:inherit;letter-spacing:inherit;cursor:pointer}
+.crm-score-sort:hover{color:#356ae6;background:#f2f6ff}
+.crm-score-sort:focus-visible{outline:3px solid #356ae633;outline-offset:-3px}
+.crm-score-sort-arrows{display:grid;gap:2px;width:10px;color:currentColor}
+.crm-score-sort-arrows i{display:block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;opacity:.35}
+.crm-score-sort-arrows .up{border-bottom:5px solid currentColor}
+.crm-score-sort-arrows .down{border-top:5px solid currentColor}
+.crm-score-sort-arrows.asc .up,.crm-score-sort-arrows.desc .down{color:#356ae6;opacity:1}
