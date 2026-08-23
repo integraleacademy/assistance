@@ -550,7 +550,8 @@ body.sidebar-collapsed main{margin-left:80px}
 
 .pipeline-status-stack{display:flex;align-items:flex-start;gap:5px;flex-wrap:wrap}
 .pipeline-appointment-date,.pipeline-relance-date{display:block;flex-basis:100%;margin-top:2px;color:#596b84;font-size:9px;font-weight:750;white-space:nowrap}
-.pipeline-relance-date.missing{color:#c23449}
+.pipeline-relance-date.overdue{color:#c23449;font-weight:800}
+.pipeline-relance-date.missing{color:#7b8798}
 @media(max-width:700px){.pipeline-appointment-date,.pipeline-relance-date{font-size:8px}}
 
 .bulk-message-preview{margin-top:16px;padding:14px;border:1px solid #dbe4f2;border-radius:12px;background:#f8faff}
