@@ -11175,6 +11175,10 @@ def _wedof_store_page_locked(items, data, page, total_count=None):
                         and previous_funding_status != "refusee"
                         and contact.get("statut_demande_financement_ft_source")
                         != CRM_MANUAL_STATUS_SOURCE):
+                    contact["statut_demande_financement_ft"] = "refusee"
+                    if (contact.get("statut_secondaire_source")
+                            != CRM_MANUAL_STATUS_SOURCE):
+                        contact["statut_secondaire"] = "Financement FT refusé"
                     _crm_add_funding_refusal_notifications(
                         data, contact, stable_id,
                     )
