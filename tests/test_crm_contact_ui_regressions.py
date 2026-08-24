@@ -1052,6 +1052,14 @@ const contacts=[
   {id:'integration-mid',integration_score:{score:20},created_at:'2026-08-23T09:00:00Z'},
   {id:'undated'}
 ];
+const followups=[
+  {id:'far',relance_date:'2026-09-14'},
+  {id:'invalid',relance_date:'2026-02-30'},
+  {id:'near',relance_date:'2026-09-03'},
+  {id:'same-day-first',relance_date:'2026-09-04'},
+  {id:'missing'},
+  {id:'same-day-second',relance_date:'2026-09-04'}
+];
 assert(nextLeadScoreSortDirection('')==='asc','first click must sort ascending');
 assert(nextLeadScoreSortDirection('asc')==='desc','second click must sort descending');
 assert(nextLeadScoreSortDirection('desc')==='asc','following click must sort ascending again');
@@ -1060,6 +1068,8 @@ assert(sortLeadsByScore(contacts,'asc').map(contact=>contact.id).join(',')==='in
 assert(sortLeadsByScore(contacts,'desc').map(contact=>contact.id).join(',')==='vae-high,integration-mid,integration-low,missing,undated','descending numeric order');
 assert(leadRecencyValue(contacts[1])>leadRecencyValue(contacts[0]),'received date must take priority over creation date');
 assert(contactScoreValue(contacts[2])===90,'displayed VAE score must take priority');
+assert(sortContactsByNextFollowup(followups).map(contact=>contact.id).join(',')==='near,same-day-first,same-day-second,far,invalid,missing','A relancer must be chronological with invalid or missing dates last');
+assert(followupDateValue({relance_date:'2026-02-30'})===null,'impossible follow-up dates must be rejected');
 console.log('CRM lead score sorting: OK');
 """
     completed = subprocess.run(
@@ -1075,6 +1085,7 @@ console.log('CRM lead score sorting: OK');
     assert 'aria-sort="${ariaSort}"' in javascript
     assert "scoreSortable:type==='pistes'" in javascript
     assert "if(isLeads)list=sortPipelineLeads(list,leadScoreSort)" in javascript
+    assert "status==='A relancer'?sortContactsByNextFollowup(sorted):sorted" in javascript
     assert "leadScoreSort=nextLeadScoreSortDirection(leadScoreSort);filter()" in javascript
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
