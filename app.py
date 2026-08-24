@@ -1202,6 +1202,15 @@ _DATA_CACHE_SIGNATURE = None
 _DATA_CACHE_PAYLOAD = None
 _DATA_BACKUP_TIMES = {}
 _DATA_BACKUP_INTERVAL_SECONDS = 300
+_DATA_WRITE_LOCK = threading.RLock()
+
+_CALLBACK_LIFECYCLE_FIELDS = (
+    "callback_status",
+    "callback_status_updated_at",
+    "callback_processed_at",
+    "callback_processed_by",
+    "statut",
+)
 
 
 def _normalize_data_payload(payload):
@@ -1282,7 +1291,107 @@ def load_data():
     """Return an isolated mutable copy for legacy read/modify/write callers."""
     return copy.deepcopy(_load_data_snapshot())
 
-def save_data(data):
+
+def _callback_lifecycle_revision(entry):
+    """Return the newest durable timestamp carried by a callback request."""
+    for key in (
+        "callback_status_updated_at", "callback_processed_at", "created_at",
+    ):
+        raw_value = str(entry.get(key) or "").strip()
+        if not raw_value:
+            continue
+        try:
+            return datetime.datetime.fromisoformat(raw_value).timestamp()
+        except ValueError:
+            continue
+    return 0.0
+
+
+def _preserve_newer_callback_lifecycle(data, persisted):
+    """Protect callback status/audit data from an older concurrent snapshot."""
+    if not isinstance(data, dict) or not isinstance(persisted, dict):
+        return
+    persisted_entries = [
+        entry
+        for entry in (persisted.get("secretariat_demandes") or [])
+        if isinstance(entry, dict) and entry.get("type") == "autre"
+        and entry.get("id")
+    ]
+    if not persisted_entries:
+        return
+    outgoing_entries = data.get("secretariat_demandes")
+    if outgoing_entries is None:
+        outgoing_entries = []
+        data["secretariat_demandes"] = outgoing_entries
+    elif not isinstance(outgoing_entries, list):
+        return
+    outgoing_by_id = {
+        str(entry.get("id") or ""): entry
+        for entry in outgoing_entries
+        if isinstance(entry, dict) and entry.get("type") == "autre"
+        and entry.get("id")
+    }
+    protected_request_ids = set()
+    for current in persisted_entries:
+        request_id = str(current["id"])
+        outgoing = outgoing_by_id.get(request_id)
+        if outgoing is None:
+            outgoing_entries.append(copy.deepcopy(current))
+            outgoing_by_id[request_id] = outgoing_entries[-1]
+            protected_request_ids.add(request_id)
+            continue
+        if (_callback_lifecycle_revision(current)
+                <= _callback_lifecycle_revision(outgoing)):
+            continue
+        for field in _CALLBACK_LIFECYCLE_FIELDS:
+            if field in current:
+                outgoing[field] = copy.deepcopy(current[field])
+            else:
+                outgoing.pop(field, None)
+        protected_request_ids.add(request_id)
+
+    if not protected_request_ids:
+        return
+    persisted_callback_activities = {}
+    for contact in (persisted.get("crm_contacts") or []):
+        if not isinstance(contact, dict):
+            continue
+        contact_id = str(contact.get("id") or "")
+        for activity in (contact.get("activities") or []):
+            if not isinstance(activity, dict):
+                continue
+            request_id = str(activity.get("callback_request_id") or "")
+            if request_id in protected_request_ids:
+                persisted_callback_activities.setdefault(contact_id, []).append(
+                    copy.deepcopy(activity)
+                )
+
+    for contact in (data.get("crm_contacts") or []):
+        if not isinstance(contact, dict):
+            continue
+        authoritative = persisted_callback_activities.get(
+            str(contact.get("id") or ""),
+        )
+        if not authoritative:
+            continue
+        activities = [
+            activity
+            for activity in (contact.get("activities") or [])
+            if not (
+                isinstance(activity, dict)
+                and str(activity.get("callback_request_id") or "")
+                in protected_request_ids
+            )
+        ]
+        contact["activities"] = sorted(
+            [*authoritative, *activities],
+            key=lambda activity: str(activity.get("date") or "")
+            if isinstance(activity, dict) else "",
+            reverse=True,
+        )
+
+
+def _save_data_unlocked(data):
     global _DATA_CACHE_PAYLOAD, _DATA_CACHE_SIGNATURE
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
 
@@ -1332,6 +1441,15 @@ def save_data(data):
                 os.remove(temp_file)
             except OSError:
                 pass
+
+
+def save_data(data):
+    """Persist one snapshot without losing newer callback lifecycle changes."""
+    with _DATA_WRITE_LOCK:
+        persisted = _load_data_snapshot()
+        _preserve_newer_callback_lifecycle(data, persisted)
+        return _save_data_unlocked(data)
+
 
 def supprimer_fichier(filename):
     if not filename:
@@ -3649,6 +3767,7 @@ def api_secretariat_demandes():
     if entry["type"] == "autre":
         entry.update({
             "callback_status": "pending",
+            "callback_status_updated_at": now.isoformat(),
             "callback_processed_at": "",
             "callback_processed_by": "",
             "statut": "À traiter",
@@ -15098,6 +15217,12 @@ CRM_CALLBACK_PROCESSED = "processed"
 CRM_CALLBACK_STATUSES = {CRM_CALLBACK_PENDING, CRM_CALLBACK_PROCESSED}
 
 
+def _crm_callback_status_timestamp():
+    return datetime.datetime.now(
+        pytz.timezone("Europe/Paris"),
+    ).isoformat(timespec="microseconds")
+
+
 def _crm_callback_request_status(entry):
     """Return the dedicated status; legacy generic « Traité » stays pending."""
     raw_status = str(entry.get("callback_status") or "").strip().casefold()
@@ -15199,6 +15324,13 @@ def _crm_prepare_callback_request(data, entry):
     if entry.get("callback_status") != status:
         entry["callback_status"] = status
         changed = True
+    if not entry.get("callback_status_updated_at"):
+        initial_status_date = (
+            entry.get("callback_processed_at") or entry.get("created_at") or ""
+        )
+        if initial_status_date:
+            entry["callback_status_updated_at"] = str(initial_status_date)
+            changed = True
     expected_generic_status = (
         "Traité" if status == CRM_CALLBACK_PROCESSED else "À traiter"
     )
@@ -15349,6 +15481,7 @@ def crm_callback_request(request_id):
     previous_status = _crm_callback_request_status(entry)
     entry["callback_status"] = requested_status
     now = _crm_now()
+    entry["callback_status_updated_at"] = _crm_callback_status_timestamp()
     user = current_user() or {}
     actor = user.get("name") or user.get("email") or "Équipe Intégrale"
     if requested_status == CRM_CALLBACK_PROCESSED:
