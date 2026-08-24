@@ -92,10 +92,16 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     )
 
     assert processed_response.status_code == 200
-    processed = processed_response.get_json()["request"]
+    processed_payload = processed_response.get_json()
+    processed = processed_payload["request"]
     assert processed["status"] == "processed"
     assert processed["processed_at"]
     assert processed["processed_by"]
+    assert processed_payload["contact"]["id"] == contact["id"]
+    assert any(
+        activity.get("title") == "Demande de rappel traitée"
+        for activity in processed_payload["contact"]["activities"]
+    )
     stored = application.load_data()
     assert len(stored["crm_contacts"]) == 1
     assert stored["secretariat_demandes"][0]["statut"] == "Traité"
@@ -111,9 +117,15 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     )
 
     assert reopened_response.status_code == 200
-    reopened = reopened_response.get_json()["request"]
+    reopened_payload = reopened_response.get_json()
+    reopened = reopened_payload["request"]
     assert reopened["status"] == "pending"
     assert reopened["processed_at"] == ""
+    assert reopened_payload["contact"]["id"] == contact["id"]
+    assert any(
+        activity.get("title") == "Demande de rappel rouverte"
+        for activity in reopened_payload["contact"]["activities"]
+    )
     stored = application.load_data()
     assert len(stored["crm_contacts"]) == 1
     assert stored["secretariat_demandes"][0]["statut"] == "À traiter"
@@ -188,6 +200,10 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert 'data-callback-filter="pending"' in javascript
     assert "/api/crm/callback-requests/" in javascript
     assert "'demande_rappel'" in javascript
+    assert "data-callback-action" in javascript
+    assert "async function saveCallbackRequestStatus" in javascript
+    assert "activityFeed.onclick=async event=>" in javascript
     assert ".callback-request-table" in stylesheet
     assert ".callback-request-status.pending" in stylesheet
     assert ".feed-item.callback-activity" in stylesheet
+    assert ".feed-callback-action" in stylesheet
