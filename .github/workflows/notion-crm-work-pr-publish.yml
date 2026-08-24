@@ -3,6 +3,8 @@ name: Notion CRM - publier après revue indépendante
 on:
   pull_request_review:
     types: [submitted]
+  pull_request:
+    types: [ready_for_review]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
