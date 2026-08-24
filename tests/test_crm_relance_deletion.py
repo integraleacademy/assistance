@@ -166,6 +166,66 @@ def test_normalization_does_not_resurrect_cancelled_legacy_date():
     assert ensure(contact) is False
 
 
+def test_normalization_keeps_only_the_nearest_active_relance():
+    namespace = _load_python_functions(
+        "_crm_relance_date",
+        "_crm_refresh_relance_date",
+        "_crm_ensure_relances",
+    )
+    ensure = namespace["_crm_ensure_relances"]
+    answered = {
+        "id": "answered",
+        "status": "answered",
+        "scheduled_date": "2026-08-20",
+        "created_at": "2026-08-20T09:00:00+02:00",
+        "created_by": "Camille",
+    }
+    contact = {
+        "relance_date": "2026-09-10",
+        "relances": [
+            {
+                "id": "later",
+                "status": "scheduled",
+                "scheduled_date": "2026-09-10",
+            },
+            answered,
+            {
+                "id": "nearest",
+                "status": "scheduled",
+                "scheduled_date": "2026-08-28",
+            },
+            {
+                "id": "same-day-duplicate",
+                "status": "scheduled",
+                "scheduled_date": "2026-08-28",
+            },
+        ],
+    }
+
+    assert ensure(contact) is True
+    active = [
+        item for item in contact["relances"]
+        if item["status"] == "scheduled"
+    ]
+    assert [item["id"] for item in active] == ["nearest"]
+    assert contact["relance_date"] == "2026-08-28"
+    assert answered == {
+        "id": "answered",
+        "status": "answered",
+        "scheduled_date": "2026-08-20",
+        "created_at": "2026-08-20T09:00:00+02:00",
+        "created_by": "Camille",
+    }
+    for relance_id in ("later", "same-day-duplicate"):
+        historical = next(
+            item for item in contact["relances"] if item["id"] == relance_id
+        )
+        assert historical["status"] == "reprogrammed"
+        assert historical["completed_at"] == "2026-08-23T14:10:00+02:00"
+        assert historical["completed_by"] == "Automatisation CRM"
+    assert ensure(contact) is False
+
+
 def test_cancelling_followups_removes_every_open_item_and_is_idempotent():
     namespace = _load_python_functions(
         "_crm_relance_date",
