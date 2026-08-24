@@ -990,6 +990,8 @@ def test_other_request_is_stored_without_creating_a_lead(client, monkeypatch):
     assert response.get_json()["crm_contact_id"] is None
     assert len(data["secretariat_demandes"]) == 1
     assert data["secretariat_demandes"][0]["crm_contact_id"] == ""
+    assert data["secretariat_demandes"][0]["callback_status"] == "pending"
+    assert data["secretariat_demandes"][0]["statut"] == "À traiter"
     assert data["crm_contacts"] == []
     assert data["crm_inbound_requests"] == []
     assert salesforce_calls == []
@@ -1026,8 +1028,12 @@ def test_other_request_links_existing_lead_and_adds_activity(client, monkeypatch
     assert data["crm_inbound_requests"] == []
     assert salesforce_calls == []
     activity = contact["activities"][0]
-    assert activity["kind"] == "appel"
+    assert activity["kind"] == "demande_rappel"
     assert activity["title"] == "Demande de rappel reçue"
+    assert activity["callback_request_id"] == data["secretariat_demandes"][0]["id"]
+    assert activity["callback_status"] == "pending"
+    assert activity["callback_event"] == "received"
+    assert "Demande :" in activity["detail"]
     assert "Souhaite être rappelée" in activity["detail"]
     assert "25/08/2026 à 14:30" in activity["detail"]
     assert activity["author"] == "Secrétariat"

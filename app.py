@@ -3647,23 +3647,15 @@ def api_secretariat_demandes():
     # doit jamais créer de piste ni être envoyée à Salesforce. Lorsqu'une fiche
     # existe déjà, la demande est seulement liée et consignée dans son journal.
     if entry["type"] == "autre":
-        crm_contact = _secretariat_existing_crm_contact(data_store, entry)
+        entry.update({
+            "callback_status": "pending",
+            "callback_processed_at": "",
+            "callback_processed_by": "",
+            "statut": "À traiter",
+        })
+        _, crm_contact = _crm_prepare_callback_request(data_store, entry)
         if crm_contact:
-            entry["crm_contact_id"] = str(crm_contact.get("id") or "")
-            activity_detail = "\n".join(filter(None, [
-                entry.get("notes") or "Demande de rappel transmise par le secrétariat.",
-                f"Rendez-vous : {entry['rdv']}" if entry.get("rdv") else "",
-            ]))
-            _crm_activity(
-                crm_contact,
-                "appel",
-                "Demande de rappel reçue",
-                activity_detail,
-                author_name="Secrétariat",
-            )
             crm_contact["updated_at"] = _crm_now()
-        else:
-            entry["crm_contact_id"] = ""
         save_data(data_store)
         return jsonify({
             "ok": True,
@@ -7195,7 +7187,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260824-callback-requests-1"
+CRM_ASSET_VERSION = "20260824-callback-processing-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -13363,12 +13355,14 @@ def _crm_prepared_read_model():
 
         data = load_data()
         _crm_prepare_contacts(data)
+        _crm_backfill_callback_requests(data)
         final_key = _crm_read_model_key()
         if final_key != key:
             # A webhook or a background WEDOF page landed while the model was
             # being prepared. Rebuild once from the new atomic snapshot.
             data = load_data()
             _crm_prepare_contacts(data)
+            _crm_backfill_callback_requests(data)
             final_key = _crm_read_model_key()
         _CRM_READ_MODEL_KEY = final_key
         _CRM_READ_MODEL_VALUE = data
@@ -13408,7 +13402,7 @@ CRM_CONTACT_SUMMARY_FIELDS = (
     "received_at", "updated_at", "commentaires", "wedof_status",
     "qualification_flag",
 )
-CRM_CONTACT_ACTIVITY_KINDS = {"appel", "email", "sms"}
+CRM_CONTACT_ACTIVITY_KINDS = {"appel", "email", "sms", "demande_rappel"}
 CRM_ACTIVITY_SECTIONS = {"notifications", "fil-actu"}
 CRM_COUNTED_RELANCE_STATUSES = {"scheduled", "answered", "no_answer"}
 CRM_CANCELLED_APPOINTMENT_STATUSES = {"canceled", "cancelled"}
@@ -15099,6 +15093,140 @@ def crm_templates():
     return jsonify(item), 201
 
 
+CRM_CALLBACK_PENDING = "pending"
+CRM_CALLBACK_PROCESSED = "processed"
+CRM_CALLBACK_STATUSES = {CRM_CALLBACK_PENDING, CRM_CALLBACK_PROCESSED}
+
+
+def _crm_callback_request_status(entry):
+    """Return the dedicated status; legacy generic « Traité » stays pending."""
+    raw_status = str(entry.get("callback_status") or "").strip().casefold()
+    if raw_status in {"processed", "traite", "traité"}:
+        return CRM_CALLBACK_PROCESSED
+    return CRM_CALLBACK_PENDING
+
+
+def _crm_callback_request_detail(entry):
+    notes = str(entry.get("notes") or "").strip()
+    appointment = str(entry.get("rdv") or "").strip()
+    return "\n".join([
+        f"Demande : {notes or 'Aucune précision renseignée.'}",
+        f"Rendez-vous : {appointment or 'Non renseigné'}",
+    ])
+
+
+def _crm_legacy_callback_request_detail(entry):
+    """Rebuild the detail written before callback activities had their own kind."""
+    return "\n".join(filter(None, [
+        str(entry.get("notes") or "").strip()
+        or "Demande de rappel transmise par le secrétariat.",
+        f"Rendez-vous : {entry['rdv']}" if entry.get("rdv") else "",
+    ]))
+
+
+def _crm_callback_request_contact(data, entry):
+    stored_contact_id = str(entry.get("crm_contact_id") or "").strip()
+    contact = _crm_contact(data, stored_contact_id) if stored_contact_id else None
+    return contact or _secretariat_existing_crm_contact(data, entry)
+
+
+def _crm_ensure_callback_request_activity(contact, entry):
+    """Create or repair the journal entry linked to one callback request."""
+    request_id = str(entry.get("id") or "").strip()
+    activities = contact.setdefault("activities", [])
+    activity = next((
+        item for item in activities
+        if isinstance(item, dict)
+        and str(item.get("callback_request_id") or "") == request_id
+        and item.get("title") == "Demande de rappel reçue"
+        and str(item.get("callback_event") or "received") == "received"
+    ), None)
+    if activity is None:
+        legacy_details = {
+            _crm_callback_request_detail(entry),
+            _crm_legacy_callback_request_detail(entry),
+        }
+        activity = next((
+            item for item in activities
+            if isinstance(item, dict)
+            and item.get("title") == "Demande de rappel reçue"
+            and not item.get("callback_request_id")
+            and str(item.get("detail") or "") in legacy_details
+        ), None)
+
+    status = _crm_callback_request_status(entry)
+    expected = {
+        "kind": "demande_rappel",
+        "title": "Demande de rappel reçue",
+        "detail": _crm_callback_request_detail(entry),
+        "callback_request_id": request_id,
+        "callback_status": status,
+        "callback_event": "received",
+    }
+    if activity is None:
+        _crm_activity(
+            contact,
+            expected["kind"],
+            expected["title"],
+            expected["detail"],
+            author_name="Secrétariat",
+        )
+        activity = activities[0]
+        if entry.get("created_at"):
+            activity["date"] = str(entry["created_at"])
+        activity.update({
+            "callback_request_id": request_id,
+            "callback_status": status,
+            "callback_event": "received",
+        })
+        return True
+
+    changed = False
+    for key, value in expected.items():
+        if activity.get(key) != value:
+            activity[key] = value
+            changed = True
+    return changed
+
+
+def _crm_prepare_callback_request(data, entry):
+    """Normalize one request, preserve its lead link and repair its journal."""
+    changed = False
+    if not str(entry.get("id") or "").strip():
+        entry["id"] = str(uuid.uuid4())
+        changed = True
+    status = _crm_callback_request_status(entry)
+    if entry.get("callback_status") != status:
+        entry["callback_status"] = status
+        changed = True
+    expected_generic_status = (
+        "Traité" if status == CRM_CALLBACK_PROCESSED else "À traiter"
+    )
+    if entry.get("statut") != expected_generic_status:
+        entry["statut"] = expected_generic_status
+        changed = True
+
+    contact = _crm_callback_request_contact(data, entry)
+    contact_id = str(contact.get("id") or "") if contact else ""
+    if str(entry.get("crm_contact_id") or "") != contact_id:
+        entry["crm_contact_id"] = contact_id
+        changed = True
+    if contact and _crm_ensure_callback_request_activity(contact, entry):
+        changed = True
+    return changed, contact
+
+
+def _crm_backfill_callback_requests(data):
+    """Repair callback statuses and journals without creating any CRM contact."""
+    changed = False
+    for entry in data.get("secretariat_demandes", []):
+        if not isinstance(entry, dict) or entry.get("type") != "autre":
+            continue
+        entry_changed, _ = _crm_prepare_callback_request(data, entry)
+        changed = entry_changed or changed
+    return changed
+
+
 def _crm_callback_requests_payload(data):
     """Expose only secretariat « other requests » to the callback workspace."""
     contacts_by_id = {
@@ -15136,6 +15264,9 @@ def _crm_callback_requests_payload(data):
                 if contact else ""
             ),
             "crm_contact_status": str(contact.get("statut") or "") if contact else "",
+            "status": _crm_callback_request_status(entry),
+            "processed_at": str(entry.get("callback_processed_at") or ""),
+            "processed_by": str(entry.get("callback_processed_by") or ""),
         })
     return sorted(
         rows,
@@ -15152,8 +15283,15 @@ def crm_bootstrap():
     L'ancien démarrage lançait six requêtes en parallèle. Chaque requête
     reparsait le même fichier complet, ce qui multipliait le pic mémoire.
     """
-    data = _crm_prepared_read_model()
     section = request.args.get("section", "")
+    if section == "demandes-rappel":
+        # One non-destructive pass repairs existing requests and makes their
+        # journal entry visible before the callback workspace is returned.
+        with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
+            stored_data = load_data()
+            if _crm_backfill_callback_requests(stored_data):
+                save_data(stored_data)
+    data = _crm_prepared_read_model()
     contacts, _ = _crm_contact_summaries_payload(
         data, section=section, prepared=True,
     )
@@ -15174,6 +15312,68 @@ def crm_bootstrap():
             if section == "demandes-rappel" else []
         ),
     })
+
+
+@app.patch("/api/crm/callback-requests/<request_id>")
+@login_required
+@_serialize_secretariat_delivery
+@_crm_serialized
+def crm_callback_request(request_id):
+    data = load_data()
+    entry = next((
+        item for item in data.get("secretariat_demandes", [])
+        if isinstance(item, dict)
+        and item.get("type") == "autre"
+        and str(item.get("id") or "") == str(request_id)
+    ), None)
+    if entry is None:
+        return jsonify({"error": "Demande de rappel introuvable."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    requested_status = str(payload.get("status") or "").strip().lower()
+    if requested_status not in CRM_CALLBACK_STATUSES:
+        return jsonify({"error": "Le statut de la demande est invalide."}), 400
+
+    previous_status = _crm_callback_request_status(entry)
+    entry["callback_status"] = requested_status
+    now = _crm_now()
+    user = current_user() or {}
+    actor = user.get("name") or user.get("email") or "Équipe Intégrale"
+    if requested_status == CRM_CALLBACK_PROCESSED:
+        if previous_status != requested_status or not entry.get("callback_processed_at"):
+            entry["callback_processed_at"] = now
+            entry["callback_processed_by"] = actor
+    else:
+        entry["callback_processed_at"] = ""
+        entry["callback_processed_by"] = ""
+
+    _, contact = _crm_prepare_callback_request(data, entry)
+    if previous_status != requested_status and contact:
+        title = (
+            "Demande de rappel traitée"
+            if requested_status == CRM_CALLBACK_PROCESSED
+            else "Demande de rappel rouverte"
+        )
+        _crm_activity(
+            contact,
+            "demande_rappel",
+            title,
+            _crm_callback_request_detail(entry),
+            author_name=actor,
+        )
+        contact["activities"][0].update({
+            "callback_request_id": str(entry.get("id") or ""),
+            "callback_status": requested_status,
+            "callback_event": requested_status,
+        })
+        contact["updated_at"] = now
+
+    save_data(data)
+    row = next(
+        item for item in _crm_callback_requests_payload(data)
+        if item["id"] == str(request_id)
+    )
+    return jsonify({"request": row})
 
 
 @app.route("/api/crm/templates/<template_id>", methods=["PATCH", "DELETE"])
