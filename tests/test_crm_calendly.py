@@ -722,6 +722,7 @@ def test_booking_normalizes_calendly_phone_question_for_text_reminders(tmp_path,
         "kind": "custom",
         "location": "Appel téléphonique",
     }
+    assert "tracking" not in captured
     assert captured["invitee"] == {
         "name": "Yanis EXEMPLE",
         "first_name": "Yanis",

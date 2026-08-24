@@ -13348,12 +13348,6 @@ def crm_contact_calendly_appointments(contact_id):
             "event_type": event_type.get("uri") or event_type_uri,
             "start_time": start_time,
             "invitee": invitee,
-            "tracking": {
-                "utm_source": "integrale_connect",
-                "utm_medium": "crm",
-                "utm_campaign": "rendez_vous",
-                "utm_content": contact_id,
-            },
         }
         if booking_location:
             booking_body["location"] = booking_location
