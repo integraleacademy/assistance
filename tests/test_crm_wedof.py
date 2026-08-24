@@ -89,11 +89,13 @@ def test_background_sync_starts_only_when_wedof_is_configured(monkeypatch):
 
     monkeypatch.setenv("WEDOF_API_KEY", SECRET)
     monkeypatch.setattr(application.threading, "Thread", FakeThread)
+    monkeypatch.setenv("WEDOF_CRM_RECONCILIATION_ENABLED", "false")
     assert application._start_wedof_background_sync() is False
     # L'ancien drapeau ne peut plus réactiver le poller historique de 5 min.
     monkeypatch.setenv("WEDOF_AUTO_SYNC_ENABLED", "true")
     assert application._start_wedof_background_sync() is False
-    monkeypatch.setenv("WEDOF_CRM_RECONCILIATION_ENABLED", "true")
+    # Sans désactivation explicite, le nouveau passage ciblé de six heures est actif.
+    monkeypatch.delenv("WEDOF_CRM_RECONCILIATION_ENABLED")
     assert application._start_wedof_background_sync() is True
     assert started[0]["name"] == "wedof-crm-reconciliation"
     assert started[0]["daemon"] is True
@@ -110,6 +112,44 @@ def test_concurrent_sync_returns_without_starting_a_second_scan():
     assert result["ok"] is True
     assert result["in_progress"] is True
     assert result["created_contacts"] == 0
+
+
+def test_automatic_global_reconciliation_respects_its_page_budget(monkeypatch):
+    pages = []
+    stored_states = []
+    monkeypatch.setattr(application, "_wedof_state", lambda: {})
+    monkeypatch.setattr(
+        application,
+        "_wedof_request",
+        lambda _path, params=None: (
+            pages.append(params["page"])
+            or ({"items": [{"externalId": str(i)} for i in range(100)]}, {
+                "x-current-page": str(params["page"]),
+                "x-item-per-page": "100",
+                "x-total-count": "1000",
+            })
+        ),
+    )
+    monkeypatch.setattr(
+        application, "_wedof_store_page",
+        lambda items, *_args, **_kwargs: {
+            "created_contacts": 0,
+            "linked_folders": 0,
+            "pending_reviews": 0,
+        },
+    )
+    monkeypatch.setattr(
+        application, "_wedof_set_state",
+        lambda **state: stored_states.append(state),
+    )
+
+    result = application._wedof_sync_locked(page_budget=2)
+
+    assert pages == [1, 2]
+    assert result["partial"] is True
+    assert result["next_page"] == 3
+    assert result["processed"] == 200
+    assert stored_states[-1]["next_page"] == 3
 
 
 def test_contact_wedof_returns_empty_cache_and_status_without_remote_check(
@@ -780,6 +820,59 @@ def test_newer_ft_instruction_wins_over_an_older_refused_folder(
     assert result["statut_secondaire"] == "Financement FT en cours"
 
 
+def test_six_hour_ft_reconciliation_reads_only_latest_in_progress_folder(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    older = folder(
+        "older-instruction", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    older.update({
+        "state": "waitingAcceptation",
+        "createdAt": "2026-08-12T10:00:00+00:00",
+        "history": [{"state": "waitingAcceptation"}],
+    })
+    latest = folder(
+        "latest-instruction", "lina@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    latest.update({
+        "state": "waitingAcceptation",
+        "createdAt": "2026-08-19T10:00:00+00:00",
+        "history": [{"state": "waitingAcceptation"}],
+    })
+    application._wedof_store_page(
+        [older, latest], application.load_data(), 1,
+    )
+    refused = dict(latest)
+    refused.update({"state": "validated", "history": []})
+    calls = []
+    monkeypatch.setattr(
+        application,
+        "_wedof_request",
+        lambda path, **_kwargs: calls.append(path) or (refused, {}),
+    )
+
+    result = application._wedof_reconcile_ft_watchlist(max_folders=10)
+
+    assert calls == ["/api/registrationFolders/latest-instruction"]
+    assert result == {
+        "ok": True,
+        "candidates": 1,
+        "checked": 1,
+        "refused": 1,
+        "errors": 0,
+        "remaining": 0,
+    }
+    updated = next(
+        item for item in application.load_data()["crm_contacts"]
+        if item["id"] == contact["id"]
+    )
+    assert updated["statut_demande_financement_ft"] == "refusee"
+    assert updated["statut_secondaire"] == "Financement FT refusé"
+
+
 def test_latest_created_folder_without_ft_request_clears_an_older_instruction(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
@@ -1366,11 +1459,11 @@ def test_ft_refusal_notification_ui_is_system_only():
 
 def _signed_wedof_webhook(client, payload, *, delivery="delivery-1"):
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
-    signature = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    signature = hmac.new(SECRET.encode(), raw, hashlib.sha512).hexdigest()
     return client.post(
         "/api/webhooks/wedof", data=raw, content_type="application/json",
         headers={
-            "X-Wedof-Signature": f"sha256={signature}",
+            "X-Wedof-Signature": signature,
             "X-Wedof-Delivery": delivery,
         },
     )

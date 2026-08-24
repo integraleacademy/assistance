@@ -11420,7 +11420,7 @@ def _wedof_state():
         return {"last_error": "État de synchronisation illisible."}
 
 
-def _wedof_sync():
+def _wedof_sync(*, page_budget=None):
     """Exécute une seule réconciliation globale, tous processus/apps confondus."""
     if not _WEDOF_SYNC_LOCK.acquire(blocking=False):
         return {
@@ -11442,7 +11442,7 @@ def _wedof_sync():
                 "created_contacts": 0, "linked_folders": 0,
                 "pending_reviews": 0,
             }
-        return _wedof_sync_locked()
+        return _wedof_sync_locked(page_budget=page_budget)
     finally:
         release_wedof_lock(
             "wedof-global-reconciliation", str(lease.get("token") or ""),
@@ -11450,16 +11450,23 @@ def _wedof_sync():
         _WEDOF_SYNC_LOCK.release()
 
 
-def _wedof_sync_locked():
+def _wedof_sync_locked(*, page_budget=None):
     state = _wedof_state()
     page = int(state.get("next_page") or 1) if state.get("in_progress") else 1
     max_pages = max(1, min(int(os.getenv("WEDOF_MAX_PAGES", "1000")), 10000))
+    if page_budget is None:
+        pages_this_run = max_pages
+    else:
+        try:
+            pages_this_run = max(1, min(int(page_budget), max_pages))
+        except (TypeError, ValueError):
+            pages_this_run = 1
     processed = 0
     created_contacts = 0
     linked_folders = 0
     pending_reviews = 0
     try:
-        for _ in range(max_pages):
+        for _ in range(pages_this_run):
             payload, headers = _wedof_request(
                 "/api/registrationFolders", params={"limit": 100, "page": page}
             )
@@ -11493,7 +11500,23 @@ def _wedof_sync_locked():
                     "last_sync_at": finished,
                 }
             page += 1
-        raise WedofAPIError("Limite de pagination WEDOF atteinte ; la reprise reste disponible.")
+        # La réconciliation automatique avance dans la pagination avec un petit
+        # budget fixe. Le curseur est conservé afin de couvrir progressivement
+        # l'historique sans refaire un scan complet quatre fois par jour.
+        _wedof_set_state(
+            next_page=page, in_progress=True, last_error="",
+            last_partial_sync_at=_wedof_now(),
+        )
+        return {
+            "ok": True,
+            "partial": True,
+            "in_progress": True,
+            "next_page": page,
+            "processed": processed,
+            "created_contacts": created_contacts,
+            "linked_folders": linked_folders,
+            "pending_reviews": pending_reviews,
+        }
     except Exception as exc:
         message = _wedof_clean(exc)
         _wedof_set_state(next_page=page, in_progress=True, last_error=message)
@@ -11507,6 +11530,151 @@ def _wedof_positive_interval(name, default, minimum):
         return default
 
 
+def _wedof_ft_watchlist(data=None):
+    """Retourne les dossiers les plus récents encore en instruction FT.
+
+    Seuls les dossiers déjà liés à une fiche CRM sont concernés. Le tri par
+    ancienne date de synchronisation fait tourner équitablement la liste si le
+    plafond par passage est atteint.
+    """
+    data = data or load_data()
+    contacts = {
+        str(contact.get("id") or ""): contact
+        for contact in data.get("crm_contacts", [])
+        if isinstance(contact, dict) and contact.get("id")
+    }
+    if not contacts or not os.path.exists(_wedof_db_path()):
+        return []
+    latest_by_contact = {}
+    with _wedof_connect() as db:
+        rows = db.execute("""
+            SELECT r.stable_id, r.payload_json, r.remote_date, r.synced_at,
+                   l.contact_id
+            FROM wedof_resources r JOIN wedof_contact_links l
+              ON r.resource_type=l.resource_type
+             AND r.stable_id=l.resource_id
+            WHERE r.resource_type='registrationFolder'
+        """)
+        for row in rows:
+            contact_id = str(row["contact_id"] or "")
+            if contact_id not in contacts:
+                continue
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            recency = _wedof_folder_recency_key(
+                payload,
+                fallback=row["remote_date"] or row["synced_at"],
+                stable_id=row["stable_id"],
+            )
+            previous = latest_by_contact.get(contact_id)
+            if previous is None or recency > previous[0]:
+                latest_by_contact[contact_id] = (
+                    recency, str(row["stable_id"]), payload,
+                    str(row["synced_at"] or ""),
+                )
+
+    watchlist = []
+    for (
+        contact_id, (_recency, stable_id, payload, synced_at)
+    ) in latest_by_contact.items():
+        status = _wedof_france_travail_status(payload)
+        if status == "en_cours_instruction":
+            watchlist.append({
+                "contact_id": contact_id,
+                "folder_id": stable_id,
+                "synced_at": synced_at,
+            })
+    return sorted(
+        watchlist,
+        key=lambda item: (item.get("synced_at") or "", item["folder_id"]),
+    )
+
+
+def _wedof_reconcile_ft_watchlist(*, max_folders=None):
+    """Relit uniquement les dossiers connus encore en instruction France Travail."""
+    try:
+        configured_limit = int(os.getenv(
+            "WEDOF_FT_RECONCILIATION_MAX_FOLDERS", "50",
+        ))
+    except (TypeError, ValueError):
+        configured_limit = 50
+    if max_folders is not None:
+        try:
+            configured_limit = int(max_folders)
+        except (TypeError, ValueError):
+            configured_limit = 1
+    configured_limit = max(1, min(configured_limit, 100))
+    watchlist = _wedof_ft_watchlist()
+    checked = 0
+    refused = 0
+    errors = 0
+    for item in watchlist[:configured_limit]:
+        folder_id = item["folder_id"]
+        try:
+            payload, _headers = _wedof_request(
+                f"/api/registrationFolders/{quote(folder_id, safe='')}"
+            )
+            folder = (
+                payload.get("data")
+                if isinstance(payload, dict)
+                and isinstance(payload.get("data"), dict)
+                else payload
+            )
+            if not isinstance(folder, dict):
+                raise WedofAPIError(
+                    "WEDOF a retourné un dossier dans un format inattendu."
+                )
+            returned_id = str(folder.get("externalId") or folder_id).strip()
+            if returned_id != folder_id:
+                raise WedofAPIError("WEDOF a retourné un autre numéro de dossier.")
+            if not folder.get("externalId"):
+                folder = {**folder, "externalId": folder_id}
+            if (_wedof_france_travail_status(
+                    folder, previous_status="en_cours_instruction",
+                    ) == "refusee"):
+                refused += 1
+            _wedof_store_page(
+                [folder], None, 0, update_sync_state=False,
+            )
+            checked += 1
+        except WedofAPIError as exc:
+            errors += 1
+            app.logger.warning(
+                "wedof FT reconciliation failed folder=%s error=%s",
+                folder_id, _wedof_clean(exc),
+            )
+            if getattr(exc, "status_code", None) in {429, 503}:
+                break
+    return {
+        "ok": errors == 0,
+        "candidates": len(watchlist),
+        "checked": checked,
+        "refused": refused,
+        "errors": errors,
+        "remaining": max(0, len(watchlist) - checked),
+    }
+
+
+def _wedof_scheduled_reconciliation():
+    """Exécute le contrôle FT prioritaire puis quelques pages globales."""
+    try:
+        page_budget = int(os.getenv(
+            "WEDOF_RECONCILIATION_PAGE_BUDGET", "5",
+        ))
+    except (TypeError, ValueError):
+        page_budget = 5
+    page_budget = max(1, min(page_budget, 20))
+    ft_result = _wedof_reconcile_ft_watchlist()
+    global_result = _wedof_sync(page_budget=page_budget)
+    return {
+        "ok": bool(ft_result.get("ok") and global_result.get("ok")),
+        "france_travail": ft_result,
+        "global": global_result,
+    }
+
+
 def _wedof_background_sync_loop():
     initial_delay = _wedof_positive_interval(
         "WEDOF_SYNC_INITIAL_DELAY_SECONDS", 300, 60,
@@ -11518,11 +11686,22 @@ def _wedof_background_sync_loop():
         return
     while not _WEDOF_POLLER_STOP.is_set():
         try:
-            result = _wedof_sync()
-            if result.get("created_contacts"):
+            # Plusieurs workers web peuvent démarrer ce thread. Ce bail n'est
+            # volontairement pas libéré : son expiration matérialise le délai
+            # de six heures et empêche un second worker de refaire le passage.
+            schedule = acquire_wedof_lock(
+                "wedof-crm-reconciliation-schedule",
+                ttl_seconds=interval,
+            )
+            if not schedule.get("acquired", False):
+                result = {"ok": True, "status": "already_scheduled"}
+            else:
+                result = _wedof_scheduled_reconciliation()
+            created = result.get("global", {}).get("created_contacts", 0)
+            if created:
                 app.logger.info(
                     "wedof auto-sync created_contacts=%s processed=%s",
-                    result["created_contacts"], result.get("processed", 0),
+                    created, result.get("global", {}).get("processed", 0),
                 )
         except Exception as exc:
             app.logger.warning("wedof auto-sync failed: %s", _wedof_clean(exc))
@@ -11536,7 +11715,7 @@ def _start_wedof_background_sync():
     # Nouveau drapeau volontaire : une ancienne configuration
     # WEDOF_AUTO_SYNC_ENABLED=true ne doit jamais ressusciter le poller 5 min.
     enabled = str(os.getenv(
-        "WEDOF_CRM_RECONCILIATION_ENABLED", "false",
+        "WEDOF_CRM_RECONCILIATION_ENABLED", "true",
     )).strip().casefold()
     if (_WEDOF_POLLER_STARTED or not os.getenv("WEDOF_API_KEY", "").strip()
             or enabled in {"0", "false", "non", "no", "off"}):
@@ -11962,15 +12141,20 @@ def _wedof_webhook_authenticated(raw_body):
     signature = (request.headers.get("X-Wedof-Signature") or "").strip()
     if signature:
         supplied = signature.split("=", 1)[-1].strip().strip('"').strip("'")
-        digest_bytes = hmac.new(
-            secret_text.encode("utf-8"), raw_body, hashlib.sha256,
-        ).digest()
-        candidates = (
-            digest_bytes.hex(),
-            digest_bytes.hex().upper(),
-            base64.b64encode(digest_bytes).decode("ascii"),
-            base64.urlsafe_b64encode(digest_bytes).decode("ascii").rstrip("="),
-        )
+        # WEDOF signe officiellement le corps brut en HMAC-SHA512 hexadécimal.
+        # Les variantes SHA256 restent acceptées pendant la transition pour ne
+        # pas casser un éventuel émetteur interne historique.
+        candidates = []
+        for algorithm in (hashlib.sha512, hashlib.sha256):
+            digest_bytes = hmac.new(
+                secret_text.encode("utf-8"), raw_body, algorithm,
+            ).digest()
+            candidates.extend((
+                digest_bytes.hex(),
+                digest_bytes.hex().upper(),
+                base64.b64encode(digest_bytes).decode("ascii"),
+                base64.urlsafe_b64encode(digest_bytes).decode("ascii").rstrip("="),
+            ))
         return any(hmac.compare_digest(supplied, candidate) for candidate in candidates)
     supplied_secret = (
         request.headers.get("X-Wedof-Secret")

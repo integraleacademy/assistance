@@ -72,3 +72,24 @@ def test_governor_is_disabled_locally_by_default(monkeypatch):
     assert governor.reserve_wedof_request(
         operation="test", method="GET", path="/api/organisms/me",
     )["enabled"] is False
+
+
+def test_schedule_lock_accepts_a_six_hour_ttl(monkeypatch):
+    monkeypatch.setenv("WEDOF_GOVERNOR_ENABLED", "true")
+    monkeypatch.setenv("WEDOF_GOVERNOR_SECRET", "shared-secret")
+    calls = []
+    monkeypatch.setattr(
+        governor.requests,
+        "post",
+        lambda url, **kwargs: (
+            calls.append((url, kwargs))
+            or Response(payload={"ok": True, "acquired": True})
+        ),
+    )
+
+    result = governor.acquire_wedof_lock(
+        "wedof-crm-reconciliation-schedule", ttl_seconds=21600,
+    )
+
+    assert result["acquired"] is True
+    assert calls[0][1]["json"]["ttl_seconds"] == 21600

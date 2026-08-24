@@ -115,7 +115,7 @@ def acquire_wedof_lock(
     return _post("locks/acquire", {
         "name": str(name or "")[:80],
         "owner": lock_owner[:160],
-        "ttl_seconds": max(30, min(int(ttl_seconds), 7200)),
+        "ttl_seconds": max(30, min(int(ttl_seconds), 86400)),
     })
 
 
