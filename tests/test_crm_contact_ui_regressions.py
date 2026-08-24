@@ -200,7 +200,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in backend
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -553,6 +553,51 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert "filename=\'crm_workspace.css\',v=asset_version" in template
     assert "filename=\'crm_workspace.js\',v=asset_version" in template
 
+
+def test_pistes_display_the_desp_journey_badge_without_affecting_other_trainings():
+    crm_js = CRM_JS.read_text(encoding="utf-8")
+    workspace_css = (
+        Path(__file__).parents[1] / "static" / "crm_workspace.css"
+    ).read_text(encoding="utf-8")
+    backend = (Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8")
+
+    assert "function despJourneyBadge(contact)" in crm_js
+    assert "formation==='DESP'&&['INITIAL','VAE'].includes(journey)" in crm_js
+    assert '<span class="crm-desp-journey">${esc(journey)}</span>' in crm_js
+    assert "showDespJourney?despJourneyBadge(contact):''" in crm_js
+    assert "showDespJourney:isLeads" in crm_js
+    assert "showDespJourney:type==='pistes'" in crm_js
+    assert (
+        "showDespJourney=false" in crm_js
+    ), "Other CRM list pages must not opt into the DESP journey badge"
+    assert 'class="crm-list-formation-line"' in crm_js
+    assert ".crm-desp-journey{" in workspace_css
+    assert ".crm-list-formation-line{" in workspace_css
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in backend
+
+    helper = "function despJourneyBadge" + crm_js.split(
+        "function despJourneyBadge", 1
+    )[1].split("function globalContactName", 1)[0]
+    script = f"""
+const esc=value=>String(value).replace(/[&<>'\"]/g,character=>({{'&':'&amp;','<':'&lt;','>':'&gt;',\"'\":'&#39;','\"':'&quot;'}}[character]));
+{helper}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+assert(despJourneyBadge({{formation:' DESP ',desp_type:'initial'}}).includes('>INITIAL<'),'INITIAL is normalized and displayed');
+assert(despJourneyBadge({{formation:'desp',desp_type:' VAE '}}).includes('>VAE<'),'VAE is normalized and displayed');
+assert(despJourneyBadge({{formation:'APS',desp_type:'INITIAL'}})==='', 'other trainings stay unchanged');
+assert(despJourneyBadge({{formation:'DESP',desp_type:''}})==='', 'missing journey stays unchanged');
+assert(despJourneyBadge({{formation:'DESP',desp_type:'<img>'}})==='', 'unknown journey cannot inject markup');
+console.log('CRM DESP journey badges: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "CRM DESP journey badges: OK" in completed.stdout
+
 def test_contact_header_displays_all_activity_counters_including_zero():
     crm_js = CRM_JS.read_text(encoding="utf-8")
     crm_css = CRM_CSS.read_text(encoding="utf-8")
@@ -778,7 +823,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in backend
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -803,7 +848,7 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in backend
 
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -865,7 +910,7 @@ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
     )
     assert "updateVisibleAppointmentData();" in refresh_body
     assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in backend
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -950,7 +995,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in backend
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -992,7 +1037,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260824-relance-permanent-delete-1" in application
+    assert "20260824-desp-journey-badge-1" in application
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
@@ -1045,11 +1090,12 @@ console.log('CRM Pistes completeness: OK');
     assert "showCompleteness?leadCompletenessCell(c):esc(c.lieu)" in javascript
     assert "crm-list-location" in javascript
     assert "showCompleteness:isLeads" in javascript
+    assert "showCompleteness:type==='pistes'" in javascript
     assert "CRMWorkspace={listPage" in workspace
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in application
 
 def test_pipeline_relance_date_distinguishes_overdue_scheduled_and_missing():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1091,7 +1137,7 @@ console.log('CRM pipeline relance date: OK');
     assert ".pipeline-relance-date.overdue{color:#c23449;font-weight:800}" in stylesheet
     assert ".pipeline-relance-date.missing{color:#7b8798}" in stylesheet
     assert ".pipeline-appointment-date,.pipeline-relance-date" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in application
 
 def test_contact_pipeline_restores_compact_chevrons_without_changing_actions():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1139,7 +1185,7 @@ console.log('CRM compact timeline: OK');
     assert ".pipeline-stage-card" not in stylesheet
     assert ".pipeline-line>span" not in stylesheet
     assert ".pipeline-step-marker" not in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in application
 
 
 def test_activity_journal_is_second_tab_before_wedof():
@@ -1178,4 +1224,4 @@ def test_activity_journal_is_second_tab_before_wedof():
         assert f'aria-labelledby="{tab_id}"' in javascript
 
     assert "loadWedof(c,{refresh:true})" in javascript
-    assert 'CRM_ASSET_VERSION = "20260824-relance-permanent-delete-1"' in application
+    assert 'CRM_ASSET_VERSION = "20260824-desp-journey-badge-1"' in application
