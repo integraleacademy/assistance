@@ -13106,6 +13106,45 @@ def _calendly_event_types_for_context(data):
     )
 
 
+CALENDLY_EVENT_TYPE_TOKENS_BY_FORMATION = {
+    "aps": ("agent de securite", " aps"),
+    "a3p": (
+        "a3p",
+        " apr",
+        "garde du corps",
+        "protection physique",
+        "protection rapprochee",
+    ),
+    "desp": ("desp", "dirigeant"),
+    "ssiap 1": ("ssiap",),
+    "chauffeur vtc": ("vtc", "chauffeur"),
+}
+
+
+def _calendly_event_type_matches_formation(event_type, formation):
+    normalized_formation = (
+        unicodedata.normalize("NFKD", str(formation or ""))
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+        .strip()
+    )
+    if not normalized_formation:
+        return True
+    expected = CALENDLY_EVENT_TYPE_TOKENS_BY_FORMATION.get(
+        normalized_formation,
+        (f" {normalized_formation}",),
+    )
+    normalized_name = (
+        " "
+        + unicodedata.normalize("NFKD", str(event_type.get("name") or ""))
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+    return any(token in normalized_name for token in expected)
+
+
 @app.route("/api/crm/calendly/event-types")
 @login_required
 def crm_calendly_event_types():
@@ -13115,23 +13154,10 @@ def crm_calendly_event_types():
         event_types = _calendly_event_types_for_context(load_data())
         formation = str(request.args.get("formation") or "").strip()
         if formation:
-            normalized = unicodedata.normalize("NFKD", formation).encode("ascii", "ignore").decode().lower()
-            expected = {
-                "aps": ("agent de securite", " aps"),
-                "a3p": (
-                    "a3p",
-                    " apr",
-                    "garde du corps",
-                    "protection physique",
-                    "protection rapprochee",
-                ),
-                "desp": ("desp", "dirigeant"), "ssiap 1": ("ssiap",),
-                "chauffeur vtc": ("vtc", "chauffeur"),
-            }.get(normalized, (normalized,))
-            event_types = [item for item in event_types if any(
-                token in " " + unicodedata.normalize("NFKD", str(item.get("name") or "")).encode("ascii", "ignore").decode().lower()
-                for token in expected
-            )]
+            event_types = [
+                item for item in event_types
+                if _calendly_event_type_matches_formation(item, formation)
+            ]
         return jsonify([
             {
                 "uri": item.get("uri"),
@@ -13310,6 +13336,15 @@ def crm_contact_calendly_appointments(contact_id):
         )
         if not event_type.get("active"):
             return jsonify({"error": "Ce type de rendez-vous Calendly n'est plus actif."}), 400
+        contact_formation = str(contact.get("formation") or "").strip()
+        if not _calendly_event_type_matches_formation(event_type, contact_formation):
+            event_type_name = event_type.get("name") or "Rendez-vous Calendly"
+            return jsonify({
+                "error": (
+                    f"Le type Calendly « {event_type_name} » ne correspond pas à la formation "
+                    f"{contact_formation}. Rechargez la fiche avant de choisir un nouveau créneau."
+                ),
+            }), 409
         if event_type.get("is_paid"):
             return jsonify({
                 "error": "Calendly impose une page de paiement pour ce type de rendez-vous. Utilisez son lien Calendly.",
