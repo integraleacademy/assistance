@@ -991,6 +991,7 @@ def test_other_request_is_stored_without_creating_a_lead(client, monkeypatch):
     assert len(data["secretariat_demandes"]) == 1
     assert data["secretariat_demandes"][0]["crm_contact_id"] == ""
     assert data["secretariat_demandes"][0]["callback_status"] == "pending"
+    assert data["secretariat_demandes"][0]["callback_status_updated_at"]
     assert data["secretariat_demandes"][0]["statut"] == "À traiter"
     assert data["crm_contacts"] == []
     assert data["crm_inbound_requests"] == []

@@ -106,6 +106,7 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     }]
     application.save_data(data)
     client.get("/api/crm/bootstrap?section=demandes-rappel")
+    stale_pending_snapshot = application.load_data()
 
     processed_response = client.patch(
         "/api/crm/callback-requests/callback-status",
@@ -133,6 +134,32 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
         for activity in stored["crm_contacts"][0]["activities"]
     )
 
+    # Une autre sauvegarde partie avant le clic ne doit pas rétablir l'ancien
+    # statut ni supprimer la trace du traitement dans le journal.
+    stale_pending_snapshot["crm_contacts"][0]["commentaires"] = (
+        "Modification concurrente à conserver"
+    )
+    application.save_data(stale_pending_snapshot)
+    stored = application.load_data()
+    assert stored["secretariat_demandes"][0]["callback_status"] == "processed"
+    assert stored["crm_contacts"][0]["commentaires"] == (
+        "Modification concurrente à conserver"
+    )
+    assert any(
+        activity.get("title") == "Demande de rappel traitée"
+        for activity in stored["crm_contacts"][0]["activities"]
+    )
+    refreshed_contact = client.get(
+        f"/api/crm/contacts/{contact['id']}"
+    ).get_json()
+    receipt = next(
+        activity for activity in refreshed_contact["activities"]
+        if activity.get("callback_event") == "received"
+        and activity.get("callback_request_id") == "callback-status"
+    )
+    assert receipt["callback_status"] == "processed"
+    stale_processed_snapshot = application.load_data()
+
     reopened_response = client.patch(
         "/api/crm/callback-requests/callback-status",
         json={"status": "pending"},
@@ -155,6 +182,15 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     assert any(
         activity.get("title") == "Demande de rappel rouverte"
         and activity.get("callback_request_id") == "callback-status"
+        for activity in stored["crm_contacts"][0]["activities"]
+    )
+
+    # La même protection s'applique dans l'autre sens après « Rouvrir ».
+    application.save_data(stale_processed_snapshot)
+    stored = application.load_data()
+    assert stored["secretariat_demandes"][0]["callback_status"] == "pending"
+    assert any(
+        activity.get("title") == "Demande de rappel rouverte"
         for activity in stored["crm_contacts"][0]["activities"]
     )
     receipt = next(
