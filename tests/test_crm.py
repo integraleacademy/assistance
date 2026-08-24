@@ -1274,7 +1274,7 @@ def test_ft_refusal_received_on_weekend_is_scheduled_for_monday(received_at):
     ]
     assert changed is True
     assert replayed_changed is False
-    assert replayed is relance
+    assert replayed["id"] == relance["id"]
     assert relance["scheduled_date"] == "2026-08-24"
     assert contact["relance_date"] == "2026-08-24"
     assert active == [relance]
