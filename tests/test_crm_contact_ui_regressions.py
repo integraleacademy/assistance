@@ -725,6 +725,22 @@ def test_bulk_messages_preview_and_offer_every_compatible_template():
     assert '.bulk-message-preview[aria-busy="true"]' in stylesheet
 
 
+def test_activity_sms_preview_uses_the_ios_style_bubble_for_inline_and_loaded_content():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    feed_start = javascript.index("function feed(c,expanded=false)")
+    feed_end = javascript.index("function editCallActivityModal", feed_start)
+    preview_flow = javascript[feed_start:feed_end]
+
+    assert 'data-preview-type="${sms?\'sms\':\'html\'}"' in preview_flow
+    assert "link.dataset.previewType==='sms'?smsPreviewHtml(content):content" in preview_flow
+    assert "show(decodeURIComponent(link.dataset.preview))" in preview_flow
+    assert "show(result.preview)" in preview_flow
+    assert "sms?'Voir le SMS':'Prévisualiser'" in preview_flow
+    assert "function smsPreviewHtml(content)" in javascript
+    assert 'class="sms-preview-bubble"' in javascript
+
+
 def test_calendly_refreshes_silently_after_cached_contact_render():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
