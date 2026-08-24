@@ -15,6 +15,7 @@ EXPECTED_LABELS = {
     "contacts": "Contacts",
     "pistes": "Pistes",
     "relances": "Relances",
+    "demandes-rappel": "Demande de rappel",
     "inscrits": "Inscrits",
     "disqualifies": "Disqualifiés",
     "notifications": "Notifications",
@@ -49,7 +50,7 @@ def test_server_renders_a_specific_title_for_every_allowed_crm_section():
     assert "page_title=CRM_PAGE_LABELS[section]" in route
     assert "<title>{{ page_title }} - Intégrale CRM</title>" in template
     assert "'page_label':page_title" in template
-    assert 'CRM_ASSET_VERSION = "20260823-section-titles-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-callback-requests-1"' in backend
 
 
 def test_client_navigation_uses_section_titles_without_breaking_contact_titles():
