@@ -9,6 +9,7 @@ const SECTION_LABELS=Object.freeze({
  contacts:'Contacts',
  pistes:'Pistes',
  relances:'Relances',
+ 'demandes-rappel':'Demande de rappel',
  inscrits:'Inscrits',
  disqualifies:'Disqualifiés',
  notifications:'Notifications',

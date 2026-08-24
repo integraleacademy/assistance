@@ -3539,17 +3539,38 @@ def _serialize_secretariat_delivery(view):
     return wrapped
 
 
+def _secretariat_existing_crm_contact(data, payload):
+    """Return a matching existing CRM contact without ever creating a lead."""
+    contacts = data.get("crm_contacts", [])
+    email = _crm_normalize_email(payload.get("email") or payload.get("mail"))
+    phone = _crm_normalize_phone(payload.get("telephone"))
+    if not email and not phone:
+        return None
+
+    def matches(contact):
+        return bool(
+            (email and _crm_normalize_email(contact.get("mail")) == email)
+            or (phone and _crm_normalize_phone(contact.get("telephone")) == phone)
+        )
+
+    selected_id = str(payload.get("crm_contact_id") or "").strip()
+    if selected_id:
+        selected = next(
+            (contact for contact in contacts
+             if str(contact.get("id") or "") == selected_id),
+            None,
+        )
+        if selected and matches(selected):
+            return selected
+
+    return next((contact for contact in contacts if matches(contact)), None)
+
+
 @app.route("/api/secretariat/crm-contact", methods=["POST"])
 def api_secretariat_crm_contact():
     """Find an existing CRM record without exposing the contact list."""
     payload = request.get_json(silent=True) or {}
-    email = _crm_normalize_email(payload.get("email"))
-    phone = _crm_normalize_phone(payload.get("telephone"))
-    if not email and not phone:
-        return jsonify({"contact_id": None})
-    contact = next((row for row in load_data().get("crm_contacts", []) if
-                    (email and _crm_normalize_email(row.get("mail")) == email) or
-                    (phone and _crm_normalize_phone(row.get("telephone")) == phone)), None)
+    contact = _secretariat_existing_crm_contact(load_data(), payload)
     return jsonify({"contact_id": contact.get("id") if contact else None})
 
 
@@ -3573,6 +3594,7 @@ def api_secretariat_demandes():
         "formation_date_examen": str(payload.get("formation_date_examen", "")).strip(),
         "telephone": str(payload.get("telephone", "")).strip(),
         "email": str(payload.get("email", "")).strip(),
+        "crm_contact_id": str(payload.get("crm_contact_id", "")).strip(),
         "notes": str(payload.get("notes", "")).strip(),
         "devis": str(payload.get("devis", "")).strip(),
         "rdv": str(payload.get("rdv", "")).strip(),
@@ -3599,7 +3621,6 @@ def api_secretariat_demandes():
         "date": now.strftime("%d/%m/%Y %H:%M"),
     }
     data_store = load_data()
-    contact_count_before = len(data_store.get("crm_contacts", []))
     entries = data_store.setdefault("secretariat_demandes", [])
     # Le formulaire formation crée déjà une ligne « RDV à prendre ». La dernière
     # étape du parcours l'enrichit au lieu de créer un doublon dans le journal.
@@ -3621,9 +3642,39 @@ def api_secretariat_demandes():
         entry = existing
     else:
         entries.append(entry)
-    # Chaque appel qualifié doit aussi devenir une piste commerciale. Le journal
-    # du secrétariat reste la trace opérationnelle, tandis que la piste est suivie
-    # dans Intégrale Connect CRM et envoyée à Salesforce.
+
+    # Une « autre demande » reste une demande de rappel indépendante. Elle ne
+    # doit jamais créer de piste ni être envoyée à Salesforce. Lorsqu'une fiche
+    # existe déjà, la demande est seulement liée et consignée dans son journal.
+    if entry["type"] == "autre":
+        crm_contact = _secretariat_existing_crm_contact(data_store, entry)
+        if crm_contact:
+            entry["crm_contact_id"] = str(crm_contact.get("id") or "")
+            activity_detail = "\n".join(filter(None, [
+                entry.get("notes") or "Demande de rappel transmise par le secrétariat.",
+                f"Rendez-vous : {entry['rdv']}" if entry.get("rdv") else "",
+            ]))
+            _crm_activity(
+                crm_contact,
+                "appel",
+                "Demande de rappel reçue",
+                activity_detail,
+                author_name="Secrétariat",
+            )
+            crm_contact["updated_at"] = _crm_now()
+        else:
+            entry["crm_contact_id"] = ""
+        save_data(data_store)
+        return jsonify({
+            "ok": True,
+            "demande": entry,
+            "crm_contact_id": entry.get("crm_contact_id") or None,
+            "messages": {},
+        }), 201
+
+    # Les demandes de renseignements formation conservent leur fonctionnement :
+    # piste CRM, rapprochement non destructif et envoi Salesforce si elle est neuve.
+    contact_count_before = len(data_store.get("crm_contacts", []))
     name_parts = entry["nom"].split(None, 1)
     crm_payload = {
         "prenom": str(entry.get("prenom") or (name_parts[0] if name_parts else "")).strip(),
@@ -7144,7 +7195,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260824-wedof-open-refresh-1"
+CRM_ASSET_VERSION = "20260824-callback-requests-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -7152,6 +7203,7 @@ CRM_PAGE_LABELS = {
     "contacts": "Contacts",
     "pistes": "Pistes",
     "relances": "Relances",
+    "demandes-rappel": "Demande de rappel",
     "inscrits": "Inscrits",
     "disqualifies": "Disqualifiés",
     "notifications": "Notifications",
@@ -15047,6 +15099,51 @@ def crm_templates():
     return jsonify(item), 201
 
 
+def _crm_callback_requests_payload(data):
+    """Expose only secretariat « other requests » to the callback workspace."""
+    contacts_by_id = {
+        str(contact.get("id") or ""): contact
+        for contact in data.get("crm_contacts", [])
+        if contact.get("id")
+    }
+    rows = []
+    for entry in data.get("secretariat_demandes", []):
+        if not isinstance(entry, dict) or entry.get("type") != "autre":
+            continue
+        stored_contact_id = str(entry.get("crm_contact_id") or "").strip()
+        contact = contacts_by_id.get(stored_contact_id)
+        if contact is None:
+            contact = _secretariat_existing_crm_contact(data, entry)
+        contact_id = str(contact.get("id") or "") if contact else ""
+        display_name = str(entry.get("nom") or "").strip()
+        if not display_name:
+            display_name = " ".join(filter(None, [
+                str(entry.get("prenom") or "").strip(),
+                str(entry.get("nom_famille") or "").strip(),
+            ]))
+        rows.append({
+            "id": str(entry.get("id") or ""),
+            "created_at": str(entry.get("created_at") or ""),
+            "date": str(entry.get("date") or ""),
+            "display_name": display_name or "Appelant non renseigné",
+            "telephone": str(entry.get("telephone") or ""),
+            "email": str(entry.get("email") or ""),
+            "notes": str(entry.get("notes") or ""),
+            "rdv": str(entry.get("rdv") or ""),
+            "crm_contact_id": contact_id,
+            "crm_contact_name": (
+                f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip()
+                if contact else ""
+            ),
+            "crm_contact_status": str(contact.get("statut") or "") if contact else "",
+        })
+    return sorted(
+        rows,
+        key=lambda row: (row.get("created_at") or "", row.get("date") or ""),
+        reverse=True,
+    )
+
+
 @app.get("/api/crm/bootstrap")
 @login_required
 def crm_bootstrap():
@@ -15056,8 +15153,9 @@ def crm_bootstrap():
     reparsait le même fichier complet, ce qui multipliait le pic mémoire.
     """
     data = _crm_prepared_read_model()
+    section = request.args.get("section", "")
     contacts, _ = _crm_contact_summaries_payload(
-        data, section=request.args.get("section", ""), prepared=True,
+        data, section=section, prepared=True,
     )
     settings = _crm_settings_payload(data)
     appointments = _crm_calendly_appointments_payload(data)
@@ -15071,6 +15169,10 @@ def crm_bootstrap():
         "appointments": appointments["appointments"],
         "calendly_integration": appointments["integration"],
         "settings": settings,
+        "callback_requests": (
+            _crm_callback_requests_payload(data)
+            if section == "demandes-rappel" else []
+        ),
     })
 
 

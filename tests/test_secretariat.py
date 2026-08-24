@@ -969,6 +969,70 @@ def test_secretariat_finds_existing_crm_contact_by_email_or_phone(client, monkey
     assert by_phone.get_json() == {"contact_id": "crm-existing"}
 
 
+def test_other_request_is_stored_without_creating_a_lead(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
+    data["crm_inbound_requests"] = []
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    salesforce_calls = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_calls.append)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "autre", "prenom": "Nadia", "nom_famille": "Durand",
+        "nom": "Nadia Durand", "email": "nadia@example.com",
+        "telephone": "0611223344", "notes": "Souhaite un duplicata de facture.",
+        "rdv": "Non souhaité",
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["crm_contact_id"] is None
+    assert len(data["secretariat_demandes"]) == 1
+    assert data["secretariat_demandes"][0]["crm_contact_id"] == ""
+    assert data["crm_contacts"] == []
+    assert data["crm_inbound_requests"] == []
+    assert salesforce_calls == []
+
+
+def test_other_request_links_existing_lead_and_adds_activity(client, monkeypatch):
+    contact = {
+        "id": "crm-existing", "prenom": "Camille", "nom": "MARTIN",
+        "mail": "camille@example.com", "telephone": "0601020304",
+        "statut": "En cours", "activities": [],
+    }
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = [contact]
+    data["crm_inbound_requests"] = []
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    salesforce_calls = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_calls.append)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "autre", "prenom": "Camille", "nom_famille": "Martin",
+        "nom": "Camille Martin", "email": "camille@example.com",
+        "telephone": "0601020304", "crm_contact_id": "crm-existing",
+        "notes": "Souhaite être rappelée au sujet de son dossier.",
+        "rdv": "25/08/2026 à 14:30",
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["crm_contact_id"] == "crm-existing"
+    assert len(data["crm_contacts"]) == 1
+    assert contact["statut"] == "En cours"
+    assert data["secretariat_demandes"][0]["crm_contact_id"] == "crm-existing"
+    assert data["crm_inbound_requests"] == []
+    assert salesforce_calls == []
+    activity = contact["activities"][0]
+    assert activity["kind"] == "appel"
+    assert activity["title"] == "Demande de rappel reçue"
+    assert "Souhaite être rappelée" in activity["detail"]
+    assert "25/08/2026 à 14:30" in activity["detail"]
+    assert activity["author"] == "Secrétariat"
+
+
 def test_secretariat_updates_existing_crm_contact_without_creating_lead(client, monkeypatch):
     contact = {
         "id": "crm-existing", "prenom": "Camille", "nom": "MARTIN",

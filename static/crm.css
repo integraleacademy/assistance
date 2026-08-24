@@ -51,6 +51,34 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
 @media(max-width:650px){.section-fields{grid-template-columns:1fr}.contact-actions{width:auto;margin-left:auto}.actions-menu{right:0}.timeline button{min-width:110px}}
 
+/* Demandes de rappel transmises par le secrétariat. */
+.callback-request-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.callback-request-stats article{padding:17px 19px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 2px 10px #17203308}
+.callback-request-stats span{display:block;color:#6f7d91;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.callback-request-stats strong{display:block;margin-top:7px;color:#223550;font:800 25px Manrope}
+.callback-request-filters{align-items:center}
+.callback-request-filters .filter-result-count{margin-left:auto}
+.callback-request-card{overflow:hidden}
+.callback-request-table{min-width:1050px}
+.callback-request-table td{vertical-align:top}
+.callback-request-table tbody tr:hover{background:#f8faff}
+.callback-request-contact,.callback-request-link{display:grid;justify-items:start;gap:5px}
+.callback-request-contact a{color:#355fba;text-decoration:none;word-break:break-word}
+.callback-request-contact a:hover{text-decoration:underline}
+.callback-request-note{display:block;max-width:400px;color:#4d5d74;line-height:1.55;white-space:pre-wrap}
+.callback-request-link b{font-size:12px}
+.callback-request-link small{color:#7c899b;font-size:10px}
+.callback-request-link .btn{margin-top:3px;padding:6px 9px;color:#2859c3;font-size:10px;text-decoration:none;white-space:nowrap}
+.callback-request-linked,.callback-request-unlinked{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:800}
+.callback-request-linked{background:#e7f7f1;color:#13775f}
+.callback-request-unlinked{background:#f0f3f7;color:#64738a}
+.callback-request-table time{color:#617087;font-size:11px;white-space:nowrap}
+.callback-request-empty{display:grid;justify-items:center;gap:7px;padding:48px 20px;text-align:center}
+.callback-request-empty>span{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:#edf3ff;color:#356ae6;font-size:21px}
+.callback-request-empty b{font:750 15px Manrope}
+.callback-request-empty p{margin:0;color:var(--muted);font-size:12px}
+@media(max-width:700px){.callback-request-stats{grid-template-columns:1fr}.callback-request-filters .filter-result-count{margin-left:0}}
+
 /* Agenda partagé et enrichissement visuel de la fiche prospect. */
 .calendar-shell{overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 15px 45px #1720330b}
 .calendar-toolbar{display:flex;align-items:center;justify-content:space-between;padding:17px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#fff,#f6f9ff)}
