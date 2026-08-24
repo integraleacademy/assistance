@@ -10126,13 +10126,104 @@ def _mask_delivery_recipient(value, kind):
     return f"***{digits[-4:]}" if digits else "absent"
 
 
+def _secretariat_automatic_information_template(data, entry, contact):
+    """Build the existing automatic form e-mail for a secretariat call."""
+    formation_code = str(entry.get("formation") or "").strip()
+    prenom = _secretariat_display_first_name(
+        contact.get("prenom") or entry.get("prenom")
+        or str(entry.get("nom") or "").split(" ")[0]
+    )
+    dates = str(
+        entry.get("formation_session_label")
+        or entry.get("formation_date_souhaitee")
+        or ""
+    ).strip()
+    centre_code, _ = _secretariat_session_details(entry)
+    devis_url = str(entry.get("devis_url") or contact.get("devis_url") or "").strip()
+
+    if formation_code == "DESP_VAE":
+        template_id = "automatic-desp-vae"
+        subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
+        body = build_vae_desp_email_html(prenom, devis_url)
+    elif formation_code == "A3P":
+        template_id = "automatic-a3p"
+        subject, _, body = _a3p_information_email_content(
+            prenom, dates, centre_code, devis_url, data,
+        )
+    elif formation_code == "APS":
+        template_id = "automatic-aps"
+        subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+        body = build_aps_email_html(prenom, dates, centre_code, devis_url)
+    elif formation_code == "SSIAP":
+        template_id = "automatic-ssiap1"
+        subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
+        body = build_ssiap1_email_html(
+            prenom, dates, centre_code, devis_url,
+            entry.get("ssiap_secourisme_valide", ""),
+        )
+    elif formation_code == "VTC":
+        template_id = "automatic-vtc"
+        subject = "🚗 Formation Chauffeur VTC"
+        body = build_vtc_email_html(prenom, centre_code, devis_url)
+    elif formation_code == "DESP_INIT":
+        template_id = "automatic-desp-initial"
+        subject = "Votre demande de renseignements – Formation DESP initial"
+        body = build_desp_init_email_html(
+            prenom, dates, centre_code, devis_url, data,
+        )
+    else:
+        # Les BTS n'ont pas encore de modèle automatique dédié dans le CRM.
+        # On reprend donc le message générique déjà envoyé par le formulaire
+        # public, afin qu'une absence de modèle personnalisé ne bloque jamais
+        # silencieusement l'e-mail du secrétariat.
+        formation = _secretariat_formation_config(formation_code)
+        formation_label = formation.get("label") or formation.get("short") or "Formation Intégrale Academy"
+        session_html = (
+            f"<p>Session souhaitée : <strong>{html_module.escape(dates)}</strong></p>"
+            if dates else ""
+        )
+        devis_html = (
+            '<p style="text-align:center;">'
+            f'<a href="{html_module.escape(devis_url, quote=True)}" '
+            'style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;'
+            'border-radius:10px;text-decoration:none;font-weight:700;">'
+            "Je télécharge mon devis détaillé</a></p>"
+            if devis_url else ""
+        )
+        template_id = f"automatic-secretariat-{formation_code.lower().replace('_', '-')}"
+        subject = "Votre demande de renseignements – Intégrale Academy"
+        body = _wrap_html(
+            "<h1>✨ Merci pour votre demande</h1>",
+            f"""
+            <p>Bonjour <strong>{html_module.escape(prenom)}</strong>,</p>
+            <p>Je fais suite à votre demande de renseignements concernant notre formation
+            <strong>{html_module.escape(formation_label)}</strong>. Nous vous remercions de nous avoir contacté !</p>
+            {session_html}
+            <p>Vous pouvez consulter le dossier de présentation de nos formations :</p>
+            <p><a href="{SECRETARIAT_DOSSIER_URL}">{SECRETARIAT_DOSSIER_URL}</a></p>
+            {devis_html}
+            <p>Notre équipe reste à votre disposition au <strong>04 22 47 07 68</strong>.</p>
+            <p>Je vous souhaite une bonne journée,</p>
+            <p><strong>Clément VAILLANT</strong><br>Directeur Intégrale Academy</p>
+            """,
+        )
+
+    return {
+        "id": template_id,
+        "nom": f"E-mail automatique {formation_code}",
+        "formation": formation_code,
+        "sujet": subject,
+        "contenu": body,
+    }
+
+
 def _secretariat_information_email(data, entry, contact):
     """Build the CRM information e-mail matching the selected training."""
     template = _secretariat_information_template(
         data, "email", entry.get("formation"),
     )
     if not template:
-        return None
+        template = _secretariat_automatic_information_template(data, entry, contact)
 
     body = _crm_resolve_message_variables(
         template.get("contenu", ""), contact, html=True, data_store=data,
