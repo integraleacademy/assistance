@@ -9745,7 +9745,7 @@ def _crm_schedule_relance(
 
 def _crm_schedule_ft_refusal_relance(
         contact, *, source, stable_id="", now=None):
-    """Planifie la relance du jour lors d'un nouveau refus France Travail."""
+    """Planifie la relance ouvrée suivant un nouveau refus France Travail."""
     if contact.get("statut") in {"Converti", "Disqualifié"}:
         return None, False
 
@@ -9755,7 +9755,10 @@ def _crm_schedule_ft_refusal_relance(
         current = paris.localize(current)
     else:
         current = current.astimezone(paris)
-    scheduled_date = current.date().isoformat()
+    scheduled_day = current.date()
+    if scheduled_day.weekday() >= 5:
+        scheduled_day += datetime.timedelta(days=7 - scheduled_day.weekday())
+    scheduled_date = scheduled_day.isoformat()
     actor_name = "France Travail" if source == "wedof_ft_refusal" else None
     planned, changed = _crm_schedule_relance(
         contact,
@@ -9779,7 +9782,7 @@ def _crm_schedule_ft_refusal_relance(
         changed = True
 
     if changed:
-        display_date = current.strftime("%d/%m/%Y")
+        display_date = scheduled_day.strftime("%d/%m/%Y")
         detail = (
             "Financement France Travail refusé. "
             f"Relance prévue le {display_date}."
