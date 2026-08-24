@@ -9678,24 +9678,40 @@ def _crm_schedule_relance(
         actor_name=None):
     """Schedule or remove open actions while preserving completed attempts."""
     scheduled_date = _crm_relance_date(scheduled_date)
+    if not scheduled_date:
+        # L'annulation explicite doit supprimer toutes les relances qui étaient
+        # encore ouvertes avant que le normaliseur n'historise les doublons.
+        raw_relances = contact.get("relances")
+        changed = not isinstance(raw_relances, list)
+        if not isinstance(raw_relances, list):
+            raw_relances = []
+        remaining = [
+            item for item in raw_relances
+            if not (
+                isinstance(item, dict)
+                and str(item.get("status") or "scheduled").strip()
+                == "scheduled"
+            )
+        ]
+        if remaining != raw_relances:
+            changed = True
+        contact["relances"] = remaining
+        if str(contact.get("relance_date") or "").strip():
+            contact["relance_date"] = ""
+            changed = True
+        if _crm_ensure_relances(contact):
+            changed = True
+        return None, changed
+
     changed = _crm_ensure_relances(contact)
     now = _crm_now()
     actor_name = actor_name or (current_user() or {}).get(
         "name", "Équipe Intégrale"
     )
-    active = [item for item in contact["relances"] if item.get("status") == "scheduled"]
-
-    if not scheduled_date:
-        active_objects = {id(item) for item in active}
-        if active_objects:
-            contact["relances"] = [
-                item for item in contact["relances"]
-                if id(item) not in active_objects
-            ]
-            changed = True
-        if _crm_refresh_relance_date(contact):
-            changed = True
-        return None, changed
+    active = [
+        item for item in contact["relances"]
+        if item.get("status") == "scheduled"
+    ]
 
     same = next((item for item in active if item.get("scheduled_date") == scheduled_date), None)
     for item in active:
