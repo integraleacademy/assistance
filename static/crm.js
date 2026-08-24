@@ -73,8 +73,17 @@ function replaceContactAppointments(contactId,appointments){
  const contact=contactInStore(contactId);
  if(contact)contact.activity_counts={...(contact.activity_counts||{}),appointments:window.CRMAppointmentState.contactAppointments(contactId,crmAppointments).length};
 }
+function sortVisibleAppointmentRows(rows,appointments,status=statusFilter){
+ const list=[...(rows||[])];
+ if(status!=='RDV programmé')return list;
+ const rowsById=new Map(list.map(row=>[String(row.dataset.id),row]));
+ const visibleContacts=list.map(row=>contactInStore(row.dataset.id)).filter(Boolean);
+ return window.CRMAppointmentState.sortContactsByNextAppointment(visibleContacts,appointments)
+  .map(contact=>rowsById.get(String(contact.id))).filter(Boolean);
+}
 function updateVisibleAppointmentData(){
- document.querySelectorAll('#resultTable tr[data-id]').forEach(row=>{
+ const rows=[...document.querySelectorAll('#resultTable tr[data-id]')];
+ rows.forEach(row=>{
   const contact=contactInStore(row.dataset.id);
   if(!contact)return;
   const activities=row.querySelector('[data-crm-cell="activities"]');
@@ -82,6 +91,8 @@ function updateVisibleAppointmentData(){
   if(activities)activities.innerHTML=listActivityBadges(contact);
   if(status)status.innerHTML=contactPipelineStatusMarkup(contact);
  });
+ const body=document.querySelector('#resultTable tbody');
+ if(body)sortVisibleAppointmentRows(rows,crmAppointments).forEach(row=>body.appendChild(row));
 }
 const contactPipelineStatusMarkup=c=>{
  const appointmentDate=nextProgrammedAppointmentDate(c),relanceMarkup=contactRelanceStatusMarkup(c);

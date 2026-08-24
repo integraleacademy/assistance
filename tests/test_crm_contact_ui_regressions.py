@@ -1074,7 +1074,7 @@ console.log('CRM lead score sorting: OK');
     assert 'data-score-sort' in javascript
     assert 'aria-sort="${ariaSort}"' in javascript
     assert "scoreSortable:type==='pistes'" in javascript
-    assert "if(isLeads)list=sortLeadsByScore(list,leadScoreSort)" in javascript
+    assert "if(isLeads)list=sortPipelineLeads(list,leadScoreSort)" in javascript
     assert "leadScoreSort=nextLeadScoreSortDirection(leadScoreSort);filter()" in javascript
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet

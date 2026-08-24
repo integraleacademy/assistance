@@ -112,3 +112,51 @@ def test_programmed_appointment_filter_uses_chronological_sort():
     assert "status==='RDV programmé'" in crm_js
     assert "CRMAppointmentState.sortContactsByNextAppointment" in crm_js
     assert crm_js.count("sortPipelineLeads(") == 3
+
+
+def test_appointment_refresh_reorders_visible_rows_without_rerendering_filters():
+    crm_js = CRM_JS.read_text(encoding="utf-8")
+    helper = crm_js[
+        crm_js.index("function sortVisibleAppointmentRows"):
+        crm_js.index("function updateVisibleAppointmentData")
+    ]
+    script = helper + r"""
+const assert=require('node:assert/strict');
+const contacts=new Map([
+ ['late',{id:'late'}],
+ ['early',{id:'early'}],
+ ['missing',{id:'missing'}],
+]);
+const rows=['late','missing','early'].map(id=>({dataset:{id}}));
+const contactInStore=id=>contacts.get(String(id));
+const statusFilter='RDV programmé';
+global.window={CRMAppointmentState:{sortContactsByNextAppointment(items,appointments){
+ const dates=new Map(appointments.map(item=>[String(item.contact_id),Date.parse(item.start_time)]));
+ return [...items].sort((first,second)=>(dates.get(String(first.id))??Infinity)-(dates.get(String(second.id))??Infinity));
+}}};
+const appointments=[
+ {contact_id:'late',start_time:'2026-08-24T09:00:00Z'},
+ {contact_id:'early',start_time:'2026-08-23T08:00:00Z'},
+];
+assert.deepEqual(
+ sortVisibleAppointmentRows(rows,appointments).map(row=>row.dataset.id),
+ ['early','late','missing']
+);
+assert.deepEqual(rows.map(row=>row.dataset.id),['late','missing','early']);
+console.log('CRM appointment refresh ordering: OK');
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM appointment refresh ordering: OK" in completed.stdout
+    refresh_body = crm_js[
+        crm_js.index("async function refreshCrmSnapshot()"):
+        crm_js.index("document.addEventListener('visibilitychange'")
+    ]
+    assert "updateVisibleAppointmentData();" in refresh_body
+    assert "sortVisibleAppointmentRows(rows,crmAppointments)" in crm_js
