@@ -119,7 +119,7 @@ def test_inbound_flows_summary_merge_and_wedof_use_the_shared_origin_recorder():
     ]
     assert 'make_primary=legacy_primary_repair' in attribution
     assert 'contact["origine"] = CRM_GOOGLE_ADS_ORIGIN' not in attribution
-    assert 'CRM_ASSET_VERSION = "20260824-leads-newest-first-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-calendly-round-robin-location-1"' in backend
     dashboard_patch = (ROOT / "static" / "crm_dashboard_origins.js").read_text(encoding="utf-8")
     assert "return gclid ? 'Google Ads'" not in dashboard_patch
 

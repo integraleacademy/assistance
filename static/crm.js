@@ -924,7 +924,7 @@ async function calendlyModal(c){
     const typeSelect=document.querySelector('#calEventType'),slots=document.querySelector('#calSlots'),rangeLabel=document.querySelector('#calRange');
     const renderLocationFields=()=>{
       const root=document.querySelector('#calLocationFields'),locations=selectedType.locations||[];
-      if(selectedType.pooling_type==='round_robin'||!locations.length){root.innerHTML='';return}
+      if(!locations.length){root.innerHTML='';return}
       const options=locations.map((location,i)=>`<option value="${i}">${esc({outbound_call:'Appel sortant',inbound_call:'Appel entrant',zoom_conference:'Zoom',google_conference:'Google Meet',microsoft_teams_conference:'Microsoft Teams',physical:'Sur place',custom:'Lieu personnalisé',ask_invitee:'Lieu choisi'}[location.kind]||location.kind)}</option>`).join('');
       root.innerHTML=`<div class="field"><label>Mode du rendez-vous</label><select id="calLocationKind">${options}</select></div><div id="calLocationValue"></div>`;
       const renderValue=()=>{const location=locations[Number(document.querySelector('#calLocationKind').value)]||locations[0],target=document.querySelector('#calLocationValue');if(location.kind==='outbound_call')target.innerHTML=`<div class="field"><label>Numéro à appeler</label><input id="calLocationText" type="tel" value="${esc(c.telephone||'')}"></div>`;else if(location.kind==='ask_invitee')target.innerHTML='<div class="field"><label>Lieu ou moyen de contact</label><input id="calLocationText" placeholder="Adresse, téléphone ou lien…"></div>';else target.innerHTML=location.location?`<p class="location-summary">${esc(location.location)}</p>`:''};
@@ -962,7 +962,7 @@ async function calendlyModal(c){
     bookButton.onclick=async()=>{
       if(!selectedStart)return toast('Choisissez un horaire.',true);
       const answers={};document.querySelectorAll('[data-question-position]').forEach(field=>{answers[field.dataset.questionPosition]=field.multiple?[...field.selectedOptions].map(x=>x.value):field.value});
-      const locations=selectedType.locations||[],locationSelect=document.querySelector('#calLocationKind'),selectedLocation=selectedType.pooling_type==='round_robin'?null:(locations[Number(locationSelect?.value||0)]||locations[0]||null);
+      const locations=selectedType.locations||[],locationSelect=document.querySelector('#calLocationKind'),selectedLocation=locations[Number(locationSelect?.value||0)]||locations[0]||null;
       const location=selectedLocation?{kind:selectedLocation.kind,location:document.querySelector('#calLocationText')?.value||selectedLocation.location||''}:null;
       bookButton.disabled=true;bookButton.textContent='Création du rendez-vous…';
       try{

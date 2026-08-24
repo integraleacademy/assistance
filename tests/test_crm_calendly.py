@@ -646,6 +646,24 @@ def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_
     assert response.get_json()["appointment"]["contact_id"] == contact["id"]
 
 
+def test_round_robin_booking_keeps_the_event_type_required_location():
+    event_type = {
+        "pooling_type": "round_robin",
+        "locations": [{"kind": "outbound_call"}],
+    }
+
+    location = application._calendly_booking_location(
+        event_type,
+        {"kind": "outbound_call", "location": "06 12 34 56 78"},
+        {"telephone": "06 12 34 56 78"},
+    )
+
+    assert location == {
+        "kind": "outbound_call",
+        "location": "+33612345678",
+    }
+
+
 def test_full_sync_imports_every_event_and_keeps_unmatched_appointments(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post(
@@ -1098,3 +1116,12 @@ def test_calendly_booking_browser_uses_seven_day_windows():
     assert "rangeStart.setDate(rangeStart.getDate()-CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
     assert "rangeStart.setDate(rangeStart.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS)" in crm_js
     assert "14 jours" not in crm_js
+
+
+def test_round_robin_booking_browser_sends_the_required_location():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    assert "if(!locations.length){root.innerHTML='';return}" in crm_js
+    assert "selectedLocation=locations[Number(locationSelect?.value||0)]||locations[0]||null" in crm_js
+    assert "selectedType.pooling_type==='round_robin'?null" not in crm_js
