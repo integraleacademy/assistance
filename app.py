@@ -15423,11 +15423,20 @@ def _crm_templates_payload(data):
         },
         {
             "id": "automatic-desp-initial",
-            "nom": "DESP initial",
+            "nom": "DESP initial – Côte d’Azur",
             "formation": "DESP_INIT",
             "sujet": "Votre demande de renseignements – Formation DESP initial",
             "contenu": build_desp_init_email_html(
                 "{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data,
+            ),
+        },
+        {
+            "id": "automatic-desp-initial-paris",
+            "nom": "DESP initial – Paris",
+            "formation": "DESP_INIT",
+            "sujet": "Votre demande de renseignements – Formation DESP initial",
+            "contenu": build_desp_init_email_html(
+                "{{ prenom }}", "", "paris", "{{ lien_devis }}", data,
             ),
         },
     ]
