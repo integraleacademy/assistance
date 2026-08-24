@@ -363,7 +363,7 @@ def test_secretariat_sends_matching_training_email_and_commercial_sms(client, mo
     assert [activity["kind"] for activity in data["crm_contacts"][0]["activities"][:2]] == ["sms", "email"]
 
 
-def test_secretariat_never_sends_summary_when_training_template_is_missing(client, monkeypatch):
+def test_secretariat_uses_automatic_training_email_when_custom_template_is_missing(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
     data["secretariat_demandes"] = []
     data["crm_contacts"] = []
@@ -376,23 +376,25 @@ def test_secretariat_never_sends_summary_when_training_template_is_missing(clien
         "_crm_ai",
         lambda *args, **kwargs: pytest.fail("Aucun résumé IA ne doit être généré"),
     )
-    monkeypatch.setattr(
-        application,
-        "send_email_html",
-        lambda *args, **kwargs: pytest.fail("Aucun mauvais e-mail ne doit être envoyé"),
-    )
+    emails = []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
     monkeypatch.setattr(application, "send_sms", lambda *args: True)
 
     response = client.post("/api/secretariat/demandes", json={
         "type": "formation", "formation": "APS", "prenom": "Camille",
         "nom": "Camille Martin", "email": "camille@example.com", "telephone": "0600000000",
+        "formation_centre": "paris", "formation_session_label": "Du 5 octobre au 6 novembre 2026",
     })
 
     assert response.status_code == 201
-    assert response.get_json()["messages"]["email"] == "template_missing"
+    assert response.get_json()["messages"]["email"] == "sent"
+    assert emails[0][0] == "camille@example.com"
+    assert emails[0][1] == "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+    assert "Intégrale Academy Paris" in emails[0][3]
+    assert "Le résumé de notre échange" not in emails[0][3]
     entry = data["secretariat_demandes"][0]
-    assert entry["email_summary_status"] == "failed"
-    assert "Aucun modèle d’information" in entry["email_summary_error"]
+    assert entry["email_summary_status"] == "sent"
+    assert entry["information_email_template_id"] == "automatic-aps"
 
 
 def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appointment(monkeypatch):
@@ -816,6 +818,40 @@ def test_secretariat_matches_information_template_for_each_training(formation, t
     data = {"crm_email_templates": [expected]}
 
     assert application._secretariat_information_template(data, "email", formation) == expected
+
+
+@pytest.mark.parametrize(("formation", "template_id"), [
+    ("APS", "automatic-aps"),
+    ("A3P", "automatic-a3p"),
+    ("DESP_INIT", "automatic-desp-initial"),
+    ("DESP_VAE", "automatic-desp-vae"),
+    ("SSIAP", "automatic-ssiap1"),
+    ("VTC", "automatic-vtc"),
+    ("BTS_MOS", "automatic-secretariat-bts-mos"),
+    ("BTS_MCO", "automatic-secretariat-bts-mco"),
+    ("BTS_CI", "automatic-secretariat-bts-ci"),
+    ("BTS_NDRC", "automatic-secretariat-bts-ndrc"),
+    ("BTS_PI", "automatic-secretariat-bts-pi"),
+    ("BTS_CG", "automatic-secretariat-bts-cg"),
+])
+def test_secretariat_has_automatic_fallback_email_for_every_training(formation, template_id):
+    data = dict(application.DEFAULT_DATA)
+    data["formation_sessions"] = {}
+    entry = {
+        "formation": formation,
+        "prenom": "Camille",
+        "formation_centre": "paris",
+        "formation_session_label": "Session test",
+    }
+
+    template = application._secretariat_automatic_information_template(
+        data, entry, {"prenom": "Camille"},
+    )
+
+    assert template["id"] == template_id
+    assert template["sujet"]
+    assert template["contenu"]
+    assert "Le résumé de notre échange" not in template["contenu"]
 
 
 def test_secretariat_api_rejects_unknown_request_type(client):
