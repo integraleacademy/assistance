@@ -1,0 +1,131 @@
+name: Notion CRM - actualiser les PR ouvertes
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: notion-crm-refresh-open-prs
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Recaler les PR CRM sur le dernier main
+    if: github.repository == 'integraleacademy/assistance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Récupérer main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configurer Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Actualiser les PR Notion CRM dans l'ordre
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          mapfile -t prs < <(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --base main \
+              --limit 100 \
+              --json number,headRefName,body \
+              --jq '.[] | select((.headRefName | startswith("work/notion-crm-")) or (.headRefName | startswith("agent/notion-crm-"))) | select((.body // "") | contains("<!-- notion-page-id:")) | "\(.number)|\(.headRefName)"' \
+            | sort -t'|' -k1,1n
+          )
+
+          if [ "${#prs[@]}" -eq 0 ]; then
+            echo "Aucune PR CRM ouverte à actualiser."
+            exit 0
+          fi
+
+          for item in "${prs[@]}"; do
+            number="${item%%|*}"
+            branch="${item#*|}"
+            echo "::group::PR #${number} — ${branch}"
+
+            git fetch --no-tags origin main "$branch"
+            git checkout -B "refresh-${number}" "origin/${branch}"
+            original_sha="$(git rev-parse HEAD)"
+
+            if git merge --no-edit origin/main; then
+              refreshed_sha="$(git rev-parse HEAD)"
+
+              if [ "$refreshed_sha" = "$original_sha" ]; then
+                echo "PR #${number} déjà à jour avec main."
+              else
+                git diff --check origin/main...HEAD
+                git push origin "HEAD:refs/heads/${branch}"
+                echo "PR #${number} actualisée automatiquement."
+              fi
+
+              gh api \
+                --method POST \
+                "repos/${GITHUB_REPOSITORY}/statuses/${refreshed_sha}" \
+                -f state='success' \
+                -f context='Notion CRM / base à jour' \
+                -f description='Branche recalée automatiquement sur le dernier main' >/dev/null
+            else
+              git merge --abort || true
+              gh api \
+                --method POST \
+                "repos/${GITHUB_REPOSITORY}/statuses/${original_sha}" \
+                -f state='failure' \
+                -f context='Notion CRM / base à jour' \
+                -f description='Conflit avec le dernier main : correction Work nécessaire' >/dev/null
+
+              gh pr comment "$number" \
+                --repo "$GITHUB_REPOSITORY" \
+                --body '⚠️ Actualisation automatique impossible : cette PR entre en conflit avec une modification déjà publiée. Ne la fusionnez pas pour le moment. ChatGPT Work devra réconcilier les changements avec le dernier `main` ; aucune mise à jour manuelle de branche n’est demandée.'
+            fi
+
+            git checkout --detach origin/main
+            git reset --hard origin/main
+            git clean -fdx
+            echo "::endgroup::"
+          done
+
+          # Une seule PR est autorisée à avancer : la plus ancienne encore ouverte.
+          # Le publieur correspondant exécute lui-même ses tests puis fusionne sans
+          # dépendre d'un workflow_run intermédiaire. Sa fusion redéclenche ensuite
+          # explicitement ce workflow ; le cron toutes les 5 minutes reste un filet
+          # de sécurité si GitHub supprime un événement généré par GITHUB_TOKEN.
+          first="${prs[0]}"
+          first_number="${first%%|*}"
+          first_branch="${first#*|}"
+
+          if [[ "$first_branch" == agent/notion-crm-* ]]; then
+            echo "Déclenchement du publieur historique pour la PR #${first_number}."
+            gh workflow run notion-crm-legacy-pr-publish.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f pr_number="$first_number"
+          elif [[ "$first_branch" == work/notion-crm-* ]]; then
+            echo "Déclenchement du publieur Work pour la PR #${first_number}."
+            gh workflow run notion-crm-work-pr-publish.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f pr_number="$first_number"
+          fi
