@@ -1426,7 +1426,7 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
     assert response.status_code == 200
     automatic = response.get_json()["automatic_email"]
     assert [template["formation"] for template in automatic] == [
-        "DESP_VAE", "A3P", "APS", "SSIAP", "VTC", "DESP_INIT",
+        "DESP_VAE", "A3P", "APS", "SSIAP", "VTC", "DESP_INIT", "DESP_INIT",
     ]
     aps = next(template for template in automatic if template["formation"] == "APS")
     assert aps["sujet"] == "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
@@ -1435,6 +1435,15 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
     a3p = next(template for template in automatic if template["formation"] == "A3P")
     assert "youtube" not in a3p["contenu"].lower()
     assert "<iframe" not in a3p["contenu"].lower()
+    desp_initial = [
+        template for template in automatic if template["formation"] == "DESP_INIT"
+    ]
+    assert [(template["id"], template["nom"]) for template in desp_initial] == [
+        ("automatic-desp-initial", "DESP initial – Côte d’Azur"),
+        ("automatic-desp-initial-paris", "DESP initial – Paris"),
+    ]
+    assert "Centre de formation : <strong>Côte d’Azur</strong>" in desp_initial[0]["contenu"]
+    assert "Centre de formation : <strong>Paris</strong>" in desp_initial[1]["contenu"]
 
 
 def test_crm_templates_include_meta_a3p_email_and_sms(tmp_path, monkeypatch):
