@@ -52,4 +52,4 @@ console.log('CRM contact phone formatting: OK');
     assert ".contact-coordinates .crm-icon{flex:none;width:17px;height:17px}" in stylesheet
     assert "overflow-wrap:anywhere" in stylesheet
     assert "text-overflow:ellipsis;white-space:nowrap" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-callback-nav-count-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-leads-newest-first-1"' in backend
