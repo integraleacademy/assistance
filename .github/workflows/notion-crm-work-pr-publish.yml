@@ -3,6 +3,8 @@ name: Notion CRM - publier après revue indépendante
 on:
   pull_request_review:
     types: [submitted]
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       pr_number:
@@ -17,8 +19,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+
+  dispatch_reviewed:
+    name: Relancer les PR relues non publiées
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Déclencher le publieur pour chaque SHA déjà relu
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t pr_numbers < <(
+            gh pr list               --repo "$GITHUB_REPOSITORY"               --state open               --base main               --limit 100               --json number,headRefName,body               --jq '.[] | select(.headRefName | startswith("work/notion-crm-")) | select((.body // "") | contains("<!-- notion-page-id:")) | .number'
+          )
+
+          for pr_number in "${pr_numbers[@]}"; do
+            pr_json="$(gh pr view "$pr_number" --repo "$GITHUB_REPOSITORY" --json headRefName,headRefOid)"
+            head_ref="$(printf '%s' "$pr_json" | jq -r '.headRefName')"
+            head_sha="$(printf '%s' "$pr_json" | jq -r '.headRefOid')"
+            marker="<!-- work-independent-review: approved sha=${head_sha} -->"
+            reviews="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/reviews?per_page=100")"
+            approved="$(printf '%s' "$reviews" | jq -r --arg sha "$head_sha" --arg marker "$marker" '[.[] | select(.user.login == "integraleacademy" and .commit_id == $sha and ((.body // "") | contains($marker)))] | length')"
+
+            if [ "$approved" = "0" ]; then
+              continue
+            fi
+
+            behind="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${head_ref}" --jq '.behind_by')"
+            if [ "$behind" != "0" ]; then
+              echo "PR #$pr_number relue mais en retard sur main ; le relecteur de secours la reprendra."
+              continue
+            fi
+
+            echo "Relance de la publication pour la PR #$pr_number au SHA $head_sha."
+            gh workflow run notion-crm-work-pr-publish.yml               --repo "$GITHUB_REPOSITORY"               --ref main               -f pr_number="$pr_number"
+          done
+
   inspect:
     name: Vérifier la PR et la revue indépendante
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
