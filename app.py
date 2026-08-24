@@ -10126,6 +10126,45 @@ def _mask_delivery_recipient(value, kind):
     return f"***{digits[-4:]}" if digits else "absent"
 
 
+def _secretariat_information_email(data, entry, contact):
+    """Build the CRM information e-mail matching the selected training."""
+    template = _secretariat_information_template(
+        data, "email", entry.get("formation"),
+    )
+    if not template:
+        return None
+
+    body = _crm_resolve_message_variables(
+        template.get("contenu", ""), contact, html=True, data_store=data,
+    ).strip()
+    quote_url = str(entry.get("devis_url") or contact.get("devis_url") or "").strip()
+    for variable in ("{{ lien_devis }}", "{{lien_devis}}"):
+        body = body.replace(variable, html_module.escape(quote_url, quote=True))
+
+    subject = _crm_resolve_message_variables(
+        template.get("sujet") or "Intégrale Academy",
+        contact,
+        data_store=data,
+    ).strip()
+    plain = html_module.unescape(
+        re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+    ).strip()
+
+    if re.search(r"<(?:!doctype|html)\b", body, re.IGNORECASE):
+        branded = body
+    else:
+        formation = _secretariat_formation_config(entry.get("formation"))
+        branded = render_template(
+            "crm_email_wrapper.html",
+            prenom=contact.get("prenom") or entry.get("prenom") or "",
+            formation=formation.get("label") or formation.get("short") or "",
+            contenu=body,
+            email_header_title="Informations sur votre formation",
+            email_header_subtitle=formation.get("label") or formation.get("short") or "",
+        )
+    return template, subject, plain, branded
+
+
 def _send_secretariat_information_messages(data, entry, contact):
     """Deliver each channel independently and persist an idempotent audit trail."""
     results = {}
@@ -10146,15 +10185,34 @@ def _send_secretariat_information_messages(data, entry, contact):
             results[kind] = "recipient_missing"
             continue
 
+        information_email = None
+        if kind == "email":
+            try:
+                information_email = _secretariat_information_email(data, entry, contact)
+            except Exception as exc:
+                entry[status_key] = "failed"
+                entry[error_key] = str(exc)[:500]
+                entry[attempted_key] = _crm_now()
+                results[kind] = "failed"
+                save_data(data)
+                continue
+            if not information_email:
+                entry[status_key] = "failed"
+                entry[error_key] = "Aucun modèle d’information ne correspond à la formation"
+                entry[attempted_key] = _crm_now()
+                results[kind] = "template_missing"
+                save_data(data)
+                continue
+
         entry[status_key] = "sending"
         entry[error_key] = ""
         entry[attempted_key] = _crm_now()
         save_data(data)
         try:
             if kind == "email":
-                subject, body, branded = _build_secretariat_followup_email(entry, contact)
+                template, subject, body, branded = information_email
                 ok = send_email_html(recipient, subject, body, branded)
-                preview, detail, title = branded, subject, "Compte rendu envoyé par e-mail"
+                preview, detail, title = branded, subject, "E-mail d’information envoyé"
             else:
                 body = _build_secretariat_followup_sms(entry.get("formation"))
                 ok = send_sms(recipient, body)
@@ -10169,6 +10227,10 @@ def _send_secretariat_information_messages(data, entry, contact):
             entry[sent_key] = now
             entry[legacy_sent_key] = now
             entry[f"information_{kind}_content"] = body
+            if kind == "email":
+                entry["information_email_template_id"] = template.get("id")
+                template["usage_count"] = int(template.get("usage_count") or 0) + 1
+                template["last_used_at"] = now
             _crm_activity(contact, kind, title, detail, preview)
             contact["updated_at"] = now
             if kind == "email" and entry.get("devis_id"):
