@@ -111,6 +111,7 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .feed-callback-action.reopen{border-color:#c8d7f2;background:#fff;color:#2d5fc5}
 .feed-callback-action:disabled{cursor:wait;opacity:.7}
 @media(max-width:700px){.feed-item-head{align-items:flex-start;flex-wrap:wrap}.feed-callback-controls{justify-content:flex-start;width:100%;margin-left:0}}
+.callback-nav-count{background:#f4b83d;color:#102b58}
 
 /* Agenda partagé et enrichissement visuel de la fiche prospect. */
 .calendar-shell{overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 15px 45px #1720330b}

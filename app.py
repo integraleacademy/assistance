@@ -7187,7 +7187,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260824-callback-contact-action-1"
+CRM_ASSET_VERSION = "20260824-callback-nav-count-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -15275,6 +15275,17 @@ def _crm_callback_requests_payload(data):
     )
 
 
+def _crm_callback_pending_count(data):
+    """Count only unprocessed secretariat « other requests »."""
+    return sum(
+        1
+        for entry in data.get("secretariat_demandes", [])
+        if isinstance(entry, dict)
+        and entry.get("type") == "autre"
+        and _crm_callback_request_status(entry) != CRM_CALLBACK_PROCESSED
+    )
+
+
 @app.get("/api/crm/bootstrap")
 @login_required
 def crm_bootstrap():
@@ -15307,6 +15318,7 @@ def crm_bootstrap():
         "appointments": appointments["appointments"],
         "calendly_integration": appointments["integration"],
         "settings": settings,
+        "callback_pending_count": _crm_callback_pending_count(data),
         "callback_requests": (
             _crm_callback_requests_payload(data)
             if section == "demandes-rappel" else []
@@ -15377,7 +15389,10 @@ def crm_callback_request(request_id):
         item for item in _crm_callback_requests_payload(data)
         if item["id"] == str(request_id)
     )
-    response = {"request": row}
+    response = {
+        "request": row,
+        "callback_pending_count": _crm_callback_pending_count(data),
+    }
     if contact_response:
         response["contact"] = contact_response
     return jsonify(response)
