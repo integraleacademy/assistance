@@ -9644,6 +9644,30 @@ def _crm_ensure_relances(contact):
         })
         changed = True
 
+    active = [
+        (index, item) for index, item in enumerate(normalized)
+        if item.get("status") == "scheduled"
+    ]
+    if len(active) > 1:
+        dated = [
+            (index, item) for index, item in active
+            if item.get("scheduled_date")
+        ]
+        _, nearest = min(
+            dated or active,
+            key=lambda entry: (entry[1].get("scheduled_date") or "", entry[0]),
+        )
+        completed_at = _crm_now()
+        for _, item in active:
+            if item is nearest:
+                continue
+            item.update({
+                "status": "reprogrammed",
+                "completed_at": completed_at,
+                "completed_by": "Automatisation CRM",
+            })
+        changed = True
+
     if _crm_refresh_relance_date(contact):
         changed = True
     return changed
