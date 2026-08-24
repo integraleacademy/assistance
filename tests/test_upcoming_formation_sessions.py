@@ -54,3 +54,26 @@ def test_session_start_date_infers_previous_year_for_cross_year_session():
     assert application._session_start_date(
         "Du 9 novembre au 19 janvier 2027"
     ) == datetime.date(2026, 11, 9)
+
+
+def test_automatic_email_lists_only_training_sessions_that_have_not_started():
+    html = application._format_upcoming_sessions_for_email(
+        "cote_azur",
+        "A3P",
+        {
+            "formation_sessions": {
+                "cote_azur": {
+                    "A3P": [
+                        {"label": "Du 1er septembre au 27 octobre 2026", "badge": ""},
+                        {"label": "Du 9 novembre 2026 au 19 janvier 2027", "badge": ""},
+                        {"label": "Du 15 février au 26 mars 2027", "badge": ""},
+                    ]
+                }
+            }
+        },
+        today=datetime.date(2026, 10, 28),
+    )
+
+    assert "Du 1er septembre au 27 octobre 2026" not in html
+    assert "Du 9 novembre 2026 au 19 janvier 2027" in html
+    assert "Du 15 février au 26 mars 2027" in html
