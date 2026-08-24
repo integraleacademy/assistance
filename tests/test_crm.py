@@ -1341,6 +1341,43 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     assert call.get_json()["activities"][0]["kind"] == "appel"
 
 
+def test_contact_followup_comment_is_logged_only_when_it_changes(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin"},
+    ).get_json()
+
+    updated = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"commentaires": "Rappeler après réception du justificatif."},
+    ).get_json()
+    assert updated["commentaires"] == "Rappeler après réception du justificatif."
+    assert updated["activities"][0]["kind"] == "suivi"
+    assert updated["activities"][0]["title"] == "Suivi mis à jour"
+    assert updated["activities"][0]["detail"] == (
+        "Rappeler après réception du justificatif."
+    )
+    activity_count = len(updated["activities"])
+
+    unchanged = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "commentaires": "Rappeler après réception du justificatif.",
+            "prenom": "Lina",
+        },
+    ).get_json()
+    assert len(unchanged["activities"]) == activity_count
+
+    cleared = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"commentaires": ""},
+    ).get_json()
+    assert cleared["activities"][0]["kind"] == "suivi"
+    assert cleared["activities"][0]["detail"] == "Commentaire retiré du suivi."
+
+
 def test_vae_eligibility_simulation_creates_detailed_crm_lead(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
