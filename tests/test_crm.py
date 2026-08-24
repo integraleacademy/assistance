@@ -745,6 +745,7 @@ def test_crm_bootstrap_reads_the_shared_data_file_once(tmp_path, monkeypatch):
     assert set(response.get_json()) == {
         "contacts", "templates", "formation_sessions", "notifications",
         "appointments", "calendly_integration", "settings",
+        "callback_requests", "callback_pending_count",
     }
 
 
@@ -989,7 +990,10 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
     refused_contact = refused.get_json()
     today = application.datetime.datetime.now(
         application.pytz.timezone("Europe/Paris")
-    ).date().isoformat()
+    ).date()
+    if today.weekday() >= 5:
+        today += application.datetime.timedelta(days=7 - today.weekday())
+    today = today.isoformat()
     assert refused_contact["statut_secondaire"] == "Financement FT refusé"
     assert refused_contact["statut"] == "A relancer"
     assert refused_contact["relance_date"] == today
@@ -1105,9 +1109,14 @@ def test_manual_ft_refusal_updates_real_status_and_beats_stale_wedof_state(
     assert saved["statut_secondaire"] == "Financement FT refusé"
     assert saved["statut_demande_financement_ft"] == "refusee"
     assert saved["statut"] == "A relancer"
-    assert saved["relance_date"] == application.datetime.datetime.now(
+    expected_date = application.datetime.datetime.now(
         application.pytz.timezone("Europe/Paris")
-    ).date().isoformat()
+    ).date()
+    if expected_date.weekday() >= 5:
+        expected_date += application.datetime.timedelta(
+            days=7 - expected_date.weekday()
+        )
+    assert saved["relance_date"] == expected_date.isoformat()
     assert len([
         item for item in saved["relances"]
         if item.get("status") == "scheduled"
@@ -1250,12 +1259,22 @@ def test_ft_refusal_received_on_weekend_is_scheduled_for_monday(received_at):
         stable_id="folder-weekend",
         now=paris.localize(application.datetime.datetime(*received_at, 10)),
     )
+    replayed, replayed_changed = application._crm_schedule_ft_refusal_relance(
+        contact,
+        source="wedof_ft_refusal",
+        stable_id="folder-weekend",
+        now=paris.localize(application.datetime.datetime(
+            2026, 8, 23 if received_at[-1] == 22 else 22, 10
+        )),
+    )
 
     active = [
         item for item in contact["relances"]
         if item.get("status") == "scheduled"
     ]
     assert changed is True
+    assert replayed_changed is False
+    assert replayed is relance
     assert relance["scheduled_date"] == "2026-08-24"
     assert contact["relance_date"] == "2026-08-24"
     assert active == [relance]
@@ -1263,6 +1282,7 @@ def test_ft_refusal_received_on_weekend_is_scheduled_for_monday(received_at):
         "Financement France Travail refusé. Relance prévue le 24/08/2026. "
         "Dossier WEDOF : folder-weekend."
     )
+    assert len(contact["activities"]) == 1
 
 
 def test_pipeline_table_displays_every_status_held_by_a_contact():
@@ -2188,7 +2208,10 @@ def test_relances_page_uses_a_daily_calendar_view(tmp_path, monkeypatch):
         workspace_js = source.read()
     assert "function remindersPage(ctx)" in workspace_js
     assert 'id="workspaceReminderDate" type="date"' in workspace_js
-    assert "contact.relance_date===selectedDate" in workspace_js
+    assert (
+        "function reminderPeriodMatches(contact,mode,selectedDate)"
+        "{const date=reminderDate(contact)" in workspace_js
+    )
     assert "selectedDate=today" in workspace_js
     assert "moveDate(-1)" in workspace_js
     assert "moveDate(1)" in workspace_js
@@ -2559,7 +2582,7 @@ def test_contact_activity_log_and_vae_tracking_are_displayed_in_tabs():
     activity = crm_js.index('id="contactActivityTab"', tabs)
     relance = crm_js.index('id="contactRelanceTab"', tabs)
 
-    assert information < wedof < vae < activity < relance
+    assert information < activity < wedof < vae < relance
     assert 'id="contactVaePanel" role="tabpanel" aria-labelledby="contactVaeTab" hidden' in crm_js
     assert 'id="contactActivityPanel" role="tabpanel" aria-labelledby="contactActivityTab" hidden' in crm_js
     assert 'id="contactRelancePanel" role="tabpanel" aria-labelledby="contactRelanceTab" hidden' in crm_js
