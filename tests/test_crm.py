@@ -1208,7 +1208,7 @@ def test_a_new_ft_refusal_on_another_day_reprograms_the_follow_up():
         contact,
         source="wedof_ft_refusal",
         stable_id="folder-cycle",
-        now=paris.localize(application.datetime.datetime(2026, 8, 23, 10)),
+        now=paris.localize(application.datetime.datetime(2026, 8, 21, 10)),
     )
     second, second_changed = application._crm_schedule_ft_refusal_relance(
         contact,
@@ -1222,7 +1222,7 @@ def test_a_new_ft_refusal_on_another_day_reprograms_the_follow_up():
     relances_by_date = {
         item["scheduled_date"]: item for item in contact["relances"]
     }
-    assert relances_by_date["2026-08-23"]["status"] == "reprogrammed"
+    assert relances_by_date["2026-08-21"]["status"] == "reprogrammed"
     assert relances_by_date["2026-08-24"]["status"] == "scheduled"
     assert second["scheduled_date"] == "2026-08-24"
     assert contact["relance_date"] == "2026-08-24"
@@ -1230,6 +1230,39 @@ def test_a_new_ft_refusal_on_another_day_reprograms_the_follow_up():
         item for item in contact["activities"]
         if item.get("title") == "Relance France Travail planifiée"
     ]) == 2
+
+
+@pytest.mark.parametrize("received_at", [(2026, 8, 22), (2026, 8, 23)])
+def test_ft_refusal_received_on_weekend_is_scheduled_for_monday(received_at):
+    paris = application.pytz.timezone("Europe/Paris")
+    contact = {
+        "id": "ft-weekend",
+        "prenom": "Weekend",
+        "nom": "FT",
+        "statut": "Nouveaux",
+        "relances": [],
+        "activities": [],
+    }
+
+    relance, changed = application._crm_schedule_ft_refusal_relance(
+        contact,
+        source="wedof_ft_refusal",
+        stable_id="folder-weekend",
+        now=paris.localize(application.datetime.datetime(*received_at, 10)),
+    )
+
+    active = [
+        item for item in contact["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert changed is True
+    assert relance["scheduled_date"] == "2026-08-24"
+    assert contact["relance_date"] == "2026-08-24"
+    assert active == [relance]
+    assert contact["activities"][0]["detail"] == (
+        "Financement France Travail refusé. Relance prévue le 24/08/2026. "
+        "Dossier WEDOF : folder-weekend."
+    )
 
 
 def test_pipeline_table_displays_every_status_held_by_a_contact():
