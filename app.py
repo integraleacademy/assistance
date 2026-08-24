@@ -7187,7 +7187,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260824-callback-processing-1"
+CRM_ASSET_VERSION = "20260824-callback-contact-action-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -15368,12 +15368,19 @@ def crm_callback_request(request_id):
         })
         contact["updated_at"] = now
 
+    contact_response = (
+        _crm_contact_detail_response(copy.deepcopy(contact), data)
+        if contact else None
+    )
     save_data(data)
     row = next(
         item for item in _crm_callback_requests_payload(data)
         if item["id"] == str(request_id)
     )
-    return jsonify({"request": row})
+    response = {"request": row}
+    if contact_response:
+        response["contact"] = contact_response
+    return jsonify(response)
 
 
 @app.route("/api/crm/templates/<template_id>", methods=["PATCH", "DELETE"])

@@ -253,4 +253,4 @@ def test_click_binding_accessibility_responsive_and_cache_version():
     assert ".feed-edit-call:focus-visible" in css
     assert ".edit-call-modal textarea{min-height:190px}" in css
     assert ".feed-edit-call{min-height:38px" in css
-    assert 'CRM_ASSET_VERSION = "20260824-callback-processing-1"' in app
+    assert 'CRM_ASSET_VERSION = "20260824-callback-contact-action-1"' in app

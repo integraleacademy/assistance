@@ -103,9 +103,14 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 
 .feed-item.callback-activity{margin:3px 0;padding:13px 10px;border:1px solid #d7e3f8;border-radius:11px;background:#f7faff}
 .feed-item.callback-activity .feed-icon{background:#dfeaff;color:#2859c3}
+.feed-callback-controls{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto}
 .feed-callback-status{flex:none;padding:4px 8px;border-radius:999px;font-size:9px;font-weight:800}
 .feed-callback-status.pending{background:#fff0cf;color:#986000}
 .feed-callback-status.processed{background:#e2f6ee;color:#13775f}
+.feed-callback-action{flex:none;border:1px solid #356ae6;border-radius:7px;padding:6px 9px;background:#356ae6;color:#fff;font:750 9px 'DM Sans';cursor:pointer;white-space:nowrap}
+.feed-callback-action.reopen{border-color:#c8d7f2;background:#fff;color:#2d5fc5}
+.feed-callback-action:disabled{cursor:wait;opacity:.7}
+@media(max-width:700px){.feed-item-head{align-items:flex-start;flex-wrap:wrap}.feed-callback-controls{justify-content:flex-start;width:100%;margin-left:0}}
 
 /* Agenda partagé et enrichissement visuel de la fiche prospect. */
 .calendar-shell{overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 15px 45px #1720330b}

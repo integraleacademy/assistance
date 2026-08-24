@@ -43,4 +43,4 @@ def test_publications_are_grouped_below_the_activity_journal():
     assert ".wedof-panel[hidden]{display:none}" in stylesheet
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
     assert ".contact-activity-panel .publications-card{margin-bottom:0}" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-callback-processing-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-callback-contact-action-1"' in backend
