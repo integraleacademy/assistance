@@ -156,9 +156,7 @@ def test_upcoming_appointment_replaces_and_cancels_a_scheduled_follow_up(tmp_pat
     refreshed = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert refreshed["statut"] == "RDV programmé"
     assert refreshed["relance_date"] == ""
-    assert len(refreshed["relances"]) == 1
-    assert refreshed["relances"][0]["scheduled_date"] == "2099-08-10"
-    assert refreshed["relances"][0]["status"] == "cancelled"
+    assert refreshed["relances"] == []
     assert any(
         activity["title"] == "Statut : RDV programmé"
         and activity["detail"] == "Ancien statut : A relancer"
@@ -182,9 +180,7 @@ def test_upcoming_appointment_replaces_and_cancels_a_scheduled_follow_up(tmp_pat
     ).get_json()
     assert after_cancellation["statut"] == "En cours"
     assert after_cancellation["relance_date"] == ""
-    assert [item["status"] for item in after_cancellation["relances"]] == [
-        "cancelled"
-    ]
+    assert after_cancellation["relances"] == []
 
 
 def test_full_sync_repairs_follow_up_created_before_cached_booking(tmp_path, monkeypatch):
@@ -232,7 +228,7 @@ def test_full_sync_repairs_follow_up_created_before_cached_booking(tmp_path, mon
     repaired = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert repaired["statut"] == "RDV programmé"
     assert repaired["relance_date"] == ""
-    assert repaired["relances"][0]["status"] == "cancelled"
+    assert repaired["relances"] == []
 
 
 def test_upcoming_appointment_preserves_final_statuses_and_relances(tmp_path, monkeypatch):
@@ -418,7 +414,7 @@ def test_cached_appointment_replaces_follow_up_when_later_linked_to_contact(
 
     assert linked["statut"] == "RDV programmé"
     assert linked["relance_date"] == ""
-    assert linked["relances"][0]["status"] == "cancelled"
+    assert linked["relances"] == []
     appointments = client.get(
         f"/api/crm/contacts/{contact['id']}/calendly/appointments"
     ).get_json()["appointments"]

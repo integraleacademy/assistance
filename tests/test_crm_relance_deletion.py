@@ -1,5 +1,7 @@
 import ast
+import datetime
 import subprocess
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +17,11 @@ def _load_python_functions(*names):
     assert {node.name for node in selected} == set(names)
     module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
     namespace = {
+        "CRM_RELANCE_STATUSES": {
+            "scheduled", "answered", "no_answer", "reprogrammed", "cancelled",
+        },
+        "datetime": datetime,
+        "uuid": uuid,
         "_crm_now": lambda: "2026-08-23T14:10:00+02:00",
         "current_user": lambda: {"name": "Camille"},
     }
@@ -94,6 +101,96 @@ def test_delete_refuses_history_or_foreign_object_and_clears_last_planned_date()
     assert delete(contact, last) is True
     assert contact["relances"] == []
     assert contact["relance_date"] == ""
+
+
+def test_normalization_purges_legacy_cancellations_without_losing_real_history():
+    namespace = _load_python_functions(
+        "_crm_relance_date",
+        "_crm_refresh_relance_date",
+        "_crm_ensure_relances",
+    )
+    ensure = namespace["_crm_ensure_relances"]
+    base = {
+        "scheduled_date": "2026-08-23",
+        "created_at": "2026-08-20T09:00:00+02:00",
+        "created_by": "Camille",
+    }
+    contact = {
+        "relance_date": "2026-08-27",
+        "relances": [
+            {**base, "id": "cancelled", "status": "cancelled"},
+            {**base, "id": "answered", "status": "answered"},
+            {**base, "id": "no-answer", "status": "no_answer"},
+            {**base, "id": "reprogrammed", "status": "reprogrammed"},
+            {
+                **base,
+                "id": "scheduled",
+                "status": "scheduled",
+                "scheduled_date": "2026-08-27",
+            },
+        ],
+    }
+
+    assert ensure(contact) is True
+    assert [item["id"] for item in contact["relances"]] == [
+        "answered",
+        "no-answer",
+        "reprogrammed",
+        "scheduled",
+    ]
+    assert contact["relance_date"] == "2026-08-27"
+    assert ensure(contact) is False
+
+
+def test_normalization_does_not_resurrect_cancelled_legacy_date():
+    namespace = _load_python_functions(
+        "_crm_relance_date",
+        "_crm_refresh_relance_date",
+        "_crm_ensure_relances",
+    )
+    ensure = namespace["_crm_ensure_relances"]
+    contact = {
+        "relance_date": "2026-08-27",
+        "relances": [{
+            "id": "cancelled",
+            "status": "cancelled",
+            "scheduled_date": "2026-08-27",
+            "created_at": "2026-08-20T09:00:00+02:00",
+            "created_by": "Camille",
+        }],
+    }
+
+    assert ensure(contact) is True
+    assert contact["relances"] == []
+    assert contact["relance_date"] == ""
+    assert ensure(contact) is False
+
+
+def test_cancelling_followups_removes_every_open_item_and_is_idempotent():
+    namespace = _load_python_functions(
+        "_crm_relance_date",
+        "_crm_refresh_relance_date",
+        "_crm_ensure_relances",
+        "_crm_schedule_relance",
+    )
+    cancel = namespace["_crm_schedule_relance"]
+    contact = {
+        "relance_date": "2026-08-24",
+        "relances": [
+            {"id": "first", "status": "scheduled", "scheduled_date": "2026-08-24"},
+            {"id": "answered", "status": "answered", "scheduled_date": "2026-08-20"},
+            {"id": "second", "status": "scheduled", "scheduled_date": "2026-08-26"},
+            {"id": "moved", "status": "reprogrammed", "scheduled_date": "2026-08-18"},
+        ],
+    }
+
+    planned, changed = cancel(contact, "", actor_name="Calendly")
+
+    assert planned is None
+    assert changed is True
+    assert [item["id"] for item in contact["relances"]] == ["answered", "moved"]
+    assert contact["relance_date"] == ""
+    assert cancel(contact, "", actor_name="Calendly") == (None, False)
 
 def test_delete_route_is_targeted_authenticated_permanent_and_persisted():
     source = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -176,6 +273,42 @@ global.toast = (...args) => toasts.push(args);
   console.error(error);
   process.exit(1);
 });
+"""
+    completed = subprocess.run(
+        ["node", "-e", function + "\n" + harness],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_tracking_ignores_legacy_cancellations_in_history_and_metrics():
+    source = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
+    function = _extract_js_function(source, "relanceTracking")
+    harness = r"""
+const assert = require('assert');
+global.plannedRelances = contact => contact.relances.filter(item => item.status === 'scheduled');
+global.relanceDateMeta = () => ({day: '23', month: 'août', long: '23 août 2026', relative: 'Aujourd’hui', tone: 'today'});
+global.relanceHistoryTone = item => item.status;
+global.relanceHistoryLabel = item => ({answered: 'A répondu', no_answer: 'Pas de réponse', cancelled: 'Annulée'}[item.status]);
+global.relanceDelivery = () => '';
+global.crmIcon = () => '';
+global.esc = value => String(value ?? '');
+global.fmt = value => String(value ?? '');
+
+const html = relanceTracking({relances: [
+  {id: 'cancelled', status: 'cancelled', scheduled_date: '2026-08-19'},
+  {id: 'no-answer', status: 'no_answer', scheduled_date: '2026-08-20'},
+  {id: 'answered', status: 'answered', scheduled_date: '2026-08-21'},
+]});
+
+assert(!html.includes('Annulée'), 'cancelled follow-up must stay hidden');
+assert(html.includes('<span>Sans réponse</span><b>1</b>'));
+assert(html.includes('<span>Ont répondu</span><b>1</b>'));
+assert(html.includes('<span>Total</span><b>2</b>'));
+assert(html.includes('<span>Historique des relances</span><b>2</b>'));
 """
     completed = subprocess.run(
         ["node", "-e", function + "\n" + harness],
