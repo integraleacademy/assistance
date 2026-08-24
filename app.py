@@ -854,7 +854,9 @@ def _session_start_date(label):
 
 def get_upcoming_formation_sessions(data_store=None, today=None):
     """Return form sessions whose start date has not passed yet."""
-    today = today or datetime.date.today()
+    today = today or datetime.datetime.now(
+        pytz.timezone("Europe/Paris")
+    ).date()
     sessions = get_formation_sessions(data_store)
     for formations in sessions.values():
         for formation_code, rows in formations.items():
@@ -2336,9 +2338,9 @@ def _extract_exam_label_from_dates_txt(dates_txt: str) -> str:
 
 
 def _format_upcoming_sessions_for_email(
-    centre_code: str, formation_code: str, data_store=None,
+    centre_code: str, formation_code: str, data_store=None, today=None,
 ) -> str:
-    sessions = get_formation_sessions(data_store)
+    sessions = get_upcoming_formation_sessions(data_store, today=today)
     rows = sessions.get(_normalize_centre_code(centre_code), {}).get(formation_code, [])
     labels = [
         (row.get("label") or "").strip()
