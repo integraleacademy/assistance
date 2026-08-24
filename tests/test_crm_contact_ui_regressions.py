@@ -564,7 +564,12 @@ def test_pistes_display_the_desp_journey_badge_without_affecting_other_trainings
     assert "function despJourneyBadge(contact)" in crm_js
     assert "formation==='DESP'&&['INITIAL','VAE'].includes(journey)" in crm_js
     assert '<span class="crm-desp-journey">${esc(journey)}</span>' in crm_js
-    assert "${despJourneyBadge(contact)}" in crm_js
+    assert "showDespJourney?despJourneyBadge(contact):''" in crm_js
+    assert "showDespJourney:isLeads" in crm_js
+    assert "showDespJourney:type==='pistes'" in crm_js
+    assert (
+        "showDespJourney=false" in crm_js
+    ), "Other CRM list pages must not opt into the DESP journey badge"
     assert 'class="crm-list-formation-line"' in crm_js
     assert ".crm-desp-journey{" in workspace_css
     assert ".crm-list-formation-line{" in workspace_css
@@ -1085,6 +1090,7 @@ console.log('CRM Pistes completeness: OK');
     assert "showCompleteness?leadCompletenessCell(c):esc(c.lieu)" in javascript
     assert "crm-list-location" in javascript
     assert "showCompleteness:isLeads" in javascript
+    assert "showCompleteness:type==='pistes'" in javascript
     assert "CRMWorkspace={listPage" in workspace
     assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
