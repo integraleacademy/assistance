@@ -483,13 +483,23 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 def test_reminder_period_metrics_filter_rows_and_are_keyboard_accessible():
     workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
     css = (Path(__file__).parents[1] / "static" / "crm_workspace.css").read_text(encoding="utf-8")
-    helper = workspace[
+    date_helpers = workspace[
+        workspace.index("const dateValue="):
+        workspace.index("const money=")
+    ]
+    reminder_date_helper = workspace[
+        workspace.index("function reminderDate"):
+        workspace.index("function hasReminderStatus")
+    ]
+    period_helper = workspace[
         workspace.index("function reminderPeriodMatches"):
         workspace.index("function remindersPage")
     ]
     script = f"""
+{date_helpers}
 const isOverdue=contact=>contact.relance_date<'2026-08-23';
-{helper}
+{reminder_date_helper}
+{period_helper}
 const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
 const overdue={{relance_date:'2026-08-22'}};
 const today={{relance_date:'2026-08-23'}};
