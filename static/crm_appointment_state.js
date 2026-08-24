@@ -42,6 +42,13 @@ const dateLabel=(contactId,appointments,now=Date.now())=>{
   ?`Prochain RDV le ${new Intl.DateTimeFormat('fr-FR',{timeZone:PARIS_TIME_ZONE,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(appointment.start_time))}`
   :'Date du RDV non renseignée';
 };
+const sortContactsByNextAppointment=(contacts,appointments,now=Date.now())=>(contacts||[])
+ .map((item,index)=>{
+  const appointment=nextAppointment(item?.id,appointments,now);
+  return{item,index,start:appointment?Date.parse(appointment.start_time):Number.POSITIVE_INFINITY};
+ })
+ .sort((first,second)=>first.start===second.start?first.index-second.index:first.start-second.start)
+ .map(row=>row.item);
 const appointmentIdentity=(appointment,index)=>String(
  appointment?.id||appointment?.invitee_uri||appointment?.event_uri||`${appointment?.start_time||''}:${index}`
 );
@@ -75,6 +82,7 @@ root.CRMAppointmentState={
  contactAppointments,
  nextAppointment,
  dateLabel,
+ sortContactsByNextAppointment,
  replaceContact,
  signature,
 };
