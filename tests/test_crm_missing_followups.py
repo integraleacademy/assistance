@@ -34,6 +34,9 @@ assert(reminderStatus(missing)[1]==='missing','missing date gets a dedicated sta
 assert(reminderStatus(invalid)[1]==='missing','invalid date is handled like the pipeline missing state');
 assert(hasReminderStatus({{statut:'A relancer'}}),'primary follow-up status is included');
 assert(hasReminderStatus({{statut:'Nouveaux',statut_secondaire:'A relancer'}}),'secondary follow-up status is included');
+assert(!hasReminderStatus({{statut:'A relancer',archived_at:'2026-08-23T12:00:00Z'}}),'archived lead is excluded');
+assert(!hasReminderStatus({{statut:'Converti',statut_secondaire:'A relancer'}}),'converted lead is excluded');
+assert(!hasReminderStatus({{statut:'Disqualifié',statut_secondaire:'A relancer'}}),'disqualified lead is excluded');
 assert(reminderPeriodMatches(missing,'missing','2026-08-24'),'missing mode includes undated leads');
 assert(reminderPeriodMatches(invalid,'missing','2026-08-24'),'missing mode includes invalid dates');
 assert(!reminderPeriodMatches(today,'missing','2026-08-24'),'missing mode excludes dated leads');
@@ -56,7 +59,7 @@ console.log('CRM missing follow-ups: OK');
     overdue_metric = 'class="metric-action overdue-metric" id="reminderOverdue"'
     assert missing_metric in javascript
     assert javascript.index(missing_metric) < javascript.index(overdue_metric)
-    assert "const followUpContacts=ctx.contacts.filter(contact=>hasReminderStatus(contact)&&!contact.archived_at)" in javascript
+    assert "const followUpContacts=ctx.contacts.filter(hasReminderStatus)" in javascript
     assert "const missing=followUpContacts.filter(contact=>!reminderDate(contact))" in javascript
     assert "periodMode==='missing'?'Pistes sans relance programmée'" in javascript
     assert "'<button class=\"btn blue\" data-reminder-reschedule>Planifier</button>" in javascript
