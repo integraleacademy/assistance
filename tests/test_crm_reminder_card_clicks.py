@@ -72,4 +72,4 @@ console.log('CRM reminder card navigation: OK');
     assert "ctx.noAnswerRelanceModal(contact,relance)" in javascript
     assert ".reminder-command:hover{" in stylesheet
     assert ".reminder-command:focus-visible{" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-leads-newest-first-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260824-calendly-round-robin-location-1"' in backend
