@@ -945,12 +945,15 @@ def test_save_data_streams_the_previous_file_to_backup(tmp_path, monkeypatch):
     )) == {"version": "avant"}
 
 
-def test_wedof_remote_sync_is_manual_from_the_contact_sheet():
+def test_wedof_open_refresh_is_targeted_and_manual_refresh_remains_available():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
     assert 'id="wedofRefresh"' in crm_js
     assert "refresh.onclick=()=>refreshWedof(c,status)" in crm_js
+    assert "void refreshWedofOnOpen(c,status)" in crm_js
+    assert "/wedof/refresh-on-open" in crm_js
+    assert "status.configured!==false&&resources.length" in crm_js
     assert "cached.sync?.last_sync_at||status.last_sync_at});if(status.configured!==false)" not in crm_js
     assert "loadWedofTabCount(c,contactWedofTab);wedofLoaded=true;loadWedof(c)" not in crm_js
 

@@ -7144,7 +7144,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260824-wedof-guardrails-1"
+CRM_ASSET_VERSION = "20260824-wedof-open-refresh-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -10588,6 +10588,9 @@ _WEDOF_FUNDING_CACHE_LOCK = threading.RLock()
 _WEDOF_FUNDING_CACHE_KEY = None
 _WEDOF_FUNDING_CACHE_VALUE = None
 _WEDOF_FUNDING_CACHE_AT = 0.0
+WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS = 30 * 60
+WEDOF_CONTACT_REFRESH_LOCK_SECONDS = 2 * 60
+WEDOF_CONTACT_REFRESH_RETRY_SECONDS = 5 * 60
 
 
 def _wedof_db_path():
@@ -10650,6 +10653,16 @@ def _wedof_connect():
             delivery_id TEXT PRIMARY KEY,
             processed_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS wedof_contact_refresh_state (
+            resource_type TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            last_attempt_at REAL NOT NULL DEFAULT 0,
+            last_success_at REAL NOT NULL DEFAULT 0,
+            last_error TEXT NOT NULL DEFAULT '',
+            lease_token TEXT NOT NULL DEFAULT '',
+            lease_expires_at REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (resource_type, resource_id)
+        );
     """)
     connection.commit()
     return connection
@@ -10657,6 +10670,95 @@ def _wedof_connect():
 
 def _wedof_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def _wedof_resource_age_seconds(resource):
+    """Retourne l'âge du cache d'un dossier, ou ``None`` si la date est illisible."""
+    value = str((resource or {}).get("synced_at") or "").strip()
+    if not value:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return max(0.0, time.time() - parsed.timestamp())
+
+
+def _wedof_begin_contact_refresh(resource_id, *, automatic):
+    """Prend un bail SQLite partagé par tous les workers CRM.
+
+    Le compteur central protège le quota entre applications. Ce bail plus fin
+    évite en complément que deux onglets ou workers relisent simultanément le
+    même dossier. Après un échec automatique, un court délai empêche une rafale
+    de nouvelles tentatives à chaque ouverture de fiche.
+    """
+    now = time.time()
+    token = uuid.uuid4().hex
+    with _wedof_connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("""
+            SELECT last_attempt_at, last_error, lease_expires_at
+            FROM wedof_contact_refresh_state
+            WHERE resource_type='registrationFolder' AND resource_id=?
+        """, (resource_id,)).fetchone()
+        if row and float(row["lease_expires_at"] or 0) > now:
+            return {"acquired": False, "reason": "refresh_in_progress"}
+        if (automatic and row and str(row["last_error"] or "")
+                and now - float(row["last_attempt_at"] or 0)
+                < WEDOF_CONTACT_REFRESH_RETRY_SECONDS):
+            retry_after = max(
+                1,
+                int(WEDOF_CONTACT_REFRESH_RETRY_SECONDS
+                    - (now - float(row["last_attempt_at"] or 0))),
+            )
+            return {
+                "acquired": False,
+                "reason": "retry_cooldown",
+                "retry_after_seconds": retry_after,
+            }
+        db.execute("""
+            INSERT INTO wedof_contact_refresh_state
+                (resource_type, resource_id, last_attempt_at, last_error,
+                 lease_token, lease_expires_at)
+            VALUES ('registrationFolder', ?, ?, 'refresh_in_progress', ?, ?)
+            ON CONFLICT(resource_type, resource_id) DO UPDATE SET
+                last_attempt_at=excluded.last_attempt_at,
+                last_error=excluded.last_error,
+                lease_token=excluded.lease_token,
+                lease_expires_at=excluded.lease_expires_at
+        """, (
+            resource_id, now, token,
+            now + WEDOF_CONTACT_REFRESH_LOCK_SECONDS,
+        ))
+    return {"acquired": True, "token": token}
+
+
+def _wedof_finish_contact_refresh(resource_id, token, *, error=""):
+    """Libère le bail et mémorise le succès ou l'échec de la tentative."""
+    clean_error = _wedof_clean(error) if error else ""
+    now = time.time()
+    with _wedof_connect() as db:
+        db.execute("""
+            UPDATE wedof_contact_refresh_state
+            SET lease_token='', lease_expires_at=0,
+                last_success_at=CASE WHEN ?='' THEN ? ELSE last_success_at END,
+                last_error=?
+            WHERE resource_type='registrationFolder' AND resource_id=?
+              AND lease_token=?
+        """, (clean_error, now, clean_error, resource_id, token))
+
+
+def _wedof_cancel_contact_refresh(resource_id, token):
+    """Libère un bail devenu inutile sans enregistrer un faux succès."""
+    with _wedof_connect() as db:
+        db.execute("""
+            UPDATE wedof_contact_refresh_state
+            SET lease_token='', lease_expires_at=0, last_error=''
+            WHERE resource_type='registrationFolder' AND resource_id=?
+              AND lease_token=?
+        """, (resource_id, token))
 
 
 def _wedof_clean(value):
@@ -10682,13 +10784,17 @@ def _wedof_request_operation(path):
     return "get_wedof_resource"
 
 
-def _wedof_request(path, *, params=None):
+def _wedof_request(path, *, params=None, operation=None, retry_budget=None):
     key = os.getenv("WEDOF_API_KEY", "").strip()
     if not key:
         raise WedofAPIError("WEDOF_API_KEY non configurée")
     base_url = os.getenv("WEDOF_BASE_URL", "https://www.wedof.fr").rstrip("/")
     timeout = float(os.getenv("WEDOF_TIMEOUT", "15"))
-    retries = max(0, min(int(os.getenv("WEDOF_GET_RETRIES", "2")), 5))
+    retries = (
+        max(0, min(int(os.getenv("WEDOF_GET_RETRIES", "2")), 5))
+        if retry_budget is None
+        else max(0, min(int(retry_budget), 5))
+    )
     headers = {
         "X-Api-Key": key,
         "Accept": "application/json",
@@ -10699,7 +10805,7 @@ def _wedof_request(path, *, params=None):
         try:
             try:
                 reserve_wedof_request(
-                    operation=_wedof_request_operation(path),
+                    operation=operation or _wedof_request_operation(path),
                     method="GET",
                     path=re.sub(
                         r"(/registrationFolders/)[^/]+", r"\1:id", str(path),
@@ -11823,8 +11929,13 @@ def _wedof_contact_resources(contact_id, data=None):
     return resources
 
 
-def _wedof_refresh_contact_resource(contact_id, data=None):
-    """Relit uniquement le dossier WEDOF le plus récent déjà connu du contact."""
+def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
+    """Relit uniquement le dossier WEDOF le plus récent déjà connu du contact.
+
+    En ouverture automatique, un cache de moins de trente minutes est renvoyé
+    sans requête distante. Le bouton manuel conserve la possibilité de forcer
+    une lecture, tout en respectant le bail qui déduplique les appels concurrents.
+    """
     resources = _wedof_contact_resources(contact_id, data)
     latest = next(
         (resource for resource in resources if resource.get("is_latest")),
@@ -11845,30 +11956,101 @@ def _wedof_refresh_contact_resource(contact_id, data=None):
             "reason": "no_known_folder",
             "processed": 0,
         }
-    payload, _headers = _wedof_request(
-        f"/api/registrationFolders/{quote(external_id, safe='')}"
-    )
-    folder = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(folder, dict) or not folder.get("externalId"):
-        folder = payload
-    if not isinstance(folder, dict):
-        raise WedofAPIError("WEDOF a retourné un dossier dans un format inattendu.")
-    returned_id = str(folder.get("externalId") or "").strip()
-    if returned_id and returned_id != external_id:
-        raise WedofAPIError("WEDOF a retourné un autre numéro de dossier.")
-    if not returned_id:
-        folder = {**folder, "externalId": external_id}
-    result = _wedof_store_page(
-        [folder], None, 0, update_sync_state=False,
-    )
-    return {
-        "ok": True,
-        "skipped": False,
-        "processed": 1,
-        "folder_id": external_id,
-        **result,
-        "last_sync_at": _wedof_now(),
-    }
+    age_seconds = _wedof_resource_age_seconds(latest)
+    if (automatic and age_seconds is not None
+            and age_seconds < WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS):
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "fresh_cache",
+            "processed": 0,
+            "folder_id": external_id,
+            "last_sync_at": latest.get("synced_at") or "",
+        }
+
+    lease = _wedof_begin_contact_refresh(external_id, automatic=automatic)
+    if not lease.get("acquired"):
+        return {
+            "ok": True,
+            "skipped": True,
+            "processed": 0,
+            "folder_id": external_id,
+            "last_sync_at": latest.get("synced_at") or "",
+            **lease,
+        }
+    token = str(lease.get("token") or "")
+    try:
+        # Un autre worker a pu terminer entre le premier contrôle de fraîcheur
+        # et la prise du bail. Relire le cache évite alors un second GET.
+        if automatic:
+            current_resources = _wedof_contact_resources(contact_id)
+            current_latest = next(
+                (resource for resource in current_resources
+                 if resource.get("is_latest")),
+                current_resources[0] if current_resources else None,
+            )
+            current_id = str((current_latest or {}).get("stable_id") or "").strip()
+            if current_id and current_id != external_id:
+                _wedof_cancel_contact_refresh(external_id, token)
+                return _wedof_refresh_contact_resource(
+                    contact_id, automatic=True,
+                )
+            current_age = _wedof_resource_age_seconds(current_latest)
+            if (current_age is not None
+                    and current_age < WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS):
+                _wedof_cancel_contact_refresh(external_id, token)
+                return {
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "fresh_cache",
+                    "processed": 0,
+                    "folder_id": external_id,
+                    "last_sync_at": (current_latest or {}).get("synced_at") or "",
+                }
+
+        payload, _headers = _wedof_request(
+            f"/api/registrationFolders/{quote(external_id, safe='')}",
+            operation=(
+                "refresh_latest_folder_on_open"
+                if automatic else "refresh_latest_folder_manual"
+            ),
+            # Une ouverture de fiche ne doit jamais multiplier les tentatives
+            # HTTP. En cas d'échec, le cache reste visible et le cooldown prend
+            # le relais ; le bouton manuel demeure disponible pour réessayer.
+            retry_budget=0 if automatic else None,
+        )
+        folder = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(folder, dict) or not folder.get("externalId"):
+            folder = payload
+        if not isinstance(folder, dict):
+            raise WedofAPIError(
+                "WEDOF a retourné un dossier dans un format inattendu."
+            )
+        returned_id = str(folder.get("externalId") or "").strip()
+        if returned_id and returned_id != external_id:
+            raise WedofAPIError("WEDOF a retourné un autre numéro de dossier.")
+        if not returned_id:
+            folder = {**folder, "externalId": external_id}
+        result = _wedof_store_page(
+            [folder], None, 0, update_sync_state=False,
+        )
+        refreshed = _wedof_contact_resources(contact_id)
+        refreshed_latest = next(
+            (resource for resource in refreshed if resource.get("is_latest")),
+            refreshed[0] if refreshed else {},
+        )
+        _wedof_finish_contact_refresh(external_id, token)
+        return {
+            "ok": True,
+            "skipped": False,
+            "processed": 1,
+            "folder_id": external_id,
+            **result,
+            "last_sync_at": refreshed_latest.get("synced_at") or _wedof_now(),
+        }
+    except Exception as exc:
+        _wedof_finish_contact_refresh(external_id, token, error=exc)
+        raise
 
 
 def _wedof_france_travail_status(payload, previous_status=""):
@@ -12140,12 +12322,39 @@ def crm_contact_wedof_refresh(contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
     try:
         sync = _wedof_refresh_contact_resource(contact_id, data)
+        refreshed_data = load_data()
         return jsonify({
             "sync": sync,
-            "resources": _wedof_contact_resources(contact_id),
+            "resources": _wedof_contact_resources(contact_id, refreshed_data),
+            "contact": _crm_contact(refreshed_data, contact_id),
         })
     except WedofAPIError as exc:
         return jsonify({"error": _wedof_clean(exc)}), 503
+
+
+@app.route(
+    "/api/crm/contacts/<contact_id>/wedof/refresh-on-open",
+    methods=["POST"],
+)
+@login_required
+def crm_contact_wedof_refresh_on_open(contact_id):
+    """Actualise au plus un dossier connu, au maximum une fois par demi-heure."""
+    data = load_data()
+    if not _crm_contact(data, contact_id):
+        return jsonify({"error": "Contact introuvable"}), 404
+    try:
+        sync = _wedof_refresh_contact_resource(
+            contact_id, data, automatic=True,
+        )
+        refreshed_data = load_data()
+        return jsonify({
+            "sync": sync,
+            "resources": _wedof_contact_resources(contact_id, refreshed_data),
+            "contact": _crm_contact(refreshed_data, contact_id),
+        })
+    except WedofAPIError as exc:
+        status_code = 429 if getattr(exc, "status_code", None) == 429 else 503
+        return jsonify({"error": _wedof_clean(exc)}), status_code
 
 
 def _wedof_webhook_authenticated(raw_body):

@@ -197,6 +197,152 @@ def test_contact_refresh_reads_only_the_latest_known_folder(
     assert response.get_json()["resources"][0]["payload"]["state"] == "inTraining"
 
 
+def test_contact_open_refresh_reads_only_stale_latest_folder_then_reuses_cache(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    older = folder("older-folder", "lina@example.test")
+    older["createdAt"] = "2026-08-10T00:00:00+02:00"
+    latest = folder("latest-folder", "lina@example.test")
+    latest["createdAt"] = "2026-08-13T00:00:00+02:00"
+    latest["state"] = "waitingAcceptation"
+    latest["history"] = [{"state": "waitingAcceptation"}]
+    application._wedof_store_page(
+        [older, latest], application.load_data(), 1,
+    )
+    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
+        db.execute(
+            "UPDATE wedof_resources SET synced_at='2000-01-01T00:00:00+00:00'"
+        )
+
+    refreshed = dict(latest)
+    refreshed["state"] = "validated"
+    calls = []
+    monkeypatch.setattr(
+        application,
+        "_wedof_request",
+        lambda path, **kwargs: (
+            calls.append((
+                path, kwargs.get("operation"), kwargs.get("retry_budget"),
+            )) or (refreshed, {})
+        ),
+    )
+
+    first = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh-on-open"
+    )
+    second = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh-on-open"
+    )
+
+    assert first.status_code == 200
+    assert first.get_json()["sync"]["processed"] == 1
+    assert first.get_json()["contact"]["statut_demande_financement_ft"] == "refusee"
+    assert first.get_json()["contact"]["statut_secondaire"] == "Financement FT refusé"
+    assert calls == [(
+        "/api/registrationFolders/latest-folder",
+        "refresh_latest_folder_on_open",
+        0,
+    )]
+    assert second.status_code == 200
+    assert second.get_json()["sync"]["reason"] == "fresh_cache"
+    assert second.get_json()["sync"]["processed"] == 0
+
+
+def test_contact_open_refresh_uses_fresh_cache_without_wedof_request(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    application._wedof_store_page(
+        [folder("fresh-folder", "lina@example.test")],
+        application.load_data(), 1,
+    )
+    monkeypatch.setattr(
+        application, "_wedof_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("fresh contact cache must not call WEDOF")
+        ),
+    )
+
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh-on-open"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["sync"]["reason"] == "fresh_cache"
+    assert response.get_json()["sync"]["processed"] == 0
+
+
+def test_contact_open_refresh_deduplicates_an_active_worker_lease(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    application._wedof_store_page(
+        [folder("locked-folder", "lina@example.test")],
+        application.load_data(), 1,
+    )
+    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
+        db.execute(
+            "UPDATE wedof_resources SET synced_at='2000-01-01T00:00:00+00:00'"
+        )
+    lease = application._wedof_begin_contact_refresh(
+        "locked-folder", automatic=True,
+    )
+    monkeypatch.setattr(
+        application, "_wedof_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("an active lease must deduplicate the WEDOF request")
+        ),
+    )
+    try:
+        response = client.post(
+            f"/api/crm/contacts/{contact['id']}/wedof/refresh-on-open"
+        )
+    finally:
+        application._wedof_cancel_contact_refresh(
+            "locked-folder", lease["token"],
+        )
+
+    assert lease["acquired"] is True
+    assert response.status_code == 200
+    assert response.get_json()["sync"]["reason"] == "refresh_in_progress"
+    assert response.get_json()["sync"]["processed"] == 0
+
+
+def test_contact_open_refresh_cools_down_after_a_remote_failure(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    application._wedof_store_page(
+        [folder("failing-folder", "lina@example.test")],
+        application.load_data(), 1,
+    )
+    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
+        db.execute(
+            "UPDATE wedof_resources SET synced_at='2000-01-01T00:00:00+00:00'"
+        )
+    calls = []
+
+    def fail_once(path, **_kwargs):
+        calls.append(path)
+        raise application.WedofAPIError("WEDOF indisponible")
+
+    monkeypatch.setattr(application, "_wedof_request", fail_once)
+
+    first = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh-on-open"
+    )
+    second = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh-on-open"
+    )
+
+    assert first.status_code == 503
+    assert second.status_code == 200
+    assert second.get_json()["sync"]["reason"] == "retry_cooldown"
+    assert second.get_json()["sync"]["processed"] == 0
+    assert calls == ["/api/registrationFolders/failing-folder"]
+
+
 def test_contact_refresh_without_known_folder_sends_no_wedof_request(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
