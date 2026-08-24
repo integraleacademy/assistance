@@ -50,7 +50,7 @@ jobs:
               ".github/workflows/notion-crm-pr-sync.yml": {"sync"},
               ".github/workflows/notion-crm-work-pr-ci.yml": {"validate"},
               ".github/workflows/notion-crm-legacy-pr-publish.yml": {"inspect", "test", "publish"},
-              ".github/workflows/notion-crm-work-pr-publish.yml": {"inspect", "test", "publish"},
+              ".github/workflows/notion-crm-work-pr-publish.yml": {"dispatch_reviewed", "inspect", "test", "publish"},
           }
           obsolete = [
               ".github/workflows/notion-crm-queue.yml",
