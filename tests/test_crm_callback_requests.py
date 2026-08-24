@@ -49,7 +49,9 @@ def test_callback_workspace_only_lists_other_requests(tmp_path, monkeypatch):
     assert b'data-nav="demandes-rappel"' in page.data
     assert "Demande de rappel - Intégrale CRM".encode() in page.data
     assert bootstrap.status_code == 200
-    rows = bootstrap.get_json()["callback_requests"]
+    bootstrap_payload = bootstrap.get_json()
+    rows = bootstrap_payload["callback_requests"]
+    assert bootstrap_payload["callback_pending_count"] == 2
     assert [row["id"] for row in rows] == ["callback-unlinked", "callback-linked"]
     assert rows[0]["crm_contact_id"] == ""
     assert rows[1]["crm_contact_id"] == contact["id"]
@@ -67,6 +69,25 @@ def test_callback_workspace_only_lists_other_requests(tmp_path, monkeypatch):
     assert callback_activity["callback_status"] == "pending"
     assert "Demande : Question sur son dossier" in callback_activity["detail"]
     assert "Rendez-vous : Demain matin" in callback_activity["detail"]
+
+
+def test_callback_pending_count_is_available_on_every_crm_page(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["secretariat_demandes"] = [
+        {"id": "pending", "type": "autre", "callback_status": "pending"},
+        {"id": "processed", "type": "autre", "callback_status": "processed"},
+        {"id": "training", "type": "formation"},
+    ]
+    application.save_data(data)
+
+    response = client.get("/api/crm/bootstrap?section=accueil")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["callback_requests"] == []
+    assert payload["callback_pending_count"] == 1
 
 
 def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
@@ -97,6 +118,7 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     assert processed["status"] == "processed"
     assert processed["processed_at"]
     assert processed["processed_by"]
+    assert processed_payload["callback_pending_count"] == 0
     assert processed_payload["contact"]["id"] == contact["id"]
     assert any(
         activity.get("title") == "Demande de rappel traitée"
@@ -121,6 +143,7 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     reopened = reopened_payload["request"]
     assert reopened["status"] == "pending"
     assert reopened["processed_at"] == ""
+    assert reopened_payload["callback_pending_count"] == 1
     assert reopened_payload["contact"]["id"] == contact["id"]
     assert any(
         activity.get("title") == "Demande de rappel rouverte"
@@ -190,6 +213,7 @@ def test_callback_workspace_repairs_legacy_call_activity_without_duplicate(
 def test_callback_workspace_ui_explains_lead_linking():
     javascript = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
     stylesheet = (ROOT / "static" / "crm.css").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "crm.html").read_text(encoding="utf-8")
 
     assert "function callbackRequestsPage()" in javascript
     assert "if(C.section==='demandes-rappel')return callbackRequestsPage();" in javascript
@@ -203,7 +227,11 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert "data-callback-action" in javascript
     assert "async function saveCallbackRequestStatus" in javascript
     assert "activityFeed.onclick=async event=>" in javascript
+    assert "function updateCallbackRequestNavCount()" in javascript
+    assert "snapshot.callback_pending_count" in javascript
+    assert 'id="callbackRequestNavCount"' in template
     assert ".callback-request-table" in stylesheet
     assert ".callback-request-status.pending" in stylesheet
     assert ".feed-item.callback-activity" in stylesheet
     assert ".feed-callback-action" in stylesheet
+    assert ".callback-nav-count" in stylesheet
