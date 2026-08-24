@@ -9383,6 +9383,7 @@ def _crm_ensure_relances(contact):
         changed = True
 
     normalized = []
+    cancelled_dates = set()
     seen_ids = set()
     for raw in raw_relances:
         if not isinstance(raw, dict):
@@ -9404,6 +9405,12 @@ def _crm_ensure_relances(contact):
             # Une annulation est une suppression métier : les anciennes traces
             # créées par le flux historique ne doivent plus être exposées ni
             # comptées comme des relances.
+            try:
+                cancelled_date = _crm_relance_date(item.get("scheduled_date"))
+            except ValueError:
+                cancelled_date = ""
+            if cancelled_date:
+                cancelled_dates.add(cancelled_date)
             changed = True
             continue
         try:
@@ -9431,7 +9438,7 @@ def _crm_ensure_relances(contact):
         legacy_date = ""
         contact["relance_date"] = ""
         changed = True
-    if legacy_date and not any(
+    if legacy_date and legacy_date not in cancelled_dates and not any(
         item.get("status") == "scheduled" and item.get("scheduled_date") == legacy_date
         for item in normalized
     ):

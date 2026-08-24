@@ -142,6 +142,30 @@ def test_normalization_purges_legacy_cancellations_without_losing_real_history()
     assert ensure(contact) is False
 
 
+def test_normalization_does_not_resurrect_cancelled_legacy_date():
+    namespace = _load_python_functions(
+        "_crm_relance_date",
+        "_crm_refresh_relance_date",
+        "_crm_ensure_relances",
+    )
+    ensure = namespace["_crm_ensure_relances"]
+    contact = {
+        "relance_date": "2026-08-27",
+        "relances": [{
+            "id": "cancelled",
+            "status": "cancelled",
+            "scheduled_date": "2026-08-27",
+            "created_at": "2026-08-20T09:00:00+02:00",
+            "created_by": "Camille",
+        }],
+    }
+
+    assert ensure(contact) is True
+    assert contact["relances"] == []
+    assert contact["relance_date"] == ""
+    assert ensure(contact) is False
+
+
 def test_cancelling_followups_removes_every_open_item_and_is_idempotent():
     namespace = _load_python_functions(
         "_crm_relance_date",
