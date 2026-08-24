@@ -9400,6 +9400,12 @@ def _crm_ensure_relances(contact):
             status = "scheduled"
             item["status"] = status
             changed = True
+        if status == "cancelled":
+            # Une annulation est une suppression métier : les anciennes traces
+            # créées par le flux historique ne doivent plus être exposées ni
+            # comptées comme des relances.
+            changed = True
+            continue
         try:
             scheduled_date = _crm_relance_date(item.get("scheduled_date"))
         except ValueError:
@@ -9447,9 +9453,9 @@ def _crm_ensure_relances(contact):
 def _crm_schedule_relance(
         contact, scheduled_date, *, source="manual", parent_relance_id=None,
         actor_name=None):
-    """Schedule one next action while preserving previous attempts as history."""
+    """Schedule or remove open actions while preserving completed attempts."""
     scheduled_date = _crm_relance_date(scheduled_date)
-    _crm_ensure_relances(contact)
+    changed = _crm_ensure_relances(contact)
     now = _crm_now()
     actor_name = actor_name or (current_user() or {}).get(
         "name", "Équipe Intégrale"
@@ -9457,17 +9463,18 @@ def _crm_schedule_relance(
     active = [item for item in contact["relances"] if item.get("status") == "scheduled"]
 
     if not scheduled_date:
-        for item in active:
-            item.update({
-                "status": "cancelled",
-                "completed_at": now,
-                "completed_by": actor_name,
-            })
-        _crm_refresh_relance_date(contact)
-        return None, bool(active)
+        active_objects = {id(item) for item in active}
+        if active_objects:
+            contact["relances"] = [
+                item for item in contact["relances"]
+                if id(item) not in active_objects
+            ]
+            changed = True
+        if _crm_refresh_relance_date(contact):
+            changed = True
+        return None, changed
 
     same = next((item for item in active if item.get("scheduled_date") == scheduled_date), None)
-    changed = False
     for item in active:
         if item is same:
             continue
