@@ -14555,6 +14555,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     ).strip()
     old_origin = contact.get("origine", "")
     old_qualification_flag = str(contact.get("qualification_flag") or "")
+    old_comments = str(contact.get("commentaires") or "")
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
     old_score = calculate_candidate_integration_score(contact, snapshot)
     if "cpf_montant" in payload:
@@ -14575,6 +14576,14 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    new_comments = str(contact.get("commentaires") or "")
+    if "commentaires" in payload and new_comments != old_comments:
+        _crm_activity(
+            contact,
+            "suivi",
+            "Suivi mis à jour",
+            new_comments or "Commentaire retiré du suivi.",
+        )
     if relance_date_supplied:
         try:
             planned_relance, relance_changed = _crm_schedule_relance(
