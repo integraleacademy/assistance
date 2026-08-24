@@ -7489,6 +7489,18 @@ def _calendly_route_error(exc, *, action=""):
         return jsonify(payload), 503
     message = str(exc)
     if action and isinstance(exc, CalendlyAPIError):
+        details = []
+        for detail in exc.payload.get("details") or []:
+            if not isinstance(detail, dict):
+                continue
+            parameter = str(detail.get("parameter") or "").strip()
+            detail_message = str(detail.get("message") or detail.get("code") or "").strip()
+            if parameter and detail_message:
+                details.append(f"{parameter} : {detail_message}")
+            elif detail_message:
+                details.append(detail_message)
+        if details:
+            message = f"{message} Détail Calendly : {' ; '.join(details)}"
         guidance = ""
         if "invalid argument" in message.casefold():
             guidance = (
@@ -9040,6 +9052,7 @@ def _calendly_booking_location(event_type, requested_location, contact):
 def _calendly_question_answers(event_type, submitted_answers):
     submitted_answers = submitted_answers if isinstance(submitted_answers, dict) else {}
     answers = []
+    text_reminder_number = ""
     for question in event_type.get("custom_questions") or []:
         if not question.get("enabled"):
             continue
@@ -9050,13 +9063,22 @@ def _calendly_question_answers(event_type, submitted_answers):
         value = str(value or "").strip()
         if question.get("required") and not value:
             raise ValueError(f"Répondez à la question obligatoire : {question.get('name')}.")
+        if value and question.get("type") == "phone_number":
+            normalized_phone = _calendly_phone_number(value)
+            if not normalized_phone:
+                raise ValueError(
+                    f"Le numéro saisi pour la question « {question.get('name')} » est invalide."
+                )
+            value = normalized_phone
+            if not text_reminder_number:
+                text_reminder_number = normalized_phone
         if value:
             answers.append({
                 "question": question.get("name"),
                 "answer": value,
                 "position": position,
             })
-    return answers
+    return answers, text_reminder_number
 
 
 def _calendly_signature_is_valid(raw_body, signature_header):
@@ -13304,14 +13326,24 @@ def crm_contact_calendly_appointments(contact_id):
             payload.get("location"),
             contact,
         )
-        answers = _calendly_question_answers(event_type, payload.get("answers"))
+        answers, text_reminder_number = _calendly_question_answers(
+            event_type,
+            payload.get("answers"),
+        )
+        first_name = str(contact.get("prenom") or "").strip()
+        last_name = str(contact.get("nom") or "").strip()
         invitee = {
             "name": " ".join(
-                part for part in [contact.get("prenom"), contact.get("nom")] if str(part or "").strip()
+                part for part in [first_name, last_name] if part
             ).strip() or contact.get("mail"),
             "email": contact.get("mail"),
             "timezone": timezone,
         }
+        if first_name and last_name:
+            invitee["first_name"] = first_name
+            invitee["last_name"] = last_name
+        if text_reminder_number:
+            invitee["text_reminder_number"] = text_reminder_number
         booking_body = {
             "event_type": event_type.get("uri") or event_type_uri,
             "start_time": start_time,

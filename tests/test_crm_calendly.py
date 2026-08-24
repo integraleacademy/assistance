@@ -638,12 +638,110 @@ def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_
     assert response.status_code == 201
     assert captured["location"] == {"kind": "outbound_call", "location": "+33612345678"}
     assert "text_reminder_number" not in captured["invitee"]
+    assert captured["invitee"]["first_name"] == "Lina"
+    assert captured["invitee"]["last_name"] == "MARTIN"
     assert captured["questions_and_answers"] == [{
         "question": "Votre projet",
         "answer": "Formation APS",
         "position": 0,
     }]
     assert response.get_json()["appointment"]["contact_id"] == contact["id"]
+
+
+def test_booking_normalizes_calendly_phone_question_for_text_reminders(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Yanis", "nom": "Exemple", "formation": "SSIAP 1"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "yanis@example.com", "telephone": "06 12 34 56 78"},
+    )
+    captured = {}
+
+    def fake_calendly(method, path, **kwargs):
+        if method == "GET" and path == "/event_types/TYPE1":
+            return {"resource": {
+                "uri": "https://api.calendly.com/event_types/TYPE1",
+                "name": "RDV téléphonique formation SSIAP 1 incendie",
+                "active": True,
+                "duration": 15,
+                "is_paid": False,
+                "booking_method": "instant",
+                "pooling_type": "round_robin",
+                "locations": [{"kind": "custom", "location": "Appel téléphonique"}],
+                "custom_questions": [
+                    {
+                        "name": "Veuillez partager tout ce qui pourra être utile",
+                        "position": 0,
+                        "enabled": True,
+                        "required": False,
+                        "type": "text",
+                    },
+                    {
+                        "name": "Numéro de téléphone",
+                        "position": 1,
+                        "enabled": True,
+                        "required": True,
+                        "type": "phone_number",
+                    },
+                ],
+            }}
+        if method == "POST" and path == "/invitees":
+            captured.update(kwargs["json_body"])
+            return {"resource": {
+                "uri": "https://api.calendly.com/scheduled_events/EVENT1/invitees/INVITEE1",
+                "event": "https://api.calendly.com/scheduled_events/EVENT1",
+                "name": "Yanis EXEMPLE",
+                "email": "yanis@example.com",
+                "status": "active",
+                "timezone": "Europe/Paris",
+            }}
+        if method == "GET" and path == "/scheduled_events/EVENT1":
+            event = calendly_payload()["scheduled_event"]
+            event["name"] = "RDV téléphonique formation SSIAP 1 incendie"
+            return {"resource": event}
+        raise AssertionError(f"Unexpected Calendly call: {method} {path}")
+
+    monkeypatch.setattr(application, "_calendly_request", fake_calendly)
+
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments",
+        json={
+            "event_type": "https://api.calendly.com/event_types/TYPE1",
+            "start_time": "2099-09-02T11:45:00Z",
+            "timezone": "Europe/Paris",
+            "location": {"kind": "custom", "location": "Appel téléphonique"},
+            "answers": {"0": "Préparer le dossier SSIAP", "1": "06 12 34 56 78"},
+        },
+    )
+
+    assert response.status_code == 201
+    assert captured["location"] == {
+        "kind": "custom",
+        "location": "Appel téléphonique",
+    }
+    assert captured["invitee"] == {
+        "name": "Yanis EXEMPLE",
+        "first_name": "Yanis",
+        "last_name": "EXEMPLE",
+        "email": "yanis@example.com",
+        "timezone": "Europe/Paris",
+        "text_reminder_number": "+33612345678",
+    }
+    assert captured["questions_and_answers"] == [
+        {
+            "question": "Veuillez partager tout ce qui pourra être utile",
+            "answer": "Préparer le dossier SSIAP",
+            "position": 0,
+        },
+        {
+            "question": "Numéro de téléphone",
+            "answer": "+33612345678",
+            "position": 1,
+        },
+    ]
 
 
 def test_round_robin_booking_keeps_the_event_type_required_location():
@@ -998,7 +1096,14 @@ def test_booking_invalid_argument_returns_actionable_retry_error(tmp_path, monke
             assert "text_reminder_number" not in kwargs["json_body"]["invitee"]
             raise application.CalendlyAPIError(
                 400,
-                {"title": "Invalid Argument", "message": "The supplied parameters are invalid."},
+                {
+                    "title": "Invalid Argument",
+                    "message": "The supplied parameters are invalid.",
+                    "details": [{
+                        "parameter": "invitee.text_reminder_number",
+                        "message": "Must use E.164 format.",
+                    }],
+                },
             )
         raise AssertionError(f"Unexpected Calendly call: {method} {path}")
 
@@ -1017,6 +1122,7 @@ def test_booking_invalid_argument_returns_actionable_retry_error(tmp_path, monke
     payload = response.get_json()
     assert payload["stage"] == "la création du rendez-vous"
     assert "Vérifiez le type de rendez-vous" in payload["error"]
+    assert "invitee.text_reminder_number : Must use E.164 format." in payload["error"]
 
 
 
