@@ -2739,7 +2739,8 @@ def test_crm_regulatory_and_funding_dependencies_are_present():
     assert 'data-show="cpf-yes"' in script
     assert 'data-show="identity-created"' in script
     assert 'data-show="ft-yes"' in script
-    assert "loadWedof(c,{refresh:true})" in script
+    assert "loadWedof(c);" in script
+    assert "loadWedof(c,{refresh:true})" not in script
 
 
 def test_leads_can_be_filtered_by_an_exact_training_session():

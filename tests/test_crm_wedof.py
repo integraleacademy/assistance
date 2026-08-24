@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import hashlib
+import hmac
 import sqlite3
 from types import SimpleNamespace
 
@@ -22,6 +24,7 @@ class FakeResponse:
 def authenticated_client(tmp_path, monkeypatch, email="clement@integraleacademy.com"):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     monkeypatch.setenv("WEDOF_DB_PATH", str(tmp_path / "wedof.sqlite3"))
+    monkeypatch.setenv("WEDOF_GOVERNOR_ENABLED", "false")
     application.app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     client = application.app.test_client()
     with client.session_transaction() as session:
@@ -86,8 +89,13 @@ def test_background_sync_starts_only_when_wedof_is_configured(monkeypatch):
 
     monkeypatch.setenv("WEDOF_API_KEY", SECRET)
     monkeypatch.setattr(application.threading, "Thread", FakeThread)
+    assert application._start_wedof_background_sync() is False
+    # L'ancien drapeau ne peut plus réactiver le poller historique de 5 min.
+    monkeypatch.setenv("WEDOF_AUTO_SYNC_ENABLED", "true")
+    assert application._start_wedof_background_sync() is False
+    monkeypatch.setenv("WEDOF_CRM_RECONCILIATION_ENABLED", "true")
     assert application._start_wedof_background_sync() is True
-    assert started[0]["name"] == "wedof-crm-auto-sync"
+    assert started[0]["name"] == "wedof-crm-reconciliation"
     assert started[0]["daemon"] is True
     assert started[1] == "started"
     assert application._start_wedof_background_sync() is False
@@ -123,7 +131,7 @@ def test_contact_wedof_returns_empty_cache_and_status_without_remote_check(
     assert response.get_json()["status"]["configured"] is True
 
 
-def test_contact_refresh_reuses_in_progress_sync_and_keeps_cached_resources(
+def test_contact_refresh_reads_only_the_latest_known_folder(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
@@ -131,17 +139,44 @@ def test_contact_refresh_reuses_in_progress_sync_and_keeps_cached_resources(
         [folder("cached-folder", "lina@example.test")],
         application.load_data(), 1,
     )
-    application._WEDOF_SYNC_LOCK.acquire()
-    try:
-        response = client.post(
-            f"/api/crm/contacts/{contact['id']}/wedof/refresh"
-        )
-    finally:
-        application._WEDOF_SYNC_LOCK.release()
+    calls = []
+    updated = folder("cached-folder", "lina@example.test")
+    updated["state"] = "inTraining"
+    monkeypatch.setattr(
+        application, "_wedof_request",
+        lambda path, **_kwargs: calls.append(path) or (updated, {}),
+    )
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh"
+    )
 
     assert response.status_code == 200
-    assert response.get_json()["sync"]["in_progress"] is True
+    assert response.get_json()["sync"]["processed"] == 1
+    assert calls == ["/api/registrationFolders/cached-folder"]
     assert response.get_json()["resources"][0]["stable_id"] == "cached-folder"
+    assert response.get_json()["resources"][0]["payload"]["state"] == "inTraining"
+
+
+def test_contact_refresh_without_known_folder_sends_no_wedof_request(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="lina@example.test")
+    monkeypatch.setattr(
+        application, "_wedof_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("no folder number means no WEDOF request")
+        ),
+    )
+
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/wedof/refresh"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["sync"] == {
+        "ok": True, "processed": 0,
+        "reason": "no_known_folder", "skipped": True,
+    }
 
 
 def test_contact_refresh_error_does_not_erase_cached_resources(
@@ -153,8 +188,10 @@ def test_contact_refresh_error_does_not_erase_cached_resources(
         application.load_data(), 1,
     )
     monkeypatch.setattr(
-        application, "_wedof_sync",
-        lambda: (_ for _ in ()).throw(application.WedofAPIError("indisponible")),
+        application, "_wedof_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            application.WedofAPIError("indisponible")
+        ),
     )
 
     response = client.post(
@@ -179,7 +216,12 @@ def test_api_key_header_and_errors_never_leak_secret(tmp_path, monkeypatch):
 
     monkeypatch.setattr(application.requests, "get", fake_get)
     response = client.get("/api/crm/wedof/status")
-    assert captured["headers"] == {"X-Api-Key": SECRET, "Accept": "application/json"}
+    assert captured["headers"] == {
+        "X-Api-Key": SECRET,
+        "Accept": "application/json",
+        "User-Agent": "IntegraleAcademy-CRM/2026.08",
+        "X-Integrale-Application": "crm",
+    }
     assert SECRET.encode() not in response.data
     assert SECRET not in json.dumps(response.get_json())
 
@@ -1320,3 +1362,57 @@ def test_ft_refusal_notification_ui_is_system_only():
     assert "action:'a signalé un refus de financement'" in source
     assert "reply:false" in source
     assert "presentation.reply?" in source
+
+
+def _signed_wedof_webhook(client, payload, *, delivery="delivery-1"):
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    signature = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    return client.post(
+        "/api/webhooks/wedof", data=raw, content_type="application/json",
+        headers={
+            "X-Wedof-Signature": f"sha256={signature}",
+            "X-Wedof-Delivery": delivery,
+        },
+    )
+
+
+def test_webhook_uses_embedded_folder_without_remote_request(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("WEDOF_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setattr(
+        application, "_wedof_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("an embedded WEDOF folder must not be fetched again")
+        ),
+    )
+    payload = folder("webhook-folder", "lina@example.test")
+
+    first = _signed_wedof_webhook(client, payload)
+    duplicate = _signed_wedof_webhook(client, payload)
+
+    assert first.status_code == 200
+    assert first.get_json() == {"ok": True, "processed": True, "source": "payload"}
+    assert duplicate.get_json() == {"ok": True, "duplicate": True}
+    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM wedof_resources WHERE stable_id='webhook-folder'"
+        ).fetchone()[0] == 1
+
+
+def test_webhook_with_only_an_id_performs_one_targeted_get(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("WEDOF_WEBHOOK_SECRET", SECRET)
+    calls = []
+    remote = folder("target-folder", "lina@example.test")
+    monkeypatch.setattr(
+        application, "_wedof_request",
+        lambda path, **_kwargs: calls.append(path) or (remote, {}),
+    )
+
+    response = _signed_wedof_webhook(
+        client, {"folderId": "target-folder"}, delivery="delivery-2",
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["source"] == "targeted_get"
+    assert calls == ["/api/registrationFolders/target-folder"]
