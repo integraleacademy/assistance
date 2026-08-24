@@ -316,12 +316,12 @@ def test_secretariat_api_does_not_duplicate_crm_contact_when_completing_request(
     assert crm_calls == []
 
 
-def test_secretariat_sends_ai_call_summary_email_and_commercial_sms(client, monkeypatch):
+def test_secretariat_sends_matching_training_email_and_commercial_sms(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
     data["secretariat_demandes"] = []
     data["crm_contacts"] = []
     data["crm_email_templates"] = [
-        {"id": "mail-aps", "nom": "Informations APS", "sujet": "Votre APS", "contenu": "<p>Contenu APS</p>"},
+        {"id": "mail-aps", "nom": "Informations APS", "sujet": "Votre APS", "contenu": "<p>Contenu APS pour {{ prenom }}</p>"},
         {"id": "mail-vtc", "nom": "Informations VTC", "sujet": "Votre VTC", "contenu": "Autre"},
     ]
     data["crm_sms_templates"] = [
@@ -330,9 +330,11 @@ def test_secretariat_sends_ai_call_summary_email_and_commercial_sms(client, monk
     monkeypatch.setattr(application, "load_data", lambda: data)
     monkeypatch.setattr(application, "save_data", lambda payload: None)
     monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
-    ai_calls = []
-    monkeypatch.setattr(application, "_crm_ai", lambda system, user, max_tokens: ai_calls.append(
-        (system, user, max_tokens)) or '''{"summary_paragraphs":["Merci pour cet échange consacré à votre projet APS et à vos objectifs professionnels.","Nous avons identifié ensemble les vérifications utiles avant de confirmer votre entrée en formation."],"financing_message":"","cnaps_message":"Notre équipe vous accompagne pour l’autorisation préalable CNAPS.","next_steps":["Consulter le dossier.","Confirmer la session."]}''')
+    monkeypatch.setattr(
+        application,
+        "_crm_ai",
+        lambda *args, **kwargs: pytest.fail("Le mail d'information ne doit pas appeler l'IA"),
+    )
     emails, sms = [], []
     monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
     monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
@@ -345,19 +347,52 @@ def test_secretariat_sends_ai_call_summary_email_and_commercial_sms(client, monk
     assert response.status_code == 201
     assert response.get_json()["messages"] == {"email": "sent", "sms": "sent"}
     assert emails[0][0] == "camille@example.com"
-    assert "Agent de Prévention et de Sécurité" in emails[0][1]
-    assert "Merci pour cet échange consacré" in emails[0][2]
-    assert "Le résumé de notre échange" in emails[0][3]
-    assert "Télécharger le dossier de présentation" in emails[0][3]
-    assert "N'invente aucune information" in ai_calls[0][0]
-    assert '"formation": "Agent de Prévention et de Sécurité (APS)"' in ai_calls[0][1]
+    assert emails[0][1] == "Votre APS"
+    assert emails[0][2] == "Contenu APS pour Camille"
+    assert "Contenu APS pour Camille" in emails[0][3]
+    assert "Informations sur votre formation" in emails[0][3]
+    assert "Le résumé de notre échange" not in emails[0][3]
     assert "Je fais suite à notre échange téléphonique" in sms[0][1]
-    assert "https://www.integralesecuriteformations.com/dossiersfc" in sms[0][1]
+    assert "https://www.integraleacademy.com/dossiersfc" in sms[0][1]
     assert "Cassandre MENARD" in sms[0][1]
     entry = data["secretariat_demandes"][0]
+    assert entry["information_email_template_id"] == "mail-aps"
+    assert data["crm_email_templates"][0]["usage_count"] == 1
     assert entry["information_email_sent_at"]
     assert entry["information_sms_sent_at"]
     assert [activity["kind"] for activity in data["crm_contacts"][0]["activities"][:2]] == ["sms", "email"]
+
+
+def test_secretariat_never_sends_summary_when_training_template_is_missing(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
+    data["crm_email_templates"] = []
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
+    monkeypatch.setattr(
+        application,
+        "_crm_ai",
+        lambda *args, **kwargs: pytest.fail("Aucun résumé IA ne doit être généré"),
+    )
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda *args, **kwargs: pytest.fail("Aucun mauvais e-mail ne doit être envoyé"),
+    )
+    monkeypatch.setattr(application, "send_sms", lambda *args: True)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "APS", "prenom": "Camille",
+        "nom": "Camille Martin", "email": "camille@example.com", "telephone": "0600000000",
+    })
+
+    assert response.status_code == 201
+    assert response.get_json()["messages"]["email"] == "template_missing"
+    entry = data["secretariat_demandes"][0]
+    assert entry["email_summary_status"] == "failed"
+    assert "Aucun modèle d’information" in entry["email_summary_error"]
 
 
 def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appointment(monkeypatch):

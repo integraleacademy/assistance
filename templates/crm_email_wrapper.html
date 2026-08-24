@@ -12,8 +12,8 @@
         <tr><td align="center" class="mobile-pad" style="padding:28px 44px 30px;background:#102c5c;background-image:linear-gradient(135deg,#102c5c 0%,#3269da 100%);color:#fff">
           <img src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" width="148" alt="Intégrale Academy" style="display:block;width:148px;max-width:100%;height:auto;margin:0 auto 20px;border:0">
           <div style="font-size:12px;line-height:16px;font-weight:700;letter-spacing:2.1px;text-transform:uppercase;opacity:.88">Intégrale Academy</div>
-          <h1 style="margin:9px 0 8px;font-size:32px;line-height:38px;color:#fff"><!-- EMAIL_HEADER_TITLE_START -->Le résumé de notre échange<!-- EMAIL_HEADER_TITLE_END --></h1>
-          <div style="font-size:15px;line-height:22px;color:#e9f0ff"><!-- EMAIL_HEADER_SUBTITLE_START -->Votre projet : <strong>Formation {{ formation }}</strong><!-- EMAIL_HEADER_SUBTITLE_END --></div>
+          <h1 style="margin:9px 0 8px;font-size:32px;line-height:38px;color:#fff"><!-- EMAIL_HEADER_TITLE_START -->{{ email_header_title|default('Le résumé de notre échange', true) }}<!-- EMAIL_HEADER_TITLE_END --></h1>
+          <div style="font-size:15px;line-height:22px;color:#e9f0ff"><!-- EMAIL_HEADER_SUBTITLE_START -->{% if email_header_subtitle|default('', true) %}{{ email_header_subtitle }}{% else %}Votre projet : <strong>Formation {{ formation }}</strong>{% endif %}<!-- EMAIL_HEADER_SUBTITLE_END --></div>
           <div style="width:56px;height:3px;background:#f4c45a;border-radius:3px;margin:20px auto 15px"></div>
           <div style="font-size:15px;font-weight:700;color:#f8d982"><!-- EMAIL_HEADER_TAGLINE_START -->Faites le premier pas vers votre futur métier<!-- EMAIL_HEADER_TAGLINE_END --></div>
         </td></tr>
