@@ -161,14 +161,22 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .calendly-lookup-warning .btn{flex:none}
 .integration-banner+.integration-banner{margin-top:8px}
 
-/* Fenêtre de réservation Calendly. */
-.calendly-modal{width:min(980px,100%);overflow:hidden;border-radius:22px}
-.calendly-modal .modal-head{padding:22px 25px;background:linear-gradient(135deg,#f6f9ff,#fff)}
+/* Fenêtre de réservation Calendly : seules les informations centrales défilent,
+   les actions restent toujours disponibles quelle que soit la hauteur d'écran. */
+.calendly-modal{display:flex;flex-direction:column;width:min(1040px,calc(100vw - 40px));max-height:min(90vh,860px);overflow:hidden;border:1px solid #dce5f2;border-radius:22px;box-shadow:0 34px 95px #07142866}
+.calendly-modal .modal-head{flex:none;padding:22px 25px;background:linear-gradient(135deg,#eef4ff,#fff)}
 .calendly-modal .modal-head h2{font-size:20px}
-.calendly-modal .modal-body{padding:23px 25px;background:#fbfcfe}
-.calendly-modal .modal-foot{padding:16px 25px;background:#fff}
+.calendly-modal .modal-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:23px 25px;background:#f8faff}
+.calendly-modal .modal-foot{flex:none;padding:16px 25px;border-top:1px solid #e4eaf3;background:#fff;box-shadow:0 -10px 24px #1720330b}
+.calendly-modal .modal-foot .btn{min-width:150px;min-height:42px}
+.calendly-booking-loading{display:flex;align-items:center;justify-content:center;gap:14px;min-height:250px;color:#52637c;text-align:left}
+.calendly-booking-loading b,.calendly-booking-loading small{display:block}.calendly-booking-loading b{font:800 15px Manrope;color:#263b5c}.calendly-booking-loading small{margin-top:5px;color:#7a879a;font-size:11px}
+.calendly-booking-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:22px;margin-bottom:20px;padding:19px 21px;border:1px solid #dce6f6;border-radius:18px;background:linear-gradient(135deg,#fff,#edf4ff)}
+.calendly-booking-intro>div:first-child{min-width:0}.calendly-booking-intro>div:first-child>span{color:#356ae6;font:800 9px Manrope;letter-spacing:.14em}.calendly-booking-intro h3{margin:5px 0 4px;color:#172b4d;font:800 19px Manrope}.calendly-booking-intro p{max-width:580px;margin:0;color:#65748a;font-size:11px;line-height:1.5}
+.calendly-booking-progress{display:flex;align-items:center;gap:8px;flex:none}.calendly-booking-progress span{display:flex;align-items:center;gap:6px;color:#7b899e;font-size:9px;font-weight:800;white-space:nowrap}.calendly-booking-progress b{display:grid;place-items:center;width:24px;height:24px;border:1px solid #ccd8eb;border-radius:50%;background:#fff;color:#60728e;font:800 9px Manrope}.calendly-booking-progress span.active{color:#2459cf}.calendly-booking-progress span.active b{border-color:#356ae6;background:#356ae6;color:#fff}
 .calendly-booking-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(270px,.7fr);gap:20px}
 .calendly-booking-grid>section,.calendly-booking-grid>aside{min-width:0}
+.calendly-booking-choice{padding:19px;border:1px solid #e1e7f0;border-radius:16px;background:#fff}
 .calendly-booking-grid>aside{align-self:start;padding:17px;border:1px solid #e1e7f0;border-radius:16px;background:#fff}
 .booking-person{display:flex;align-items:center;gap:10px;margin-bottom:17px;padding-bottom:15px;border-bottom:1px solid #edf0f5}
 .booking-person .avatar{flex:none;width:40px;height:40px;border-radius:12px}
@@ -202,6 +210,7 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 
 @media(max-width:900px){
   .appointment-grid{grid-template-columns:1fr}
+  .calendly-booking-intro{align-items:flex-start;flex-direction:column}
   .calendly-booking-grid{grid-template-columns:1fr}
   .calendly-booking-grid>aside{order:-1}
 }
@@ -230,7 +239,10 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
   .appointment-item .appointment-actions .btn{width:auto;flex:1}
   #calendlyIntegration{padding:0 14px 14px}
   .integration-banner{align-items:flex-start;flex-direction:column}
+  .calendly-modal{width:100%;max-height:calc(100dvh - 16px)}
   .calendly-modal .modal-body{padding:17px}
+  .calendly-booking-intro{padding:16px}.calendly-booking-intro h3{font-size:17px}.calendly-booking-progress{width:100%;justify-content:space-between}.calendly-booking-progress span{gap:4px;font-size:8px}
+  .calendly-booking-choice{padding:14px}
   .availability-nav{grid-template-columns:1fr 1fr}
   .availability-nav b{grid-column:1/-1;grid-row:1}
 }

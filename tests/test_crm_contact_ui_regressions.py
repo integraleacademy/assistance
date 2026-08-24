@@ -62,12 +62,20 @@ def test_wedof_business_labels_and_statuses_execute_in_javascript():
 
 def test_contact_appointment_modal_uses_scoped_explicit_controls():
     javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
 
     assert "const dialog=document.querySelector('.calendly-modal')" in javascript
     assert "const cancelButton=dialog.querySelector('#calCancel')" in javascript
     assert "const bookButton=dialog.querySelector('#calBook')" in javascript
     assert "calCancel.onclick" not in javascript
     assert "dialog.querySelector('.modal-body').innerHTML" in javascript
+    assert 'class="calendly-booking-intro"' in javascript
+    assert 'class="calendly-booking-progress" aria-label="Étapes de réservation"' in javascript
+    assert 'id="calSlots" class="cal-slots" aria-live="polite"' in javascript
+    assert ".calendly-modal{display:flex;flex-direction:column" in stylesheet
+    assert "max-height:min(90vh,860px);overflow:hidden" in stylesheet
+    assert ".calendly-modal .modal-body{min-height:0;overflow-y:auto" in stylesheet
+    assert ".calendly-modal .modal-foot{flex:none" in stylesheet
 
 
 def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
