@@ -574,6 +574,29 @@ def test_event_types_match_apr_calendly_name_for_a3p_formation(tmp_path, monkeyp
     ]
 
 
+def test_event_types_for_ssiap_exclude_desp(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "_calendly_event_types_for_context", lambda data: [
+        {
+            "uri": "type-desp",
+            "name": "RDV téléphonique formation DESP",
+            "active": True,
+        },
+        {
+            "uri": "type-ssiap",
+            "name": "RDV téléphonique formation SSIAP 1 incendie",
+            "active": True,
+        },
+    ])
+
+    response = client.get("/api/crm/calendly/event-types?formation=SSIAP%201")
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.get_json()] == [
+        "RDV téléphonique formation SSIAP 1 incendie"
+    ]
+
+
 def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post(
@@ -590,7 +613,7 @@ def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_
         if method == "GET" and path == "/event_types/TYPE1":
             return {"resource": {
                 "uri": "https://api.calendly.com/event_types/TYPE1",
-                "name": "Appel découverte",
+                "name": "RDV téléphonique agent de sécurité (APS)",
                 "active": True,
                 "duration": 30,
                 "is_paid": False,
@@ -743,6 +766,46 @@ def test_booking_normalizes_calendly_phone_question_for_text_reminders(tmp_path,
             "position": 1,
         },
     ]
+
+
+def test_booking_rejects_an_event_type_for_another_formation(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Yanis", "nom": "Exemple", "formation": "SSIAP 1"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "yanis@example.com", "telephone": "06 12 34 56 78"},
+    )
+
+    def fake_calendly(method, path, **kwargs):
+        if method == "GET" and path == "/event_types/DESP1":
+            return {"resource": {
+                "uri": "https://api.calendly.com/event_types/DESP1",
+                "name": "RDV téléphonique formation DESP",
+                "active": True,
+                "duration": 15,
+                "is_paid": False,
+                "booking_method": "instant",
+                "locations": [],
+                "custom_questions": [],
+            }}
+        raise AssertionError(f"Calendly ne doit pas créer ce rendez-vous : {method} {path}")
+
+    monkeypatch.setattr(application, "_calendly_request", fake_calendly)
+
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/calendly/appointments",
+        json={
+            "event_type": "https://api.calendly.com/event_types/DESP1",
+            "start_time": "2099-09-02T11:45:00Z",
+            "timezone": "Europe/Paris",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "ne correspond pas à la formation SSIAP 1" in response.get_json()["error"]
 
 
 def test_round_robin_booking_keeps_the_event_type_required_location():
@@ -1048,7 +1111,7 @@ def test_booking_rejects_invalid_outbound_phone_before_calling_invitees(tmp_path
         if method == "GET" and path == "/event_types/TYPE1":
             return {"resource": {
                 "uri": "https://api.calendly.com/event_types/TYPE1",
-                "name": "Appel découverte",
+                "name": "RDV téléphonique agent de sécurité (APS)",
                 "active": True,
                 "duration": 30,
                 "locations": [{"kind": "outbound_call"}],
@@ -1087,7 +1150,7 @@ def test_booking_invalid_argument_returns_actionable_retry_error(tmp_path, monke
         if method == "GET" and path == "/event_types/TYPE1":
             return {"resource": {
                 "uri": "https://api.calendly.com/event_types/TYPE1",
-                "name": "Appel découverte",
+                "name": "RDV téléphonique agent de sécurité (APS)",
                 "active": True,
                 "duration": 30,
                 "locations": [{"kind": "outbound_call"}],
