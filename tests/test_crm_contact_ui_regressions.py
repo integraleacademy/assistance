@@ -735,6 +735,22 @@ def test_bulk_messages_preview_and_offer_every_compatible_template():
     assert '.bulk-message-preview[aria-busy="true"]' in stylesheet
 
 
+def test_individual_email_picker_offers_automatic_templates_without_sms_leakage():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    message_modal = javascript.split("function messageModal", 1)[1].split(
+        "function bulkMessageModal", 1,
+    )[0]
+
+    assert "modelPool=[...(isMail?templates.automatic_email||[]:[])" in message_modal
+    assert "...automaticMeta,...templates[type]" in message_modal
+    assert (
+        "new Map(modelPool.map(template=>[String(template.id),template]))"
+        in message_modal
+    )
+    assert "messageTemplateOptions(list,c.formation)" in message_modal
+    assert "if(isMail)subjectField.value=t.sujet" in message_modal
+
+
 def test_activity_sms_preview_uses_the_ios_style_bubble_for_inline_and_loaded_content():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
