@@ -10,6 +10,29 @@ def client():
     return application.app.test_client()
 
 
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_legacy_callback_form_redirects_to_secretariat(client, monkeypatch, method):
+    monkeypatch.setattr(
+        application,
+        "load_data",
+        lambda: pytest.fail("Le formulaire historique ne doit plus être traité"),
+    )
+    response = getattr(client, method)(
+        "/formulaire-a-rappeler",
+        data={
+            "nom": "Martin",
+            "prenom": "Camille",
+            "mail": "camille@example.com",
+            "telephone": "0600000000",
+            "objet_appel": "Formation APS",
+            "creneau_rappel": "Matin",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/secretariat"
+
+
 def test_secretariat_page_starts_with_the_two_request_types(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
