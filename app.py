@@ -10024,14 +10024,9 @@ def _secretariat_information_template(data, kind, formation_code):
                  if normalise(template.get("nom")) == name), None)
 
 
-def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
-    """Copy the next phone appointment from the CRM into the follow-up facts.
-
-    Calendly can receive the booking between the first secretariat form and the
-    final CRM submission.  Consequently the browser's payload is not the source
-    of truth here: the appointment cached on the CRM contact is looked up again
-    immediately before the summary e-mail is generated.
-    """
+def _crm_next_phone_appointment(data, entry, contact=None, now=None):
+    """Return the next cached phone appointment matching a secretariat call."""
+    contact = contact or {}
     contact_id = str(contact.get("id") or "").strip()
     emails = {
         _crm_normalize_email(value)
@@ -10043,7 +10038,12 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
         for value in (contact.get("telephone"), entry.get("telephone"))
         if _crm_normalize_phone(value)
     }
-    now = datetime.datetime.now(pytz.timezone("Europe/Paris"))
+    paris = pytz.timezone("Europe/Paris")
+    now = now or datetime.datetime.now(paris)
+    if now.tzinfo is None:
+        now = paris.localize(now)
+    else:
+        now = now.astimezone(paris)
     matches = []
     for appointment in data.get("crm_calendly_appointments", []):
         same_contact = bool(contact_id) and str(appointment.get("contact_id") or "") == contact_id
@@ -10072,7 +10072,7 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
             )
             if start.tzinfo is None:
                 start = pytz.UTC.localize(start)
-            start = start.astimezone(pytz.timezone("Europe/Paris"))
+            start = start.astimezone(paris)
         except (TypeError, ValueError):
             continue
         if start <= now:
@@ -10081,7 +10081,22 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
 
     if not matches:
         return None
-    start, appointment = min(matches, key=lambda item: item[0])
+    return min(matches, key=lambda item: item[0])
+
+
+def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
+    """Copy the next phone appointment from the CRM into the follow-up facts.
+
+    Calendly can receive the booking between the first secretariat form and the
+    final CRM submission.  Consequently the browser's payload is not the source
+    of truth here: the appointment cached on the CRM contact is looked up again
+    immediately before the summary e-mail is generated.
+    """
+    match = _crm_next_phone_appointment(data, entry, contact)
+    if not match:
+        return None
+    start, appointment = match
+    contact_id = str(contact.get("id") or "").strip()
     entry.update({
         "rdv": _crm_calendly_datetime_label(appointment.get("start_time")),
         "rdv_status": "scheduled",
@@ -15493,6 +15508,42 @@ def _crm_callback_request_contact(data, entry):
     return contact or _secretariat_existing_crm_contact(data, entry)
 
 
+def _crm_hydrate_callback_request_appointment(data, entry, contact):
+    """Replace a stale Calendly placeholder with the cached confirmed date."""
+    raw_label = str(entry.get("rdv") or "").strip()
+    normalized_label = unicodedata.normalize("NFKD", raw_label)
+    normalized_label = "".join(
+        char for char in normalized_label if not unicodedata.combining(char)
+    )
+    normalized_label = re.sub(
+        r"[^a-z0-9]+", " ", normalized_label.casefold(),
+    ).strip()
+    if normalized_label not in {
+        "", "calendly propose", "rendez vous reserve via calendly",
+    }:
+        return False
+
+    match = _crm_next_phone_appointment(data, entry, contact)
+    if not match:
+        return False
+    start, appointment = match
+    expected = {
+        "rdv": _crm_calendly_datetime_label(appointment.get("start_time")),
+        "rdv_status": "scheduled",
+        "rdv_date": start.strftime("%d/%m/%Y"),
+        "rdv_time": start.strftime("%H:%M"),
+        "rdv_mode": "Appel téléphonique",
+        "rdv_name": appointment.get("name") or "Rendez-vous téléphonique",
+        "rdv_host_name": appointment.get("host_name") or "",
+    }
+    changed = False
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            entry[key] = value
+            changed = True
+    return changed
+
+
 def _crm_ensure_callback_request_activity(contact, entry):
     """Create or repair the journal entry linked to one callback request."""
     request_id = str(entry.get("id") or "").strip()
@@ -15580,6 +15631,8 @@ def _crm_prepare_callback_request(data, entry):
     contact_id = str(contact.get("id") or "") if contact else ""
     if str(entry.get("crm_contact_id") or "") != contact_id:
         entry["crm_contact_id"] = contact_id
+        changed = True
+    if _crm_hydrate_callback_request_appointment(data, entry, contact):
         changed = True
     if contact and _crm_ensure_callback_request_activity(contact, entry):
         changed = True
