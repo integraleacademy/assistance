@@ -1,3 +1,4 @@
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 import gzip
@@ -220,6 +221,11 @@ def test_administration_menu_displays_brevo_sms_balance():
     assert 'name="platform"' in crm_js
     assert 'name="page_url"' in crm_js
     assert 'name="actions"' in crm_js
+    assert 'name="attachment" type="file"' in crm_js
+    assert 'body:new FormData(form)' in crm_js
+    assert "headers:{}" in crm_js
+    assert "attachment_uploaded" in crm_js
+    assert "20260825-development-support-attachments-1" in template
 
 
 def test_team_user_can_open_development_support(tmp_path, monkeypatch):
@@ -297,6 +303,135 @@ def test_development_support_rewrites_and_creates_notion_page(tmp_path, monkeypa
     assert "Ajouter un bouton de validation" in children_text
     assert "https://example.com/stagiaires/42" in children_text
     assert "Clément VAILLANT" in children_text
+
+
+def test_development_support_uploads_attachment_to_notion(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOTION_API_TOKEN", "notion-test")
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "Demande reformulée")
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        if url == "https://api.notion.com/v1/file_uploads":
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {"id": "upload-123", "status": "pending"},
+            )
+        if url == "https://api.notion.com/v1/file_uploads/upload-123/send":
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {"id": "upload-123", "status": "uploaded"},
+            )
+        if url == "https://api.notion.com/v1/pages":
+            return SimpleNamespace(
+                status_code=201,
+                json=lambda: {"id": "new-page", "url": "https://www.notion.so/new-page"},
+            )
+        raise AssertionError(f"URL Notion inattendue : {url}")
+
+    monkeypatch.setattr(application.requests, "post", fake_post)
+    response = c.post(
+        "/api/crm/development-support",
+        data={
+            "platform": "CRM",
+            "page_url": "https://example.com/crm/pistes",
+            "actions": "Ajouter la capture à la demande de développement envoyée dans Notion.",
+            "attachment": (BytesIO(b"fake-png-content"), "capture écran.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["attachment_uploaded"] is True
+    assert [url for url, _ in calls] == [
+        "https://api.notion.com/v1/file_uploads",
+        "https://api.notion.com/v1/file_uploads/upload-123/send",
+        "https://api.notion.com/v1/pages",
+    ]
+    create_upload = calls[0][1]
+    assert create_upload["json"]["mode"] == "single_part"
+    assert create_upload["json"]["filename"] == "capture_ecran.png"
+    assert create_upload["json"]["content_type"] == "image/png"
+    send_upload = calls[1][1]
+    assert "Content-Type" not in send_upload["headers"]
+    assert send_upload["files"]["file"] == (
+        "capture_ecran.png", b"fake-png-content", "image/png")
+    notion = calls[2][1]["json"]
+    attached_file = notion["properties"][application.CRM_NOTION_ATTACHMENT_PROPERTY]["files"][0]
+    assert attached_file["name"] == "capture_ecran.png"
+    assert attached_file["file_upload"]["id"] == "upload-123"
+    file_blocks = [child for child in notion["children"] if child["type"] == "file"]
+    assert file_blocks[0]["file"]["file_upload"]["id"] == "upload-123"
+
+
+def test_development_support_rejects_unsupported_attachment(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        application, "_crm_ai",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("AI should not run")),
+    )
+
+    response = c.post(
+        "/api/crm/development-support",
+        data={
+            "platform": "CRM",
+            "page_url": "https://example.com/crm/pistes",
+            "actions": "Ajouter une pièce jointe à cette demande de développement.",
+            "attachment": (BytesIO(b"binary"), "programme.exe"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "format" in response.get_json()["error"].lower()
+
+
+def test_development_support_rejects_oversized_attachment(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES", 5)
+
+    response = c.post(
+        "/api/crm/development-support",
+        data={
+            "platform": "CRM",
+            "page_url": "https://example.com/crm/pistes",
+            "actions": "Ajouter une pièce jointe à cette demande de développement.",
+            "attachment": (BytesIO(b"123456"), "capture.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 413
+    assert "20 Mo" in response.get_json()["error"]
+
+
+def test_development_support_does_not_create_page_when_attachment_upload_fails(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOTION_API_TOKEN", "notion-test")
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "Demande reformulée")
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append(url)
+        return SimpleNamespace(status_code=503, json=lambda: {})
+
+    monkeypatch.setattr(application.requests, "post", fake_post)
+    response = c.post(
+        "/api/crm/development-support",
+        data={
+            "platform": "CRM",
+            "page_url": "https://example.com/crm/pistes",
+            "actions": "Ajouter une pièce jointe à cette demande de développement.",
+            "attachment": (BytesIO(b"fake-png-content"), "capture.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 503
+    assert calls == ["https://api.notion.com/v1/file_uploads"]
+    assert "pièce jointe" in response.get_json()["error"].lower()
 
 
 def test_development_support_creates_notion_page_when_ai_is_unavailable(tmp_path, monkeypatch):

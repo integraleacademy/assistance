@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_file, send_from_directory, url_for, redirect, abort, jsonify
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil, gzip
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil, gzip, mimetypes
 import html as html_module
 from html.parser import HTMLParser
 from urllib.parse import quote, urlparse
@@ -14127,6 +14127,12 @@ CRM_DEVELOPMENT_SUPPORT_PLATFORMS = {
     "Site internet officiel": "Site internet officiel",
 }
 CRM_NOTION_DATA_SOURCE_ID = "7f12fe92-dbc4-40c8-af4e-77578b5dbfc0"
+CRM_NOTION_ATTACHMENT_PROPERTY = "fichier"
+CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+CRM_DEVELOPMENT_SUPPORT_ATTACHMENT_EXTENSIONS = frozenset({
+    ".csv", ".doc", ".docx", ".gif", ".heic", ".jpeg", ".jpg", ".pdf",
+    ".png", ".txt", ".webp", ".xls", ".xlsx",
+})
 
 
 def _crm_notion_rich_text(value):
@@ -14137,8 +14143,77 @@ def _crm_notion_rich_text(value):
     ] or [{"type": "text", "text": {"content": ""}}]
 
 
+def _crm_development_support_attachment():
+    uploaded = request.files.get("attachment")
+    if not uploaded or not uploaded.filename:
+        return None
+    filename = secure_filename(uploaded.filename)
+    extension = os.path.splitext(filename)[1].lower()
+    if not filename or extension not in CRM_DEVELOPMENT_SUPPORT_ATTACHMENT_EXTENSIONS:
+        raise ValueError(
+            "Format de pièce jointe non accepté. Utilisez une image, un PDF, "
+            "un document Word/Excel, un CSV ou un fichier texte."
+        )
+    if len(filename.encode("utf-8")) > 240:
+        raise ValueError("Le nom de la pièce jointe est trop long.")
+    content = uploaded.stream.read(CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES + 1)
+    if not content:
+        raise ValueError("La pièce jointe est vide.")
+    if len(content) > CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES:
+        raise OverflowError("La pièce jointe ne doit pas dépasser 20 Mo.")
+    # The browser-provided MIME type is user-controlled; derive it from the
+    # validated extension before forwarding the file to Notion.
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return {
+        "filename": filename,
+        "content": content,
+        "content_type": content_type,
+    }
+
+
+def _crm_upload_notion_attachment(token, notion_version, attachment):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": notion_version,
+    }
+    created_response = requests.post(
+        "https://api.notion.com/v1/file_uploads",
+        headers={**headers, "Content-Type": "application/json"},
+        json={
+            "mode": "single_part",
+            "filename": attachment["filename"],
+            "content_type": attachment["content_type"],
+        },
+        timeout=(10, 30),
+    )
+    if created_response.status_code not in {200, 201}:
+        raise RuntimeError(f"Notion File Upload HTTP {created_response.status_code}")
+    upload_id = str((created_response.json() or {}).get("id") or "").strip()
+    if not upload_id:
+        raise ValueError("Réponse Notion sans identifiant de fichier")
+    sent_response = requests.post(
+        f"https://api.notion.com/v1/file_uploads/{quote(upload_id, safe='')}/send",
+        headers=headers,
+        files={
+            "file": (
+                attachment["filename"],
+                attachment["content"],
+                attachment["content_type"],
+            ),
+        },
+        timeout=(10, 60),
+    )
+    if sent_response.status_code not in {200, 201}:
+        raise RuntimeError(f"Notion File Send HTTP {sent_response.status_code}")
+    sent_payload = sent_response.json() or {}
+    if sent_payload.get("status") != "uploaded":
+        raise ValueError("Notion n’a pas confirmé le téléversement du fichier")
+    return upload_id
+
+
 def _crm_development_support_page(
-        platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True):
+        platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True,
+        attachment_upload_id="", attachment_filename=""):
     user = current_user() or {}
     subject = re.sub(r"^[#*\\s-]+", "", str(rewritten_actions).splitlines()[0]).strip()
     title = f"{platform} — {subject or original_actions}"[:100]
@@ -14146,7 +14221,7 @@ def _crm_development_support_page(
         "paragraph": {"rich_text": _crm_notion_rich_text(value)}}
     heading = lambda value: {"object": "block", "type": "heading_2",
         "heading_2": {"rich_text": _crm_notion_rich_text(value)}}
-    return {
+    page = {
         "parent": {
             "type": "data_source_id",
             "data_source_id": os.getenv(
@@ -14170,12 +14245,34 @@ def _crm_development_support_page(
             paragraph(user.get("name") or user.get("email") or "Administrateur CRM"),
         ],
     }
+    if attachment_upload_id:
+        file_upload = {
+            "type": "file_upload",
+            "file_upload": {"id": attachment_upload_id},
+        }
+        page["properties"][CRM_NOTION_ATTACHMENT_PROPERTY] = {
+            "type": "files",
+            "files": [{**file_upload, "name": attachment_filename}],
+        }
+        page["children"].extend([
+            heading("Pièce jointe"),
+            {
+                "object": "block",
+                "type": "file",
+                "file": {
+                    **file_upload,
+                    "name": attachment_filename,
+                    "caption": [],
+                },
+            },
+        ])
+    return page
 
 
 @app.post("/api/crm/development-support")
 @login_required
 def crm_development_support():
-    payload = request.get_json(silent=True) or {}
+    payload = (request.get_json(silent=True) or {}) if request.is_json else request.form
     platform = str(payload.get("platform") or "").strip()
     page_url = str(payload.get("page_url") or "").strip()
     actions = str(payload.get("actions") or "").strip()
@@ -14186,6 +14283,12 @@ def crm_development_support():
         return jsonify({"error": "Renseignez une URL http(s) valide."}), 400
     if len(actions) < 20 or len(actions) > 6_000:
         return jsonify({"error": "Détaillez les actions à mener entre 20 et 6 000 caractères."}), 400
+    try:
+        attachment = _crm_development_support_attachment()
+    except OverflowError as exc:
+        return jsonify({"error": str(exc)}), 413
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     ai_rewritten = True
     try:
@@ -14207,14 +14310,31 @@ def crm_development_support():
     token = os.getenv("NOTION_API_TOKEN")
     if not token:
         return jsonify({"error": "La connexion Notion du CRM n’est pas configurée."}), 503
+    notion_version = os.getenv("NOTION_API_VERSION", "2025-09-03")
+    attachment_upload_id = ""
+    if attachment:
+        try:
+            attachment_upload_id = _crm_upload_notion_attachment(
+                token, notion_version, attachment)
+        except (requests.RequestException, RuntimeError, ValueError) as exc:
+            print(f"Support développement — téléversement Notion impossible : {exc}", flush=True)
+            return jsonify({
+                "error": (
+                    "La pièce jointe n’a pas pu être envoyée à Notion. "
+                    "La demande n’a pas été créée."
+                ),
+            }), 503
     notion_payload = _crm_development_support_page(
-        platform, page_url, actions, rewritten, ai_rewritten=ai_rewritten)
+        platform, page_url, actions, rewritten, ai_rewritten=ai_rewritten,
+        attachment_upload_id=attachment_upload_id,
+        attachment_filename=attachment["filename"] if attachment else "",
+    )
     try:
         response = requests.post(
             "https://api.notion.com/v1/pages",
             headers={
                 "Authorization": f"Bearer {token}",
-                "Notion-Version": os.getenv("NOTION_API_VERSION", "2025-09-03"),
+                "Notion-Version": notion_version,
                 "Content-Type": "application/json",
             },
             json=notion_payload,
@@ -14233,6 +14353,7 @@ def crm_development_support():
         "url": notion_url,
         "title": notion_payload["properties"]["Pensée"]["title"][0]["text"]["content"],
         "ai_rewritten": ai_rewritten,
+        "attachment_uploaded": bool(attachment_upload_id),
     }), 201
 
 
