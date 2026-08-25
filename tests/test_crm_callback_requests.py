@@ -90,6 +90,47 @@ def test_callback_pending_count_is_available_on_every_crm_page(
     assert payload["callback_pending_count"] == 1
 
 
+def test_callback_workspace_replaces_calendly_placeholder_with_cached_date(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post("/api/crm/contacts", json={
+        "prenom": "Mohamed", "nom": "Ajej Bhiri",
+        "mail": "sassou3000@outlook.fr", "telephone": "0646490258",
+    }).get_json()
+    data = application.load_data()
+    data["secretariat_demandes"] = [{
+        "id": "callback-calendly", "type": "autre",
+        "nom": "Mohamed Ajej Bhiri", "email": "sassou3000@outlook.fr",
+        "telephone": "0646490258", "notes": "Question sur son dossier APS.",
+        "rdv": "Calendly proposé", "crm_contact_id": contact["id"],
+        "created_at": "2026-08-25T09:13:00+02:00",
+    }]
+    data["crm_calendly_appointments"] = [{
+        "id": "appointment-mohamed", "contact_id": contact["id"],
+        "status": "active", "start_time": "2099-08-31T08:00:00Z",
+        "name": "RDV téléphonique formation agent de sécurité privée",
+        "location": {"kind": "custom"},
+    }]
+    application.save_data(data)
+
+    response = client.get("/api/crm/bootstrap?section=demandes-rappel")
+
+    assert response.status_code == 200
+    row = response.get_json()["callback_requests"][0]
+    assert row["rdv"] == "31/08/2099 à 09:00"
+    stored = application.load_data()
+    request = stored["secretariat_demandes"][0]
+    assert request["rdv"] == "31/08/2099 à 09:00"
+    assert request["rdv_status"] == "scheduled"
+    assert request["rdv_date"] == "31/08/2099"
+    assert request["rdv_time"] == "09:00"
+    receipt = next(
+        activity for activity in stored["crm_contacts"][0]["activities"]
+        if activity.get("callback_request_id") == "callback-calendly"
+    )
+    assert "Rendez-vous : 31/08/2099 à 09:00" in receipt["detail"]
+
+
 def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post("/api/crm/contacts", json={
