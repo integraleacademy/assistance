@@ -225,7 +225,7 @@ def test_administration_menu_displays_brevo_sms_balance():
     assert 'body:new FormData(form)' in crm_js
     assert "headers:{}" in crm_js
     assert "attachment_uploaded" in crm_js
-    assert "20260825-development-support-attachments-1" in template
+    assert "20260825-development-support-inline-images-2" in template
 
 
 def test_team_user_can_open_development_support(tmp_path, monkeypatch):
@@ -358,11 +358,33 @@ def test_development_support_uploads_attachment_to_notion(tmp_path, monkeypatch)
     assert send_upload["files"]["file"] == (
         "capture_ecran.png", b"fake-png-content", "image/png")
     notion = calls[2][1]["json"]
-    attached_file = notion["properties"][application.CRM_NOTION_ATTACHMENT_PROPERTY]["files"][0]
-    assert attached_file["name"] == "capture_ecran.png"
-    assert attached_file["file_upload"]["id"] == "upload-123"
+    assert application.CRM_NOTION_ATTACHMENT_PROPERTY not in notion["properties"]
     file_blocks = [child for child in notion["children"] if child["type"] == "file"]
-    assert file_blocks[0]["file"]["file_upload"]["id"] == "upload-123"
+    assert file_blocks == []
+    image_blocks = [child for child in notion["children"] if child["type"] == "image"]
+    assert image_blocks[0]["image"]["type"] == "file_upload"
+    assert image_blocks[0]["image"]["file_upload"]["id"] == "upload-123"
+
+
+def test_development_support_keeps_documents_as_notion_files():
+    with application.app.test_request_context("/"):
+        application.session["user_email"] = "clement@integraleacademy.com"
+        notion = application._crm_development_support_page(
+            "CRM",
+            "https://example.com/crm/pistes",
+            "Ajouter le document à la demande de développement.",
+            "Demande reformulée",
+            attachment_upload_id="upload-pdf",
+            attachment_filename="cahier-des-charges.pdf",
+            attachment_content_type="application/pdf",
+        )
+
+    attached_file = notion["properties"][application.CRM_NOTION_ATTACHMENT_PROPERTY]["files"][0]
+    assert attached_file["name"] == "cahier-des-charges.pdf"
+    assert attached_file["file_upload"]["id"] == "upload-pdf"
+    file_blocks = [child for child in notion["children"] if child["type"] == "file"]
+    assert file_blocks[0]["file"]["file_upload"]["id"] == "upload-pdf"
+    assert not [child for child in notion["children"] if child["type"] == "image"]
 
 
 def test_development_support_rejects_unsupported_attachment(tmp_path, monkeypatch):
