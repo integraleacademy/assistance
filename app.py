@@ -14213,7 +14213,7 @@ def _crm_upload_notion_attachment(token, notion_version, attachment):
 
 def _crm_development_support_page(
         platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True,
-        attachment_upload_id="", attachment_filename=""):
+        attachment_upload_id="", attachment_filename="", attachment_content_type=""):
     user = current_user() or {}
     subject = re.sub(r"^[#*\\s-]+", "", str(rewritten_actions).splitlines()[0]).strip()
     title = f"{platform} — {subject or original_actions}"[:100]
@@ -14250,22 +14250,32 @@ def _crm_development_support_page(
             "type": "file_upload",
             "file_upload": {"id": attachment_upload_id},
         }
-        page["properties"][CRM_NOTION_ATTACHMENT_PROPERTY] = {
-            "type": "files",
-            "files": [{**file_upload, "name": attachment_filename}],
-        }
-        page["children"].extend([
-            heading("Pièce jointe"),
-            {
-                "object": "block",
-                "type": "file",
-                "file": {
-                    **file_upload,
-                    "name": attachment_filename,
-                    "caption": [],
+        if str(attachment_content_type).startswith("image/"):
+            page["children"].extend([
+                heading("Image jointe"),
+                {
+                    "object": "block",
+                    "type": "image",
+                    "image": {**file_upload, "caption": []},
                 },
-            },
-        ])
+            ])
+        else:
+            page["properties"][CRM_NOTION_ATTACHMENT_PROPERTY] = {
+                "type": "files",
+                "files": [{**file_upload, "name": attachment_filename}],
+            }
+            page["children"].extend([
+                heading("Pièce jointe"),
+                {
+                    "object": "block",
+                    "type": "file",
+                    "file": {
+                        **file_upload,
+                        "name": attachment_filename,
+                        "caption": [],
+                    },
+                },
+            ])
     return page
 
 
@@ -14328,6 +14338,7 @@ def crm_development_support():
         platform, page_url, actions, rewritten, ai_rewritten=ai_rewritten,
         attachment_upload_id=attachment_upload_id,
         attachment_filename=attachment["filename"] if attachment else "",
+        attachment_content_type=attachment["content_type"] if attachment else "",
     )
     try:
         response = requests.post(
