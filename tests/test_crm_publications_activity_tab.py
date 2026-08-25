@@ -36,11 +36,21 @@ def test_publications_are_grouped_below_the_activity_journal():
     assert "publishBtn.onclick=publish" in javascript
     assert "publicationText.onkeydown=" in javascript
     assert "rephrasePublication.onclick=async" in javascript
-    assert "bindPublicationFeed(c,publicationFeed)" in javascript
+    assert "bindPublicationFeed(c,publicationFeed,renderActivityFeed)" in javascript
     assert "/api/crm/contacts/${c.id}/publications" in javascript
     assert "document.querySelector('#publicationFeed')" in javascript
+
+    assert "function activityTimeline(c)" in javascript
+    assert "kind:'publication',title:'Publication ajoutée'" in javascript
+    assert (
+        "kind:'publication_comment',title:'Commentaire sur une publication'"
+        in javascript
+    )
+    assert "const activities=activityTimeline(c)" in javascript
+    assert "bindPublicationFeed(c,publicationFeed,renderActivityFeed)" in javascript
+    assert "mergeContactInStore(c.id,updated);renderActivityFeed()" in javascript
 
     assert ".wedof-panel[hidden]{display:none}" in stylesheet
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
     assert ".contact-activity-panel .publications-card{margin-bottom:0}" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260824-calendly-round-robin-location-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260825-unified-activity-journal-1"' in backend
