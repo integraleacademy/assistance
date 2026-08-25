@@ -191,12 +191,16 @@ def test_failed_brevo_sms_balance_alert_is_retried(tmp_path, monkeypatch):
     assert len(attempts) == 2
 
 
-def test_brevo_sms_credits_are_admin_only(tmp_path, monkeypatch):
+def test_team_user_can_read_brevo_sms_credits(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     with c.session_transaction() as session:
-        session["user_email"] = "cassandre@integraleacademy.com"
+        session["user_email"] = "elsa@integraleacademy.com"
+    monkeypatch.setattr(application, "_brevo_sms_credits", lambda: 500)
 
-    assert c.get("/api/crm/brevo/sms-credits").status_code == 403
+    response = c.get("/api/crm/brevo/sms-credits")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"credits": 500}
 
 
 def test_administration_menu_displays_brevo_sms_balance():
@@ -218,18 +222,19 @@ def test_administration_menu_displays_brevo_sms_balance():
     assert 'name="actions"' in crm_js
 
 
-def test_development_support_is_admin_only(tmp_path, monkeypatch):
+def test_team_user_can_open_development_support(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     with c.session_transaction() as session:
-        session["user_email"] = "cassandre@integraleacademy.com"
+        session["user_email"] = "elsa@integraleacademy.com"
 
     response = c.post("/api/crm/development-support", json={
-        "platform": "CRM",
-        "page_url": "https://example.com/crm/pistes",
-        "actions": "Ajouter un bouton clairement décrit dans la liste.",
+        "platform": "Autre",
+        "page_url": "javascript:alert(1)",
+        "actions": "Trop court",
     })
 
-    assert response.status_code == 403
+    assert response.status_code == 400
+    assert "plateforme" in response.get_json()["error"].lower()
 
 
 def test_development_support_validates_platform_url_and_description(tmp_path, monkeypatch):
@@ -1526,10 +1531,21 @@ def test_non_admin_cannot_reset_crm_database(tmp_path, monkeypatch):
 
 def test_database_reset_button_is_only_rendered_for_admin(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    assert b'id="deleteCrmDatabase"' in c.get("/crm").data
-    with c.session_transaction() as session:
-        session["user_email"] = "cassandre@integraleacademy.com"
-    assert b'id="deleteCrmDatabase"' not in c.get("/crm").data
+    admin_page = c.get("/crm").data
+    assert b'id="adminToolsBtn"' in admin_page
+    assert b'id="deleteCrmDatabase"' in admin_page
+
+    for email in (
+        "cassandre@integraleacademy.com",
+        "aurelie@integraleacademy.com",
+        "elsa@integraleacademy.com",
+    ):
+        with c.session_transaction() as session:
+            session["user_email"] = email
+        team_page = c.get("/crm").data
+        assert b'id="adminToolsBtn"' in team_page
+        assert b'id="developmentSupportBtn"' in team_page
+        assert b'id="deleteCrmDatabase"' not in team_page
 
 
 def test_contact_publication_is_signed_and_persisted(tmp_path, monkeypatch):

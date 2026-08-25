@@ -14112,9 +14112,7 @@ def crm_resolve_inbound_request(request_id):
 @app.get("/api/crm/brevo/sms-credits")
 @login_required
 def crm_brevo_sms_credits():
-    """Expose the live Brevo SMS balance to CRM administrators only."""
-    if (current_user() or {}).get("role") != "admin":
-        return jsonify({"error": "Cette information est réservée à l’administrateur"}), 403
+    """Expose the live Brevo SMS balance to authenticated CRM users."""
     try:
         credits = _brevo_sms_credits()
     except (requests.RequestException, RuntimeError, ValueError) as exc:
@@ -14177,9 +14175,6 @@ def _crm_development_support_page(
 @app.post("/api/crm/development-support")
 @login_required
 def crm_development_support():
-    if (current_user() or {}).get("role") != "admin":
-        return jsonify({"error": "Le support développement est réservé à l’administrateur."}), 403
-
     payload = request.get_json(silent=True) or {}
     platform = str(payload.get("platform") or "").strip()
     page_url = str(payload.get("page_url") or "").strip()
