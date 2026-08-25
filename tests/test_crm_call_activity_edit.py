@@ -138,26 +138,45 @@ def test_patch_route_targets_one_call_and_saves_only_real_changes():
     assert "_crm_complete_relance" not in route
 
 
-def test_feed_exposes_edit_only_for_calls_and_displays_edit_metadata():
+def test_feed_centralizes_all_events_and_exposes_edit_only_for_calls():
     source = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
-    function = _extract_js_function(source, "feed")
+    functions = "\n".join((
+        _extract_js_function(source, "activityTimeline"),
+        _extract_js_function(source, "feed"),
+    ))
     harness = r"""
 const assert = require('assert');
-global.visibleActivityKinds = new Set(['appel','email','sms','calendly','erreur']);
 global.esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;');
 global.fmt = value => 'DATE:' + value;
-const html = feed({activities: [
-  {id:'call-1',kind:'appel',title:'Appel consigné',detail:'Corrigé',date:'d1',author:'Alex',edited_at:'d2',edited_by:'Camille'},
-  {id:'mail-1',kind:'email',title:'E-mail envoyé',detail:'Objet',date:'d3',author:'Alex'}
-]});
+const html = feed({
+  activities: [
+    {id:'call-1',kind:'appel',title:'Appel consigné',detail:'Corrigé',date:'2026-08-25T10:00:00+02:00',author:'Alex',edited_at:'d2',edited_by:'Camille'},
+    {id:'mail-1',kind:'email',title:'E-mail envoyé',detail:'Objet',date:'2026-08-25T09:00:00+02:00',author:'Alex'},
+    {id:'status-1',kind:'statut',title:'Statut : En cours',detail:'Ancien statut : Nouveau',date:'2026-08-25T08:00:00+02:00',author:'Camille'},
+    {id:'followup-1',kind:'suivi',title:'Suivi mis à jour',detail:'Attendre le retour France Travail.',date:'2026-08-25T07:00:00+02:00',author:'Camille'}
+  ],
+  publications: [{
+    id:'post-1',texte:'Pièce reçue.',date:'2026-08-25T11:00:00+02:00',author:'Alex',comments:[
+      {id:'reply-1',texte:'Dossier vérifié.',date:'2026-08-25T12:00:00+02:00',author:'Camille'}
+    ]
+  }]
+}, true);
 assert.strictEqual((html.match(/data-edit-call=/g) || []).length, 1);
 assert.ok(html.includes('data-edit-call="call-1"'));
 assert.ok(!html.includes('data-edit-call="mail-1"'));
 assert.ok(html.includes('Modifier le compte-rendu de l’appel'));
 assert.ok(html.includes('Modifié DATE:d2 · Camille'));
+assert.ok(html.includes('Statut : En cours'));
+assert.ok(html.includes('Suivi mis à jour'));
+assert.ok(html.includes('Attendre le retour France Travail.'));
+assert.ok(html.includes('Publication ajoutée'));
+assert.ok(html.includes('Pièce reçue.'));
+assert.ok(html.includes('Commentaire sur une publication'));
+assert.ok(html.includes('Dossier vérifié.'));
+assert.ok(html.indexOf('Dossier vérifié.') < html.indexOf('Pièce reçue.'));
 """
     completed = subprocess.run(
-        ["node", "-e", function + "\n" + harness],
+        ["node", "-e", functions + "\n" + harness],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -253,4 +272,4 @@ def test_click_binding_accessibility_responsive_and_cache_version():
     assert ".feed-edit-call:focus-visible" in css
     assert ".edit-call-modal textarea{min-height:190px}" in css
     assert ".feed-edit-call{min-height:38px" in css
-    assert 'CRM_ASSET_VERSION = "20260824-calendly-round-robin-location-1"' in app
+    assert 'CRM_ASSET_VERSION = "20260825-unified-activity-journal-1"' in app
