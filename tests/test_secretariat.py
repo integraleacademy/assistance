@@ -33,22 +33,26 @@ def test_legacy_callback_form_redirects_to_secretariat(client, monkeypatch, meth
     assert response.headers["Location"] == "/secretariat"
 
 
-def test_secretariat_page_starts_with_the_two_request_types(client, monkeypatch):
+def test_secretariat_page_starts_with_caller_information(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
     assert response.status_code == 200
-    assert b"Renseignements formation" in response.data
-    assert b"Autre demande" in response.data
-    assert b'data-request="formation"' in response.data
-    assert b'data-request="autre"' in response.data
+    body = response.data.decode()
+    assert body.index("Informations sur l'appelant") < body.index(
+        "Quelle formation est concernée"
+    )
+    assert 'data-step="1"><h2>Informations sur l\'appelant' in body
+    assert "La recherche dans le CRM se lance automatiquement" in body
+    assert 'data-request="formation"' not in body
+    assert 'data-request="autre"' not in body
 
 
-def test_secretariat_flow_includes_bts_optional_quote_and_calendly(client, monkeypatch):
+def test_secretariat_flow_includes_bts_required_quote_and_calendly(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
     assert response.status_code == 200
     assert b"BTS Management Op\xc3\xa9rationnel de la S\xc3\xa9curit\xc3\xa9" in response.data
-    assert b'name="devis" value="OUI"' in response.data
+    assert b'name="devis" value="OUI" required' in response.data
     assert b'name="devis" value="OUI" checked' not in response.data
     assert b'id="calendlyInline"' in response.data
     assert "Non, passer cette étape".encode() in response.data
@@ -91,20 +95,22 @@ def test_secretariat_includes_a_training_search(client, monkeypatch):
     assert b"function filterFormations()" in response.data
 
 
-def test_secretariat_checks_crm_before_showing_new_caller_questions(client, monkeypatch):
+def test_secretariat_checks_crm_automatically_and_branches_the_flow(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert b'id="newCallerFields" class="full grid" hidden' in response.data
-    assert b'#newCallerFields[hidden]{display:none}' in response.data
-    assert 'id="callerSubmit">Vérifier dans le CRM'.encode() in response.data
-    assert b"if(existingCrmContactId||requestType!=='formation')" in response.data
-    assert b"callerLookupComplete=true;newCallerFields.hidden=false" in response.data
-    assert b"showStep(5);renderCalendlyWidget();return" in response.data
+    assert 'id="callerSubmit">Continuer'.encode() in response.data
+    assert b"function scheduleCallerLookup()" in response.data
+    assert b"callerLookupTimer=setTimeout(()=>lookupCaller(),600)" in response.data
+    assert b"/api/secretariat/crm-contact" in response.data
+    assert b"requestType=existingCrmContactId?'autre':'formation'" in response.data
+    assert b"if(existingCrmContactId){finish.textContent=" in response.data
+    assert b"showStep(6);precision.focus()" in response.data
+    assert b"else{showStep(2);formationSearch.focus()}" in response.data
 
 
-def test_secretariat_displays_training_details_before_caller_form(client, monkeypatch):
+def test_secretariat_displays_training_details_after_new_caller_qualification(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
@@ -115,7 +121,10 @@ def test_secretariat_displays_training_details_before_caller_form(client, monkey
     assert b"Ce que l\xe2\x80\x99appelant va apprendre" in response.data
     assert b"protection rapproch" in response.data
     assert b"site internet d\xe2\x80\x99Int\xc3\xa9grale Academy" in response.data
-    assert b"consultez l\xe2\x80\x99assistant IA des formations" in response.data
+    body = response.data.decode()
+    assert body.index('data-step="1"') < body.index('data-step="2"')
+    assert body.index('data-step="2"') < body.index('data-step="3"')
+    assert body.index('data-step="3"') < body.index('data-step="4"')
 
 
 def test_secretariat_requires_asking_for_the_preferred_training_session(client, monkeypatch):
@@ -127,6 +136,7 @@ def test_secretariat_requires_asking_for_the_preferred_training_session(client, 
     assert b'name="formation_date_souhaitee"' in response.data
     assert b"if(!selectedSession)" in response.data
     assert b"formation_date_souhaitee:requestType" in response.data
+    assert "Je ne sais pas encore / à définir".encode() not in response.data
 
 
 def test_secretariat_only_exposes_sessions_whose_start_date_has_not_passed(client, monkeypatch):
@@ -157,14 +167,19 @@ def test_secretariat_form_collects_funding_and_regulatory_information(client, mo
         b"titre_sejour",
     ):
         assert b'name="' + field + b'"' in response.data
-    assert b"Tous les champs sont facultatifs" in response.data
-    assert "laissez les deux boutons décochés".encode() not in response.data
+    assert "Tous les champs affichés sont obligatoires".encode() in response.data
+    assert b'name="cpf_consulte" value="OUI" required' in response.data
+    assert b'name="france_travail" value="OUI" required' in response.data
+    assert b'name="financement_perso" value="OUI" required' in response.data
+    assert b'name="identite_numerique" value="OUI" required' in response.data
+    assert b'name="devis" value="OUI" required' in response.data
     assert b"Avez-vous d\xc3\xa9j\xc3\xa0 consult\xc3\xa9 votre compte CPF" in response.data
     assert b'<select id="cpf_consulte"' not in response.data
     assert response.data.index(b'name="cpf_consulte"') < response.data.index(b'id="cpfMontantField"')
-    assert b"function updateCallerQuestions()" in response.data
+    assert b"function updateQualificationQuestions()" in response.data
     assert b"['APS','A3P'].includes(formation.value)" in response.data
     assert b"isCnapsFormation&&!cnapsYes" in response.data
+    assert b"input.required=show" in response.data
     assert b'data-step="6"' in response.data
     assert response.data.index(b"Proposer un rendez-vous") < response.data.index(
         b"Objet et pr\xc3\xa9cisions sur la demande"
@@ -182,7 +197,6 @@ def test_secretariat_embeds_calendly_without_leaving_the_page(client, monkeypatc
     assert b"calendly.event_scheduled" in response.data
     assert b"sans quitter cette page" in response.data
     assert b'id="calendlyLink"' not in response.data
-    assert b'target="_blank"' not in response.data
 
 
 def test_secretariat_requires_an_explicit_appointment_choice(client, monkeypatch):
@@ -719,17 +733,20 @@ def test_secretariat_finds_booking_by_phone_when_calendly_email_differs(client, 
     }
 
 
-def test_secretariat_summary_page_contains_phone_appointment_panel(client, monkeypatch):
-    monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda *_: [])
+def test_secretariat_precision_step_has_no_ai_summary_and_is_required(client, monkeypatch):
+    monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda *_: {})
     response = client.get("/secretariat")
     assert response.status_code == 200
-    assert b'id="phoneAppointment"' in response.data
-    assert "RDV téléphonique".encode() in response.data
+    assert "Objet et précisions sur la demande".encode() in response.data
+    assert "Apporter des précisions sur l’objet de l’appel".encode() in response.data
+    assert b'id="precision" maxlength="4000"' in response.data
+    assert b'id="precision" maxlength="4000" placeholder=' in response.data
+    assert b'required></textarea>' in response.data
+    assert "Résumé proposé par l’IA".encode() not in response.data
+    assert b"/api/secretariat/ai/request-summary" not in response.data
+    assert b"payload.notes=details" in response.data
     assert b"/api/secretariat/calendly/appointment" in response.data
-    assert "Mise à jour du dossier en cours".encode() in response.data
-    assert b"Promise.allSettled([summaryPromise,calendlyPromise])" in response.data
-    assert "Création du résumé IA".encode() in response.data
-    assert "Recherche du rendez-vous Calendly".encode() in response.data
+    assert b"if(existingCrmContactId){openAppointmentStep();return}" in response.data
 
 
 def test_secretariat_refreshes_calendly_before_building_summary_email(client, monkeypatch):
@@ -1061,6 +1078,38 @@ def test_secretariat_finds_existing_crm_contact_by_email_or_phone(client, monkey
 
     assert by_email.get_json() == {"contact_id": "crm-existing"}
     assert by_phone.get_json() == {"contact_id": "crm-existing"}
+
+
+def test_new_caller_flow_creates_one_crm_lead(client, monkeypatch):
+    data = dict(application.DEFAULT_DATA)
+    data["secretariat_demandes"] = []
+    data["crm_contacts"] = []
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "save_data", lambda payload: None)
+    monkeypatch.setattr(
+        application, "_send_secretariat_information_messages", lambda *_: {},
+    )
+    salesforce_calls = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", salesforce_calls.append)
+
+    response = client.post("/api/secretariat/demandes", json={
+        "type": "formation", "formation": "VTC",
+        "prenom": "Nadia", "nom_famille": "Durand", "nom": "Nadia Durand",
+        "email": "nadia@example.com", "telephone": "0611223344",
+        "cpf_consulte": "NON", "france_travail": "NON",
+        "financement_perso": "NON", "identite_numerique": "NON",
+        "devis": "NON", "formation_date_souhaitee": "Paris — Septembre 2026",
+        "rdv": "Non souhaité", "notes": "Souhaite connaître les modalités VTC.",
+    })
+
+    assert response.status_code == 201
+    assert len(data["crm_contacts"]) == 1
+    assert response.get_json()["crm_contact_id"] == data["crm_contacts"][0]["id"]
+    assert data["secretariat_demandes"][0]["type"] == "formation"
+    assert data["secretariat_demandes"][0]["notes"] == (
+        "Souhaite connaître les modalités VTC."
+    )
+    assert len(salesforce_calls) == 1
 
 
 def test_other_request_is_stored_without_creating_a_lead(client, monkeypatch):
