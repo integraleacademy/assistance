@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 import app as application
@@ -45,6 +47,35 @@ def test_secretariat_page_starts_with_caller_information(client, monkeypatch):
     assert "La recherche dans le CRM se lance automatiquement" in body
     assert 'data-request="formation"' not in body
     assert 'data-request="autre"' not in body
+
+
+def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    body = response.data.decode()
+    action_targets = {
+        1: "callerSubmit",
+        2: "nextFormation",
+        3: "nextQualification",
+        4: "nextDates",
+        5: "reviewRequest",
+        6: "finish",
+    }
+    for step_number, target in action_targets.items():
+        step = body.split(f'data-step="{step_number}"', 1)[1].split(
+            f'data-step="{step_number + 1}"', 1
+        )[0]
+        assert step.count('class="actions') == 2
+        assert 'class="actions actions-top"' in step
+        assert f'data-action-proxy="{target}"' in step
+        assert step.count("data-back") == (0 if step_number == 1 else 2)
+
+    ids = re.findall(r'\sid="([^"]+)"', body)
+    assert len(ids) == len(set(ids))
+    assert "function syncNavigationProxies()" in body
+    assert "if(!target.disabled)target.click()" in body
 
 
 def test_secretariat_flow_includes_bts_required_quote_and_calendly(client, monkeypatch):
