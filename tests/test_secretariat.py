@@ -95,7 +95,7 @@ def test_secretariat_includes_a_training_search(client, monkeypatch):
     assert b"function filterFormations()" in response.data
 
 
-def test_secretariat_checks_crm_automatically_and_branches_the_flow(client, monkeypatch):
+def test_secretariat_checks_crm_automatically_but_waits_for_continue(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
@@ -105,9 +105,18 @@ def test_secretariat_checks_crm_automatically_and_branches_the_flow(client, monk
     assert b"callerLookupTimer=setTimeout(()=>lookupCaller(),600)" in response.data
     assert b"/api/secretariat/crm-contact" in response.data
     assert b"requestType=existingCrmContactId?'autre':'formation'" in response.data
+    assert b"callerLookupComplete=true" in response.data
+    assert b"Appelant trouv\xc3\xa9 dans le CRM. Cliquez sur" in response.data
+    assert b"Aucune fiche CRM trouv\xc3\xa9e. Cliquez sur" in response.data
+    assert b"function continueAfterCallerLookup()" in response.data
+    assert b"if(callerLookupComplete){continueAfterCallerLookup();return}" in response.data
     assert b"if(existingCrmContactId){finish.textContent=" in response.data
     assert b"showStep(6);precision.focus()" in response.data
     assert b"else{showStep(2);formationSearch.focus()}" in response.data
+    lookup_code = response.data.decode().split(
+        "async function lookupCaller()", 1
+    )[1].split("function continueAfterCallerLookup()", 1)[0]
+    assert "showStep(" not in lookup_code
 
 
 def test_secretariat_displays_training_details_after_new_caller_qualification(client, monkeypatch):
