@@ -16161,12 +16161,25 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
 
 def _crm_email_html(body, contact):
     """Keep complete custom e-mails intact and brand body-only messages."""
+    body = str(body or "")
     if re.search(r"<(?:!doctype|html)\b", body, re.IGNORECASE):
         return body
+    if not re.search(r"</?[a-z][^>]*>", body, re.IGNORECASE):
+        normalized = html_module.unescape(body).replace("\r\n", "\n").replace("\r", "\n")
+        paragraphs = [
+            paragraph.strip()
+            for paragraph in re.split(r"\n[ \t]*\n+", normalized)
+            if paragraph.strip()
+        ]
+        body = "".join(
+            '<p style="margin:0 0 16px">'
+            + html_module.escape(paragraph).replace("\n", "<br>")
+            + "</p>"
+            for paragraph in paragraphs
+        )
     return render_template(
         "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
     )
-
 
 @app.route("/api/crm/contacts/<contact_id>/cnaps-form", methods=["POST"])
 @login_required
