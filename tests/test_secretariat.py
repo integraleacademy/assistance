@@ -1118,6 +1118,11 @@ def test_new_caller_flow_creates_one_crm_lead(client, monkeypatch):
     assert data["secretariat_demandes"][0]["notes"] == (
         "Souhaite connaître les modalités VTC."
     )
+    publication = data["crm_contacts"][0]["publications"][0]
+    assert publication["texte"] == "Souhaite connaître les modalités VTC."
+    assert publication["author"] == "Secrétariat"
+    assert publication["source_secretariat_id"] == data["secretariat_demandes"][0]["id"]
+    assert data["secretariat_demandes"][0]["crm_publication_id"] == publication["id"]
     assert len(salesforce_calls) == 1
 
 
@@ -1190,6 +1195,29 @@ def test_other_request_links_existing_lead_and_adds_activity(client, monkeypatch
     assert "Souhaite être rappelée" in activity["detail"]
     assert "25/08/2026 à 14:30" in activity["detail"]
     assert activity["author"] == "Secrétariat"
+    publication = contact["publications"][0]
+    assert publication["texte"] == "Souhaite être rappelée au sujet de son dossier."
+    assert publication["author"] == "Secrétariat"
+    assert publication["source_secretariat_id"] == data["secretariat_demandes"][0]["id"]
+    assert data["secretariat_demandes"][0]["crm_publication_id"] == publication["id"]
+
+
+def test_secretariat_publication_is_idempotent_for_the_same_call():
+    contact = {"id": "crm-existing", "publications": []}
+    entry = {
+        "id": "secretariat-1",
+        "created_at": "2026-08-26T18:30:00+02:00",
+        "notes": "Première précision.",
+    }
+
+    first = application._crm_ensure_secretariat_publication(contact, entry)
+    entry["notes"] = "Précision corrigée."
+    second = application._crm_ensure_secretariat_publication(contact, entry)
+
+    assert second["id"] == first["id"]
+    assert len(contact["publications"]) == 1
+    assert contact["publications"][0]["texte"] == "Précision corrigée."
+    assert contact["publications"][0]["author"] == "Secrétariat"
 
 
 def test_secretariat_updates_existing_crm_contact_without_creating_lead(client, monkeypatch):

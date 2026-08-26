@@ -3776,6 +3776,7 @@ def api_secretariat_demandes():
         })
         _, crm_contact = _crm_prepare_callback_request(data_store, entry)
         if crm_contact:
+            _crm_ensure_secretariat_publication(crm_contact, entry)
             crm_contact["updated_at"] = _crm_now()
         save_data(data_store)
         return jsonify({
@@ -3820,6 +3821,8 @@ def api_secretariat_demandes():
     # received neither the selected campus nor the requested training dates.
     crm_payload.update({"centre": centre_code, "dates": session_label})
     crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
+    if crm_contact:
+        _crm_ensure_secretariat_publication(crm_contact, entry)
     creates_new_lead = len(data_store.get("crm_contacts", [])) > contact_count_before
     message_results = {}
     if entry["type"] == "formation" and crm_contact:
@@ -9990,6 +9993,53 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
         proposed_contact=contact, external_id=entry.get("id"),
     )
     return matched
+
+
+def _crm_ensure_secretariat_publication(contact, entry):
+    """Publish the secretary's call details once on the matched CRM contact."""
+    text = str(entry.get("notes") or "").strip()
+    if not contact or not text:
+        return None
+
+    request_id = str(entry.get("id") or "").strip()
+    publication_id = str(entry.get("crm_publication_id") or "").strip()
+    publications = contact.setdefault("publications", [])
+    publication = next((
+        item for item in publications
+        if isinstance(item, dict) and (
+            (publication_id and str(item.get("id") or "") == publication_id)
+            or (
+                request_id
+                and str(item.get("source_secretariat_id") or "") == request_id
+            )
+        )
+    ), None)
+
+    if publication is None:
+        publication = {
+            "id": str(uuid.uuid4()),
+            "date": str(entry.get("created_at") or _crm_now()),
+            "texte": text,
+            "author": "Secrétariat",
+            "author_email": "",
+            "likes": [],
+            "comments": [],
+            "source": "assistant-secretariat",
+            "source_secretariat_id": request_id,
+        }
+        publications.insert(0, publication)
+    else:
+        publication.update({
+            "texte": text,
+            "author": "Secrétariat",
+            "author_email": "",
+            "source": "assistant-secretariat",
+            "source_secretariat_id": request_id,
+        })
+
+    entry["crm_publication_id"] = publication["id"]
+    contact["updated_at"] = _crm_now()
+    return publication
 
 
 def _secretariat_information_template(data, kind, formation_code):
