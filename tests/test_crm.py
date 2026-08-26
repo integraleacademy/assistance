@@ -2182,6 +2182,44 @@ def test_crm_email_preview_uses_the_sent_mail_wrapper(tmp_path, monkeypatch):
     assert "integraleacademy.com" in html
 
 
+def test_crm_plain_text_email_preserves_line_breaks_in_preview_and_delivery(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "mail": "lina@example.com"},
+    ).get_json()
+    content = (
+        "Première ligne\r\nDeuxième ligne\r\n\r\n"
+        "Nouveau paragraphe : 2 < 3 & 5 > 4"
+    )
+    sent = {}
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda to, subject, plain, html: sent.update(
+            to=to, subject=subject, plain=plain, html=html,
+        ) or True,
+    )
+
+    preview = c.post(
+        f"/api/crm/contacts/{contact['id']}/message-preview",
+        json={"type": "email", "sujet": "Suivi", "contenu": content},
+    )
+    delivery = c.post(
+        f"/api/crm/contacts/{contact['id']}/message",
+        json={"type": "email", "sujet": "Suivi", "contenu": content},
+    )
+
+    assert preview.status_code == 200
+    assert delivery.status_code == 200
+    html = preview.get_json()["html"]
+    assert "Première ligne<br>Deuxième ligne" in html
+    assert "Nouveau paragraphe : 2 &lt; 3 &amp; 5 &gt; 4" in html
+    assert html.count('<p style="margin:0 0 16px">') == 2
+    assert sent["html"] == html
+
+
 
 def test_grouped_preview_resolves_email_subject_and_sms_without_side_effects(
     tmp_path, monkeypatch
