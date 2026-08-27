@@ -49,6 +49,15 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .form-section>h3{margin:0;padding:12px 15px;background:#f7f9fc;border-bottom:1px solid var(--line);font:700 13px Manrope;color:#31425d}
 .section-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:16px}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
+.call-modal{width:min(700px,100%)}
+.crm-preset-group{margin-top:14px;padding:12px;border:1px solid #dce5f2;border-radius:11px;background:#f8faff}
+.crm-preset-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;color:#52637b;font-size:11px;font-weight:800}
+.crm-preset-add{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:1px solid #b9cbed;border-radius:9px;background:#fff;color:var(--blue);font-size:20px;font-weight:700;line-height:1;cursor:pointer}
+.crm-preset-add:hover{border-color:var(--blue);background:#edf3ff}
+.crm-preset-add:disabled{cursor:wait;opacity:.55}
+.crm-preset-list{display:flex;flex-wrap:wrap;gap:7px}
+.crm-preset-choice{padding:7px 10px;border:1px solid #cfdbed;border-radius:999px;background:#fff;color:#40536e;font:600 11px 'DM Sans',sans-serif;text-align:left;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+.crm-preset-choice:hover,.crm-preset-choice:focus-visible{border-color:#8faee8;background:#edf3ff;color:#245ac5;outline:0}
 @media(max-width:650px){.section-fields{grid-template-columns:1fr}.contact-actions{width:auto;margin-left:auto}.actions-menu{right:0}.timeline button{min-width:110px}}
 
 /* Demandes de rappel transmises par le secrétariat. */
