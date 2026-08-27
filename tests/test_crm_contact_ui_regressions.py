@@ -349,6 +349,9 @@ console.log('CRM manual next action: OK');
     assert "CRM manual next action: OK" in completed.stdout
     assert "function manualNextActionModal(c)" in javascript
     assert 'id="manualNextActionBtn"' in javascript
+    assert 'id="dictateManualNextAction"' in javascript
+    assert 'id="dictateManualNextActionStatus"' in javascript
+    assert "bindVoiceDictation(input,voiceButton,voiceStatus)" in javascript
     assert "prochaine_action_manuelle:value" in javascript
     assert "nextActionElement.classList.toggle('manual'" in javascript
     assert "MANUELLE" in javascript
