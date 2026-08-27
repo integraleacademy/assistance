@@ -28,11 +28,18 @@ def test_publications_are_grouped_below_the_activity_journal():
     )
     assert 'role="tabpanel" aria-labelledby="contactActivityTab" hidden' in activity_panel
     assert javascript.count('id="publicationText"') == 1
+    assert javascript.count('id="dictatePublication"') == 1
+    assert javascript.count('id="dictatePublicationStatus"') == 1
     assert javascript.count('id="publishBtn"') == 1
     assert javascript.count('id="rephrasePublication"') == 1
     assert javascript.count('id="publicationFeed"') == 1
 
     assert "bindMentions(publicationText)" in javascript
+    assert (
+        "bindVoiceDictation(publicationText,publicationVoiceButton,publicationVoiceStatus)"
+        in javascript
+    )
+    assert "pausePublicationVoice()" in javascript
     assert "publishBtn.onclick=publish" in javascript
     assert "publicationText.onkeydown=" in javascript
     assert "rephrasePublication.onclick=async" in javascript
@@ -53,4 +60,5 @@ def test_publications_are_grouped_below_the_activity_journal():
     assert ".wedof-panel[hidden]{display:none}" in stylesheet
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
     assert ".contact-activity-panel .publications-card{margin-bottom:0}" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260825-unified-activity-journal-1"' in backend
+    assert ".publication-compose-actions .publication-voice-button" in stylesheet
+    assert 'CRM_ASSET_VERSION = "20260827-multi-field-voice-dictation-3"' in backend
