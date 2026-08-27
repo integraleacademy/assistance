@@ -7255,6 +7255,25 @@ def lookup_hebergement():
 
 
 
+CRM_ASSET_FILES = (
+    "crm.css", "crm_workspace.css", "crm_title.js", "crm_sidebar_state.js",
+    "crm_appointment_state.js", "crm_workspace.js", "crm.js",
+    "favicon_32x32.png", "iaconnectcrm.png",
+)
+
+
+def _crm_asset_version(static_root=None):
+    """Fingerprint the CRM assets so every deployment invalidates stale caches."""
+    root = static_root or os.path.join(os.path.dirname(__file__), "static")
+    digest = hashlib.sha256()
+    for filename in CRM_ASSET_FILES:
+        digest.update(filename.encode("utf-8"))
+        with open(os.path.join(root, filename), "rb") as asset:
+            digest.update(asset.read())
+    return f"crm-{digest.hexdigest()[:16]}"
+
+
+CRM_ASSET_VERSION = _crm_asset_version()
 CRM_STATUSES = [
     "Nouveaux", "Blocage", "RDV programmé", "En cours",
     "A relancer", "Disqualifié", "Converti",
@@ -7274,7 +7293,6 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260825-unified-activity-journal-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
