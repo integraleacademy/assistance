@@ -50,7 +50,7 @@ def _extract_js_function(source, name):
     raise AssertionError(f"Fonction JavaScript incomplète : {name}")
 
 
-def test_default_and_custom_call_and_relance_presets_persist(tmp_path, monkeypatch):
+def test_default_and_custom_crm_presets_persist(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
 
     defaults = client.get("/api/crm/settings").get_json()
@@ -58,9 +58,13 @@ def test_default_and_custom_call_and_relance_presets_persist(tmp_path, monkeypat
     assert defaults["relance_motif_presets"] == (
         application.CRM_DEFAULT_RELANCE_MOTIF_PRESETS
     )
+    assert defaults["manual_next_action_presets"] == (
+        application.CRM_DEFAULT_MANUAL_NEXT_ACTION_PRESETS
+    )
 
     custom_call = "Attend la confirmation de son employeur"
     custom_relance = "Relancer après réception du devis"
+    custom_next_action = "Vérifier la réception des justificatifs"
     response = client.patch("/api/crm/settings", json={
         "call_note_presets": [
             *defaults["call_note_presets"],
@@ -71,12 +75,17 @@ def test_default_and_custom_call_and_relance_presets_persist(tmp_path, monkeypat
             *defaults["relance_motif_presets"],
             custom_relance,
         ],
+        "manual_next_action_presets": [
+            *defaults["manual_next_action_presets"],
+            custom_next_action,
+        ],
     })
 
     assert response.status_code == 200
     saved = response.get_json()
     assert saved["call_note_presets"].count(custom_call) == 1
     assert custom_relance in saved["relance_motif_presets"]
+    assert custom_next_action in saved["manual_next_action_presets"]
     assert client.get("/api/crm/settings").get_json() == saved
     assert client.get("/api/crm/bootstrap").get_json()["settings"] == saved
 
@@ -134,13 +143,14 @@ assert.strictEqual(motif.value, 'Suivi VAE');
     assert completed.returncode == 0, completed.stderr
 
 
-def test_both_modals_expose_preset_choices_and_persistent_add_buttons():
+def test_all_three_modals_expose_preset_choices_and_persistent_add_buttons():
     javascript = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
     stylesheet = (ROOT / "static" / "crm.css").read_text(encoding="utf-8")
 
     for marker in (
         "crmPresetMarkup('call_note_presets')",
         "crmPresetMarkup('relance_motif_presets')",
+        "crmPresetMarkup('manual_next_action_presets')",
         "data-crm-preset-add",
         "[key]:[...current,value]",
         "api('/api/crm/settings'",
