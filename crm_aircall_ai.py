@@ -20,18 +20,40 @@ _QUESTION_KEYS = {
     "question", "questions", "label", "title", "prompt", "field", "fieldname",
     "questiontext", "name", "key",
 }
-_ANSWER_KEYS = {"answer", "answers", "value", "values", "response", "responses", "text"}
+_ANSWER_KEYS = {
+    "rawanswer", "rawanswers", "rawresponse", "rawresponses", "answer", "answers",
+    "value", "values", "response", "responses", "text", "content",
+}
+_INTAKE_PATHS = (
+    ("data", "extracted_data"),
+    ("data", "intake_questions"),
+    ("data", "admission_questions"),
+    ("data", "questions_and_answers"),
+    ("data", "qualification_questions"),
+    ("data", "intake"),
+    ("extracted_data",),
+    ("intake_questions",),
+    ("admission_questions",),
+    ("questions_and_answers",),
+)
+_EMAIL_LOCAL_BLACKLIST = {
+    "accueil", "admin", "administration", "commercial", "contact", "direction",
+    "formation", "formations", "info", "secretariat", "support",
+}
+
+
+def _strip_accents(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(char for char in text if not unicodedata.combining(char))
 
 
 def _compact(value: Any) -> str:
-    text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
-    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = _strip_accents(value).strip().casefold()
     return re.sub(r"[^a-z0-9]+", "", text)
 
 
 def _words(value: Any) -> str:
-    text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
-    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = _strip_accents(value).strip().casefold()
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 
@@ -41,13 +63,42 @@ def _text(value: Any, limit: int = 3_000) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, Mapping):
-        for key in ("text", "answer", "value", "response", "content", "summary"):
+        for key in (
+            "raw_response", "raw_answer", "response", "answer", "value", "text",
+            "content", "summary", "display_value", "normalized_value",
+        ):
             if key in value and (result := _text(value[key], limit)):
                 return result
         return ""
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return ", ".join(filter(None, (_text(item, limit) for item in value)))[:limit]
     return " ".join(str(value).strip().split())[:limit]
+
+
+def _label_text(value: Any, limit: int = 500) -> str:
+    if isinstance(value, Mapping):
+        for key in ("question", "label", "title", "prompt", "field_name", "name", "key", "field"):
+            if key in value:
+                nested = value[key]
+                if isinstance(nested, Mapping):
+                    if result := _label_text(nested, limit):
+                        return result
+                elif result := _text(nested, limit):
+                    return result
+        return ""
+    return _text(value, limit)
+
+
+def _answer_text(value: Any, limit: int = 3_000) -> str:
+    if isinstance(value, Mapping):
+        for key in (
+            "raw_response", "raw_answer", "response", "answer", "value", "text",
+            "content", "display_value", "normalized_value",
+        ):
+            if key in value and (result := _answer_text(value[key], limit)):
+                return result
+        return ""
+    return _text(value, limit)
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -73,10 +124,15 @@ def _flatten(value: Any, prefix: str = "", depth: int = 0) -> list[tuple[str, st
             questions, answers = _as_list(question), _as_list(answer)
             if len(questions) == len(answers):
                 for raw_question, raw_answer in zip(questions, answers):
-                    if (question_text := _text(raw_question, 500)) and (
-                        answer_text := _text(raw_answer)
-                    ):
+                    question_text = _label_text(raw_question)
+                    answer_text = _answer_text(raw_answer)
+                    if question_text and answer_text:
                         rows.append((_compact(question_text), answer_text))
+            elif len(questions) == 1:
+                question_text = _label_text(questions[0])
+                answer_text = _answer_text(answer)
+                if question_text and answer_text:
+                    rows.append((_compact(question_text), answer_text))
 
         for key, item in value.items():
             child_prefix = f"{prefix} {key}".strip()
@@ -92,43 +148,16 @@ def _flatten(value: Any, prefix: str = "", depth: int = 0) -> list[tuple[str, st
     return rows
 
 
-def _pick(rows: list[tuple[str, str]], predicate: Callable[[str], bool]) -> str:
-    return next((value for key, value in rows if value and predicate(key)), "")
-
-
-def _is_first_name(key: str) -> bool:
-    return key in {"prenom", "firstname", "givenname"} or any(
-        marker in key for marker in ("votreprenom", "callerfirstname", "clientfirstname")
-    )
-
-
-def _is_last_name(key: str) -> bool:
-    if "prenom" in key or "firstname" in key:
-        return False
-    return key == "nom" or any(
-        marker in key for marker in ("nomdefamille", "lastname", "surname", "familyname")
-    )
-
-
-def _is_email(key: str) -> bool:
-    return any(marker in key for marker in ("email", "adressemail", "adresseemail", "courriel"))
-
-
-def _is_phone(key: str) -> bool:
-    return any(marker in key for marker in (
-        "telephone", "phone", "rawdigits", "callernumber", "externalnumber", "mobile",
-    ))
-
-
-def _is_training(key: str) -> bool:
-    return any(marker in key for marker in ("formation", "training", "course"))
-
-
-def _is_interest(key: str) -> bool:
-    return any(marker in key for marker in (
-        "interess", "interest", "prospect", "qualification", "readytoapply",
-        "souhaitezvousvousinscrire", "wanttoenrol", "wanttoenroll",
-    ))
+def _dedupe_rows(rows: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for key, value in rows:
+        marker = (str(key or ""), str(value or "").strip().casefold())
+        if not all(marker) or marker in seen:
+            continue
+        seen.add(marker)
+        result.append((key, value))
+    return result
 
 
 def _path(payload: Mapping[str, Any], *parts: str) -> Any:
@@ -140,6 +169,75 @@ def _path(payload: Mapping[str, Any], *parts: str) -> Any:
     return current
 
 
+def _intake_rows(payload: Mapping[str, Any]) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for path in _INTAKE_PATHS:
+        value = _path(payload, *path)
+        if value is not None:
+            rows.extend(_flatten(value, " ".join(path)))
+    return _dedupe_rows(rows)
+
+
+def _pick(rows: Sequence[tuple[str, str]], predicate: Callable[[str], bool]) -> str:
+    return next((value for key, value in rows if value and predicate(key)), "")
+
+
+def _values(rows: Sequence[tuple[str, str]], predicate: Callable[[str], bool]) -> list[str]:
+    return [value for key, value in rows if value and predicate(key)]
+
+
+def _is_first_name(key: str) -> bool:
+    return key in {"prenom", "firstname", "givenname"} or any(
+        marker in key for marker in (
+            "votreprenom", "quelestvotreprenom", "callerfirstname", "clientfirstname",
+            "contactfirstname",
+        )
+    )
+
+
+def _is_last_name(key: str) -> bool:
+    if "prenom" in key or "firstname" in key:
+        return False
+    return key in {"nom", "lastname", "surname", "familyname"} or any(
+        marker in key for marker in (
+            "nomdefamille", "votrenom", "quelestvotrenom", "callerlastname",
+            "clientlastname", "contactlastname",
+        )
+    )
+
+
+def _is_full_name(key: str) -> bool:
+    return key in {"fullname", "nomcomplet", "identitecomplete"} or any(
+        marker in key for marker in ("votrenomcomplet", "fullcontactname", "callerfullname")
+    )
+
+
+def _is_email(key: str) -> bool:
+    return any(marker in key for marker in (
+        "email", "adressemail", "adresseemail", "courriel", "mailaddress",
+    ))
+
+
+def _is_phone(key: str) -> bool:
+    return any(marker in key for marker in (
+        "telephone", "phone", "rawdigits", "callernumber", "externalnumber", "mobile",
+        "contactphone", "phonenumber",
+    ))
+
+
+def _is_training(key: str) -> bool:
+    return any(marker in key for marker in (
+        "formation", "training", "course", "parcours", "programmeinteresse",
+    ))
+
+
+def _is_interest(key: str) -> bool:
+    return any(marker in key for marker in (
+        "interess", "interest", "prospect", "qualification", "readytoapply",
+        "souhaitezvousvousinscrire", "wanttoenrol", "wanttoenroll",
+    ))
+
+
 def _first_path(payload: Mapping[str, Any], paths: Sequence[Sequence[str]], limit=500) -> str:
     for path in paths:
         if value := _text(_path(payload, *path), limit):
@@ -147,15 +245,94 @@ def _first_path(payload: Mapping[str, Any], paths: Sequence[Sequence[str]], limi
     return ""
 
 
-def _normalize_email(value: str) -> str:
-    email = re.sub(r"\s+", "", value or "").casefold()
-    if email.count("@") != 1:
+def _expand_spoken_repetitions(value: Any, *, inline_digits: bool = False) -> str:
+    text = str(value or "")
+
+    def repeat_word(match: re.Match[str]) -> str:
+        count = {"deux": 2, "double": 2, "trois": 3, "triple": 3}.get(
+            _strip_accents(match.group(1)).casefold(), 1
+        )
+        return match.group(2) * count
+
+    text = re.sub(
+        r"(?i)\b(deux|double|trois|triple)\s+(?:fois\s+)?(?:la\s+lettre\s+)?([a-zà-ÿ])\b",
+        repeat_word,
+        text,
+    )
+    if inline_digits:
+        text = re.sub(
+            r"([234])\s*([A-Za-zÀ-ÿ])",
+            lambda match: match.group(2) * int(match.group(1)),
+            text,
+        )
+    return text
+
+
+def _collapse_spelled_letters(value: Any) -> str:
+    text = " ".join(str(value or "").strip().split())
+    tokens = text.split()
+    if len(tokens) >= 3 and all(re.fullmatch(r"[A-Za-zÀ-ÿ]{1,3}", token) for token in tokens):
+        return "".join(tokens)
+    return text
+
+
+def _normalize_person_name(value: Any) -> str:
+    text = _expand_spoken_repetitions(value, inline_digits=True)
+    text = _collapse_spelled_letters(text)
+    text = re.sub(r"[^A-Za-zÀ-ÿ'’\-\s]", "", text)
+    text = " ".join(text.replace("’", "'").split()).strip(" -'")
+    return text[:120]
+
+
+def _split_full_name(value: Any) -> tuple[str, str]:
+    text = _normalize_person_name(value)
+    if not text:
+        return "", ""
+    if "," in str(value or ""):
+        raw_last, raw_first = str(value).split(",", 1)
+        return _normalize_person_name(raw_first), _normalize_person_name(raw_last)
+    parts = text.split()
+    if len(parts) < 2:
+        return "", text
+    return parts[0], " ".join(parts[1:])
+
+
+def _normalize_email(value: Any) -> str:
+    text = _strip_accents(_expand_spoken_repetitions(value)).casefold()
+    replacements = (
+        (r"\btiret\s+bas\b|\bunderscore\b", "_"),
+        (r"\barobase\b|\bat\b", "@"),
+        (r"\bpoint\b|\bdot\b", "."),
+        (r"\btiret\b|\bdash\b", "-"),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    text = re.sub(r"\bg\s*mail\b", "gmail", text)
+    text = re.sub(r"\bhot\s*mail\b", "hotmail", text)
+    text = re.sub(r"\bout\s*look\b", "outlook", text)
+    text = re.sub(r"\s+", "", text)
+    text = text.strip(".,;:")
+    if text.count("@") != 1:
         return ""
-    local, domain = email.split("@", 1)
-    return email[:254] if local and "." in domain and not domain.startswith(".") else ""
+    local, domain = text.split("@", 1)
+    if not local or not domain or domain.startswith(".") or "." not in domain:
+        return ""
+    if not re.fullmatch(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+", local):
+        return ""
+    if not re.fullmatch(r"[a-z0-9.-]+", domain) or ".." in domain:
+        return ""
+    return text[:254]
 
 
-def _normalize_phone(value: str) -> str:
+def _first_name_from_email(email: str) -> str:
+    local = str(email or "").split("@", 1)[0]
+    candidate = re.split(r"[._+\-]", local, maxsplit=1)[0]
+    if candidate in _EMAIL_LOCAL_BLACKLIST or not re.fullmatch(r"[a-z]{2,40}", candidate):
+        return ""
+    return candidate.capitalize()
+
+
+def _normalize_phone(value: Any) -> str:
     raw = " ".join(str(value or "").strip().split())
     return raw[:40] if 8 <= len(re.sub(r"\D", "", raw)) <= 15 else ""
 
@@ -168,37 +345,39 @@ def normalize_training(value: Any) -> tuple[str, str]:
         return "", ""
 
     bts = {
-        "BTS MOS": (r"\bmos\b", "management operationnel de la securite"),
-        "BTS MCO": (r"\bmco\b", "management commercial operationnel"),
-        "BTS NDRC": (r"\bndrc\b", "negociation et digitalisation"),
-        "BTS PI": (r"\bpi\b", "professions immobilieres"),
-        "BTS CG": (r"\bcg\b", "comptabilite gestion"),
-        "BTS CI": (r"\bci\b", "commerce international"),
+        "BTS MOS": ("mos", "management operationnel de la securite"),
+        "BTS MCO": ("mco", "management commercial operationnel"),
+        "BTS NDRC": ("ndrc", "negociation et digitalisation"),
+        "BTS PI": ("pi", "professions immobilieres"),
+        "BTS CG": ("cg", "comptabilite gestion"),
+        "BTS CI": ("ci", "commerce international"),
     }
-    if "bts" in text or any(phrase in text for _, phrase in bts.values()):
-        for label, (pattern, phrase) in bts.items():
-            if re.search(pattern, text) or phrase in text:
+    if "bts" in compact or any(phrase in text for _, phrase in bts.values()):
+        for label, (code, phrase) in bts.items():
+            if code in compact or phrase in text:
                 return label, ""
 
     if any(term in text for term in (
         "protection physique", "protection rapprochee", "garde du corps",
-    )) or "a3p" in compact or re.search(r"\bapr\b", text):
+    )) or any(term in compact for term in ("a3p", "atroisp", "apr")):
         return "A3P", ""
-    if "desp" in text or ("dirigeant" in text and "securite" in text):
-        subtype = "VAE" if "vae" in text or "validation des acquis" in text else ""
+    if any(term in compact for term in ("desp", "deesp")) or (
+        "dirigeant" in text and "securite" in text
+    ):
+        subtype = "VAE" if "vae" in compact or "validation des acquis" in text else ""
         return "DESP", subtype or ("INITIAL" if "initial" in text else "")
-    if "ssiap" in text or "securite incendie" in text:
+    if any(term in compact for term in ("ssiap", "siappe", "ssiape")) or "securite incendie" in text:
         return "SSIAP 1", ""
-    if re.search(r"\bvtc\b", text) or "chauffeur" in text:
+    if "vtc" in compact or "chauffeur" in text:
         return "Chauffeur VTC", ""
-    if re.search(r"\baps\b", text) or any(term in text for term in (
+    if "aps" in compact or any(term in text for term in (
         "agent de prevention", "agent de securite privee",
     )):
         return "APS", ""
     return "", ""
 
 
-def _interest_state(rows: list[tuple[str, str]], summary: str) -> bool | None:
+def _interest_state(rows: Sequence[tuple[str, str]], summary: str) -> bool | None:
     value = _words(_pick(rows, _is_interest))
     if value in {"non", "no", "false", "0", "pas interesse", "non interesse"}:
         return False
@@ -237,32 +416,111 @@ def _is_training_prospect(raw_training: str, summary: str, explicit: bool | None
     ))
 
 
-def parse_aircall_lead(payload: Mapping[str, Any]) -> dict[str, str | bool]:
-    rows = _flatten(payload)
-    first_name = _pick(rows, _is_first_name)
-    last_name = _pick(rows, _is_last_name)
-    if not first_name and not last_name:
-        full_name = _pick(rows, lambda key: key in {"fullname", "nomcomplet", "identitecomplete"})
-        parts = full_name.split()
-        first_name, last_name = (parts[0], " ".join(parts[1:])) if parts else ("", "")
-
-    email = _normalize_email(_pick(rows, _is_email))
-    caller_phone = _first_path(payload, (
-        ("data", "call", "raw_digits"), ("data", "call", "phone_number"),
-        ("data", "raw_digits"), ("data", "caller_number"), ("data", "phone_number"),
-        ("call", "raw_digits"), ("call", "phone_number"), ("raw_digits",),
-    ))
-    phone = _normalize_phone(_pick(rows, _is_phone)) or _normalize_phone(caller_phone)
-    raw_training = _pick(rows, _is_training)
-    summary = _first_path(payload, (
+def _summary_text(payload: Mapping[str, Any], rows: Sequence[tuple[str, str]]) -> str:
+    return _first_path(payload, (
         ("data", "summary", "text"), ("data", "summary", "content"),
         ("data", "summary"), ("data", "call_summary"), ("data", "call", "summary"),
         ("data", "ai_voice_agent", "summary"), ("summary", "text"), ("summary",),
     ), 3_000) or _pick(rows, lambda key: key in {
         "summary", "callsummary", "resume", "resumedelappel", "notes", "commentaire",
     })
-    formation, desp_type = normalize_training(raw_training or summary)
-    interest = _interest_state(rows, summary)
+
+
+def _transcript_text(payload: Mapping[str, Any]) -> str:
+    return _first_path(payload, (
+        ("data", "transcript"), ("data", "transcription"),
+        ("data", "call", "transcript"), ("data", "call", "transcription"),
+        ("data", "ai_voice_agent", "transcript"), ("transcript",), ("transcription",),
+    ), 8_000)
+
+
+def parse_aircall_lead(payload: Mapping[str, Any]) -> dict[str, str | bool]:
+    intake_rows = _intake_rows(payload)
+    rows = _dedupe_rows([*intake_rows, *_flatten(payload)])
+
+    first_name = next(
+        (name for value in _values(intake_rows, _is_first_name)
+         if (name := _normalize_person_name(value))),
+        "",
+    ) or next(
+        (name for value in _values(rows, _is_first_name)
+         if (name := _normalize_person_name(value))),
+        "",
+    )
+    last_name = next(
+        (name for value in _values(intake_rows, _is_last_name)
+         if (name := _normalize_person_name(value))),
+        "",
+    ) or next(
+        (name for value in _values(rows, _is_last_name)
+         if (name := _normalize_person_name(value))),
+        "",
+    )
+
+    full_name = _pick(intake_rows, _is_full_name) or _pick(rows, _is_full_name)
+    if full_name and (not first_name or not last_name):
+        split_first, split_last = _split_full_name(full_name)
+        first_name = first_name or split_first
+        last_name = last_name or split_last
+    elif last_name and not first_name and len(last_name.split()) >= 2:
+        split_first, split_last = _split_full_name(last_name)
+        first_name, last_name = split_first, split_last
+
+    email = next(
+        (email for value in _values(intake_rows, _is_email)
+         if (email := _normalize_email(value))),
+        "",
+    ) or next(
+        (email for value in _values(rows, _is_email)
+         if (email := _normalize_email(value))),
+        "",
+    )
+    if not first_name and email:
+        first_name = _first_name_from_email(email)
+
+    caller_phone = _first_path(payload, (
+        ("data", "call", "raw_digits"), ("data", "call", "phone_number"),
+        ("data", "call", "external_number"), ("data", "number", "raw_digits"),
+        ("data", "raw_digits"), ("data", "caller_number"), ("data", "phone_number"),
+        ("data", "external_number"), ("data", "contact_phone"),
+        ("call", "raw_digits"), ("call", "phone_number"), ("raw_digits",),
+    ))
+    phone = next(
+        (phone for value in _values(intake_rows, _is_phone)
+         if (phone := _normalize_phone(value))),
+        "",
+    ) or _normalize_phone(caller_phone) or next(
+        (phone for value in _values(rows, _is_phone)
+         if (phone := _normalize_phone(value))),
+        "",
+    )
+
+    summary = _summary_text(payload, rows)
+    transcript = _transcript_text(payload)
+    training_candidates = _dedupe_rows([
+        *(row for row in intake_rows if _is_training(row[0])),
+        *(row for row in rows if _is_training(row[0])),
+    ])
+    raw_training = ""
+    formation = desp_type = ""
+    for _, candidate in training_candidates:
+        candidate_formation, candidate_desp_type = normalize_training(candidate)
+        if candidate_formation:
+            raw_training = candidate
+            formation, desp_type = candidate_formation, candidate_desp_type
+            break
+    if not raw_training and training_candidates:
+        raw_training = training_candidates[0][1]
+    if not formation:
+        for candidate in (summary, transcript, " ".join(value for _, value in intake_rows)):
+            candidate_formation, candidate_desp_type = normalize_training(candidate)
+            if candidate_formation:
+                formation, desp_type = candidate_formation, candidate_desp_type
+                if not raw_training:
+                    raw_training = candidate[:300]
+                break
+
+    interest = _interest_state(intake_rows or rows, summary)
     return {
         "prenom": first_name[:120], "nom": last_name[:120], "mail": email,
         "telephone": phone, "formation": formation, "raw_training": raw_training[:300],
