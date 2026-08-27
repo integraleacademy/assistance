@@ -82,6 +82,19 @@ def test_contact_appointment_modal_uses_scoped_explicit_controls():
     assert ".calendly-modal .modal-foot{flex:none" in stylesheet
 
 
+def test_empty_calendly_booking_stays_in_the_contact_sheet():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert (
+        '<button type="button" class="btn blue" id="emptyCalendlyBook">'
+        "Planifier un rendez-vous</button>"
+    ) in javascript
+    assert (
+        "emptyBook.onclick=event=>{event.preventDefault();"
+        "event.stopPropagation();calendlyModal(c)}"
+    ) in javascript
+
+
 def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
