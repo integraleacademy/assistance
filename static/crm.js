@@ -1100,6 +1100,32 @@ async function calendlyModal(c){
   }catch(e){dialog.querySelector('.modal-body').innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;bookButton.style.display='none'}
 }
 async function openRegistrationDraft(c){const registrationTab=window.open('','_blank');if(!registrationTab)return toast('Autorisez les fenêtres pop-up pour ouvrir Gestion stagiaires',true);try{const result=await api(`/api/crm/contacts/${c.id}/convertir`,{method:'POST'});Object.assign(c,result.contact);registrationTab.location.href=result.url;showContact(c.id);toast('Dossier d’inscription ouvert dans Gestion stagiaires')}catch(e){registrationTab.close();toast(e.message,true)}}
+function formatVoiceDictation(value,capitalizeFirst=true){
+ let text=String(value||'').trim();
+ const commands=[
+  [/(?:^|\s)nouveau paragraphe[,.!?;:]?(?=\s|$)/giu,'\n\n'],
+  [/(?:^|\s)(?:(?:à|a) la ligne|nouvelle ligne|retour (?:à|a) la ligne)[,.!?;:]?(?=\s|$)/giu,'\n'],
+  [/(?:^|\s)point d[’']interrogation[,.!?;:]?(?=\s|$)/giu,'?'],
+  [/(?:^|\s)point d[’']exclamation[,.!?;:]?(?=\s|$)/giu,'!'],
+  [/(?:^|\s)point[- ]virgule[,.!?;:]?(?=\s|$)/giu,';'],
+  [/(?:^|\s)deux[- ]points?[,.!?;:]?(?=\s|$)/giu,':'],
+  [/(?:^|\s)virgule[,.!?;:]?(?=\s|$)/giu,','],
+  [/(?:^|\s)point[,.!?;:]?(?=\s|$)/giu,'.'],
+ ];
+ commands.forEach(([pattern,replacement])=>{text=text.replace(pattern,replacement)});
+ text=text
+  .replace(/[ \t]+([,.;:!?])/g,'$1')
+  .replace(/([,;:])(?=[^\s\n])/g,'$1 ')
+  .replace(/([.!?])(?=[^\s\n])/g,'$1 ')
+  .replace(/[ \t]*\n[ \t]*/g,'\n')
+  .replace(/\n{3,}/g,'\n\n')
+  .replace(/[ \t]{2,}/g,' ')
+  .replace(/^[ \t]+|[ \t]+$/g,'');
+ return text.replace(/(^|[.!?]\s+|\n+)([a-zà-öø-ÿ])/g,(match,prefix,letter)=>{
+  if(!prefix&&!capitalizeFirst)return match;
+  return prefix+letter.toLocaleUpperCase('fr-FR')
+ })
+}
 function bindVoiceDictation(field,button,status){
  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition,label=button.querySelector('[data-voice-label]');
  if(!SpeechRecognition){
@@ -1121,11 +1147,11 @@ function bindVoiceDictation(field,button,status){
   button.classList.toggle('is-listening',value);
   button.setAttribute('aria-pressed',String(value));
   label.textContent=value?'Arrêter la dictée':'Dicter le résumé';
-  status.textContent=value?'Écoute en cours… Parlez normalement.':'Cliquez sur le micro, puis parlez normalement.'
+  status.textContent=value?'Écoute en cours… Dites « point », « virgule » ou « à la ligne ».':'Dites « point », « virgule » ou « à la ligne » pour ponctuer.'
  };
  const render=interim=>{
-  const dictated=combine(finalText,interim);
-  field.value=combine(baseText,dictated);
+  const capitalizeFirst=!baseText||/[.!?]\s*$|\n\s*$/.test(baseText),dictated=formatVoiceDictation(combine(finalText,interim),capitalizeFirst);
+  field.value=!baseText?dictated:!dictated?baseText:baseText+(dictated.startsWith('\n')||/\n\s*$/.test(baseText)?'':' ')+dictated;
   field.dispatchEvent(new Event('input',{bubbles:true}));
   field.scrollTop=field.scrollHeight
  };
@@ -1166,7 +1192,7 @@ function bindVoiceDictation(field,button,status){
    try{recognition.stop()}catch(_){recognition.abort()}
    return
   }
-  baseText=field.value.trimEnd();
+  baseText=field.value.replace(/[ \t]+$/,'');
   finalText='';
   lastError='';
   setListening(true);
@@ -1184,7 +1210,7 @@ function bindVoiceDictation(field,button,status){
  }
 }
 function callModal(c,options={}){
- modal(options.relance?'Consigner l’appel de relance':'Consigner un appel',`<div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}<div class="field call-note-field"><div class="field-label-row call-note-heading"><label for="callNote">Compte-rendu</label><button class="voice-input-button" id="dictateCall" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le résumé</span></button></div><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…"></textarea><small class="voice-input-status" id="dictateCallStatus" aria-live="polite">Cliquez sur le micro, puis parlez normalement.</small></div>${crmPresetMarkup('call_note_presets')}`,`<button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button>`,'call-modal');
+ modal(options.relance?'Consigner l’appel de relance':'Consigner un appel',`<div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}<div class="field call-note-field"><div class="field-label-row call-note-heading"><label for="callNote">Compte-rendu</label><button class="voice-input-button" id="dictateCall" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le résumé</span></button></div><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…"></textarea><small class="voice-input-status" id="dictateCallStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small></div>${crmPresetMarkup('call_note_presets')}`,`<button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button>`,'call-modal');
  const callNote=document.querySelector('#callNote'),voiceButton=document.querySelector('#dictateCall'),voiceStatus=document.querySelector('#dictateCallStatus'),aiButton=document.querySelector('#aiBtn'),logButton=document.querySelector('#logCall');
  const stopVoiceDictation=bindVoiceDictation(callNote,voiceButton,voiceStatus);
  bindCrmPresetGroup('call_note_presets',callNote);

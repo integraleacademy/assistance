@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _voice_function():
     source = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
-    start = source.index("function bindVoiceDictation(")
+    start = source.index("function formatVoiceDictation(")
     end = source.index("\nfunction callModal(", start)
     return source[start:end]
 
@@ -24,6 +24,8 @@ def test_call_modal_exposes_accessible_voice_dictation_controls():
         "recognition.lang='fr-FR'",
         "recognition.continuous=true",
         "recognition.interimResults=true",
+        "formatVoiceDictation(combine(finalText,interim),capitalizeFirst)",
+        "Dites « point », « virgule » ou « à la ligne » pour ponctuer.",
         "stopVoiceDictation();closeModal()",
     ):
         assert marker in javascript
@@ -87,6 +89,32 @@ global.Event = function(type) { this.type = type; };
 const toasts = [];
 global.toast = (...args) => toasts.push(args);
 
+assert.strictEqual(
+  formatVoiceDictation(
+    'ceci est un test point ce monsieur doit créer son identité numérique '
+      + 'virgule puis vérifier son compte CPF point à la ligne prochaine étape '
+      + 'deux points prendre un rendez-vous point d’exclamation'
+  ),
+  'Ceci est un test. Ce monsieur doit créer son identité numérique, puis vérifier son compte CPF.\n'
+    + 'Prochaine étape: prendre un rendez-vous!'
+);
+assert.strictEqual(
+  formatVoiceDictation(
+    'première partie point-virgule deuxième partie point d’interrogation '
+      + 'nouveau paragraphe conclusion point'
+  ),
+  'Première partie; deuxième partie?\n\nConclusion.'
+);
+assert.strictEqual(
+  formatVoiceDictation('suite du texte point fin', false),
+  'suite du texte. Fin'
+);
+assert.strictEqual(
+  formatVoiceDictation('première ligne à la ligne'),
+  'Première ligne\n'
+);
+assert.strictEqual(formatVoiceDictation('à la ligne', false), '\n');
+
 const voice = makeButton();
 const field = makeField('Le candidat a appelé.');
 const destroy = bindVoiceDictation(field, voice.button, {textContent: ''});
@@ -102,13 +130,13 @@ assert.ok(voice.classes.has('is-listening'));
 currentRecognition.onresult({
   resultIndex: 0,
   results: [
-    result('Il souhaite suivre la formation A3P.', true),
-    result('Un rendez-vous sera fixé', false)
+    result('il souhaite suivre la formation A3P point', true),
+    result('à la ligne un rendez-vous sera fixé', false)
   ]
 });
 assert.strictEqual(
   field.value,
-  'Le candidat a appelé. Il souhaite suivre la formation A3P. Un rendez-vous sera fixé'
+  'Le candidat a appelé. Il souhaite suivre la formation A3P.\nUn rendez-vous sera fixé'
 );
 assert.deepStrictEqual(field.events, ['input']);
 assert.strictEqual(field.scrollTop, 120);
@@ -121,9 +149,17 @@ assert.strictEqual(voice.label.textContent, 'Dicter le résumé');
 voice.button.onclick();
 currentRecognition.onresult({
   resultIndex: 0,
-  results: [result('Le financement sera vérifié.', true)]
+  results: [result('à la ligne', true)]
 });
-assert.ok(field.value.endsWith('Le financement sera vérifié.'));
+assert.ok(field.value.endsWith('Un rendez-vous sera fixé\n'));
+voice.button.onclick();
+
+voice.button.onclick();
+currentRecognition.onresult({
+  resultIndex: 0,
+  results: [result('le financement sera vérifié point', true)]
+});
+assert.ok(field.value.endsWith('\nLe financement sera vérifié.'));
 destroy();
 assert.strictEqual(currentRecognition.aborted, true);
 assert.strictEqual(voice.button.onclick, null);
