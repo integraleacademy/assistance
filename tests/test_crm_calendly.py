@@ -1106,6 +1106,10 @@ const appointment={start_time:'2026-08-27T07:00:00Z',status:'active'};
 assert.equal(CALENDLY_APPOINTMENT_PAST_DELAY_MS,2*60*60*1000);
 assert.equal(calendlyAppointmentIsUpcoming(appointment,start+8*60*1000),true);
 assert.equal(calendlyAppointmentIsPast(appointment,start+8*60*1000),false);
+assert.equal(calendlyAppointmentIsUpcoming({...appointment,response_status:'answered'},start+8*60*1000),false);
+assert.equal(calendlyAppointmentIsPast({...appointment,response_status:'answered'},start+8*60*1000),true);
+assert.equal(calendlyAppointmentIsUpcoming({...appointment,response_status:'no_answer'},start+8*60*1000),false);
+assert.equal(calendlyAppointmentIsPast({...appointment,response_status:'no_answer'},start+8*60*1000),true);
 assert.equal(calendlyAppointmentIsUpcoming(appointment,start+2*60*60*1000),true);
 assert.equal(calendlyAppointmentIsPast(appointment,start+2*60*60*1000),false);
 assert.equal(calendlyAppointmentIsUpcoming(appointment,start+2*60*60*1000+1),false);
@@ -1124,7 +1128,7 @@ assert.equal(calendlyAppointmentIsPast({...appointment,status:'canceled'},start+
     assert completed.returncode == 0, completed.stderr
     assert "const upcoming=ordered.filter(a=>calendlyAppointmentIsUpcoming(a,now));" in crm_js
     assert "const past=ordered.filter(a=>calendlyAppointmentIsPast(a,now));" in crm_js
-    assert "calendly_timing_version='20260827-calendly-two-hour-delay-1'" in crm_template
+    assert "calendly_timing_version='20260827-calendly-two-hour-delay-2'" in crm_template
 
 
 def test_no_answer_updates_the_in_memory_contact_without_refresh():
