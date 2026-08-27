@@ -72,6 +72,25 @@ def test_message_and_publication_fields_reuse_the_voice_dictation_controls():
     assert ".publication-compose-actions .publication-voice-button" in stylesheet
 
 
+def test_manual_next_action_reuses_voice_dictation_and_cleans_it_up():
+    javascript = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
+    manual_modal = javascript.split("function manualNextActionModal", 1)[1].split(
+        "function relaunchModal", 1
+    )[0]
+
+    for marker in (
+        'id="dictateManualNextAction"',
+        'id="dictateManualNextActionStatus"',
+        "Dicter l’action",
+        "bindVoiceDictation(input,voiceButton,voiceStatus)",
+        "pauseVoiceDictation();const value=input.value.trim()",
+        "destroyVoiceDictation();closeModal()",
+        "document.querySelector('.close').onclick=close",
+        "cancel.onclick=close",
+    ):
+        assert marker in manual_modal
+
+
 def test_voice_dictation_appends_results_handles_errors_and_has_a_fallback():
     harness = r"""
 const assert = require('assert');
