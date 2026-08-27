@@ -101,7 +101,7 @@ async function applyBulk(type,ctx){
  let payload={ids:[...state.selected]},[action,actionValue]=value.split('::');payload.action=action;if(actionValue)payload.value=actionValue;
  if(action==='relance'){
   const date=prompt('Date de la relance au format AAAA-MM-JJ :',new Date(Date.now()+86400000).toISOString().slice(0,10));if(!date)return;
-  const motif=(prompt('Motif de la relance :','')||'').trim();if(!motif)return ctx.toast('Indiquez le motif de la relance',true);
+  const motifPrompt=prompt('Motif de la relance (facultatif) :','');if(motifPrompt===null)return;const motif=motifPrompt.trim();
   payload.value=date;payload.motif=motif;
  }
  if(action==='disqualify'){const reason=prompt('Motif obligatoire : financement, prix, distance, prérequis, injoignable, autre…');if(!reason)return;payload.reason=reason;payload.detail=prompt('Précision éventuelle :','')||'';payload.reactivation_date=prompt('Date de réactivation éventuelle (AAAA-MM-JJ) :','')||''}

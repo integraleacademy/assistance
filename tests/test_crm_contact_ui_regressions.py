@@ -563,7 +563,7 @@ def test_contact_relance_tracking_is_actionable_and_visually_scoped():
         "relance_id:options.relance?.id",
         'id="relaunchMotif"',
         "relance_motif:motif",
-        "Indiquez le motif de la relance",
+        "Motif de la relance (facultatif)",
         "relance-reason",
     ):
         assert marker in javascript
@@ -580,8 +580,17 @@ def test_contact_relance_tracking_is_actionable_and_visually_scoped():
 
     workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
     assert "reminder-motif" in workspace
-    assert "Motif de la relance :" in workspace
+    assert "Motif de la relance (facultatif) :" in workspace
     assert "payload.motif=motif" in workspace
+    relaunch_modal = javascript[
+        javascript.index("function relaunchModal"):
+        javascript.index("function noAnswerRelanceModal")
+    ]
+    assert 'id="relaunchMotif" maxlength="160"' in relaunch_modal
+    assert 'placeholder="Ex. Dossier de financement à compléter" required' not in relaunch_modal
+    assert "if(!motif)return toast('Indiquez le motif de la relance',true)" not in relaunch_modal
+    assert "if(motifPrompt===null)return" in workspace
+    assert "if(!motif)return ctx.toast('Indiquez le motif de la relance',true)" not in workspace
 
 
 def test_pipeline_overview_displays_primary_and_secondary_steps():
