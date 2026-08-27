@@ -1180,6 +1180,11 @@ CRM_DEFAULT_RELANCE_MOTIF_PRESETS = [
     "En attente RDV France Travail",
     "Doit revenir vers nous",
 ]
+CRM_DEFAULT_MANUAL_NEXT_ACTION_PRESETS = [
+    "Le candidat doit consulter le montant de son CPF",
+    "Le candidat doit se rapprocher de son conseiller France Travail",
+    "Le candidat doit créer son Identité Numérique la Poste",
+]
 
 DEFAULT_DATA = {
     "demandes": [],
@@ -1208,6 +1213,9 @@ DEFAULT_DATA = {
         "direction_costs": {},
         "call_note_presets": CRM_DEFAULT_CALL_NOTE_PRESETS.copy(),
         "relance_motif_presets": CRM_DEFAULT_RELANCE_MOTIF_PRESETS.copy(),
+        "manual_next_action_presets": (
+            CRM_DEFAULT_MANUAL_NEXT_ACTION_PRESETS.copy()
+        ),
     },
     "crm_ai_candidate_analyses": {},
     "crm_cnaps_scoring_snapshots": {},
@@ -14555,15 +14563,20 @@ def crm_settings():
         "calendar_default_view", "calendar_workday_start", "calendar_workday_end",
         "notification_mentions", "notification_system", "direction_costs",
         "call_note_presets", "relance_motif_presets",
+        "manual_next_action_presets",
     }
     if "direction_costs" in payload and (current_user() or {}).get("role") != "admin":
         return jsonify({"error": "La configuration des coûts est réservée à l’administrateur."}), 403
     for key in allowed.intersection(payload):
-        if key in {"call_note_presets", "relance_motif_presets"}:
-            label = (
-                "réponses pré-enregistrées"
-                if key == "call_note_presets" else "motifs de relance"
-            )
+        if key in {
+            "call_note_presets", "relance_motif_presets",
+            "manual_next_action_presets",
+        }:
+            label = {
+                "call_note_presets": "réponses pré-enregistrées",
+                "relance_motif_presets": "motifs de relance",
+                "manual_next_action_presets": "prochaines actions pré-enregistrées",
+            }[key]
             try:
                 settings[key] = _crm_preset_values(payload.get(key), label)
             except ValueError as exc:
