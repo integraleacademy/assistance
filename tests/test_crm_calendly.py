@@ -1149,7 +1149,47 @@ def test_spotlight_appointment_displays_the_result_control():
     assert "calendlyActions(a,true)" in spotlight
     assert ".next-appointment-side .appointment-response{" in crm_css
     assert ".next-appointment-side .appointment-response select{" in crm_css
-    assert crm_template.count("calendly_result_version='20260827-calendly-result-control-1'") == 2
+    assert crm_template.count("calendly_result_version='20260827-calendar-treated-appointments-1'") == 2
+
+
+def test_calendar_visually_marks_completed_appointments_as_treated():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    with open(application.app.root_path + "/static/crm.css", encoding="utf-8") as source:
+        crm_css = source.read()
+    with open(application.app.root_path + "/templates/crm.html", encoding="utf-8") as source:
+        crm_template = source.read()
+
+    helper = crm_js[
+        crm_js.index("function calendarAppointmentTreatment"):
+        crm_js.index("function changeCalendarDate")
+    ]
+    script = helper + r"""
+const assert=require('node:assert/strict');
+assert.deepEqual(calendarAppointmentTreatment({response_status:'answered'}),{
+  tone:'answered',label:'Traité · A répondu'
+});
+assert.deepEqual(calendarAppointmentTreatment({response_status:'no_answer'}),{
+  tone:'no-answer',label:'Traité · Sans réponse'
+});
+assert.equal(calendarAppointmentTreatment({response_status:''}),null);
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "calendar-treated-${treatment.tone}" in crm_js
+    assert "calendar-treatment-badge ${treatment.tone}" in crm_js
+    assert ".calendar-event.calendar-treated-answered{" in crm_css
+    assert ".calendar-event.calendar-treated-no-answer{" in crm_css
+    assert ".calendar-treatment-badge.answered{" in crm_css
+    assert ".calendar-treatment-badge.no-answer{" in crm_css
+    assert crm_template.count("calendly_result_version='20260827-calendar-treated-appointments-1'") == 2
 
 
 def test_no_answer_updates_the_in_memory_contact_without_refresh():
