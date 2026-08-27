@@ -1504,6 +1504,53 @@ def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):
     assert call.get_json()["activities"][0]["kind"] == "appel"
 
 
+def test_manual_next_action_is_trimmed_persisted_and_clearable(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+
+    assert contact["prochaine_action_manuelle"] == ""
+
+    updated = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "prochaine_action_manuelle":
+                "  Rappeler pour confirmer le financement  "
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.get_json()["prochaine_action_manuelle"] == (
+        "Rappeler pour confirmer le financement"
+    )
+    reloaded = c.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert reloaded["prochaine_action_manuelle"] == (
+        "Rappeler pour confirmer le financement"
+    )
+    summaries = c.get("/api/crm/contacts?section=contacts").get_json()
+    summary = next(item for item in summaries if item["id"] == contact["id"])
+    assert summary["prochaine_action_manuelle"] == (
+        "Rappeler pour confirmer le financement"
+    )
+
+    too_long = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"prochaine_action_manuelle": "x" * 301},
+    )
+    assert too_long.status_code == 400
+    assert "300 caractères" in too_long.get_json()["error"]
+
+    cleared = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"prochaine_action_manuelle": "   "},
+    )
+    assert cleared.status_code == 200
+    assert cleared.get_json()["prochaine_action_manuelle"] == ""
+
+
 def test_contact_followup_comment_is_logged_only_when_it_changes(
         tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)

@@ -314,6 +314,49 @@ def test_contact_header_displays_the_scheduled_relaunch_date_explicitly():
     assert "<b>${esc(nextAction)}</b>" in javascript
 
 
+def test_contact_header_supports_a_distinct_manual_next_action():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+    workspace = (CRM_JS.parent / "crm_workspace.js").read_text(encoding="utf-8")
+    helper = workspace[
+        workspace.index("function nextAction"):
+        workspace.index("function filterOptions")
+    ]
+    script = r"""
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+const isOverdue=()=>true;
+const hasContact=()=>false;
+""" + helper + r"""
+assert(
+ nextAction({prochaine_action_manuelle:'  Envoyer la convention  '})==='Envoyer la convention',
+ 'the manual value must override every automatic suggestion'
+);
+assert(
+ nextAction({archived_at:'2026-08-27',prochaine_action_manuelle:'Envoyer la convention'})==='Fiche archivée',
+ 'an archived contact must keep its lifecycle label'
+);
+console.log('CRM manual next action: OK');
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM manual next action: OK" in completed.stdout
+    assert "function manualNextActionModal(c)" in javascript
+    assert 'id="manualNextActionBtn"' in javascript
+    assert "prochaine_action_manuelle:value" in javascript
+    assert "nextActionElement.classList.toggle('manual'" in javascript
+    assert "MANUELLE" in javascript
+    assert ".next-action.manual" in stylesheet
+    assert "background:#fff4dc" in stylesheet
+    assert "hasValue(contact.prochaine_action_manuelle)" in workspace
+
+
 def test_contact_header_displays_only_the_active_relaunch_motif():
     javascript = CRM_JS.read_text(encoding="utf-8")
     helper = javascript[

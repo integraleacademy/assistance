@@ -13832,7 +13832,8 @@ CRM_CONTACT_SUMMARY_FIELDS = (
     "statut_demande_financement_ft_source", "dates_formation", "cpf",
     "cpf_montant", "financement_ft", "reste_a_charge_perso", "desp_type",
     "origine", "source", "source_detail", "source_history", "commercial", "tags",
-    "prix_vente", "cout_estime", "relance_date", "archived_at",
+    "prix_vente", "cout_estime", "relance_date", "prochaine_action_manuelle",
+    "archived_at",
     "converted_at", "status_changed_at", "disqualification_reason",
     "disqualification_detail", "reactivation_date", "created_at",
     "received_at", "updated_at", "commentaires", "wedof_status",
@@ -14082,7 +14083,8 @@ def _crm_create_contact_locked():
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
         "origine": str(payload.get("origine") or "Ajout manuel"), "commercial": str(payload.get("commercial") or ""),
-        "inscrit_ft": "", "commentaires": "", "relance_date": "", "relances": [], "statut_secondaire": "",
+        "inscrit_ft": "", "commentaires": "", "relance_date": "",
+        "prochaine_action_manuelle": "", "relances": [], "statut_secondaire": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
@@ -14739,6 +14741,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
                "statut", "statut_secondaire", "commercial", "tags", "prix_vente", "cout_estime",
+               "prochaine_action_manuelle",
                "disqualification_reason", "disqualification_detail", "reactivation_date", "archived_at",
                "qualification_flag"}
     if "qualification_flag" in payload:
@@ -14771,6 +14774,15 @@ def _crm_patch_contact_locked(data, contact, contact_id):
                 except ValueError:
                     return jsonify({"error": "Les montants commerciaux doivent être positifs."}), 400
             payload[money_field] = raw_money
+    if "prochaine_action_manuelle" in payload:
+        manual_next_action = str(
+            payload.get("prochaine_action_manuelle") or ""
+        ).strip()
+        if len(manual_next_action) > 300:
+            return jsonify({
+                "error": "La prochaine action manuelle est limitée à 300 caractères."
+            }), 400
+        payload["prochaine_action_manuelle"] = manual_next_action
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
