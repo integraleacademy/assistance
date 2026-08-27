@@ -1166,6 +1166,7 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
     assert len(scheduled) == 1
     assert scheduled[0]["scheduled_date"] == today
     assert scheduled[0]["source"] == "manual_ft_refusal"
+    assert scheduled[0]["motif"] == "Suite refus FT"
     assert any(
         item.get("title") == "Relance France Travail planifiée"
         for item in refused_contact["activities"]
@@ -2492,6 +2493,75 @@ def test_planning_a_reminder_waits_for_server_persistence_before_updating_contac
     assert optimistic_update not in crm_js
     assert "saveRelaunch.textContent='Enregistrement…'" in crm_js
     assert "saveRelaunch.disabled=false" in crm_js
+
+
+def test_relance_motif_is_saved_normalized_updated_and_validated(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post(
+        "/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"},
+    ).get_json()
+
+    planned = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "statut": "A relancer",
+            "relance_date": "2099-09-03",
+            "relance_motif": "  Dossier   de financement à compléter  ",
+        },
+    )
+
+    assert planned.status_code == 200
+    saved = planned.get_json()
+    assert saved["relances"][0]["motif"] == "Dossier de financement à compléter"
+    assert any(
+        "Motif : Dossier de financement à compléter" in item.get("detail", "")
+        for item in saved["activities"]
+    )
+
+    updated = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "relance_date": "2099-09-03",
+            "relance_motif": "Rappeler après réception des pièces",
+        },
+    )
+    assert updated.status_code == 200
+    relances = [
+        item for item in updated.get_json()["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert len(relances) == 1
+    assert relances[0]["motif"] == "Rappeler après réception des pièces"
+
+    too_long = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "relance_date": "2099-09-04",
+            "relance_motif": "x" * 161,
+        },
+    )
+    assert too_long.status_code == 400
+    assert "160 caractères" in too_long.get_json()["error"]
+
+
+def test_legacy_relance_without_motif_remains_compatible(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    data = application.load_data()
+    stored = next(item for item in data["crm_contacts"] if item["id"] == contact["id"])
+    stored["relance_date"] = "2099-09-03"
+    stored["relances"] = [{
+        "id": "legacy-follow-up",
+        "scheduled_date": "2099-09-03",
+        "status": "scheduled",
+        "source": "legacy",
+    }]
+    application.save_data(data)
+
+    response = c.get(f"/api/crm/contacts/{contact['id']}")
+
+    assert response.status_code == 200
+    assert response.get_json()["relances"][0].get("motif") is None
 
 
 def test_relance_no_answer_reprograms_and_sends_named_templates_only_once(tmp_path, monkeypatch):
