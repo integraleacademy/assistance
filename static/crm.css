@@ -167,6 +167,10 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .appointment-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .appointment-actions .btn{text-decoration:none;white-space:nowrap}
 .next-appointment .appointment-actions{max-width:235px}
+.next-appointment-side{display:flex;align-items:stretch;flex-direction:column;gap:9px;max-width:235px}
+.next-appointment-side .appointment-response{align-items:stretch;flex-direction:column;gap:4px;color:#e3ebff;font-size:9px;letter-spacing:.04em;text-transform:uppercase}
+.next-appointment-side .appointment-response select{width:100%;min-width:195px;padding:8px 28px 8px 10px;border-color:#ffffff70;box-shadow:0 5px 13px #102d721c}
+.next-appointment-side .appointment-actions{max-width:none}
 .next-appointment .appointment-actions .btn.blue{border-color:#fff;background:#fff;color:#2353bf;box-shadow:0 5px 13px #102d721c}
 .next-appointment .appointment-actions .danger-light{border-color:#ffffff3b;background:#ffffff12;color:#fff}
 .next-appointment .appointment-actions .btn:hover{transform:translateY(-1px)}
@@ -266,6 +270,8 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
   .next-appointment-content{grid-template-columns:62px minmax(0,1fr);gap:12px}
   .next-date{width:62px;height:68px}
   .next-main h3{font-size:16px;line-height:1.35;overflow-wrap:anywhere}
+  .next-appointment-side{grid-column:1/-1;width:100%;max-width:none}
+  .next-appointment-side .appointment-response select{width:100%;min-width:0}
   .next-appointment .appointment-actions{grid-column:1/-1;width:100%;max-width:none;justify-content:stretch}
   .next-appointment .appointment-actions .btn{flex:1;text-align:center}
 }
@@ -290,6 +296,8 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
   .next-appointment-content{grid-template-columns:58px minmax(0,1fr);gap:12px}
   .next-date{width:58px;height:67px}
   .next-date span{font-size:24px}
+  .next-appointment-side{grid-column:1/-1;width:100%;max-width:none}
+  .next-appointment-side .appointment-response select{width:100%;min-width:0}
   .next-appointment .appointment-actions{grid-column:1/-1;max-width:none;justify-content:stretch}
   .next-appointment .appointment-actions .btn{flex:1;text-align:center}
   .next-main h3{font-size:16px}

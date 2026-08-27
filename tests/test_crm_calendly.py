@@ -1131,6 +1131,27 @@ assert.equal(calendlyAppointmentIsPast({...appointment,status:'canceled'},start+
     assert "calendly_timing_version='20260827-calendly-two-hour-delay-2'" in crm_template
 
 
+def test_spotlight_appointment_displays_the_result_control():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    with open(application.app.root_path + "/static/crm.css", encoding="utf-8") as source:
+        crm_css = source.read()
+    with open(application.app.root_path + "/templates/crm.html", encoding="utf-8") as source:
+        crm_template = source.read()
+
+    spotlight = crm_js[
+        crm_js.index("const nextCard=spotlight.length?"):
+        crm_js.index("const spotlightIds=")
+    ]
+
+    assert "next-appointment-side" in spotlight
+    assert "appointmentResponseControl(a,'Résultat du rendez-vous')" in spotlight
+    assert "calendlyActions(a,true)" in spotlight
+    assert ".next-appointment-side .appointment-response{" in crm_css
+    assert ".next-appointment-side .appointment-response select{" in crm_css
+    assert crm_template.count("calendly_result_version='20260827-calendly-result-control-1'") == 2
+
+
 def test_no_answer_updates_the_in_memory_contact_without_refresh():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
