@@ -9504,6 +9504,7 @@ def _crm_edit_call_activity(activity, detail):
 
 
 CRM_RELANCE_STATUSES = {"scheduled", "answered", "no_answer", "reprogrammed", "cancelled"}
+CRM_RELANCE_MOTIF_MAX_LENGTH = 160
 
 
 def _crm_relance_date(value):
@@ -9515,6 +9516,17 @@ def _crm_relance_date(value):
         datetime.date.fromisoformat(normalized)
     except ValueError as exc:
         raise ValueError("La date de relance est invalide.") from exc
+    return normalized
+
+
+def _crm_relance_motif(value):
+    """Return a compact user-facing relance reason or reject oversized input."""
+    normalized = " ".join(str(value or "").split())
+    if len(normalized) > CRM_RELANCE_MOTIF_MAX_LENGTH:
+        raise ValueError(
+            "Le motif de relance ne peut pas dépasser "
+            f"{CRM_RELANCE_MOTIF_MAX_LENGTH} caractères."
+        )
     return normalized
 
 
@@ -9578,6 +9590,15 @@ def _crm_ensure_relances(contact):
         if item.get("scheduled_date") != scheduled_date:
             item["scheduled_date"] = scheduled_date
             changed = True
+        if "motif" in item:
+            # Les données historiques restent lisibles même si elles ont été
+            # écrites avant l'ajout de la validation côté API.
+            motif = " ".join(str(item.get("motif") or "").split())[
+                :CRM_RELANCE_MOTIF_MAX_LENGTH
+            ]
+            if item.get("motif") != motif:
+                item["motif"] = motif
+                changed = True
         if "created_at" not in item:
             item["created_at"] = contact.get("updated_at") or contact.get("created_at") or _crm_now()
             changed = True
@@ -9641,7 +9662,7 @@ def _crm_ensure_relances(contact):
 
 def _crm_schedule_relance(
         contact, scheduled_date, *, source="manual", parent_relance_id=None,
-        actor_name=None):
+        actor_name=None, motif=None):
     """Schedule or remove open actions while preserving completed attempts."""
     scheduled_date = _crm_relance_date(scheduled_date)
     if not scheduled_date:
@@ -9669,6 +9690,7 @@ def _crm_schedule_relance(
             changed = True
         return None, changed
 
+    normalized_motif = None if motif is None else _crm_relance_motif(motif)
     changed = _crm_ensure_relances(contact)
     now = _crm_now()
     actor_name = actor_name or (current_user() or {}).get(
@@ -9699,9 +9721,17 @@ def _crm_schedule_relance(
             "created_by": actor_name,
             "source": source,
         }
+        if normalized_motif:
+            same["motif"] = normalized_motif
         if parent_relance_id:
             same["parent_relance_id"] = parent_relance_id
         contact["relances"].insert(0, same)
+        changed = True
+    elif normalized_motif is not None and same.get("motif", "") != normalized_motif:
+        if normalized_motif:
+            same["motif"] = normalized_motif
+        else:
+            same.pop("motif", None)
         changed = True
 
     if _crm_refresh_relance_date(contact):
@@ -9731,6 +9761,7 @@ def _crm_schedule_ft_refusal_relance(
         scheduled_date,
         source=source,
         actor_name=actor_name,
+        motif="Suite refus FT",
     )
 
     metadata = {
@@ -13087,6 +13118,7 @@ def crm_calendly_update_appointment(appointment_id):
                     contact,
                     next_relance_date,
                     source="calendly_no_answer",
+                    motif="Suite absence au rendez-vous",
                 )
                 _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+2")
             contact["updated_at"] = now
@@ -14530,13 +14562,21 @@ def crm_contacts_bulk():
             contact["archived_at"] = ""
         elif action == "relance":
             try:
-                planned, _ = _crm_schedule_relance(contact, payload.get("value"), source="bulk")
+                planned, _ = _crm_schedule_relance(
+                    contact,
+                    payload.get("value"),
+                    source="bulk",
+                    motif=payload.get("motif"),
+                )
             except ValueError as exc:
                 return jsonify({"error": str(exc)}), 400
             contact["statut"] = "A relancer"
             if planned:
                 _crm_activity(contact, "relance", "Relance planifiée en groupe",
-                              f"Prochaine relance le {planned['scheduled_date']}")
+                              " · ".join(filter(None, [
+                                  f"Prochaine relance le {planned['scheduled_date']}",
+                                  f"Motif : {planned.get('motif')}" if planned.get("motif") else "",
+                              ])))
         elif action == "disqualify":
             reason = str(payload.get("reason") or "").strip()
             if not reason:
@@ -14691,6 +14731,9 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     _crm_ensure_relances(contact)
     relance_date_supplied = "relance_date" in payload
     requested_relance_date = payload.get("relance_date")
+    requested_relance_motif = (
+        payload.get("relance_motif") if "relance_motif" in payload else None
+    )
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
@@ -14745,6 +14788,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
                 contact,
                 requested_relance_date,
                 source="manual",
+                motif=requested_relance_motif,
             )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -14754,7 +14798,10 @@ def _crm_patch_contact_locked(data, contact, contact_id):
                     contact,
                     "relance",
                     "Relance planifiée",
-                    f"Prochaine relance le {planned_relance['scheduled_date']}",
+                    " · ".join(filter(None, [
+                        f"Prochaine relance le {planned_relance['scheduled_date']}",
+                        f"Motif : {planned_relance.get('motif')}" if planned_relance.get("motif") else "",
+                    ])),
                 )
             else:
                 _crm_activity(contact, "relance", "Relance annulée")
@@ -15075,6 +15122,7 @@ def crm_relance_no_answer(contact_id, relance_id):
         next_date,
         source="no_answer",
         parent_relance_id=relance_id,
+        motif=relance.get("motif") or "Suite relance sans réponse",
     )
     old_status = contact.get("statut")
     contact["statut"] = "A relancer"

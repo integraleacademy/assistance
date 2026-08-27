@@ -463,6 +463,10 @@ def test_contact_relance_tracking_is_actionable_and_visually_scoped():
         "function bindRelanceTracking",
         "/sans-reponse",
         "relance_id:options.relance?.id",
+        'id="relaunchMotif"',
+        "relance_motif:motif",
+        "Indiquez le motif de la relance",
+        "relance-reason",
     ):
         assert marker in javascript
     for selector in (
@@ -475,6 +479,11 @@ def test_contact_relance_tracking_is_actionable_and_visually_scoped():
         ".relance-result-modal",
     ):
         assert selector in stylesheet
+
+    workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+    assert "reminder-motif" in workspace
+    assert "Motif de la relance :" in workspace
+    assert "payload.motif=motif" in workspace
 
 
 def test_pipeline_overview_displays_primary_and_secondary_steps():
