@@ -1101,13 +1101,97 @@ async function calendlyModal(c){
   }catch(e){dialog.querySelector('.modal-body').innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;bookButton.style.display='none'}
 }
 async function openRegistrationDraft(c){const registrationTab=window.open('','_blank');if(!registrationTab)return toast('Autorisez les fenêtres pop-up pour ouvrir Gestion stagiaires',true);try{const result=await api(`/api/crm/contacts/${c.id}/convertir`,{method:'POST'});Object.assign(c,result.contact);registrationTab.location.href=result.url;showContact(c.id);toast('Dossier d’inscription ouvert dans Gestion stagiaires')}catch(e){registrationTab.close();toast(e.message,true)}}
+function bindVoiceDictation(field,button,status){
+ const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition,label=button.querySelector('[data-voice-label]');
+ if(!SpeechRecognition){
+  button.disabled=true;
+  button.title='La dictée vocale nécessite Chrome ou Edge.';
+  label.textContent='Dictée indisponible';
+  status.textContent='La dictée vocale nécessite Chrome ou Edge.';
+  return()=>{button.onclick=null}
+ }
+ const recognition=new SpeechRecognition();
+ recognition.lang='fr-FR';
+ recognition.continuous=true;
+ recognition.interimResults=true;
+ recognition.maxAlternatives=1;
+ let listening=false,destroyed=false,baseText='',finalText='',lastError='';
+ const combine=(first,second)=>[first,second].filter(Boolean).join(first&&second?' ':'');
+ const setListening=value=>{
+  listening=value;
+  button.classList.toggle('is-listening',value);
+  button.setAttribute('aria-pressed',String(value));
+  label.textContent=value?'Arrêter la dictée':'Dicter le résumé';
+  status.textContent=value?'Écoute en cours… Parlez normalement.':'Cliquez sur le micro, puis parlez normalement.'
+ };
+ const render=interim=>{
+  const dictated=combine(finalText,interim);
+  field.value=combine(baseText,dictated);
+  field.dispatchEvent(new Event('input',{bubbles:true}));
+  field.scrollTop=field.scrollHeight
+ };
+ const errorMessage=error=>({
+  'not-allowed':'Autorisez l’accès au micro dans Chrome (icône à gauche de l’adresse), puis réessayez.',
+  'service-not-allowed':'Autorisez l’accès au micro dans Chrome (icône à gauche de l’adresse), puis réessayez.',
+  'audio-capture':'Aucun microphone n’a été détecté. Vérifiez le micro de l’ordinateur.',
+  'network':'La dictée vocale est momentanément indisponible. Vérifiez votre connexion.',
+  'no-speech':'Je n’ai rien entendu. Cliquez sur le micro et recommencez.'
+ }[error]||'La dictée vocale s’est interrompue. Réessayez.');
+ recognition.onstart=()=>{if(!destroyed)setListening(true)};
+ recognition.onresult=event=>{
+  if(destroyed)return;
+  let interim='';
+  for(let index=event.resultIndex;index<event.results.length;index++){
+   const text=String(event.results[index][0]?.transcript||'').trim();
+   if(!text)continue;
+   if(event.results[index].isFinal)finalText=combine(finalText,text);
+   else interim=combine(interim,text)
+  }
+  render(interim)
+ };
+ recognition.onerror=event=>{
+  if(destroyed||event.error==='aborted')return;
+  const message=errorMessage(event.error);
+  lastError=message;
+  setListening(false);
+  status.textContent=message;
+  if(event.error!=='no-speech')toast(message,true)
+ };
+ recognition.onend=()=>{
+  if(destroyed)return;
+  setListening(false);
+  if(lastError){status.textContent=lastError;lastError=''}
+ };
+ button.onclick=()=>{
+  if(listening){
+   try{recognition.stop()}catch(_){recognition.abort()}
+   return
+  }
+  baseText=field.value.trimEnd();
+  finalText='';
+  lastError='';
+  setListening(true);
+  try{recognition.start()}catch(_){
+   setListening(false);
+   toast('Impossible de démarrer la dictée vocale. Réessayez.',true)
+  }
+ };
+ return()=>{
+  if(destroyed)return;
+  destroyed=true;
+  button.onclick=null;
+  if(listening){try{recognition.abort()}catch(_){}}
+  listening=false
+ }
+}
 function callModal(c,options={}){
- modal(options.relance?'Consigner l’appel de relance':'Consigner un appel',`<div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}<div class="field"><label>Compte-rendu</label><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…"></textarea></div>${crmPresetMarkup('call_note_presets')}`,`<button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button>`,'call-modal');
- const callNote=document.querySelector('#callNote'),aiButton=document.querySelector('#aiBtn'),logButton=document.querySelector('#logCall');
+ modal(options.relance?'Consigner l’appel de relance':'Consigner un appel',`<div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}<div class="field call-note-field"><div class="field-label-row call-note-heading"><label for="callNote">Compte-rendu</label><button class="voice-input-button" id="dictateCall" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le résumé</span></button></div><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…"></textarea><small class="voice-input-status" id="dictateCallStatus" aria-live="polite">Cliquez sur le micro, puis parlez normalement.</small></div>${crmPresetMarkup('call_note_presets')}`,`<button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button>`,'call-modal');
+ const callNote=document.querySelector('#callNote'),voiceButton=document.querySelector('#dictateCall'),voiceStatus=document.querySelector('#dictateCallStatus'),aiButton=document.querySelector('#aiBtn'),logButton=document.querySelector('#logCall');
+ const stopVoiceDictation=bindVoiceDictation(callNote,voiceButton,voiceStatus);
  bindCrmPresetGroup('call_note_presets',callNote);
- if(options.onCancel)document.querySelector('.close').onclick=()=>{closeModal();options.onCancel()};
- aiButton.onclick=async()=>{if(!callNote.value.trim())return toast('Saisissez d’abord une note',true);aiButton.disabled=true;aiButton.textContent='Reformulation…';try{callNote.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:callNote.value})})).texte}catch(e){toast(e.message,true)}finally{aiButton.disabled=false;aiButton.textContent='✦ Reformuler avec l’IA'}};
- logButton.onclick=async()=>{if(!callNote.value.trim())return toast('Saisissez un compte-rendu',true);logButton.disabled=true;try{const result=await api(`/api/crm/contacts/${c.id}/appel`,{method:'POST',body:JSON.stringify({commentaire:callNote.value,appointment_id:options.appointment?.id,relance_id:options.relance?.id})});Object.assign(c,result.contact||result);mergeContactInStore(c.id,result.contact||result);closeModal();if(options.onSaved)options.onSaved(result);showContact(c.id,options.returnTab||'contactInfoTab');const sent=result.delivery?.sms&&result.delivery?.email;toast(options.appointment?(sent?'Appel consigné ; e-mail et SMS envoyés':'Appel consigné ; vérifiez les coordonnées ou la configuration des envois'):options.relance?'Appel consigné · relance classée « A répondu »':'Appel consigné',!!options.appointment&&!sent)}catch(e){logButton.disabled=false;toast(e.message,true)}};
+ document.querySelector('.close').onclick=()=>{stopVoiceDictation();closeModal();if(options.onCancel)options.onCancel()};
+ aiButton.onclick=async()=>{if(voiceButton.getAttribute('aria-pressed')==='true')voiceButton.click();if(!callNote.value.trim())return toast('Saisissez d’abord une note',true);aiButton.disabled=true;aiButton.textContent='Reformulation…';try{callNote.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:callNote.value})})).texte}catch(e){toast(e.message,true)}finally{aiButton.disabled=false;aiButton.textContent='✦ Reformuler avec l’IA'}};
+ logButton.onclick=async()=>{if(!callNote.value.trim())return toast('Saisissez un compte-rendu',true);if(voiceButton.getAttribute('aria-pressed')==='true')voiceButton.click();logButton.disabled=true;try{const result=await api(`/api/crm/contacts/${c.id}/appel`,{method:'POST',body:JSON.stringify({commentaire:callNote.value,appointment_id:options.appointment?.id,relance_id:options.relance?.id})});Object.assign(c,result.contact||result);mergeContactInStore(c.id,result.contact||result);stopVoiceDictation();closeModal();if(options.onSaved)options.onSaved(result);showContact(c.id,options.returnTab||'contactInfoTab');const sent=result.delivery?.sms&&result.delivery?.email;toast(options.appointment?(sent?'Appel consigné ; e-mail et SMS envoyés':'Appel consigné ; vérifiez les coordonnées ou la configuration des envois'):options.relance?'Appel consigné · relance classée « A répondu »':'Appel consigné',!!options.appointment&&!sent)}catch(e){logButton.disabled=false;toast(e.message,true)}};
 }
 function messageTemplateOptions(list,formation,showOthers=false){
  const name=String(formation||'').trim(),needle=name.toLocaleLowerCase('fr-FR'),isMetaA3p=x=>String(x.id||'').startsWith('automatic-meta-a3p-'),isRelaunch=x=>String(x.nom||'').trim().toLocaleLowerCase('fr-FR')==='relance';

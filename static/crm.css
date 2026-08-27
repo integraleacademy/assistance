@@ -50,6 +50,21 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .section-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:16px}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
 .call-modal{width:min(700px,100%)}
+.call-note-heading{gap:12px;margin-bottom:7px}
+.call-note-heading label{margin:0}
+.voice-input-button{display:inline-flex;align-items:center;gap:8px;flex:none;padding:7px 10px;border:1px solid #b9cbed;border-radius:9px;background:#f5f8ff;color:#285fc8;font:750 11px 'DM Sans',sans-serif;cursor:pointer;transition:border-color .15s,background .15s,color .15s,box-shadow .15s}
+.voice-input-button:hover,.voice-input-button:focus-visible{border-color:#7fa2e4;background:#eaf1ff;outline:0;box-shadow:0 0 0 3px #356ae61a}
+.voice-input-button:disabled{border-color:#d9e0ea;background:#f4f6f9;color:#8c98aa;cursor:not-allowed;box-shadow:none}
+.voice-input-button.is-listening{border-color:#ef8b98;background:#fff0f2;color:#c52f45}
+.voice-input-icon{position:relative;width:10px;height:14px;border:2px solid currentColor;border-radius:7px}
+.voice-input-icon:before{content:'';position:absolute;left:50%;bottom:-6px;width:2px;height:5px;border-radius:2px;background:currentColor;transform:translateX(-50%)}
+.voice-input-icon:after{content:'';position:absolute;left:50%;bottom:-7px;width:9px;height:2px;border-radius:2px;background:currentColor;transform:translateX(-50%)}
+.voice-input-button.is-listening .voice-input-icon{animation:voice-input-pulse 1s ease-in-out infinite}
+.voice-input-status{display:block;min-height:15px;margin-top:7px;color:#748298;font-size:10px;line-height:1.45}
+@keyframes voice-input-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.88)}}
+@media(prefers-reduced-motion:reduce){.voice-input-button.is-listening .voice-input-icon{animation:none}}
+@media(max-width:650px){.call-note-heading{align-items:stretch;flex-direction:column}.voice-input-button{justify-content:center;width:100%;min-height:42px}}
+
 .crm-preset-group{margin-top:14px;padding:12px;border:1px solid #dce5f2;border-radius:11px;background:#f8faff}
 .crm-preset-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;color:#52637b;font-size:11px;font-weight:800}
 .crm-preset-add{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:1px solid #b9cbed;border-radius:9px;background:#fff;color:var(--blue);font-size:20px;font-weight:700;line-height:1;cursor:pointer}
