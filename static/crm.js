@@ -825,13 +825,12 @@ function manualNextActionModal(c){
 function relaunchModal(c,options={}){
   const tomorrow=new Date(Date.now()+86400000).toISOString().slice(0,10);
   const active=(c.relances||[]).find(item=>item.status==='scheduled');
-  modal('Planifier une relance',`<p class="relaunch-intro">Choisissez la date à laquelle <strong>${esc(displayName(c))}</strong> devra être recontacté(e).</p><label class="field"><span style="display:block;margin-bottom:7px">Date de la prochaine relance</span><div class="relaunch-date"><span>◫</span><input id="relaunchDate" type="date" min="${new Date().toISOString().slice(0,10)}" value="${c.relance_date||tomorrow}" required></div></label><label class="field"><span style="display:block;margin-bottom:7px">Motif de la relance</span><input id="relaunchMotif" maxlength="160" value="${esc(active?.motif||'')}" placeholder="Ex. Dossier de financement à compléter" required></label>${crmPresetMarkup('relance_motif_presets')}`,`<button class="btn" id="cancelRelaunch">Annuler</button><button class="btn blue" id="saveRelaunch">Planifier la relance</button>`,'relaunch-modal');
+  modal('Planifier une relance',`<p class="relaunch-intro">Choisissez la date à laquelle <strong>${esc(displayName(c))}</strong> devra être recontacté(e).</p><label class="field"><span style="display:block;margin-bottom:7px">Date de la prochaine relance</span><div class="relaunch-date"><span>◫</span><input id="relaunchDate" type="date" min="${new Date().toISOString().slice(0,10)}" value="${c.relance_date||tomorrow}" required></div></label><label class="field"><span style="display:block;margin-bottom:7px">Motif de la relance (facultatif)</span><input id="relaunchMotif" maxlength="160" value="${esc(active?.motif||'')}" placeholder="Ex. Dossier de financement à compléter"></label>${crmPresetMarkup('relance_motif_presets')}`,`<button class="btn" id="cancelRelaunch">Annuler</button><button class="btn blue" id="saveRelaunch">Planifier la relance</button>`,'relaunch-modal');
   bindCrmPresetGroup('relance_motif_presets',document.querySelector('#relaunchMotif'),true);
   cancelRelaunch.onclick=closeModal;
   saveRelaunch.onclick=async()=>{
     if(!relaunchDate.value)return toast('Choisissez une date',true);
     const motif=relaunchMotif.value.trim();
-    if(!motif)return toast('Indiquez le motif de la relance',true);
     const id=c.id,date=relaunchDate.value,next={statut:'A relancer',relance_date:date,relance_motif:motif};
     saveRelaunch.disabled=true;cancelRelaunch.disabled=true;relaunchDate.disabled=true;relaunchMotif.disabled=true;saveRelaunch.textContent='Enregistrement…';
     try{const updated=await api(`/api/crm/contacts/${id}`,{method:'PATCH',body:JSON.stringify(next)});Object.assign(c,updated);mergeContactInStore(id,updated);closeModal();showContact(id,options.returnTab||'contactInfoTab');toast('Relance planifiée')}
