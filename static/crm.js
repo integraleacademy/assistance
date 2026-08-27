@@ -1,5 +1,9 @@
 const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['Prochain RDV inscription','POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Prochain RDV inscription','Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],callbackRequests=[],callbackRequestPendingCount=0,crmAppointments=[],crmSettings={},statusFilter='',callbackRequestFilter='pending',callbackRequestSearch='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='month',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='',activeCalendlyContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
 const CALENDLY_AVAILABILITY_WINDOW_DAYS=7;
+const CALENDLY_APPOINTMENT_PAST_DELAY_MS=2*60*60*1000;
+const calendlyAppointmentCutoff=appointment=>new Date(appointment?.start_time||0).getTime()+CALENDLY_APPOINTMENT_PAST_DELAY_MS;
+const calendlyAppointmentIsUpcoming=(appointment,now=Date.now())=>appointment?.status!=='canceled'&&calendlyAppointmentCutoff(appointment)>=now;
+const calendlyAppointmentIsPast=(appointment,now=Date.now())=>appointment?.status!=='canceled'&&calendlyAppointmentCutoff(appointment)<now;
 const esc=s=>String(s??'').replace(/rendez-vouss/gi,'rendez-vous').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const api=async(url,opt={})=>{const{timeout=20000,...requestOptions}=opt,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{const r=await fetch(url,{headers:{'Content-Type':'application/json'},...requestOptions,signal:requestOptions.signal||controller.signal});if(!r.ok){const payload=await r.json().catch(()=>({})),error=Error(payload.error||'Une erreur est survenue');error.status=r.status;error.reason=payload.reason;throw error}return r.status===204?null:r.json()}catch(error){if(error.name==='AbortError')throw Error('Le serveur met trop de temps à répondre. Réessayez dans quelques secondes.');throw error}finally{clearTimeout(timer)}};
 let toastTimer,pendingStatusSaves=0;
@@ -847,8 +851,8 @@ function sortedAppointments(items){
   const now=Date.now();
   return [...items].sort((a,b)=>{
     const at=new Date(a.start_time||0).getTime(),bt=new Date(b.start_time||0).getTime();
-    const ag=a.status!=='canceled'&&at>=now?0:a.status!=='canceled'?1:2;
-    const bg=b.status!=='canceled'&&bt>=now?0:b.status!=='canceled'?1:2;
+    const ag=calendlyAppointmentIsUpcoming(a,now)?0:a.status!=='canceled'?1:2;
+    const bg=calendlyAppointmentIsUpcoming(b,now)?0:b.status!=='canceled'?1:2;
     return ag!==bg?ag-bg:ag===0?at-bt:bt-at;
   });
 }
@@ -924,8 +928,8 @@ function renderCalendlyAppointments(c,items,integration){
   if(!list||!box)return;
   const now=Date.now();
   const ordered=sortedAppointments(items);
-  const upcoming=ordered.filter(a=>a.status!=='canceled'&&new Date(a.start_time||0).getTime()>=now);
-  const past=ordered.filter(a=>a.status!=='canceled'&&new Date(a.start_time||0).getTime()<now);
+  const upcoming=ordered.filter(a=>calendlyAppointmentIsUpcoming(a,now));
+  const past=ordered.filter(a=>calendlyAppointmentIsPast(a,now));
   const canceled=ordered.filter(a=>a.status==='canceled');
   const todayKey=calendarDateKey(new Date()),today=upcoming.find(a=>calendarDateKey(new Date(a.start_time))===todayKey),next=upcoming.find(a=>a!==today);
   const spotlight=[today&&['Rendez-vous du jour',today],next&&['Prochain rendez-vous',next]].filter(Boolean);

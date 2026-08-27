@@ -2,6 +2,7 @@ import datetime
 import hashlib
 import hmac
 import json
+import subprocess
 import time
 
 import app as application
@@ -1085,6 +1086,45 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         ".calendar-training-ssiap{",
     ]:
         assert marker in crm_css
+
+
+def test_calendly_appointment_stays_upcoming_for_two_hours_after_start():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    with open(application.app.root_path + "/templates/crm.html", encoding="utf-8") as source:
+        crm_template = source.read()
+
+    helpers = crm_js[
+        crm_js.index("const CALENDLY_APPOINTMENT_PAST_DELAY_MS="):
+        crm_js.index("const esc=")
+    ]
+    script = helpers + r"""
+const assert=require('node:assert/strict');
+const start=Date.parse('2026-08-27T07:00:00Z');
+const appointment={start_time:'2026-08-27T07:00:00Z',status:'active'};
+
+assert.equal(CALENDLY_APPOINTMENT_PAST_DELAY_MS,2*60*60*1000);
+assert.equal(calendlyAppointmentIsUpcoming(appointment,start+8*60*1000),true);
+assert.equal(calendlyAppointmentIsPast(appointment,start+8*60*1000),false);
+assert.equal(calendlyAppointmentIsUpcoming(appointment,start+2*60*60*1000),true);
+assert.equal(calendlyAppointmentIsPast(appointment,start+2*60*60*1000),false);
+assert.equal(calendlyAppointmentIsUpcoming(appointment,start+2*60*60*1000+1),false);
+assert.equal(calendlyAppointmentIsPast(appointment,start+2*60*60*1000+1),true);
+assert.equal(calendlyAppointmentIsUpcoming({...appointment,status:'canceled'},start),false);
+assert.equal(calendlyAppointmentIsPast({...appointment,status:'canceled'},start+3*60*60*1000),false);
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "const upcoming=ordered.filter(a=>calendlyAppointmentIsUpcoming(a,now));" in crm_js
+    assert "const past=ordered.filter(a=>calendlyAppointmentIsPast(a,now));" in crm_js
+    assert "calendly_timing_version='20260827-calendly-two-hour-delay-1'" in crm_template
 
 
 def test_no_answer_updates_the_in_memory_contact_without_refresh():
