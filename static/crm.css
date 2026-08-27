@@ -380,6 +380,13 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .calendar-training-a3p{--calendar-training-color:#14a37f}
 .calendar-training-vtc{--calendar-training-color:#7c5ce7}
 .calendar-training-ssiap{--calendar-training-color:#e24b5b}
+.calendar-event.calendar-treated-answered{--calendar-training-color:#15916f;border-color:#a8ddcd;border-left-color:#15916f;background:linear-gradient(135deg,#eefaf6,#f8fdfa)}
+.calendar-event.calendar-treated-no-answer{--calendar-training-color:#d58a1f;border-color:#efd19c;border-left-color:#d58a1f;background:linear-gradient(135deg,#fff7e8,#fffcf5)}
+.calendar-event.calendar-treated-answered time{color:#11745a}
+.calendar-event.calendar-treated-no-answer time{color:#9a6515}
+.calendar-event .calendar-treatment-badge{display:inline-flex;align-items:center;margin:0;padding:5px 9px;border-radius:999px;font:800 9px Manrope;white-space:nowrap}
+.calendar-event .calendar-treatment-badge.answered{background:#d9f3e9;color:#107259}
+.calendar-event .calendar-treatment-badge.no-answer{background:#ffe9bf;color:#8b5b10}
 .actions-menu .delete-action{margin-top:5px;border-top:1px solid #f2d7da;color:#c43e4d}
 .actions-menu .delete-action:hover{background:#fff1f2;color:#ad2635}
 .side-user form{margin:0}.side-user button{display:grid;place-items:center;width:34px;height:34px;border:1px solid #ffffff24;border-radius:8px;background:#ffffff0c;color:#d6e2f5;font-size:18px;cursor:pointer}.side-user button:hover,.side-user button:focus-visible{background:#ffffff20;color:#fff;outline:2px solid #8bb8ff;outline-offset:2px}
