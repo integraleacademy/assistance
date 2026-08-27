@@ -1166,6 +1166,21 @@ DATA_DIR = os.path.dirname(DATA_FILE)
 UPLOAD_FOLDER = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+CRM_DEFAULT_CALL_NOTE_PRESETS = [
+    "Doit créer son Identité Numérique la Poste.",
+    "Un nouveau RDV téléphonique a été fixé",
+    "Une relance a été programmée",
+    "Est assez motivé",
+    "N’est pas très motivé",
+    "A déjà la carte professionnelle",
+    "N’a pas de carte professionnelle",
+]
+CRM_DEFAULT_RELANCE_MOTIF_PRESETS = [
+    "Suivi VAE",
+    "En attente RDV France Travail",
+    "Doit revenir vers nous",
+]
+
 DEFAULT_DATA = {
     "demandes": [],
     "archives": [],
@@ -1191,6 +1206,8 @@ DEFAULT_DATA = {
         "notification_mentions": True,
         "notification_system": True,
         "direction_costs": {},
+        "call_note_presets": CRM_DEFAULT_CALL_NOTE_PRESETS.copy(),
+        "relance_motif_presets": CRM_DEFAULT_RELANCE_MOTIF_PRESETS.copy(),
     },
     "crm_ai_candidate_analyses": {},
     "crm_cnaps_scoring_snapshots": {},
@@ -14491,8 +14508,38 @@ def _crm_settings_payload(data):
     settings = data.setdefault("crm_settings", {})
     defaults = DEFAULT_DATA["crm_settings"]
     for key, value in defaults.items():
-        settings.setdefault(key, value.copy() if isinstance(value, dict) else value)
+        settings.setdefault(
+            key,
+            value.copy() if isinstance(value, (dict, list)) else value,
+        )
     return settings
+
+
+def _crm_preset_values(value, label):
+    if not isinstance(value, list):
+        raise ValueError(f"Les {label} doivent être transmis sous forme de liste.")
+    if len(value) > 50:
+        raise ValueError(f"Vous ne pouvez pas enregistrer plus de 50 {label}.")
+    normalized = []
+    seen = set()
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError(
+                f"Chaque élément de la liste « {label} » doit être un texte."
+            )
+        text = " ".join(item.split())
+        if not text:
+            continue
+        if len(text) > 160:
+            raise ValueError(
+                f"Chaque élément de la liste « {label} » est limité à 160 caractères."
+            )
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(text)
+    return normalized
 
 
 @app.route("/api/crm/settings", methods=["GET", "PATCH"])
@@ -14507,11 +14554,21 @@ def crm_settings():
     allowed = {
         "calendar_default_view", "calendar_workday_start", "calendar_workday_end",
         "notification_mentions", "notification_system", "direction_costs",
+        "call_note_presets", "relance_motif_presets",
     }
     if "direction_costs" in payload and (current_user() or {}).get("role") != "admin":
         return jsonify({"error": "La configuration des coûts est réservée à l’administrateur."}), 403
     for key in allowed.intersection(payload):
-        if key == "direction_costs":
+        if key in {"call_note_presets", "relance_motif_presets"}:
+            label = (
+                "réponses pré-enregistrées"
+                if key == "call_note_presets" else "motifs de relance"
+            )
+            try:
+                settings[key] = _crm_preset_values(payload.get(key), label)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+        elif key == "direction_costs":
             costs = payload.get(key)
             if not isinstance(costs, dict):
                 return jsonify({"error": "La configuration des coûts est invalide."}), 400
