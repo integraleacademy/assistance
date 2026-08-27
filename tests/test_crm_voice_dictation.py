@@ -39,6 +39,39 @@ def test_call_modal_exposes_accessible_voice_dictation_controls():
         assert selector in stylesheet
 
 
+def test_message_and_publication_fields_reuse_the_voice_dictation_controls():
+    javascript = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "static" / "crm.css").read_text(encoding="utf-8")
+    message_modal = javascript.split("function messageModal", 1)[1].split(
+        "function bulkMessageModal", 1
+    )[0]
+
+    for marker in (
+        'id="dictateMessage"',
+        'id="dictateMessageStatus"',
+        "Dicter le message",
+        "bindVoiceDictation(messageField,voiceButton,voiceStatus)",
+        "pauseVoiceDictation()",
+        "destroyVoiceDictation();closeModal()",
+    ):
+        assert marker in message_modal
+
+    for marker in (
+        'id="dictatePublication"',
+        'id="dictatePublicationStatus"',
+        "Dicter la publication",
+        "bindVoiceDictation(publicationText,publicationVoiceButton,publicationVoiceStatus)",
+        "pausePublicationVoice()",
+        "if(selected.id!=='contactActivityTab')stopActiveVoiceDictation()",
+    ):
+        assert marker in javascript
+
+    assert "function stopActiveVoiceDictation()" in javascript
+    assert "stopActiveVoiceDictation();modalRoot.innerHTML=" in javascript
+    assert ".voice-input-heading" in stylesheet
+    assert ".publication-compose-actions .publication-voice-button" in stylesheet
+
+
 def test_voice_dictation_appends_results_handles_errors_and_has_a_fallback():
     harness = r"""
 const assert = require('assert');
@@ -49,8 +82,8 @@ class FakeRecognition {
   stop() { this.stopped = true; this.onend(); }
   abort() { this.aborted = true; }
 }
-function makeButton() {
-  const label = {textContent: ''};
+function makeButton(idleLabel = 'Dicter le résumé') {
+  const label = {textContent: idleLabel};
   const classes = new Set();
   const attrs = {};
   const button = {
@@ -163,6 +196,21 @@ assert.ok(field.value.endsWith('\nLe financement sera vérifié.'));
 destroy();
 assert.strictEqual(currentRecognition.aborted, true);
 assert.strictEqual(voice.button.onclick, null);
+
+const publication = makeButton('Dicter la publication');
+bindVoiceDictation(makeField(), publication.button, {textContent: ''});
+const publicationRecognition = currentRecognition;
+publication.button.onclick();
+assert.strictEqual(publication.label.textContent, 'Arrêter la dictée');
+
+const message = makeButton('Dicter le message');
+bindVoiceDictation(makeField(), message.button, {textContent: ''});
+message.button.onclick();
+assert.strictEqual(publicationRecognition.stopped, true);
+assert.strictEqual(publication.label.textContent, 'Dicter la publication');
+assert.strictEqual(message.label.textContent, 'Arrêter la dictée');
+message.button.onclick();
+assert.strictEqual(message.label.textContent, 'Dicter le message');
 
 const denied = makeButton();
 const deniedStatus = {textContent: ''};

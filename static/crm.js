@@ -480,6 +480,7 @@ function relanceTracking(c){
   return`<section class="relance-tracking"><header class="relance-hero"><div class="relance-hero-icon">${crmIcon('alarm')}</div><div><span class="relance-eyebrow">SUIVI COMMERCIAL</span><h2>Suivi des relances</h2><p>Visualisez les tentatives, traitez les réponses et gardez toujours la prochaine action à jour.</p></div><button class="btn blue" id="planRelanceFromTracking" type="button">+ Planifier une relance</button></header><div class="relance-metrics"><article><span>À venir</span><b>${planned.length}</b><small>relance${planned.length>1?'s':''} planifiée${planned.length>1?'s':''}</small></article><article><span>Sans réponse</span><b>${noAnswer}</b><small>tentative${noAnswer>1?'s':''}</small></article><article><span>Ont répondu</span><b>${answered}</b><small>appel${answered>1?'s':''} consigné${answered>1?'s':''}</small></article><article><span>Total</span><b>${all.length}</b><small>relance${all.length>1?'s':''} suivie${all.length>1?'s':''}</small></article></div><section class="relance-planned"><div class="relance-section-head"><div><span>PROCHAINES ACTIONS</span><h2>Les relances prévues</h2></div>${planned.length?`<b>${planned.length}</b>`:''}</div><div class="relance-list">${plannedHtml}</div></section>${historyHtml}</section>`
 }
 async function showContact(id,initialTab='contactInfoTab'){
+  stopActiveVoiceDictation();
   activeWedofContactId=String(id);
   const returnSection=contactReturnSection();
   let c=contacts.find(x=>x.id===id);
@@ -652,14 +653,18 @@ function bindContact(c,initialTab='contactInfoTab'){
 		  let reglementaireLoaded=false;
 		  const loadReglementaireOnce=()=>{if(reglementaireLoaded||(!needsCnaps(c)&&!isDespVae(c)))return;reglementaireLoaded=true;loadReglementaire(c)};
 		  const tabs=[contactInfoTab,contactActivityTab,contactWedofTab,document.querySelector('#contactVaeTab'),document.querySelector('#contactRelanceTab')].filter(Boolean);
-		  const selectContactTab=selected=>{tabs.forEach(tab=>{const active=tab===selected;tab.classList.toggle('wedof-tab-active',active);tab.setAttribute('aria-selected',String(active));document.querySelector(`#${tab.getAttribute('aria-controls')}`).hidden=!active});if(selected.id==='contactVaeTab')loadReglementaireOnce()};
+		  const selectContactTab=selected=>{if(selected.id!=='contactActivityTab')stopActiveVoiceDictation();tabs.forEach(tab=>{const active=tab===selected;tab.classList.toggle('wedof-tab-active',active);tab.setAttribute('aria-selected',String(active));document.querySelector(`#${tab.getAttribute('aria-controls')}`).hidden=!active});if(selected.id==='contactVaeTab')loadReglementaireOnce()};
 	  tabs.forEach(tab=>tab.onclick=()=>selectContactTab(tab));
 	  bindRelanceTracking(c);
 	  const preferredTab=tabs.find(tab=>tab.id===initialTab);if(preferredTab)selectContactTab(preferredTab);
 	  loadWedof(c);
   let activityExpanded=false;const renderActivityFeed=()=>{const current=contacts.find(item=>item.id===c.id)||c;activityFeed.innerHTML=feed(current,activityExpanded)};
-  const publish=async()=>{const texte=publicationText.value.trim();if(!texte)return toast('Écrivez une publication',true);publishBtn.disabled=true;try{const result=await api(`/api/crm/contacts/${c.id}/publications`,{method:'POST',body:JSON.stringify({texte})});Object.assign(c,result.contact);mergeContactInStore(c.id,result.contact);publicationText.value='';renderActivityFeed();publicationFeed.innerHTML=publications(c);bindPublicationFeed(c,publicationFeed,renderActivityFeed);toast('Publication ajoutée')}catch(e){toast(e.message,true)}finally{publishBtn.disabled=false}};
-  bindMentions(publicationText);publishBtn.onclick=publish;publicationText.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!document.querySelector('.mention-menu:not([hidden])')){e.preventDefault();publish()}};rephrasePublication.onclick=async()=>{if(!publicationText.value.trim())return toast('Saisissez d’abord une publication',true);rephrasePublication.disabled=true;try{publicationText.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:publicationText.value})})).texte}catch(e){toast(e.message,true)}finally{rephrasePublication.disabled=false}};bindPublicationFeed(c,publicationFeed,renderActivityFeed);
+  publicationText.insertAdjacentHTML('afterend','<small class="voice-input-status" id="dictatePublicationStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small>');
+  document.querySelector('.publication-compose-actions').insertAdjacentHTML('afterbegin','<button class="btn voice-input-button publication-voice-button" id="dictatePublication" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter la publication</span></button>');
+  const publicationVoiceButton=document.querySelector('#dictatePublication'),publicationVoiceStatus=document.querySelector('#dictatePublicationStatus'),pausePublicationVoice=()=>{if(publicationVoiceButton.getAttribute('aria-pressed')==='true')publicationVoiceButton.click()};
+  bindVoiceDictation(publicationText,publicationVoiceButton,publicationVoiceStatus);
+  const publish=async()=>{pausePublicationVoice();const texte=publicationText.value.trim();if(!texte)return toast('Écrivez une publication',true);publishBtn.disabled=true;try{const result=await api(`/api/crm/contacts/${c.id}/publications`,{method:'POST',body:JSON.stringify({texte})});Object.assign(c,result.contact);mergeContactInStore(c.id,result.contact);publicationText.value='';renderActivityFeed();publicationFeed.innerHTML=publications(c);bindPublicationFeed(c,publicationFeed,renderActivityFeed);toast('Publication ajoutée')}catch(e){toast(e.message,true)}finally{publishBtn.disabled=false}};
+  bindMentions(publicationText);publishBtn.onclick=publish;publicationText.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!document.querySelector('.mention-menu:not([hidden])')){e.preventDefault();publish()}};rephrasePublication.onclick=async()=>{pausePublicationVoice();if(!publicationText.value.trim())return toast('Saisissez d’abord une publication',true);rephrasePublication.disabled=true;try{publicationText.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:publicationText.value})})).texte}catch(e){toast(e.message,true)}finally{rephrasePublication.disabled=false}};bindPublicationFeed(c,publicationFeed,renderActivityFeed);
   updateFundingBadges(c);
   renderIntegrationScore(c);
   loadCandidateAi(c);
@@ -792,7 +797,7 @@ function rerenderWedofContactIfSafe(c,changed){if(!changed)return false;const fo
 async function loadWedof(c){const box=document.querySelector('#contactWedofPanel');if(!box)return;box.innerHTML='<div class="wedof-loading"><span class="sync-spinner"></span><b>Données WEDOF en cours de chargement</b><small>Lecture des dernières données synchronisées…</small></div>';try{const cached=await api(`/api/crm/contacts/${c.id}/wedof`);if(!wedofContactIsCurrent(c))return;const resources=cached.resources||[],status=cached.status||{};updateFundingBadges(c,resources);updateWedofTabCount(resources.length);renderWedof(c,cached,status);if(status.configured!==false&&resources.length)void refreshWedofOnOpen(c,status)}catch(e){if(!wedofContactIsCurrent(c))return;box.innerHTML=`<div class="wedof-state wedof-state-error"><span>!</span><h2>Impossible de charger WEDOF</h2><p>${esc(e.message)}</p><button class="wedof-refresh" id="wedofRetry">Réessayer</button></div>`;document.querySelector('#wedofRetry').onclick=()=>loadWedof(c)}}
 async function refreshWedofOnOpen(c,status={}){if(!wedofContactIsCurrent(c))return;const button=document.querySelector('#wedofRefresh');if(!button||button.disabled)return;button.disabled=true;button.textContent='↻ Vérification…';try{const data=await api(`/api/crm/contacts/${c.id}/wedof/refresh-on-open`,{method:'POST',body:'{}',timeout:60000});if(!wedofContactIsCurrent(c))return;const changed=mergeWedofRefreshedContact(c,data.contact);if(data.sync?.skipped){button.disabled=false;button.textContent='↻ Actualiser ce dossier';return}updateFundingBadges(c,data.resources||[]);renderWedof(c,data,{...status,last_sync_at:data.sync?.last_sync_at||status.last_sync_at});const notice=document.querySelector('#wedofNotice');if(notice)notice.innerHTML='<div class="wedof-notice">✓ Dernier dossier WEDOF vérifié automatiquement.</div>';rerenderWedofContactIfSafe(c,changed)}catch(e){if(!wedofContactIsCurrent(c))return;const currentButton=document.querySelector('#wedofRefresh');if(currentButton){currentButton.disabled=false;currentButton.textContent='↻ Actualiser ce dossier'}const notice=document.querySelector('#wedofNotice');if(notice)notice.innerHTML=`<div class="wedof-notice wedof-notice-error">La vérification automatique n’a pas abouti : ${esc(e.message)}. Les données en cache restent affichées.</div>`}}
 async function refreshWedof(c,status={},options={}){if(!wedofContactIsCurrent(c))return;const button=document.querySelector('#wedofRefresh');if(!button||button.disabled)return;button.disabled=true;button.textContent='↻ Actualisation…';try{const data=await api(`/api/crm/contacts/${c.id}/wedof/refresh`,{method:'POST',body:'{}',timeout:60000});if(!wedofContactIsCurrent(c))return;const changed=mergeWedofRefreshedContact(c,data.contact);updateFundingBadges(c,data.resources||[]);renderWedof(c,data,{...status,last_sync_at:data.sync?.last_sync_at||status.last_sync_at});const notice=document.querySelector('#wedofNotice');if(notice)notice.innerHTML=data.sync?.skipped?`<div class="wedof-notice">${esc(wedofRefreshSkipMessage(data.sync.reason))}</div>`:'<div class="wedof-notice">✓ Dossier WEDOF actualisé avec succès.</div>';if(!rerenderWedofContactIfSafe(c,changed)&&!options.silent)toast(data.sync?.skipped?'Aucune requête WEDOF nécessaire':'Dossier WEDOF actualisé')}catch(e){if(!wedofContactIsCurrent(c))return;const currentButton=document.querySelector('#wedofRefresh');if(currentButton){currentButton.disabled=false;currentButton.textContent='↻ Actualiser ce dossier'}const notice=document.querySelector('#wedofNotice');if(notice)notice.innerHTML=`<div class="wedof-notice wedof-notice-error">L’actualisation n’a pas abouti : ${esc(e.message)}. Les données en cache restent affichées.</div>`;if(!options.silent)toast(e.message,true)}}
-function modal(title,body,foot='',className=''){modalRoot.innerHTML=`<div class="modal-bg"><div class="modal ${className}" role="dialog" aria-modal="true"><div class="modal-head"><h2>${title}</h2><button class="close" aria-label="Fermer">×</button></div><div class="modal-body">${body}</div>${foot?`<div class="modal-foot">${foot}</div>`:''}</div></div>`;document.querySelector('.close').onclick=closeModal}function closeModal(){modalRoot.innerHTML=''}
+function modal(title,body,foot='',className=''){stopActiveVoiceDictation();modalRoot.innerHTML=`<div class="modal-bg"><div class="modal ${className}" role="dialog" aria-modal="true"><div class="modal-head"><h2>${title}</h2><button class="close" aria-label="Fermer">×</button></div><div class="modal-body">${body}</div>${foot?`<div class="modal-foot">${foot}</div>`:''}</div></div>`;document.querySelector('.close').onclick=closeModal}function closeModal(){stopActiveVoiceDictation();modalRoot.innerHTML=''}
 const crmPresetMeta={
  call_note_presets:{title:'Réponses pré-enregistrées',prompt:'Saisissez la nouvelle réponse pré-enregistrée :',empty:'Saisissez une réponse.',saved:'Réponse pré-enregistrée ajoutée'},
  relance_motif_presets:{title:'Motifs de relance',prompt:'Saisissez le nouveau motif de relance :',empty:'Saisissez un motif de relance.',saved:'Motif de relance ajouté'},
@@ -1126,8 +1131,14 @@ function formatVoiceDictation(value,capitalizeFirst=true){
   return prefix+letter.toLocaleUpperCase('fr-FR')
  })
 }
+let activeVoiceDictationStop=null;
+function stopActiveVoiceDictation(){
+ const stop=activeVoiceDictationStop;
+ activeVoiceDictationStop=null;
+ if(stop)stop()
+}
 function bindVoiceDictation(field,button,status){
- const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition,label=button.querySelector('[data-voice-label]');
+ const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition,label=button.querySelector('[data-voice-label]'),idleLabel=label.textContent.trim()||'Dicter le résumé';
  if(!SpeechRecognition){
   button.disabled=true;
   button.title='La dictée vocale nécessite Chrome ou Edge.';
@@ -1146,8 +1157,13 @@ function bindVoiceDictation(field,button,status){
   listening=value;
   button.classList.toggle('is-listening',value);
   button.setAttribute('aria-pressed',String(value));
-  label.textContent=value?'Arrêter la dictée':'Dicter le résumé';
+  label.textContent=value?'Arrêter la dictée':idleLabel;
   status.textContent=value?'Écoute en cours… Dites « point », « virgule » ou « à la ligne ».':'Dites « point », « virgule » ou « à la ligne » pour ponctuer.'
+ };
+ const releaseActive=()=>{if(activeVoiceDictationStop===stopListening)activeVoiceDictationStop=null};
+ const stopListening=()=>{
+  if(!listening)return;
+  try{recognition.stop()}catch(_){recognition.abort()}
  };
  const render=interim=>{
   const capitalizeFirst=!baseText||/[.!?]\s*$|\n\s*$/.test(baseText),dictated=formatVoiceDictation(combine(finalText,interim),capitalizeFirst);
@@ -1179,25 +1195,30 @@ function bindVoiceDictation(field,button,status){
   const message=errorMessage(event.error);
   lastError=message;
   setListening(false);
+  releaseActive();
   status.textContent=message;
   if(event.error!=='no-speech')toast(message,true)
  };
  recognition.onend=()=>{
   if(destroyed)return;
   setListening(false);
+  releaseActive();
   if(lastError){status.textContent=lastError;lastError=''}
  };
  button.onclick=()=>{
   if(listening){
-   try{recognition.stop()}catch(_){recognition.abort()}
+   stopListening();
    return
   }
+  stopActiveVoiceDictation();
   baseText=field.value.replace(/[ \t]+$/,'');
   finalText='';
   lastError='';
+  activeVoiceDictationStop=stopListening;
   setListening(true);
   try{recognition.start()}catch(_){
    setListening(false);
+   releaseActive();
    toast('Impossible de démarrer la dictée vocale. Réessayez.',true)
   }
  };
@@ -1205,6 +1226,7 @@ function bindVoiceDictation(field,button,status){
   if(destroyed)return;
   destroyed=true;
   button.onclick=null;
+  releaseActive();
   if(listening){try{recognition.abort()}catch(_){}}
   listening=false
  }
@@ -1232,12 +1254,14 @@ function messageTemplateOptions(list,formation,showOthers=false){
 function smsPreviewHtml(content){return `<style>html,body{margin:0}.sms-preview{box-sizing:border-box;min-height:100vh;padding:48px 24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033}.sms-preview-label{margin:0 auto 12px;max-width:420px;color:#718096;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.sms-preview-bubble{max-width:420px;margin:auto;padding:16px 18px;border-radius:20px 20px 5px 20px;background:#356ae6;color:#fff;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;box-shadow:0 8px 24px #356ae633}.sms-preview small{display:block;max-width:420px;margin:10px auto;color:#718096;text-align:right}</style><div class="sms-preview"><p class="sms-preview-label">Aperçu du SMS</p><div class="sms-preview-bubble">${esc(content)}</div><small>${String(content||'').length} caractère(s)</small></div>`}
 function messageModal(c,type){
  const isMail=type==='email',isMeta=[c.origine,c.source].some(value=>String(value||'').trim().toLocaleUpperCase('fr-FR')==='META'),isA3p=String(c.formation||'').trim().toLocaleUpperCase('fr-FR')==='A3P',automaticMeta=(isMeta||isA3p)?(templates.automatic_meta||[]).filter(t=>t.type===type):[],modelPool=[...(isMail?templates.automatic_email||[]:[]),...automaticMeta,...templates[type]],list=[...new Map(modelPool.map(template=>[String(template.id),template])).values()];
- modal(isMail?'Envoyer un e-mail':'Envoyer un SMS',`<div class="field"><label>Destinataire</label><input value="${esc(isMail?c.mail:c.telephone)}" disabled></div><div class="field"><label>Utiliser un modèle</label><select id="tpl">${messageTemplateOptions(list,c.formation)}</select></div>${isMail?'<div class="field"><label>Objet</label><input id="subject" value="Intégrale Academy — Votre formation"></div>':''}<div class="field"><label>Message ${isMail?'(HTML accepté)':''}</label><textarea id="msg" placeholder="Votre message…"></textarea></div>`,`<button class="btn ai-button" id="generateMessage">✦ Générer avec l’IA</button><button class="btn" id="messagePreview">Prévisualiser</button><button class="btn blue" id="sendMessage">Envoyer</button>`,'message-modal');
- const generateButton=document.querySelector('#generateMessage'),templateSelect=document.querySelector('#tpl'),messageField=document.querySelector('#msg'),subjectField=document.querySelector('#subject'),previewButton=document.querySelector('#messagePreview'),sendButton=document.querySelector('#sendMessage');
- generateButton.onclick=async()=>{generateButton.disabled=true;generateButton.textContent='Génération…';try{messageField.value=(await api(`/api/crm/contacts/${c.id}/generer-message`,{method:'POST',body:JSON.stringify({type,instructions:messageField.value})})).texte}catch(e){toast(e.message,true)}finally{generateButton.disabled=false;generateButton.textContent='✦ Générer avec l’IA'}};
- templateSelect.onchange=()=>{if(templateSelect.value==='__other_templates__'){templateSelect.innerHTML=messageTemplateOptions(list,c.formation,true);templateSelect.value='';return}const t=list.find(x=>x.id===templateSelect.value);if(t){messageField.value=t.contenu;if(isMail)subjectField.value=t.sujet}};
- previewButton.onclick=async()=>{previewButton.disabled=true;try{if(isMail){const result=await api(`/api/crm/contacts/${c.id}/message-preview`,{method:'POST',body:JSON.stringify({contenu:messageField.value})});previewModal(result.html,true)}else previewModal(smsPreviewHtml(messageField.value),false,null,{contenu:messageField.value,destinataire:c.telephone})}catch(e){toast(e.message,true)}finally{previewButton.disabled=false}};
- sendButton.onclick=async()=>{sendButton.disabled=true;try{Object.assign(c,await api(`/api/crm/contacts/${c.id}/message`,{method:'POST',body:JSON.stringify({type,contenu:messageField.value,sujet:isMail?subjectField.value:'',template_id:templateSelect.value})}));closeModal();showContact(c.id);toast(`${isMail?'E-mail':'SMS'} envoyé`)}catch(e){toast(e.message,true);sendButton.disabled=false}}
+ modal(isMail?'Envoyer un e-mail':'Envoyer un SMS',`<div class="field"><label>Destinataire</label><input value="${esc(isMail?c.mail:c.telephone)}" disabled></div><div class="field"><label>Utiliser un modèle</label><select id="tpl">${messageTemplateOptions(list,c.formation)}</select></div>${isMail?'<div class="field"><label>Objet</label><input id="subject" value="Intégrale Academy — Votre formation"></div>':''}<div class="field message-body-field"><div class="field-label-row voice-input-heading"><label for="msg">Message ${isMail?'(HTML accepté)':''}</label><button class="voice-input-button" id="dictateMessage" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le message</span></button></div><textarea id="msg" placeholder="Votre message…"></textarea><small class="voice-input-status" id="dictateMessageStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small></div>`,`<button class="btn ai-button" id="generateMessage">✦ Générer avec l’IA</button><button class="btn" id="messagePreview">Prévisualiser</button><button class="btn blue" id="sendMessage">Envoyer</button>`,'message-modal');
+ const generateButton=document.querySelector('#generateMessage'),templateSelect=document.querySelector('#tpl'),messageField=document.querySelector('#msg'),subjectField=document.querySelector('#subject'),previewButton=document.querySelector('#messagePreview'),sendButton=document.querySelector('#sendMessage'),voiceButton=document.querySelector('#dictateMessage'),voiceStatus=document.querySelector('#dictateMessageStatus');
+ const destroyVoiceDictation=bindVoiceDictation(messageField,voiceButton,voiceStatus),pauseVoiceDictation=()=>{if(voiceButton.getAttribute('aria-pressed')==='true')voiceButton.click()};
+ document.querySelector('.close').onclick=()=>{destroyVoiceDictation();closeModal()};
+ generateButton.onclick=async()=>{pauseVoiceDictation();generateButton.disabled=true;generateButton.textContent='Génération…';try{messageField.value=(await api(`/api/crm/contacts/${c.id}/generer-message`,{method:'POST',body:JSON.stringify({type,instructions:messageField.value})})).texte}catch(e){toast(e.message,true)}finally{generateButton.disabled=false;generateButton.textContent='✦ Générer avec l’IA'}};
+ templateSelect.onchange=()=>{pauseVoiceDictation();if(templateSelect.value==='__other_templates__'){templateSelect.innerHTML=messageTemplateOptions(list,c.formation,true);templateSelect.value='';return}const t=list.find(x=>x.id===templateSelect.value);if(t){messageField.value=t.contenu;if(isMail)subjectField.value=t.sujet}};
+ previewButton.onclick=async()=>{pauseVoiceDictation();previewButton.disabled=true;try{if(isMail){const result=await api(`/api/crm/contacts/${c.id}/message-preview`,{method:'POST',body:JSON.stringify({contenu:messageField.value})});destroyVoiceDictation();previewModal(result.html,true)}else{destroyVoiceDictation();previewModal(smsPreviewHtml(messageField.value),false,null,{contenu:messageField.value,destinataire:c.telephone})}}catch(e){toast(e.message,true)}finally{previewButton.disabled=false}};
+ sendButton.onclick=async()=>{pauseVoiceDictation();sendButton.disabled=true;try{Object.assign(c,await api(`/api/crm/contacts/${c.id}/message`,{method:'POST',body:JSON.stringify({type,contenu:messageField.value,sujet:isMail?subjectField.value:'',template_id:templateSelect.value})}));destroyVoiceDictation();closeModal();showContact(c.id);toast(`${isMail?'E-mail':'SMS'} envoyé`)}catch(e){toast(e.message,true);sendButton.disabled=false}}
 }
 function bulkMessageModal(type){
  const isMail=type==='email',selected=contacts.filter(contact=>selectedLeadIds.has(String(contact.id))&&isActiveLead(contact)),eligible=selected.filter(contact=>String((isMail?contact.mail:contact.telephone)||'').trim()),missing=selected.filter(contact=>!eligible.includes(contact));
@@ -1308,6 +1332,7 @@ async function createContact(){modal('Créer une nouvelle piste',`<div class="fi
 function deleteCrmDatabaseModal(){adminToolsMenuElement?.classList.remove('open');adminToolsButton?.setAttribute('aria-expanded','false');modal('Supprimer la base de données',`<div class="database-delete-warning"><b>Cette action est irréversible.</b><p>Tous les prospects, toutes les pistes et leur historique CRM seront définitivement supprimés. Les autres données du site ne seront pas affectées.</p><label for="deleteCrmConfirmation">Saisissez <strong>SUPPRIMER</strong> pour confirmer</label><input id="deleteCrmConfirmation" autocomplete="off" placeholder="SUPPRIMER"></div>`,`<button class="btn" id="cancelDatabaseDelete">Annuler</button><button class="btn danger" id="confirmDatabaseDelete" disabled>Supprimer définitivement</button>`,'database-delete-modal');const confirmation=document.querySelector('#deleteCrmConfirmation'),submit=document.querySelector('#confirmDatabaseDelete');document.querySelector('#cancelDatabaseDelete').onclick=closeModal;confirmation.oninput=()=>{submit.disabled=confirmation.value.trim()!=='SUPPRIMER'};submit.onclick=async()=>{submit.disabled=true;submit.textContent='Suppression…';try{const result=await api('/api/crm/database',{method:'DELETE'});contacts=[];crmAppointments=[];notifications=[];localStorage.removeItem('crm-recent-searches');closeModal();C.section='accueil';history.pushState({},'',`/crm`);render();updateNotificationCount();toast(`${result.deleted_count} fiche${result.deleted_count>1?'s':''} supprimée${result.deleted_count>1?'s':''}`)}catch(e){submit.disabled=false;submit.textContent='Supprimer définitivement';toast(e.message,true)}};confirmation.focus()}
 let integrationTimer;function scheduleContactIntegrations(c){clearTimeout(integrationTimer);integrationTimer=setTimeout(()=>{loadCalendlyAppointments(c,true);refreshFundingBadges(c)},300)}
 function render(){
+ stopActiveVoiceDictation();
  window.CRMDocumentTitle.applySection(C.section,C.page_label);
  document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===C.section));updateLeadCount();
  if(C.section==='accueil'){page.innerHTML=dashboard();bindDashboard();document.querySelector('.page-title')?.insertAdjacentHTML('afterend',dashboardExportButton);return}
