@@ -75,6 +75,15 @@ const nextProgrammedAppointmentDate=c=>{
  if(!contactHasPipelineStatus(c,'RDV programmé'))return'';
  return window.CRMAppointmentState.dateLabel(c.id,crmAppointments);
 };
+function activeRelanceMotif(c){
+ const activeDate=String(c?.relance_date||'').trim();
+ const relance=(c?.relances||[]).find(item=>item?.status==='scheduled'&&item.scheduled_date===activeDate);
+ return String(relance?.motif||'').trim();
+}
+function relanceActionWithMotif(c,label){
+ const motif=activeRelanceMotif(c),value=String(label||'');
+ return motif&&/^Relance (?:prévue|en retard)/.test(value)?`${value} - Motif : ${motif}`:value;
+}
 function relanceStatusDetails(c,today=parisDateKey(new Date())){
  if(!contactPipelineStatuses(c).includes('A relancer'))return null;
  const value=String(c.relance_date||'').trim(),parts=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -478,7 +487,7 @@ async function showContact(id,initialTab='contactInfoTab'){
   updateLeadCount();
   saveRecent(c);
   history.pushState({},'',contactSheetUrl(id,returnSection));
-  const last=contactLastContact(c),nextAction=window.CRMWorkspace?CRMWorkspace.nextAction(c):c.relance_date?`Relance prévue le ${new Date(c.relance_date+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})}`:'Demander les informations manquantes';
+  const last=contactLastContact(c),baseNextAction=window.CRMWorkspace?CRMWorkspace.nextAction(c):c.relance_date?`Relance prévue le ${new Date(c.relance_date+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})}`:'Demander les informations manquantes',nextAction=relanceActionWithMotif(c,baseNextAction);
   const googleAdsIdentifier=c.google_ads_identifier||c.gclid||c.wbraid||c.gbraid||'';
   const googleAdsIdentifierType=c.google_ads_identifier_type||(c.gclid?'GCLID':c.wbraid?'WBRAID':c.gbraid?'GBRAID':'');
   if(googleAdsIdentifier&&!c.gclid)c.gclid=googleAdsIdentifier;

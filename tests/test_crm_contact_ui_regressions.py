@@ -310,6 +310,61 @@ def test_contact_header_displays_the_scheduled_relaunch_date_explicitly():
 
     assert "`Relance prévue le ${" in javascript
     assert "day:'2-digit',month:'2-digit',year:'numeric'" in javascript
+    assert "nextAction=relanceActionWithMotif(c,baseNextAction)" in javascript
+    assert "<b>${esc(nextAction)}</b>" in javascript
+
+
+def test_contact_header_displays_only_the_active_relaunch_motif():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    helper = javascript[
+        javascript.index("function activeRelanceMotif"):
+        javascript.index("function relanceStatusDetails")
+    ]
+    script = r"""
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+""" + helper + r"""
+const active={
+ relance_date:'2026-08-28',
+ relances:[
+  {status:'answered',scheduled_date:'2026-08-27',motif:'Historique'},
+  {status:'scheduled',scheduled_date:'2026-08-28',motif:'Suite à refus FT'},
+ ]
+};
+assert(
+ relanceActionWithMotif(active,'Relance prévue le 28/08/2026')==='Relance prévue le 28/08/2026 - Motif : Suite à refus FT',
+ 'the active motif must be appended to the scheduled label'
+);
+assert(
+ relanceActionWithMotif(active,'Relance en retard depuis le 28/08/2026')==='Relance en retard depuis le 28/08/2026 - Motif : Suite à refus FT',
+ 'the active motif must be appended to the overdue label'
+);
+assert(
+ relanceActionWithMotif({relance_date:'2026-08-28',relances:[{status:'answered',scheduled_date:'2026-08-28',motif:'Historique'}]},'Relance prévue le 28/08/2026')==='Relance prévue le 28/08/2026',
+ 'a historical motif must not be displayed'
+);
+assert(
+ relanceActionWithMotif({relance_date:'2026-08-28',relances:[{status:'scheduled',scheduled_date:'2026-08-29',motif:'Autre date'}]},'Relance prévue le 28/08/2026')==='Relance prévue le 28/08/2026',
+ 'a motif from another scheduled date must not be displayed'
+);
+assert(
+ relanceActionWithMotif({relance_date:'2026-08-28',relances:[]},'Relance prévue le 28/08/2026')==='Relance prévue le 28/08/2026',
+ 'a missing motif must keep the existing label'
+);
+assert(
+ relanceActionWithMotif(active,'Compléter les coordonnées')==='Compléter les coordonnées',
+ 'unrelated next actions must stay unchanged'
+);
+console.log('CRM contact active relance motif: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM contact active relance motif: OK" in completed.stdout
 
 
 def test_contact_header_score_uses_server_contract_and_refreshes_with_card():
