@@ -2580,6 +2580,21 @@ def test_relance_motif_is_saved_normalized_updated_and_validated(tmp_path, monke
     assert len(relances) == 1
     assert relances[0]["motif"] == "Rappeler après réception des pièces"
 
+    without_motif = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "relance_date": "2099-09-03",
+            "relance_motif": "",
+        },
+    )
+    assert without_motif.status_code == 200
+    relances = [
+        item for item in without_motif.get_json()["relances"]
+        if item.get("status") == "scheduled"
+    ]
+    assert len(relances) == 1
+    assert "motif" not in relances[0]
+
     too_long = c.patch(
         f"/api/crm/contacts/{contact['id']}",
         json={
