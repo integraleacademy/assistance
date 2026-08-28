@@ -1088,6 +1088,63 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         assert marker in crm_css
 
 
+def test_calendar_appointments_expose_and_render_contact_scores(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "mail": "lina@example.com", "telephone": "+33612345678",
+            "lieu": "Côte d’Azur", "dates_formation": "Septembre",
+            "origine": "Site internet", "cpf": "NON",
+            "identite_creation": "NON", "financement_ft": "NON",
+            "statut_demande_financement_ft": "non_demandee",
+            "inscrit_ft": "NON", "carte_pro": "OUI",
+        },
+    )
+    signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
+
+    linked = client.get(
+        "/api/crm/calendly/appointments"
+    ).get_json()["appointments"][0]["contact"]
+
+    assert linked["id"] == contact["id"]
+    assert linked["lieu"] == "Côte d’Azur"
+    assert linked["carte_pro"] == "OUI"
+    assert isinstance(linked["integration_score"]["score"], int)
+    assert "personal_remainder_applicable" in linked["integration_score"]
+
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    with open(application.app.root_path + "/static/crm.css", encoding="utf-8") as source:
+        crm_css = source.read()
+    helper = crm_js[
+        crm_js.index("function calendarContactMetrics"):
+        crm_js.index("function changeCalendarDate")
+    ]
+    script = "const window={CRMWorkspace:{contactCompleteness:c=>c.complete}};" + helper + r"""
+const assert=require('node:assert/strict');
+const rendered=calendarContactMetrics({id:'contact-1',complete:82,integration_score:{score:64}});
+assert.match(rendered,/Score d’intégration/);
+assert.match(rendered,/64 \/ 100/);
+assert.match(rendered,/Complétude du dossier/);
+assert.match(rendered,/82 %/);
+assert.match(calendarContactMetrics({id:'contact-2',complete:null,integration_score:{score:null}}),/Indisponible/);
+assert.equal(calendarContactMetrics({}), '');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script], check=False, capture_output=True, text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "${calendarContactMetrics(c)}" in crm_js
+    assert ".calendar-contact-metrics{" in crm_css
+    assert ".calendar-contact-metric strong{" in crm_css
+
+
 def test_calendly_appointment_stays_upcoming_for_two_hours_after_start():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()

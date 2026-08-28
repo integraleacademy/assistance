@@ -13077,6 +13077,43 @@ def crm_calendly_status():
     return jsonify(_crm_calendly_status_payload(load_data()))
 
 
+CRM_CALENDAR_CONTACT_FIELDS = (
+    "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
+    "statut", "dates_formation", "origine", "relance_date",
+    "prochaine_action_manuelle", "desp_type", "cpf", "cpf_montant",
+    "identite_creation", "identite_ok", "financement_ft",
+    "statut_demande_financement_ft", "refus_ft_perso", "inscrit_ft",
+    "reste_a_charge_perso", "carte_pro", "titre_sejour",
+    "titre_sejour_cnaps", "garde_vue", "antecedents", "compte_cnaps",
+    "integration_dracar",
+)
+
+
+def _crm_calendar_contact_payload(data, contact):
+    """Expose uniquement les champs requis par les indicateurs du calendrier."""
+    if not contact:
+        return {
+            "id": "", "prenom": "", "nom": "", "formation": "",
+            "telephone": "", "mail": "",
+        }
+    payload = {
+        key: contact.get(key)
+        for key in CRM_CALENDAR_CONTACT_FIELDS
+    }
+    snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(
+        str(contact.get("id") or "")
+    )
+    score = calculate_candidate_integration_score(contact, snapshot)
+    payload["integration_score"] = {
+        key: score.get(key)
+        for key in (
+            "score", "level", "label", "operational_status",
+            "personal_remainder_applicable",
+        )
+    }
+    return payload
+
+
 def _crm_calendly_appointments_payload(data):
     """Construit l'agenda CRM sans relire le fichier de données."""
     contacts = {item.get("id"): item for item in data.get("crm_contacts", [])}
@@ -13085,14 +13122,7 @@ def _crm_calendly_appointments_payload(data):
         contact = contacts.get(item.get("contact_id")) or {}
         appointments.append({
             **item,
-            "contact": {
-                "id": contact.get("id", ""),
-                "prenom": contact.get("prenom", ""),
-                "nom": contact.get("nom", ""),
-                "formation": contact.get("formation", ""),
-                "telephone": contact.get("telephone", ""),
-                "mail": contact.get("mail", ""),
-            },
+            "contact": _crm_calendar_contact_payload(data, contact),
         })
     appointments.sort(key=lambda item: item.get("start_time") or "")
     return {
