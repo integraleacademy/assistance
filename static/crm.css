@@ -411,6 +411,8 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .calendar-event .calendar-treatment-badge{display:inline-flex;align-items:center;margin:0;padding:5px 9px;border-radius:999px;font:800 9px Manrope;white-space:nowrap}
 .calendar-event .calendar-treatment-badge.answered{background:#d9f3e9;color:#107259}
 .calendar-event .calendar-treatment-badge.no-answer{background:#ffe9bf;color:#8b5b10}
+.calendar-contact-metrics{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.calendar-event .calendar-contact-metrics>span{display:flex;align-items:center;gap:6px;margin:0;padding:5px 8px;border-radius:9px;background:#edf8f4;color:#137258;font-size:10px}.calendar-event .calendar-contact-metrics>span.watch{background:#fff5df;color:#916017}.calendar-event .calendar-contact-metrics>span.low{background:#fff0ef;color:#a13b35}.calendar-event .calendar-contact-metrics>span.unavailable{background:#f1f4f8;color:#718096}.calendar-contact-metric small{font-size:9px;font-weight:700}.calendar-contact-metric strong{font:800 10px Manrope;white-space:nowrap}
+@media(max-width:650px){.calendar-contact-metrics{align-items:stretch;flex-direction:column}.calendar-event .calendar-contact-metrics>span{justify-content:space-between;max-width:230px}}
 .actions-menu .delete-action{margin-top:5px;border-top:1px solid #f2d7da;color:#c43e4d}
 .actions-menu .delete-action:hover{background:#fff1f2;color:#ad2635}
 .side-user form{margin:0}.side-user button{display:grid;place-items:center;width:34px;height:34px;border:1px solid #ffffff24;border-radius:8px;background:#ffffff0c;color:#d6e2f5;font-size:18px;cursor:pointer}.side-user button:hover,.side-user button:focus-visible{background:#ffffff20;color:#fff;outline:2px solid #8bb8ff;outline-offset:2px}
