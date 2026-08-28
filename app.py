@@ -14607,7 +14607,7 @@ def crm_settings():
     return jsonify(settings)
 
 
-@app.patch("/api/crm/contacts/bulk")
+@app.route("/api/crm/contacts/bulk", methods=["PATCH", "DELETE"])
 @login_required
 @_crm_serialized
 def crm_contacts_bulk():
@@ -14615,6 +14615,26 @@ def crm_contacts_bulk():
     ids = {str(value) for value in payload.get("ids", []) if value}
     if not ids or len(ids) > 500:
         return jsonify({"error": "Sélection invalide."}), 400
+    if request.method == "DELETE":
+        deleted_ids = {
+            str(contact.get("id"))
+            for contact in data.get("crm_contacts", [])
+            if str(contact.get("id")) in ids
+        }
+        data["crm_contacts"] = [
+            contact for contact in data.get("crm_contacts", [])
+            if str(contact.get("id")) not in deleted_ids
+        ]
+        data["crm_calendly_appointments"] = [
+            appointment
+            for appointment in data.get("crm_calendly_appointments", [])
+            if str(appointment.get("contact_id")) not in deleted_ids
+        ]
+        save_data(data)
+        return jsonify({
+            "deleted_ids": sorted(deleted_ids),
+            "count": len(deleted_ids),
+        })
     action = str(payload.get("action") or "").strip()
     statuses = _crm_statuses(data)
     updated = []
