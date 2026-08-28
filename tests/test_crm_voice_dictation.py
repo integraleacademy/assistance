@@ -25,6 +25,9 @@ def test_call_modal_exposes_accessible_voice_dictation_controls():
         "recognition.continuous=true",
         "recognition.interimResults=true",
         "formatVoiceDictation(combine(finalText,interim),capitalizeFirst)",
+        "mode:'correction_dictee'",
+        "stopVoiceDictation.stop(true)",
+        "await stopVoiceDictation.whenSettled()",
         "Dites « point », « virgule » ou « à la ligne » pour ponctuer.",
         "stopVoiceDictation();closeModal()",
     ):
@@ -250,6 +253,133 @@ bindVoiceDictation(makeField(), unsupported.button, unsupportedStatus);
 assert.strictEqual(unsupported.button.disabled, true);
 assert.strictEqual(unsupported.label.textContent, 'Dictée indisponible');
 assert.ok(unsupportedStatus.textContent.includes('Chrome ou Edge'));
+"""
+    completed = subprocess.run(
+        ["node", "-e", _voice_function() + "\n" + harness],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_voice_dictation_corrects_on_explicit_stop_and_preserves_user_edits():
+    harness = r"""
+const assert = require('assert');
+let currentRecognition;
+class FakeRecognition {
+  constructor() { currentRecognition = this; }
+  start() { this.onstart(); }
+  stop() { this.onend(); }
+  abort() { this.aborted = true; }
+}
+function makeButton() {
+  const label = {textContent: 'Dicter le résumé'};
+  const attrs = {};
+  return {
+    label,
+    button: {
+      disabled: false,
+      onclick: null,
+      querySelector() { return label; },
+      setAttribute(name, value) { attrs[name] = value; },
+      getAttribute(name) { return attrs[name]; },
+      classList: {toggle() {}}
+    }
+  };
+}
+function makeField(value = '') {
+  return {
+    value,
+    scrollHeight: 100,
+    scrollTop: 0,
+    events: [],
+    dispatchEvent(event) { this.events.push(event.type); }
+  };
+}
+function result(transcript, isFinal = true) {
+  const item = [{transcript}];
+  item.isFinal = isFinal;
+  return item;
+}
+global.window = {webkitSpeechRecognition: FakeRecognition};
+global.Event = function(type) { this.type = type; };
+global.toast = () => {};
+
+(async () => {
+  const correctedVoice = makeButton();
+  const correctedField = makeField();
+  const correctedStatus = {textContent: ''};
+  const corrections = [];
+  const corrected = bindVoiceDictation(
+    correctedField,
+    correctedVoice.button,
+    correctedStatus,
+    {onComplete: async raw => {
+      corrections.push(raw);
+      return 'Monsieur part à la retraite le 1er octobre.';
+    }}
+  );
+  correctedVoice.button.onclick();
+  currentRecognition.onresult({
+    resultIndex: 0,
+    results: [result('monsieur par la retraite le 1er octobre')]
+  });
+  corrected.stop(true);
+  await corrected.whenSettled();
+  assert.deepStrictEqual(corrections, ['Monsieur par la retraite le 1er octobre']);
+  assert.strictEqual(
+    correctedField.value,
+    'Monsieur part à la retraite le 1er octobre.'
+  );
+  assert.ok(correctedStatus.textContent.includes('corrigée automatiquement'));
+  assert.strictEqual(correctedVoice.button.disabled, false);
+
+  let resolveLate;
+  const editedVoice = makeButton();
+  const editedField = makeField();
+  const editedStatus = {textContent: ''};
+  const edited = bindVoiceDictation(
+    editedField,
+    editedVoice.button,
+    editedStatus,
+    {onComplete: () => new Promise(resolve => { resolveLate = resolve; })}
+  );
+  editedVoice.button.onclick();
+  currentRecognition.onresult({
+    resultIndex: 0,
+    results: [result('texte dicté')]
+  });
+  edited.stop(true);
+  editedField.value = 'Correction saisie manuellement';
+  resolveLate('Correction IA tardive');
+  await edited.whenSettled();
+  assert.strictEqual(editedField.value, 'Correction saisie manuellement');
+  assert.ok(editedStatus.textContent.includes('modification a été conservée'));
+
+  const failedVoice = makeButton();
+  const failedField = makeField();
+  const failedStatus = {textContent: ''};
+  const failed = bindVoiceDictation(
+    failedField,
+    failedVoice.button,
+    failedStatus,
+    {onComplete: async () => { throw new Error('indisponible'); }}
+  );
+  failedVoice.button.onclick();
+  currentRecognition.onresult({
+    resultIndex: 0,
+    results: [result('dictée brute point')]
+  });
+  failed.stop(true);
+  await failed.whenSettled();
+  assert.strictEqual(failedField.value, 'Dictée brute.');
+  assert.ok(failedStatus.textContent.includes('dictée brute a été conservée'));
+})().catch(error => {
+  console.error(error);
+  process.exit(1);
+});
 """
     completed = subprocess.run(
         ["node", "-e", _voice_function() + "\n" + harness],

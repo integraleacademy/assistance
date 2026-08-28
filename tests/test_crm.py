@@ -3024,6 +3024,32 @@ def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
     assert response.get_json() == {"texte": "Compte-rendu reformulé."}
 
 
+def test_crm_rephrase_has_a_strict_voice_correction_mode(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    captured = {}
+
+    def fake_ai(system_prompt, user_prompt, max_tokens=500):
+        captured.update(system=system_prompt, user=user_prompt)
+        return "Monsieur part à la retraite le 1er octobre."
+
+    monkeypatch.setattr(application, "_crm_ai", fake_ai)
+
+    response = c.post("/api/crm/reformuler", json={
+        "texte": "Monsieur par la retraite le 1er octobre",
+        "mode": "correction_dictee",
+    })
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "texte": "Monsieur part à la retraite le 1er octobre.",
+    }
+    assert captured["user"] == "Monsieur par la retraite le 1er octobre"
+    for protected_fact in ("faits", "noms", "dates", "montants", "acronymes"):
+        assert protected_fact in captured["system"]
+    assert "N’ajoute aucune information" in captured["system"]
+
+
 def test_france_travail_request_generator_uses_explicit_profile_facts(
         tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
