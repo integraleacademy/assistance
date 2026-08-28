@@ -3090,6 +3090,8 @@ def test_france_travail_request_generator_is_conditional_and_copyable():
     assert 'id="copyFtRequest"' in javascript
     assert "copyContactCoordinate(output.value)" in javascript
     assert ".ft-request-modal" in stylesheet
+    assert ".ft-request-modal{display:flex;flex-direction:column" in stylesheet
+    assert ".ft-request-modal .modal-body{min-height:0;overflow-y:auto" in stylesheet
 
 
 def test_crm_ai_summary_and_message_generation(tmp_path, monkeypatch):
