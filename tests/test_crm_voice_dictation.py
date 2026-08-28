@@ -20,7 +20,7 @@ def test_call_modal_exposes_accessible_voice_dictation_controls():
         'id="dictateCall"',
         'id="dictateCallStatus"',
         'aria-live="polite"',
-        "bindVoiceDictation(callNote,voiceButton,voiceStatus)",
+        "bindVoiceDictation(callNote,voiceButton,voiceStatus,{onComplete:",
         "recognition.lang='fr-FR'",
         "recognition.continuous=true",
         "recognition.interimResults=true",
@@ -352,6 +352,8 @@ global.toast = () => {};
     results: [result('texte dicté')]
   });
   edited.stop(true);
+  await Promise.resolve();
+  assert.strictEqual(typeof resolveLate, 'function');
   editedField.value = 'Correction saisie manuellement';
   resolveLate('Correction IA tardive');
   await edited.whenSettled();
