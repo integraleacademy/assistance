@@ -40,13 +40,13 @@ def test_secretariat_page_starts_with_caller_information(client, monkeypatch):
     response = client.get("/secretariat")
     assert response.status_code == 200
     body = response.data.decode()
-    assert body.index("Informations sur l'appelant") < body.index(
-        "Quelle formation est concernée"
-    )
+    assert body.index("Informations sur l'appelant") < body.index("Besoin")
+    assert body.index("Besoin") < body.index("Quelle formation est concernée")
     assert 'data-step="1"><h2>Informations sur l\'appelant' in body
+    assert 'data-step="2" hidden><h2>Besoin</h2>' in body
     assert "La recherche dans le CRM se lance automatiquement" in body
-    assert 'data-request="formation"' not in body
-    assert 'data-request="autre"' not in body
+    assert 'data-request="formation"' in body
+    assert 'data-request="autre"' in body
 
 
 def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monkeypatch):
@@ -57,11 +57,11 @@ def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monke
     body = response.data.decode()
     action_targets = {
         1: "callerSubmit",
-        2: "nextFormation",
-        3: "nextQualification",
-        4: "nextDates",
-        5: "reviewRequest",
-        6: "finish",
+        3: "nextFormation",
+        4: "nextQualification",
+        5: "nextDates",
+        6: "reviewRequest",
+        7: "finish",
     }
     for step_number, target in action_targets.items():
         step = body.split(f'data-step="{step_number}"', 1)[1].split(
@@ -71,6 +71,12 @@ def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monke
         assert 'class="actions actions-top"' in step
         assert f'data-action-proxy="{target}"' in step
         assert step.count("data-back") == (0 if step_number == 1 else 2)
+
+    need_step = body.split('data-step="2"', 1)[1].split('data-step="3"', 1)[0]
+    assert need_step.count('class="actions') == 2
+    assert need_step.count("data-back") == 2
+    assert 'data-request="formation"' in need_step
+    assert 'data-request="autre"' in need_step
 
     ids = re.findall(r'\sid="([^"]+)"', body)
     assert len(ids) == len(set(ids))
@@ -135,19 +141,32 @@ def test_secretariat_checks_crm_automatically_but_waits_for_continue(client, mon
     assert b"function scheduleCallerLookup()" in response.data
     assert b"callerLookupTimer=setTimeout(()=>lookupCaller(),600)" in response.data
     assert b"/api/secretariat/crm-contact" in response.data
-    assert b"requestType=existingCrmContactId?'autre':'formation'" in response.data
+    assert b"requestType=existingCrmContactId?'autre':'formation'" not in response.data
     assert b"callerLookupComplete=true" in response.data
     assert b"Appelant trouv\xc3\xa9 dans le CRM. Cliquez sur" in response.data
     assert b"Aucune fiche CRM trouv\xc3\xa9e. Cliquez sur" in response.data
     assert b"function continueAfterCallerLookup()" in response.data
     assert b"if(callerLookupComplete){continueAfterCallerLookup();return}" in response.data
-    assert b"if(existingCrmContactId){finish.textContent=" in response.data
-    assert b"showStep(6);precision.focus()" in response.data
-    assert b"else{showStep(2);formationSearch.focus()}" in response.data
+    assert b"callerLookupStatus.hidden=true;showStep(2);requestChoices[0]?.focus()" in response.data
     lookup_code = response.data.decode().split(
         "async function lookupCaller()", 1
     )[1].split("function continueAfterCallerLookup()", 1)[0]
     assert "showStep(" not in lookup_code
+
+
+def test_secretariat_need_step_controls_each_request_branch(client, monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
+    response = client.get("/secretariat")
+
+    assert response.status_code == 200
+    body = response.data
+    assert b"requestType=button.dataset.request" in body
+    assert b"if(requestType==='formation')" in body
+    assert b"showStep(3);formationSearch.focus()" in body
+    assert b"showStep(7);precision.focus()" in body
+    assert b"const path=requestType==='autre'?[1,2,7,6]" in body
+    assert b"if(requestType==='autre'){save();return}" in body
+    assert b"if(requestType==='autre'){openAppointmentStep();return}" in body
 
 
 def test_secretariat_displays_training_details_after_new_caller_qualification(client, monkeypatch):
@@ -165,6 +184,7 @@ def test_secretariat_displays_training_details_after_new_caller_qualification(cl
     assert body.index('data-step="1"') < body.index('data-step="2"')
     assert body.index('data-step="2"') < body.index('data-step="3"')
     assert body.index('data-step="3"') < body.index('data-step="4"')
+    assert body.index('data-step="4"') < body.index('data-step="5"')
 
 
 def test_secretariat_requires_asking_for_the_preferred_training_session(client, monkeypatch):
@@ -220,7 +240,7 @@ def test_secretariat_form_collects_funding_and_regulatory_information(client, mo
     assert b"['APS','A3P'].includes(formation.value)" in response.data
     assert b"isCnapsFormation&&!cnapsYes" in response.data
     assert b"input.required=show" in response.data
-    assert b'data-step="6"' in response.data
+    assert b'data-step="7"' in response.data
     assert response.data.index(b"Proposer un rendez-vous") < response.data.index(
         b"Objet et pr\xc3\xa9cisions sur la demande"
     )
@@ -786,7 +806,7 @@ def test_secretariat_precision_step_has_no_ai_summary_and_is_required(client, mo
     assert b"/api/secretariat/ai/request-summary" not in response.data
     assert b"payload.notes=details" in response.data
     assert b"/api/secretariat/calendly/appointment" in response.data
-    assert b"if(existingCrmContactId){openAppointmentStep();return}" in response.data
+    assert b"if(requestType==='autre'){openAppointmentStep();return}" in response.data
 
 
 def test_secretariat_refreshes_calendly_before_building_summary_email(client, monkeypatch):
