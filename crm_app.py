@@ -5,6 +5,7 @@ import crm_salesforce_migration as salesforce_migration
 import crm_salesforce_tasks_import as salesforce_tasks_import
 
 from crm_aircall_ai import register_aircall_ai_crm
+from crm_aircall_dossier import register_aircall_dossier_actions
 from crm_cnaps_tracking import register_cnaps_tracking_proxy
 from crm_google_ads import register_google_ads_offline_conversions
 from crm_location_normalization import (
@@ -130,4 +131,5 @@ register_cnaps_tracking_proxy(
     login_required=legacy_app.login_required,
 )
 register_aircall_ai_crm(legacy_app)
+register_aircall_dossier_actions(legacy_app)
 register_google_ads_offline_conversions(legacy_app)
