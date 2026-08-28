@@ -3024,6 +3024,74 @@ def test_crm_rephrase_uses_chat_completion(tmp_path, monkeypatch):
     assert response.get_json() == {"texte": "Compte-rendu reformulé."}
 
 
+def test_france_travail_request_generator_uses_explicit_profile_facts(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={
+        "prenom": "Mehdy", "nom": "Moumen", "formation": "A3P",
+        "lieu": "Côte d’Azur", "dates_formation": "Du 1er septembre au 27 octobre 2026",
+    }).get_json()
+    contact = c.patch(f"/api/crm/contacts/{contact['id']}", json={
+        "cpf": "OUI", "cpf_montant": "1800", "financement_ft": "OUI",
+        "carte_pro": "OUI",
+    }).get_json()
+    captured = {}
+
+    def fake_ai(system, user, max_tokens=500):
+        captured.update(system=system, user=user, max_tokens=max_tokens)
+        return "Bonjour,\n\nJe sollicite le financement de ma formation.\n\nBien cordialement,\nMEHDY MOUMEN"
+
+    monkeypatch.setattr(application, "_crm_ai", fake_ai)
+    response = c.post(
+        f"/api/crm/contacts/{contact['id']}/generer-demande-ft",
+        json={
+            "ancien_militaire": True,
+            "carte_professionnelle": True,
+            "experience_securite": True,
+            "reconversion": False,
+            "permis_b_mobilite": True,
+            "perspectives_embauche": True,
+            "parcours": "Ancien militaire et trois ans dans la sécurité privée.",
+            "projet_professionnel": "Exercer dans la protection rapprochée.",
+            "choix_formation_centre": "Centre recommandé par des professionnels.",
+            "perspectives_emploi": "Deux entreprises ont accepté un entretien après la formation.",
+            "motivation": "Disponible immédiatement et déterminé à réussir.",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["texte"].startswith("Bonjour,")
+    context = json.loads(captured["user"])["informations_factuelles_autorisees"]
+    assert context["candidat"]["nom_complet"] == "Mehdy MOUMEN"
+    assert context["formation"]["nom"] == "Agent de protection physique des personnes (A3P)"
+    assert context["formation"]["centre"] == "Intégrale Sécurité Formations à Puget-sur-Argens (Var)"
+    assert context["profil"]["ancien_militaire"] is True
+    assert context["profil"]["carte_professionnelle_cnaps"] is True
+    assert context["profil"]["en_reconversion_professionnelle"] is False
+    assert context["profil"]["parcours_et_experience"].startswith("Ancien militaire")
+    assert context["financement"]["montant_cpf_disponible_euros"] == "1800.00"
+    assert "N’invente aucun fait" in captured["system"]
+    assert "première personne" in captured["system"]
+    assert captured["max_tokens"] == 1100
+
+
+def test_france_travail_request_generator_is_conditional_and_copyable():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        javascript = source.read()
+    with open(application.app.root_path + "/static/crm.css", encoding="utf-8") as source:
+        stylesheet = source.read()
+
+    assert 'id="ftRequestGeneratorButton"' in javascript
+    assert 'data-show="ft-yes"' in javascript
+    assert "franceTravailRequestModal(c)" in javascript
+    assert "generer-demande-ft" in javascript
+    assert 'id="ftFormerMilitary"' in javascript
+    assert 'id="ftProfessionalCard"' in javascript
+    assert 'id="copyFtRequest"' in javascript
+    assert "copyContactCoordinate(output.value)" in javascript
+    assert ".ft-request-modal" in stylesheet
+
+
 def test_crm_ai_summary_and_message_generation(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={
