@@ -15590,12 +15590,26 @@ def crm_contact_reglementaire(contact_id):
 @app.route("/api/crm/reformuler", methods=["POST"])
 @login_required
 def crm_rephrase():
-    text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
+    payload = request.get_json(silent=True) or {}
+    text = str(payload.get("texte", "")).strip()
     if not text: return jsonify({"error": "Texte vide"}), 400
     if not os.getenv("OPENAI_API_KEY"):
         return jsonify({"error": "OPENAI_API_KEY non configurée"}), 503
     try:
-        reformulation = _crm_ai("Reformule la note CRM en français professionnel, clair et factuel. Ne rajoute aucune information.", text)
+        if payload.get("mode") == "correction_dictee":
+            system_prompt = (
+                "Corrige uniquement l’orthographe, les accords, la conjugaison, "
+                "la ponctuation, les répétitions involontaires et les erreurs "
+                "évidentes de transcription vocale de cette note CRM. Préserve "
+                "strictement le sens, les faits, les noms, les dates, les "
+                "montants et les acronymes métier. N’ajoute aucune information."
+            )
+        else:
+            system_prompt = (
+                "Reformule la note CRM en français professionnel, clair et "
+                "factuel. Ne rajoute aucune information."
+            )
+        reformulation = _crm_ai(system_prompt, text)
         return jsonify({"texte": reformulation})
     except Exception as exc:
         print("Erreur reformulation CRM:", exc)
