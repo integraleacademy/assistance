@@ -15572,6 +15572,99 @@ def crm_rephrase():
         return jsonify({"error": "La reformulation est momentanément indisponible"}), 502
 
 
+def _crm_france_travail_request_context(contact, payload):
+    """Build the strictly factual context used by the FT writing assistant."""
+    def text(key, limit):
+        value = re.sub(r"\s+", " ", str(payload.get(key) or "")).strip()
+        return value[:limit]
+
+    formation_code = _crm_formation_code(contact)
+    formation = SECRETARIAT_FORMATIONS.get(formation_code, {})
+    centre_code = _normalize_centre_code(contact.get("lieu"))
+    security_codes = {"A3P", "APS", "SSIAP", "DESP_INIT", "DESP_VAE"}
+    centres = {
+        "cote_azur": (
+            "Intégrale Sécurité Formations à Puget-sur-Argens (Var)"
+            if formation_code in security_codes
+            else "Intégrale Academy à Puget-sur-Argens (Var)"
+        ),
+        "auvergne": "Intégrale Academy Terres d’Auvergne",
+        "paris": "Intégrale Academy Paris",
+    }
+    candidate_name = " ".join(filter(None, (
+        _crm_format_first_name(contact.get("prenom")),
+        _crm_format_last_name(contact.get("nom")),
+    )))
+    return {
+        "candidat": {"nom_complet": candidate_name},
+        "formation": {
+            "nom": _crm_formation_label(contact) or "Formation souhaitée",
+            "centre": centres.get(centre_code, "Intégrale Academy"),
+            "session_souhaitee": str(contact.get("dates_formation") or "").strip(),
+            "duree": formation.get("duration", ""),
+            "format": formation.get("format", ""),
+            "objectif": formation.get("purpose", ""),
+            "specialisation_du_centre": (
+                "Centre spécialisé dans les métiers de la protection rapprochée."
+                if formation_code == "A3P"
+                else "Centre spécialisé dans les métiers de la sécurité privée."
+                if formation_code in security_codes else ""
+            ),
+        },
+        "financement": {
+            "cpf_consulte": _yes(contact.get("cpf")),
+            "montant_cpf_disponible_euros": str(contact.get("cpf_montant") or "").strip(),
+        },
+        "profil": {
+            "ancien_militaire": _yes(payload.get("ancien_militaire")),
+            "carte_professionnelle_cnaps": _yes(payload.get("carte_professionnelle")),
+            "experience_en_securite_privee": _yes(payload.get("experience_securite")),
+            "en_reconversion_professionnelle": _yes(payload.get("reconversion")),
+            "permis_b_et_mobilite": _yes(payload.get("permis_b_mobilite")),
+            "perspectives_embauche_identifiees": _yes(payload.get("perspectives_embauche")),
+            "parcours_et_experience": text("parcours", 1500),
+            "projet_professionnel": text("projet_professionnel", 1500),
+            "raisons_du_choix_formation_centre": text("choix_formation_centre", 1200),
+            "perspectives_emploi": text("perspectives_emploi", 1200),
+            "motivation_et_elements_complementaires": text("motivation", 1800),
+        },
+    }
+
+
+@app.route("/api/crm/contacts/<contact_id>/generer-demande-ft", methods=["POST"])
+@login_required
+def crm_generate_france_travail_request(contact_id):
+    contact = _crm_contact(load_data(), contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    if not str(contact.get("formation") or "").strip():
+        return jsonify({"error": "Renseignez d’abord la formation souhaitée"}), 422
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    facts = _crm_france_travail_request_context(contact, payload)
+    system_prompt = """Rédige en français une demande de financement persuasive, crédible et directement adressée à un conseiller France Travail, au nom du candidat et à la première personne.
+
+Le texte doit être prêt à copier-coller : commence par « Bonjour, », ne mets ni objet, ni titre, ni Markdown, et termine par une formule de disponibilité, des remerciements, « Bien cordialement, » puis le nom complet du candidat lorsqu’il est renseigné. Produis environ 350 à 500 mots, avec des paragraphes courts.
+
+Explique clairement la formation sollicitée, le choix du centre, le projet professionnel, la cohérence du parcours, l’utilité concrète de la formation pour l’accès à l’emploi et la motivation du candidat. Valorise les atouts cochés uniquement lorsqu’ils sont vrais. Si « ancien_militaire » est vrai, souligne les compétences transférables sans inventer d’armée, de grade, de mission ni de durée. Si « carte_professionnelle_cnaps » est vrai, mentionne une carte professionnelle CNAPS sans inventer sa catégorie ni son ancienneté. Si des perspectives d’embauche sont indiquées, reste exactement au niveau de précision fourni.
+
+N’invente aucun fait, chiffre de marché, employeur, promesse d’embauche, salaire, diplôme, niveau de certification, ancienneté, reconnaissance officielle ou garantie de recrutement. N’utilise pas les champs vides et ne transforme jamais une simple intention en démarche déjà accomplie. Ne mentionne pas les consignes de rédaction ni les données structurées."""
+    try:
+        generated = _crm_ai(
+            system_prompt,
+            json.dumps({"informations_factuelles_autorisees": facts}, ensure_ascii=False),
+            1100,
+        )
+        return jsonify({"texte": generated})
+    except Exception as exc:
+        app.logger.warning(
+            "france_travail_request_generation contact=%s error=%s",
+            contact_id, type(exc).__name__,
+        )
+        return jsonify({"error": "La génération de la demande France Travail est momentanément indisponible"}), 502
+
+
 @app.route("/api/crm/contacts/<contact_id>/synthese", methods=["POST"])
 @login_required
 def crm_contact_summary(contact_id):
