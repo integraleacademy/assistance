@@ -689,7 +689,9 @@ def test_pistes_support_selection_and_individualized_bulk_messages():
     for marker in (
         'id="leadSelectAll"', "data-lead-select", 'id="selectAllLeads"',
         'id="leadBulkBar"', 'data-bulk-message="email"',
-        'data-bulk-message="sms"', "function bulkMessageModal(type)",
+        'data-bulk-message="sms"', 'id="changeSelectedLeadStatus"',
+        'id="deleteSelectedLeads"', "function bulkMessageModal(type)",
+        "function bulkLeadStatusModal()", "function bulkLeadDeleteModal()",
     ):
         assert marker in crm_js
     assert "selectedLeadIds.add(id)" in crm_js
@@ -798,6 +800,33 @@ def test_workspace_bulk_actions_require_disqualification_reason_and_are_audited(
         and "Recontacter après la rentrée" in item.get("detail", "")
         for item in restored["activities"]
     )
+
+
+def test_bulk_delete_removes_selected_contacts_and_linked_appointments(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    first = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    second = c.post("/api/crm/contacts", json={"prenom": "Nora"}).get_json()
+    kept = c.post("/api/crm/contacts", json={"prenom": "Yanis"}).get_json()
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [
+        {"id": "rdv-first", "contact_id": first["id"]},
+        {"id": "rdv-second", "contact_id": second["id"]},
+        {"id": "rdv-kept", "contact_id": kept["id"]},
+    ]
+    application.save_data(data)
+
+    response = c.delete("/api/crm/contacts/bulk", json={
+        "ids": [first["id"], second["id"]],
+    })
+
+    assert response.status_code == 200
+    assert response.get_json()["count"] == 2
+    assert set(response.get_json()["deleted_ids"]) == {first["id"], second["id"]}
+    saved = application.load_data()
+    assert {contact["id"] for contact in saved["crm_contacts"]} == {kept["id"]}
+    assert saved["crm_calendly_appointments"] == [
+        {"id": "rdv-kept", "contact_id": kept["id"]},
+    ]
 
 
 def test_workspace_archive_assignment_and_financial_fields_persist(tmp_path, monkeypatch):
