@@ -749,6 +749,31 @@ def test_contact_completeness_uses_the_real_conditional_requirements():
     assert "contactCompletenessDetails(contact).percent" in workspace_js
 
 
+def test_crm_displays_and_saves_the_meta_cpf_tier_next_to_the_amount(tmp_path, monkeypatch):
+    crm_js = open(
+        application.app.root_path + "/static/crm.js", encoding="utf-8"
+    ).read()
+    crm_css = open(
+        application.app.root_path + "/static/crm.css", encoding="utf-8"
+    ).read()
+
+    assert 'name="cpf_montant"' in crm_js
+    assert 'name="cpf_palier"' in crm_js
+    assert "Palier CPF déclaré sur META" in crm_js
+    assert "c.cpf_montant||c.cpf_palier" in crm_js
+    assert ".cpf-declared-values" in crm_css
+
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    updated = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"cpf_palier": "2000-3000 euros"},
+    )
+
+    assert updated.status_code == 200
+    assert updated.get_json()["cpf_palier"] == "2000-3000 euros"
+
+
 def test_manual_contact_creation_keeps_workspace_fields(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={

@@ -278,6 +278,34 @@ def test_meta_questions_fill_training_session_funding_and_regulatory_fields(tmp_
     assert len(contact["meta_answers"]) >= 9
 
 
+def test_meta_cpf_tier_is_kept_separate_from_the_exact_amount(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    payload = lead(**{
+        "leadgen_id": "meta-cpf-tier",
+        "Avez-vous consulté votre compte CPF (Mon Compte Formation) ?": "Oui",
+        "Quel montant exact est disponible sur votre CPF (Mon Compte Formation) ?":
+            "1000-2000 euros",
+    })
+
+    response = post(client, payload)
+
+    assert response.status_code == 201
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    submission = data["crm_meta_lead_submissions"][0]
+    assert contact["cpf"] == "OUI"
+    assert contact["cpf_palier"] == "1000-2000 euros"
+    assert not contact.get("cpf_montant")
+    assert submission["mapped_fields"]["cpf_palier"] == "1000-2000 euros"
+
+    fields, custom_answers = application._parse_meta_lead_payload({
+        "cpf_palier": "Plus de 4000 euros",
+    })
+    mapped, _ = application._meta_crm_payload(fields, custom_answers)
+    assert mapped["cpf_palier"] == "Plus de 4000 euros"
+    assert not mapped.get("cpf_montant")
+
+
 def test_nested_zapier_answers_and_form_name_fallback_are_supported(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     payload = {
