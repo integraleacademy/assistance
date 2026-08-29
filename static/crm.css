@@ -48,6 +48,7 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .form-section{border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .form-section>h3{margin:0;padding:12px 15px;background:#f7f9fc;border-bottom:1px solid var(--line);font:700 13px Manrope;color:#31425d}
 .section-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:16px}
+.cpf-declared-values{display:grid;grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
 .call-modal{width:min(700px,100%)}
 .call-note-heading,.voice-input-heading{gap:12px;margin-bottom:7px}
@@ -73,7 +74,7 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .crm-preset-list{display:flex;flex-wrap:wrap;gap:7px}
 .crm-preset-choice{padding:7px 10px;border:1px solid #cfdbed;border-radius:999px;background:#fff;color:#40536e;font:600 11px 'DM Sans',sans-serif;text-align:left;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
 .crm-preset-choice:hover,.crm-preset-choice:focus-visible{border-color:#8faee8;background:#edf3ff;color:#245ac5;outline:0}
-@media(max-width:650px){.section-fields{grid-template-columns:1fr}.contact-actions{width:auto;margin-left:auto}.actions-menu{right:0}.timeline button{min-width:110px}}
+@media(max-width:650px){.section-fields,.cpf-declared-values{grid-template-columns:1fr}.cpf-declared-values{grid-column:auto}.contact-actions{width:auto;margin-left:auto}.actions-menu{right:0}.timeline button{min-width:110px}}
 
 /* Demandes de rappel transmises par le secrétariat. */
 .callback-request-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}

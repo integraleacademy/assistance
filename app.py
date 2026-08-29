@@ -7300,7 +7300,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260827-secondary-transition-pro-1"
+CRM_ASSET_VERSION = "20260829-cpf-palier-meta-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -7728,6 +7728,10 @@ _META_DIRECT_CRM_QUESTION_ALIASES = {
     "montantcpf": "cpf_montant",
     "cpfmontant": "cpf_montant",
     "montantcpfdisponible": "cpf_montant",
+    "paliercpf": "cpf_palier",
+    "cpfpalier": "cpf_palier",
+    "tranchecpf": "cpf_palier",
+    "cpftranche": "cpf_palier",
     "cartepro": "carte_pro",
     "carteprofessionnelle": "carte_pro",
     "cnapsok": "carte_pro",
@@ -7759,7 +7763,8 @@ _META_DIRECT_CRM_QUESTION_ALIASES = {
 }
 
 _META_CRM_COMPLETION_FIELDS = (
-    "formation", "lieu", "dates_formation", "cpf", "cpf_montant", "carte_pro",
+    "formation", "lieu", "dates_formation", "cpf", "cpf_montant", "cpf_palier",
+    "carte_pro",
     "titre_sejour", "garde_vue", "antecedents", "compte_cnaps", "desp_type",
     "identite_creation", "identite_ok", "financement_ft",
     "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso",
@@ -7791,6 +7796,20 @@ def _meta_words(value):
     text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
     text = "".join(char for char in text if not unicodedata.combining(char))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _meta_is_cpf_tier(value):
+    """Distingue une tranche CPF d'un montant exact exploitable par le score."""
+    text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    if any(term in text for term in (
+        "plus de", "moins de", "entre ", "jusqu", "au moins", "et plus",
+    )):
+        return True
+    return bool(re.search(
+        r"\d[\d\s\u00a0]*(?:-|–|—|\s+a\s+|\s+au\s+)\d",
+        text,
+    ))
 
 
 def _crm_is_meta_contact(contact):
@@ -8084,6 +8103,10 @@ def _meta_crm_payload(fields, custom_answers):
                 amount = ""
             if amount and not crm.get("cpf_montant"):
                 crm["cpf_montant"] = amount
+        elif field == "cpf_palier":
+            tier = _meta_scalar(value)
+            if tier and not crm.get("cpf_palier"):
+                crm["cpf_palier"] = tier
         elif field == "desp_type":
             normalized = _meta_words(value)
             if "vae" in normalized or "validation des acquis" in normalized:
@@ -8108,7 +8131,10 @@ def _meta_crm_payload(fields, custom_answers):
         if fields.get(direct_field):
             apply({"centre": "lieu", "dates": "dates_formation"}.get(direct_field, direct_field), fields[direct_field])
     for row in answer_rows:
-        apply(_meta_crm_question_field(row["question"]), row["answer"])
+        mapped_field = _meta_crm_question_field(row["question"])
+        if mapped_field == "cpf_montant" and _meta_is_cpf_tier(row["answer"]):
+            mapped_field = "cpf_palier"
+        apply(mapped_field, row["answer"])
         question, answer = _meta_words(row["question"]), _meta_words(row["answer"])
         if "financ" in question or "prise en charge" in question:
             if "cpf" in answer:
@@ -9441,6 +9467,7 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     _crm_ensure_relances(contact)
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
+    response.setdefault("cpf_palier", "")
     response.setdefault("qualification_flag", "")
     # Le statut WEDOF est calculé une seule fois pour toute la liste des contacts
     # puis injecté ici. Ne jamais relire toute la base WEDOF depuis cette fonction :
@@ -13886,7 +13913,8 @@ CRM_CONTACT_SUMMARY_FIELDS = (
     "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
     "statut", "statut_secondaire", "statut_demande_financement_ft",
     "statut_demande_financement_ft_source", "dates_formation", "cpf",
-    "cpf_montant", "financement_ft", "reste_a_charge_perso", "desp_type",
+    "cpf_montant", "cpf_palier", "financement_ft", "reste_a_charge_perso",
+    "desp_type",
     "origine", "source", "source_detail", "source_history", "commercial", "tags",
     "prix_vente", "cout_estime", "relance_date", "prochaine_action_manuelle",
     "archived_at",
@@ -14137,6 +14165,7 @@ def _crm_create_contact_locked():
         "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
+        "cpf_palier": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
         "origine": str(payload.get("origine") or "Ajout manuel"), "commercial": str(payload.get("commercial") or ""),
         "inscrit_ft": "", "commentaires": "", "relance_date": "",
@@ -14860,7 +14889,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
-               "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant",
+               "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant", "cpf_palier",
                "statut", "statut_secondaire", "commercial", "tags", "prix_vente", "cout_estime",
                "prochaine_action_manuelle",
                "disqualification_reason", "disqualification_detail", "reactivation_date", "archived_at",
@@ -14885,6 +14914,8 @@ def _crm_patch_contact_locked(data, contact, contact_id):
             payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+    if "cpf_palier" in payload:
+        payload["cpf_palier"] = str(payload.get("cpf_palier") or "").strip()[:120]
     for money_field in ("prix_vente", "cout_estime"):
         if money_field in payload:
             raw_money = str(payload.get(money_field) or "").strip().replace(" ", "").replace(",", ".")
