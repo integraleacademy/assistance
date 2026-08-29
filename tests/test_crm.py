@@ -539,13 +539,49 @@ def test_dashboard_compares_periods_and_remains_compact_on_mobile():
     with open(root + "/static/crm.css", encoding="utf-8") as source:
         crm_css = source.read()
 
-    assert "week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'" in crm_js
+    assert "today:'Aujourd’hui',week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'" in crm_js
     assert "lastYear.start.setFullYear" in crm_js
     assert "data-dashboard-shift" in crm_js
     assert "bindDashboard()" in crm_js
     assert "@media(max-width:650px)" in crm_css
     assert ".analytics-kpis{grid-template-columns:1fr 1fr" in crm_css
     assert ".analytics-table-wrap{width:100%;overflow:auto}" in crm_css
+
+
+def test_dashboard_today_period_uses_local_calendar_day():
+    root = application.app.root_path
+    crm_js = open(root + "/static/crm.js", encoding="utf-8").read()
+    period_code = crm_js[
+        crm_js.index("const dashboardPeriods="):
+        crm_js.index("const dashboardInRange=")
+    ]
+    node_script = f"""
+let dashboardPeriod='today',dashboardOffset=0;
+{period_code}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+const current=dashboardFullRange('today',0);
+const previous=dashboardFullRange('today',-1);
+const nextDay=new Date(current.start);nextDay.setDate(nextDay.getDate()+1);
+const nextPreviousDay=new Date(previous.start);nextPreviousDay.setDate(nextPreviousDay.getDate()+1);
+assert(current.start.getHours()===0&&current.start.getMinutes()===0,'today starts at local midnight');
+assert(current.end.getTime()===nextDay.getTime(),'today ends at the next local midnight');
+assert(previous.end.getTime()===nextPreviousDay.getTime(),'past days cover the whole local day');
+assert(current.start.getDate()!==previous.start.getDate()||current.start.getMonth()!==previous.start.getMonth(),'offset moves to the previous calendar day');
+const ranges=dashboardRanges();
+assert(ranges.current.start.getTime()===current.start.getTime(),'the dashboard uses today as its current range');
+assert(ranges.current.end.getTime()<=Date.now()+1000,'the current day never includes future data');
+assert(Object.keys(dashboardPeriods)[0]==='today','today is the first period tab');
+console.log('CRM dashboard today period: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", node_script],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM dashboard today period: OK" in completed.stdout
 
 
 def test_complete_workspace_assets_are_loaded_before_the_crm_script():
