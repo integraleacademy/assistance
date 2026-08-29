@@ -194,7 +194,7 @@ function leadCompletenessCell(contact){const percent=leadCompletenessValue(conta
 function despJourneyBadge(contact){const formation=String(contact?.formation||'').trim().toUpperCase(),journey=String(contact?.desp_type||'').trim().toUpperCase();return formation==='DESP'&&['INITIAL','VAE'].includes(journey)?`<span class="crm-desp-journey">${esc(journey)}</span>`:''}
 function globalContactName(contact){return `<span class="global-search-contact-name">${listQualificationFlag(contact)}<b>${esc(displayName(contact))}</b></span>`}
 function table(list,{selectable=false,scoreSortable=false,showCompleteness=false,showDespJourney=false}={}){const selectionHead=selectable?'<th class="lead-select-cell"><input type="checkbox" id="leadSelectAll" aria-label="Sélectionner toutes les pistes affichées"></th>':'',selectionCell=contact=>selectable?`<td class="lead-select-cell"><input type="checkbox" data-lead-select="${esc(contact.id)}" aria-label="Sélectionner ${esc(displayName(contact))}" ${selectedLeadIds.has(String(contact.id))?'checked':''}></td>`:'',columns=`<colgroup>${selectable?'<col class="crm-col-select">':''}<col class="crm-col-contact"><col class="crm-col-origin"><col class="crm-col-activities"><col class="crm-col-formation"><col class="crm-col-score"><col class="${showCompleteness?'crm-col-completeness':'crm-col-location'}"><col class="crm-col-status"><col class="crm-col-updated"></colgroup>`,projectCell=contact=>`<div class="crm-list-formation-line"><b class="crm-list-formation">${esc(contact.formation||'À définir')}</b>${showDespJourney?despJourneyBadge(contact):''}</div>${showCompleteness?`<small class="crm-list-location">${esc(contact.lieu||'Lieu à définir')}</small>`:''}`;return `<div class="card table-card"><div class="table-wrap"><table class="crm-activity-table">${columns}<thead><tr>${selectionHead}<th>CONTACT</th><th>ORIGINE</th><th>ACTIVITÉS</th><th>FORMATION</th>${scoreSortHeader(scoreSortable)}<th>${showCompleteness?'COMPLÉTUDE':'LIEU'}</th><th>STATUT</th><th>DERNIÈRE MODIFICATION</th></tr></thead><tbody>${list.length?list.map(c=>`<tr data-id="${c.id}">${selectionCell(c)}<td><div class="person"><span class="avatar">${initials(c)}</span><div><b>${esc(displayName(c))}</b><small>${esc(contactCoordinateSummary(c))}</small></div></div></td><td>${listOriginBadge(c)}</td><td data-crm-cell="activities">${listActivityBadges(c)}</td><td>${projectCell(c)}</td><td>${leadScoreCell(c)}</td><td>${showCompleteness?leadCompletenessCell(c):esc(c.lieu)}</td><td data-crm-cell="status">${contactPipelineStatusMarkup(c)}</td><td>${fmt(c.updated_at)}</td></tr>`).join(''):`<tr><td colspan="${selectable?9:8}" class="empty">Aucun contact dans cette vue.<br>Créez votre première piste pour commencer.</td></tr>`}</tbody></table></div></div>`}
-const dashboardPeriods={week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'};
+const dashboardPeriods={today:'Aujourd’hui',week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'};
 const crmExportDefinitions=[
  {key:'a3p',title:'Fichier A3P',formation:'A3P'},
  {key:'aps',title:'Fichier APS',formation:'APS'},
@@ -221,12 +221,14 @@ const dashboardDate=value=>{const date=new Date(value);return Number.isNaN(date.
 const dashboardContactDate=contact=>dashboardDate(contact.created_at||contact.received_at||contact.updated_at);
 function dashboardFullRange(period,offset=0){
  const now=new Date(),start=new Date(now);start.setHours(0,0,0,0);
- if(period==='week'){start.setDate(start.getDate()-((start.getDay()+6)%7)+offset*7)}
+ if(period==='today'){start.setDate(start.getDate()+offset)}
+ else if(period==='week'){start.setDate(start.getDate()-((start.getDay()+6)%7)+offset*7)}
  else if(period==='month'){start.setDate(1);start.setMonth(start.getMonth()+offset)}
  else if(period==='quarter'){start.setDate(1);start.setMonth(Math.floor(start.getMonth()/3)*3+offset*3)}
  else{start.setMonth(0,1);start.setFullYear(start.getFullYear()+offset)}
  const end=new Date(start);
- if(period==='week')end.setDate(end.getDate()+7);
+ if(period==='today')end.setDate(end.getDate()+1);
+ else if(period==='week')end.setDate(end.getDate()+7);
  else if(period==='month')end.setMonth(end.getMonth()+1);
  else if(period==='quarter')end.setMonth(end.getMonth()+3);
  else end.setFullYear(end.getFullYear()+1);
@@ -278,7 +280,7 @@ function dashboardDelta(current,reference,label){
  const difference=reference?Math.round((current-reference)/reference*100):(current?100:0),tone=difference>0?'up':difference<0?'down':'flat';
  return `<span class="analytics-delta ${tone}">${difference>0?'↑':difference<0?'↓':'→'} ${Math.abs(difference)} % <small>${label}</small></span>`;
 }
-const dashboardRangeLabel=range=>{const format=new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short',year:range.start.getFullYear()!==new Date().getFullYear()?'numeric':undefined}),last=new Date(range.end.getTime()-1);return `${format.format(range.start)} – ${format.format(last)}`};
+const dashboardRangeLabel=range=>{const format=new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short',year:range.start.getFullYear()!==new Date().getFullYear()?'numeric':undefined}),last=new Date(range.end.getTime()-1);return dashboardPeriod==='today'?format.format(range.start):`${format.format(range.start)} – ${format.format(last)}`};
 function dashboardGroup(list,labelFor){
  const groups=new Map();
  list.forEach(contact=>{const label=labelFor(contact)||'Non renseignée',row=groups.get(label)||{label,contacts:[],count:0,contacted:0,appointments:0,converted:0};row.contacts.push(contact);row.count++;if(dashboardHasContact(contact))row.contacted++;if(dashboardHasAppointment(contact))row.appointments++;if(contact.statut==='Converti')row.converted++;groups.set(label,row)});
@@ -336,11 +338,11 @@ function dashboardBarRows(groups,total,limit=8){
  return groups.slice(0,limit).map(group=>`<div class="analytics-bar-row"><div class="analytics-bar-label"><b>${esc(group.label)}</b><span>${group.count} · ${dashboardRate(group.count,total)} % des pistes · ${dashboardRate(group.converted,group.count)} % converties</span></div><div class="analytics-bar-track"><i style="width:${Math.max(4,group.count/max*100)}%"></i></div></div>`).join('')||'<p class="analytics-empty">Aucune donnée sur cette période.</p>';
 }
 function dashboardBuckets(range,period,list){
- const sizes={week:864e5,month:864e5,quarter:7*864e5},size=sizes[period],buckets=[];
+ const sizes={today:36e5,week:864e5,month:864e5,quarter:7*864e5},size=sizes[period],buckets=[];
  if(period==='year'){
   for(let cursor=new Date(range.start);cursor<range.end;cursor.setMonth(cursor.getMonth()+1)){const start=new Date(cursor),end=new Date(cursor);end.setMonth(end.getMonth()+1);buckets.push({start,end,label:new Intl.DateTimeFormat('fr-FR',{month:'short'}).format(start),value:0})}
  }else{
-  for(let cursor=range.start.getTime();cursor<range.end.getTime();cursor+=size){const start=new Date(cursor),end=new Date(Math.min(range.end.getTime(),cursor+size));buckets.push({start,end,label:period==='quarter'?`S${buckets.length+1}`:new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short'}).format(start),value:0})}
+  for(let cursor=range.start.getTime();cursor<range.end.getTime();cursor+=size){const start=new Date(cursor),end=new Date(Math.min(range.end.getTime(),cursor+size)),label=period==='today'?new Intl.DateTimeFormat('fr-FR',{hour:'2-digit'}).format(start):period==='quarter'?`S${buckets.length+1}`:new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short'}).format(start);buckets.push({start,end,label,value:0})}
  }
  list.forEach(contact=>{const date=dashboardContactDate(contact),bucket=buckets.find(item=>date&&date>=item.start&&date<item.end);if(bucket)bucket.value++});
  return buckets;
