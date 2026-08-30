@@ -16783,39 +16783,6 @@ register_salesforce_import(
     save_data_fn=save_data,
 )
 
-# Chat interne : base SQL séparée, WebSocket authentifié par la session existante.
-from chat import init_chat
-
-chat = init_chat(app, USERS, current_user)
-socketio = chat.socketio
-
-
-def _chat_asset_version():
-    """Change à chaque déploiement, même hors Render lors du développement."""
-    configured = os.getenv("RENDER_GIT_COMMIT") or os.getenv("ASSET_VERSION")
-    if configured:
-        return configured
-    paths = [os.path.join(app.static_folder, name) for name in
-             ("chat.js", "chat.css", "vendor/socket.io.min.js")]
-    return str(max(int(os.path.getmtime(path)) for path in paths if os.path.exists(path)))
-
-
-CHAT_ASSET_VERSION = _chat_asset_version()
-app.config["CHAT_ASSET_VERSION"] = CHAT_ASSET_VERSION
-
-
-@app.context_processor
-def inject_chat_asset_version():
-    return {"chat_asset_version": CHAT_ASSET_VERSION}
-
-
-_database_backend = "postgresql" if chat.engine.url.drivername.startswith("postgresql") else "sqlite"
-app.logger.info(
-    "chat startup pid=%s socketio=%s presence=%s redis_configured=%s database=%s git=%s assets=%s",
-    os.getpid(), socketio.async_mode, chat.presence.backend, bool(os.getenv("REDIS_URL")),
-    _database_backend, os.getenv("RENDER_GIT_COMMIT", "local"), CHAT_ASSET_VERSION,
-)
-
 
 @app.before_request
 def start_crm_request_timing():
@@ -16872,25 +16839,10 @@ def cache_versioned_static_assets(response):
     return response
 
 
-@app.after_request
-def inject_authenticated_chat_widget(response):
-    """Ajoute le widget à toute page HTML authentifiée, jamais aux pages publiques."""
-    view = app.view_functions.get(request.endpoint)
-    is_private = bool(getattr(view, "_login_required", False))
-    if (session.get("user_email") and is_private and response.status_code == 200
-            and response.mimetype == "text/html" and request.endpoint != "login"):
-        body = response.get_data(as_text=True)
-        marker = "</body>"
-        if marker in body and 'id="integrale-chat"' not in body:
-            widget = render_template("_chat_widget.html")
-            response.set_data(body.replace(marker, widget + marker, 1))
-            response.headers["Content-Length"] = len(response.get_data())
-    return response
-
 
 _start_wedof_background_sync()
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    socketio.run(app, host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
