@@ -1063,6 +1063,18 @@ def test_crm_bootstrap_revalidates_without_rebuilding_unchanged_data(
     prepared.assert_not_called()
 
 
+def test_callback_requests_have_a_lightweight_navigation_refresh(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+
+    response = c.get("/api/crm/callback-requests")
+
+    assert response.status_code == 200
+    assert set(response.get_json()) == {
+        "callback_requests", "callback_pending_count",
+    }
+
+
 def test_crm_frontend_uses_the_single_bootstrap_endpoint():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()

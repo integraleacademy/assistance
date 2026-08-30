@@ -16353,6 +16353,21 @@ def crm_bootstrap():
     return response
 
 
+@app.get("/api/crm/callback-requests")
+@login_required
+def crm_callback_requests():
+    """Recharge uniquement l'espace des demandes de rappel."""
+    with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
+        stored_data = load_data()
+        if _crm_backfill_callback_requests(stored_data):
+            save_data(stored_data)
+    data = _crm_prepared_read_model()
+    return jsonify({
+        "callback_requests": _crm_callback_requests_payload(data),
+        "callback_pending_count": _crm_callback_pending_count(data),
+    })
+
+
 @app.patch("/api/crm/callback-requests/<request_id>")
 @login_required
 @_serialize_secretariat_delivery

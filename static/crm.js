@@ -1500,20 +1500,33 @@ const contactMatchesSearch=(contact,query)=>{const normalized=normalizeGlobalSea
 function contactSearchRank(c,q){const phoneQuery=phoneSearchQuery(q),phone=normalizePhoneSearch(c.telephone);if(phoneQuery){if(phone===phoneQuery)return 0;if(phone.startsWith(phoneQuery))return 1;if(phone.includes(phoneQuery))return 2;return 3}const names=[c.nom,c.prenom,displayName(c),`${c.nom||''} ${c.prenom||''}`].map(normalizeGlobalSearch);if(names.some(value=>value===q))return 0;if(names.some(value=>value.startsWith(q)))return 1;if(names.some(value=>value.includes(q)))return 2;return 3}
 const prepareGlobalContactLinks=()=>document.querySelectorAll('button[data-global-id]').forEach(button=>{const link=document.createElement('a');link.dataset.globalId=button.dataset.globalId;link.href=contactSheetUrl(button.dataset.globalId);link.target='_blank';link.rel='noopener';link.innerHTML=button.innerHTML;button.replaceWith(link)});
 new MutationObserver(prepareGlobalContactLinks).observe(globalResults,{childList:true});
-const CRM_FULL_RELOAD_SECTIONS=new Set(['fil-actu','demandes-rappel']);
+async function refreshCrmSectionData(section){
+ try{
+  if(section==='fil-actu'){
+   const fresh=await api('/api/crm/contacts?section=fil-actu');
+   if(C.section===section){contacts=fresh;render()}
+   return;
+  }
+  if(section==='demandes-rappel'){
+   const fresh=await api('/api/crm/callback-requests');
+   if(C.section===section){callbackRequests=fresh.callback_requests||[];callbackRequestPendingCount=Math.max(0,Number(fresh.callback_pending_count)||0);updateCallbackRequestNavCount();render()}
+   return;
+  }
+  await refreshCrmSnapshot();
+ }catch(error){toast(error.message,true)}
+}
 function navigateCrmSection(section,url,label){
- if(!section||CRM_FULL_RELOAD_SECTIONS.has(section))return false;
+ if(!section)return false;
  C.section=section;
  C.page_label=label||section;
  history.pushState({crmSection:section},'',url);
  window.scrollTo({top:0,behavior:'auto'});
  render();
- refreshCrmSnapshot();
+ refreshCrmSectionData(section);
  return true;
 }
 document.querySelectorAll('.sidebar a[data-nav]').forEach(link=>link.addEventListener('click',event=>{
  if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
- if(CRM_FULL_RELOAD_SECTIONS.has(link.dataset.nav))return;
  event.preventDefault();
  navigateCrmSection(link.dataset.nav,link.href,link.dataset.label);
 }));
