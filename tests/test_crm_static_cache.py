@@ -6,6 +6,7 @@ def test_primary_crm_assets_share_the_backend_cache_version():
 
     versioned_assets = (
         "crm.css",
+        "crm_dashboard_origins.css",
         "crm_workspace.css",
         "crm_title.js",
         "crm_appointment_state.js",
@@ -13,7 +14,6 @@ def test_primary_crm_assets_share_the_backend_cache_version():
         "crm.js",
     )
     unversioned_assets = (
-        "crm_dashboard_origins.css",
         "crm_dashboard_origins.js",
     )
 

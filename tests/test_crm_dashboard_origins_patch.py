@@ -17,20 +17,22 @@ def test_dashboard_origin_patch_is_loaded_after_main_crm_script():
     assert template.index("crm.js") < template.index("crm_dashboard_origins.js")
 
 
-def test_dashboard_origin_patch_removes_meta_kpi_and_preserves_google_ads():
-    javascript = read("static/crm_dashboard_origins.js")
+def test_dashboard_origin_compatibility_asset_does_not_override_kpi_rendering():
+    compatibility = read("static/crm_dashboard_origins.js")
+    javascript = read("static/crm.js")
 
-    assert "label === 'Pistes META' ? ''" in javascript
-    assert "contact.gclid || contact.formulaire?.gclid" in javascript
-    assert "return gclid ? 'Google Ads'" in javascript
-    assert "Saisie manuelle" not in javascript
-    assert "requiredOrigins" not in javascript
+    assert "dashboardKpi = function" not in compatibility
+    assert "dashboard = function" not in compatibility
+    assert "dashboardKpi('Pistes META'" in javascript
+    assert "dashboardKpi('Pistes Google Ads'" in javascript
+    assert "Saisie manuelle" not in compatibility
+    assert "requiredOrigins" not in compatibility
 
 
-def test_dashboard_origin_patch_keeps_five_responsive_kpi_columns():
+def test_dashboard_origin_patch_keeps_four_responsive_kpi_columns():
     stylesheet = read("static/crm_dashboard_origins.css")
 
-    assert "repeat(5,minmax(0,1fr))" in stylesheet
+    assert "repeat(4,minmax(0,1fr))" in stylesheet
     assert "@media(max-width:1250px)" in stylesheet
     assert "repeat(3,minmax(0,1fr))" in stylesheet
     assert "@media(max-width:650px)" in stylesheet
