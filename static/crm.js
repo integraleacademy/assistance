@@ -248,6 +248,7 @@ const dashboardInRange=(value,range)=>{const date=dashboardDate(value);return !!
 const crmActiveContacts=()=>contacts.filter(contact=>!contact.archived_at);
 const dashboardContactsIn=range=>crmActiveContacts().filter(contact=>{const date=dashboardContactDate(contact);return !!date&&date>=range.start&&date<range.end});
 const crmOriginFilterValues=['META','Google Ads','Site internet','Bouche à oreilles','Mon Compte Formation','Secrétariat','Simulateur VAE','Autre'];
+const crmLeadOriginFilterValues=[...crmOriginFilterValues.slice(0,-1),'Pistes abandonnées','Autre'];
 const crmOriginKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr-FR').replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
 function canonicalCrmOriginValue(value,contact={}){
  const raw=String(value||'').trim(),normalized=crmOriginKey(raw);
@@ -262,6 +263,7 @@ function canonicalCrmOriginValue(value,contact={}){
  if(normalized.includes('simulateur')&&normalized.includes('vae'))return'Simulateur VAE';
  if(normalized.includes('secretariat'))return'Secrétariat';
  if(normalized.includes('bouche')&&normalized.includes('oreille'))return'Bouche à oreilles';
+ if(normalized.includes('abandon'))return'Pistes abandonnées';
  if(normalized.includes('site internet')||normalized.includes('site web')||normalized==='site'||normalized==='demande infos formations')return'Site internet';
  return crmOriginFilterValues.includes(raw)?raw:'Autre';
 }
@@ -273,7 +275,7 @@ function crmOriginLabels(contact){
 }
 function canonicalCrmOrigin(contact){return crmOriginLabels(contact)[0]}
 function dashboardOrigin(contact){return canonicalCrmOrigin(contact)}
-function leadOriginFilterOptions(){return[...crmOriginFilterValues]}
+function leadOriginFilterOptions(){return[...crmLeadOriginFilterValues]}
 const dashboardHasContact=contact=>(contact.activities||[]).some(activity=>contactContactActivityKinds.has(activity.kind))||crmAppointments.some(appointment=>String(appointment.contact_id)===String(contact.id)&&appointment.response_status==='answered');
 const dashboardHasAppointment=contact=>crmAppointments.some(appointment=>String(appointment.contact_id)===String(contact.id)&&appointment.status!=='canceled');
 const dashboardIsMetaLead=contact=>crmOriginLabels(contact).includes('META');

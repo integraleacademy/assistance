@@ -148,6 +148,9 @@ assert(sourceLabel(contact)==='Google Ads','primary origin preserved');
 assert(JSON.stringify(sourceLabels(contact))===JSON.stringify(['Google Ads','Secrétariat','Simulateur VAE']),'ordered distinct origins');
 const laterAds={{origine:'Secrétariat',gclid:'late-click',source_history:[{{origin:'Secrétariat'}},{{origin:'Google Ads'}}]}};
 assert(sourceLabel(laterAds)==='Secrétariat','late gclid does not replace primary');
+const abandoned={{origine:'Formulaire abandonné',source_history:[{{origin:'formulaire_abandonne_demande_infos'}}]}};
+assert(sourceLabel(abandoned)==='Pistes abandonnées','abandoned form origin is canonicalized');
+assert(workspaceLeadOriginOptions.includes('Pistes abandonnées'),'abandoned leads stay available in the workspace filter');
 console.log('CRM multiple origins helpers: OK');
 """
     completed = subprocess.run(
@@ -165,6 +168,36 @@ console.log('CRM multiple origins helpers: OK');
     assert "Secondaire" in javascript
     assert "<span>ORIGINES</span>${originBadge(contact,ctx)}" in javascript
     assert "La première origine détectée reste principale." in javascript
+
+
+def test_abandoned_form_origin_is_available_in_native_lead_filter():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    helpers = javascript[
+        javascript.index("const crmOriginFilterValues="):
+        javascript.index("const dashboardHasContact=")
+    ]
+    script = helpers + r"""
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+const abandoned={
+ origine:'Formulaire abandonné',
+ source_history:[{origin:'formulaire_abandonne_demande_infos'}],
+};
+assert(canonicalCrmOrigin(abandoned)==='Pistes abandonnées','historical value is canonicalized');
+assert(crmOriginLabels(abandoned).includes('Pistes abandonnées'),'the lead matches the filter');
+assert(leadOriginFilterOptions().includes('Pistes abandonnées'),'the option is visible');
+assert(canonicalCrmOriginValue('Google Ads')==='Google Ads','other origins stay unchanged');
+console.log('CRM abandoned leads origin filter: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM abandoned leads origin filter: OK" in completed.stdout
+    assert "const crmLeadOriginFilterValues=" in javascript
+    assert "function leadOriginFilterOptions(){return[...crmLeadOriginFilterValues]}" in javascript
 
 
 def test_native_list_and_contact_sheet_show_all_origins_accessibly():
