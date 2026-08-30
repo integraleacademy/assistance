@@ -1014,7 +1014,7 @@ def test_crm_collaborative_refresh_is_lightweight_and_never_overlaps():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    assert "CRM_REFRESH_INTERVAL_MS=60000" in crm_js
+    assert "CRM_REFRESH_INTERVAL_MS=180000" in crm_js
     assert "crmRefreshInFlight" in crm_js
     assert "document.hidden||crmRefreshInFlight" in crm_js
     assert "api(`/api/crm/contacts/updates${suffix}`)" in crm_js

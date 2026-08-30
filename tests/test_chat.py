@@ -201,10 +201,24 @@ def test_http_read_notifies_every_socket_for_the_same_user():
 def test_chat_heartbeat_does_not_trigger_repeated_bootstraps():
     source = open(application.app.root_path + "/static/chat.js", encoding="utf-8").read()
     heartbeat = source.split("async function heartbeat()", 1)[1].split(
+        "const CHAT_HEARTBEAT_INTERVAL_MS", 1
+    )[0]
+    realtime = source.split("function activateRealtime", 1)[1].split(
         "function initSocket", 1
     )[0]
+    startup = source.split(
+        'if (localStorage.getItem("ic-chat-open") === "1")', 1
+    )[1]
 
     assert "bootstrap()" not in heartbeat
     assert "bootstrapInFlight" in source
     assert "heartbeat(); setInterval(heartbeat, 20000)" not in source
+    assert "const CHAT_HEARTBEAT_INTERVAL_MS = 45000" in source
+    assert "if (!document.hidden) heartbeat()" in source
+    assert "activateRealtime();" in source.split("function setOpen", 1)[1].split(
+        "function connection", 1
+    )[0]
+    assert "bootstrap().finally(initSocket)" in realtime
+    assert "bootstrap();" in startup
+    assert "bootstrap().finally(initSocket);" not in startup
     assert 'socket.on("presence:changed"' in source
