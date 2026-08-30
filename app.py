@@ -19,6 +19,7 @@ from functools import wraps
 from flask import session, flash
 
 import calendar
+import concurrent.futures
 from datetime import date as _date
 import requests
 from openai import OpenAI
@@ -13162,6 +13163,274 @@ CRM_CALENDAR_CONTACT_FIELDS = (
     "integration_dracar",
 )
 
+CRM_CALENDAR_RANGE_DAYS = 7
+CRM_CALENDAR_EXCLUDED_HOST_NAME = "Aurélie Chaussez"
+CRM_CALENDAR_EXCLUDED_HOST_EMAIL = "aurelie@integraleacademy.com"
+
+
+def _crm_calendly_calendar_host_is_excluded(name="", email=""):
+    return (
+        _crm_normalize_email(email) == CRM_CALENDAR_EXCLUDED_HOST_EMAIL
+        or _crm_normalize_name(name)
+        == _crm_normalize_name(CRM_CALENDAR_EXCLUDED_HOST_NAME)
+    )
+
+
+def _crm_calendly_calendar_text_is_phone(value):
+    words = set(_crm_origin_key(value).split())
+    return bool(words.intersection({"appel", "phone", "telephone"}))
+
+
+def _crm_calendly_calendar_location_is_phone(location):
+    if not isinstance(location, dict):
+        return _crm_calendly_calendar_text_is_phone(location)
+    kind = str(location.get("kind") or location.get("type") or "").casefold()
+    if kind in {"outbound_call", "phone_call"}:
+        return True
+    return any(
+        _crm_calendly_calendar_text_is_phone(location.get(key))
+        for key in ("location", "additional_info", "description")
+    )
+
+
+def _crm_calendly_calendar_item_is_phone(item):
+    return (
+        _crm_calendly_calendar_location_is_phone(item.get("location"))
+        or _crm_calendly_calendar_text_is_phone(item.get("name"))
+        or _crm_calendly_calendar_text_is_phone(item.get("event_type_name"))
+    )
+
+
+def _crm_calendly_calendar_event_type_is_phone(event_type):
+    locations = event_type.get("locations") or []
+    return (
+        any(_crm_calendly_calendar_location_is_phone(item) for item in locations)
+        or _crm_calendly_calendar_text_is_phone(event_type.get("name"))
+    )
+
+
+def _crm_calendly_calendar_event_type_is_excluded(event_type, excluded_user_uris):
+    profile = event_type.get("profile") or {}
+    if _crm_calendly_calendar_host_is_excluded(
+        profile.get("name"), profile.get("email")
+    ):
+        return True
+    owner_uri = str(profile.get("owner") or event_type.get("owner") or "").strip()
+    return bool(owner_uri and owner_uri in excluded_user_uris)
+
+
+def _crm_calendly_calendar_excluded_user_uris(data):
+    """Resolve Aurélie's Calendly URI so her event types are never counted."""
+    try:
+        context = _calendly_context_from_data(data)
+        memberships = _calendly_paginated_collection(
+            "/organization_memberships",
+            params={
+                "organization": context["organization"],
+                "email": CRM_CALENDAR_EXCLUDED_HOST_EMAIL,
+                "count": 100,
+            },
+            max_pages=2,
+        )
+    except (CalendlyAPIError, RuntimeError, requests.RequestException):
+        return set()
+    user_uris = set()
+    for membership in memberships:
+        user = membership.get("user")
+        if isinstance(user, str):
+            if user:
+                user_uris.add(user)
+            continue
+        if not isinstance(user, dict):
+            continue
+        if _crm_calendly_calendar_host_is_excluded(
+            user.get("name"), user.get("email")
+        ):
+            uri = str(user.get("uri") or "").strip()
+            if uri:
+                user_uris.add(uri)
+    return user_uris
+
+
+def _crm_calendly_calendar_datetime(value):
+    try:
+        parsed = datetime.datetime.fromisoformat(
+            str(value or "").replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = pytz.UTC.localize(parsed)
+    return parsed
+
+
+def _crm_calendly_calendar_appointments(data, start_date, end_date):
+    paris = pytz.timezone("Europe/Paris")
+    contacts = {item.get("id"): item for item in data.get("crm_contacts", [])}
+    appointments = []
+    for item in data.get("crm_calendly_appointments", []):
+        if str(item.get("status") or "active").casefold() == "canceled":
+            continue
+        if _crm_calendly_calendar_host_is_excluded(
+            item.get("host_name"), item.get("host_email")
+        ):
+            continue
+        if not _crm_calendly_calendar_item_is_phone(item):
+            continue
+        start = _crm_calendly_calendar_datetime(item.get("start_time"))
+        if not start:
+            continue
+        local_date = start.astimezone(paris).date()
+        if not start_date <= local_date < end_date:
+            continue
+        contact = contacts.get(item.get("contact_id")) or {}
+        appointments.append({
+            **item,
+            "contact": _crm_calendar_contact_payload(data, contact),
+        })
+    return sorted(appointments, key=lambda item: item.get("start_time") or "")
+
+
+def _crm_calendly_calendar_available_times(event_type, start_time, end_time):
+    return (
+        _calendly_request(
+            "GET",
+            "/event_type_available_times",
+            params={
+                "event_type": event_type["uri"],
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+            timeout=12,
+        ).get("collection")
+        or []
+    )
+
+
+def _crm_calendly_calendar_capacity_payload(data, start_date, now=None):
+    paris = pytz.timezone("Europe/Paris")
+    now = now or datetime.datetime.now(paris)
+    if now.tzinfo is None:
+        now = paris.localize(now)
+    else:
+        now = now.astimezone(paris)
+    end_date = start_date + datetime.timedelta(days=CRM_CALENDAR_RANGE_DAYS)
+    day_keys = [
+        (start_date + datetime.timedelta(days=offset)).isoformat()
+        for offset in range(CRM_CALENDAR_RANGE_DAYS)
+    ]
+    appointments = _crm_calendly_calendar_appointments(data, start_date, end_date)
+    appointments_by_day = {key: 0 for key in day_keys}
+    for appointment in appointments:
+        parsed = _crm_calendly_calendar_datetime(appointment.get("start_time"))
+        if parsed:
+            key = parsed.astimezone(paris).date().isoformat()
+            if key in appointments_by_day:
+                appointments_by_day[key] += 1
+
+    available_by_day = {key: set() for key in day_keys}
+    successful_types = 0
+    failed_types = 0
+    warning = ""
+    event_types = []
+    query_start = max(
+        paris.localize(datetime.datetime.combine(start_date, datetime.time.min)).astimezone(pytz.UTC),
+        now.astimezone(pytz.UTC) + datetime.timedelta(minutes=1),
+    )
+    query_end = paris.localize(
+        datetime.datetime.combine(end_date, datetime.time.min)
+    ).astimezone(pytz.UTC)
+    query_end = min(query_end, query_start + datetime.timedelta(days=7))
+
+    if query_end > query_start and _calendly_token():
+        try:
+            excluded_user_uris = _crm_calendly_calendar_excluded_user_uris(data)
+            event_types = [
+                item for item in _calendly_event_types_for_context(data)
+                if item.get("active", True)
+                and _crm_calendly_calendar_event_type_is_phone(item)
+                and not _crm_calendly_calendar_event_type_is_excluded(
+                    item, excluded_user_uris
+                )
+            ]
+            if not event_types:
+                warning = "Aucun type de rendez-vous téléphonique Calendly n'est disponible."
+        except (CalendlyAPIError, RuntimeError, requests.RequestException) as exc:
+            warning = str(exc)
+    elif query_end > query_start:
+        warning = "La connexion Calendly n'est pas configurée."
+
+    if event_types:
+        start_time = query_start.isoformat(timespec="seconds").replace("+00:00", "Z")
+        end_time = query_end.isoformat(timespec="seconds").replace("+00:00", "Z")
+        workers = min(4, len(event_types))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    _crm_calendly_calendar_available_times,
+                    event_type,
+                    start_time,
+                    end_time,
+                ): event_type
+                for event_type in event_types
+            }
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    slots = future.result()
+                    successful_types += 1
+                except (CalendlyAPIError, RuntimeError, requests.RequestException):
+                    failed_types += 1
+                    continue
+                for slot in slots:
+                    if str(slot.get("status") or "available").casefold() != "available":
+                        continue
+                    parsed = _crm_calendly_calendar_datetime(slot.get("start_time"))
+                    if not parsed:
+                        continue
+                    key = parsed.astimezone(paris).date().isoformat()
+                    if key in available_by_day:
+                        available_by_day[key].add(
+                            parsed.astimezone(pytz.UTC).isoformat()
+                        )
+        if failed_types:
+            warning = (
+                "Certaines disponibilités Calendly n'ont pas pu être chargées."
+            )
+
+    days = []
+    for key in day_keys:
+        day = datetime.date.fromisoformat(key)
+        if day < now.date():
+            available_count = 0
+            availability_status = "past"
+        elif successful_types:
+            available_count = len(available_by_day[key])
+            availability_status = "partial" if failed_types else "live"
+        else:
+            available_count = None
+            availability_status = "unavailable"
+        appointment_count = appointments_by_day[key]
+        days.append({
+            "date": key,
+            "appointment_count": appointment_count,
+            "available_count": available_count,
+            "total_capacity": (
+                appointment_count + available_count
+                if available_count is not None else None
+            ),
+            "availability_status": availability_status,
+        })
+    return {
+        "days": days,
+        "appointments": appointments,
+        "live": bool(successful_types and not failed_types),
+        "partial": bool(successful_types and failed_types),
+        "warning": warning,
+        "refreshed_at": now.isoformat(timespec="seconds"),
+        "excluded_host": CRM_CALENDAR_EXCLUDED_HOST_NAME,
+        "event_type_count": len(event_types),
+    }
+
 
 def _crm_calendar_contact_payload(data, contact):
     """Expose uniquement les champs requis par les indicateurs du calendrier."""
@@ -13216,6 +13485,28 @@ def _crm_calendly_appointments_payload(data):
 def crm_calendly_appointments():
     """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
     return jsonify(_crm_calendly_appointments_payload(load_data()))
+
+
+@app.route("/api/crm/calendly/calendar-capacity")
+@login_required
+def crm_calendly_calendar_capacity():
+    """Return seven days of live phone availability and booked appointments."""
+    raw_start_date = str(request.args.get("start_date") or "").strip()
+    try:
+        start_date = (
+            datetime.date.fromisoformat(raw_start_date)
+            if raw_start_date
+            else datetime.datetime.now(
+                pytz.timezone("Europe/Paris")
+            ).date()
+        )
+    except ValueError:
+        return jsonify({
+            "error": "La date de début du calendrier est invalide."
+        }), 400
+    return jsonify(
+        _crm_calendly_calendar_capacity_payload(load_data(), start_date)
+    )
 
 
 @app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
