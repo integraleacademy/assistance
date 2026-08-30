@@ -657,6 +657,7 @@ const rendered={{
   zero:scoreBadge(score(0)),
   missing:[null,undefined,'','invalide'].map(value=>scoreBadge(score(value))),
   ready:scoreBadge(score(75,'ready')),
+  provisional:scoreBadge(score(28,'action_required',{{score_estimated:true,score_complete:false}})),
   regulatory:scoreBadge(score(25,'blocked',{{
     regulatory_applicable:true,regulatory_status:'accepted',regulatory_label:'Accepté'
   }})),
@@ -675,6 +676,9 @@ process.stdout.write(JSON.stringify(rendered));
     assert "0 — Bloqué" in rendered["zero"]
     assert all("Non calculable" in badge for badge in rendered["missing"])
     assert "75 — Fragile" in rendered["ready"]
+    assert "28 ~ — Provisoire" in rendered["provisional"]
+    assert "score-badge fragile provisional" in rendered["provisional"]
+    assert "Score provisoire fondé sur les informations actuellement connues" in rendered["provisional"]
     assert "25 — Bloqué" in rendered["regulatory"] and "score-shield accepted" in rendered["regulatory"]
     assert "VAE 80 %" in rendered["vae"] and "Bloqué" not in rendered["vae"]
     assert rendered["sorted"] == [25, 10, None]
@@ -853,6 +857,10 @@ def test_manual_contact_creation_keeps_workspace_fields(tmp_path, monkeypatch):
     assert created["lieu"] == "Côte d’Azur"
     assert created["origine"] == "Google"
     assert created["commercial"] == "Cassandre"
+    assert created["integration_score"]["score"] == 0
+    assert created["integration_score"]["score_estimated"] is True
+    assert created["integration_score"]["score_complete"] is False
+    assert created["integration_score"]["operational_status"] == "action_required"
 
 
 def test_workspace_bulk_actions_require_disqualification_reason_and_are_audited(tmp_path, monkeypatch):
