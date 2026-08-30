@@ -24,13 +24,24 @@ function contactCompletenessDetails(contact){
  require('next_action','Prochaine action',hasValue(contact.relance_date)||hasValue(contact.prochaine_action_manuelle)||['converti','disqualifie'].includes(normalize(contact.statut)));
  if(normalize(contact.formation)==='desp')require('desp_type','Parcours DESP');
  require('cpf','Compte CPF');
- if(isYes(contact.cpf))require('cpf_montant','Montant CPF');
- require('identite_creation','Création de l’identité numérique');
- if(isYes(contact.identite_creation))require('identite_ok','Identité numérique fonctionnelle');
+ const cpfDeclared=hasValue(contact.cpf_montant)||hasValue(contact.cpf_palier);
+ if(isYes(contact.cpf))require('cpf_montant','Montant ou palier CPF',cpfDeclared);
+ const cpfExact=Number(String(contact.cpf_montant||'').replace(',','.'))||0;
+ const cpfRoute=(isYes(contact.cpf)||cpfDeclared)&&(cpfExact>0||hasValue(contact.cpf_palier));
+ if(cpfRoute)require('identite_creation','Création de l’identité numérique');
+ if(cpfRoute&&isYes(contact.identite_creation))require('identite_ok','Identité numérique fonctionnelle');
  require('financement_ft','Projet de financement France Travail');
- require('statut_demande_financement_ft','Statut de la demande France Travail');
- if(isYes(contact.financement_ft))require('refus_ft_perso','Financement personnel si refus France Travail');
- require('inscrit_ft','Inscription France Travail');
+ const rawFtStatus=normalize(contact.statut_demande_financement_ft).replace(/\s+/g,'_');
+ const ftStatus=rawFtStatus==='non_demandee'?'aucune_demande':rawFtStatus;
+ const ftRelevant=isYes(contact.financement_ft)||Boolean(ftStatus&&ftStatus!=='aucune_demande');
+ if(ftRelevant)require('statut_demande_financement_ft','Statut de la demande France Travail');
+ if(ftStatus==='acceptee')require('montant_accorde_ft','Montant accordé par France Travail');
+ if(isYes(contact.financement_ft)&&(!ftStatus||['aucune_demande','a_preparer'].includes(ftStatus)))require('inscrit_ft','Inscription France Travail');
+ const unsecured=contact.integration_score?.unsecured_amount_eur;
+ const personalRequired=unsecured!=null
+  ? Number(unsecured)>0
+  : normalize(contact.cpf)==='non';
+ if(personalRequired)require('financement_perso_possible','Capacité de financement personnel',hasValue(contact.financement_perso_possible)||hasValue(contact.refus_ft_perso));
  if(contact.integration_score?.personal_remainder_applicable===true)require('reste_a_charge_perso','Financement personnel du reste à charge');
  if(['aps','a3p'].includes(normalize(contact.formation))){
   require('carte_pro','Carte professionnelle');
@@ -50,7 +61,7 @@ function contactCompletenessDetails(contact){
 const contactCompleteness=contact=>contactCompletenessDetails(contact).percent;
 const hasContact=contact=>(contact.activities||[]).some(item=>['appel','email','sms'].includes(item.kind));
 const isOverdue=contact=>contact.relance_date&&new Date(`${contact.relance_date}T23:59:59`)<new Date();
-function priority(contact){let score=0;if(!hasContact(contact))score+=35;if(isOverdue(contact))score+=30;score+=Math.min(20,daysSince(lastActivity(contact)?.date||contact.created_at));if(contact.origine==='META')score+=10;if(contactCompleteness(contact)<60)score+=5;return Math.min(100,score)}
+function priority(contact){let score=0;if(!hasContact(contact))score+=35;if(isOverdue(contact))score+=30;score+=Math.min(20,daysSince(lastActivity(contact)?.date||contact.created_at));if(contactCompleteness(contact)<60)score+=5;return Math.min(100,score)}
 function duplicateMap(contacts){const map=new Map();contacts.forEach(contact=>{const keys=[normalize(contact.mail),String(contact.telephone||'').replace(/\D/g,''),normalize(`${contact.prenom} ${contact.nom}`)].filter(value=>value.length>3);keys.forEach(key=>map.set(key,[...(map.get(key)||[]),contact.id]))});const duplicates=new Map();map.forEach(ids=>{if(ids.length>1)ids.forEach(id=>duplicates.set(id,[...new Set([...(duplicates.get(id)||[]),...ids.filter(other=>other!==id)])]))});return duplicates}
 const workspaceOriginOptions=['META','Google Ads','Site internet','Bouche à oreilles','Mon Compte Formation','Secrétariat','Simulateur VAE','Autre'];
 function canonicalSourceLabel(value,contact={}){
@@ -217,7 +228,7 @@ function refreshContactCompleteness(contact){
 const completenessGroups=[
  {title:'Identité et contact',keys:['prenom','nom','telephone','mail']},
  {title:'Formation',keys:['formation','lieu','dates_formation','desp_type']},
- {title:'Financement',keys:['cpf','cpf_montant','identite_creation','identite_ok','financement_ft','statut_demande_financement_ft','refus_ft_perso','inscrit_ft','reste_a_charge_perso']},
+ {title:'Financement',keys:['cpf','cpf_montant','cpf_palier','identite_creation','identite_ok','financement_ft','statut_demande_financement_ft','montant_accorde_ft','financement_perso_possible','refus_ft_perso','inscrit_ft','reste_a_charge_perso']},
  {title:'Suivi',keys:['origine','next_action']},
  {title:'Réglementaire',keys:['carte_pro','titre_sejour','titre_sejour_cnaps','garde_vue','antecedents','compte_cnaps','integration_dracar']},
 ];

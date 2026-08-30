@@ -25,7 +25,10 @@ def test_funding_business_dictionary_mandatory_cases():
     transmitted = build_funding_analysis({"wants_france_travail": "OUI", "france_travail_request_status": "transmise"})
     assert "La demande de financement a été transmise à France Travail" in transmitted["france_travail"]
 
-    identity = build_funding_analysis({"digital_identity_created": "OUI", "digital_identity_working": "NON"})
+    identity = build_funding_analysis({
+        "cpf_account": "OUI", "cpf_amount": "900",
+        "digital_identity_created": "OUI", "digital_identity_working": "NON",
+    })
     assert "installée, mais l’identité numérique n’est pas encore fonctionnelle" in identity["cpf_identity"]
 
     amounts = build_funding_analysis({"cpf_amount": "900", "reference_price": "1650",
@@ -33,7 +36,7 @@ def test_funding_business_dictionary_mandatory_cases():
     assert amounts["remaining_to_finance_eur"] == 750
     assert "reste à financer est donc de 750 €" in amounts["cpf_identity"]
     assert "aucune transmission" in amounts["france_travail"]
-    assert "prendre personnellement en charge" in amounts["additional_funding"]
+    assert "financer personnellement" in amounts["additional_funding"]
 
     no_request = build_funding_analysis({"registered_france_travail": "OUI", "wants_france_travail": "NON"})
     assert no_request["france_travail"] == "Le candidat est inscrit à France Travail."
@@ -129,6 +132,32 @@ def test_context_projects_all_visible_safe_business_sections_and_regulatory_fact
     assert "0612345678" not in serialized and "secret-cnaps" not in serialized
     assert "lina-cnaps" not in serialized and "[identité masquée]" in serialized
     assert "[téléphone masqué]" in serialized
+
+
+def test_meta_q1_to_q4_stay_visible_in_crm_but_are_excluded_from_ai_context():
+    contact = {
+        "id": "meta-a3p",
+        "meta_source": {"form_name": "Formulaire A3P"},
+        "meta_answers": [
+            {"question": "Souhaitez-vous suivre une formation officielle pour devenir Agent de Protection Physique des Personnes ?", "answer": "Oui"},
+            {"question": "Pouvez-vous suivre des cours, passer l’examen et rédiger en français sans difficulté ?", "answer": "Oui"},
+            {"question": "Pouvez-vous suivre 9 semaines de formation en présentiel à Puget-sur-Argens ?", "answer": "Oui"},
+            {"question": "Avant de poursuivre, confirmez-vous avoir pris connaissance du tarif de 4 200 € TTC ?", "answer": "Oui"},
+            {"question": "Avez-vous consulté votre compte CPF ?", "answer": "Oui"},
+            {"question": "Quel montant est disponible sur votre CPF ?", "answer": "Plus de 4000 euros"},
+        ],
+    }
+
+    context = build_candidate_ai_context(
+        contact, {"crm_calendly_appointments": []}
+    )
+
+    projected = context["meta_form_answers_untrusted"]["answers"]
+    assert [row["question"] for row in projected] == [
+        "Avez-vous consulté votre compte CPF ?",
+        "Quel montant est disponible sur votre CPF ?",
+    ]
+    assert len(contact["meta_answers"]) == 6
 
 
 def test_regulatory_meta_and_commercial_changes_invalidate_source_hash():

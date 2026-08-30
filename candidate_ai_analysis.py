@@ -53,7 +53,7 @@ Les informations contenues dans `authoritative_facts`, `regulatory_declarations_
 Pour les rendez-vous, utilise toujours temporal_status, upcoming_count, past_count, in_progress_count et canceled_count. Ne déduis jamais qu’un rendez-vous est futur du seul statut Calendly active. « programmé » ou « à venir » ne peut être utilisé que si upcoming_count est supérieur à zéro. Distingue un rendez-vous passé d’un rendez-vous honoré : « candidat joint » est réservé à outcome=answered, « sans réponse » à outcome=no_answer et outcome=unknown signifie que le résultat n’est pas renseigné. Le statut commercial de la piste ne remplace jamais ces faits temporels.
 Utilise les montants, nombres, dates et statuts exacts fournis. Ne transforme pas une information absente en réponse négative : écris « non renseigné ». Écris « aucune solution identifiée », et non « aucune solution possible », quand aucun financement n’est enregistré. Distingue faits confirmés, informations manquantes et hypothèses à vérifier.
 Le champ general_summary ne doit jamais mentionner ni reformuler la session souhaitée (dates et lieu), les rendez-vous ou le suivi VAE : le CRM ajoutera lui-même leur narration factuelle.
-Le dictionnaire métier du financement est impératif : `cpf_account` indique seulement si le compte CPF est créé ; `cpf_amount` est le solde déclaré, jamais des droits engagés ; `digital_identity_created` indique une démarche commencée, distincte de `digital_identity_working` ; `registered_france_travail` indique seulement une inscription ; `personal_funding_fallback` est uniquement une solution de repli déclarée en cas de refus, jamais un paiement réalisé.
+Le dictionnaire métier du financement est impératif : `cpf_account` indique seulement si le compte CPF a été consulté ; `cpf_amount` est le solde déclaré et `cpf_tier` une fourchette déclarée, jamais des droits engagés ; `digital_identity_created` indique une démarche commencée, distincte de `digital_identity_working` ; `registered_france_travail` indique seulement une inscription ; `personal_funding_capacity` indique une capacité personnelle déclarée, jamais un paiement réalisé. `personal_funding_fallback` est son ancien équivalent conservé uniquement pour compatibilité.
 `personal_remainder` indique explicitement si le candidat financera personnellement le reste à charge calculé. Cette réponse et la session souhaitée sont des faits essentiels qui doivent être repris dans l’analyse.
 `wants_france_travail` est exclusivement l’intention que l’équipe prépare une demande. Il ne constitue JAMAIS un statut administratif. Sans `france_travail_request_status`, une réponse OUI signifie `a_preparer` : aucune transmission ni instruction ne peut être affirmée. Les seuls statuts fiables sont aucune_demande, a_preparer, transmise, en_cours_instruction, acceptee, refusee et annulee. N’affirme « transmise », « en cours d’instruction », « acceptée » ou « refusée » que lorsque ce statut exact est fourni.
 Il est interdit, sans statut explicite correspondant, d’écrire : financement validé ou sécurisé, prise en charge confirmée, dossier en cours chez France Travail, demande transmise ou en attente de validation, accord probable, candidat éligible, financement accepté ou refusé. Un candidat inscrit à France Travail n’est pas pour autant éligible et n’a pas nécessairement demandé un financement.
@@ -120,19 +120,29 @@ def build_funding_analysis(funding, formation=None):
     identity_working = _tri_state(funding.get("digital_identity_working"))
     wants_ft = _tri_state(funding.get("wants_france_travail"))
     registered = _tri_state(funding.get("registered_france_travail"))
-    fallback = _tri_state(funding.get("personal_funding_fallback"))
+    fallback = _tri_state(funding.get("personal_funding_capacity"))
+    if fallback is None:
+        fallback = _tri_state(funding.get("personal_funding_fallback"))
     personal_remainder = _tri_state(funding.get("personal_remainder"))
     cpf = _known_amount(funding.get("cpf_amount"))
+    cpf_tier = sanitize_candidate_text(funding.get("cpf_tier"), 120)
     price = _known_amount(funding.get("reference_price", formation.get("reference_price")))
+    awarded_ft = _known_amount(funding.get("france_travail_awarded_amount"))
     raw_status = _normalized(funding.get("france_travail_request_status")).strip().replace(" ", "_")
     status = raw_status if raw_status in FT_REQUEST_STATUSES else "aucune_demande"
     if wants_ft is True and status == "aucune_demande":
         status = "a_preparer"
-    remaining = max(price - cpf, 0) if price is not None and cpf is not None else None
+    effective_cpf = 0 if account is False else cpf
+    remaining = (max(price - effective_cpf, 0)
+                 if price is not None and effective_cpf is not None else None)
 
-    cpf_parts = [{True: "Le candidat a créé son compte CPF.", False: "Le candidat doit encore créer son compte CPF."}.get(account,
-        "La création du compte CPF n’est pas renseignée.")]
-    if cpf is None:
+    cpf_parts = [{True: "Le candidat indique avoir consulté son compte CPF.", False: "Le candidat indique ne pas avoir consulté son compte CPF."}.get(account,
+        "La consultation du compte CPF n’est pas renseignée.")]
+    if account is False and (cpf is not None or cpf_tier):
+        cpf_parts.append("Un montant ou palier CPF est enregistré, mais il n’est pas retenu tant que la consultation du compte est indiquée comme non effectuée.")
+    elif cpf is None and cpf_tier:
+        cpf_parts.append(f"Le candidat déclare un palier CPF de {cpf_tier}. Le montant exact reste à confirmer.")
+    elif cpf is None:
         cpf_parts.append("Le montant disponible sur le CPF n’est pas renseigné.")
     elif price is None:
         cpf_parts.append(f"Le candidat déclare disposer de {_money(cpf)} sur son CPF. Le prix de la formation n’étant pas renseigné, le reste à financer est impossible à déterminer.")
@@ -140,14 +150,16 @@ def build_funding_analysis(funding, formation=None):
         cpf_parts.append(f"La formation coûte {_money(price)}. Le candidat dispose de {_money(cpf)} sur son CPF. Le reste à financer est donc de {_money(remaining)}.")
     else:
         cpf_parts.append(f"La formation coûte {_money(price)} et le candidat déclare disposer de {_money(cpf)} sur son CPF. Ce solde semble potentiellement suffisant, sans signifier que les droits sont déjà mobilisés ni que la formation est financée.")
-    if identity_created is True and identity_working is False:
-        cpf_parts.append("L’application Identité Numérique La Poste a été installée, mais l’identité numérique n’est pas encore fonctionnelle.")
-    elif identity_created is True and identity_working is True:
-        cpf_parts.append("L’application Identité Numérique La Poste est installée et l’identité numérique est indiquée comme fonctionnelle.")
-    elif identity_created is False:
-        cpf_parts.append("La mise en place de l’Identité Numérique La Poste reste à effectuer.")
-    else:
-        cpf_parts.append("La situation de l’Identité Numérique La Poste est à vérifier.")
+    cpf_route = account is not False and ((cpf is not None and cpf > 0) or bool(cpf_tier))
+    if cpf_route:
+        if identity_created is True and identity_working is False:
+            cpf_parts.append("L’application Identité Numérique La Poste a été installée, mais l’identité numérique n’est pas encore fonctionnelle.")
+        elif identity_created is True and identity_working is True:
+            cpf_parts.append("L’application Identité Numérique La Poste est installée et l’identité numérique est indiquée comme fonctionnelle.")
+        elif identity_created is False:
+            cpf_parts.append("La mise en place de l’Identité Numérique La Poste reste à effectuer pour mobiliser le CPF.")
+        else:
+            cpf_parts.append("La situation de l’Identité Numérique La Poste est à vérifier si le CPF doit être mobilisé.")
 
     registration = {True: "Le candidat est inscrit à France Travail.", False: "Le candidat n’est pas inscrit à France Travail.", None: "L’inscription à France Travail n’est pas renseignée."}[registered]
     ft_parts = [registration]
@@ -160,6 +172,10 @@ def build_funding_analysis(funding, formation=None):
     }
     if status in status_text:
         ft_parts.append(status_text[status])
+        if status == "acceptee" and awarded_ft is not None:
+            ft_parts.append(f"Le montant accordé enregistré est de {_money(awarded_ft)}.")
+        elif status == "acceptee":
+            ft_parts.append("Le montant accordé reste à confirmer avant de considérer le reste à charge comme couvert.")
     elif wants_ft is True:
         ft_parts.append("Le candidat souhaite qu’une demande soit déposée auprès de France Travail. La demande reste à préparer et aucune transmission n’est actuellement enregistrée.")
         if registered is False:
@@ -168,10 +184,15 @@ def build_funding_analysis(funding, formation=None):
         ft_parts.append("Le souhait de solliciter un financement France Travail n’est pas renseigné.")
 
     additional_parts = []
-    if wants_ft is True:
-        additional_parts.append({True: "En cas de refus de France Travail, le candidat a déclaré pouvoir prendre personnellement en charge le financement restant.",
-            False: "En cas de refus de France Travail, aucune solution de financement personnel n’est actuellement prévue."}.get(fallback,
-            "La solution de financement personnel en cas de refus de France Travail n’est pas renseignée."))
+    if fallback is not None or wants_ft is True:
+        if wants_ft is True:
+            additional_parts.append({True: "En cas de refus de France Travail, le candidat a déclaré pouvoir financer personnellement tout ou partie du reste.",
+                False: "En cas de refus de France Travail, le candidat indique ne pas pouvoir financer personnellement le reste."}.get(fallback,
+                "La capacité de financement personnel en cas de refus de France Travail n’est pas renseignée."))
+        else:
+            additional_parts.append({True: "Le candidat déclare pouvoir financer personnellement tout ou partie du reste à charge.",
+                False: "Le candidat indique ne pas pouvoir financer personnellement le reste à charge."}.get(fallback,
+                "La capacité de financement personnel n’est pas renseignée."))
     if remaining is not None and remaining > 0:
         additional_parts.append({
             True: f"Le candidat a confirmé qu’il financera personnellement le reste à charge de {_money(remaining)}.",
@@ -180,16 +201,17 @@ def build_funding_analysis(funding, formation=None):
         }[personal_remainder])
     additional_funding = " ".join(additional_parts) or "Aucun financement complémentaire n’est renseigné."
     strengths, vigilance, actions = [], [], []
-    if account is True: strengths.append("Compte CPF déjà créé.")
-    if identity_working is True: strengths.append("Identité Numérique La Poste fonctionnelle.")
+    if account is True: strengths.append("Compte CPF consulté.")
+    if cpf_route and identity_working is True: strengths.append("Identité Numérique La Poste fonctionnelle.")
     if registered is True: strengths.append("Inscription à France Travail enregistrée.")
     if fallback is True: strengths.append("Solution de repli personnelle déclarée en cas de refus.")
     if personal_remainder is True and remaining: strengths.append(f"Prise en charge personnelle du reste à charge de {_money(remaining)} confirmée.")
-    if cpf is None: vigilance.append("Montant CPF non renseigné."); actions.append("Confirmer le montant CPF avec le candidat.")
+    if cpf is None and cpf_tier: vigilance.append("Montant CPF exact à confirmer à partir du palier déclaré."); actions.append("Confirmer le montant CPF exact avec le candidat.")
+    elif cpf is None: vigilance.append("Montant CPF non renseigné."); actions.append("Confirmer le montant CPF avec le candidat.")
     if price is None: vigilance.append("Prix de la formation non renseigné : le reste à financer ne peut pas être calculé.")
-    if identity_working is not True: vigilance.append("Identité numérique non confirmée comme fonctionnelle."); actions.append("Finaliser ou vérifier l’Identité Numérique La Poste.")
+    if cpf_route and identity_working is not True: vigilance.append("Identité numérique non confirmée comme fonctionnelle."); actions.append("Finaliser ou vérifier l’Identité Numérique La Poste.")
     if wants_ft is True and status == "a_preparer": vigilance.append("Demande France Travail à préparer, sans transmission enregistrée."); actions.append("Réunir les éléments puis déposer la demande France Travail avec le candidat.")
-    if fallback is not True and wants_ft is True: vigilance.append("Solution personnelle de repli absente ou à confirmer."); actions.append("Confirmer la solution de financement personnel en cas de refus.")
+    if remaining and fallback is not True: vigilance.append("Capacité de financement personnel absente ou à confirmer."); actions.append("Confirmer la capacité de financement personnel du reste à charge.")
     if remaining and personal_remainder is None: vigilance.append("Prise en charge personnelle du reste à charge à confirmer."); actions.append(f"Confirmer la prise en charge personnelle des {_money(remaining)} restants.")
     if remaining is not None and remaining > 0: actions.insert(0, f"Sécuriser le reste à financer de {_money(remaining)}.")
     security = "Le financement n’est pas encore sécurisé"
@@ -472,6 +494,19 @@ def build_regulatory_declarations(contact):
 
 def _project_meta_context(contact):
     """Conserve les réponses de formulaire utiles en neutralisant les contenus non fiables."""
+    def excluded_from_analysis(question):
+        normalized = _normalized(question)
+        if re.match(r"^q\s*[1-4]\b", normalized):
+            return True
+        excluded_signatures = (
+            ("formation officielle", "agent de protection physique"),
+            ("cours", "examen", "francais"),
+            ("9 semaines", "presentiel", "puget"),
+            ("pris connaissance", "tarif", "4 200"),
+        )
+        return any(all(term in normalized for term in signature)
+                   for signature in excluded_signatures)
+
     def clean(value, limit):
         text = sanitize_candidate_text(value, limit)
         for identity in (contact.get("prenom"), contact.get("nom")):
@@ -485,7 +520,9 @@ def _project_meta_context(contact):
             continue
         question = clean(row.get("question"), 240)
         answer = clean(row.get("answer"), 500)
-        if question and answer:
+        # Q1 à Q4 du formulaire A3P sont des questions de parcours/filtrage :
+        # elles restent visibles sur la fiche, mais ne pilotent ni le score ni l'IA.
+        if question and answer and not excluded_from_analysis(question):
             answers.append({"question": question, "answer": answer})
         if len(answers) == 20:
             break
@@ -505,20 +542,29 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
         "desired_session": "dates_formation", "location": "lieu", "start_date": "date_debut",
         "reference_price": "tarif", "remaining_places": "places_restantes"})
     funding = _pick(contact, {"cpf_account": "cpf", "cpf_amount": "cpf_montant",
+        "cpf_tier": "cpf_palier",
         "digital_identity_created": "identite_creation", "digital_identity_working": "identite_ok",
         "wants_france_travail": "financement_ft", "registered_france_travail": "inscrit_ft",
         "france_travail_request_status": "statut_demande_financement_ft",
+        "france_travail_awarded_amount": "montant_accorde_ft",
+        "personal_funding_capacity": "financement_perso_possible",
         "personal_funding_fallback": "refus_ft_perso", "personal_remainder": "reste_a_charge_perso",
         "other": "financement_autre"})
+    if "personal_funding_capacity" not in funding and contact.get("refus_ft_perso") not in (None, ""):
+        funding["personal_funding_capacity"] = contact.get("refus_ft_perso")
     score = integration_score or {}
     if score:
-        score = _pick(score, {"score": "score", "level": "level", "operational_status": "operational_status",
+        score = _pick(score, {"version": "version", "score": "score", "level": "level", "operational_status": "operational_status",
             "financial_score": "financial_score", "regulatory_score": "regulatory_score",
             "regulatory_status": "regulatory_status", "normalized_cnaps_status": "normalized_cnaps_status",
             "criteria": "breakdown", "remaining_to_finance": "remaining_to_finance_eur", "blockers": "blockers",
             "warnings": "warnings", "recommended_actions": "next_actions"})
         funding.update(_pick(integration_score, {"coverage_percent": "cpf_coverage_percent",
+            "coverage_min_percent": "cpf_coverage_min_percent",
+            "coverage_max_percent": "cpf_coverage_max_percent",
             "remaining_to_finance": "remaining_to_finance_eur", "reference_price": "training_price_eur",
+            "remaining_to_finance_min": "remaining_to_finance_min_eur",
+            "remaining_to_finance_max": "remaining_to_finance_max_eur",
             "personal_remainder_status": "personal_remainder_status",
             "funding_solution_status": "funding_solution_status", "unsecured_amount": "unsecured_amount_eur"}))
     funding_analysis = build_funding_analysis(funding, formation)
@@ -567,7 +613,8 @@ def build_candidate_ai_context(contact, data, integration_score=None, wedof_reso
     training_fact = (f"Le candidat souhaite suivre le parcours {training_label} par la {pathway}."
         if training_label and pathway else f"Le candidat souhaite suivre la formation {training_label}." if training_label else "Formation non renseignée.")
     financing_identified = any(value not in (None, "", False, "NON", "Non", "non", 0, "0") for value in (
-        funding.get("cpf_amount"), funding.get("wants_france_travail"), funding.get("personal_funding_fallback"),
+        funding.get("cpf_amount"), funding.get("cpf_tier"), funding.get("wants_france_travail"),
+        funding.get("personal_funding_capacity"), funding.get("personal_funding_fallback"),
         funding.get("personal_remainder"), funding.get("other")))
     authoritative = {
         "training": {"label": training_label, "pathway": pathway, "fact": training_fact},

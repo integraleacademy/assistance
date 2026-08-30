@@ -174,6 +174,7 @@ def _crm_create_contact_from_vae_simulation(data, nom, prenom, mail, telephone,
         "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_username": "",
         "cnaps_password": "", "integration_dracar": "", "identite_creation": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
+        "montant_accorde_ft": "", "financement_perso_possible": "",
         "refus_ft_perso": "", "reste_a_charge_perso": "", "inscrit_ft": "",
         "relance_date": "", "origine": "Simulateur VAE",
         "commentaires": f"Test d’éligibilité VAE DESP réalisé — score : {score}% — {resultat}.",
@@ -2188,6 +2189,8 @@ def _crm_create_or_match_abandoned_form_contact(data, record, fields, now_str):
         "identite_creation": str(fields.get("identite_numerique") or "").strip(),
         "identite_ok": "",
         "financement_ft": str(fields.get("france_travail") or "").strip(),
+        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
+        "financement_perso_possible": str(fields.get("ft_refus_ok") or "").strip(),
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": str(fields.get("financement_perso") or "").strip(),
         "inscrit_ft": "", "commentaires": "", "relance_date": "",
@@ -7300,7 +7303,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260829-cpf-palier-meta-1"
+CRM_ASSET_VERSION = "20260829-scoring-universel-v5-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -7751,6 +7754,10 @@ _META_DIRECT_CRM_QUESTION_ALIASES = {
     "financementft": "financement_ft",
     "statutdemandefinancementft": "statut_demande_financement_ft",
     "statutdemandefrancetravail": "statut_demande_financement_ft",
+    "montantaccordeft": "montant_accorde_ft",
+    "montantaccordefrancetravail": "montant_accorde_ft",
+    "financementpersopossible": "financement_perso_possible",
+    "financementpersonnelpossible": "financement_perso_possible",
     "ftrefusok": "refus_ft_perso",
     "refusftperso": "refus_ft_perso",
     "financementperso": "reste_a_charge_perso",
@@ -7767,7 +7774,8 @@ _META_CRM_COMPLETION_FIELDS = (
     "carte_pro",
     "titre_sejour", "garde_vue", "antecedents", "compte_cnaps", "desp_type",
     "identite_creation", "identite_ok", "financement_ft",
-    "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso",
+    "statut_demande_financement_ft", "montant_accorde_ft",
+    "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
     "inscrit_ft", "commentaires",
 )
 
@@ -7993,6 +8001,23 @@ def _meta_funding_status(value):
     return ""
 
 
+def _meta_question_excluded_from_scoring(question):
+    """Garde Q1 à Q4 visibles sans les projeter dans les faits métier du CRM."""
+    normalized = _meta_words(question)
+    if re.match(r"^q\s*[1-4]\b", normalized):
+        return True
+    excluded_signatures = (
+        ("formation officielle", "agent de protection physique"),
+        ("cours", "examen", "francais"),
+        ("9 semaines", "presentiel", "puget"),
+        ("pris connaissance", "tarif", "4 200"),
+    )
+    return any(
+        all(term in normalized for term in signature)
+        for signature in excluded_signatures
+    )
+
+
 def _meta_crm_question_field(question):
     key = _meta_key(question)
     direct = _META_DIRECT_CRM_QUESTION_ALIASES.get(key)
@@ -8008,6 +8033,10 @@ def _meta_crm_question_field(question):
         return "inscrit_ft"
     if "statut" in key and ("francetravail" in key or "financementft" in key):
         return "statut_demande_financement_ft"
+    if "montant" in key and ("accord" in key or "accepte" in key) and "francetravail" in key:
+        return "montant_accorde_ft"
+    if any(term in key for term in ("payerpersonnellement", "financerpersonnellement", "financementpersonnel")):
+        return "financement_perso_possible"
     if "refus" in key and ("francetravail" in key or "ft" in key) and "financ" in key:
         return "refus_ft_perso"
     if "resteacharge" in key or ("financementpersonnel" in key and "refus" not in key):
@@ -8095,14 +8124,14 @@ def _meta_crm_payload(fields, custom_answers):
                 if " — " in raw and _meta_place(raw.split(" — ", 1)[0]):
                     raw = raw.split(" — ", 1)[1].strip()
                 crm.setdefault("dates_formation", raw)
-        elif field == "cpf_montant":
+        elif field in {"cpf_montant", "montant_accorde_ft"}:
             try:
                 amount_text = re.sub(r"[^0-9,\.\s]", "", _meta_scalar(value)).strip()
                 amount = normalize_cpf_amount(amount_text)
             except ValueError:
                 amount = ""
-            if amount and not crm.get("cpf_montant"):
-                crm["cpf_montant"] = amount
+            if amount and not crm.get(field):
+                crm[field] = amount
         elif field == "cpf_palier":
             tier = _meta_scalar(value)
             if tier and not crm.get("cpf_palier"):
@@ -8123,6 +8152,7 @@ def _meta_crm_payload(fields, custom_answers):
         elif field in {
             "cpf", "carte_pro", "titre_sejour", "garde_vue", "antecedents",
             "compte_cnaps", "identite_creation", "identite_ok", "financement_ft",
+            "financement_perso_possible",
             "refus_ft_perso", "reste_a_charge_perso", "inscrit_ft",
         }:
             set_yes_no(field, value)
@@ -8131,6 +8161,8 @@ def _meta_crm_payload(fields, custom_answers):
         if fields.get(direct_field):
             apply({"centre": "lieu", "dates": "dates_formation"}.get(direct_field, direct_field), fields[direct_field])
     for row in answer_rows:
+        if _meta_question_excluded_from_scoring(row["question"]):
+            continue
         mapped_field = _meta_crm_question_field(row["question"])
         if mapped_field == "cpf_montant" and _meta_is_cpf_tier(row["answer"]):
             mapped_field = "cpf_palier"
@@ -8363,7 +8395,11 @@ def _meta_salesforce_payload(meta_lead_id, fields, crm_payload, answer_rows):
             or ""
         ).strip(),
         "france_travail": str(crm_payload.get("financement_ft") or "").strip(),
-        "ft_refus_ok": str(crm_payload.get("refus_ft_perso") or "").strip(),
+        "ft_refus_ok": str(
+            crm_payload.get("financement_perso_possible")
+            or crm_payload.get("refus_ft_perso")
+            or ""
+        ).strip(),
         "financement_perso": str(
             crm_payload.get("reste_a_charge_perso") or ""
         ).strip(),
@@ -9468,6 +9504,11 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     response = dict(contact)
     response.setdefault("reste_a_charge_perso", "")
     response.setdefault("cpf_palier", "")
+    response.setdefault("montant_accorde_ft", "")
+    if not response.get("financement_perso_possible"):
+        response["financement_perso_possible"] = str(
+            contact.get("refus_ft_perso") or ""
+        )
     response.setdefault("qualification_flag", "")
     # Le statut WEDOF est calculé une seule fois pour toute la liste des contacts
     # puis injecté ici. Ne jamais relire toute la base WEDOF depuis cette fonction :
@@ -9479,7 +9520,7 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     snapshot = regulatory_snapshot
     if snapshot is None and data is not None:
         snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact.get("id")))
-    response["integration_score"] = calculate_candidate_integration_score(contact, snapshot)
+    response["integration_score"] = calculate_candidate_integration_score(response, snapshot)
     return response
 
 
@@ -9925,6 +9966,8 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
         # fonctionnement et l'inscription FT sont des faits distincts à vérifier.
         "identite_ok": "",
         "financement_ft": str(fields.get("france_travail") or "").strip(),
+        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
+        "financement_perso_possible": str(fields.get("ft_refus_ok") or "").strip(),
         "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": "",
         "origine": _crm_information_request_origin(fields),
@@ -10051,6 +10094,8 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
         "identite_creation": str(entry.get("identite_numerique") or "").strip(),
         "identite_ok": "",
         "financement_ft": str(entry.get("france_travail") or "").strip(),
+        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
+        "financement_perso_possible": str(entry.get("ft_refus_ok") or "").strip(),
         "refus_ft_perso": str(entry.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": str(entry.get("financement_perso") or "").strip(),
         "origine": "Secrétariat",
@@ -11705,7 +11750,8 @@ def _wedof_new_crm_contact(data, payload, stable_id):
         "cnaps_password": "", "integration_dracar": "",
         "desp_type": str(payload.get("desp_type") or "").strip(),
         "identite_creation": "", "identite_ok": "", "financement_ft": "",
-        "statut_demande_financement_ft": "", "refus_ft_perso": "",
+        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
+        "financement_perso_possible": "", "refus_ft_perso": "",
         "reste_a_charge_perso": "", "inscrit_ft": "", "relance_date": "",
         "statut_secondaire": "", "origine": "Mon Compte Formation",
         "commentaires": f"Demande CPF reçue automatiquement via WEDOF · dossier {stable_id}.",
@@ -13107,9 +13153,10 @@ def crm_calendly_status():
 CRM_CALENDAR_CONTACT_FIELDS = (
     "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
     "statut", "dates_formation", "origine", "relance_date",
-    "prochaine_action_manuelle", "desp_type", "cpf", "cpf_montant",
+    "prochaine_action_manuelle", "desp_type", "cpf", "cpf_montant", "cpf_palier",
     "identite_creation", "identite_ok", "financement_ft",
-    "statut_demande_financement_ft", "refus_ft_perso", "inscrit_ft",
+    "statut_demande_financement_ft", "montant_accorde_ft",
+    "financement_perso_possible", "refus_ft_perso", "inscrit_ft",
     "reste_a_charge_perso", "carte_pro", "titre_sejour",
     "titre_sejour_cnaps", "garde_vue", "antecedents", "compte_cnaps",
     "integration_dracar",
@@ -13130,7 +13177,12 @@ def _crm_calendar_contact_payload(data, contact):
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(
         str(contact.get("id") or "")
     )
-    score = calculate_candidate_integration_score(contact, snapshot)
+    effective_contact = dict(contact)
+    effective_contact.setdefault(
+        "financement_perso_possible",
+        str(contact.get("refus_ft_perso") or ""),
+    )
+    score = calculate_candidate_integration_score(effective_contact, snapshot)
     payload["integration_score"] = {
         key: score.get(key)
         for key in (
@@ -13913,8 +13965,11 @@ CRM_CONTACT_SUMMARY_FIELDS = (
     "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
     "statut", "statut_secondaire", "statut_demande_financement_ft",
     "statut_demande_financement_ft_source", "dates_formation", "cpf",
-    "cpf_montant", "cpf_palier", "financement_ft", "reste_a_charge_perso",
-    "desp_type",
+    "cpf_montant", "cpf_palier", "financement_ft", "montant_accorde_ft",
+    "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
+    "identite_creation", "identite_ok", "inscrit_ft", "desp_type",
+    "carte_pro", "titre_sejour", "titre_sejour_cnaps", "garde_vue",
+    "antecedents", "compte_cnaps", "integration_dracar",
     "origine", "source", "source_detail", "source_history", "commercial", "tags",
     "prix_vente", "cout_estime", "relance_date", "prochaine_action_manuelle",
     "archived_at",
@@ -14016,11 +14071,23 @@ def _crm_contact_summary_response(contact, data, *, funding_status=None,
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(
         str(contact.get("id"))
     )
-    score = calculate_candidate_integration_score(contact, snapshot)
+    effective_contact = dict(contact)
+    effective_contact.setdefault(
+        "financement_perso_possible",
+        str(contact.get("refus_ft_perso") or ""),
+    )
+    if summary.get("statut_demande_financement_ft"):
+        effective_contact["statut_demande_financement_ft"] = summary[
+            "statut_demande_financement_ft"
+        ]
+    score = calculate_candidate_integration_score(effective_contact, snapshot)
     summary["integration_score"] = {
         key: score.get(key)
         for key in (
-            "score", "level", "operational_status", "regulatory_applicable",
+            "score", "level", "label", "operational_status",
+            "financial_score", "score_complete", "score_estimated",
+            "data_confidence_percent", "unsecured_amount_eur",
+            "remaining_to_finance_max_eur", "regulatory_applicable",
             "regulatory_status", "regulatory_label",
         )
     }
@@ -14166,7 +14233,9 @@ def _crm_create_contact_locked():
         "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "cpf_palier": "",
-        "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "", "refus_ft_perso": "", "reste_a_charge_perso": "",
+        "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
+        "montant_accorde_ft": "", "financement_perso_possible": "",
+        "refus_ft_perso": "", "reste_a_charge_perso": "",
         "origine": str(payload.get("origine") or "Ajout manuel"), "commercial": str(payload.get("commercial") or ""),
         "inscrit_ft": "", "commentaires": "", "relance_date": "",
         "prochaine_action_manuelle": "", "relances": [], "statut_secondaire": "",
@@ -14889,7 +14958,9 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
                "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
-               "financement_ft", "statut_demande_financement_ft", "refus_ft_perso", "reste_a_charge_perso", "origine", "inscrit_ft", "commentaires", "cpf_montant", "cpf_palier",
+               "financement_ft", "statut_demande_financement_ft", "montant_accorde_ft",
+               "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
+               "origine", "inscrit_ft", "commentaires", "cpf_montant", "cpf_palier",
                "statut", "statut_secondaire", "commercial", "tags", "prix_vente", "cout_estime",
                "prochaine_action_manuelle",
                "disqualification_reason", "disqualification_detail", "reactivation_date", "archived_at",
@@ -14914,6 +14985,15 @@ def _crm_patch_contact_locked(data, contact, contact_id):
             payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+    if "montant_accorde_ft" in payload:
+        try:
+            payload["montant_accorde_ft"] = normalize_cpf_amount(
+                payload.get("montant_accorde_ft")
+            )
+        except ValueError:
+            return jsonify({
+                "error": "Le montant accordé par France Travail doit être positif et comporter au maximum deux décimales."
+            }), 400
     if "cpf_palier" in payload:
         payload["cpf_palier"] = str(payload.get("cpf_palier") or "").strip()[:120]
     for money_field in ("prix_vente", "cout_estime"):
@@ -15009,7 +15089,11 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         contact["statut_secondaire"] = ""
     # Une confirmation porte sur un montant exact : toute modification de ses
     # déterminants l'invalide afin qu'elle ne soit jamais réutilisée pour un autre montant.
-    determinants = {"formation", "desp_type", "cpf", "cpf_montant", "financement_ft", "statut_demande_financement_ft"}
+    determinants = {
+        "formation", "desp_type", "cpf", "cpf_montant", "cpf_palier",
+        "financement_ft", "statut_demande_financement_ft",
+        "montant_accorde_ft", "financement_perso_possible",
+    }
     provisional_score = calculate_candidate_integration_score(contact, snapshot)
     old_amount = old_score.get("personal_remainder_amount_eur")
     new_amount = provisional_score.get("personal_remainder_amount_eur")

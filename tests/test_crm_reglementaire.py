@@ -195,8 +195,9 @@ def test_cnaps_route_projects_production_status_into_integration_score(tmp_path,
     assert body["scoring_snapshot"]["normalized_status"] == "transmitted"
     assert body["scoring_snapshot"]["raw_status"] == "TRANSMIS"
     assert body["integration_score"]["normalized_cnaps_status"] == "transmitted"
-    assert body["integration_score"]["regulatory_score"] == 35
-    assert body["integration_score"]["score"] == 61
+    assert body["integration_score"]["regulatory_score"] == 40
+    assert body["integration_score"]["financial_score"] == 57
+    assert body["integration_score"]["score"] == 50
 
 
 def test_only_desp_vae_404_is_linked(tmp_path, monkeypatch):
