@@ -810,6 +810,39 @@ def test_crm_displays_and_saves_the_meta_cpf_tier_next_to_the_amount(tmp_path, m
     assert updated.get_json()["cpf_palier"] == "2000-3000 euros"
 
 
+def test_crm_saves_universal_personal_capacity_and_confirmed_ft_amount(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={
+        "prenom": "Lina", "formation": "SSIAP 1",
+    }).get_json()
+
+    updated = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={
+            "cpf": "NON", "financement_ft": "OUI",
+            "statut_demande_financement_ft": "acceptee",
+            "montant_accorde_ft": "980",
+            "financement_perso_possible": "OUI",
+        },
+    )
+
+    assert updated.status_code == 200
+    body = updated.get_json()
+    assert body["montant_accorde_ft"] == "980.00"
+    assert body["financement_perso_possible"] == "OUI"
+    assert body["integration_score"]["financial_score"] == 100
+    assert body["integration_score"]["funding_solution_status"] == (
+        "secured_france_travail"
+    )
+
+    invalid = c.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"montant_accorde_ft": "12.345"},
+    )
+    assert invalid.status_code == 400
+
+
 def test_manual_contact_creation_keeps_workspace_fields(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     created = c.post("/api/crm/contacts", json={

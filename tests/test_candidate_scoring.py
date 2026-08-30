@@ -1,7 +1,43 @@
 import pytest
 
-from candidate_scoring import (calculate_candidate_integration_score,
-    calculate_security_regulatory_score, normalize_cnaps_tracking_status, normalize_cpf_amount)
+from candidate_scoring import (
+    CANDIDATE_SCORING_VERSION,
+    calculate_candidate_integration_score,
+    calculate_security_regulatory_score,
+    normalize_cnaps_tracking_status,
+    normalize_cpf_amount,
+    parse_cpf_tier,
+)
+
+
+TRAINING_CASES = (
+    ("APS", {}, 1650),
+    ("A3P", {}, 4200),
+    ("SSIAP 1", {}, 980),
+    ("Chauffeur VTC", {}, 1500),
+    ("DESP", {"desp_type": "INITIAL"}, 4300),
+    ("DESP", {"desp_type": "VAE"}, 3800),
+)
+
+
+def financial_contact(formation="A3P", cpf_amount="4200", **updates):
+    value = {
+        "formation": formation,
+        "cpf": "OUI",
+        "cpf_montant": cpf_amount,
+        "identite_creation": "OUI",
+        "identite_ok": "OUI",
+        "financement_ft": "NON",
+    }
+    value.update(updates)
+    return value
+
+
+def financial_points(result, key):
+    return next(
+        row["points"] for row in result["financial_breakdown"]
+        if row["key"] == key
+    )
 
 
 def test_candidate_score_styles_are_bundled():
@@ -11,165 +47,343 @@ def test_candidate_score_styles_are_bundled():
     assert ".integration-score-card{padding:18px" in css
     assert ".score-main strong{font:850 32px Manrope}" in css
     assert ".score-progress i,.cpf-coverage i" in css
-    assert ".score-money{display:grid" in css
+    assert ".score-confidence{" in css
+    assert ".integration-score-card.incomplete" in css
 
 
-def contact(**updates):
-    base = {"formation": "APS", "cpf": "OUI", "cpf_montant": "1650",
-            "identite_creation": "OUI", "identite_ok": "OUI",
-            "financement_ft": "NON", "refus_ft_perso": "OUI", "reste_a_charge_perso": "OUI", "inscrit_ft": "NON"}
-    base.update(updates)
-    return base
+def test_v5_uses_60_percent_financial_and_40_percent_verified_regulatory():
+    declared = calculate_candidate_integration_score(
+        financial_contact(carte_pro="OUI")
+    )
+    verified = calculate_candidate_integration_score(
+        financial_contact(carte_pro="OUI"),
+        {"has_active_professional_title": True},
+    )
+
+    assert CANDIDATE_SCORING_VERSION == declared["version"] == 5
+    assert declared["financial_score"] == 100
+    assert declared["regulatory_score"] == 70
+    assert declared["score"] == 88
+    assert declared["operational_status"] == "action_required"
+    assert verified["score"] == 100
+    assert verified["regulatory_source"] == "verified_cnaps_title"
+    assert verified["operational_status"] == "ready"
 
 
-def points(result, key):
-    return next(row["points"] for row in result["breakdown"] if row["key"] == key)
+@pytest.mark.parametrize(("snapshot", "contact_updates", "expected"), [
+    ({"raw_status": "ACCEPTÉ"}, {"carte_pro": "NON"}, 100),
+    ({"raw_status": "EN INSTRUCTION"}, {"carte_pro": "NON"}, 55),
+    ({"raw_status": "TRANSMIS"}, {"carte_pro": "NON"}, 40),
+    ({"raw_status": "ENREGISTRÉ"}, {"carte_pro": "NON"}, 25),
+    ({}, {"carte_pro": "NON", "compte_cnaps": "OUI"}, 25),
+    ({}, {"carte_pro": "OUI"}, 70),
+])
+def test_regulatory_progress_ladder(snapshot, contact_updates, expected):
+    result = calculate_security_regulatory_score(
+        financial_contact(**contact_updates), snapshot
+    )
+    assert result["score"] == expected
 
 
-def test_ideal_aps_profile():
-    result = calculate_candidate_integration_score(contact(carte_pro="OUI"))
-    assert (result["score"], result["level"], result["label"]) == (100, "excellent", "Dossier très avancé")
-    assert result["cpf_coverage_percent"] == 100
-    assert result["remaining_to_finance_eur"] == 0
-    assert result["blockers"] == []
-    assert result["operational_status"] == "ready"
-
-
-def test_non_security_training_keeps_financial_score():
-    result = calculate_candidate_integration_score(contact(formation="SSIAP 1", cpf_montant="980"))
-    assert result["score"] == result["financial_score"]
-    assert result["regulatory_applicable"] is False
-
-
-@pytest.mark.parametrize("raw,expected", [("ACCEPTÉ", "accepted"), ("ACCEPTE", "accepted"),
-    ("TRANSMIS", "transmitted"), ("EN INSTRUCTION", "in_review"),
-    ("ENREGISTRÉ", "registered"), ("REFUSÉ", "refused"), ("AUCUN RÉSULTAT", "no_result")])
+@pytest.mark.parametrize("raw,expected", [
+    ("ACCEPTÉ", "accepted"),
+    ("ACCEPTE", "accepted"),
+    ("TRANSMIS", "transmitted"),
+    ("EN INSTRUCTION", "in_review"),
+    ("ENREGISTRÉ", "registered"),
+    ("REFUSÉ", "refused"),
+    ("AUCUN RÉSULTAT", "no_result"),
+])
 def test_cnaps_status_normalization(raw, expected):
-    assert normalize_cnaps_tracking_status({"cnaps": {"cnaps_status": raw, "titles": []}}) == expected
+    assert normalize_cnaps_tracking_status({
+        "cnaps": {"cnaps_status": raw, "titles": []},
+    }) == expected
 
 
-def test_transmitted_weighting_and_no_title_precedence():
-    lead = contact(carte_pro="NON", compte_cnaps="OUI", antecedents="NON", titre_sejour_cnaps="CONFORME")
-    result = calculate_candidate_integration_score(lead, {"found": True, "raw_status": "TRANSMIS", "has_active_professional_title": False})
-    assert (result["regulatory_score"], result["regulatory_contribution"], result["score"]) == (45, 18, 78)
-    assert result["normalized_cnaps_status"] == "transmitted"
-    tracking = next(row for row in result["regulatory_breakdown"] if row["key"] == "cnaps_tracking")
-    assert (tracking["points"], tracking["max_points"], tracking["detail"]) == (15, 30, "Demande CNAPS transmise")
-    assert not any("Aucun résultat CNAPS exploitable" in warning for warning in result["warnings"])
+def test_unknown_regulatory_state_is_incomplete_instead_of_zero():
+    result = calculate_candidate_integration_score(
+        financial_contact(carte_pro="NON", compte_cnaps="NON"),
+        {"found": False},
+    )
+
+    assert result["financial_score"] == 100
+    assert result["regulatory_score"] is None
+    assert result["score"] is None
+    assert result["level"] is None
+    assert "situation réglementaire à compléter" in result["label"]
     assert result["operational_status"] == "action_required"
 
 
-def test_no_result_refusal_and_accepted_priority():
-    lead = contact(carte_pro="NON", compte_cnaps="OUI", antecedents="NON", titre_sejour_cnaps="CONFORME")
-    missing = calculate_candidate_integration_score(lead, {"found": False})
-    assert (missing["regulatory_score"], missing["score"], missing["level"]) == (30, 72, "qualify")
-    refused = calculate_candidate_integration_score(lead, {"raw_status": "REFUSÉ"})
-    assert refused["regulatory_score"] == 0 and refused["operational_status"] == "blocked"
-    accepted = calculate_candidate_integration_score({**lead, "formation": "A3P", "cpf_montant": "4200", "antecedents": "OUI"}, {"raw_status": "ACCEPTÉ"})
-    assert accepted["regulatory_score"] == 100 and accepted["score"] == 100
-
-
-def test_declarative_safeguards_and_stay_status():
-    base = contact(carte_pro="NON", compte_cnaps="OUI", antecedents="OUI", titre_sejour="OUI")
-    risk = calculate_security_regulatory_score(base, {"raw_status": "TRANSMIS"})
-    assert risk["score"] <= 25 and risk["status"] == "high_risk"
-    assert not any("juridiquement refus" in text.lower() for text in risk["warnings"])
-    assert any("titre de séjour" in text for text in risk["warnings"])
-    blocked = calculate_candidate_integration_score({**base, "titre_sejour_cnaps": "NON_CONFORME"}, {"raw_status": "TRANSMIS"})
-    assert blocked["regulatory_score"] == 25 and blocked["operational_status"] == "blocked"
-
-
-def test_raw_status_wins_over_stale_unknown_snapshot():
-    assert normalize_cnaps_tracking_status({"normalized_status": "unknown", "raw_status": "TRANSMIS"}) == "transmitted"
-
-
-def test_production_capture_weighting_is_61():
-    lead = contact(formation="A3P", cpf_montant="1995", carte_pro="NON", compte_cnaps="NON",
-                   antecedents="NON", titre_sejour_cnaps="NON_CONCERNE")
+def test_cnaps_refusal_is_zero_and_blocking():
     result = calculate_candidate_integration_score(
-        lead, {"found": True, "raw_status": "TRANSMIS", "has_active_professional_title": False})
-    assert result["financial_score"] == 79
-    assert (result["regulatory_score"], result["regulatory_contribution"], result["score"]) == (35, 14, 61)
-    assert result["normalized_cnaps_status"] == "transmitted"
+        financial_contact(carte_pro="NON"), {"raw_status": "REFUSÉ"}
+    )
+    assert result["regulatory_score"] == 0
+    assert result["score"] == 60
+    assert result["operational_status"] == "blocked"
+    assert any("refus" in blocker.lower() for blocker in result["blockers"])
 
 
-def test_no_result_accepted_without_title_and_refused_rules():
-    lead = contact(carte_pro="NON", compte_cnaps="NON", antecedents="NON", titre_sejour_cnaps="NON_CONCERNE")
-    missing = calculate_candidate_integration_score(lead, {"found": False})
-    tracking = next(row for row in missing["regulatory_breakdown"] if row["key"] == "cnaps_tracking")
-    assert missing["normalized_cnaps_status"] == "no_result" and tracking["points"] == 0 and tracking["max_points"] == 30
-    assert any("Aucun résultat CNAPS exploitable" in warning for warning in missing["warnings"])
-    accepted = calculate_candidate_integration_score(lead, {"raw_status": "ACCEPTÉ", "has_active_professional_title": False})
-    assert accepted["regulatory_score"] == 100 and accepted["regulatory_status"] == "ready"
-    refused = calculate_candidate_integration_score(lead, {"raw_status": "REFUSÉ"})
-    assert refused["regulatory_score"] == 0 and refused["operational_status"] == "blocked"
+def test_sensitive_declarations_trigger_review_without_numerical_penalty():
+    base = financial_contact(carte_pro="NON", compte_cnaps="OUI")
+    clear = calculate_security_regulatory_score(
+        {**base, "antecedents": "NON", "garde_vue": "NON"},
+        {"raw_status": "TRANSMIS"},
+    )
+    declared = calculate_security_regulatory_score(
+        {**base, "antecedents": "OUI", "garde_vue": "OUI"},
+        {"raw_status": "TRANSMIS"},
+    )
+
+    assert clear["score"] == declared["score"] == 40
+    assert declared["status"] == "in_progress"
+    assert len(declared["warnings"]) >= 2
+    assert not any("juridiquement refus" in text.lower()
+                   for text in declared["warnings"])
 
 
-def test_half_covered_cpf():
-    result = calculate_candidate_integration_score(contact(cpf_montant="825"))
-    assert points(result, "cpf_coverage") == 20
-    assert result["cpf_coverage_percent"] == 50
-    assert result["remaining_to_finance_eur"] == 825
+def test_non_conforming_stay_status_is_a_human_review_blocker():
+    result = calculate_candidate_integration_score(
+        financial_contact(
+            carte_pro="NON", compte_cnaps="OUI",
+            titre_sejour_cnaps="NON_CONFORME",
+        ),
+        {"raw_status": "TRANSMIS"},
+    )
+    assert result["regulatory_score"] == 40
+    assert result["operational_status"] == "blocked"
+    assert any("titre de séjour" in blocker for blocker in result["blockers"])
 
 
-def test_cpf_above_ssiap_price_is_capped():
-    result = calculate_candidate_integration_score(contact(formation="SSIAP 1", cpf_montant="1500"))
-    assert result["cpf_coverage_percent"] == 100
-    assert points(result, "cpf_coverage") == 40
-    assert result["remaining_to_finance_eur"] == 0
-    assert result["cpf_amount_eur"] == 1500
+@pytest.mark.parametrize(("formation", "extra", "price"), TRAINING_CASES)
+def test_every_supported_training_uses_the_same_financial_model(
+        formation, extra, price):
+    result = calculate_candidate_integration_score(financial_contact(
+        formation=formation, cpf_amount=str(price), **extra,
+    ))
+    assert result["training_price_eur"] == price
+    assert result["financial_score"] == 100
+    if formation not in {"APS", "A3P"}:
+        assert result["score"] == 100
+        assert result["regulatory_applicable"] is False
 
 
-def test_amount_is_ignored_without_cpf_account():
-    result = calculate_candidate_integration_score(contact(cpf="NON", cpf_montant="1000"))
-    assert points(result, "cpf_coverage") == 0
-    assert any("montant CPF est enregistré" in warning for warning in result["warnings"])
-
-
-@pytest.mark.parametrize("wants,registered,personal,expected", [
-    ("NON", "NON", "NON", 15), ("OUI", "OUI", "OUI", 10),
-    ("OUI", "OUI", "NON", 6), ("OUI", "NON", "OUI", 4),
-    ("OUI", "NON", "NON", 0),
+@pytest.mark.parametrize(("raw", "minimum", "maximum"), [
+    ("0-1000 euros", 0, 1000),
+    ("1 000–2 000 €", 1000, 2000),
+    ("2000-3000 euros", 2000, 3000),
+    ("3000 à 4000 euros", 3000, 4000),
+    ("Plus de 4000 euros", 4000, None),
 ])
-def test_france_travail_scale(wants, registered, personal, expected):
-    result = calculate_candidate_integration_score(contact(
-        financement_ft=wants, inscrit_ft=registered, refus_ft_perso=personal))
-    assert points(result, "france_travail_strategy") == expected
+def test_cpf_tiers_are_parsed_as_ranges(raw, minimum, maximum):
+    tier = parse_cpf_tier(raw)
+    assert tier["min_cents"] == minimum * 100
+    assert tier["max_cents"] == (maximum * 100 if maximum is not None else None)
+    assert tier["estimated"] is True
 
 
-def test_legacy_lead_missing_fields_is_supported():
-    result = calculate_candidate_integration_score({"formation": "APS"})
-    assert isinstance(result["score"], int)
-    assert result["warnings"]
+def test_open_cpf_tier_is_scored_from_lower_bound_and_displayed_as_range():
+    result = calculate_candidate_integration_score(financial_contact(
+        cpf_amount="", cpf_palier="Plus de 4000 euros",
+        financement_perso_possible="OUI",
+    ))
+
+    assert result["cpf_amount_eur"] is None
+    assert result["cpf_amount_min_eur"] == 4000
+    assert result["cpf_amount_max_eur"] is None
+    assert result["cpf_range_open_ended"] is True
+    assert result["cpf_coverage_min_percent"] == 95
+    assert result["cpf_coverage_max_percent"] == 100
+    assert result["remaining_to_finance_min_eur"] == 0
+    assert result["remaining_to_finance_max_eur"] == 200
+    assert result["financial_score"] == 81
+    assert result["score_estimated"] is True
+
+
+def test_exact_cpf_amount_wins_over_an_old_tier():
+    result = calculate_candidate_integration_score(financial_contact(
+        cpf_amount="2500", cpf_palier="Plus de 4000 euros",
+        financement_perso_possible="OUI",
+    ))
+    assert result["cpf_amount_eur"] == 2500
+    assert result["cpf_amount_min_eur"] == 2500
+    assert result["cpf_amount_max_eur"] == 2500
+    assert result["cpf_amount_estimated"] is False
+
+
+def test_unknown_financing_is_not_converted_to_zero_or_full_remainder():
+    unknown = calculate_candidate_integration_score({
+        "formation": "SSIAP 1", "cpf": "OUI",
+    })
+    confirmed_none = calculate_candidate_integration_score({
+        "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "NON",
+        "financement_perso_possible": "NON",
+    })
+
+    assert unknown["financial_score"] is None
+    assert unknown["cpf_coverage_percent"] is None
+    assert unknown["remaining_to_finance_eur"] is None
+    assert unknown["unsecured_amount_eur"] is None
+    assert unknown["operational_status"] == "action_required"
+    assert confirmed_none["financial_score"] == 0
+    assert confirmed_none["remaining_to_finance_eur"] == 980
+    assert confirmed_none["unsecured_amount_eur"] == 980
+    assert confirmed_none["operational_status"] == "blocked"
+
+
+def test_identity_only_changes_score_when_cpf_is_used():
+    no_cpf = {
+        "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "NON",
+        "financement_perso_possible": "OUI",
+    }
+    without_identity = calculate_candidate_integration_score(no_cpf)
+    with_identity = calculate_candidate_integration_score({
+        **no_cpf, "identite_creation": "NON", "identite_ok": "NON",
+    })
+    assert without_identity["financial_score"] == with_identity["financial_score"]
+    assert without_identity["financial_breakdown"] == with_identity["financial_breakdown"]
+    assert not any("identité numérique" in action.lower()
+                   for action in with_identity["next_actions"])
+
+    cpf_not_ready = calculate_candidate_integration_score(financial_contact(
+        formation="SSIAP 1", cpf_amount="980",
+        identite_creation="NON", identite_ok="NON",
+    ))
+    cpf_ready = calculate_candidate_integration_score(financial_contact(
+        formation="SSIAP 1", cpf_amount="980",
+    ))
+    assert financial_points(cpf_not_ready, "route_readiness") == 0
+    assert financial_points(cpf_ready, "route_readiness") == 20
+
+
+def test_france_travail_actual_status_changes_progress_and_readiness():
+    base = {
+        "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "OUI",
+        "inscrit_ft": "OUI", "financement_perso_possible": "NON",
+    }
+    scores = {
+        status: calculate_candidate_integration_score({
+            **base, "statut_demande_financement_ft": status,
+        })
+        for status in (
+            "a_preparer", "transmise", "en_cours_instruction", "acceptee",
+        )
+    }
+
+    assert [scores[key]["financial_score"] for key in (
+        "a_preparer", "transmise", "en_cours_instruction", "acceptee",
+    )] == [20, 33, 40, 46]
+    assert all(result["operational_status"] == "action_required"
+               for result in scores.values())
+    accepted = calculate_candidate_integration_score({
+        **base, "statut_demande_financement_ft": "acceptee",
+        "montant_accorde_ft": "980",
+    })
+    assert accepted["financial_score"] == 100
+    assert accepted["funding_solution_status"] == "secured_france_travail"
+    assert accepted["financial_data_confidence_percent"] == 100
+    assert accepted["score_complete"] is True
+    assert accepted["operational_status"] == "ready"
+
+
+def test_refused_france_travail_distinguishes_no_fallback_capacity_and_exact_payment():
+    base = financial_contact(
+        cpf_amount="2000", financement_ft="OUI",
+        statut_demande_financement_ft="refusee",
+    )
+    none = calculate_candidate_integration_score({
+        **base, "financement_perso_possible": "NON",
+    })
+    capacity = calculate_candidate_integration_score({
+        **base, "financement_perso_possible": "OUI",
+    })
+    exact = calculate_candidate_integration_score({
+        **base, "financement_perso_possible": "OUI",
+        "reste_a_charge_perso": "OUI",
+    })
+
+    assert none["financial_score"] < capacity["financial_score"] < exact["financial_score"]
+    assert none["operational_status"] == "blocked"
+    assert capacity["operational_status"] == "action_required"
+    assert exact["financial_score"] == 100
+    assert exact["funding_solution_status"] == "secured_personal"
+
+
+def test_personal_remainder_needs_an_exact_reliable_amount():
+    tier = calculate_candidate_integration_score(financial_contact(
+        cpf_amount="", cpf_palier="1000-2000 euros",
+        financement_perso_possible="OUI", reste_a_charge_perso="OUI",
+    ))
+    exact = calculate_candidate_integration_score(financial_contact(
+        cpf_amount="2000", financement_perso_possible="OUI",
+        reste_a_charge_perso="OUI",
+    ))
+
+    assert tier["funding_solution_status"] != "secured_personal"
+    assert tier["personal_remainder_applicable"] is False
+    assert any("sans montant exact fiable" in warning for warning in tier["warnings"])
+    assert exact["funding_solution_status"] == "secured_personal"
+    assert exact["personal_remainder_amount_eur"] == 2200
+
+
+def test_legacy_personal_fallback_and_universal_field_score_identically():
+    old = calculate_candidate_integration_score(financial_contact(
+        cpf_amount="2000", refus_ft_perso="OUI",
+    ))
+    new = calculate_candidate_integration_score(financial_contact(
+        cpf_amount="2000", financement_perso_possible="OUI",
+    ))
+    compared = (
+        "financial_score", "funding_solution_status", "unsecured_amount_eur",
+        "financial_breakdown", "blockers", "warnings", "next_actions",
+    )
+    assert {key: old[key] for key in compared} == {
+        key: new[key] for key in compared
+    }
+
+
+def test_q1_to_q4_do_not_change_any_score_or_action():
+    base = financial_contact(formation="SSIAP 1", cpf_amount="980")
+    enriched = {
+        **base,
+        "q1_projet_formation": "OUI",
+        "q2_niveau_francais": "OUI",
+        "q3_disponibilite_neuf_semaines": "OUI",
+        "q4_tarif_accepte": "OUI",
+    }
+    assert calculate_candidate_integration_score(base) == (
+        calculate_candidate_integration_score(enriched)
+    )
+
+
+@pytest.mark.parametrize("origin", [
+    "META", "Site internet", "Secrétariat", "Mon Compte Formation",
+    "Ajout manuel", "Google Ads",
+])
+def test_origin_never_changes_the_integration_score(origin):
+    base = financial_contact(formation="SSIAP 1", cpf_amount="980")
+    assert calculate_candidate_integration_score({**base, "origine": origin}) == (
+        calculate_candidate_integration_score(base)
+    )
+
+
+def test_amount_is_ignored_when_cpf_is_explicitly_no():
+    result = calculate_candidate_integration_score({
+        "formation": "SSIAP 1", "cpf": "NON", "cpf_montant": "1000",
+        "financement_ft": "NON", "financement_perso_possible": "OUI",
+    })
+    assert result["cpf_coverage_percent"] == 0
+    assert financial_points(result, "funding_coverage") == 0
+    assert any("indiqué NON" in warning for warning in result["warnings"])
 
 
 def test_unknown_training_is_not_calculable():
-    result = calculate_candidate_integration_score(contact(formation="Formation future"))
+    result = calculate_candidate_integration_score(financial_contact(
+        formation="Formation future",
+    ))
     assert result["score"] is None
     assert result["label"] == "Score indisponible — tarif de la formation non configuré"
     assert any("Tarif non configuré" in warning for warning in result["warnings"])
-
-
-def test_no_funding_is_blocked():
-    result = calculate_candidate_integration_score(contact(
-        cpf="NON", cpf_montant="", financement_ft="NON", refus_ft_perso="NON", reste_a_charge_perso="NON"))
-    assert result["operational_status"] == "blocked"
-    assert any("ne financera pas personnellement" in blocker for blocker in result["blockers"])
-
-
-def test_inconsistent_identity_warns_without_error():
-    result = calculate_candidate_integration_score(contact(identite_creation="NON", identite_ok="OUI"))
-    assert isinstance(result["score"], int)
-    assert any("fonctionnelle" in warning and "création" in warning for warning in result["warnings"])
-
-
-def test_training_change_recalculates_all_financial_values():
-    aps = calculate_candidate_integration_score(contact(cpf_montant="1650"))
-    a3p = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="1650"))
-    assert (aps["training_price_eur"], a3p["training_price_eur"]) == (1650, 4200)
-    assert aps["cpf_coverage_percent"] != a3p["cpf_coverage_percent"]
-    assert aps["remaining_to_finance_eur"] != a3p["remaining_to_finance_eur"]
-    assert aps["score"] != a3p["score"]
 
 
 def test_amount_validation_is_decimal_exact_and_rejects_invalid_values():
@@ -180,52 +394,23 @@ def test_amount_validation_is_decimal_exact_and_rejects_invalid_values():
         normalize_cpf_amount("12.345")
 
 
-def test_personal_remainder_confirmed_a3p():
-    result = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", reste_a_charge_perso="OUI"))
-    assert result["financial_score"] == 79
-    assert result["personal_remainder_applicable"] is True
-    assert result["personal_remainder_amount_eur"] == 2200
-    assert result["personal_remainder_status"] == "confirmed"
-    assert result["funding_solution_status"] == "secured_personal"
-    assert result["unsecured_amount_eur"] == 0
-    assert points(result, "personal_funding") == points(result, "france_travail_strategy") == 15
-    assert not result["blockers"]
-    assert not any("Sécuriser le financement" in action for action in result["next_actions"])
-
-
-def test_personal_remainder_refused_and_unknown():
-    refused = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", reste_a_charge_perso="NON"))
-    assert refused["financial_score"] == 49
-    assert refused["personal_remainder_status"] == "refused"
-    assert refused["funding_solution_status"] == "unsecured"
-    assert refused["unsecured_amount_eur"] == 2200
-    assert refused["operational_status"] == "blocked"
-    unknown = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", reste_a_charge_perso=""))
-    assert unknown["financial_score"] == 49 and not unknown["blockers"]
-    assert unknown["operational_status"] == "action_required"
-    assert any("n’est pas renseignée" in warning for warning in unknown["warnings"])
-    assert any("Confirmer si" in action for action in unknown["next_actions"])
-
-
-def test_ft_fallback_is_distinct_from_personal_remainder():
-    legacy = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", refus_ft_perso="OUI", reste_a_charge_perso=""))
-    assert legacy["personal_remainder_status"] == "unknown"
-    assert points(legacy, "personal_funding") == 0
-    ft = calculate_candidate_integration_score(contact(formation="A3P", cpf_montant="2000", financement_ft="OUI", refus_ft_perso="OUI", reste_a_charge_perso="NON", inscrit_ft="OUI"))
-    assert ft["personal_remainder_applicable"] is False
-    assert ft["funding_solution_status"] == "secured_personal_fallback"
-    assert points(ft, "personal_funding") == 15
-
-
-def test_cpf_missing_is_not_reliable_for_personal_question():
-    result = calculate_candidate_integration_score(contact(cpf="OUI", cpf_montant="", reste_a_charge_perso="OUI"))
-    assert result["personal_remainder_applicable"] is False
-    assert result["personal_remainder_status"] == "not_applicable"
-
-
-def test_frontend_uses_backend_remainder_without_training_price_table():
+def test_frontend_uses_backend_ranges_and_universal_financing_fields():
     source = open("static/crm.js", encoding="utf-8").read()
     assert "personal_remainder_applicable" in source
     assert "personal_remainder_amount_eur" in source
-    assert "Le candidat financera-t-il personnellement le reste à charge de" in source
-    assert "TRAINING_PRICES" not in source and "4200" not in source and "1650" not in source
+    assert "remaining_to_finance_min_eur" in source
+    assert "remaining_to_finance_max_eur" in source
+    assert 'name="cpf_palier"' in source
+    assert 'name="montant_accorde_ft"' in source
+    assert "financement_perso_possible" in source
+    assert "Le candidat financera-t-il personnellement le reste à charge exact de" in source
+    assert "TRAINING_PRICES" not in source
+
+
+def test_workspace_priority_has_no_origin_bonus():
+    source = open("static/crm_workspace.js", encoding="utf-8").read()
+    priority_source = source.split("function priority(contact)", 1)[1].split(
+        "function duplicateMap", 1
+    )[0]
+    assert "origine" not in priority_source
+    assert "META" not in priority_source

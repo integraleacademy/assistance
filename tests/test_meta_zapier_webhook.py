@@ -306,6 +306,61 @@ def test_meta_cpf_tier_is_kept_separate_from_the_exact_amount(tmp_path, monkeypa
     assert not mapped.get("cpf_montant")
 
 
+def test_new_a3p_q5_to_q9_feed_the_universal_score(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    salesforce_payloads = []
+    monkeypatch.setattr(
+        application, "creer_piste_salesforce", salesforce_payloads.append,
+    )
+    payload = lead(**{
+        "leadgen_id": "meta-a3p-v5",
+        "Souhaitez-vous suivre une formation officielle pour devenir Agent de Protection Physique des Personnes ?": "Oui",
+        "Pouvez-vous suivre des cours, passer l’examen et rédiger en français sans difficulté ?": "Oui",
+        "Pouvez-vous suivre 9 semaines de formation en présentiel à Puget-sur-Argens ?": "Oui",
+        "Avant de poursuivre, confirmez-vous avoir pris connaissance du tarif de la formation, fixé à 4 200 € TTC ?": "Oui",
+        "Avez-vous consulté votre compte CPF (Mon Compte Formation) ?": "Oui",
+        "Quel montant exact est disponible sur votre CPF (Mon Compte Formation) ?": "1000-2000 euros",
+        "Souhaitez-vous demander un financement à France Travail ?": "Oui",
+        "Pourriez-vous payer personnellement la formation ? (en cas de refus de financement France Travail par exemple)": "Oui",
+        "Avez-vous une carte professionnelle CNAPS en cours de validité ?": "Oui",
+    })
+
+    response = post(client, payload)
+
+    assert response.status_code == 201
+    contact = application.load_data()["crm_contacts"][0]
+    assert contact["cpf"] == "OUI"
+    assert contact["cpf_palier"] == "1000-2000 euros"
+    assert contact["financement_ft"] == "OUI"
+    assert contact["financement_perso_possible"] == "OUI"
+    assert contact["carte_pro"] == "OUI"
+    assert len(contact["meta_answers"]) >= 9
+    score = application._crm_contact_response(contact)["integration_score"]
+    assert score["version"] == 5
+    assert score["cpf_amount_estimated"] is True
+    assert score["cpf_amount_min_eur"] == 1000
+    assert score["cpf_amount_max_eur"] == 2000
+    assert score["regulatory_score"] == 70
+    assert salesforce_payloads[0]["ft_refus_ok"] == "OUI"
+
+
+def test_new_a3p_q1_to_q4_remain_visible_without_mapping_to_scoring_facts():
+    questions = {
+        "Souhaitez-vous suivre une formation officielle pour devenir Agent de Protection Physique des Personnes ?": "Oui",
+        "Pouvez-vous suivre des cours, passer l’examen et rédiger en français sans difficulté ?": "Oui",
+        "Pouvez-vous suivre 9 semaines de formation en présentiel à Puget-sur-Argens ?": "Oui",
+        "Avant de poursuivre, confirmez-vous avoir pris connaissance du tarif de la formation, fixé à 4 200 € TTC ?": "Oui",
+    }
+
+    fields, custom_answers = application._parse_meta_lead_payload(questions)
+    mapped, answer_rows = application._meta_crm_payload(fields, custom_answers)
+    baseline, _ = application._meta_crm_payload({}, {})
+
+    assert mapped == baseline
+    assert len(answer_rows) == 4
+    assert {row["question"] for row in answer_rows} == set(questions)
+
+
 def test_nested_zapier_answers_and_form_name_fallback_are_supported(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     payload = {
