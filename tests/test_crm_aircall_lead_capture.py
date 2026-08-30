@@ -236,6 +236,10 @@ def test_sms_action_is_idempotent_and_creates_visible_pending_callback(legacy):
     assert first["sms_sent"] is True
     assert second["already_sent"] is True
     assert len(legacy.sent_sms) == 1
+    assert legacy.sent_sms[0][1].startswith(
+        "Intégrale Academy : complétez le formulaire. "
+        "Un expert formation vous rappellera : https://assistance.example.test/rappel-formation/"
+    )
     assert len(legacy._store["crm_aircall_lead_requests"]) == 1
     assert len(legacy._store["secretariat_demandes"]) == 1
     record = legacy._store["crm_aircall_lead_requests"][0]

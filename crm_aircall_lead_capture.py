@@ -318,8 +318,9 @@ def _public_base_url(request_obj: Any) -> str:
 
 
 def _sms_text(url: str) -> str:
-    # Texte GSM-7 volontairement court afin de rester dans un seul SMS.
-    return f"Integrale Academy : completez vos coordonnees pour etre rappele : {url}"
+    # Les accents utilisés appartiennent à l'alphabet GSM-7 : le message reste
+    # professionnel sans déclencher inutilement l'encodage Unicode.
+    return f"Intégrale Academy : complétez le formulaire. Un expert formation vous rappellera : {url}"
 
 
 def _callback_entry(record: Mapping[str, Any], phone: str, label: str) -> dict[str, Any]:
