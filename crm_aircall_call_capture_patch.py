@@ -200,7 +200,9 @@ def _is_first_name_label(key: str, integration: Any) -> bool:
 
 
 def _is_last_name_label(key: str, integration: Any) -> bool:
-    if _is_combined_name_label(key):
+    # « nom de l'appelant » est aussi une sous-chaîne de « prénom de
+    # l'appelant » : un champ prénom ne doit donc jamais être repris comme nom.
+    if _is_combined_name_label(key) or _is_first_name_label(key, integration):
         return False
     return integration._is_last_name(key) or any(marker in key for marker in (
         "nomdelappelant", "nomduclient", "nomducontact", "familyname",

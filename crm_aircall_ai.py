@@ -394,15 +394,24 @@ def _interest_state(rows: Sequence[tuple[str, str]], summary: str) -> bool | Non
 def _is_training_prospect(raw_training: str, summary: str, explicit: bool | None) -> bool:
     if explicit is not None:
         return explicit
+    summary_words = _words(summary)
+    practical_terms = ("adresse", "horaires", "horaire", "stationnement", "parking", "acces")
+    training_intent_terms = (
+        "inscription", "financement", "prix", "tarif", "date", "dates",
+        "session", "sessions", "devis", "prerequis",
+    )
+    if (
+        any(term in summary_words for term in practical_terms)
+        and not any(term in summary_words for term in training_intent_terms)
+        and any(term in summary_words for term in ("uniquement", "seulement", "juste"))
+    ):
+        return False
     raw_words = _words(raw_training)
     if raw_words:
         practical = any(term in raw_words for term in (
             "adresse", "horaires", "horaire", "stationnement", "parking", "acces",
-        )) and not any(term in raw_words for term in (
-            "formation", "training", "course", "inscription", "financement",
-        ))
+        )) and not any(term in raw_words for term in training_intent_terms)
         return not practical
-    summary_words = _words(summary)
     return any(phrase in summary_words for phrase in (
         "interesse par une formation", "interesse par la formation",
         "souhaite des renseignements sur une formation",
@@ -603,6 +612,26 @@ def register_aircall_ai_crm(legacy_app: Any) -> None:
         }
         with legacy_app._CRM_RECONCILIATION_LOCK:
             data = legacy_app.load_data()
+            # Le nouveau parcours envoie d'abord un formulaire par SMS. Tant
+            # que ce formulaire est attendu, conserver le résumé dans la
+            # demande de rappel sans créer une fiche partielle. Si l'action SMS
+            # n'a pas été utilisée ou a échoué, le comportement historique
+            # ci-dessous reste le filet de sécurité.
+            from crm_aircall_lead_capture import (
+                attach_aircall_summary_to_pending_request,
+            )
+
+            pending_form = attach_aircall_summary_to_pending_request(
+                data, lead, call_id,
+            )
+            if pending_form:
+                legacy_app.save_data(data)
+                return jsonify_fn({
+                    "ok": True,
+                    "result": "awaiting_form",
+                    "request_id": pending_form.get("id"),
+                    "formation": display_training,
+                }), 200
             duplicate = next((row for row in data.setdefault("crm_inbound_requests", [])
                 if row.get("source") == AIRCALL_AI_SOURCE
                 and str(row.get("external_id") or "") == external_id), None)

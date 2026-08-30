@@ -8,6 +8,7 @@ from crm_aircall_ai import register_aircall_ai_crm
 from crm_aircall_call_capture_patch import install_aircall_call_capture_patch
 from crm_aircall_caller_context import register_aircall_caller_context
 from crm_aircall_dossier import register_aircall_dossier_actions
+from crm_aircall_lead_capture import register_aircall_lead_capture
 from crm_cnaps_tracking import register_cnaps_tracking_proxy
 from crm_google_ads import register_google_ads_offline_conversions
 from crm_location_normalization import (
@@ -136,4 +137,5 @@ install_aircall_call_capture_patch()
 register_aircall_ai_crm(legacy_app)
 register_aircall_dossier_actions(legacy_app)
 register_aircall_caller_context(legacy_app)
+register_aircall_lead_capture(legacy_app)
 register_google_ads_offline_conversions(legacy_app)
