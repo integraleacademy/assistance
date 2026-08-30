@@ -16298,6 +16298,7 @@ def crm_bootstrap():
     reparsait le même fichier complet, ce qui multipliait le pic mémoire.
     """
     section = request.args.get("section", "")
+    user_email = (current_user() or {}).get("email", "")
     if section == "demandes-rappel":
         # One non-destructive pass repairs existing requests and makes their
         # journal entry visible before the callback workspace is returned.
@@ -16305,18 +16306,30 @@ def crm_bootstrap():
             stored_data = load_data()
             if _crm_backfill_callback_requests(stored_data):
                 save_data(stored_data)
+    read_model_key = _crm_read_model_key()
+    bootstrap_etag = hashlib.sha256(repr((
+        CRM_ASSET_VERSION,
+        section,
+        user_email,
+        read_model_key,
+    )).encode("utf-8")).hexdigest()
+    if request.if_none_match.contains(bootstrap_etag):
+        response = app.response_class(status=304)
+        response.set_etag(bootstrap_etag)
+        response.headers["Cache-Control"] = "private, no-cache"
+        return response
     data = _crm_prepared_read_model()
     contacts, _ = _crm_contact_summaries_payload(
         data, section=section, prepared=True,
     )
     settings = _crm_settings_payload(data)
     appointments = _crm_calendly_appointments_payload(data)
-    return jsonify({
+    response = jsonify({
         "contacts": contacts,
         "templates": _crm_templates_payload(data),
         "formation_sessions": get_formation_sessions(data),
         "notifications": _crm_notifications_payload(
-            data, (current_user() or {}).get("email", ""),
+            data, user_email,
         ),
         "appointments": appointments["appointments"],
         "calendly_integration": appointments["integration"],
@@ -16326,6 +16339,32 @@ def crm_bootstrap():
             _crm_callback_requests_payload(data)
             if section == "demandes-rappel" else []
         ),
+    })
+    final_model_key = _crm_read_model_key()
+    if final_model_key != read_model_key:
+        bootstrap_etag = hashlib.sha256(repr((
+            CRM_ASSET_VERSION,
+            section,
+            user_email,
+            final_model_key,
+        )).encode("utf-8")).hexdigest()
+    response.set_etag(bootstrap_etag)
+    response.headers["Cache-Control"] = "private, no-cache"
+    return response
+
+
+@app.get("/api/crm/callback-requests")
+@login_required
+def crm_callback_requests():
+    """Recharge uniquement l'espace des demandes de rappel."""
+    with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
+        stored_data = load_data()
+        if _crm_backfill_callback_requests(stored_data):
+            save_data(stored_data)
+    data = _crm_prepared_read_model()
+    return jsonify({
+        "callback_requests": _crm_callback_requests_payload(data),
+        "callback_pending_count": _crm_callback_pending_count(data),
     })
 
 

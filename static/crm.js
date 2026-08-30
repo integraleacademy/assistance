@@ -1451,6 +1451,8 @@ function deleteCrmDatabaseModal(){adminToolsMenuElement?.classList.remove('open'
 let integrationTimer;function scheduleContactIntegrations(c){clearTimeout(integrationTimer);integrationTimer=setTimeout(()=>{loadCalendlyAppointments(c,true);refreshFundingBadges(c)},300)}
 function render(){
  stopActiveVoiceDictation();
+ document.body.dataset.section=C.section;
+ document.querySelector('#manageStatusesTop')?.toggleAttribute('hidden',C.section!=='pistes');
  window.CRMDocumentTitle.applySection(C.section,C.page_label);
  document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===C.section));updateLeadCount();
  if(C.section==='accueil'){page.innerHTML=dashboard();bindDashboard();document.querySelector('.page-title')?.insertAdjacentHTML('afterend',dashboardExportButton);return}
@@ -1498,6 +1500,36 @@ const contactMatchesSearch=(contact,query)=>{const normalized=normalizeGlobalSea
 function contactSearchRank(c,q){const phoneQuery=phoneSearchQuery(q),phone=normalizePhoneSearch(c.telephone);if(phoneQuery){if(phone===phoneQuery)return 0;if(phone.startsWith(phoneQuery))return 1;if(phone.includes(phoneQuery))return 2;return 3}const names=[c.nom,c.prenom,displayName(c),`${c.nom||''} ${c.prenom||''}`].map(normalizeGlobalSearch);if(names.some(value=>value===q))return 0;if(names.some(value=>value.startsWith(q)))return 1;if(names.some(value=>value.includes(q)))return 2;return 3}
 const prepareGlobalContactLinks=()=>document.querySelectorAll('button[data-global-id]').forEach(button=>{const link=document.createElement('a');link.dataset.globalId=button.dataset.globalId;link.href=contactSheetUrl(button.dataset.globalId);link.target='_blank';link.rel='noopener';link.innerHTML=button.innerHTML;button.replaceWith(link)});
 new MutationObserver(prepareGlobalContactLinks).observe(globalResults,{childList:true});
+async function refreshCrmSectionData(section){
+ try{
+  if(section==='fil-actu'){
+   const fresh=await api('/api/crm/contacts?section=fil-actu');
+   if(C.section===section){contacts=fresh;render()}
+   return;
+  }
+  if(section==='demandes-rappel'){
+   const fresh=await api('/api/crm/callback-requests');
+   if(C.section===section){callbackRequests=fresh.callback_requests||[];callbackRequestPendingCount=Math.max(0,Number(fresh.callback_pending_count)||0);updateCallbackRequestNavCount();render()}
+   return;
+  }
+  await refreshCrmSnapshot();
+ }catch(error){toast(error.message,true)}
+}
+function navigateCrmSection(section,url,label){
+ if(!section)return false;
+ C.section=section;
+ C.page_label=label||section;
+ history.pushState({crmSection:section},'',url);
+ window.scrollTo({top:0,behavior:'auto'});
+ render();
+ refreshCrmSectionData(section);
+ return true;
+}
+document.querySelectorAll('.sidebar a[data-nav]').forEach(link=>link.addEventListener('click',event=>{
+ if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+ event.preventDefault();
+ navigateCrmSection(link.dataset.nav,link.href,link.dataset.label);
+}));
 globalResults.addEventListener('click',event=>{const link=event.target.closest('a[data-global-id]');if(!link)return;const contact=contacts.find(item=>String(item.id)===link.dataset.globalId);if(contact)saveRecent(contact);globalSearch.value='';globalResults.classList.remove('open')});
 const searchPages=[['Accueil','accueil','/crm'],['Calendrier','calendrier','/crm/calendrier'],['Notifications','notifications','/crm/notifications'],['Fil actu','fil-actu','/crm/fil-actu'],['Pistes','pistes','/crm/pistes'],['Relances','relances','/crm/relances'],['Inscrits','inscrits','/crm/inscrits'],['Disqualifiés','disqualifies','/crm/disqualifies'],['Contacts','contacts','/crm/contacts'],['Modèles','modeles','/crm/modeles']];const recentSearches=()=>JSON.parse(localStorage.getItem('crm-recent-searches')||'[]');const saveRecent=c=>{const next=[c.id,...recentSearches().filter(id=>id!==c.id)].slice(0,5);localStorage.setItem('crm-recent-searches',JSON.stringify(next))};function renderGlobalSearch(){const q=normalizeGlobalSearch(globalSearch.value),recent=recentSearches().map(id=>contacts.find(c=>c.id===id)).filter(contact=>contact&&!contact.archived_at).slice(0,5),found=q?crmActiveContacts().filter(c=>contactMatchesSearch(c,q)).sort((a,b)=>contactSearchRank(a,q)-contactSearchRank(b,q)||displayName(a).localeCompare(displayName(b),'fr')).slice(0,5):recent,pageFound=q?searchPages.filter(([label])=>normalizeGlobalSearch(label).includes(q)).slice(0,5):[];globalResults.innerHTML=(found.length&&!q?'<p>5 dernières pistes consultées</p>':'')+found.map(c=>`<button data-global-id="${c.id}"><span class="avatar">${initials(c)}</span><span>${globalContactName(c)}<small>${esc(c.formation||'Dossier')} · ${esc(c.statut)} · ${esc(contactCoordinateSummary(c))}</small></span></button>`).join('')+pageFound.map(([label,section,url])=>`<button data-global-page="${section}" data-global-url="${url}"><span class="avatar page-avatar">⌁</span><span><b>${esc(label)}</b><small>Ouvrir la rubrique CRM</small></span></button>`).join('')||(q?'<p>Aucun résultat trouvé</p>':'');globalResults.classList.toggle('open',!!q||!!found.length);document.querySelectorAll('[data-global-id]').forEach(b=>b.onclick=()=>{const c=contacts.find(x=>x.id===b.dataset.globalId);if(c)saveRecent(c);globalSearch.value='';globalResults.classList.remove('open');showContact(b.dataset.globalId)});document.querySelectorAll('[data-global-page]').forEach(b=>b.onclick=()=>{C.section=b.dataset.globalPage;globalSearch.value='';globalResults.classList.remove('open');history.pushState({},'',b.dataset.globalUrl);render()})}globalSearch.onfocus=renderGlobalSearch;globalSearch.oninput=renderGlobalSearch;
 document.addEventListener('click',e=>{if(!searchBox.contains(e.target))globalResults.classList.remove('open')});
