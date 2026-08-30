@@ -394,29 +394,26 @@ def calculate_financial_readiness_score(contact):
         ("funding_progress", "Avancement de la solution de financement", progress_points, 30),
         ("route_readiness", "Démarches nécessaires à la solution choisie", operational_points, 20),
     ]
-    has_financing_fact = any((
-        cpf is not None, exact_known, tier is not None, wants_ft is not None,
-        bool(ft_status), personal_capacity is not None,
-        personal_remainder is not None,
-    ))
-    coverage_basis_known = cpf_amount_known or (
-        ft_status == "acceptee" and ft_amount_known
-    )
-    score = (min(100, sum(row[2] for row in breakdown))
-             if has_financing_fact and coverage_basis_known else None)
-    if score is None:
-        level, label, indication = None, "Score incomplet — financement à renseigner", "Informations de financement requises"
-    else:
-        level, label, indication = _score_level(score)
+    # Le score est une borne basse fondée exclusivement sur les faits connus.
+    # Une réponse absente ne devient jamais un fait négatif ou un montant de
+    # 0 € : elle rapporte simplement 0 point tant qu'elle n'est pas renseignée.
+    # Les montants et statuts restent donc à ``None`` dans le résultat, tandis
+    # que la confiance et ``score_complete`` signalent le caractère provisoire.
+    score = min(100, sum(row[2] for row in breakdown))
+    score_complete = confidence == 100 and tier is None
+    level, label, indication = _score_level(score)
+    if not score_complete:
+        label = "Score provisoire — informations à compléter"
+        indication = "Borne basse calculée à partir des éléments connus"
     pending_funding = ft_status in {
         "a_preparer", "transmise", "en_cours_instruction",
     } or (ft_status == "acceptee" and unsecured_cents > 0)
     status = ("blocked" if blockers else
-              "action_required" if warnings or actions or pending_funding else
+              "action_required" if not score_complete or warnings or actions or pending_funding else
               "ready")
     return {"version": CANDIDATE_SCORING_VERSION, "score": score, "max_score": 100,
             "level": level, "label": label, "indication": indication,
-            "operational_status": status, "score_complete": score is not None and confidence == 100,
+            "operational_status": status, "score_complete": score_complete,
             "training_code": code, "training_price_eur": _euros(price_cents),
             "cpf_amount_eur": _euros(declared_cents) if exact_known else None,
             "cpf_amount_min_eur": _euros(cpf_min_cents) if cpf_amount_known else None,
@@ -597,21 +594,31 @@ def calculate_candidate_integration_score(contact, cnaps_snapshot=None):
     regulatory_score = regulatory.get("score")
     if financial_score is None:
         global_score = None
-    elif applicable and regulatory_score is None:
-        global_score = None
     elif applicable:
-        global_score = max(0, min(100, int((Decimal(financial_score) * Decimal("0.60") + Decimal(regulatory_score) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))))
+        # Une dimension réglementaire inconnue reste ``None`` dans l'API, mais
+        # sa contribution minimale provisoire vaut 0. Le score global reste
+        # ainsi triable et lisible sans présenter l'information comme connue.
+        regulatory_lower_bound = regulatory_score if regulatory_score is not None else 0
+        global_score = max(0, min(100, int((Decimal(financial_score) * Decimal("0.60") + Decimal(regulatory_lower_bound) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))))
     else:
         global_score = financial_score
     financial_confidence = financial.get("financial_data_confidence_percent", 0)
     regulatory_confidence = regulatory.get("data_confidence_percent", 100 if not applicable else 0)
     confidence = int((Decimal(financial_confidence) * Decimal("0.60") + Decimal(regulatory_confidence) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if applicable else financial_confidence
+    score_complete = bool(financial.get("score_complete")) and bool(regulatory.get("score_complete"))
+    score_estimated = global_score is not None and (
+        bool(financial.get("cpf_amount_estimated"))
+        or confidence < 100
+        or not score_complete
+    )
     result.update({
         "score": global_score, "financial_score": financial_score,
+        "financial_score_complete": bool(financial.get("score_complete")),
         "financial_weight": 60 if applicable else 100,
         "financial_contribution": None if financial_score is None else int((Decimal(financial_score) * Decimal("0.60" if applicable else "1")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
         "financial_breakdown": financial.get("breakdown", []),
         "regulatory_applicable": applicable, "regulatory_score": regulatory_score,
+        "regulatory_score_complete": bool(regulatory.get("score_complete")),
         "regulatory_weight": 40 if applicable else 0,
         "regulatory_contribution": (None if regulatory_score is None else int((Decimal(regulatory_score) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))) if applicable else 0,
         "regulatory_status": regulatory["status"], "regulatory_label": regulatory["label"],
@@ -622,18 +629,19 @@ def calculate_candidate_integration_score(contact, cnaps_snapshot=None):
         "warnings": _unique(financial.get("warnings", []) + regulatory["warnings"]),
         "next_actions": _unique(financial.get("next_actions", []) + regulatory["next_actions"]),
         "data_confidence_percent": confidence,
-        "score_complete": bool(financial.get("score_complete")) and bool(regulatory.get("score_complete")),
-        "score_estimated": bool(financial.get("cpf_amount_estimated")) or confidence < 100,
+        "score_complete": score_complete,
+        "score_estimated": score_estimated,
     })
     if global_score is not None:
         result["level"], result["label"], result["indication"] = _score_level(global_score)
-    elif financial_score is not None and applicable and regulatory_score is None:
-        result["level"] = None
-        result["label"] = "Score incomplet — situation réglementaire à compléter"
-        result["indication"] = "Vérification réglementaire requise"
+        if score_estimated:
+            result["label"] = "Score provisoire — informations à compléter"
+            result["indication"] = "Borne basse calculée à partir des éléments connus"
     if result["blockers"]:
         result["operational_status"] = "blocked"
     elif global_score is None:
+        result["operational_status"] = "action_required"
+    elif not score_complete:
         result["operational_status"] = "action_required"
     elif result["warnings"] or result["next_actions"]:
         result["operational_status"] = "action_required"

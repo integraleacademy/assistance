@@ -100,7 +100,7 @@ def test_cnaps_status_normalization(raw, expected):
     }) == expected
 
 
-def test_unknown_regulatory_state_is_incomplete_instead_of_zero():
+def test_unknown_regulatory_state_keeps_a_numeric_provisional_lower_bound():
     result = calculate_candidate_integration_score(
         financial_contact(carte_pro="NON", compte_cnaps="NON"),
         {"found": False},
@@ -108,9 +108,11 @@ def test_unknown_regulatory_state_is_incomplete_instead_of_zero():
 
     assert result["financial_score"] == 100
     assert result["regulatory_score"] is None
-    assert result["score"] is None
-    assert result["level"] is None
-    assert "situation réglementaire à compléter" in result["label"]
+    assert result["score"] == 60
+    assert result["level"] == "qualify"
+    assert result["score_estimated"] is True
+    assert result["score_complete"] is False
+    assert "Score provisoire" in result["label"]
     assert result["operational_status"] == "action_required"
 
 
@@ -211,7 +213,7 @@ def test_exact_cpf_amount_wins_over_an_old_tier():
     assert result["cpf_amount_estimated"] is False
 
 
-def test_unknown_financing_is_not_converted_to_zero_or_full_remainder():
+def test_unknown_financing_gets_a_lower_bound_without_inventing_money():
     unknown = calculate_candidate_integration_score({
         "formation": "SSIAP 1", "cpf": "OUI",
     })
@@ -220,7 +222,11 @@ def test_unknown_financing_is_not_converted_to_zero_or_full_remainder():
         "financement_perso_possible": "NON",
     })
 
-    assert unknown["financial_score"] is None
+    assert unknown["financial_score"] == 0
+    assert unknown["score"] == 0
+    assert unknown["score_estimated"] is True
+    assert unknown["score_complete"] is False
+    assert "Score provisoire" in unknown["label"]
     assert unknown["cpf_coverage_percent"] is None
     assert unknown["remaining_to_finance_eur"] is None
     assert unknown["unsecured_amount_eur"] is None
@@ -229,6 +235,26 @@ def test_unknown_financing_is_not_converted_to_zero_or_full_remainder():
     assert confirmed_none["remaining_to_finance_eur"] == 980
     assert confirmed_none["unsecured_amount_eur"] == 980
     assert confirmed_none["operational_status"] == "blocked"
+
+
+@pytest.mark.parametrize(("formation", "extra"), [
+    (formation, extra) for formation, extra, _price in TRAINING_CASES
+])
+def test_every_supported_training_has_a_numeric_score_with_missing_answers(
+        formation, extra):
+    result = calculate_candidate_integration_score({
+        "formation": formation,
+        **extra,
+    })
+
+    assert result["financial_score"] == 0
+    assert result["score"] == 0
+    assert result["score_estimated"] is True
+    assert result["score_complete"] is False
+    assert result["label"] == "Score provisoire — informations à compléter"
+    assert result["operational_status"] == "action_required"
+    assert result["cpf_amount_eur"] is None
+    assert result["remaining_to_finance_eur"] is None
 
 
 def test_identity_only_changes_score_when_cpf_is_used():
@@ -382,6 +408,7 @@ def test_unknown_training_is_not_calculable():
         formation="Formation future",
     ))
     assert result["score"] is None
+    assert result["score_estimated"] is False
     assert result["label"] == "Score indisponible — tarif de la formation non configuré"
     assert any("Tarif non configuré" in warning for warning in result["warnings"])
 
