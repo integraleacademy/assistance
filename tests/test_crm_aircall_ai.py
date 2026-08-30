@@ -7,6 +7,7 @@ import uuid
 import pytest
 
 import crm_aircall_ai as integration
+import crm_aircall_lead_capture as lead_capture
 
 
 class FakeRequest:
@@ -148,7 +149,7 @@ def _summary_payload(*, call_id="call-123", formation="APS"):
 
 def test_parse_aircall_lead_extracts_intake_fields_and_caller_number():
     lead = integration.parse_aircall_lead(_summary_payload())
-    assert lead == {
+    expected = {
         "prenom": "Jean",
         "nom": "Dupont",
         "mail": "jean.dupont@example.com",
@@ -160,6 +161,9 @@ def test_parse_aircall_lead_extracts_intake_fields_and_caller_number():
         "interested": True,
         "explicitly_not_interested": False,
     }
+    # Le point d'entrée de production installe un enrichissement additif qui
+    # conserve aussi le motif et les réponses d'admission dans ce dictionnaire.
+    assert {key: lead.get(key) for key in expected} == expected
 
 
 @pytest.mark.parametrize("raw,expected,desp_type", [
@@ -242,6 +246,37 @@ def test_webhook_is_idempotent_for_same_call_id(legacy):
     assert len(legacy._store["crm_contacts"]) == 1
     assert len(legacy._store["crm_inbound_requests"]) == 1
     assert len(legacy._store["crm_contacts"][0]["activities"]) == 1
+
+
+def test_webhook_waits_for_sms_form_instead_of_creating_partial_lead(legacy):
+    now = lead_capture._now()
+    legacy._store[lead_capture.AIRCALL_REQUESTS_KEY] = [{
+        "id": "sms-request-1",
+        "token_hash": "unused-in-this-test",
+        "caller_phone": "+33612345678",
+        "normalized_phone": "33612345678",
+        "formation_code": "APS",
+        "call_id": "call-sms-form",
+        "status": "pending",
+        "sms_status": "sent",
+        "created_at": lead_capture._iso(now),
+        "expires_at": lead_capture._iso(now + lead_capture.dt.timedelta(days=1)),
+    }]
+    legacy._store["secretariat_demandes"] = [{
+        "id": "sms-request-1", "type": "autre", "notes": "Formulaire attendu",
+    }]
+
+    body, status = legacy.call_route(
+        _summary_payload(call_id="call-sms-form", formation="APS")
+    )
+
+    assert status == 200
+    assert body["result"] == "awaiting_form"
+    assert body["request_id"] == "sms-request-1"
+    assert legacy._store["crm_contacts"] == []
+    record = legacy._store[lead_capture.AIRCALL_REQUESTS_KEY][0]
+    assert record["call_summary"].startswith("Le candidat souhaite")
+    assert "Coordonnées attendues" in legacy._store["secretariat_demandes"][0]["notes"]
 
 
 def test_webhook_matches_existing_contact_instead_of_duplicating(legacy):
