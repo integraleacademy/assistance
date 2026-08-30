@@ -1505,7 +1505,7 @@ globalSearch.onkeydown=e=>{if(e.key==='Enter'){C.section='contacts';history.push
 // Synchronisation collaborative légère : une seule requête à la fois, uniquement
 // lorsque l'onglet est visible. Un rechargement complet n'a lieu que si la liste
 // des contacts a réellement changé.
-const CRM_REFRESH_INTERVAL_MS=60000,CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000;
+const CRM_REFRESH_INTERVAL_MS=180000,CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000;
 let crmRefreshTimer=null,crmRefreshInFlight=false,lastPipelineAppointmentRefreshAt=0,pipelineAppointmentRefreshInFlight=false;
 async function refreshPipelineAppointments(now=Date.now()){
  if(C.section!=='pistes'||!C.is_admin||document.hidden||pipelineAppointmentRefreshInFlight)return false;

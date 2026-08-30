@@ -2,7 +2,7 @@ import os
 bind = f"0.0.0.0:{os.getenv('PORT', '10000')}"
 worker_class = "gthread"
 workers = 1  # Socket.IO: conserver un processus sans sticky sessions/coordination complète.
-threads = int(os.getenv("GUNICORN_THREADS", "16"))
+threads = int(os.getenv("GUNICORN_THREADS", "32"))
 timeout = int(os.getenv("GUNICORN_TIMEOUT", "120"))
 max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "5000"))
 max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "500"))

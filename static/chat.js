@@ -20,6 +20,8 @@
   let connectionHideTimer;
   let connectionDegradedTimer;
   let initialConnectionExpired = false;
+  let heartbeatTimer = null;
+  let realtimeActivated = false;
   sessionStorage.setItem("chat_tab_id", tabId);
 
   function setOpen(open) {
@@ -28,7 +30,10 @@
     $(".ic-launcher").setAttribute("aria-expanded", String(open));
     $(".ic-launcher").setAttribute("aria-label", open ? "Fermer le chat interne" : "Ouvrir le chat interne");
     localStorage.setItem("ic-chat-open", open ? "1" : "0");
-    if (open) markRead();
+    if (open) {
+      activateRealtime();
+      bootstrap().then(markRead);
+    }
   }
 
   function connection(status, text) {
@@ -239,6 +244,22 @@
     catch (error) { notice(`Présence indisponible : ${error.message}`, heartbeat); }
   }
 
+  const CHAT_HEARTBEAT_INTERVAL_MS = 45000;
+
+  function startHeartbeat() {
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(() => {
+      if (!document.hidden) heartbeat();
+    }, CHAT_HEARTBEAT_INTERVAL_MS);
+  }
+
+  function activateRealtime() {
+    if (realtimeActivated) return;
+    realtimeActivated = true;
+    startHeartbeat();
+    bootstrap().finally(initSocket);
+  }
+
   function initSocket() {
     if (state.socket) return;
     if (typeof window.io !== "function") {
@@ -338,11 +359,11 @@
   messages.addEventListener("scroll", () => {
     if (messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24) markRead();
   });
-  window.addEventListener("pagehide", () => navigator.sendBeacon("/api/chat/presence/close", new Blob([JSON.stringify({ tab_id: tabId })], { type: "application/json" })));
+  window.addEventListener("pagehide", () => {
+    if (realtimeActivated) navigator.sendBeacon("/api/chat/presence/close", new Blob([JSON.stringify({ tab_id: tabId })], { type: "application/json" }));
+  });
 
   if (localStorage.getItem("ic-chat-open") === "1") setOpen(true);
-  connection("connecting", "Connexion au chat…");
-  setInterval(heartbeat, 20000);
-  bootstrap().finally(initSocket);
+  bootstrap();
   window.__integraleChat = true;
 })();

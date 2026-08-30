@@ -121,5 +121,6 @@ def test_read_badges_are_cleared_by_http_when_realtime_is_unavailable(chat_page)
 
 def test_connection_never_stays_connecting_forever(chat_page):
     page, _ = chat_page
+    page.click(".ic-launcher")
     page.wait_for_timeout(10500)
     assert page.locator(".ic-connection").inner_text() == "Temps réel indisponible — le chat reste accessible"
