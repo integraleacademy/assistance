@@ -850,9 +850,10 @@ def test_dashboard_and_pipeline_explain_their_distinct_scopes():
     assert "const dashboardContactsIn=range=>crmActiveContacts().filter" in javascript
     assert "Pistes créées sur la période" in javascript
     assert "Évolution des pistes créées" in javascript
-    assert "const activeContacts=crmActiveContacts();let list=[...activeContacts]" in javascript
+    assert "function listContactsForType(type,activeContacts=crmActiveContacts())" in javascript
+    assert "dashboardView?dashboardDrilldownContacts(activeContacts,dashboardView)" in javascript
     assert "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length" in javascript
-    assert "function bindList(type){let base=crmActiveContacts().filter" in javascript
+    assert "function bindList(type){let base=listContactsForType(type)" in javascript
     assert "dashboardKpi('Nouvelles pistes'" not in javascript
 
 
