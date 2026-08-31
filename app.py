@@ -7303,7 +7303,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260831-activity-journal-1"
+CRM_ASSET_VERSION = "20260831-quick-reminder-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -10984,6 +10984,9 @@ def _crm_named_template(data, kind, name):
     expected = str(name).strip().casefold()
     return next((item for item in data.get(f"crm_{kind}_templates", [])
                  if str(item.get("nom") or "").strip().casefold() == expected), None)
+
+
+CRM_QUICK_REMINDER_TEMPLATE = "Rappel dans 5min"
 
 
 def _crm_send_appointment_followup(data, contact, template_name):
@@ -16773,6 +16776,51 @@ def crm_send_message(contact_id):
                 template["last_used_at"] = _crm_now()
                 break
     contact["updated_at"] = _crm_now(); save_data(data)
+    return jsonify(contact)
+
+
+@app.route("/api/crm/contacts/<contact_id>/quick-reminder", methods=["POST"])
+@login_required
+@_crm_serialized
+def crm_send_quick_reminder(contact_id):
+    """Send the configured five-minute reminder from a contact sheet."""
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    if not str(contact.get("telephone") or "").strip():
+        return jsonify({
+            "error": "Renseignez le numéro de téléphone avant d’envoyer le rappel."
+        }), 409
+    template = _crm_named_template(data, "sms", CRM_QUICK_REMINDER_TEMPLATE)
+    if not template:
+        return jsonify({
+            "error": (
+                "Le modèle SMS « Rappel dans 5min » est introuvable dans "
+                "/crm/modeles."
+            )
+        }), 409
+    body = _crm_resolve_message_variables(
+        template.get("contenu"), contact, data_store=data
+    ).strip()
+    if not body:
+        return jsonify({
+            "error": "Le modèle SMS « Rappel dans 5min » est vide."
+        }), 409
+    if not send_sms(contact.get("telephone"), body):
+        return jsonify({
+            "error": "L’envoi du SMS « Rappel dans 5min » a échoué."
+        }), 502
+
+    now = _crm_now()
+    _crm_activity(
+        contact, "sms", f"SMS « {CRM_QUICK_REMINDER_TEMPLATE} » envoyé",
+        body, body,
+    )
+    template["usage_count"] = int(template.get("usage_count") or 0) + 1
+    template["last_used_at"] = now
+    contact["updated_at"] = now
+    save_data(data)
     return jsonify(contact)
 
 

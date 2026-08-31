@@ -2438,6 +2438,64 @@ def test_meta_a3p_templates_can_be_sent_manually_and_logged(tmp_path, monkeypatc
     }
 
 
+def test_quick_reminder_sends_the_named_template_and_logs_usage(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={
+        "prenom": "Lina", "telephone": "0612345678",
+    }).get_json()
+    data = application.load_data()
+    data["crm_sms_templates"] = [{
+        "id": "rappel-5min", "nom": "Rappel dans 5min",
+        "contenu": "Bonjour {{ prenom }}, je vous appelle dans 5 minutes.",
+        "usage_count": 2,
+    }]
+    application.save_data(data)
+    sent = {}
+    monkeypatch.setattr(
+        application, "send_sms",
+        lambda telephone, body: sent.update(telephone=telephone, body=body) or True,
+    )
+
+    response = c.post(f"/api/crm/contacts/{contact['id']}/quick-reminder")
+
+    assert response.status_code == 200
+    assert sent == {
+        "telephone": "0612345678",
+        "body": "Bonjour Lina, je vous appelle dans 5 minutes.",
+    }
+    payload = response.get_json()
+    activity = payload["activities"][0]
+    assert activity["kind"] == "sms"
+    assert activity["title"] == "SMS « Rappel dans 5min » envoyé"
+    assert activity["detail"] == sent["body"]
+    saved_template = application.load_data()["crm_sms_templates"][0]
+    assert saved_template["usage_count"] == 3
+    assert saved_template["last_used_at"]
+
+
+def test_quick_reminder_refuses_missing_phone_or_template(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    without_phone = c.post("/api/crm/contacts", json={"prenom": "Lina"}).get_json()
+    sent = []
+    monkeypatch.setattr(
+        application, "send_sms",
+        lambda *args: sent.append(args) or True,
+    )
+
+    no_phone = c.post(f"/api/crm/contacts/{without_phone['id']}/quick-reminder")
+    with_phone = c.patch(
+        f"/api/crm/contacts/{without_phone['id']}",
+        json={"telephone": "0612345678"},
+    ).get_json()
+    no_template = c.post(f"/api/crm/contacts/{with_phone['id']}/quick-reminder")
+
+    assert no_phone.status_code == 409
+    assert "numéro de téléphone" in no_phone.get_json()["error"]
+    assert no_template.status_code == 409
+    assert "introuvable" in no_template.get_json()["error"]
+    assert sent == []
+
+
 def test_message_modal_does_not_rely_on_named_window_properties():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()

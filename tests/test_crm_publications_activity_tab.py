@@ -61,4 +61,4 @@ def test_publications_are_grouped_below_the_activity_journal():
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
     assert ".contact-activity-panel .publications-card{margin-bottom:0}" in stylesheet
     assert ".publication-compose-actions .publication-voice-button" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260831-activity-journal-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in backend
