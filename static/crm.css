@@ -48,6 +48,7 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .form-section{border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .form-section>h3{margin:0;padding:12px 15px;background:#f7f9fc;border-bottom:1px solid var(--line);font:700 13px Manrope;color:#31425d}
 .section-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:16px}
+.cnaps-field-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:7px}.cnaps-field-actions .btn{padding:7px 9px;font-size:11px}.cnaps-field-actions .btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .cpf-declared-values{display:grid;grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
 .call-modal{width:min(700px,100%)}
