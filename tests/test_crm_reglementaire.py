@@ -207,11 +207,11 @@ def test_only_desp_vae_404_is_linked(tmp_path, monkeypatch):
     posts = []
     monkeypatch.setattr(crm_cnaps_tracking.requests, "post", lambda *args, **kwargs:
                         (posts.append(kwargs) or response(200, {"vae": {}})))
-    lead = vae_contact(test_client, formation="DESP", desp_type="VAE")
+    lead = vae_contact(test_client, formation="DESP", desp_type="VAE", nom="Martin VAE")
     assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 200
-    lead = vae_contact(test_client, formation="DESP", desp_type="INITIAL")
+    lead = vae_contact(test_client, formation="DESP", desp_type="INITIAL", nom="Martin Initial")
     assert test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire").status_code == 404
-    lead = vae_contact(test_client, mail="", telephone="")
+    lead = vae_contact(test_client, mail="", telephone="", nom="Martin Incomplet")
     result = test_client.get(f"/api/crm/contacts/{lead['id']}/reglementaire")
     assert result.status_code == 422
     assert result.get_json()["reason"] == "insufficient_identity"
@@ -444,4 +444,38 @@ console.log('CRM CNAPS credentials: OK');
     assert "form.compte_cnaps?.value==='OUI'" in javascript
     assert "!cnapsUsername.value.trim()&&form.mail.value.trim()" in javascript
     assert "form.addEventListener('input',autofillCnapsUsername)" in javascript
+    assert "cnapsUsername.dispatchEvent(new Event('input',{bubbles:true}))" in javascript
+    binding = javascript[javascript.index("const autofillCnapsUsername="):]
+    assert binding.index("form.oninput=e=>") < binding.index("autofillCnapsUsername();")
+    autofill_source = binding[:binding.index("\n")]
+    autosave_script = r"""
+let saves=0;
+const listeners=[];
+class Event { constructor(type, options){ this.type=type; this.bubbles=options?.bubbles } }
+const form={
+ compte_cnaps:{value:'OUI'},
+ mail:{value:'lina@example.com'},
+ addEventListener:(type, listener)=>listeners.push(listener),
+ oninput:null
+};
+const cnapsUsername={
+ value:'',
+ dispatchEvent:event=>{
+  for(const listener of listeners)listener(event);
+  if(form.oninput)form.oninput(event);
+ }
+};
+""" + autofill_source + r"""
+form.addEventListener('input',autofillCnapsUsername);
+form.oninput=()=>{saves+=1};
+autofillCnapsUsername();
+if(cnapsUsername.value!=='lina@example.com'||saves!==1){
+ throw new Error(JSON.stringify({value:cnapsUsername.value,saves}));
+}
+console.log('CRM CNAPS autosave: OK');
+"""
+    autosave = subprocess.run(
+        ["node", "-e", autosave_script], check=True, capture_output=True, text=True
+    )
+    assert "CRM CNAPS autosave: OK" in autosave.stdout
     assert ".cnaps-field-actions{" in stylesheet
