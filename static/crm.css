@@ -837,6 +837,12 @@ img,svg,video,canvas,iframe{max-width:100%}
 .feed-content{min-width:0}
 .contact-activity-panel .feed-item-head{align-items:flex-start;justify-content:flex-start;gap:12px}
 .feed-title-block{display:flex;min-width:0;flex:1;align-items:center;gap:8px;flex-wrap:wrap}
+.feed-appointment-result{display:inline-flex;flex:none;align-items:center;justify-content:center;min-height:28px;margin-left:auto;padding:5px 10px;border:1px solid transparent;border-radius:999px;font:800 11px 'DM Sans';line-height:1;white-space:nowrap}
+.feed-appointment-result.answered{border-color:#bce8d9;background:#e6f7f1;color:#14785f}
+.feed-appointment-result.no-answer{border-color:#f3c7ce;background:#fdecef;color:#bd354a}
+.feed-appointment-result.pending{border-color:#efd8aa;background:#fff4dd;color:#916113}
+.feed-appointment-result.upcoming{border-color:#d8cdf8;background:#f0ebff;color:#7050c6}
+.feed-appointment-result.canceled{border-color:#dce2ea;background:#eef1f5;color:#647287}
 .contact-activity-panel .feed-item b{color:#26364d;font-size:14px;line-height:1.45}
 .feed-kind{display:inline-flex;align-items:center;padding:4px 7px;border-radius:999px;background:#edf3ff;color:#315fc3;font-size:10px;font-weight:850;line-height:1;white-space:nowrap}
 .contact-activity-panel .feed-item p{margin:8px 0 0;color:#526178;font-size:13px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
@@ -882,6 +888,7 @@ img,svg,video,canvas,iframe{max-width:100%}
  .contact-activity-panel .feed-icon{width:38px;height:38px}
  .contact-activity-panel .feed-item-head{flex-wrap:wrap}
  .feed-title-block{width:100%}
+ .feed-appointment-result{margin-left:0}
  .contact-activity-panel .feed-item b{font-size:13px}
  .contact-activity-panel .feed-item p{font-size:12px}
  .feed-callback-controls{width:100%;justify-content:flex-start;margin-left:0}

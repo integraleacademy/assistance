@@ -108,6 +108,7 @@ function replaceContactAppointments(contactId,appointments){
  crmAppointments=window.CRMAppointmentState.replaceContact(crmAppointments,contactId,appointments);
  const contact=contactInStore(contactId);
  if(contact)contact.activity_counts={...(contact.activity_counts||{}),appointments:window.CRMAppointmentState.contactAppointments(contactId,crmAppointments).length};
+ document.querySelector('#activityFilters')?.dispatchEvent(new Event('crm:refresh'));
 }
 function sortVisibleAppointmentRows(rows,appointments,status=statusFilter){
  const list=[...(rows||[])];
@@ -649,6 +650,32 @@ function bindPublicationFeed(c,root=document,onActivityChanged=null){
  async function updatePublication(button,path,opt){const article=button.closest('.publication'),contact=contacts.find(x=>x.id===article.dataset.contact);button.disabled=true;try{const result=await api(`/api/crm/contacts/${article.dataset.contact}/publications/${path}`,opt);if(result?.contact)Object.assign(contact,result.contact);else if(opt.method==='DELETE'){const fresh=await api(`/api/crm/contacts/${article.dataset.contact}`);Object.assign(contact,fresh)}if(typeof onActivityChanged==='function')onActivityChanged(contact);if(C.section==='fil-actu')newsPage();else{publicationFeed.innerHTML=publications(contact);bindPublicationFeed(contact,publicationFeed,onActivityChanged)}}catch(e){toast(e.message,true);button.disabled=false}}
  if(c){const more=root.querySelector('#publicationMore');if(more)more.onclick=()=>{const expanded=more.textContent.includes('Masquer');root.innerHTML=publications(c,!expanded);bindPublicationFeed(c,root,onActivityChanged)}}
 }
+function calendlyActivityDetail(appointment){
+  const date=new Date(appointment?.start_time||'');
+  if(Number.isNaN(date.getTime()))return'';
+  const dateLabel=new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',day:'2-digit',month:'2-digit',year:'numeric'}).format(date);
+  const timeLabel=new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit',hour12:false}).format(date);
+  return`${appointment.name||'Rendez-vous'} — ${dateLabel} à ${timeLabel}`;
+}
+function activityAppointment(c,activity){
+  const kind=String(activity?.kind||'').trim().toLowerCase();
+  if(!['calendly','rdv','appointment'].includes(kind))return null;
+  const appointments=crmAppointments.filter(item=>String(item.contact_id||'')===String(c?.id||''));
+  const appointmentId=String(activity?.appointment_id||'');
+  if(appointmentId){const exact=appointments.find(item=>String(item.id||'')===appointmentId);if(exact)return exact}
+  const detail=String(activity?.detail||'').trim();
+  return appointments.find(item=>calendlyActivityDetail(item)===detail)||null;
+}
+function appointmentActivityResult(c,activity,now=Date.now()){
+  const appointment=activityAppointment(c,activity);
+  if(!appointment)return /annul[eé]/i.test(String(activity?.title||''))?{tone:'canceled',label:'Annulé'}:null;
+  const status=String(appointment.status||'active').toLowerCase(),response=String(appointment.response_status||'').toLowerCase();
+  if(['canceled','cancelled'].includes(status))return{tone:'canceled',label:'Annulé'};
+  if(response==='answered')return{tone:'answered',label:'A répondu'};
+  if(response==='no_answer')return{tone:'no-answer',label:'Sans réponse'};
+  const startsAt=Date.parse(appointment.start_time||'');
+  return Number.isFinite(startsAt)&&startsAt>now?{tone:'upcoming',label:'À venir'}:{tone:'pending',label:'Résultat à renseigner'};
+}
 function activityTimeline(c){
   const items=(c.activities||[]).filter(item=>item&&typeof item==='object').map((item,index)=>({...item,_timelineIndex:index}));
   let timelineIndex=items.length;
@@ -704,8 +731,8 @@ function feed(c,expanded=false){
   const groups=[];
   visible.forEach(activity=>{const day=activityDateGroup(activity.date),last=groups[groups.length-1];if(last&&last.key===day.key)last.activities.push(activity);else groups.push({...day,activities:[activity]})});
   const content=groups.map(group=>`<section class="activity-day-group"><h3 class="activity-day-heading"><span>${esc(group.label)}</span><strong>${group.activities.length}</strong></h3><div class="activity-day-list">${group.activities.map(a=>{
-    const category=activityCategory(a),definition=activityFilterDefinitions.find(item=>item.key===category),sms=category==='sms',callback=a.kind==='demande_rappel'||a.callback_request_id,attention=['calendly','erreur'].includes(a.kind),processed=a.callback_status==='processed',callbackReceipt=callback&&a.callback_request_id&&(a.callback_event==='received'||(!a.callback_event&&a.title==='Demande de rappel reçue')),preview=a.preview?`data-preview="${encodeURIComponent(a.preview)}" data-preview-type="${sms?'sms':'html'}"`:a.has_preview?`data-preview-id="${esc(a.id)}" data-preview-type="${sms?'sms':'html'}"`:'',editable=a.kind==='appel'&&!callback,callbackControls=callback?`<span class="feed-callback-controls"><span class="feed-callback-status ${processed?'processed':'pending'}">${processed?'Traité':'À traiter'}</span>${callbackReceipt?`<button class="feed-callback-action ${processed?'reopen':'process'}" type="button" data-callback-action="${esc(a.callback_request_id)}" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button>`:''}</span>`:'';
-    return`<article class="feed-item activity-${category}${callback?' callback-activity':''}${attention?' attention-activity':''}" data-activity-id="${esc(a.id)}" data-activity-category="${category}"><span class="feed-icon">${crmIcon(definition.icon)}</span><div class="feed-content"><div class="feed-item-head"><div class="feed-title-block"><span class="feed-kind">${esc(definition.label)}</span><b>${esc(a.title)}</b></div>${callbackControls}${editable?`<button class="feed-edit-call" type="button" data-edit-call="${esc(a.id)}" aria-label="Modifier le compte-rendu de l’appel">Modifier</button>`:''}</div>${sms?'':`<p>${esc(a.detail)}</p>`}<div class="feed-meta"><time>${fmt(a.date)}</time><span aria-hidden="true">•</span><span>${esc(a.author||'Équipe Intégrale')}</span></div>${a.edited_at?`<small class="feed-edited">Modifié ${fmt(a.edited_at)} · ${esc(a.edited_by||'Équipe Intégrale')}</small>`:''}${preview?`<a class="preview-link" ${preview}>${sms?'Voir le SMS':'Prévisualiser'}</a>`:''}</div></article>`
+    const category=activityCategory(a),definition=activityFilterDefinitions.find(item=>item.key===category),sms=category==='sms',callback=a.kind==='demande_rappel'||a.callback_request_id,attention=['calendly','erreur'].includes(a.kind),processed=a.callback_status==='processed',callbackReceipt=callback&&a.callback_request_id&&(a.callback_event==='received'||(!a.callback_event&&a.title==='Demande de rappel reçue')),preview=a.preview?`data-preview="${encodeURIComponent(a.preview)}" data-preview-type="${sms?'sms':'html'}"`:a.has_preview?`data-preview-id="${esc(a.id)}" data-preview-type="${sms?'sms':'html'}"`:'',editable=a.kind==='appel'&&!callback,callbackControls=callback?`<span class="feed-callback-controls"><span class="feed-callback-status ${processed?'processed':'pending'}">${processed?'Traité':'À traiter'}</span>${callbackReceipt?`<button class="feed-callback-action ${processed?'reopen':'process'}" type="button" data-callback-action="${esc(a.callback_request_id)}" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button>`:''}</span>`:'',appointmentResult=category==='rdv'?appointmentActivityResult(c,a):null;
+    return`<article class="feed-item activity-${category}${callback?' callback-activity':''}${attention?' attention-activity':''}" data-activity-id="${esc(a.id)}" data-activity-category="${category}"><span class="feed-icon">${crmIcon(definition.icon)}</span><div class="feed-content"><div class="feed-item-head"><div class="feed-title-block"><span class="feed-kind">${esc(definition.label)}</span><b>${esc(a.title)}</b></div>${appointmentResult?`<span class="feed-appointment-result ${appointmentResult.tone}">${esc(appointmentResult.label)}</span>`:''}${callbackControls}${editable?`<button class="feed-edit-call" type="button" data-edit-call="${esc(a.id)}" aria-label="Modifier le compte-rendu de l’appel">Modifier</button>`:''}</div>${sms?'':`<p>${esc(a.detail)}</p>`}<div class="feed-meta"><time>${fmt(a.date)}</time><span aria-hidden="true">•</span><span>${esc(a.author||'Équipe Intégrale')}</span></div>${a.edited_at?`<small class="feed-edited">Modifié ${fmt(a.edited_at)} · ${esc(a.edited_by||'Équipe Intégrale')}</small>`:''}${preview?`<a class="preview-link" ${preview}>${sms?'Voir le SMS':'Prévisualiser'}</a>`:''}</div></article>`
   }).join('')}</div></section>`).join('');
   const more=activities.length>5?`<button class="btn feed-more" id="feedMore">${expanded?'Voir moins':`Voir plus (${activities.length-5})`}</button>`:'';
   return content+more;
@@ -1104,6 +1131,7 @@ function bindAppointmentResponseControls(items,onSaved){
       if(appointment)Object.assign(appointment,updated);
       const contact=contacts.find(c=>c.id===appointment?.contact_id);
       if(contact&&updated.contact)Object.assign(contact,updated.contact);
+      document.querySelector('#activityFilters')?.dispatchEvent(new Event('crm:refresh'));
       const sent=updated.delivery&&updated.delivery.sms&&updated.delivery.email;
       toast(select.value==='no_answer'?(sent?'Sans réponse : relance à J+2 et messages envoyés':'Relance à J+2 créée ; vérifiez les coordonnées ou la configuration des envois'):'Résultat du rendez-vous enregistré',select.value==='no_answer'&&!sent);
       if(onSaved)onSaved();

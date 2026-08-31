@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 
@@ -56,3 +57,48 @@ def test_activity_journal_uses_larger_saas_typography_and_cards():
     assert "font-size:13px" in stylesheet
     assert ".contact-activity-panel .contact-journey-summary span" in stylesheet
     assert ".activity-empty-state" in stylesheet
+
+
+def test_activity_journal_displays_the_current_appointment_result():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "crm.html").read_text(encoding="utf-8")
+
+    helpers = javascript[
+        javascript.index("function calendlyActivityDetail"):
+        javascript.index("function activityTimeline")
+    ]
+    script = "let crmAppointments=[];\n" + helpers + r"""
+const assert=require('node:assert/strict');
+const contact={id:'lead-1'};
+const answered={id:'rdv-answered',contact_id:'lead-1',name:'RDV téléphonique',start_time:'2026-08-31T12:00:00Z',status:'active',response_status:'answered'};
+const noAnswer={id:'rdv-no-answer',contact_id:'lead-1',name:'RDV téléphonique',start_time:'2026-08-28T11:45:00Z',status:'active',response_status:'no_answer'};
+const pending={id:'rdv-pending',contact_id:'lead-1',name:'RDV téléphonique',start_time:'2026-08-27T08:00:00Z',status:'active'};
+const upcoming={id:'rdv-upcoming',contact_id:'lead-1',name:'RDV téléphonique',start_time:'2026-09-02T08:00:00Z',status:'active'};
+const canceled={id:'rdv-canceled',contact_id:'lead-1',name:'RDV téléphonique',start_time:'2026-08-26T08:00:00Z',status:'canceled'};
+crmAppointments=[answered,noAnswer,pending,upcoming,canceled];
+const activity=appointment=>({kind:'calendly',title:'Rendez-vous Calendly planifié',detail:calendlyActivityDetail(appointment)});
+
+assert.equal(calendlyActivityDetail(answered),'RDV téléphonique — 31/08/2026 à 14:00');
+assert.deepEqual(appointmentActivityResult(contact,activity(answered)),{tone:'answered',label:'A répondu'});
+assert.deepEqual(appointmentActivityResult(contact,activity(noAnswer)),{tone:'no-answer',label:'Sans réponse'});
+assert.deepEqual(appointmentActivityResult(contact,activity(pending),Date.parse('2026-08-31T12:00:00Z')),{tone:'pending',label:'Résultat à renseigner'});
+assert.deepEqual(appointmentActivityResult(contact,activity(upcoming),Date.parse('2026-08-31T12:00:00Z')),{tone:'upcoming',label:'À venir'});
+assert.deepEqual(appointmentActivityResult(contact,activity(canceled)),{tone:'canceled',label:'Annulé'});
+assert.equal(appointmentActivityResult(contact,{kind:'calendly',title:'Rendez-vous Calendly planifié',detail:'Rendez-vous inconnu'}),null);
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "feed-appointment-result ${appointmentResult.tone}" in javascript
+    assert "document.querySelector('#activityFilters')?.dispatchEvent(new Event('crm:refresh'))" in javascript
+    assert ".feed-appointment-result.answered" in stylesheet
+    assert ".feed-appointment-result.no-answer" in stylesheet
+    assert ".feed-appointment-result.pending" in stylesheet
+    assert template.count("activity_rdv_result_version='20260831-activity-rdv-results-1'") == 2
