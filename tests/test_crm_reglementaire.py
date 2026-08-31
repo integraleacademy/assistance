@@ -409,3 +409,39 @@ process.stdout.write(JSON.stringify({{valid,unknownTone,missing,invalid:panel.in
     assert "Statut SCOTIA" in rendered["missing"] and "Commentaire SCOTIA" in rendered["missing"]
     assert "Date non disponible" in rendered["invalid"]
     assert javascript.count("/reglementaire${") == 1
+
+
+def test_cnaps_credentials_can_be_generated_autofilled_and_copied():
+    javascript = (Path(application.app.root_path) / "static/crm.js").read_text(encoding="utf-8")
+    stylesheet = (Path(application.app.root_path) / "static/crm.css").read_text(encoding="utf-8")
+    helpers = javascript[
+        javascript.index("function cnapsBirthYear"):
+        javascript.index("function selectHtml")
+    ]
+    node_script = helpers + r"""
+const cases=[
+ [{nom:'Vaillant',date_naissance:'1993-05-04'},'Vaillant1993@'],
+ [{nom:'ÉLODIE-DUPONT',meta_answers:[{question:'Date de naissance',answer:'01/07/1988'}]},'Elodiedupont1988@'],
+ [{nom:'Martin',birth_date:'2099-01-01'},''],
+ [{nom:'',dateOfBirth:'1990-01-01'},'']
+];
+for(const [contact,expected] of cases){
+ const actual=cnapsGeneratedPassword(contact);
+ if(actual!==expected)throw new Error(JSON.stringify({contact,actual,expected}));
+}
+console.log('CRM CNAPS credentials: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", node_script], check=True, capture_output=True, text=True
+    )
+
+    assert "CRM CNAPS credentials: OK" in completed.stdout
+    assert 'id="cnapsUsernameCopy"' in javascript
+    assert 'id="cnapsPasswordGenerate"' in javascript
+    assert 'id="cnapsPasswordCopy"' in javascript
+    assert "await copyContactCoordinate(input.value)" in javascript
+    assert "cnapsPassword.dispatchEvent(new Event('input',{bubbles:true}))" in javascript
+    assert "form.compte_cnaps?.value==='OUI'" in javascript
+    assert "!cnapsUsername.value.trim()&&form.mail.value.trim()" in javascript
+    assert "form.addEventListener('input',autofillCnapsUsername)" in javascript
+    assert ".cnaps-field-actions{" in stylesheet
