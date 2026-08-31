@@ -95,6 +95,37 @@ def test_empty_calendly_booking_stays_in_the_contact_sheet():
     ) in javascript
 
 
+
+def test_message_preview_can_return_to_the_preserved_email_or_sms_draft():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert "function messageModal(c,type,draft={})" in javascript
+    assert (
+        "initialDraft={contenu:String(draft.contenu??''),"
+        "sujet:String(draft.sujet??'Intégrale Academy — Votre formation'),"
+        "template_id:String(draft.template_id??'')}"
+    ) in javascript
+    assert '<textarea id="msg" placeholder="Votre message…">${esc(initialDraft.contenu)}</textarea>' in javascript
+    assert "subject\" value=\"${esc(initialDraft.sujet)}" in javascript
+    assert (
+        "if(initialDraft.template_id&&[...templateSelect.options].some("
+        "option=>option.value===initialDraft.template_id))"
+        "templateSelect.value=initialDraft.template_id"
+    ) in javascript
+    assert (
+        "const draftState={contenu:messageField.value,"
+        "sujet:isMail?subjectField.value:'',template_id:templateSelect.value}"
+    ) in javascript
+    assert "()=>messageModal(c,type,draftState)" in javascript
+    assert (
+        "function previewModal(content,allowCopy=false,emailData=null,"
+        "smsData=null,onBack=null)"
+    ) in javascript
+    assert 'id="backToMessage">← Retour au message</button>' in javascript
+    assert "if(typeof onBack==='function')backToMessage.onclick=onBack" in javascript
+    assert "const show=content=>previewModal(" in javascript
+
+
 def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
