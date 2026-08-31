@@ -14877,6 +14877,7 @@ def crm_contacts_bulk():
             reason = str(payload.get("reason") or "").strip()
             if not reason:
                 return jsonify({"error": "Le motif de disqualification est obligatoire."}), 400
+            _crm_schedule_relance(contact, "")
             contact.update({
                 "statut": "Disqualifié",
                 "disqualification_reason": reason,

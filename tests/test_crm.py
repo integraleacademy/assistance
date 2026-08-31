@@ -893,6 +893,29 @@ def test_workspace_bulk_actions_require_disqualification_reason_and_are_audited(
     first = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
     second = c.post("/api/crm/contacts", json={"prenom": "Nora", "nom": "Petit"}).get_json()
     ids = [first["id"], second["id"]]
+    data = application.load_data()
+    stored_first = next(
+        contact for contact in data["crm_contacts"]
+        if contact["id"] == first["id"]
+    )
+    stored_first["relance_date"] = "2027-01-10"
+    stored_first["relances"] = [
+        {
+            "id": "active-reminder",
+            "scheduled_date": "2027-01-10",
+            "status": "scheduled",
+            "created_at": "2026-08-30T09:00:00+02:00",
+            "created_by": "Clément",
+        },
+        {
+            "id": "answered-reminder",
+            "scheduled_date": "2026-08-29",
+            "status": "answered",
+            "created_at": "2026-08-28T09:00:00+02:00",
+            "created_by": "Clément",
+        },
+    ]
+    application.save_data(data)
 
     missing = c.patch("/api/crm/contacts/bulk", json={"ids": ids, "action": "disqualify"})
     assert missing.status_code == 400
@@ -916,6 +939,15 @@ def test_workspace_bulk_actions_require_disqualification_reason_and_are_audited(
         assert "Motif : Projet reporté" in activity["detail"]
         assert "Précisions : Recontacter après la rentrée" in activity["detail"]
         assert "Réactivation prévue : 2027-01-15" in activity["detail"]
+    disqualified_first = next(
+        contact for contact in result.get_json()["updated"]
+        if contact["id"] == first["id"]
+    )
+    assert disqualified_first["relance_date"] == ""
+    assert [item["id"] for item in disqualified_first["relances"]] == [
+        "answered-reminder"
+    ]
+    assert disqualified_first["relances"][0]["status"] == "answered"
 
     restored = c.patch("/api/crm/contacts/bulk", json={
         "ids": [first["id"]], "action": "status", "value": "Nouveaux",
