@@ -1061,7 +1061,12 @@ def test_pipeline_financing_stages_follow_real_funding_request_status():
 
     assert "if(fundingStatus==='en_cours_instruction')statuses.add('Financement FT en cours')" in crm_js
     assert "if(fundingStatus==='refusee')statuses.add('Financement FT refusé')" in crm_js
-    assert "const contactHasPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status)" in crm_js
+    assert "const contactHasAnyPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status)" in crm_js
+    assert (
+        "const contactHasPipelineStatus=(c,status)=>"
+        "!['Converti','Disqualifié'].includes(c.statut)"
+        "&&contactHasAnyPipelineStatus(c,status)"
+    ) in crm_js
     assert "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length" in crm_js
     assert "list.filter(c=>contactHasPipelineStatus(c,statusFilter))" in crm_js
     assert "!statusFilter||contactHasPipelineStatus(c,statusFilter)" in crm_js
@@ -1732,6 +1737,18 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
         application.app.root_path + "/static/crm.css", encoding="utf-8"
     ).read()
     assert "'Secrétariat','Formulaire abandonné','Ajout manuel','Autre'" in crm_js
+    tracking = crm_js.split('id="trackingCard"', 1)[1].split(
+        'id="contactActivityPanel"', 1
+    )[0]
+    assert '<label>Commentaires</label>' not in tracking
+    assert 'name="commentaires"' not in tracking
+    assert 'id="rephraseComments"' not in tracking
+    assert (
+        "const originHistory=page.querySelector('#trackingCard .contact-origin-history')"
+        in crm_js
+    )
+    assert "originHistory?.insertAdjacentHTML('afterend'" in crm_js
+    assert '#trackingCard textarea[name="commentaires"]' not in crm_js
 
 
 def test_tracking_card_precedes_the_activity_tab_and_publications_stay_inside_it():
