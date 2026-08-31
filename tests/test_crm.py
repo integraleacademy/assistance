@@ -538,29 +538,44 @@ def test_dashboard_compares_periods_and_remains_compact_on_mobile():
         crm_js = source.read()
     with open(root + "/static/crm.css", encoding="utf-8") as source:
         crm_css = source.read()
+    with open(root + "/templates/crm.html", encoding="utf-8") as source:
+        crm_template = source.read()
 
-    assert "today:'Aujourd’hui',week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'" in crm_js
+    assert "today:'Aujourd’hui',yesterday:'Hier',week:'Semaine',month:'Mois',quarter:'Trimestre',year:'Année'" in crm_js
     assert "lastYear.start.setFullYear" in crm_js
     assert "data-dashboard-shift" in crm_js
     assert "bindDashboard()" in crm_js
+    assert "20260831-dashboard-yesterday-1" in crm_template
     assert "@media(max-width:650px)" in crm_css
     assert ".analytics-kpis{grid-template-columns:1fr 1fr" in crm_css
     assert ".analytics-table-wrap{width:100%;overflow:auto}" in crm_css
 
 
-def test_dashboard_today_period_uses_local_calendar_day():
+def test_dashboard_day_periods_use_local_calendar_days():
     root = application.app.root_path
     crm_js = open(root + "/static/crm.js", encoding="utf-8").read()
     period_code = crm_js[
         crm_js.index("const dashboardPeriods="):
         crm_js.index("const dashboardInRange=")
     ]
+    label_code = crm_js[
+        crm_js.index("const dashboardRangeLabel="):
+        crm_js.index("const dashboardDrilldownViews=")
+    ]
+    bucket_code = crm_js[
+        crm_js.index("function dashboardBuckets"):
+        crm_js.index("function dashboardTrend")
+    ]
     node_script = f"""
 let dashboardPeriod='today',dashboardOffset=0;
 {period_code}
+{label_code}
+{bucket_code}
 const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
 const current=dashboardFullRange('today',0);
 const previous=dashboardFullRange('today',-1);
+const yesterday=dashboardFullRange('yesterday',0);
+const dayBeforeYesterday=dashboardFullRange('yesterday',-1);
 const nextDay=new Date(current.start);nextDay.setDate(nextDay.getDate()+1);
 const nextPreviousDay=new Date(previous.start);nextPreviousDay.setDate(nextPreviousDay.getDate()+1);
 assert(current.start.getHours()===0&&current.start.getMinutes()===0,'today starts at local midnight');
@@ -570,8 +585,18 @@ assert(current.start.getDate()!==previous.start.getDate()||current.start.getMont
 const ranges=dashboardRanges();
 assert(ranges.current.start.getTime()===current.start.getTime(),'the dashboard uses today as its current range');
 assert(ranges.current.end.getTime()<=Date.now()+1000,'the current day never includes future data');
-assert(Object.keys(dashboardPeriods)[0]==='today','today is the first period tab');
-console.log('CRM dashboard today period: OK');
+assert(yesterday.start.getTime()===previous.start.getTime(),'yesterday starts at the previous local midnight');
+assert(yesterday.end.getTime()===current.start.getTime(),'yesterday ends at the current local midnight');
+assert(dayBeforeYesterday.end.getTime()===yesterday.start.getTime(),'the previous comparison is the full day before yesterday');
+dashboardPeriod='yesterday';
+const yesterdayRanges=dashboardRanges();
+assert(yesterdayRanges.current.start.getTime()===yesterday.start.getTime(),'the Hier tab selects yesterday');
+assert(yesterdayRanges.current.end.getTime()===yesterday.end.getTime(),'the Hier tab keeps the complete day');
+assert(!dashboardRangeLabel(yesterdayRanges.current).includes('–'),'a single day is not displayed as a duplicated range');
+const yesterdayBuckets=dashboardBuckets(yesterdayRanges.current,'yesterday',[]);
+assert(yesterdayBuckets.length>=23&&yesterdayBuckets.length<=25,'the yesterday chart keeps hourly buckets across daylight-saving changes');
+assert(Object.keys(dashboardPeriods).slice(0,2).join(',')==='today,yesterday','Hier follows Aujourd’hui');
+console.log('CRM dashboard day periods: OK');
 """
     completed = subprocess.run(
         ["node", "-e", node_script],
@@ -581,7 +606,7 @@ console.log('CRM dashboard today period: OK');
         text=True,
     )
 
-    assert "CRM dashboard today period: OK" in completed.stdout
+    assert "CRM dashboard day periods: OK" in completed.stdout
 
 
 def test_complete_workspace_assets_are_loaded_before_the_crm_script():
