@@ -142,13 +142,27 @@ def test_feed_centralizes_all_events_and_exposes_edit_only_for_calls():
     source = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
     functions = "\n".join((
         _extract_js_function(source, "activityTimeline"),
+        _extract_js_function(source, "activityCategory"),
+        _extract_js_function(source, "activityDateGroup"),
+        _extract_js_function(source, "activityEmptyState"),
         _extract_js_function(source, "feed"),
     ))
     harness = r"""
 const assert = require('assert');
 global.esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;');
 global.fmt = value => 'DATE:' + value;
-const html = feed({
+global.crmIcon = name => `<svg>${name}</svg>`;
+global.parisDateKey = value => new Date(value).toISOString().slice(0, 10);
+global.activityFilterDefinitions = [
+  {key:'all',label:'Tout',icon:'activity'},
+  {key:'sms',label:'SMS',icon:'message'},
+  {key:'email',label:'Mails',icon:'mail'},
+  {key:'rdv',label:'RDV',icon:'calendar'},
+  {key:'appel',label:'Appels consignés',icon:'phone'},
+  {key:'publication',label:'Publications',icon:'users'},
+  {key:'other',label:'Autre',icon:'activity'},
+];
+const contact = {
   activities: [
     {id:'call-1',kind:'appel',title:'Appel consigné',detail:'Corrigé',date:'2026-08-25T10:00:00+02:00',author:'Alex',edited_at:'d2',edited_by:'Camille'},
     {id:'mail-1',kind:'email',title:'E-mail envoyé',detail:'Objet',date:'2026-08-25T09:00:00+02:00',author:'Alex'},
@@ -160,7 +174,8 @@ const html = feed({
       {id:'reply-1',texte:'Dossier vérifié.',date:'2026-08-25T12:00:00+02:00',author:'Camille'}
     ]
   }]
-}, true);
+};
+const html = feed(contact, true);
 assert.strictEqual((html.match(/data-edit-call=/g) || []).length, 1);
 assert.ok(html.includes('data-edit-call="call-1"'));
 assert.ok(!html.includes('data-edit-call="mail-1"'));
@@ -174,6 +189,17 @@ assert.ok(html.includes('Pièce reçue.'));
 assert.ok(html.includes('Commentaire sur une publication'));
 assert.ok(html.includes('Dossier vérifié.'));
 assert.ok(html.indexOf('Dossier vérifié.') < html.indexOf('Pièce reçue.'));
+const callsOnly = feed(contact, true, 'appel');
+assert.ok(callsOnly.includes('Appel consigné'));
+assert.ok(!callsOnly.includes('E-mail envoyé'));
+const publicationsOnly = feed(contact, true, 'publication');
+assert.ok(publicationsOnly.includes('Publication ajoutée'));
+assert.ok(publicationsOnly.includes('Commentaire sur une publication'));
+assert.ok(!publicationsOnly.includes('Statut : En cours'));
+const otherOnly = feed(contact, true, 'other');
+assert.ok(otherOnly.includes('Statut : En cours'));
+assert.ok(otherOnly.includes('Suivi mis à jour'));
+assert.ok(!otherOnly.includes('Appel consigné'));
 """
     completed = subprocess.run(
         ["node", "-e", functions + "\n" + harness],
@@ -272,4 +298,4 @@ def test_click_binding_accessibility_responsive_and_cache_version():
     assert ".feed-edit-call:focus-visible" in css
     assert ".edit-call-modal textarea{min-height:190px}" in css
     assert ".feed-edit-call{min-height:38px" in css
-    assert 'CRM_ASSET_VERSION = "20260830-crm-latency-1"' in app
+    assert 'CRM_ASSET_VERSION = "20260831-activity-journal-1"' in app

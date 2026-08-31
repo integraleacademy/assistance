@@ -303,7 +303,7 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert "'demande_rappel'" in javascript
     assert "data-callback-action" in javascript
     assert "async function saveCallbackRequestStatus" in javascript
-    assert "activityFeed.onclick=async event=>" in javascript
+    assert "activityFeedRoot.onclick=async event=>" in javascript
     assert "function updateCallbackRequestNavCount()" in javascript
     assert "snapshot.callback_pending_count" in javascript
     assert 'id="callbackRequestNavCount"' in template
