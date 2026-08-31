@@ -15576,13 +15576,26 @@ def crm_notifications():
     return jsonify(items)
 
 
-@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>", methods=["DELETE"])
+@app.route(
+    "/api/crm/contacts/<contact_id>/publications/<publication_id>",
+    methods=["PATCH", "DELETE"],
+)
 @login_required
 def crm_delete_publication(contact_id, publication_id):
     data = load_data(); contact = _crm_contact(data, contact_id)
     publication = _crm_publication(contact, publication_id) if contact else None
     if not publication: return jsonify({"error": "Publication introuvable"}), 404
-    if not _crm_owns_content(publication): return jsonify({"error": "Vous ne pouvez supprimer que vos publications"}), 403
+    if not _crm_owns_content(publication):
+        action = "modifier" if request.method == "PATCH" else "supprimer"
+        return jsonify({"error": f"Vous ne pouvez {action} que vos publications"}), 403
+    if request.method == "PATCH":
+        text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
+        if not text:
+            return jsonify({"error": "Le texte de la publication est requis"}), 400
+        publication["texte"] = text
+        contact["updated_at"] = _crm_now()
+        save_data(data)
+        return jsonify({"publication": publication, "contact": contact})
     contact["publications"].remove(publication); contact["updated_at"] = _crm_now(); save_data(data)
     return "", 204
 
