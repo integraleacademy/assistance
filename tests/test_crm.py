@@ -2063,6 +2063,33 @@ def test_publication_social_actions_and_owner_deletion(tmp_path, monkeypatch):
     assert commented.status_code == 201
     comment = commented.get_json()["comment"]
     assert comment["author"] == "Clément VAILLANT"
+
+    original_date = publication["date"]
+    edited = c.patch(
+        f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}",
+        json={"texte": "Une actualité corrigée"},
+    )
+    assert edited.status_code == 200
+    edited_publication = edited.get_json()["publication"]
+    assert edited_publication["texte"] == "Une actualité corrigée"
+    assert edited_publication["date"] == original_date
+    assert edited_publication["likes"] == ["clement@integraleacademy.com"]
+    assert edited_publication["comments"] == [comment]
+    assert c.patch(
+        f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}",
+        json={"texte": "   "},
+    ).status_code == 400
+
+    with c.session_transaction() as session:
+        session["user_email"] = "cassandre@integraleacademy.com"
+    forbidden = c.patch(
+        f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}",
+        json={"texte": "Modification interdite"},
+    )
+    assert forbidden.status_code == 403
+    with c.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+
     assert c.delete(
         f"/api/crm/contacts/{contact['id']}/publications/{publication['id']}/comments/{comment['id']}"
     ).status_code == 204

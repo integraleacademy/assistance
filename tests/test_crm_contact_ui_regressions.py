@@ -502,6 +502,23 @@ def test_tracking_card_uses_the_standard_form_section_heading():
     assert '.form-section>h3.tracking-card-head' in stylesheet
 
 
+def test_publication_owner_can_open_save_or_cancel_an_inline_edit():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    for marker in (
+        'class="publication-edit-action"',
+        'data-edit-publication',
+        'data-cancel-publication-edit',
+        'data-save-publication-edit',
+        "method:'PATCH'",
+        "Le texte de la publication est requis",
+    ):
+        assert marker in javascript
+    assert ".publication-editor[hidden]" in stylesheet
+    assert ".publication-edit-action:focus-visible" in stylesheet
+
+
 def test_contact_supports_a_removable_secondary_timeline():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
