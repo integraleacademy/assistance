@@ -8688,6 +8688,31 @@ def _crm_calendly_datetime_label(value):
         return str(value or "Date non renseignée")
 
 
+def _crm_calendly_cancellation_date(payload, now=None):
+    """Return the cancellation day in Paris, preferring Calendly's timestamp."""
+    cancellation = payload.get("cancellation") or {}
+    raw_timestamp = (
+        cancellation.get("created_at")
+        if isinstance(cancellation, dict)
+        else ""
+    ) or payload.get("updated_at")
+    paris = pytz.timezone("Europe/Paris")
+    try:
+        cancelled_at = datetime.datetime.fromisoformat(
+            str(raw_timestamp or "").replace("Z", "+00:00")
+        )
+        if cancelled_at.tzinfo is None:
+            cancelled_at = pytz.UTC.localize(cancelled_at)
+        cancelled_at = cancelled_at.astimezone(paris)
+    except (TypeError, ValueError):
+        cancelled_at = now or datetime.datetime.now(paris)
+        if cancelled_at.tzinfo is None:
+            cancelled_at = paris.localize(cancelled_at)
+        else:
+            cancelled_at = cancelled_at.astimezone(paris)
+    return cancelled_at.date().isoformat()
+
+
 def _crm_calendly_booking_supersedes_active_relance(contact, appointment):
     """Return whether an existing booking is newer than the open follow-up.
 
@@ -8854,16 +8879,55 @@ def _crm_upsert_calendly_appointment(
             actor_name="Calendly",
         )
 
+    cancellation_relance_changed = False
+    cancellation_has_active_replacement = False
+    cancellation_automation_pending = bool(
+        contact
+        and webhook_event == "invitee.canceled"
+        and not appointment.get("cancellation_followup_processed_at")
+    )
+    if cancellation_automation_pending:
+        cancellation_has_active_replacement = any(
+            item is not appointment
+            and item.get("contact_id") == contact.get("id")
+            and _crm_calendly_appointment_is_today_or_future(item)
+            for item in appointments
+        )
+        if (
+            not cancellation_has_active_replacement
+            and (contact.get("statut") or "Nouveaux")
+            not in {"Converti", "Disqualifié"}
+        ):
+            cancellation_date = _crm_calendly_cancellation_date(payload)
+            _, cancellation_relance_changed = _crm_schedule_relance(
+                contact,
+                cancellation_date,
+                source="calendly_cancellation",
+                actor_name="Calendly",
+                motif="Suite annulation du rendez-vous",
+            )
+            appointment["cancellation_followup_date"] = cancellation_date
+        appointment["cancellation_followup_processed_at"] = now
+        appointment["updated_at"] = now
+        changed = True
+
     old_status = (contact.get("statut") or "Nouveaux") if contact else ""
     status_changed = bool(
         contact
         and _crm_sync_contact_calendly_status(
             data,
             contact,
-            prefer_appointment=appointment_became_active,
+            prefer_appointment=(
+                appointment_became_active
+                or cancellation_has_active_replacement
+            ),
         )
     )
-    pipeline_changed = relance_changed or status_changed
+    pipeline_changed = (
+        relance_changed
+        or cancellation_relance_changed
+        or status_changed
+    )
     if (
         contact
         and pipeline_changed
