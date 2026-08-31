@@ -616,8 +616,8 @@ async function showContact(id,initialTab='contactInfoTab'){
   const googleAdsLabel=page.querySelector('label[for="contactGclid"]');
   if(googleAdsLabel&&googleAdsIdentifierType)googleAdsLabel.textContent=`${googleAdsIdentifierType} Google Ads`;
   if(!googleAdsIdentifier&&c.origine==='Google Ads'){
-    const commentsField=page.querySelector('#trackingCard textarea[name="commentaires"]')?.closest('.field');
-    commentsField?.insertAdjacentHTML('beforebegin','<div class="field full"><label>Identifiant Google Ads</label><input type="text" value="Non transmis par Google" readonly aria-readonly="true" title="La campagne a été reconnue sans identifiant de clic individuel."></div>');
+    const originHistory=page.querySelector('#trackingCard .contact-origin-history');
+    originHistory?.insertAdjacentHTML('afterend','<div class="field full"><label>Identifiant Google Ads</label><input type="text" value="Non transmis par Google" readonly aria-readonly="true" title="La campagne a été reconnue sans identifiant de clic individuel."></div>');
   }
   const originSelect=page.querySelector('[name="origine"]');
   if(originSelect&&c.origine==='META'&&![...originSelect.options].some(option=>option.value==='META')){
