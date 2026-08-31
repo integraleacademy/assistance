@@ -650,6 +650,37 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
     assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
+    assert (
+        "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length"
+        in javascript
+    )
+
+    pipeline_helpers = javascript[
+        javascript.index("const isActiveLead="):
+        javascript.index("const manualNextActionValue=")
+    ]
+    script = f"""
+{pipeline_helpers}
+const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
+const active={{statut:'Nouveau',statut_secondaire:'Transition pro'}};
+const converted={{statut:'Converti',statut_secondaire:'Transition pro'}};
+const disqualified={{statut:'Disqualifié',statut_secondaire:'Transition pro'}};
+const appointmentOutsidePipeline={{statut:'Converti',statut_secondaire:'RDV programmé'}};
+assert(contactHasPipelineStatus(active,'Transition pro'),'an active Transition pro lead is counted');
+assert(!contactHasPipelineStatus(converted,'Transition pro'),'a converted Transition pro contact is excluded');
+assert(!contactHasPipelineStatus(disqualified,'Transition pro'),'a disqualified Transition pro contact is excluded');
+assert(contactHasAnyPipelineStatus(appointmentOutsidePipeline,'RDV programmé'),'general appointment detection remains available outside the pipeline');
+console.log('CRM pipeline counters: OK');
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM pipeline counters: OK" in completed.stdout
 
 
 def test_reminder_period_metrics_filter_rows_and_are_keyboard_accessible():
@@ -886,7 +917,7 @@ console.log('CRM appointment date state: OK');
 
     assert "CRM appointment date state: OK" in completed.stdout
     assert "nextProgrammedAppointmentDate" in crm_js
-    assert "contactHasPipelineStatus(c,'RDV programmé')" in crm_js
+    assert "contactHasAnyPipelineStatus(c,'RDV programmé')" in crm_js
     assert "window.CRMAppointmentState.dateLabel(c.id,crmAppointments)" in crm_js
     assert "contactPipelineStatusMarkup(c)" in crm_js
     assert ".pipeline-appointment-date" in crm_css
