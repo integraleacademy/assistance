@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, send_from_directory, url_for, redirect, abort, jsonify
+from flask import Flask, render_template, request, send_file, send_from_directory, url_for, redirect, abort, jsonify, has_app_context
 from flask import render_template_string
 import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil, gzip, mimetypes
 import html as html_module
@@ -10959,6 +10959,14 @@ def _crm_send_appointment_followup(data, contact, template_name):
     return delivery
 
 
+def _crm_send_ft_refusal_messages(data, contact):
+    """Envoie les modèles e-mail et SMS lors d'un nouveau refus France Travail."""
+    if has_app_context():
+        return _crm_send_appointment_followup(data, contact, "FT refusé")
+    with app.app_context():
+        return _crm_send_appointment_followup(data, contact, "FT refusé")
+
+
 def _crm_ai(system_prompt, user_prompt, max_tokens=500):
     """Single, testable entry point for the CRM writing assistants."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -12028,6 +12036,7 @@ def _wedof_store_page_locked(
                         _crm_add_funding_refusal_notifications(
                             data, contact, stable_id,
                         )
+                        _crm_send_ft_refusal_messages(data, contact)
                         crm_changed = True
                     if (not stored_funding_was_refused
                             or previous_funding_status != "refusee"):
@@ -15079,6 +15088,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         contact.get("statut_demande_financement_ft") or ""
     ).strip()
     if new_funding_status == "refusee" and old_funding_status != "refusee":
+        _crm_send_ft_refusal_messages(data, contact)
         _crm_schedule_ft_refusal_relance(
             contact,
             source="manual_ft_refusal",

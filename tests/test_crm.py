@@ -1324,7 +1324,36 @@ def test_gunicorn_recycles_the_single_worker():
 
 def test_funding_request_status_automatically_updates_secondary_timeline(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    created = c.post("/api/crm/contacts", json={"prenom": "Auto", "nom": "FT"}).get_json()
+    deliveries = {"sms": [], "email": []}
+    monkeypatch.setattr(
+        application,
+        "send_sms",
+        lambda phone, body: deliveries["sms"].append((phone, body)) or True,
+    )
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda mail, subject, plain, html: deliveries["email"].append(
+            (mail, subject, plain, html)
+        ) or True,
+    )
+    created = c.post("/api/crm/contacts", json={
+        "prenom": "Auto",
+        "nom": "FT",
+        "mail": "auto@example.com",
+        "telephone": "+33612345678",
+    }).get_json()
+    c.post("/api/crm/templates", json={
+        "type": "sms",
+        "nom": "FT refusé",
+        "contenu": "Bonjour {{ prenom }}, votre financement FT est refusé.",
+    })
+    c.post("/api/crm/templates", json={
+        "type": "email",
+        "nom": "FT refusé",
+        "sujet": "Décision France Travail — {{ prenom }}",
+        "contenu": "<p>Bonjour {{ prenom }}, votre financement FT est refusé.</p>",
+    })
 
     in_progress = c.patch(
         f"/api/crm/contacts/{created['id']}",
@@ -1360,6 +1389,22 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
         item.get("title") == "Relance France Travail planifiée"
         for item in refused_contact["activities"]
     )
+    assert deliveries["sms"] == [(
+        "+33612345678",
+        "Bonjour Auto, votre financement FT est refusé.",
+    )]
+    assert len(deliveries["email"]) == 1
+    assert deliveries["email"][0][0:2] == (
+        "auto@example.com",
+        "Décision France Travail — Auto",
+    )
+    assert "Bonjour Auto" in deliveries["email"][0][3]
+    assert {
+        item.get("title") for item in refused_contact["activities"]
+    } >= {
+        "SMS « FT refusé » envoyé",
+        "E-mail « FT refusé » envoyé",
+    }
 
     replayed = c.patch(
         f"/api/crm/contacts/{created['id']}",
@@ -1373,6 +1418,7 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
         item for item in replayed["activities"]
         if item.get("title") == "Relance France Travail planifiée"
     ]) == 1
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
 
 
 def test_primary_pipeline_places_in_progress_after_scheduled_appointment():
