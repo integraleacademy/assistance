@@ -1384,6 +1384,9 @@ console.log('CRM Pistes completeness: OK');
     assert "showCompleteness:isLeads" in javascript
     assert "showCompleteness:type==='pistes'" in javascript
     assert "CRMWorkspace={listPage" in workspace
+    assert ".workspace-completeness" in stylesheet
+    assert ".crm-list-completeness" in stylesheet
+    assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in application
 
 
 def test_france_travail_details_are_hidden_and_ignored_when_route_is_refused():
@@ -1396,9 +1399,7 @@ def test_france_travail_details_are_hidden_and_ignored_when_route_is_refused():
     assert "String(c.financement_ft||'').trim().toUpperCase()==='OUI'?" in javascript
     assert "const ftRelevant=isYes(contact.financement_ft);" in workspace
     assert "contactCompleteness,contactCompletenessDetails" in workspace
-    assert ".workspace-completeness" in stylesheet
-    assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in application
+
 
 def test_pipeline_relance_date_distinguishes_overdue_scheduled_and_missing():
     javascript = CRM_JS.read_text(encoding="utf-8")
