@@ -165,7 +165,14 @@ def calculate_financial_readiness_score(contact):
     if personal_capacity is None:
         personal_capacity = legacy_fallback
     personal_remainder = _boolean(contact.get("reste_a_charge_perso"))
-    ft_status = normalize_ft_request_status(contact.get("statut_demande_financement_ft"))
+    stored_ft_status = normalize_ft_request_status(
+        contact.get("statut_demande_financement_ft")
+    )
+    # An explicit refusal of the France Travail route wins over stale manual
+    # or WEDOF details.  Keep those fields on the contact for history, but do
+    # not let them influence the current score until the route is selected
+    # again.
+    ft_status = None if wants_ft is False else stored_ft_status
     code = resolve_training_code(contact)
     price_cents = TRAINING_PRICES_CENTS.get(code)
     warnings, blockers, actions = [], [], []
@@ -211,9 +218,6 @@ def calculate_financial_readiness_score(contact):
         actions.append("Calculer puis confirmer le reste à charge exact")
     if functional is True and created is False:
         warnings.append("L’identité numérique est fonctionnelle alors que sa création est indiquée NON.")
-    if ft_status and wants_ft is False and ft_status not in {"aucune_demande", "annulee"}:
-        warnings.append("Un statut France Travail est enregistré alors que le financement France Travail est indiqué NON.")
-
     if price_cents is None:
         warnings.append(f"Tarif non configuré pour la formation « {contact.get('formation') or 'inconnue'} » (code résolu : {code or 'aucun'}).")
         actions.append("Configurer le tarif de cette formation")
@@ -245,7 +249,10 @@ def calculate_financial_readiness_score(contact):
     remaining_min = max(price_cents - useful_max_for_display, 0)
     remaining_max = max(price_cents - useful_min_cents, 0)
 
-    ft_amount_text = str(contact.get("montant_accorde_ft") or "").strip()
+    ft_amount_text = (
+        "" if wants_ft is False
+        else str(contact.get("montant_accorde_ft") or "").strip()
+    )
     ft_amount_known = bool(ft_amount_text)
     ft_amount_cents = _amount_cents(ft_amount_text) if ft_amount_known else 0
     secured_cents = useful_min_cents
