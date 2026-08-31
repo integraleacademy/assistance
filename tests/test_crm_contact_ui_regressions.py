@@ -650,6 +650,19 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
 
     assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
+    assert (
+        "contactHasPipelineStatus=(c,status)=>"
+        "!['Converti','Disqualifié'].includes(c.statut)"
+        "&&contactHasAnyPipelineStatus(c,status)"
+    ) in javascript
+    assert (
+        "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length"
+        in javascript
+    )
+    assert (
+        "if(!contactHasAnyPipelineStatus(c,'RDV programmé'))return''"
+        in javascript
+    )
 
 
 def test_reminder_period_metrics_filter_rows_and_are_keyboard_accessible():
