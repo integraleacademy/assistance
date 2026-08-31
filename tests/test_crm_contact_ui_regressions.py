@@ -1142,6 +1142,34 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "nextAppointment" in appointment_state
     assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in backend
 
+
+def test_calendar_page_rerenders_from_the_collaborative_snapshot():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    renderer = javascript[
+        javascript.index("function renderCalendarAppointments("):
+        javascript.index("async function loadCalendar(")
+    ]
+    loader = javascript[
+        javascript.index("async function loadCalendar("):
+        javascript.index("function changeReminderDate(")
+    ]
+    refresh = javascript[
+        javascript.index("async function refreshCrmSnapshot()"):
+        javascript.index("document.addEventListener('visibilitychange'")
+    ]
+
+    assert "/api/" not in renderer
+    assert "calendarSelectedDate" in renderer
+    assert "bindRows();" in renderer
+    assert "bindAppointmentResponseControls(items,()=>loadCalendar())" in renderer
+    assert "api('/api/crm/calendly/appointments')" in loader
+    assert "crmAppointments=data.appointments||[]" in loader
+    assert "renderCalendarAppointments(crmAppointments)" in loader
+    assert "if(C.section==='calendrier'&&!id&&hasAppointments)renderCalendarAppointments(crmAppointments);" in refresh
+    assert "if(hasAppointments&&(appointmentsChanged||C.section==='calendrier'))crmAppointments=snapshot.appointments;" in refresh
+    assert "/api/crm/calendly/appointments" not in refresh
+
 def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
     javascript = CRM_JS.read_text(encoding="utf-8")
     backend = APP_PY.read_text(encoding="utf-8")
