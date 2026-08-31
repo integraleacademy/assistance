@@ -15672,34 +15672,24 @@ def crm_delete_publication_comment(contact_id, publication_id, comment_id):
 @app.route("/api/crm/contacts/<contact_id>/convertir", methods=["POST"])
 @login_required
 def crm_convert_contact(contact_id):
-    """Préremplit un dossier distant, puis valide la conversion CRM."""
+    """Convertit une piste dans le CRM sans dépendre d'un service externe."""
     data = load_data(); contact = _crm_contact(data, contact_id)
     if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    missing = [label for key, label in (("prenom", "prénom"), ("nom", "nom"), ("mail", "e-mail"),
-        ("formation", "formation"), ("lieu", "lieu"), ("dates_formation", "session"))
-        if not str(contact.get(key, "")).strip()]
-    if missing: return jsonify({"error": "Complétez avant l’inscription : " + ", ".join(missing)}), 400
-    api_url = os.getenv("GESTION_STAGIAIRES_API_URL", "").strip()
-    api_token = os.getenv("GESTION_STAGIAIRES_API_TOKEN", "").strip()
-    if not api_url or not api_token:
-        return jsonify({"error": "Connexion Gestion stagiaires non configurée"}), 503
-    try:
-        response = requests.post(api_url, json=_gestion_stagiaires_payload(contact), headers={
-            "Authorization": f"Bearer {api_token}", "Accept": "application/json"}, timeout=15)
-        remote = response.json() if response.content else {}
-        if response.status_code not in {200, 201}:
-            message = remote.get("error") if isinstance(remote, dict) else None
-            return jsonify({"error": message or "Gestion stagiaires a refusé le préremplissage"}), 502
-        if not isinstance(remote, dict) or not remote.get("url"):
-            return jsonify({"error": "Réponse invalide de Gestion stagiaires (URL temporaire absente)"}), 502
-    except (requests.RequestException, ValueError) as exc:
-        print("Erreur conversion Gestion stagiaires:", exc)
-        return jsonify({"error": "Gestion stagiaires est momentanément indisponible"}), 502
-    old_status = contact.get("statut", "Nouveaux"); contact["statut"] = "Converti"
-    _crm_activity(contact, "conversion", "Dossier d’inscription ouvert dans Gestion stagiaires",
+    old_status = contact.get("statut", "Nouveaux")
+    if old_status == "Converti":
+        return jsonify({"contact": contact})
+    changed_at = _crm_now()
+    contact["statut"] = "Converti"
+    contact["status_changed_at"] = changed_at
+    if not contact.get("converted_at"):
+        contact["converted_at"] = changed_at
+    contact["disqualification_reason"] = ""
+    contact["disqualification_detail"] = ""
+    _crm_activity(contact, "statut", "Statut : Converti",
                   f"Ancien statut : {old_status}")
-    contact["updated_at"] = _crm_now(); save_data(data)
-    return jsonify({"contact": contact, "url": str(remote["url"])})
+    contact["updated_at"] = changed_at
+    save_data(data)
+    return jsonify({"contact": contact})
 
 
 _CRM_REGLEMENTAIRE_CACHE = {}
