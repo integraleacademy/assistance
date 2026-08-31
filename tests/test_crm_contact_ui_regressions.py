@@ -1379,7 +1379,9 @@ assert(contactCompleteness({...ft,financement_perso_possible:'Non'})===100,'Fran
 assert(contactCompleteness({...base,statut_demande_financement_ft:'acceptee',montant_accorde_ft:'980',inscrit_ft:'Oui'})===100,'France Travail history is ignored when the route is explicitly refused');
 const aps={...base,formation:'APS',carte_pro:'Non'};
 assert(contactCompleteness(aps)<100,'APS without a professional card requires CNAPS answers');
-assert(contactCompleteness({...aps,titre_sejour:'Non',titre_sejour_cnaps:'Non concerné',garde_vue:'Non',antecedents:'Non',compte_cnaps:'Non'})===100,'CNAPS answers complete the record');
+assert(contactCompleteness({...aps,titre_sejour:'Non',garde_vue:'Non',antecedents:'Non',compte_cnaps:'Non'})===100,'a non-holder does not need a residence-permit assessment');
+assert(contactCompleteness({...aps,titre_sejour:'Oui',garde_vue:'Non',antecedents:'Non',compte_cnaps:'Non'})<100,'a holder requires a residence-permit assessment');
+assert(contactCompleteness({...aps,titre_sejour:'Oui',titre_sejour_cnaps:'Conforme',garde_vue:'Non',antecedents:'Non',compte_cnaps:'Non'})===100,'the holder assessment completes the record');
 console.log('CRM Pistes completeness: OK');
 """
     completed = subprocess.run(
@@ -1404,6 +1406,16 @@ console.log('CRM Pistes completeness: OK');
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
     assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in application
+
+
+def test_residence_permit_assessment_is_conditionally_active_and_purged():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+
+    assert 'data-show="residence-permit-holder"' in javascript
+    assert "titleHolder=withoutCard&&yes('titre_sejour')" in javascript
+    assert "if(!titleHolder)titleSituation.value=''" in javascript
+    assert "titleSituation.disabled=!titleHolder" in javascript
+    assert "titleSituation.required=titleHolder" in javascript
 
 
 def test_france_travail_details_are_hidden_and_ignored_when_route_is_refused():

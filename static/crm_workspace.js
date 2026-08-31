@@ -47,7 +47,7 @@ function contactCompletenessDetails(contact){
   require('carte_pro','Carte professionnelle');
   if(normalize(contact.carte_pro)==='non'){
    require('titre_sejour','Titre de séjour');
-   require('titre_sejour_cnaps','Situation du titre de séjour');
+   if(isYes(contact.titre_sejour))require('titre_sejour_cnaps','Situation du titre de séjour');
    require('garde_vue','Garde à vue ou prise d’empreintes');
    require('antecedents','Antécédents judiciaires');
    require('compte_cnaps','Compte CNAPS');
