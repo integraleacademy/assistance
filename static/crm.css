@@ -802,3 +802,88 @@ img,svg,video,canvas,iframe{max-width:100%}
 .cnaps-form-send:disabled{cursor:wait;opacity:.7}
 #cnapsFormStatus{color:#4b596d;font-size:12px;font-weight:700}
 @media(max-width:650px){.cnaps-form-action{align-items:stretch}.cnaps-form-send{width:100%}#cnapsFormStatus{width:100%;text-align:center}}
+
+/* Journal d'activités : vue SaaS lisible, filtrée et chronologique. */
+.contact-activity-panel{gap:20px}
+.contact-activity-panel .activity-card{overflow:hidden;border-color:#d9e2ef;border-radius:19px;background:#fff;box-shadow:0 14px 38px #17345f0d}
+.contact-activity-panel .activity-card-head{gap:18px;padding:24px 26px;background:linear-gradient(120deg,#fff 0%,#f6f9ff 72%,#eef3ff 100%)}
+.activity-card-head>div{min-width:0}
+.activity-kicker{display:block;margin-bottom:5px;color:#5271d3;font-size:10px;font-weight:850;letter-spacing:.12em}
+.contact-activity-panel .activity-card-head h2{color:#1b2940;font:800 22px Manrope;letter-spacing:-.02em}
+.contact-activity-panel .activity-card-head small{display:block;margin-top:5px;color:#718096;font-size:13px;line-height:1.45}
+.activity-total{display:inline-flex;flex:none;align-items:center;justify-content:center;min-height:36px;padding:8px 12px;border:1px solid #ccd9f2;border-radius:999px;background:#fff;color:#315dbd;font:800 12px Manrope;box-shadow:0 4px 12px #244d9710}
+.contact-activity-panel .contact-journey-summary{border-top:1px solid #e6ebf3;border-bottom:1px solid #e6ebf3;background:#e8edf5}
+.contact-activity-panel .contact-journey-summary>div{padding:15px 18px;background:#fbfcfe}
+.contact-activity-panel .contact-journey-summary span{color:#748298;font-size:11px;font-weight:700}
+.contact-activity-panel .contact-journey-summary b{margin-top:5px;color:#273952;font:800 13px Manrope}
+.activity-filters{display:flex;gap:8px;overflow-x:auto;padding:14px 20px;border-bottom:1px solid #e5eaf2;background:#fff;scrollbar-width:thin}
+.activity-filter{display:inline-flex;flex:none;align-items:center;gap:7px;min-height:42px;padding:9px 11px;border:1px solid #dce4f0;border-radius:11px;background:#f8faff;color:#52647d;font:750 13px 'DM Sans';cursor:pointer;transition:border-color .16s,background .16s,color .16s,box-shadow .16s,transform .16s}
+.activity-filter .crm-icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8}
+.activity-filter strong{display:grid;min-width:23px;height:23px;place-items:center;padding:0 6px;border-radius:999px;background:#e8edf5;color:#53647c;font:800 11px Manrope}
+.activity-filter:hover{border-color:#b9cae9;background:#f0f5ff;color:#2d5fc5;transform:translateY(-1px)}
+.activity-filter:focus-visible{outline:3px solid #356ae62b;outline-offset:2px}
+.activity-filter.active{border-color:#356ae6;background:#356ae6;color:#fff;box-shadow:0 6px 16px #356ae62b}
+.activity-filter.active strong{background:#ffffff2b;color:#fff}
+.contact-activity-panel .feed{padding:21px 24px 27px;background:#f6f8fc}
+.activity-day-group+.activity-day-group{margin-top:25px}
+.activity-day-heading{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:0 3px;color:#66768e;font:800 12px Manrope}
+.activity-day-heading:after{content:'';height:1px;flex:1;background:#dfe5ee}
+.activity-day-heading strong{order:3;display:grid;min-width:23px;height:23px;place-items:center;border-radius:999px;background:#e5ebf4;color:#5d6d83;font:800 10px Manrope}
+.activity-day-list{display:grid;gap:10px}
+.contact-activity-panel .feed-item{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;margin:0;padding:17px 18px;border:1px solid #dfe5ee;border-radius:14px;background:#fff;box-shadow:0 5px 16px #17203308;transition:border-color .16s,box-shadow .16s,transform .16s}
+.contact-activity-panel .feed-item:hover{border-color:#c4d2e8;box-shadow:0 9px 22px #17345f10;transform:translateY(-1px)}
+.contact-activity-panel .feed-icon{display:grid;width:42px;height:42px;place-items:center;border-radius:12px;background:#edf3ff;color:#356ae6}
+.contact-activity-panel .feed-icon .crm-icon{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8}
+.feed-content{min-width:0}
+.contact-activity-panel .feed-item-head{align-items:flex-start;justify-content:flex-start;gap:12px}
+.feed-title-block{display:flex;min-width:0;flex:1;align-items:center;gap:8px;flex-wrap:wrap}
+.contact-activity-panel .feed-item b{color:#26364d;font-size:14px;line-height:1.45}
+.feed-kind{display:inline-flex;align-items:center;padding:4px 7px;border-radius:999px;background:#edf3ff;color:#315fc3;font-size:10px;font-weight:850;line-height:1;white-space:nowrap}
+.contact-activity-panel .feed-item p{margin:8px 0 0;color:#526178;font-size:13px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.feed-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:9px;color:#8793a5}
+.contact-activity-panel .feed-meta time,.contact-activity-panel .feed-meta span{font-size:11px;line-height:1.4}
+.contact-activity-panel .feed-edited{margin-top:5px;font-size:10px}
+.contact-activity-panel .preview-link{display:inline-flex;margin-top:9px;color:#2f63d2;font-size:12px;font-weight:800;text-decoration:none}
+.contact-activity-panel .preview-link:hover{text-decoration:underline}
+.contact-activity-panel .feed-edit-call{min-height:31px;padding:6px 10px;font-size:11px}
+.contact-activity-panel .feed-more{min-height:40px;margin:20px auto 0;padding:9px 15px;border-color:#c9d6eb;background:#fff;color:#315fc3;font-size:12px;box-shadow:0 4px 12px #17345f0a}
+.activity-empty-state{display:grid;justify-items:center;padding:58px 20px;text-align:center}
+.activity-empty-icon{display:grid;width:52px;height:52px;place-items:center;border-radius:15px;background:#eaf0ff;color:#356ae6}
+.activity-empty-icon .crm-icon{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8}
+.activity-empty-state b{margin-top:13px;color:#2c3d56;font:800 15px Manrope}
+.activity-empty-state p{max-width:430px;margin:6px 0 0;color:#7b8799;font-size:12px;line-height:1.55}
+.contact-activity-panel .activity-sms .feed-icon,.contact-activity-panel .activity-sms .feed-kind{background:#e6f7f1;color:#14785f}
+.contact-activity-panel .activity-email .feed-icon,.contact-activity-panel .activity-email .feed-kind{background:#e9f0ff;color:#2e61c9}
+.contact-activity-panel .activity-rdv .feed-icon,.contact-activity-panel .activity-rdv .feed-kind{background:#f0ebff;color:#7050c6}
+.contact-activity-panel .activity-appel .feed-icon,.contact-activity-panel .activity-appel .feed-kind{background:#fff1dc;color:#9a6412}
+.contact-activity-panel .activity-publication .feed-icon,.contact-activity-panel .activity-publication .feed-kind{background:#eaf6ff;color:#28709d}
+.contact-activity-panel .activity-other .feed-icon,.contact-activity-panel .activity-other .feed-kind{background:#eef1f5;color:#647287}
+.contact-activity-panel .feed-item.callback-activity{border-color:#d7e3f8;background:#fff}
+.contact-activity-panel .feed-item.attention-activity{border-color:#ecd8af;background:#fffdf8}
+.contact-activity-panel .publications-card{overflow:hidden;border-color:#dce3ee;border-radius:18px;box-shadow:0 12px 30px #17345f0b}
+.contact-activity-panel .publications-card .card-head{padding:21px 24px}
+.contact-activity-panel .publications-card .card-head h2{font:800 19px Manrope}
+.contact-activity-panel .publications-card .card-head small{font-size:12px}
+.contact-activity-panel .publication-compose textarea{font-size:14px}
+.contact-activity-panel .publication-author>b,.contact-activity-panel .publication-text{font-size:14px}
+
+@media(max-width:700px){
+ .contact-activity-panel .activity-card-head{align-items:flex-start;padding:20px 16px}
+ .contact-activity-panel .activity-card-head h2{font-size:20px}
+ .contact-activity-panel .activity-card-head small{font-size:12px}
+ .activity-total{width:100%;justify-content:flex-start}
+ .contact-activity-panel .contact-journey-summary>div{padding:13px 14px}
+ .contact-activity-panel .contact-journey-summary span{font-size:10px}
+ .contact-activity-panel .contact-journey-summary b{font-size:12px}
+ .activity-filters{padding:12px 14px}
+ .activity-filter{min-height:40px;font-size:12px}
+ .contact-activity-panel .feed{padding:15px 13px 19px}
+ .contact-activity-panel .feed-item{grid-template-columns:40px minmax(0,1fr);gap:11px;padding:14px}
+ .contact-activity-panel .feed-icon{width:38px;height:38px}
+ .contact-activity-panel .feed-item-head{flex-wrap:wrap}
+ .feed-title-block{width:100%}
+ .contact-activity-panel .feed-item b{font-size:13px}
+ .contact-activity-panel .feed-item p{font-size:12px}
+ .feed-callback-controls{width:100%;justify-content:flex-start;margin-left:0}
+ .contact-activity-panel .publications-card .card-head{padding:18px 16px}
+}
