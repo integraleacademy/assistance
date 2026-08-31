@@ -13920,6 +13920,8 @@ def _crm_prepare_contacts(data):
     automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
 
     for existing in data.get("crm_contacts", []):
+        if _crm_clear_inconsistent_titre_sejour_cnaps(existing):
+            changed = True
         if _crm_migrate_registration_appointment_status(existing):
             changed = True
         if _crm_backfill_information_request_attribution(existing):
@@ -13977,6 +13979,16 @@ def _crm_prepare_contacts(data):
             changed = True
 
     return changed, wedof_funding_statuses
+
+
+def _crm_clear_inconsistent_titre_sejour_cnaps(contact):
+    """Remove a residence-permit assessment from non-holders only."""
+    if _yes(contact.get("titre_sejour")):
+        return False
+    if not str(contact.get("titre_sejour_cnaps") or "").strip():
+        return False
+    contact["titre_sejour_cnaps"] = ""
+    return True
 
 
 _CRM_READ_MODEL_LOCK = threading.RLock()
@@ -15012,6 +15024,20 @@ def crm_contact(contact_id):
 def _crm_patch_contact_locked(data, contact, contact_id):
     """Apply one contact PATCH while the caller holds the CRM write lock."""
     payload = request.get_json(silent=True) or {}
+    effective_titre_sejour = payload.get(
+        "titre_sejour", contact.get("titre_sejour")
+    )
+    if not _yes(effective_titre_sejour):
+        if str(payload.get("titre_sejour_cnaps") or "").strip():
+            return jsonify({
+                "error": (
+                    "La situation du titre de séjour ne peut être renseignée "
+                    "que si la personne est titulaire d’un titre de séjour."
+                )
+            }), 400
+        # A partial PATCH changing the holder answer must also purge a legacy
+        # assessment omitted by the disabled browser control.
+        payload["titre_sejour_cnaps"] = ""
     # La provenance d'une piste WEDOF reste Mon Compte Formation lorsque
     # l'équipe corrige manuellement la formation ou un autre champ.
     if contact.get("source") == "wedof_cpf":

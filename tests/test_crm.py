@@ -3625,6 +3625,72 @@ def test_crm_persists_reglementaire_answers(tmp_path, monkeypatch):
     assert all(response.get_json()[key] == value for key, value in answers.items())
 
 
+def test_crm_enforces_conditional_residence_permit_assessment(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    contact = test_client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "formation": "APS"},
+    ).get_json()
+    contact_id = contact["id"]
+
+    accepted = test_client.patch(f"/api/crm/contacts/{contact_id}", json={
+        "titre_sejour": "OUI", "titre_sejour_cnaps": "A_VERIFIER",
+    })
+    assert accepted.status_code == 200
+    assert accepted.get_json()["titre_sejour_cnaps"] == "A_VERIFIER"
+
+    rejected = test_client.patch(f"/api/crm/contacts/{contact_id}", json={
+        "titre_sejour": "NON", "titre_sejour_cnaps": "NON_CONFORME",
+    })
+    assert rejected.status_code == 400
+    assert "titulaire d’un titre de séjour" in rejected.get_json()["error"]
+    assert test_client.get(
+        f"/api/crm/contacts/{contact_id}"
+    ).get_json()["titre_sejour_cnaps"] == "A_VERIFIER"
+
+    cleared = test_client.patch(
+        f"/api/crm/contacts/{contact_id}", json={"titre_sejour": "NON"}
+    )
+    assert cleared.status_code == 200
+    assert cleared.get_json()["titre_sejour_cnaps"] == ""
+
+
+def test_crm_light_migration_clears_only_inconsistent_residence_permit_data():
+    holder = {"titre_sejour": "Oui", "titre_sejour_cnaps": "CONFORME"}
+    non_holder = {"titre_sejour": "NON", "titre_sejour_cnaps": "A_VERIFIER"}
+
+    assert application._crm_clear_inconsistent_titre_sejour_cnaps(holder) is False
+    assert holder["titre_sejour_cnaps"] == "CONFORME"
+    assert application._crm_clear_inconsistent_titre_sejour_cnaps(non_holder) is True
+    assert non_holder["titre_sejour_cnaps"] == ""
+
+
+def test_residence_permit_cleanup_script_is_dry_run_then_atomic_write(tmp_path):
+    path = tmp_path / "crm.json"
+    initial = {
+        "crm_contacts": [
+            {"id": "holder", "titre_sejour": "OUI", "titre_sejour_cnaps": "CONFORME"},
+            {"id": "non-holder", "titre_sejour": "NON", "titre_sejour_cnaps": "A_VERIFIER"},
+        ]
+    }
+    path.write_text(json.dumps(initial), encoding="utf-8")
+    command = [
+        "python", "scripts/cleanup_crm_titre_sejour_cnaps.py", str(path),
+    ]
+
+    dry_run = subprocess.run(command, check=True, capture_output=True, text=True)
+    assert "simulation : 1 contact" in dry_run.stdout
+    assert json.loads(path.read_text(encoding="utf-8")) == initial
+
+    applied = subprocess.run(
+        [*command, "--write"], check=True, capture_output=True, text=True
+    )
+    cleaned = json.loads(path.read_text(encoding="utf-8"))
+    assert "appliqué : 1 contact" in applied.stdout
+    assert cleaned["crm_contacts"][0]["titre_sejour_cnaps"] == "CONFORME"
+    assert cleaned["crm_contacts"][1]["titre_sejour_cnaps"] == ""
+
+
 def test_crm_mentions_are_private_and_replyable(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post('/api/crm/contacts', json={'prenom': 'Lina'}).get_json()
