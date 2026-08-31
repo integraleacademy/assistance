@@ -118,6 +118,7 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
 
     canceled_payload = calendly_payload(status="canceled")
     canceled_payload["cancellation"] = {"reason": "Indisponible"}
+    canceled_payload["updated_at"] = "2099-08-04T23:30:00Z"
     canceled = signed_webhook(client, monkeypatch, "invitee.canceled", canceled_payload)
 
     assert canceled.status_code == 200
@@ -129,7 +130,14 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     updated_contact = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert updated_contact["activities"][0]["title"] == "Rendez-vous Calendly annulé"
     assert updated_contact["statut"] == "A relancer"
-    assert updated_contact["relance_date"] == "2099-09-03"
+    assert updated_contact["relance_date"] == "2099-08-05"
+    assert updated_contact["relances"][0]["source"] == "calendly_cancellation"
+    assert updated_contact["relances"][0]["motif"] == "Suite annulation du rendez-vous"
+    assert any(
+        relance["scheduled_date"] == "2099-09-03"
+        and relance["status"] == "reprogrammed"
+        for relance in updated_contact["relances"]
+    )
     assert any(
         activity["title"] == "Statut : A relancer"
         and activity["detail"] == "Ancien statut : RDV programmé"
@@ -137,7 +145,7 @@ def test_webhook_links_all_appointments_to_contact_and_updates_cancellation(tmp_
     )
 
 
-def test_upcoming_appointment_replaces_and_cancels_a_scheduled_follow_up(tmp_path, monkeypatch):
+def test_cancellation_schedules_same_day_follow_up_then_new_booking_replaces_it(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post(
         "/api/crm/contacts",
@@ -168,6 +176,7 @@ def test_upcoming_appointment_replaces_and_cancels_a_scheduled_follow_up(tmp_pat
     canceled_payload["scheduled_event"]["start_time"] = "2099-08-12T08:00:00Z"
     canceled_payload["scheduled_event"]["end_time"] = "2099-08-12T08:30:00Z"
     canceled_payload["cancellation"] = {"reason": "Indisponible"}
+    canceled_payload["updated_at"] = "2099-08-05T08:15:00Z"
     canceled = signed_webhook(
         client,
         monkeypatch,
@@ -179,9 +188,45 @@ def test_upcoming_appointment_replaces_and_cancels_a_scheduled_follow_up(tmp_pat
     after_cancellation = client.get(
         f"/api/crm/contacts/{contact['id']}"
     ).get_json()
-    assert after_cancellation["statut"] == "En cours"
-    assert after_cancellation["relance_date"] == ""
-    assert after_cancellation["relances"] == []
+    assert after_cancellation["statut"] == "A relancer"
+    assert after_cancellation["relance_date"] == "2099-08-05"
+    assert len(after_cancellation["relances"]) == 1
+    assert after_cancellation["relances"][0]["status"] == "scheduled"
+    assert after_cancellation["relances"][0]["source"] == "calendly_cancellation"
+    assert any(
+        activity["title"] == "Statut : A relancer"
+        and activity["detail"] == "Ancien statut : RDV programmé"
+        for activity in after_cancellation["activities"]
+    )
+
+    new_payload = calendly_payload()
+    new_payload["uri"] = (
+        "https://api.calendly.com/scheduled_events/EVENT2/invitees/INVITEE2"
+    )
+    new_payload["event"] = "https://api.calendly.com/scheduled_events/EVENT2"
+    new_payload["scheduled_event"]["uri"] = new_payload["event"]
+    new_payload["scheduled_event"]["start_time"] = "2099-08-14T08:00:00Z"
+    new_payload["scheduled_event"]["end_time"] = "2099-08-14T08:30:00Z"
+
+    rebooked = signed_webhook(
+        client,
+        monkeypatch,
+        "invitee.created",
+        new_payload,
+    )
+
+    assert rebooked.status_code == 200
+    after_rebooking = client.get(
+        f"/api/crm/contacts/{contact['id']}"
+    ).get_json()
+    assert after_rebooking["statut"] == "RDV programmé"
+    assert after_rebooking["relance_date"] == ""
+    assert after_rebooking["relances"] == []
+    assert any(
+        activity["title"] == "Statut : RDV programmé"
+        and activity["detail"] == "Ancien statut : A relancer"
+        for activity in after_rebooking["activities"]
+    )
 
 
 def test_full_sync_repairs_follow_up_created_before_cached_booking(tmp_path, monkeypatch):
