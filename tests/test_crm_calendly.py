@@ -1145,6 +1145,19 @@ assert.equal(calendarContactMetrics({}), '');
     assert ".calendar-contact-metric strong{" in crm_css
 
 
+def test_calendar_appointments_open_linked_contacts_in_new_tabs():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+
+    bind_rows = crm_js[
+        crm_js.index("function bindRows()"):
+        crm_js.index("function plannedRelances")
+    ]
+
+    assert "C.section==='calendrier'&&row.closest('#calendarContent')" in bind_rows
+    assert "row.dataset.openNewTab?openContactInNewTab(row.dataset.id)" in bind_rows
+
+
 def test_calendly_appointment_stays_upcoming_for_two_hours_after_start():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
