@@ -1732,6 +1732,12 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
         application.app.root_path + "/static/crm.css", encoding="utf-8"
     ).read()
     assert "'Secrétariat','Formulaire abandonné','Ajout manuel','Autre'" in crm_js
+    tracking = crm_js.split('id="trackingCard"', 1)[1].split(
+        'id="contactActivityPanel"', 1
+    )[0]
+    assert '<label>Commentaires</label>' not in tracking
+    assert 'name="commentaires"' not in tracking
+    assert 'id="rephraseComments"' not in tracking
 
 
 def test_tracking_card_precedes_the_activity_tab_and_publications_stay_inside_it():
