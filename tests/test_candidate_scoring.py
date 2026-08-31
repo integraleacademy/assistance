@@ -312,6 +312,25 @@ def test_france_travail_actual_status_changes_progress_and_readiness():
     assert accepted["operational_status"] == "ready"
 
 
+def test_france_travail_status_and_amount_are_ignored_when_route_is_refused():
+    base = {
+        "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "NON",
+        "financement_perso_possible": "NON",
+    }
+    without_history = calculate_candidate_integration_score(base)
+    with_stale_history = calculate_candidate_integration_score({
+        **base,
+        "inscrit_ft": "OUI",
+        "statut_demande_financement_ft": "acceptee",
+        "montant_accorde_ft": "980",
+    })
+
+    assert with_stale_history["financial_score"] == without_history["financial_score"]
+    assert with_stale_history["funding_solution_status"] == "unsecured"
+    assert with_stale_history["france_travail_request_status"] == "aucune_demande"
+    assert with_stale_history["france_travail_awarded_amount_eur"] is None
+
+
 def test_refused_france_travail_distinguishes_no_fallback_capacity_and_exact_payment():
     base = financial_contact(
         cpf_amount="2000", financement_ft="OUI",

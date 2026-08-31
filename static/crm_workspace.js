@@ -33,9 +33,9 @@ function contactCompletenessDetails(contact){
  require('financement_ft','Projet de financement France Travail');
  const rawFtStatus=normalize(contact.statut_demande_financement_ft).replace(/\s+/g,'_');
  const ftStatus=rawFtStatus==='non_demandee'?'aucune_demande':rawFtStatus;
- const ftRelevant=isYes(contact.financement_ft)||Boolean(ftStatus&&ftStatus!=='aucune_demande');
+ const ftRelevant=isYes(contact.financement_ft);
  if(ftRelevant)require('statut_demande_financement_ft','Statut de la demande France Travail');
- if(ftStatus==='acceptee')require('montant_accorde_ft','Montant accordé par France Travail');
+ if(ftRelevant&&ftStatus==='acceptee')require('montant_accorde_ft','Montant accordé par France Travail');
  if(isYes(contact.financement_ft)&&(!ftStatus||['aucune_demande','a_preparer'].includes(ftStatus)))require('inscrit_ft','Inscription France Travail');
  const unsecured=contact.integration_score?.unsecured_amount_eur;
  const personalRequired=unsecured!=null
