@@ -1483,7 +1483,35 @@ def test_route_access_control_and_all_error_responses_hide_secret(tmp_path, monk
 def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
-    contact = create_contact(client, email="lina@example.test")
+    deliveries = {"sms": [], "email": []}
+    monkeypatch.setattr(
+        application,
+        "send_sms",
+        lambda phone, body: deliveries["sms"].append((phone, body)) or True,
+    )
+    monkeypatch.setattr(
+        application,
+        "send_email_html",
+        lambda mail, subject, plain, html: deliveries["email"].append(
+            (mail, subject, plain, html)
+        ) or True,
+    )
+    contact = create_contact(
+        client,
+        email="lina@example.test",
+        phone="+33612345678",
+    )
+    client.post("/api/crm/templates", json={
+        "type": "sms",
+        "nom": "FT refusé",
+        "contenu": "Bonjour {{ prenom }}, votre financement FT est refusé.",
+    })
+    client.post("/api/crm/templates", json={
+        "type": "email",
+        "nom": "FT refusé",
+        "sujet": "Décision France Travail — {{ prenom }}",
+        "contenu": "<p>Bonjour {{ prenom }}, votre financement FT est refusé.</p>",
+    })
     ft_folder = folder(
         "ft-notification", "lina@example.test",
         first_name="Lina", last_name="Martin",
@@ -1536,6 +1564,15 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
         item for item in refused_contact["activities"]
         if item.get("title") == "Relance France Travail planifiée"
     ]) == 1
+    assert deliveries["sms"] == [(
+        "+33612345678",
+        "Bonjour Lina, votre financement FT est refusé.",
+    )]
+    assert len(deliveries["email"]) == 1
+    assert deliveries["email"][0][0:2] == (
+        "lina@example.test",
+        "Décision France Travail — Lina",
+    )
 
     own_alerts = [
         item for item in client.get("/api/crm/notifications").get_json()
@@ -1564,6 +1601,7 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
         item for item in replayed_contact["activities"]
         if item.get("title") == "Relance France Travail planifiée"
     ]) == 1
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
 
     ft_folder["state"] = "waitingAcceptation"
     application._wedof_store_page(
@@ -1590,6 +1628,7 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
         item for item in final_contact["activities"]
         if item.get("title") == "Relance France Travail planifiée"
     ]) == 1
+    assert len(deliveries["sms"]) == len(deliveries["email"]) == 2
 
 
 def test_ft_refusal_notification_ui_is_system_only():
