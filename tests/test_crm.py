@@ -3533,77 +3533,65 @@ def test_crm_email_has_branding_and_legal_footer(tmp_path, monkeypatch):
     assert "Votre avenir, notre engagement" not in captured["html"]
 
 
-def test_crm_conversion_prefills_remote_registration_before_changing_status(tmp_path, monkeypatch):
+def test_crm_conversion_only_changes_crm_status(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    contact = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"}).get_json()
+    contact = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
     c.patch(f"/api/crm/contacts/{contact['id']}", json={
-        "mail": "lina@example.com", "telephone": "0600000000", "lieu": "Paris",
-        "dates_formation": "Du 1 au 5 septembre 2026", "desp_type": "Initial",
-        "commentaires": "Financement validé.",
+        "statut": "Disqualifié", "disqualification_reason": "Hors périmètre",
+        "disqualification_detail": "Ancienne décision",
     })
-    monkeypatch.setenv("GESTION_STAGIAIRES_API_URL", "https://gestion.example/api/preremplissage")
-    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", "secret")
-    captured = {}
-
-    def fake_post(url, **kwargs):
-        captured.update(url=url, **kwargs)
-        return SimpleNamespace(status_code=201, content=b'{}', json=lambda: {
-            "url": "https://gestion.example/inscriptions/nouveau?jeton=temporary",
-        })
-
-    monkeypatch.setattr(application.requests, "post", fake_post)
+    monkeypatch.setattr(application.requests, "post", lambda *args, **kwargs: pytest.fail(
+        "La conversion CRM ne doit appeler aucun service externe"
+    ))
     response = c.post(f"/api/crm/contacts/{contact['id']}/convertir")
 
     assert response.status_code == 200
     result = response.get_json()
     converted = result["contact"]
     assert converted["statut"] == "Converti"
-    assert result["url"] == "https://gestion.example/inscriptions/nouveau?jeton=temporary"
-    assert converted["activities"][0]["kind"] == "conversion"
-    assert converted["activities"][0]["title"] == "Dossier d’inscription ouvert dans Gestion stagiaires"
-    assert "gestion_stagiaire_id" not in converted
-    assert captured["json"]["email"] == "lina@example.com"
-    assert captured["json"] == {
-        "source": "integrale-connect-crm", "crm_contact_id": contact["id"],
-        "prenom": "Lina", "nom": "MARTIN", "email": "lina@example.com",
-        "telephone": "0600000000", "formation": "APS", "parcours": "Initial",
-        "centre": "Paris", "session": "Du 1 au 5 septembre 2026",
-        "commentaires": "Financement validé.",
-    }
-    assert captured["headers"]["Authorization"] == "Bearer secret"
-    assert "Idempotency-Key" not in captured["headers"]
+    assert "url" not in result
+    assert converted["status_changed_at"]
+    assert converted["converted_at"] == converted["status_changed_at"]
+    assert converted["updated_at"] == converted["status_changed_at"]
+    assert converted["disqualification_reason"] == ""
+    assert converted["disqualification_detail"] == ""
+    assert converted["activities"][0]["kind"] == "statut"
+    assert converted["activities"][0]["title"] == "Statut : Converti"
+    assert converted["activities"][0]["detail"] == "Ancien statut : Disqualifié"
 
 
-def test_crm_conversion_does_not_change_status_when_remote_rejects(tmp_path, monkeypatch):
+def test_crm_conversion_is_idempotent(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     contact = c.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
-    c.patch(f"/api/crm/contacts/{contact['id']}", json={
-        "mail": "lina@example.com", "lieu": "Paris", "dates_formation": "Septembre 2026",
-    })
-    monkeypatch.setenv("GESTION_STAGIAIRES_API_URL", "https://gestion.example/api/preremplissage")
-    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", "secret")
-    monkeypatch.setattr(application.requests, "post", lambda *args, **kwargs: SimpleNamespace(
-        status_code=422, content=b'{}', json=lambda: {"error": "Session inconnue"}))
+    first = c.post(f"/api/crm/contacts/{contact['id']}/convertir").get_json()["contact"]
+    second = c.post(f"/api/crm/contacts/{contact['id']}/convertir").get_json()["contact"]
 
-    response = c.post(f"/api/crm/contacts/{contact['id']}/convertir")
-
-    assert response.status_code == 502
-    assert response.get_json()["error"] == "Session inconnue"
-    assert c.get(f"/api/crm/contacts/{contact['id']}").get_json()["statut"] == "Nouveaux"
+    assert second["statut"] == "Converti"
+    assert second["status_changed_at"] == first["status_changed_at"]
+    assert second["converted_at"] == first["converted_at"]
+    conversion_activities = [
+        activity for activity in second["activities"]
+        if activity["title"] == "Statut : Converti"
+    ]
+    assert len(conversion_activities) == 1
 
 
-def test_crm_conversion_javascript_opens_and_closes_registration_tab():
+def test_crm_conversion_javascript_stays_in_the_crm():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    assert "function conversionModal" not in crm_js
-    assert "Inscrire dans Gestion stagiaires" not in crm_js
-    open_tab = "const registrationTab=window.open('','_blank')"
-    backend_call = "await api(`/api/crm/contacts/${c.id}/convertir`"
-    assert open_tab in crm_js
-    assert crm_js.index(open_tab) < crm_js.index(backend_call)
-    assert "registrationTab.location.href=result.url" in crm_js
-    assert "catch(e){registrationTab.close();toast(e.message,true)}" in crm_js
+    conversion = crm_js[
+        crm_js.index("async function convertContact(c)"):
+        crm_js.index("function formatVoiceDictation(")
+    ]
+    assert "window.open" not in conversion
+    assert "result.url" not in conversion
+    assert "Gestion stagiaires" not in conversion
+    assert "await api(`/api/crm/contacts/${c.id}/convertir`,{method:'POST'})" in conversion
+    assert "mergeContactInStore(c.id,result.contact)" in conversion
+    assert "await showContact(c.id)" in conversion
+    assert "toast('Piste convertie')" in conversion
+    assert "openRegistrationDraft" not in crm_js
 
 
 def test_crm_persists_reglementaire_answers(tmp_path, monkeypatch):
