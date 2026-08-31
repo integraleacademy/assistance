@@ -78,4 +78,4 @@ for(const [value,expected] of cases){
     assert ".contact-coordinates .crm-icon{flex:none;width:17px;height:17px}" in stylesheet
     assert "overflow-wrap:anywhere" in stylesheet
     assert "text-overflow:ellipsis;white-space:nowrap" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260831-activity-journal-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in backend
