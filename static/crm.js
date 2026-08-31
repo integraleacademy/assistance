@@ -76,10 +76,11 @@ const contactPipelineStatuses=c=>{
  if(fundingStatus==='refusee')statuses.add('Financement FT refusé');
  return [...statuses];
 };
-const contactHasPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status);
+const contactHasAnyPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status);
+const contactHasPipelineStatus=(c,status)=>!['Converti','Disqualifié'].includes(c.statut)&&contactHasAnyPipelineStatus(c,status);
 const manualNextActionValue=c=>String(c?.prochaine_action_manuelle||'').trim();
 const nextProgrammedAppointmentDate=c=>{
- if(!contactHasPipelineStatus(c,'RDV programmé'))return'';
+ if(!contactHasAnyPipelineStatus(c,'RDV programmé'))return'';
  return window.CRMAppointmentState.dateLabel(c.id,crmAppointments);
 };
 function activeRelanceMotif(c){
