@@ -1359,6 +1359,7 @@ assert(contactCompleteness({...cpf,cpf_montant:'1200'})===100,'CPF amount comple
 const ft={...base,financement_ft:'Oui',financement_perso_possible:''};
 assert(contactCompleteness(ft)<100,'France Travail personal capacity is conditional');
 assert(contactCompleteness({...ft,financement_perso_possible:'Non'})===100,'France Travail personal capacity completes the record');
+assert(contactCompleteness({...base,statut_demande_financement_ft:'acceptee',montant_accorde_ft:'980',inscrit_ft:'Oui'})===100,'France Travail history is ignored when the route is explicitly refused');
 const aps={...base,formation:'APS',carte_pro:'Non'};
 assert(contactCompleteness(aps)<100,'APS without a professional card requires CNAPS answers');
 assert(contactCompleteness({...aps,titre_sejour:'Non',titre_sejour_cnaps:'Non concerné',garde_vue:'Non',antecedents:'Non',compte_cnaps:'Non'})===100,'CNAPS answers complete the record');
@@ -1383,10 +1384,22 @@ console.log('CRM Pistes completeness: OK');
     assert "showCompleteness:isLeads" in javascript
     assert "showCompleteness:type==='pistes'" in javascript
     assert "CRMWorkspace={listPage" in workspace
-    assert "contactCompleteness,contactCompletenessDetails" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
     assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in application
+
+
+def test_france_travail_details_are_hidden_and_ignored_when_route_is_refused():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    workspace = (Path(__file__).parents[1] / "static" / "crm_workspace.js").read_text(encoding="utf-8")
+
+    assert "ftRelevant=yes('financement_ft')" in javascript
+    assert "ftAccepted=ftRelevant&&ftStatus==='acceptee'" in javascript
+    assert "ftSelected=c.financement_ft==='OUI'" in javascript
+    assert "String(c.financement_ft||'').trim().toUpperCase()==='OUI'?" in javascript
+    assert "const ftRelevant=isYes(contact.financement_ft);" in workspace
+    assert "contactCompleteness,contactCompletenessDetails" in workspace
+
 
 def test_pipeline_relance_date_distinguishes_overdue_scheduled_and_missing():
     javascript = CRM_JS.read_text(encoding="utf-8")
