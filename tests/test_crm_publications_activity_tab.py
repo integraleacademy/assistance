@@ -77,4 +77,4 @@ def test_publications_are_integrated_into_the_activity_journal_tab():
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
     assert ".activity-publications-panel[hidden]{display:none!important}" in stylesheet
     assert ".publication-compose-actions .publication-voice-button" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260901-contact-sheet-rules-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260901-cnaps-card-validity-1"' in backend

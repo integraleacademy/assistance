@@ -7410,7 +7410,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260901-contact-sheet-rules-1"
+CRM_ASSET_VERSION = "20260901-cnaps-card-validity-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -15163,6 +15163,56 @@ def crm_contact(contact_id):
             save_data(data)
             return "", 204
         return _crm_patch_contact_locked(data, contact, contact_id)
+
+
+@app.route(
+    "/api/crm/contacts/<contact_id>/cnaps-card-validity",
+    methods=["POST"],
+)
+@login_required
+def crm_contact_cnaps_card_validity(contact_id):
+    """Vérifie un NUB dans l'annuaire public CNAPS à la demande."""
+    payload = request.get_json(silent=True) or {}
+    cnaps_nub = re.sub(r"\s+", "", str(payload.get("nub") or ""))
+    if not re.fullmatch(r"\d{7}", cnaps_nub):
+        return jsonify({
+            "error": "Le NUB doit comporter exactement 7 chiffres."
+        }), 400
+
+    # Le NUB saisi est conservé avant l'appel distant, même si l'annuaire est
+    # momentanément indisponible. Le verrou n'est jamais gardé pendant le
+    # réseau afin de ne pas bloquer les autres sauvegardes CRM.
+    with _CRM_RECONCILIATION_LOCK:
+        data = load_data()
+        contact = _crm_contact(data, contact_id)
+        if not contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        last_name = " ".join(str(contact.get("nom") or "").strip().split())
+        if not last_name:
+            return jsonify({
+                "error": "Renseignez le nom de la personne avant la vérification CNAPS."
+            }), 422
+        if str(contact.get("cnaps_nub") or "") != cnaps_nub:
+            contact["cnaps_nub"] = cnaps_nub
+            contact["updated_at"] = _crm_now()
+            save_data(data)
+
+    from crm_cnaps_tracking import fetch_cnaps_card_validity
+
+    result = fetch_cnaps_card_validity(last_name, cnaps_nub)
+    if result.get("check_status") != "success":
+        app.logger.warning(
+            "Vérification de carte CNAPS indisponible (%s)",
+            result.get("http_status") or "network",
+        )
+        return jsonify({
+            "error": (
+                "La vérification CNAPS est momentanément indisponible. "
+                "Réessayez dans quelques instants."
+            ),
+            "reason": "cnaps_unavailable",
+        }), 502
+    return jsonify(result)
 
 
 def _crm_patch_contact_locked(data, contact, contact_id):

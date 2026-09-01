@@ -190,7 +190,8 @@ def test_contact_sheet_frontend_contract_for_requested_rules():
     assert 'data-show="with-card"' in javascript
     assert 'class="cnaps-panel conditional" data-show="without-card"' in javascript
     assert "needsCnapsTracking" in javascript
-    assert "espace-consultation.cnaps.interieur.gouv.fr" in javascript
+    assert "/cnaps-card-validity" in javascript
+    assert "CNAPS_CARD_LOOKUP_URL" not in javascript
     assert "Résumé IA ·" not in javascript
     assert "['RDV',counts.appointments]" in javascript
     assert "['RDV total'" not in javascript
@@ -239,4 +240,3 @@ assert.equal(result.past.some(item=>item.id==='today'),true);
 
     assert completed.returncode == 0, completed.stderr
     assert "past.filter(a=>!spotlightIds.has(a.id))" in javascript
-
