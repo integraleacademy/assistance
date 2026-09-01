@@ -420,6 +420,7 @@ def test_cnaps_credentials_can_be_generated_autofilled_and_copied():
     ]
     node_script = helpers + r"""
 const cases=[
+ [{nom:'Durand',cnaps_birth_year:'1995'},'Durand1995@'],
  [{nom:'Vaillant',date_naissance:'1993-05-04'},'Vaillant1993@'],
  [{nom:'ÉLODIE-DUPONT',meta_answers:[{question:'Date de naissance',answer:'01/07/1988'}]},'Elodiedupont1988@'],
  [{nom:'Martin',birth_date:'2099-01-01'},''],
@@ -437,10 +438,14 @@ console.log('CRM CNAPS credentials: OK');
 
     assert "CRM CNAPS credentials: OK" in completed.stdout
     assert 'id="cnapsUsernameCopy"' in javascript
+    assert 'label for="cnapsBirthYear">Année de naissance</label>' in javascript
+    assert 'name="cnaps_birth_year"' in javascript
+    assert "cnapsUsernameField?.insertAdjacentHTML('afterend'" in javascript
     assert 'id="cnapsPasswordGenerate"' in javascript
     assert 'id="cnapsPasswordCopy"' in javascript
     assert "await copyContactCoordinate(input.value)" in javascript
     assert "cnapsPassword.dispatchEvent(new Event('input',{bubbles:true}))" in javascript
+    assert "cnaps_birth_year:cnapsBirthYearInput?.value||''" in javascript
     assert "form.compte_cnaps?.value==='OUI'" in javascript
     assert "!cnapsUsername.value.trim()&&form.mail.value.trim()" in javascript
     assert "form.addEventListener('input',autofillCnapsUsername)" in javascript

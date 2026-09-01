@@ -172,7 +172,8 @@ def _crm_create_contact_from_vae_simulation(data, nom, prenom, mail, telephone,
         "cpf": "", "cpf_montant": "", "carte_pro": "",
         "antecedents": "", "garde_vue": "", "titre_sejour": "",
         "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_username": "",
-        "cnaps_password": "", "integration_dracar": "", "identite_creation": "",
+        "cnaps_birth_year": "", "cnaps_password": "", "integration_dracar": "",
+        "identite_creation": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
         "montant_accorde_ft": "", "financement_perso_possible": "",
         "refus_ft_perso": "", "reste_a_charge_perso": "", "inscrit_ft": "",
@@ -9569,6 +9570,7 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     response.setdefault("reste_a_charge_perso", "")
     response.setdefault("cpf_palier", "")
     response.setdefault("montant_accorde_ft", "")
+    response.setdefault("cnaps_birth_year", "")
     if not response.get("financement_perso_possible"):
         response["financement_perso_possible"] = str(
             contact.get("refus_ft_perso") or ""
@@ -11822,7 +11824,7 @@ def _wedof_new_crm_contact(data, payload, stable_id):
         "cpf": "OUI", "cpf_montant": "", "carte_pro": "",
         "antecedents": "", "garde_vue": "", "titre_sejour": "",
         "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_username": "",
-        "cnaps_password": "", "integration_dracar": "",
+        "cnaps_birth_year": "", "cnaps_password": "", "integration_dracar": "",
         "desp_type": str(payload.get("desp_type") or "").strip(),
         "identite_creation": "", "identite_ok": "", "financement_ft": "",
         "statut_demande_financement_ft": "", "montant_accorde_ft": "",
@@ -14317,7 +14319,8 @@ def _crm_create_contact_locked():
         "formation": str(payload.get("formation", "APS")), "lieu": str(payload.get("lieu") or "Paris"),
         "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
         "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
-        "cnaps_username": "", "cnaps_password": "", "integration_dracar": "",
+        "cnaps_username": "", "cnaps_birth_year": "", "cnaps_password": "",
+        "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
         "cpf_palier": "",
         "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
@@ -15067,7 +15070,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         payload.get("relance_motif") if "relance_motif" in payload else None
     )
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
-               "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_password",
+               "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_birth_year", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "statut_demande_financement_ft", "montant_accorde_ft",
                "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
@@ -15107,6 +15110,20 @@ def _crm_patch_contact_locked(data, contact, contact_id):
             }), 400
     if "cpf_palier" in payload:
         payload["cpf_palier"] = str(payload.get("cpf_palier") or "").strip()[:120]
+    if "cnaps_birth_year" in payload:
+        birth_year = str(payload.get("cnaps_birth_year") or "").strip()
+        current_year = datetime.date.today().year
+        if birth_year and (
+                not re.fullmatch(r"\d{1,4}", birth_year)
+                or (len(birth_year) == 4
+                    and not 1900 <= int(birth_year) <= current_year)):
+            return jsonify({
+                "error": (
+                    "L’année de naissance doit comporter 4 chiffres et ne "
+                    "peut pas être dans le futur."
+                )
+            }), 400
+        payload["cnaps_birth_year"] = birth_year
     for money_field in ("prix_vente", "cout_estime"):
         if money_field in payload:
             raw_money = str(payload.get(money_field) or "").strip().replace(" ", "").replace(",", ".")
