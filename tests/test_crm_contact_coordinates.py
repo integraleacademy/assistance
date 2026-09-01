@@ -35,6 +35,17 @@ for(const [value,expected] of cases){
  const actual=formatContactPhone(value);
  if(actual!==expected)throw new Error(value+' -> '+actual+' (expected '+expected+')');
 }
+const compactCases=[
+ ['06 65 24 52 71','0665245271'],
+ ['+33 6 65 24 52 71','+33665245271'],
+ ['0033 6 65 24 52 71','0033665245271'],
+ ['poste 123','poste 123'],
+ ['','']
+];
+for(const [value,expected] of compactCases){
+ const actual=compactContactPhone(value);
+ if(actual!==expected)throw new Error(value+' -> '+actual+' (expected '+expected+')');
+}
 (async()=>{
  let modernCopied='';
  Object.defineProperty(globalThis,'navigator',{value:{clipboard:{writeText:async value=>{modernCopied=value}}},configurable:true});
@@ -65,13 +76,18 @@ for(const [value,expected] of cases){
     assert "input('nom','Nom','text'" in javascript
     assert "coordinate('telephone','Téléphone','tel'" in javascript
     assert "coordinate('mail','E-mail','email'" in javascript
+    assert "formatContactPhone(c.telephone)" in javascript
+    assert "contact-header-coordinate-${name}" in javascript
     assert 'data-copy-field="${name}"' in javascript
     assert "document.querySelectorAll('[data-copy-contact],[data-copy-field]')" in javascript
     assert "button.closest('label')?.querySelector('input')?.value" in javascript
     assert "Numéro de téléphone copié" in javascript
     assert "Adresse e-mail copiée" in javascript
     assert "headerContactEditor.oninput=handleContactInput" in javascript
+    assert "headerPhoneInput.addEventListener('blur'" in javascript
+    assert "contactFormPayload(form)" in javascript
     assert "form.prenom.value=c.prenom" in javascript
+    assert "form.telephone.value=formatContactPhone(c.telephone)" in javascript
     assert 'class="form-section section-user"' not in javascript
     assert "navigator.clipboard.writeText(text)" in javascript
     assert "document.execCommand('copy')" in javascript
@@ -80,5 +96,7 @@ for(const [value,expected] of cases){
     assert ".contact-header-editor input{" in stylesheet
     assert ".contact-header-coordinate-control{display:flex" in stylesheet
     assert ".contact-header-coordinate-control .contact-copy{" in stylesheet
+    assert ".contact-header-coordinate-telephone input{" in stylesheet
+    assert "font:900 16px Manrope" in stylesheet
     assert template.count("copy_coordinates_version='20260825-copy-contact-coordinates-1'") == 2
     assert 'CRM_ASSET_VERSION = "20260901-cnaps-card-validity-1"' in backend
