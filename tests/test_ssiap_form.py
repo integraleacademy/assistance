@@ -49,8 +49,9 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         self.assertLess(location_step, puget_location)
         self.assertLess(puget_location, dates_step)
         self.assertLess(financing_step, question)
-        self.assertIn("980 € TTC", page)
-        self.assertIn("1 200 € TTC", page)
+        self.assertIn("1 230 € TTC", page)
+        self.assertNotIn("980 € TTC", page)
+        self.assertNotIn("1 200 € TTC", page)
         self.assertIn("Du 12 au 27 octobre 2026 - examen le 28 octobre 2026", page)
         self.assertIn("['VTC', 'APS', 'SSIAP', 'DESP_VAE']", page)
 
@@ -97,7 +98,7 @@ class SsiapInformationFormTestCase(unittest.TestCase):
             page,
         )
 
-    def test_ssiap_quote_uses_base_price_with_valid_first_aid_certificate(self):
+    def test_ssiap_quote_uses_requested_price_with_valid_first_aid_certificate(self):
         context = application.build_devis_context(
             "SSIAP",
             application.PLAN_FORMATIONS["SSIAP"],
@@ -105,11 +106,11 @@ class SsiapInformationFormTestCase(unittest.TestCase):
             formation_details={"ssiap_secourisme_valide": "OUI"},
         )
 
-        self.assertEqual(context["devis_total"], "980 €")
-        self.assertEqual(context["devis_lignes"][0]["prix_unitaire"], "980 €")
+        self.assertEqual(context["devis_total"], "1230 €")
+        self.assertEqual(context["devis_lignes"][0]["prix_unitaire"], "1230 €")
         self.assertNotIn("SST inclus", context["devis_lignes"][0]["intitule"])
 
-    def test_ssiap_quote_includes_sst_when_certificate_is_not_valid(self):
+    def test_ssiap_quote_keeps_requested_price_when_certificate_is_not_valid(self):
         context = application.build_devis_context(
             "SSIAP",
             application.PLAN_FORMATIONS["SSIAP"],
@@ -117,9 +118,9 @@ class SsiapInformationFormTestCase(unittest.TestCase):
             formation_details={"ssiap_secourisme_valide": "NON"},
         )
 
-        self.assertEqual(context["devis_total"], "1200 €")
-        self.assertEqual(context["devis_lignes"][0]["prix_unitaire"], "1200 €")
-        self.assertIn("SST inclus", context["devis_lignes"][0]["intitule"])
+        self.assertEqual(context["devis_total"], "1230 €")
+        self.assertEqual(context["devis_lignes"][0]["prix_unitaire"], "1230 €")
+        self.assertNotIn("SST inclus", context["devis_lignes"][0]["intitule"])
 
     def test_ssiap_email_uses_dedicated_aps_style_template(self):
         email_html = application.build_ssiap1_email_html(
@@ -134,14 +135,14 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         self.assertIn("Du 12 au 27 octobre 2026 — examen le 28 octobre 2026", email_html)
         self.assertIn("67 heures de formation", email_html)
         self.assertIn("Puget-sur-Argens", email_html)
-        self.assertIn("980 € TTC", email_html)
+        self.assertIn("1 230 € TTC", email_html)
         self.assertIn("certificat SST valide ou un PSC1 de moins de 2 ans", email_html)
         self.assertIn("https://example.com/devis/ssiap", email_html)
         self.assertIn("https://calendly.com/integraleacademy/ssiap1", email_html)
         self.assertNotIn("{session_html}", email_html)
         self.assertNotIn("formation APS", email_html)
 
-    def test_ssiap_email_displays_sst_included_tariff(self):
+    def test_ssiap_email_keeps_requested_tariff_when_first_aid_is_missing(self):
         email_html = application.build_ssiap1_email_html(
             "Nadia",
             "Du 12 au 27 octobre 2026 - examen le 28 octobre 2026",
@@ -150,8 +151,8 @@ class SsiapInformationFormTestCase(unittest.TestCase):
             "NON",
         )
 
-        self.assertIn("1 200 € TTC", email_html)
-        self.assertIn("La formation SST est incluse dans ce tarif", email_html)
+        self.assertIn("1 230 € TTC", email_html)
+        self.assertIn("Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis", email_html)
 
     def test_email_uses_brevo_fallback_when_gmail_smtp_fails(self):
         brevo_response = Mock(status_code=201, text='{"messageId":"test"}')

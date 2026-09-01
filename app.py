@@ -369,9 +369,6 @@ def _parse_dates_range(dates_txt: str):
     return (d1, d2)
 
 def get_formation_tarif(formation_code: str, formation_details=None) -> int:
-    details = formation_details if isinstance(formation_details, dict) else {}
-    if formation_code == "SSIAP" and details.get("ssiap_secourisme_valide") == "NON":
-        return 1200
     return PLAN_TARIFS.get(formation_code, 0)
 
 
@@ -432,16 +429,14 @@ def build_devis_context(
     elif formation_code == "VTC":
         lignes = [
             {"intitule": "Formation Chauffeur VTC incluant :\nFormation théorique en ligne à distance\nFormation pratique sur véhicule à doubles commandes\nFrais d’examen Chambre des métiers\nPrêt du véhicule à doubles commandes le jour de l’examen pratique\nLe livre officiel Chauffeur VTC",
-             "prix_unitaire": _eur(1600), "quantite": 1, "total": _eur(1600)},
+             "prix_unitaire": _eur(1500), "quantite": 1, "total": _eur(1500)},
             {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
         ]
-        total = 1600
+        total = 1500
 
     elif formation_code == "SSIAP":
         total = get_formation_tarif(formation_code, formation_details)
         intitule = "Agent de sécurité incendie SSIAP 1"
-        if total == 1200:
-            intitule += " (SST inclus)"
         lignes = [
             {"intitule": intitule, "prix_unitaire": _eur(total), "quantite": 1, "total": _eur(total)},
             {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
@@ -491,10 +486,10 @@ FORMATION_CENTRES = {
 SECRETARIAT_FORMATIONS = {
     "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "purpose": "Se former à la protection rapprochée des personnes et exercer comme agent de protection physique.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/apr"},
     "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "purpose": "Obtenir les compétences nécessaires aux missions de surveillance, de prévention et de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/aps"},
-    "SSIAP": {"short": "SSIAP 1", "duration": "Formation + examen", "price": "980 € TTC · 1 200 € avec SST", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
+    "SSIAP": {"short": "SSIAP 1", "duration": "Formation + examen", "price": "1 230 € TTC", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
     "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "175 h à distance + 70 h en présentiel", "purpose": "Acquérir l'aptitude professionnelle permettant de créer et diriger une entreprise de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "DESP_VAE": {"short": "VAE DESP", "duration": "Accompagnement individualisé", "price": "3 800 € TTC", "format": "100 % à distance", "purpose": "Faire reconnaître son expérience afin d'obtenir la certification de dirigeant d'entreprise de sécurité privée.", "funding": "CPF, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
-    "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 600 € TTC", "format": "Hybride", "purpose": "Préparer l'examen VTC et maîtriser les bases nécessaires à l'activité de chauffeur professionnel.", "funding": "CPF, France Travail ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
+    "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 500 € TTC", "format": "Hybride", "purpose": "Préparer l'examen VTC et maîtriser les bases nécessaires à l'activité de chauffeur professionnel.", "funding": "CPF, France Travail ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
     "BTS_MOS": {"short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Piloter des prestations de sécurité et encadrer des équipes opérationnelles.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
     "BTS_MCO": {"short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Gérer une unité commerciale et développer la relation client et les ventes.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
     "BTS_CI": {"short": "BTS CI", "label": "BTS Commerce International (CI)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Développer et suivre les activités commerciales d'une entreprise à l'international.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
@@ -2548,8 +2543,8 @@ def build_ssiap1_email_html(
         else '<p style="margin:0; line-height:1.65;">📅 <strong>Date transmise lors de notre échange téléphonique.</strong></p>'
     )
     secourisme_info = (
-        "La formation SST est incluse dans ce tarif."
-        if tarif == 1200
+        "Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis."
+        if ssiap_secourisme_valide == "NON"
         else "Tarif applicable avec un certificat SST valide ou un PSC1 de moins de 2 ans."
     )
     return _render_email_template(
@@ -4259,8 +4254,8 @@ def demande_informations_formations():
             session_date = _format_selected_session_date(form_data.get("dates", ""))
             tarif_ssiap = get_formation_tarif("SSIAP", form_data)
             secourisme_info = (
-                "Le tarif comprend la formation SST."
-                if tarif_ssiap == 1200
+                "Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis."
+                if form_data.get("ssiap_secourisme_valide") == "NON"
                 else "Tarif applicable avec un certificat SST ou PSC1 de moins de 2 ans."
             )
             plain = (
@@ -6386,7 +6381,7 @@ def demande_devis():
         TARIFS = {
             "A3P": 4200,
             "APS": 1650,
-            "VTC": 1600,
+            "VTC": 1500,
             "DESP_INIT": 4300,
             "DESP_VAE": 3800
         }
@@ -7304,7 +7299,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260831-quick-reminder-1"
+CRM_ASSET_VERSION = "20260901-contact-sheet-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -13858,7 +13853,7 @@ def crm_calendly_webhook():
 CRM_DEFAULT_SALE_PRICES = {
     "APS": 1650,
     "A3P": 4200,
-    "SSIAP 1": 1200,
+    "SSIAP 1": 1230,
     "CHAUFFEUR VTC": 1500,
     "DESP_INITIAL": 4300,
     "DESP_VAE": 3800,
@@ -13867,18 +13862,25 @@ CRM_DEFAULT_SALE_PRICES = {
 
 def _crm_default_sale_price(contact):
     formation = str(contact.get("formation") or "").strip().upper()
-    if formation == "DESP":
+    if formation in {"VAE", "VAE DESP", "DESP VAE"}:
+        formation = "DESP_VAE"
+    elif formation == "DESP":
         formation = f"DESP_{str(contact.get('desp_type') or 'INITIAL').strip().upper()}"
+    elif formation == "VTC":
+        formation = "CHAUFFEUR VTC"
+    elif formation.startswith("SSIAP"):
+        formation = "SSIAP 1"
     return CRM_DEFAULT_SALE_PRICES.get(formation, "")
 
 
 def _crm_workspace_backfill(contact):
     """Ajoute les champs du poste de travail sans altérer les données existantes."""
     changed = False
+    default_sale_price = _crm_default_sale_price(contact)
     defaults = {
         "commercial": "",
         "tags": "",
-        "prix_vente": _crm_default_sale_price(contact),
+        "prix_vente": default_sale_price,
         "cout_estime": "",
         "disqualification_reason": "",
         "disqualification_detail": "",
@@ -13891,6 +13893,18 @@ def _crm_workspace_backfill(contact):
         if key not in contact:
             contact[key] = value
             changed = True
+    current_sale_price = str(contact.get("prix_vente") or "").strip()
+    legacy_default_price = (
+        (default_sale_price == CRM_DEFAULT_SALE_PRICES["SSIAP 1"]
+         and current_sale_price in {
+             "980", "980.0", "980.00", "1200", "1200.0", "1200.00",
+         })
+        or (default_sale_price == CRM_DEFAULT_SALE_PRICES["CHAUFFEUR VTC"]
+            and current_sale_price in {"1600", "1600.0", "1600.00"})
+    )
+    if default_sale_price and (not current_sale_price or legacy_default_price):
+        contact["prix_vente"] = default_sale_price
+        changed = True
     if contact.get("statut") == "Converti" and not contact.get("converted_at"):
         contact["converted_at"] = contact.get("updated_at") or contact.get("created_at") or _crm_now()
         changed = True
@@ -14331,6 +14345,7 @@ def _crm_create_contact_locked():
         "prochaine_action_manuelle": "", "relances": [], "statut_secondaire": "",
         "created_at": now, "updated_at": now, "activities": [],
     }
+    contact["prix_vente"] = _crm_default_sale_price(contact)
     _crm_activity(contact, "creation", "Piste créée", "Ajoutée dans Intégrale Connect CRM")
     contact, inbound, created = find_or_create_crm_contact(
         data, payload, "saisie_manuelle", proposed_contact=contact,
@@ -15143,9 +15158,28 @@ def _crm_patch_contact_locked(data, contact, contact_id):
                 "error": "La prochaine action manuelle est limitée à 300 caractères."
             }), 400
         payload["prochaine_action_manuelle"] = manual_next_action
+    old_training = (
+        str(contact.get("formation") or ""),
+        str(contact.get("desp_type") or ""),
+    )
+    old_default_sale_price = str(_crm_default_sale_price(contact) or "")
+    old_sale_price = str(contact.get("prix_vente") or "").strip()
     for key, value in payload.items():
         if key in allowed:
             contact[key] = str(value or "")
+    new_training = (
+        str(contact.get("formation") or ""),
+        str(contact.get("desp_type") or ""),
+    )
+    if new_training != old_training:
+        new_default_sale_price = _crm_default_sale_price(contact)
+        submitted_sale_price = str(
+            payload.get("prix_vente", old_sale_price) or ""
+        ).strip()
+        if (new_default_sale_price
+                and (not submitted_sale_price
+                     or submitted_sale_price == old_default_sale_price)):
+            contact["prix_vente"] = str(new_default_sale_price)
     new_comments = str(contact.get("commentaires") or "")
     if "commentaires" in payload and new_comments != old_comments:
         _crm_activity(

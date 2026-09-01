@@ -16,18 +16,19 @@ def test_financing_block_is_grouped_into_three_responsive_cards():
 
     cpf = block.index('class="funding-card funding-card-cpf"')
     france_travail = block.index('class="funding-card funding-card-ft"')
-    personal = block.index('class="funding-card funding-card-personal"')
+    personal = block.index('class="funding-card funding-card-personal conditional"')
 
     assert cpf < france_travail < personal
     assert 'class="funding-workspace"' in block
     assert "CPF et identité numérique" in block
     assert "France Travail" in block
     assert "Paiement personnel" in block
+    assert 'data-show="personal-financing"' in block
 
     for marker in (
         "selectHtml('cpf'",
         'name="cpf_montant"',
-        'name="cpf_palier"',
+        "cpfTierSelect(c.cpf_palier)",
         "selectField('identite_creation'",
         "selectField('identite_ok'",
         "selectHtml('financement_ft'",
@@ -38,6 +39,8 @@ def test_financing_block_is_grouped_into_three_responsive_cards():
         'name="reste_a_charge_perso"',
     ):
         assert marker in block
+
+    assert 'return`<select name="cpf_palier">' in javascript
 
     for selector in (
         ".funding-workspace{",

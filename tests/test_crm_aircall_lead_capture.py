@@ -40,7 +40,7 @@ class FakeLegacyApp:
                 "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel",
             },
             "APS": {"short": "APS", "duration": "175 h", "price": "1 650 € TTC", "format": "Présentiel"},
-            "SSIAP": {"short": "SSIAP 1", "duration": "70 h", "price": "980 € TTC", "format": "Présentiel"},
+            "SSIAP": {"short": "SSIAP 1", "duration": "70 h", "price": "1 230 € TTC", "format": "Présentiel"},
             "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "Hybride"},
             "DESP_VAE": {"short": "VAE DESP", "duration": "3 semaines", "price": "3 800 € TTC", "format": "À distance"},
             "VTC": {"short": "Chauffeur VTC", "duration": "105 h", "price": "1 500 € TTC", "format": "Hybride"},

@@ -7,7 +7,7 @@ CRM_CSS = ROOT / "static" / "crm.css"
 APP_PY = ROOT / "app.py"
 
 
-def test_publications_are_grouped_below_the_activity_journal():
+def test_publications_are_integrated_into_the_activity_journal_tab():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
     backend = APP_PY.read_text(encoding="utf-8")
@@ -21,10 +21,17 @@ def test_publications_are_grouped_below_the_activity_journal():
     info_panel = javascript[info_start:activity_class]
     activity_panel = javascript[activity_class:relance_start]
 
-    assert 'class="card publications-card"' not in info_panel
-    assert activity_panel.count('class="card publications-card"') == 1
+    assert 'id="activityPublicationsPanel"' not in info_panel
+    assert activity_panel.count('id="activityPublicationsPanel"') == 1
+    assert (
+        'class="publications-card activity-publications-panel" '
+        'id="activityPublicationsPanel" hidden'
+    ) in activity_panel
     assert activity_panel.index("<h2>Journal d’activités</h2>") < activity_panel.index(
         "<h2>Publications</h2>"
+    )
+    assert activity_panel.index('id="activityFeed"') < activity_panel.index(
+        'id="activityPublicationsPanel"'
     )
     assert 'role="tabpanel" aria-labelledby="contactActivityTab" hidden' in activity_panel
     assert javascript.count('id="publicationText"') == 1
@@ -56,9 +63,18 @@ def test_publications_are_grouped_below_the_activity_journal():
     assert "const activities=activityTimeline(c)" in javascript
     assert "bindPublicationFeed(c,publicationFeed,renderActivityFeed)" in javascript
     assert "mergeContactInStore(c.id,updated);renderActivityFeed()" in javascript
+    assert "let activityExpanded=false,activityFilter='appel'" in javascript
+    assert "showPublications=activityFilter==='publication'" in javascript
+    assert "activityFeedRoot.hidden=showPublications" in javascript
+    assert "activityPublicationsPanel.hidden=!showPublications" in javascript
+
+    filters = javascript[javascript.index("const activityFilterDefinitions=["):]
+    assert filters.index("{key:'appel',label:'Appels consignés'") < filters.index(
+        "{key:'all',label:'Tout'"
+    )
 
     assert ".wedof-panel[hidden]{display:none}" in stylesheet
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
-    assert ".contact-activity-panel .publications-card{margin-bottom:0}" in stylesheet
+    assert ".activity-publications-panel[hidden]{display:none!important}" in stylesheet
     assert ".publication-compose-actions .publication-voice-button" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260901-contact-sheet-1"' in backend

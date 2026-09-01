@@ -9,7 +9,7 @@ CRM_HTML = ROOT / "templates" / "crm.html"
 APP_PY = ROOT / "app.py"
 
 
-def test_contact_coordinates_are_larger_and_french_phones_are_formatted_for_display_only():
+def test_contact_coordinates_are_editable_in_the_header_and_phone_helpers_still_work():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
     template = CRM_HTML.read_text(encoding="utf-8")
@@ -59,23 +59,19 @@ for(const [value,expected] of cases){
     )
 
     assert "CRM contact coordinates: OK" in completed.stdout
-    assert 'href="tel:${esc(c.telephone)}"' in javascript
-    assert "<span>${esc(formatContactPhone(c.telephone))}</span>" in javascript
-    assert 'href="mailto:${esc(c.mail)}"' in javascript
-    assert "<span>${esc(c.mail)}</span>" in javascript
-    assert 'data-copy-contact="${esc(c.telephone)}"' in javascript
-    assert 'aria-label="Copier le numéro de téléphone"' in javascript
-    assert 'data-copy-contact="${esc(c.mail)}"' in javascript
-    assert 'aria-label="Copier l’adresse e-mail"' in javascript
-    assert "await copyContactCoordinate(button.dataset.copyContact)" in javascript
+    assert "function contactHeaderEditor(c,last)" in javascript
+    assert 'form="contactForm" data-header-contact-field name="${name}"' in javascript
+    assert "input('prenom','Prénom','text'" in javascript
+    assert "input('nom','Nom','text'" in javascript
+    assert "input('telephone','Téléphone','tel'" in javascript
+    assert "input('mail','E-mail','email'" in javascript
+    assert "headerContactEditor.oninput=handleContactInput" in javascript
+    assert "form.prenom.value=c.prenom" in javascript
+    assert 'class="form-section section-user"' not in javascript
     assert "navigator.clipboard.writeText(text)" in javascript
     assert "document.execCommand('copy')" in javascript
-    assert "toast(button.dataset.copySuccess)" in javascript
-    assert ".contact-coordinate{display:inline-flex" in stylesheet
-    assert ".contact-copy{" in stylesheet
+    assert ".contact-header-editor{display:grid" in stylesheet
+    assert ".contact-header-name-fields,.contact-header-coordinate-fields" in stylesheet
+    assert ".contact-header-editor input{" in stylesheet
     assert template.count("copy_coordinates_version='20260825-copy-contact-coordinates-1'") == 2
-    assert "font-size:14px;font-weight:750" in stylesheet
-    assert ".contact-coordinates .crm-icon{flex:none;width:17px;height:17px}" in stylesheet
-    assert "overflow-wrap:anywhere" in stylesheet
-    assert "text-overflow:ellipsis;white-space:nowrap" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260901-contact-sheet-1"' in backend

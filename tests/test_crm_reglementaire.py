@@ -451,7 +451,9 @@ console.log('CRM CNAPS credentials: OK');
     assert "form.addEventListener('input',autofillCnapsUsername)" in javascript
     assert "cnapsUsername.dispatchEvent(new Event('input',{bubbles:true}))" in javascript
     binding = javascript[javascript.index("const autofillCnapsUsername="):]
-    assert binding.index("form.oninput=e=>") < binding.index("autofillCnapsUsername();")
+    assert binding.index("form.oninput=handleContactInput") < binding.index(
+        "autofillCnapsUsername();"
+    )
     autofill_source = binding[:binding.index("\n")]
     autosave_script = r"""
 let saves=0;
