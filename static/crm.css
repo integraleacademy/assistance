@@ -376,9 +376,41 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 @media(max-width:800px){.wedof-facts{grid-template-columns:repeat(2,1fr)}.wedof-columns{grid-template-columns:1fr}}
 @media(max-width:550px){.wedof-tabs{width:100%}.wedof-tab{min-width:max-content;padding:10px 12px}.wedof-header{align-items:flex-start;flex-direction:column;padding:18px}.wedof-refresh{width:100%}.wedof-folder>summary{grid-template-columns:9px minmax(0,1fr) 20px;padding:15px 13px}.wedof-badge{grid-column:2}.wedof-chevron{grid-column:3;grid-row:1}.wedof-folder-body{padding:0 13px 14px}.wedof-facts{margin:0 -13px 13px}.wedof-money{grid-template-columns:1fr}.wedof-metadata div{grid-template-columns:1fr}.wedof-links{display:grid}.wedof-links .wedof-link{text-align:center}}
 
-/* Suivi CNAPS en lecture seule, alimenté par Gestion stagiaires. */
-.cnaps-panel{margin:0 16px 16px;padding:16px;border:1px solid #dbe3ef;border-radius:12px;background:#fbfcff}.cnaps-panel.loading{opacity:.65}.cnaps-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.cnaps-head h4{margin:0;color:#233653;font:800 14px Manrope}.cnaps-head small{color:#8390a3;font-size:10px}.cnaps-actions{display:flex;gap:8px;flex-wrap:wrap}.cnaps-actions .btn{text-decoration:none}.cnaps-summary{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;border-radius:10px;background:#f0f4fa;color:#60708a;font-size:11px}.cnaps-badge{display:inline-flex;padding:5px 9px;border-radius:999px;font-size:9px;font-weight:850;text-transform:uppercase}.cnaps-badge.green{background:#e5f7f0;color:#13775f}.cnaps-badge.blue{background:#e8f0ff;color:#2c60ce}.cnaps-badge.red{background:#ffeaed;color:#bd3949}.cnaps-badge.amber{background:#fff3db;color:#96650c}.cnaps-titles{display:grid;gap:9px;margin-top:11px}.cnaps-titles article{padding:12px 13px;border:1px solid #e2e7ef;border-radius:10px;background:#fff}.cnaps-titles article>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.cnaps-titles strong{font:750 12px Manrope}.cnaps-titles p,.cnaps-checked{margin:7px 0 0;color:#748196;font-size:10px}.cnaps-warning{color:#bf3345!important;font-weight:800}.cnaps-warning:before{content:'⚠ ';}.cnaps-empty,.cnaps-notice{padding:13px;border-radius:9px;background:#fff6e5;color:#8b651c;font-size:11px}.cnaps-error{background:#fff0f2;color:#b63848}.cnaps-muted{margin-top:10px;background:#f3f5f8;color:#758196}.cnaps-notice{margin:10px 0 0}.cnaps-checked{margin-top:12px}
-@media(max-width:650px){.cnaps-head{align-items:flex-start;flex-direction:column}.cnaps-actions{width:100%}.cnaps-actions>*{flex:1;text-align:center}}
+/* Espace réglementaire : parcours lisible, cartes métier et suivi CNAPS. */
+.form-section.regulatory-section{border-color:#d9e3ee;background:#f7f9fc}
+.form-section.regulatory-section>summary{padding:15px 17px;background:linear-gradient(135deg,#f7fbfa,#f4f7fc);border-bottom-color:transparent}
+.form-section.regulatory-section[open]>summary{border-bottom-color:#dfe6ef;background:#fff}
+.regulatory-section>summary h3{color:#243750}.regulatory-section>summary h3 .crm-icon{color:#168368}
+.regulatory-section .section-ai-summary{padding:5px 9px;border-radius:999px;background:#e9f5f1;color:#28745f;font-weight:750}
+.regulatory-workspace{display:grid;gap:16px;padding:18px;background:linear-gradient(145deg,#f8fafc,#f3f6fa)}
+.regulatory-card{overflow:hidden;border:1px solid #dde5ef;border-radius:16px;background:#fff;box-shadow:0 6px 20px #17203309}
+.regulatory-card-head{display:flex;align-items:center;gap:12px;padding:15px 17px;border-bottom:1px solid #e8edf3;background:#fbfcfe}
+.regulatory-card-head>div{min-width:0}.regulatory-card-head h4{margin:0;color:#263851;font:800 14px Manrope}.regulatory-card-head p{margin:3px 0 0;color:#7a879a;font-size:11px;line-height:1.4}
+.regulatory-step{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:10px;background:#e7f7f1;color:#14775f;font:800 10px Manrope;box-shadow:inset 0 0 0 1px #c8eadf}
+.regulatory-card-account .regulatory-step{background:#eaf1ff;color:#2b61cd;box-shadow:inset 0 0 0 1px #d1def9}
+.regulatory-card .section-fields{padding:17px}.regulatory-card .field label{color:#586981;font-size:11px;letter-spacing:.01em}
+.regulatory-card .field input,.regulatory-card .field select{min-height:42px;border-color:#d9e2ed;border-radius:10px;background:#fff}
+.regulatory-card .field input:focus,.regulatory-card .field select:focus{border-color:#7fa2e8;outline:0;box-shadow:0 0 0 3px #356ae615}
+.regulatory-card .binary-choice{gap:9px}.regulatory-card .binary-choice label{min-height:44px;border-radius:10px;background:#fbfcfe}
+.regulatory-card .binary-choice label:has(input:checked){border-color:#3c70df;background:#edf3ff;color:#2459c8;box-shadow:0 0 0 3px #356ae612}
+
+.cnaps-panel{overflow:hidden;margin:0;padding:0;border:1px solid #d9e3f0;border-radius:16px;background:#fff;box-shadow:0 7px 22px #1720330b;transition:opacity .18s ease}.cnaps-panel.loading{opacity:.66}
+.cnaps-head{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:0;padding:17px 18px;border-bottom:1px solid #e5ebf3;background:linear-gradient(135deg,#f8fbff,#fff)}
+.cnaps-head-title{display:flex;align-items:center;gap:12px;min-width:0}.cnaps-head-icon{display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:12px;background:#e9f0ff;color:#2d61cd}.cnaps-head-icon .crm-icon{width:20px;height:20px}
+.cnaps-head-title>div{min-width:0}.cnaps-eyebrow{display:block;margin-bottom:2px;color:#6281bd;font:800 9px Manrope;letter-spacing:.12em}.cnaps-head h4{margin:0;color:#203553;font:800 15px Manrope}.cnaps-head small{display:block;margin-top:3px;color:#8390a3;font-size:10px}
+.cnaps-actions{display:flex;gap:8px;flex-wrap:wrap}.cnaps-actions .btn{min-height:36px;text-decoration:none}.cnaps-actions .btn:not(.blue){background:#f8faff;color:#496079}
+.cnaps-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:16px 18px;background:#f8faff}
+.cnaps-summary{display:grid;align-content:start;gap:7px;min-width:0;min-height:76px;padding:12px 13px;border:1px solid #e3e9f1;border-radius:12px;background:#fff;color:#60708a;font-size:11px}.cnaps-summary span{color:#7f8c9f;font-size:10px;font-weight:750}.cnaps-summary>b:not(.cnaps-badge){overflow-wrap:anywhere;color:#273a56;font:800 13px Manrope}.cnaps-summary-status{align-content:space-between}
+.cnaps-badge{display:inline-flex;align-items:center;justify-content:center;width:max-content;max-width:100%;padding:5px 9px;border-radius:999px;font-size:8px;font-weight:850;line-height:1.25;text-transform:uppercase;overflow-wrap:anywhere}.cnaps-badge.green{background:#e5f7f0;color:#13775f}.cnaps-badge.blue{background:#e8f0ff;color:#2c60ce}.cnaps-badge.red{background:#ffeaed;color:#bd3949}.cnaps-badge.amber{background:#fff3db;color:#96650c}
+.cnaps-titles-section{padding:2px 18px 16px}.cnaps-titles-header{display:flex;align-items:center;justify-content:space-between;margin:11px 0 9px}.cnaps-titles-header span{color:#8794a7;font:800 8px Manrope;letter-spacing:.1em}.cnaps-titles-header h5{margin:2px 0 0;color:#34465f;font:800 11px Manrope}
+.cnaps-titles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px}.cnaps-titles article{padding:12px 13px;border:1px solid #e2e8f0;border-radius:11px;background:#fff;box-shadow:0 3px 12px #17203307}.cnaps-titles article>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.cnaps-titles strong{color:#30425c;font:750 12px Manrope}.cnaps-titles p,.cnaps-checked{margin:7px 0 0;color:#748196;font-size:10px}.cnaps-warning{color:#bf3345!important;font-weight:800}.cnaps-warning:before{content:'⚠ ';}
+.cnaps-footer{display:flex;justify-content:flex-end;padding:10px 18px;border-top:1px solid #edf1f5;background:#fbfcfe}.cnaps-footer .cnaps-checked{margin:0}
+.cnaps-empty,.cnaps-notice{margin:0 18px 16px;padding:12px 13px;border-radius:10px;background:#fff6e5;color:#8b651c;font-size:10px}.cnaps-muted{border:1px dashed #dbe2eb;background:#f7f9fc;color:#758196;text-align:center}.cnaps-notice{border:1px solid #f1dcae}
+.cnaps-empty-state{display:flex;align-items:flex-start;gap:12px;margin:17px;padding:15px;border:1px solid #f2cbd1;border-radius:12px;background:#fff4f5;color:#ad3445}.cnaps-empty-state>span{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:9px;background:#ffe4e8;font:800 14px Manrope}.cnaps-empty-state b{display:block;color:#9f2f40;font:800 11px Manrope}.cnaps-empty-state p{margin:4px 0 0;color:#b74b5a;font-size:10px;line-height:1.5}
+.cnaps-loading-state{display:flex;align-items:center;gap:12px;margin:17px;padding:15px;border:1px solid #e0e7f1;border-radius:12px;background:#f8faff;color:#64748a}.cnaps-loading-state b,.cnaps-loading-state small{display:block}.cnaps-loading-state b{color:#344861;font:800 11px Manrope}.cnaps-loading-state small{margin-top:3px;font-size:9px}.cnaps-loading-dot{flex:none;width:26px;height:26px;border:3px solid #dfe8f8;border-top-color:#356ae6;border-radius:50%;animation:cnaps-spin .8s linear infinite}@keyframes cnaps-spin{to{transform:rotate(360deg)}}
+@media(max-width:760px){.cnaps-overview{grid-template-columns:1fr 1fr}.cnaps-summary-status{grid-column:1/-1}}
+@media(max-width:650px){.regulatory-workspace{padding:12px}.regulatory-card .section-fields{padding:14px}.regulatory-card-head{align-items:flex-start;padding:14px}.cnaps-head{align-items:flex-start;flex-direction:column;padding:15px}.cnaps-actions{display:grid;grid-template-columns:1fr;width:100%}.cnaps-actions>*{width:100%;text-align:center}.cnaps-overview{grid-template-columns:1fr;padding:13px}.cnaps-summary-status{grid-column:auto}.cnaps-summary{min-height:0}.cnaps-titles-section{padding:1px 13px 13px}.cnaps-titles{grid-template-columns:1fr}.cnaps-footer{justify-content:flex-start;padding:10px 13px}.cnaps-empty,.cnaps-notice{margin:0 13px 13px}.cnaps-empty-state,.cnaps-loading-state{margin:13px}}
+@media(prefers-reduced-motion:reduce){.cnaps-loading-dot{animation-duration:1.6s}}
 
 /* États automatiques de la synthèse IA et de la synchronisation WEDOF. */
 .summary-loading{color:#65738a;background:linear-gradient(90deg,#65738a,#356ae6,#65738a);background-size:200% auto;background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:summary-shimmer 1.5s linear infinite}.summary-error{color:var(--red)}
@@ -799,13 +831,15 @@ img,svg,video,canvas,iframe{max-width:100%}
 
 
 /* Envoi du formulaire CNAPS depuis la fiche prospect. */
-.cnaps-form-action{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px;border:1px solid #bce8d9;border-radius:11px;background:#f2fbf7}
-.cnaps-form-send{min-width:154px;border-color:var(--green);background:var(--green);color:#fff}
+.cnaps-form-action{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid #c5e7dc;border-radius:12px;background:linear-gradient(135deg,#f2fbf7,#f8fcfb)}
+.cnaps-form-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#daf3ea;color:#158064}.cnaps-form-icon .crm-icon{width:18px;height:18px}
+.cnaps-form-copy{min-width:0}.cnaps-form-copy b,.cnaps-form-copy small{display:block}.cnaps-form-copy b{color:#225548;font:800 12px Manrope}.cnaps-form-copy small{margin-top:3px;color:#648177;font-size:10px;line-height:1.4}
+.cnaps-form-send{min-width:154px;border-color:var(--green);background:var(--green);color:#fff;box-shadow:0 5px 12px #14a37f24}
 .cnaps-form-send:hover{filter:brightness(.96)}
 .cnaps-form-send.is-sent{border-color:#98a2b3;background:#98a2b3;color:#fff}
 .cnaps-form-send:disabled{cursor:wait;opacity:.7}
-#cnapsFormStatus{color:#4b596d;font-size:12px;font-weight:700}
-@media(max-width:650px){.cnaps-form-action{align-items:stretch}.cnaps-form-send{width:100%}#cnapsFormStatus{width:100%;text-align:center}}
+#cnapsFormStatus{display:block;margin-top:4px;color:#3f7465;font-size:10px;font-weight:750}
+@media(max-width:650px){.cnaps-form-action{grid-template-columns:38px minmax(0,1fr)}.cnaps-form-send{grid-column:1/-1;width:100%}#cnapsFormStatus{text-align:left}}
 
 /* Journal d'activités : vue SaaS lisible, filtrée et chronologique. */
 .contact-activity-panel{gap:20px}

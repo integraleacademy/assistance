@@ -484,3 +484,32 @@ console.log('CRM CNAPS autosave: OK');
     )
     assert "CRM CNAPS autosave: OK" in autosave.stdout
     assert ".cnaps-field-actions{" in stylesheet
+
+
+def test_regulatory_block_is_grouped_into_readable_responsive_cards():
+    javascript = (Path(application.app.root_path) / "static/crm.js").read_text(encoding="utf-8")
+    stylesheet = (Path(application.app.root_path) / "static/crm.css").read_text(encoding="utf-8")
+
+    eligibility = javascript.index('class="regulatory-card regulatory-card-eligibility"')
+    account = javascript.index('class="regulatory-card regulatory-card-account conditional"')
+    tracking = javascript.index('class="cnaps-panel" id="cnapsPanel"')
+
+    assert javascript.index('class="regulatory-workspace"') < eligibility < account < tracking
+    assert 'data-show="without-card"><div class="regulatory-card-head"' in javascript
+    assert "Situation réglementaire" in javascript
+    assert "Compte et accès CNAPS" in javascript
+    assert "Suivi du dossier CNAPS" in javascript
+    assert 'class="cnaps-overview"' in javascript
+    assert '<span>NUB</span>' in javascript
+    assert '<span>Inscription</span>' in javascript
+    assert 'class="cnaps-form-copy"' in javascript
+
+    for selector in (
+        ".regulatory-workspace{",
+        ".regulatory-card{",
+        ".regulatory-card-head{",
+        ".cnaps-overview{",
+        ".cnaps-empty-state{",
+        "@media(max-width:650px){.regulatory-workspace",
+    ):
+        assert selector in stylesheet
