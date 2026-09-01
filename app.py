@@ -7410,7 +7410,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260901-cnaps-card-validity-1"
+CRM_ASSET_VERSION = "20260901-cnaps-card-validity-persistence-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -9677,6 +9677,7 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     response.setdefault("cpf_palier", "")
     response.setdefault("montant_accorde_ft", "")
     response.setdefault("cnaps_nub", "")
+    response.setdefault("cnaps_card_validity", None)
     response.setdefault("cnaps_birth_year", "")
     if not response.get("financement_perso_possible"):
         response["financement_perso_possible"] = str(
@@ -14449,7 +14450,7 @@ def _crm_create_contact_locked():
         "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
         "formation": str(payload.get("formation", "APS")), "lieu": str(payload.get("lieu") or "Paris"),
         "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
-        "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_nub": "",
+        "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_nub": "", "cnaps_card_validity": None,
         "cnaps_username": "", "cnaps_birth_year": "", "cnaps_password": "",
         "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
@@ -15194,6 +15195,7 @@ def crm_contact_cnaps_card_validity(contact_id):
             }), 422
         if str(contact.get("cnaps_nub") or "") != cnaps_nub:
             contact["cnaps_nub"] = cnaps_nub
+            contact.pop("cnaps_card_validity", None)
             contact["updated_at"] = _crm_now()
             save_data(data)
 
@@ -15212,7 +15214,32 @@ def crm_contact_cnaps_card_validity(contact_id):
             ),
             "reason": "cnaps_unavailable",
         }), 502
-    return jsonify(result)
+    persisted_result = copy.deepcopy(result)
+    persisted_result.update({
+        "check_status": "success",
+        "checked_at": str(result.get("checked_at") or _crm_now()),
+        "nub": cnaps_nub,
+    })
+    with _CRM_RECONCILIATION_LOCK:
+        data = load_data()
+        contact = _crm_contact(data, contact_id)
+        if not contact:
+            return jsonify({"error": "Contact introuvable"}), 404
+        current_last_name = " ".join(
+            str(contact.get("nom") or "").strip().split()
+        )
+        if (str(contact.get("cnaps_nub") or "") != cnaps_nub
+                or current_last_name != last_name):
+            return jsonify({
+                "error": (
+                    "Le nom ou le NUB a été modifié pendant la vérification. "
+                    "Relancez la vérification."
+                )
+            }), 409
+        contact["cnaps_card_validity"] = persisted_result
+        contact["updated_at"] = _crm_now()
+        save_data(data)
+    return jsonify(persisted_result)
 
 
 def _crm_patch_contact_locked(data, contact, contact_id):
@@ -15274,6 +15301,10 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     old_origin = contact.get("origine", "")
     old_qualification_flag = str(contact.get("qualification_flag") or "")
     old_comments = str(contact.get("commentaires") or "")
+    old_cnaps_identity = (
+        _crm_format_last_name(contact.get("nom")),
+        str(contact.get("cnaps_nub") or ""),
+    )
     snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
     old_score = calculate_candidate_integration_score(contact, snapshot)
     if "cpf_montant" in payload:
@@ -15441,6 +15472,10 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     _crm_sync_contact_calendly_status(data, contact)
     contact["prenom"] = _crm_format_first_name(contact.get("prenom"))
     contact["nom"] = _crm_format_last_name(contact.get("nom"))
+    if ({"nom", "cnaps_nub"}.intersection(payload)
+            and (contact.get("nom"), str(contact.get("cnaps_nub") or ""))
+            != old_cnaps_identity):
+        contact.pop("cnaps_card_validity", None)
     statuses = _crm_statuses(data)
     if contact.get("statut") not in statuses:
         contact["statut"] = old_status if old_status in statuses else statuses[0]
