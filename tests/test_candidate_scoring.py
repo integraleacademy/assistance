@@ -40,6 +40,13 @@ def financial_points(result, key):
     )
 
 
+def financial_label(result, key):
+    return next(
+        row["label"] for row in result["financial_breakdown"]
+        if row["key"] == key
+    )
+
+
 def test_candidate_score_styles_are_bundled():
     with open("static/crm.css", encoding="utf-8") as source:
         css = source.read()
@@ -361,6 +368,30 @@ def test_france_travail_actual_status_changes_progress_and_readiness():
     assert accepted["operational_status"] == "ready"
 
 
+def test_route_readiness_label_matches_the_selected_funding_solution():
+    cpf = calculate_candidate_integration_score(financial_contact(
+        formation="SSIAP 1", cpf_amount="980",
+    ))
+    france_travail = calculate_candidate_integration_score({
+        "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "OUI",
+        "inscrit_ft": "OUI", "statut_demande_financement_ft": "transmise",
+    })
+    personal = calculate_candidate_integration_score({
+        "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "NON",
+        "financement_perso_possible": "OUI", "reste_a_charge_perso": "OUI",
+    })
+
+    assert financial_label(cpf, "route_readiness") == (
+        "Identité numérique CPF opérationnelle"
+    )
+    assert financial_label(france_travail, "route_readiness") == (
+        "Démarches France Travail réalisées"
+    )
+    assert financial_label(personal, "route_readiness") == (
+        "Paiement personnel confirmé"
+    )
+
+
 def test_france_travail_status_and_amount_are_ignored_when_route_is_refused():
     base = {
         "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "NON",
@@ -499,6 +530,10 @@ def test_frontend_uses_backend_ranges_and_universal_financing_fields():
     assert 'name="montant_accorde_ft"' in source
     assert "financement_perso_possible" in source
     assert "Le candidat financera-t-il personnellement le reste à charge exact de" in source
+    assert "Complétude et niveau de vérification" in source
+    assert "Confiance des données" not in source
+    assert "Paiement personnel déclaré" in source
+    assert "Couvert personnellement" not in source
     assert "TRAINING_PRICES" not in source
 
 
