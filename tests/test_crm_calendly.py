@@ -1265,7 +1265,7 @@ def test_spotlight_appointment_displays_the_result_control():
     assert "calendlyActions(a,true)" in spotlight
     assert ".next-appointment-side .appointment-response{" in crm_css
     assert ".next-appointment-side .appointment-response select{" in crm_css
-    assert crm_template.count("calendly_result_version='20260827-calendar-treated-appointments-1'") == 2
+    assert crm_template.count("calendly_result_version='20260901-calendar-result-history-1'") == 2
 
 
 def test_calendar_visually_marks_completed_appointments_as_treated():
@@ -1305,7 +1305,7 @@ assert.equal(calendarAppointmentTreatment({response_status:''}),null);
     assert ".calendar-event.calendar-treated-no-answer{" in crm_css
     assert ".calendar-treatment-badge.answered{" in crm_css
     assert ".calendar-treatment-badge.no-answer{" in crm_css
-    assert crm_template.count("calendly_result_version='20260827-calendar-treated-appointments-1'") == 2
+    assert crm_template.count("calendly_result_version='20260901-calendar-result-history-1'") == 2
 
 
 def test_no_answer_updates_the_in_memory_contact_without_refresh():

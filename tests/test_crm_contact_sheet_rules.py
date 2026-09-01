@@ -209,7 +209,7 @@ def test_contact_sheet_frontend_contract_for_requested_rules():
     assert 'disabled>${esc(selectedSession)} — date enregistrée, non proposée' in javascript
 
 
-def test_today_appointment_remains_in_the_spotlight_after_its_time():
+def test_today_appointment_stays_in_the_spotlight_until_a_result_is_saved():
     javascript = CRM_JS.read_text(encoding="utf-8")
     appointment_helpers = javascript[
         javascript.index("const CALENDLY_APPOINTMENT_PAST_DELAY_MS="):
@@ -232,6 +232,12 @@ const result=calendlyAppointmentGroups([tomorrow,todayPast],now);
 assert.equal(result.today.id,'today');
 assert.equal(result.next.id,'tomorrow');
 assert.equal(result.past.some(item=>item.id==='today'),true);
+for(const response_status of ['answered','no_answer']){
+ const treated=calendlyAppointmentGroups([tomorrow,{...todayPast,response_status}],now);
+ assert.equal(treated.today,undefined);
+ assert.equal(treated.next.id,'tomorrow');
+ assert.equal(treated.past.some(item=>item.id==='today'),true);
+}
 """
 
     completed = subprocess.run(
@@ -239,4 +245,5 @@ assert.equal(result.past.some(item=>item.id==='today'),true);
     )
 
     assert completed.returncode == 0, completed.stderr
+    assert "a.status!=='canceled'&&!calendlyAppointmentHasResult(a)" in javascript
     assert "past.filter(a=>!spotlightIds.has(a.id))" in javascript

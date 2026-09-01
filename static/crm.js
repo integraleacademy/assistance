@@ -1229,7 +1229,7 @@ function calendlyAppointmentGroups(ordered,now=Date.now()){
   const upcoming=ordered.filter(a=>calendlyAppointmentIsUpcoming(a,now));
   const past=ordered.filter(a=>calendlyAppointmentIsPast(a,now));
   const canceled=ordered.filter(a=>a.status==='canceled');
-  const todayKey=parisDateKey(now),today=ordered.find(a=>a.status!=='canceled'&&parisDateKey(a.start_time)===todayKey),next=upcoming.find(a=>a.id!==today?.id);
+  const todayKey=parisDateKey(now),today=ordered.find(a=>a.status!=='canceled'&&!calendlyAppointmentHasResult(a)&&parisDateKey(a.start_time)===todayKey),next=upcoming.find(a=>a.id!==today?.id);
   return{upcoming,past,canceled,today,next};
 }
 function calendlyDateParts(value){
