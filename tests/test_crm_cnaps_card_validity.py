@@ -131,7 +131,7 @@ def test_cnaps_lookup_returns_safe_error_for_remote_failure():
     assert "detail" not in str(result)
 
 
-def test_crm_cnaps_validity_route_saves_nub_and_returns_titles(
+def test_crm_cnaps_validity_route_saves_nub_and_the_complete_result(
     tmp_path, monkeypatch,
 ):
     client = crm_client(tmp_path, monkeypatch)
@@ -170,6 +170,58 @@ def test_crm_cnaps_validity_route_saves_nub_and_returns_titles(
     assert captured == {"last_name": "LARDJANE", "nub": "1000731"}
     stored = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert stored["cnaps_nub"] == "1000731"
+    assert stored["cnaps_card_validity"] == response.get_json()
+    assert stored["cnaps_card_validity"]["checked_at"] == (
+        "2026-09-01T08:00:00+00:00"
+    )
+
+    reloaded = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert reloaded["cnaps_card_validity"]["titles"][0][
+        "display_status"
+    ] == "CP SH ACTIF"
+
+
+def test_changing_the_cnaps_identity_clears_the_saved_validity(
+    tmp_path, monkeypatch,
+):
+    client = crm_client(tmp_path, monkeypatch)
+    contact = create_contact(client)
+    monkeypatch.setattr(
+        crm_cnaps_tracking,
+        "fetch_cnaps_card_validity",
+        lambda last_name, nub: {
+            "check_status": "success",
+            "checked_at": "2026-09-01T08:00:00+00:00",
+            "nub": nub,
+            "titles": [],
+            "active_titles": [],
+            "message": "Aucun titre CNAPS trouvé",
+            "error": None,
+        },
+    )
+    verified = client.post(
+        f"/api/crm/contacts/{contact['id']}/cnaps-card-validity",
+        json={"nub": "1000731"},
+    )
+    assert verified.status_code == 200
+
+    changed_nub = client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"cnaps_nub": "7654321"},
+    )
+    assert changed_nub.status_code == 200
+    assert changed_nub.get_json()["cnaps_card_validity"] is None
+
+    client.post(
+        f"/api/crm/contacts/{contact['id']}/cnaps-card-validity",
+        json={"nub": "7654321"},
+    )
+    changed_name = client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"nom": "Dupont"},
+    )
+    assert changed_name.status_code == 200
+    assert changed_name.get_json()["cnaps_card_validity"] is None
 
 
 def test_crm_cnaps_validity_route_validates_nub_and_name(tmp_path, monkeypatch):
@@ -197,6 +249,9 @@ def test_cnaps_validity_frontend_uses_the_api_and_renders_the_result():
     assert "/cnaps-card-validity" in javascript
     assert 'id="cnapsCardValidityResult"' in javascript
     assert "cnapsCardValidityMarkup" in javascript
+    assert "renderSavedCnapsCardValidity" in javascript
+    assert "c.cnaps_card_validity=result" in javascript
+    assert "Vérification CNAPS terminée et enregistrée" in javascript
     assert "CP SH ACTIF" not in javascript
     assert "Portail CNAPS ouvert" not in javascript
     assert ".cnaps-card-validity-chip.is-active" in styles
