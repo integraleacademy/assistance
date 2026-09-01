@@ -302,7 +302,7 @@ def test_frontend_has_shared_cnaps_vae_loading_and_safe_rendering():
     javascript = (Path(application.app.root_path) / "static/crm.js").read_text(encoding="utf-8")
     assert "const isDespVae=" in javascript
     assert "['APS','A3P']" in javascript
-    assert "needsCnaps(c)&&!isDespVae(c)" in javascript
+    assert "needsCnapsTracking(c)&&!isDespVae(c)" in javascript
     assert javascript.count("/reglementaire${") == 1
     assert "force?'?refresh=1':''" in javascript
     assert "actionDates=vae.action_dates||{}" in javascript
@@ -494,7 +494,9 @@ def test_regulatory_block_is_grouped_into_readable_responsive_cards():
 
     eligibility = javascript.index('class="regulatory-card regulatory-card-eligibility"')
     account = javascript.index('class="regulatory-card regulatory-card-account conditional"')
-    tracking = javascript.index('class="cnaps-panel" id="cnapsPanel"')
+    tracking = javascript.index(
+        'class="cnaps-panel conditional" data-show="without-card" id="cnapsPanel"'
+    )
 
     assert javascript.index('class="regulatory-workspace"') < eligibility < account < tracking
     assert 'data-show="without-card"><div class="regulatory-card-head"' in javascript

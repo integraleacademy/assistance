@@ -1243,6 +1243,7 @@ assert.equal(calendlyAppointmentIsPast({...appointment,status:'canceled'},start+
     assert completed.returncode == 0, completed.stderr
     assert "const upcoming=ordered.filter(a=>calendlyAppointmentIsUpcoming(a,now));" in crm_js
     assert "const past=ordered.filter(a=>calendlyAppointmentIsPast(a,now));" in crm_js
+    assert "calendlyAppointmentGroups(ordered,now)" in crm_js
     assert "calendly_timing_version='20260827-calendly-two-hour-delay-2'" in crm_template
 
 
