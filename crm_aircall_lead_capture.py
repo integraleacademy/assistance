@@ -64,7 +64,7 @@ _AIRCALL_TRAINING_OVERRIDES = {
     "A3P": {"duration": "327 h · 9 semaines", "price": "4 200 € TTC"},
     "SSIAP": {
         "duration": "70 h · 2 semaines (84 h avec SST)",
-        "price": "980 € TTC · 1 230 € TTC avec SST",
+        "price": "1 230 € TTC",
     },
     "DESP_VAE": {"duration": "3 semaines d’accompagnement", "price": "3 800 € TTC"},
     "VTC": {

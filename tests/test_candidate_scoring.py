@@ -13,7 +13,7 @@ from candidate_scoring import (
 TRAINING_CASES = (
     ("APS", {}, 1650),
     ("A3P", {}, 4200),
-    ("SSIAP 1", {}, 980),
+    ("SSIAP 1", {}, 1230),
     ("Chauffeur VTC", {}, 1500),
     ("DESP", {"desp_type": "INITIAL"}, 4300),
     ("DESP", {"desp_type": "VAE"}, 3800),
@@ -58,7 +58,7 @@ def test_candidate_score_styles_are_bundled():
     assert ".integration-score-card.incomplete" in css
 
 
-def test_v6_uses_60_percent_financial_and_40_percent_regulatory():
+def test_v7_uses_60_percent_financial_and_40_percent_regulatory():
     declared = calculate_candidate_integration_score(
         financial_contact(carte_pro="OUI")
     )
@@ -67,7 +67,7 @@ def test_v6_uses_60_percent_financial_and_40_percent_regulatory():
         {"has_active_professional_title": True},
     )
 
-    assert CANDIDATE_SCORING_VERSION == declared["version"] == 6
+    assert CANDIDATE_SCORING_VERSION == declared["version"] == 7
     assert declared["financial_score"] == 100
     assert declared["regulatory_score"] == 100
     assert declared["score"] == 100
@@ -288,8 +288,8 @@ def test_unknown_financing_gets_a_lower_bound_without_inventing_money():
     assert unknown["unsecured_amount_eur"] is None
     assert unknown["operational_status"] == "action_required"
     assert confirmed_none["financial_score"] == 0
-    assert confirmed_none["remaining_to_finance_eur"] == 980
-    assert confirmed_none["unsecured_amount_eur"] == 980
+    assert confirmed_none["remaining_to_finance_eur"] == 1230
+    assert confirmed_none["unsecured_amount_eur"] == 1230
     assert confirmed_none["operational_status"] == "blocked"
 
 
@@ -328,11 +328,11 @@ def test_identity_only_changes_score_when_cpf_is_used():
                    for action in with_identity["next_actions"])
 
     cpf_not_ready = calculate_candidate_integration_score(financial_contact(
-        formation="SSIAP 1", cpf_amount="980",
+        formation="SSIAP 1", cpf_amount="1230",
         identite_creation="NON", identite_ok="NON",
     ))
     cpf_ready = calculate_candidate_integration_score(financial_contact(
-        formation="SSIAP 1", cpf_amount="980",
+        formation="SSIAP 1", cpf_amount="1230",
     ))
     assert financial_points(cpf_not_ready, "route_readiness") == 0
     assert financial_points(cpf_ready, "route_readiness") == 20
@@ -359,7 +359,7 @@ def test_france_travail_actual_status_changes_progress_and_readiness():
                for result in scores.values())
     accepted = calculate_candidate_integration_score({
         **base, "statut_demande_financement_ft": "acceptee",
-        "montant_accorde_ft": "980",
+        "montant_accorde_ft": "1230",
     })
     assert accepted["financial_score"] == 100
     assert accepted["funding_solution_status"] == "secured_france_travail"
@@ -370,7 +370,7 @@ def test_france_travail_actual_status_changes_progress_and_readiness():
 
 def test_route_readiness_label_matches_the_selected_funding_solution():
     cpf = calculate_candidate_integration_score(financial_contact(
-        formation="SSIAP 1", cpf_amount="980",
+        formation="SSIAP 1", cpf_amount="1230",
     ))
     france_travail = calculate_candidate_integration_score({
         "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "OUI",
@@ -402,7 +402,7 @@ def test_france_travail_status_and_amount_are_ignored_when_route_is_refused():
         **base,
         "inscrit_ft": "OUI",
         "statut_demande_financement_ft": "acceptee",
-        "montant_accorde_ft": "980",
+        "montant_accorde_ft": "1230",
     })
 
     assert with_stale_history["financial_score"] == without_history["financial_score"]
@@ -468,7 +468,7 @@ def test_legacy_personal_fallback_and_universal_field_score_identically():
 
 
 def test_q1_to_q4_do_not_change_any_score_or_action():
-    base = financial_contact(formation="SSIAP 1", cpf_amount="980")
+    base = financial_contact(formation="SSIAP 1", cpf_amount="1230")
     enriched = {
         **base,
         "q1_projet_formation": "OUI",
@@ -486,7 +486,7 @@ def test_q1_to_q4_do_not_change_any_score_or_action():
     "Ajout manuel", "Google Ads",
 ])
 def test_origin_never_changes_the_integration_score(origin):
-    base = financial_contact(formation="SSIAP 1", cpf_amount="980")
+    base = financial_contact(formation="SSIAP 1", cpf_amount="1230")
     assert calculate_candidate_integration_score({**base, "origine": origin}) == (
         calculate_candidate_integration_score(base)
     )

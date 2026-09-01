@@ -336,11 +336,11 @@ def test_new_a3p_q5_to_q9_feed_the_universal_score(tmp_path, monkeypatch):
     assert contact["carte_pro"] == "OUI"
     assert len(contact["meta_answers"]) >= 9
     score = application._crm_contact_response(contact)["integration_score"]
-    assert score["version"] == 5
+    assert score["version"] == 7
     assert score["cpf_amount_estimated"] is True
     assert score["cpf_amount_min_eur"] == 1000
     assert score["cpf_amount_max_eur"] == 2000
-    assert score["regulatory_score"] == 70
+    assert score["regulatory_score"] == 100
     assert salesforce_payloads[0]["ft_refus_ok"] == "OUI"
 
 

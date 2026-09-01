@@ -851,14 +851,14 @@ def test_crm_saves_universal_personal_capacity_and_confirmed_ft_amount(
         json={
             "cpf": "NON", "financement_ft": "OUI",
             "statut_demande_financement_ft": "acceptee",
-            "montant_accorde_ft": "980",
+            "montant_accorde_ft": "1230",
             "financement_perso_possible": "OUI",
         },
     )
 
     assert updated.status_code == 200
     body = updated.get_json()
-    assert body["montant_accorde_ft"] == "980.00"
+    assert body["montant_accorde_ft"] == "1230.00"
     assert body["financement_perso_possible"] == "OUI"
     assert body["integration_score"]["financial_score"] == 100
     assert body["integration_score"]["funding_solution_status"] == (
@@ -1761,7 +1761,7 @@ def test_tracking_card_precedes_the_activity_tab_and_publications_stay_inside_it
     activity_panel = crm_js.split('id="contactActivityPanel"', 1)[1].split(
         'id="contactRelancePanel"', 1
     )[0]
-    assert 'class="card publications-card"' in activity_panel
+    assert 'class="publications-card activity-publications-panel"' in activity_panel
 
 
 def test_contact_lifecycle_and_activity(tmp_path, monkeypatch):

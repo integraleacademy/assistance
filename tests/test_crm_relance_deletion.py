@@ -390,4 +390,4 @@ def test_button_accessibility_responsive_style_and_cache_version():
     assert ".relance-delete:focus-visible" in css
     assert ".relance-delete:disabled" in css
     assert ".relance-item-controls{display:grid;grid-template-columns:1fr 1fr;width:100%" in css
-    assert 'CRM_ASSET_VERSION = "20260831-quick-reminder-1"' in app
+    assert 'CRM_ASSET_VERSION = "20260901-contact-sheet-1"' in app

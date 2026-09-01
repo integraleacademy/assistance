@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 6
+CANDIDATE_SCORING_VERSION = 7
 
 FT_REQUEST_PROGRESS_POINTS = {
     "aucune_demande": 0,
@@ -47,7 +47,7 @@ TRAINING_PRICES_CENTS = {
     "DESP_INITIAL": 430_000,
     "DESP_VAE": 380_000,
     "A3P": 420_000,
-    "SSIAP_1": 98_000,
+    "SSIAP_1": 123_000,
 }
 
 
