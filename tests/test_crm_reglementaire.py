@@ -440,7 +440,7 @@ console.log('CRM CNAPS credentials: OK');
     assert 'id="cnapsUsernameCopy"' in javascript
     assert 'label for="cnapsBirthYear">Année de naissance</label>' in javascript
     assert 'name="cnaps_birth_year"' in javascript
-    assert "cnapsUsernameField?.insertAdjacentHTML('afterend'" in javascript
+    assert "cnapsPasswordField?.insertAdjacentHTML('afterend'" in javascript
     assert 'id="cnapsPasswordGenerate"' in javascript
     assert 'id="cnapsPasswordCopy"' in javascript
     assert "await copyContactCoordinate(input.value)" in javascript
@@ -498,6 +498,10 @@ def test_regulatory_block_is_grouped_into_readable_responsive_cards():
     assert 'data-show="without-card"><div class="regulatory-card-head"' in javascript
     assert "Situation réglementaire" in javascript
     assert "Compte et accès CNAPS" in javascript
+    account_card = javascript[account:tracking]
+    assert account_card.index("Nom d’utilisateur") < account_card.index("Mot de passe")
+    assert 'class="field conditional" data-show="cnaps-account"><label>Mot de passe</label>' in account_card
+    assert 'class="field full conditional" data-show="cnaps-account"><label>Mot de passe</label>' not in account_card
     assert "Suivi du dossier CNAPS" in javascript
     assert 'class="cnaps-overview"' in javascript
     assert '<span>NUB</span>' in javascript
