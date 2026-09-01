@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 5
+CANDIDATE_SCORING_VERSION = 6
 
 FT_REQUEST_PROGRESS_POINTS = {
     "aucune_demande": 0,
@@ -513,6 +513,19 @@ def calculate_security_regulatory_score(contact, cnaps_snapshot=None):
     )
     warnings, blockers, actions = [], [], []
 
+    def authorization_breakdown(account_points, instruction_points,
+                                accepted_points):
+        return [
+            {"key": "cnaps_account", "label": "Compte CNAPS créé",
+             "points": account_points, "max_points": 20},
+            {"key": "cnaps_request_in_review",
+             "label": "Demande CNAPS en cours d’instruction",
+             "points": instruction_points, "max_points": 30},
+            {"key": "cnaps_request_accepted",
+             "label": "Demande CNAPS acceptée",
+             "points": accepted_points, "max_points": 50},
+        ]
+
     antecedents = _boolean(contact.get("antecedents"))
     custody = _boolean(contact.get("garde_vue"))
     if antecedents is True:
@@ -523,36 +536,49 @@ def calculate_security_regulatory_score(contact, cnaps_snapshot=None):
         actions.append("Faire vérifier la situation réglementaire par l’équipe")
 
     stay = _normalized_text(contact.get("titre_sejour_cnaps"))
-    validated_path = active_title or cnaps_status == "accepted"
+    validated_path = active_title or card is True or cnaps_status == "accepted"
     if stay == "NON_CONFORME" and not validated_path:
         blockers.append("Une condition administrative liée au titre de séjour est indiquée comme non remplie. Vérification humaine obligatoire.")
         actions.append("Vérifier la situation administrative avant toute poursuite")
 
-    if cnaps_status == "refused":
+    if expires_before_training or expired_without_active:
+        score, status, label, source, confidence = 55, "in_progress", "Titre CNAPS à renouveler", "cnaps_tracking", 100
+        breakdown = [{
+            "key": "professional_card_renewal",
+            "label": "Carte professionnelle à renouveler",
+            "points": score, "max_points": 100,
+        }]
+        warnings.append("Le titre professionnel CNAPS est expiré ou expire avant le début de la formation.")
+        actions.append("Vérifier le renouvellement du titre professionnel CNAPS")
+    elif active_title or card is True:
+        score, status, label, confidence = 100, "ready", "Carte professionnelle", 100
+        source = "verified_cnaps_title" if active_title else "candidate_declaration"
+        breakdown = [{
+            "key": "professional_card", "label": "Carte professionnelle",
+            "points": 100, "max_points": 100,
+        }]
+    elif cnaps_status == "refused":
         blockers.append("Le suivi CNAPS indique un refus. Vérification humaine obligatoire avant toute poursuite de l’inscription.")
         actions.append("Vérifier le motif et la situation du dossier CNAPS")
         score, status, label, source, confidence = 0, "blocked", "Dossier CNAPS refusé", "cnaps_tracking", 100
-    elif expires_before_training or expired_without_active:
-        score, status, label, source, confidence = 55, "in_progress", "Titre CNAPS à renouveler", "cnaps_tracking", 100
-        warnings.append("Le titre professionnel CNAPS est expiré ou expire avant le début de la formation.")
-        actions.append("Vérifier le renouvellement du titre professionnel CNAPS")
-    elif active_title:
-        score, status, label, source, confidence = 100, "ready", "Carte professionnelle vérifiée", "verified_cnaps_title", 100
+        breakdown = [{
+            "key": "cnaps_request_refused",
+            "label": "Demande CNAPS refusée",
+            "points": 0, "max_points": 100,
+        }]
     elif cnaps_status == "accepted":
-        score, status, label, source, confidence = 100, "ready", "Autorisation CNAPS acceptée", "cnaps_tracking", 100
-    elif card is True:
-        score, status, label, source, confidence = 70, "in_progress", "Carte professionnelle déclarée à vérifier", "candidate_declaration", 70
-        warnings.append("La carte professionnelle est déclarée par le candidat mais n’a pas encore été vérifiée dans le suivi CNAPS.")
-        actions.append("Vérifier la carte professionnelle et sa validité jusqu’à la formation")
-    elif cnaps_status == "in_review":
-        score, status, label, source, confidence = 55, "in_progress", "Demande CNAPS en instruction", "cnaps_tracking", 100
-    elif cnaps_status == "transmitted":
-        score, status, label, source, confidence = 40, "in_progress", "Demande CNAPS transmise", "cnaps_tracking", 100
+        score, status, label, source, confidence = 100, "ready", "Demande CNAPS acceptée", "cnaps_tracking", 100
+        breakdown = authorization_breakdown(20, 30, 50)
+    elif cnaps_status in {"transmitted", "in_review"}:
+        score, status, label, source, confidence = 50, "in_progress", "Demande CNAPS en cours d’instruction", "cnaps_tracking", 100
+        breakdown = authorization_breakdown(20, 30, 0)
     elif cnaps_status == "registered" or account is True:
-        score, status, label, source, confidence = 25, "in_progress", "Démarche CNAPS créée", "cnaps_tracking" if cnaps_status == "registered" else "candidate_declaration", 80 if cnaps_status == "registered" else 60
+        score, status, label, source, confidence = 20, "in_progress", "Compte CNAPS créé", "cnaps_tracking" if cnaps_status == "registered" else "candidate_declaration", 80 if cnaps_status == "registered" else 60
+        breakdown = authorization_breakdown(20, 0, 0)
         actions.append("Finaliser et transmettre la demande d’autorisation CNAPS")
     else:
         score, status, label, source, confidence = None, "unknown", "Situation réglementaire à compléter", "unknown", 0
+        breakdown = []
         if card is None:
             warnings.append("La détention d’une carte professionnelle n’est pas renseignée.")
             actions.append("Vérifier si le candidat possède une carte professionnelle")
@@ -569,11 +595,6 @@ def calculate_security_regulatory_score(contact, cnaps_snapshot=None):
         warnings.append("La situation administrative liée au titre de séjour reste à vérifier.")
         actions.append("Vérifier les justificatifs liés au titre de séjour")
 
-    breakdown = [] if score is None else [{
-        "key": "regulatory_progress", "label": label,
-        "detail": CNAPS_PROGRESS_LABELS.get(cnaps_status, "Situation inconnue"),
-        "points": score, "max_points": 100,
-    }]
     return {"applicable": True, "score": score, "max_score": 100,
             "score_complete": score is not None,
             "data_confidence_percent": confidence, "status": status,
