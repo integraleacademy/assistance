@@ -451,29 +451,38 @@ function callbackRequestsTable(rows){
   return`<tr class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td><span class="callback-request-note">${esc(row.notes||'Aucune précision renseignée.')}</span></td><td>${esc(row.rdv||'—')}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td><button class="btn ${processed?'':'blue'} callback-request-action" type="button" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button></td></tr>`;
  }).join('')}</tbody></table></div></section>`;
 }
+function drawCallbackRequests(){
+ const input=document.querySelector('#callbackRequestSearch'),results=document.querySelector('#callbackRequestResults'),count=document.querySelector('#callbackRequestCount');
+ if(!input||!results||!count)return;
+ const pending=callbackRequests.filter(row=>row.status!=='processed').length,processed=callbackRequests.length-pending;
+ const stats={callbackRequestPendingStat:pending,callbackRequestProcessedStat:processed,callbackRequestTotalStat:callbackRequests.length};
+ Object.entries(stats).forEach(([id,value])=>{const element=document.querySelector(`#${id}`);if(element)element.textContent=value});
+ const pendingLabel=document.querySelector('#callbackRequestPendingLabel'),processedLabel=document.querySelector('#callbackRequestProcessedLabel');
+ if(pendingLabel)pendingLabel.textContent=`demande${pending>1?'s':''} en attente`;
+ if(processedLabel)processedLabel.textContent=`demande${processed>1?'s':''} clôturée${processed>1?'s':''}`;
+ document.querySelectorAll('[data-callback-filter]').forEach(button=>{const value=button.dataset.callbackFilter,total=value==='pending'?pending:value==='processed'?processed:callbackRequests.length,buttonCount=button.querySelector('span');if(buttonCount)buttonCount.textContent=total});
+ const query=normalizeGlobalSearch(callbackRequestSearch),filtered=callbackRequests.filter(row=>callbackRequestFilter==='all'||(callbackRequestFilter==='processed'?row.status==='processed':row.status!=='processed')).filter(row=>normalizeGlobalSearch([row.display_name,row.telephone,row.email,row.notes,row.rdv,row.crm_contact_name,row.crm_contact_status,row.processed_by].join(' ')).includes(query));
+ results.innerHTML=callbackRequestsTable(filtered);
+ count.textContent=`${filtered.length} demande${filtered.length>1?'s':''}`;
+ results.querySelectorAll('.callback-request-action').forEach(button=>button.onclick=async()=>{
+  const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,nextStatus=button.dataset.callbackStatus;
+  if(!requestId)return;
+  button.disabled=true;
+  button.textContent='Enregistrement…';
+  try{
+   await saveCallbackRequestStatus(requestId,nextStatus);
+   drawCallbackRequests();
+   toast(nextStatus==='processed'?'Demande marquée comme traitée':'Demande rouverte');
+  }catch(error){button.disabled=false;button.textContent=nextStatus==='processed'?'Marquer comme traitée':'Rouvrir';toast(error.message,true)}
+ });
+}
 function callbackRequestsPage(){
  const pending=callbackRequests.filter(row=>row.status!=='processed').length,processed=callbackRequests.length-pending;
- page.innerHTML=header('SECRÉTARIAT','Demande de rappel','Toutes les « Autres demandes » reçues par le secrétariat, sans création automatique de piste.')+`<section class="callback-request-stats"><article class="is-pending"><span>À traiter</span><strong>${pending}</strong><small>demande${pending>1?'s':''} en attente</small></article><article class="is-processed"><span>Traitées</span><strong>${processed}</strong><small>demande${processed>1?'s':''} clôturée${processed>1?'s':''}</small></article><article><span>Total reçu</span><strong>${callbackRequests.length}</strong><small>historique complet</small></article></section><div class="callback-request-toolbar"><div class="callback-request-status-filters" role="group" aria-label="Filtrer les demandes selon leur statut"><button type="button" data-callback-filter="pending" aria-pressed="${callbackRequestFilter==='pending'}" class="${callbackRequestFilter==='pending'?'active':''}">À traiter <span>${pending}</span></button><button type="button" data-callback-filter="processed" aria-pressed="${callbackRequestFilter==='processed'}" class="${callbackRequestFilter==='processed'?'active':''}">Traitées <span>${processed}</span></button><button type="button" data-callback-filter="all" aria-pressed="${callbackRequestFilter==='all'}" class="${callbackRequestFilter==='all'?'active':''}">Toutes <span>${callbackRequests.length}</span></button></div><div class="filters callback-request-filters"><input id="callbackRequestSearch" aria-label="Rechercher une demande de rappel" placeholder="⌕  Nom, e-mail, téléphone ou demande…" value="${esc(callbackRequestSearch)}"><span class="filter-result-count" id="callbackRequestCount"></span></div></div><div id="callbackRequestResults"></div>`;
- const input=document.querySelector('#callbackRequestSearch'),results=document.querySelector('#callbackRequestResults'),count=document.querySelector('#callbackRequestCount');
- const draw=()=>{
-  const query=normalizeGlobalSearch(callbackRequestSearch),filtered=callbackRequests.filter(row=>callbackRequestFilter==='all'||(callbackRequestFilter==='processed'?row.status==='processed':row.status!=='processed')).filter(row=>normalizeGlobalSearch([row.display_name,row.telephone,row.email,row.notes,row.rdv,row.crm_contact_name,row.crm_contact_status,row.processed_by].join(' ')).includes(query));
-  results.innerHTML=callbackRequestsTable(filtered);
-  count.textContent=`${filtered.length} demande${filtered.length>1?'s':''}`;
-  results.querySelectorAll('.callback-request-action').forEach(button=>button.onclick=async()=>{
-   const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,nextStatus=button.dataset.callbackStatus;
-   if(!requestId)return;
-   button.disabled=true;
-   button.textContent='Enregistrement…';
-   try{
-    await saveCallbackRequestStatus(requestId,nextStatus);
-    callbackRequestsPage();
-    toast(nextStatus==='processed'?'Demande marquée comme traitée':'Demande rouverte');
-   }catch(error){button.disabled=false;button.textContent=nextStatus==='processed'?'Marquer comme traitée':'Rouvrir';toast(error.message,true)}
-  });
- };
- input.oninput=()=>{callbackRequestSearch=input.value;draw()};
- document.querySelectorAll('[data-callback-filter]').forEach(button=>button.onclick=()=>{callbackRequestFilter=button.dataset.callbackFilter;document.querySelectorAll('[data-callback-filter]').forEach(item=>{item.classList.toggle('active',item===button);item.setAttribute('aria-pressed',String(item===button))});draw()});
- draw();
+ page.innerHTML=header('SECRÉTARIAT','Demande de rappel','Toutes les « Autres demandes » reçues par le secrétariat, sans création automatique de piste.')+`<section class="callback-request-stats"><article class="is-pending"><span>À traiter</span><strong id="callbackRequestPendingStat">${pending}</strong><small id="callbackRequestPendingLabel">demande${pending>1?'s':''} en attente</small></article><article class="is-processed"><span>Traitées</span><strong id="callbackRequestProcessedStat">${processed}</strong><small id="callbackRequestProcessedLabel">demande${processed>1?'s':''} clôturée${processed>1?'s':''}</small></article><article><span>Total reçu</span><strong id="callbackRequestTotalStat">${callbackRequests.length}</strong><small>historique complet</small></article></section><div class="callback-request-toolbar"><div class="callback-request-status-filters" role="group" aria-label="Filtrer les demandes selon leur statut"><button type="button" data-callback-filter="pending" aria-pressed="${callbackRequestFilter==='pending'}" class="${callbackRequestFilter==='pending'?'active':''}">À traiter <span>${pending}</span></button><button type="button" data-callback-filter="processed" aria-pressed="${callbackRequestFilter==='processed'}" class="${callbackRequestFilter==='processed'?'active':''}">Traitées <span>${processed}</span></button><button type="button" data-callback-filter="all" aria-pressed="${callbackRequestFilter==='all'}" class="${callbackRequestFilter==='all'?'active':''}">Toutes <span>${callbackRequests.length}</span></button></div><div class="filters callback-request-filters"><input id="callbackRequestSearch" aria-label="Rechercher une demande de rappel" placeholder="⌕  Nom, e-mail, téléphone ou demande…" value="${esc(callbackRequestSearch)}"><span class="filter-result-count" id="callbackRequestCount"></span></div></div><div id="callbackRequestResults"></div>`;
+ const input=document.querySelector('#callbackRequestSearch');
+ input.oninput=()=>{callbackRequestSearch=input.value;drawCallbackRequests()};
+ document.querySelectorAll('[data-callback-filter]').forEach(button=>button.onclick=()=>{callbackRequestFilter=button.dataset.callbackFilter;document.querySelectorAll('[data-callback-filter]').forEach(item=>{item.classList.toggle('active',item===button);item.setAttribute('aria-pressed',String(item===button))});drawCallbackRequests()});
+ drawCallbackRequests();
 }
 function listContactsForType(type,activeContacts=crmActiveContacts()){
  if(type==='pistes'){
@@ -1718,8 +1727,10 @@ async function refreshCrmSnapshot(){
  if(document.hidden||crmRefreshInFlight){scheduleCrmRefresh();return}
  crmRefreshInFlight=true;
  try{
-  const id=new URLSearchParams(location.search).get('fiche');
-  const suffix=id?`?contact_id=${encodeURIComponent(id)}`:'';
+  const id=new URLSearchParams(location.search).get('fiche'),refreshParams=new URLSearchParams();
+  if(id)refreshParams.set('contact_id',id);
+  if(C.section==='demandes-rappel')refreshParams.set('section',C.section);
+  const suffix=refreshParams.size?`?${refreshParams}`:'';
   if(!id)await refreshPipelineAppointments();
   const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
   const updates=snapshot.contacts||[];
@@ -1740,6 +1751,12 @@ async function refreshCrmSnapshot(){
    });
   }else updates.forEach(update=>mergeContactInStore(update.id,update));
   if(snapshot.selected)mergeContactInStore(snapshot.selected.id,snapshot.selected);
+  if(Array.isArray(snapshot.callback_requests)){
+   callbackRequests=snapshot.callback_requests;
+   callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);
+   updateCallbackRequestNavCount();
+   if(C.section==='demandes-rappel'&&!id)drawCallbackRequests();
+  }
   updateLeadCount();
   updateVisibleAppointmentData();
   if(C.section==='calendrier'&&!id&&hasAppointments)renderCalendarAppointments(crmAppointments);
