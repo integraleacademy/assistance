@@ -81,4 +81,4 @@ for(const [value,expected] of cases){
     assert ".contact-header-coordinate-control{display:flex" in stylesheet
     assert ".contact-header-coordinate-control .contact-copy{" in stylesheet
     assert template.count("copy_coordinates_version='20260825-copy-contact-coordinates-1'") == 2
-    assert 'CRM_ASSET_VERSION = "20260901-contact-sheet-rules-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260901-cnaps-card-validity-1"' in backend

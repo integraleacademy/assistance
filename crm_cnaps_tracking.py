@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+import re
 import unicodedata
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, List, Set, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -17,10 +18,193 @@ from candidate_scoring import normalize_cnaps_tracking_status
 REMOTE_PATH = "/api/integrations/crm/stagiaires"
 CNAPS_TRACKING_PATH = "/api/integrations/crm/cnaps-tracking"
 LINK_EXISTING_PATH = f"{REMOTE_PATH}/link-existing"
+CNAPS_PUBLIC_ANNUAIRE_PAGE_URL = (
+    "https://espace-consultation.cnaps.interieur.gouv.fr/annuaire/"
+    "app/annuaire-public"
+)
+CNAPS_PUBLIC_ANNUAIRE_ENDPOINT = os.getenv(
+    "CNAPS_PUBLIC_ANNUAIRE_ENDPOINT",
+    "https://espace-consultation.cnaps.interieur.gouv.fr/annuaire/"
+    "api/back/public/annuaire/search/personne-physique",
+).strip()
+CNAPS_PUBLIC_ANNUAIRE_PAGE_SIZE = 10
+CNAPS_PUBLIC_ANNUAIRE_MAX_PAGES = 25
+CNAPS_TITLE_ORDER = ["AP SH", "AP A3P", "CP SH", "CP A3P"]
 _SECRET_KEYS = {
     "token", "public_token", "trainee_token", "api_token", "authorization",
     "x-api-key",
 }
+
+
+def normalized_name(value: Any) -> str:
+    """Normalise un nom pour une recherche indépendante de sa présentation."""
+    text = " ".join(str(value or "").strip().split()).casefold()
+    return "".join(
+        character for character in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(character)
+    )
+
+
+def normalize_cnaps_nub(value: Any) -> str:
+    """Conserve uniquement les chiffres du numéro unique bénéficiaire."""
+    return re.sub(r"\D+", "", str(value or ""))
+
+
+def _cnaps_activity_code(value: Any) -> str:
+    """Reprend les libellés courts utilisés dans Gestion Stagiaires."""
+    label = normalized_name(value)
+    prefix = ""
+    if label.startswith("autorisation prealable"):
+        prefix = "AP"
+    elif label.startswith("carte professionnelle"):
+        prefix = "CP"
+    activity = ""
+    if "surveillance humaine ou gardiennage" in label:
+        activity = "SH"
+    elif "protection physique des personnes" in label:
+        activity = "A3P"
+    return f"{prefix} {activity}".strip() or str(value or "").strip() or "Titre CNAPS"
+
+
+def _cnaps_card_error(nub: str, *, http_status: Any = None) -> Dict[str, Any]:
+    return {
+        "check_status": "error",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "nub": normalize_cnaps_nub(nub),
+        "titles": [],
+        "active_titles": [],
+        "message": "Vérification CNAPS impossible",
+        "error": "cnaps_unavailable",
+        "http_status": http_status,
+    }
+
+
+def fetch_cnaps_card_validity(
+    last_name: str,
+    nub: str,
+    *,
+    session: Any = None,
+) -> Dict[str, Any]:
+    """Interroge l'annuaire public CNAPS comme Gestion Stagiaires.
+
+    La réponse est volontairement limitée aux titres, statuts et dates utiles à
+    la fiche CRM. Les données d'autres personnes éventuellement renvoyées par
+    l'annuaire sont écartées par le couple nom/NUB.
+    """
+    normalized_last_name = " ".join(str(last_name or "").strip().split()).upper()
+    normalized_nub = normalize_cnaps_nub(nub)
+    if (not CNAPS_PUBLIC_ANNUAIRE_ENDPOINT or not normalized_last_name
+            or len(normalized_nub) != 7):
+        return _cnaps_card_error(normalized_nub)
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Referer": CNAPS_PUBLIC_ANNUAIRE_PAGE_URL,
+        "Origin": "https://espace-consultation.cnaps.interieur.gouv.fr",
+        "User-Agent": (
+            "Mozilla/5.0 (compatible; assistance-crm/1.0; "
+            "+https://assistance-alw9.onrender.com)"
+        ),
+    }
+    requester = session or requests.Session()
+    rows: List[Dict[str, Any]] = []
+    total_pages = 1
+    page = 0
+    last_http_status = None
+    try:
+        while page < min(total_pages, CNAPS_PUBLIC_ANNUAIRE_MAX_PAGES):
+            payload = {
+                "nom": normalized_last_name,
+                "nub": normalized_nub,
+                "page": page,
+                "size": CNAPS_PUBLIC_ANNUAIRE_PAGE_SIZE,
+                "sorts": [
+                    {"field": "nom", "asc": True},
+                    {"field": "dateFinValidite", "asc": True},
+                ],
+            }
+            response = requester.post(
+                CNAPS_PUBLIC_ANNUAIRE_ENDPOINT,
+                json=payload,
+                headers=headers,
+                timeout=(3, 10),
+                allow_redirects=True,
+            )
+            last_http_status = getattr(response, "status_code", None)
+            if last_http_status != 200:
+                return _cnaps_card_error(
+                    normalized_nub, http_status=last_http_status,
+                )
+            content_type = str(
+                (getattr(response, "headers", {}) or {}).get("Content-Type", "")
+            ).lower()
+            if content_type and "json" not in content_type:
+                return _cnaps_card_error(
+                    normalized_nub, http_status=last_http_status,
+                )
+            payload_response = response.json()
+            if (not isinstance(payload_response, dict)
+                    or not isinstance(payload_response.get("results"), list)):
+                return _cnaps_card_error(
+                    normalized_nub, http_status=last_http_status,
+                )
+            rows.extend(
+                row for row in payload_response["results"]
+                if isinstance(row, dict)
+            )
+            if page == 0:
+                try:
+                    total_pages = max(
+                        1, int(payload_response.get("totalPages") or 1),
+                    )
+                except (TypeError, ValueError):
+                    total_pages = 1
+            page += 1
+    except Exception:
+        return _cnaps_card_error(normalized_nub, http_status=last_http_status)
+
+    titles: List[Dict[str, Any]] = []
+    seen: Set[Tuple[str, str, str, str]] = set()
+    expected_name = normalized_name(normalized_last_name)
+    for row in rows:
+        row_nub = normalize_cnaps_nub(row.get("nub"))
+        row_name = normalized_name(row.get("nom"))
+        if row_nub != normalized_nub or row_name != expected_name:
+            continue
+        label = str(row.get("typeActivite") or "").strip()
+        status = str(row.get("agrementStatutEs") or "").strip().upper()
+        expires_at = str(row.get("dateFinValidite") or "").strip()
+        code = _cnaps_activity_code(label)
+        key = (code, label, status, expires_at)
+        if key in seen:
+            continue
+        seen.add(key)
+        titles.append({
+            "code": code,
+            "label": label or code,
+            "status": status or "INCONNU",
+            "display_status": " ".join(
+                part for part in (code, status or "INCONNU") if part
+            ),
+            "expires_at": expires_at or None,
+        })
+    titles.sort(key=lambda title: (
+        CNAPS_TITLE_ORDER.index(title["code"])
+        if title["code"] in CNAPS_TITLE_ORDER else 999,
+        title["label"],
+        title.get("expires_at") or "",
+    ))
+    active_titles = [title for title in titles if title["status"] == "ACTIF"]
+    return {
+        "check_status": "success",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "nub": normalized_nub,
+        "titles": titles,
+        "active_titles": active_titles,
+        "message": None if titles else "Aucun titre CNAPS trouvé",
+        "error": None,
+    }
 
 
 def gestion_stagiaires_api_url() -> str:
@@ -53,15 +237,6 @@ def gestion_stagiaires_cnaps_tracking_api_url() -> str:
         return ""
     parsed = urlsplit(api_url)
     return urlunsplit((parsed.scheme, parsed.netloc, CNAPS_TRACKING_PATH, "", ""))
-
-
-def normalized_name(value: Any) -> str:
-    """Normalise un nom pour une recherche indépendante de sa présentation."""
-    text = " ".join(str(value or "").strip().split()).casefold()
-    return "".join(
-        character for character in unicodedata.normalize("NFKD", text)
-        if not unicodedata.combining(character)
-    )
 
 
 def crm_contact_identity(contact: Dict[str, Any]) -> Dict[str, str]:

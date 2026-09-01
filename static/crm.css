@@ -976,7 +976,26 @@ img,svg,video,canvas,iframe{max-width:100%}
 .contact-header-editor input:focus{border-color:#6f94e2;background:#fff;box-shadow:0 0 0 3px #356ae617}
 .contact-journey-label{display:inline-flex;align-items:center;min-height:32px;padding:6px 11px;border:1px solid #d9e1ec;border-radius:9px;background:#eef2f8;color:#52637a;font:850 11px Manrope;box-shadow:0 3px 10px #1720330d}
 .contact-journey-label.formation-a3p{border-color:#a9ddca;background:#e5f7f0;color:#0e765b}.contact-journey-label.formation-aps{border-color:#b8cdf6;background:#e8f0ff;color:#2859bf}.contact-journey-label.formation-vtc{border-color:#cdbcf2;background:#f0ebff;color:#704cc4}.contact-journey-label.formation-desp{border-color:#f0c294;background:#fff0df;color:#b45d16}.contact-journey-label.formation-ssiap{border-color:#efb6bd;background:#ffeaed;color:#b52f42}
-.cnaps-nub-control{display:flex;align-items:stretch;gap:8px}.cnaps-nub-control input{min-width:0;flex:1}.cnaps-nub-control .btn{flex:none;white-space:nowrap}.cnaps-nub-field .field-help{margin-top:6px}
+.cnaps-nub-control{display:flex;align-items:stretch;gap:8px}
+.cnaps-nub-control input{min-width:0;flex:1}
+.cnaps-nub-control .btn{flex:none;white-space:nowrap}
+.cnaps-nub-field .field-help{margin-top:6px}
+.cnaps-card-validity-result{display:grid;gap:8px;margin-top:10px;padding:11px 12px;border:1px solid #dbe4f1;border-radius:11px;background:#f8faff}
+.cnaps-card-validity-result[hidden]{display:none}
+.cnaps-card-validity-result.is-loading{color:#52637a;font-size:12px;font-weight:750}
+.cnaps-card-validity-result.is-error{border-color:#fecaca;background:#fff1f2;color:#991b1b}
+.cnaps-card-validity-result.is-error b,.cnaps-card-validity-result.is-error span{display:block}
+.cnaps-card-validity-result.is-error span{margin-top:3px;font-size:11px}
+.cnaps-card-validity-titles{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.cnaps-card-validity-chip{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:7px 11px;border:1px solid;border-radius:999px;font-size:11px;line-height:1}
+.cnaps-card-validity-chip b{font-weight:900;letter-spacing:.025em}
+.cnaps-card-validity-chip small{font-size:10px;font-weight:750;opacity:.9}
+.cnaps-card-validity-chip.is-active{border-color:#16a34a;background:#16a34a;color:#fff;box-shadow:0 8px 18px #16a34a24}
+.cnaps-card-validity-chip.is-inactive{border-color:#fca5a5;background:#fee2e2;color:#991b1b}
+.cnaps-card-validity-chip.is-unknown{border-color:#fdba74;background:#ffedd5;color:#9a3412}
+.cnaps-card-validity-checked{color:#738196;font-size:10px;font-weight:700}
+.cnaps-card-validity-empty{display:grid;gap:3px;color:#9a3412}
+.cnaps-card-validity-empty b{font-size:12px}.cnaps-card-validity-empty span{font-size:11px}
 .contact-next-row{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(250px,.7fr);gap:9px;min-width:0}
 .contact-next-row .next-action{grid-column:auto;margin:0}
 .next-telephone-appointment{display:flex;align-items:center;gap:10px;min-width:0;padding:9px 12px;border-left:4px solid #7c5ce7;border-radius:7px;background:#f1edff;color:#51399d}
