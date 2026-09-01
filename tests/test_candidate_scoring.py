@@ -51,7 +51,7 @@ def test_candidate_score_styles_are_bundled():
     assert ".integration-score-card.incomplete" in css
 
 
-def test_v5_uses_60_percent_financial_and_40_percent_verified_regulatory():
+def test_v6_uses_60_percent_financial_and_40_percent_regulatory():
     declared = calculate_candidate_integration_score(
         financial_contact(carte_pro="OUI")
     )
@@ -60,11 +60,11 @@ def test_v5_uses_60_percent_financial_and_40_percent_verified_regulatory():
         {"has_active_professional_title": True},
     )
 
-    assert CANDIDATE_SCORING_VERSION == declared["version"] == 5
+    assert CANDIDATE_SCORING_VERSION == declared["version"] == 6
     assert declared["financial_score"] == 100
-    assert declared["regulatory_score"] == 70
-    assert declared["score"] == 88
-    assert declared["operational_status"] == "action_required"
+    assert declared["regulatory_score"] == 100
+    assert declared["score"] == 100
+    assert declared["operational_status"] == "ready"
     assert verified["score"] == 100
     assert verified["regulatory_source"] == "verified_cnaps_title"
     assert verified["operational_status"] == "ready"
@@ -72,17 +72,66 @@ def test_v5_uses_60_percent_financial_and_40_percent_verified_regulatory():
 
 @pytest.mark.parametrize(("snapshot", "contact_updates", "expected"), [
     ({"raw_status": "ACCEPTÉ"}, {"carte_pro": "NON"}, 100),
-    ({"raw_status": "EN INSTRUCTION"}, {"carte_pro": "NON"}, 55),
-    ({"raw_status": "TRANSMIS"}, {"carte_pro": "NON"}, 40),
-    ({"raw_status": "ENREGISTRÉ"}, {"carte_pro": "NON"}, 25),
-    ({}, {"carte_pro": "NON", "compte_cnaps": "OUI"}, 25),
-    ({}, {"carte_pro": "OUI"}, 70),
+    ({"raw_status": "EN INSTRUCTION"}, {"carte_pro": "NON"}, 50),
+    ({"raw_status": "TRANSMIS"}, {"carte_pro": "NON"}, 50),
+    ({"raw_status": "ENREGISTRÉ"}, {"carte_pro": "NON"}, 20),
+    ({}, {"carte_pro": "NON", "compte_cnaps": "OUI"}, 20),
+    ({}, {"carte_pro": "OUI"}, 100),
 ])
 def test_regulatory_progress_ladder(snapshot, contact_updates, expected):
     result = calculate_security_regulatory_score(
         financial_contact(**contact_updates), snapshot
     )
     assert result["score"] == expected
+
+
+def test_cnaps_authorization_steps_are_cumulative():
+    account = calculate_security_regulatory_score(
+        financial_contact(carte_pro="NON", compte_cnaps="OUI"), {}
+    )
+    transmitted = calculate_security_regulatory_score(
+        financial_contact(carte_pro="NON"), {"raw_status": "TRANSMIS"}
+    )
+    accepted = calculate_security_regulatory_score(
+        financial_contact(carte_pro="NON"), {"raw_status": "ACCEPTÉ"}
+    )
+
+    def points(result):
+        return [
+            (row["label"], row["points"], row["max_points"])
+            for row in result["breakdown"]
+        ]
+
+    assert points(account) == [
+        ("Compte CNAPS créé", 20, 20),
+        ("Demande CNAPS en cours d’instruction", 0, 30),
+        ("Demande CNAPS acceptée", 0, 50),
+    ]
+    assert points(transmitted) == [
+        ("Compte CNAPS créé", 20, 20),
+        ("Demande CNAPS en cours d’instruction", 30, 30),
+        ("Demande CNAPS acceptée", 0, 50),
+    ]
+    assert points(accepted) == [
+        ("Compte CNAPS créé", 20, 20),
+        ("Demande CNAPS en cours d’instruction", 30, 30),
+        ("Demande CNAPS acceptée", 50, 50),
+    ]
+
+
+def test_professional_card_replaces_cnaps_authorization_steps():
+    result = calculate_security_regulatory_score(
+        financial_contact(carte_pro="OUI"), {"raw_status": "TRANSMIS"}
+    )
+
+    assert result["score"] == 100
+    assert result["label"] == "Carte professionnelle"
+    assert result["breakdown"] == [{
+        "key": "professional_card",
+        "label": "Carte professionnelle",
+        "points": 100,
+        "max_points": 100,
+    }]
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -137,7 +186,7 @@ def test_sensitive_declarations_trigger_review_without_numerical_penalty():
         {"raw_status": "TRANSMIS"},
     )
 
-    assert clear["score"] == declared["score"] == 40
+    assert clear["score"] == declared["score"] == 50
     assert declared["status"] == "in_progress"
     assert len(declared["warnings"]) >= 2
     assert not any("juridiquement refus" in text.lower()
@@ -152,7 +201,7 @@ def test_non_conforming_stay_status_is_a_human_review_blocker():
         ),
         {"raw_status": "TRANSMIS"},
     )
-    assert result["regulatory_score"] == 40
+    assert result["regulatory_score"] == 50
     assert result["operational_status"] == "blocked"
     assert any("titre de séjour" in blocker for blocker in result["blockers"])
 
