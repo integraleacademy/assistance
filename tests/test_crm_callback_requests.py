@@ -312,3 +312,38 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert ".feed-item.callback-activity" in stylesheet
     assert ".feed-callback-action" in stylesheet
     assert ".callback-nav-count" in stylesheet
+
+
+def test_callback_workspace_is_refreshed_by_the_collaborative_snapshot(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["secretariat_demandes"] = [{
+        "id": "callback-live-refresh",
+        "type": "autre",
+        "nom": "Lina Martin",
+        "telephone": "0600000000",
+        "callback_status": "pending",
+        "created_at": "2026-09-01T00:00:00+02:00",
+    }]
+    application.save_data(data)
+
+    compact = client.get("/api/crm/contacts/updates").get_json()
+    callback = client.get(
+        "/api/crm/contacts/updates?section=demandes-rappel"
+    ).get_json()
+
+    assert compact["callback_pending_count"] == 1
+    assert "callback_requests" not in compact
+    assert callback["callback_pending_count"] == 1
+    assert callback["callback_requests"][0]["id"] == "callback-live-refresh"
+
+    javascript = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
+    refresh = javascript[
+        javascript.index("async function refreshCrmSnapshot()"):
+        javascript.index("document.addEventListener('visibilitychange'")
+    ]
+    assert "refreshParams.set('section',C.section)" in refresh
+    assert "Array.isArray(snapshot.callback_requests)" in refresh
+    assert "drawCallbackRequests();" in refresh
+    assert "callbackRequestsPage();" not in refresh

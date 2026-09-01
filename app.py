@@ -14372,7 +14372,16 @@ def crm_contact_updates():
             "activities": selected.get("activities", []),
             "publications": selected.get("publications", []),
         }
-    return jsonify({"contacts": summaries, "selected": selected_payload, "appointments": appointments})
+    section = request.args.get("section", "")
+    payload = {
+        "contacts": summaries,
+        "selected": selected_payload,
+        "appointments": appointments,
+        "callback_pending_count": _crm_callback_pending_count(data),
+    }
+    if section == "demandes-rappel":
+        payload["callback_requests"] = _crm_callback_requests_payload(data)
+    return jsonify(payload)
 
 
 @app.delete("/api/crm/database")
