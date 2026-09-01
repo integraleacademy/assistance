@@ -320,6 +320,16 @@ def calculate_financial_readiness_score(contact):
         elif personal_route:
             route_scores.append(20 if personal_remainder_confirmed else 10)
     operational_points = int((Decimal(sum(route_scores)) / len(route_scores)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if route_scores else 0
+    if conservative_cpf_full:
+        route_readiness_label = "Identité numérique CPF opérationnelle"
+    elif ft_route:
+        route_readiness_label = "Démarches France Travail réalisées"
+    elif personal_route:
+        route_readiness_label = "Paiement personnel confirmé"
+    elif cpf_route:
+        route_readiness_label = "Identité numérique CPF opérationnelle"
+    else:
+        route_readiness_label = "Démarches de financement à définir"
 
     if cpf_route:
         if created is None:
@@ -399,7 +409,7 @@ def calculate_financial_readiness_score(contact):
     breakdown = [
         ("funding_coverage", "Couverture financière sécurisée ou estimée", coverage_points, 50),
         ("funding_progress", "Avancement de la solution de financement", progress_points, 30),
-        ("route_readiness", "Démarches nécessaires à la solution choisie", operational_points, 20),
+        ("route_readiness", route_readiness_label, operational_points, 20),
     ]
     # Le score est une borne basse fondée exclusivement sur les faits connus.
     # Une réponse absente ne devient jamais un fait négatif ou un montant de
