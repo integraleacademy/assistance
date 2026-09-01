@@ -3603,6 +3603,7 @@ def test_crm_persists_reglementaire_answers(tmp_path, monkeypatch):
         "titre_sejour": "OUI",
         "compte_cnaps": "OUI",
         "cnaps_username": "lina.cnaps",
+        "cnaps_birth_year": "1993",
         "cnaps_password": "secret",
         "integration_dracar": "OUI",
     }
@@ -3611,6 +3612,22 @@ def test_crm_persists_reglementaire_answers(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert all(response.get_json()[key] == value for key, value in answers.items())
+
+
+def test_crm_rejects_an_invalid_cnaps_birth_year(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    contact = test_client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+
+    response = test_client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"cnaps_birth_year": "2099"},
+    )
+
+    assert response.status_code == 400
+    assert "année de naissance" in response.get_json()["error"]
 
 
 def test_crm_enforces_conditional_residence_permit_assessment(tmp_path, monkeypatch):
