@@ -1693,6 +1693,117 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
         )
 
 
+CRM_EMAIL_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
+CRM_EMAIL_ATTACHMENT_EXTENSIONS = frozenset({
+    ".csv", ".doc", ".docx", ".gif", ".heic", ".jpeg", ".jpg", ".pdf",
+    ".png", ".ppt", ".pptx", ".txt", ".webp", ".xls", ".xlsx",
+})
+
+
+def _crm_email_attachment_root():
+    """Return the private, persistent folder used by CRM e-mail templates."""
+    root = os.path.abspath(os.path.join(
+        os.path.dirname(DATA_FILE), "uploads", "crm-email-attachments",
+    ))
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def _crm_read_email_attachment(uploaded):
+    """Validate an uploaded e-mail attachment and return safe in-memory data."""
+    if not uploaded or not uploaded.filename:
+        return None
+    filename = secure_filename(uploaded.filename)
+    extension = os.path.splitext(filename)[1].lower()
+    if not filename or extension not in CRM_EMAIL_ATTACHMENT_EXTENSIONS:
+        raise ValueError(
+            "Format de pièce jointe non accepté. Utilisez une image, un PDF, "
+            "un document Word, Excel ou PowerPoint, un CSV ou un fichier texte."
+        )
+    if len(filename.encode("utf-8")) > 240:
+        raise ValueError("Le nom de la pièce jointe est trop long.")
+    content = uploaded.stream.read(CRM_EMAIL_ATTACHMENT_MAX_BYTES + 1)
+    if not content:
+        raise ValueError("La pièce jointe est vide.")
+    if len(content) > CRM_EMAIL_ATTACHMENT_MAX_BYTES:
+        raise OverflowError("La pièce jointe ne doit pas dépasser 20 Mo.")
+    return {
+        "filename": filename,
+        "content": content,
+        "content_type": mimetypes.guess_type(filename)[0] or "application/octet-stream",
+    }
+
+
+def _crm_store_email_attachment(uploaded):
+    attachment = _crm_read_email_attachment(uploaded)
+    if not attachment:
+        return None
+    attachment_id = str(uuid.uuid4())
+    attachment_dir = os.path.join(_crm_email_attachment_root(), attachment_id)
+    os.makedirs(attachment_dir, exist_ok=False)
+    path = os.path.join(attachment_dir, attachment["filename"])
+    try:
+        with open(path, "xb") as attachment_file:
+            attachment_file.write(attachment["content"])
+    except Exception:
+        shutil.rmtree(attachment_dir, ignore_errors=True)
+        raise
+    return {
+        "id": attachment_id,
+        "nom": attachment["filename"],
+        "taille": len(attachment["content"]),
+        "type": attachment["content_type"],
+    }
+
+
+def _crm_email_attachment_path(metadata):
+    """Resolve stored metadata without allowing a path to escape its private root."""
+    if not isinstance(metadata, dict):
+        return None
+    try:
+        attachment_id = str(uuid.UUID(str(metadata.get("id") or "")))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    filename = str(metadata.get("nom") or "")
+    if not filename or secure_filename(filename) != filename:
+        return None
+    root = _crm_email_attachment_root()
+    path = os.path.abspath(os.path.join(root, attachment_id, filename))
+    if os.path.commonpath((root, path)) != root or not os.path.isfile(path):
+        return None
+    return path
+
+
+def _crm_delete_email_attachment(metadata):
+    if not isinstance(metadata, dict):
+        return
+    try:
+        attachment_id = str(uuid.UUID(str(metadata.get("id") or "")))
+    except (ValueError, TypeError, AttributeError):
+        return
+    root = _crm_email_attachment_root()
+    attachment_dir = os.path.abspath(os.path.join(root, attachment_id))
+    if os.path.commonpath((root, attachment_dir)) == root:
+        shutil.rmtree(attachment_dir, ignore_errors=True)
+
+
+def _crm_send_email_html(to_emails, subject, plain_text, html_body,
+                         template=None, attachments_paths=None):
+    """Send an e-mail with explicit files or the attachment saved on its template."""
+    paths = attachments_paths
+    if paths is None and isinstance(template, dict):
+        stored_path = _crm_email_attachment_path(template.get("piece_jointe"))
+        paths = [stored_path] if stored_path else []
+    paths = [path for path in (paths or []) if path]
+    # Keep the historical four-argument call when there is no attachment. It
+    # remains compatible with existing providers, tests and local overrides.
+    if not paths:
+        return send_email_html(to_emails, subject, plain_text, html_body)
+    return send_email_html(
+        to_emails, subject, plain_text, html_body, attachments_paths=paths,
+    )
+
+
 # -------------------------------------------------------------------
 # SMS helper
 # -------------------------------------------------------------------
@@ -7299,7 +7410,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260901-contact-copy-1"
+CRM_ASSET_VERSION = "20260901-email-attachments-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -10585,7 +10696,9 @@ def _send_secretariat_information_messages(data, entry, contact):
         try:
             if kind == "email":
                 template, subject, body, branded = information_email
-                ok = send_email_html(recipient, subject, body, branded)
+                ok = _crm_send_email_html(
+                    recipient, subject, body, branded, template=template,
+                )
                 preview, detail, title = branded, subject, "E-mail d’information envoyé"
             else:
                 body = _build_secretariat_followup_sms(entry.get("formation"))
@@ -11017,7 +11130,10 @@ def _crm_send_appointment_followup(data, contact, template_name):
             email_template.get("sujet") or template_name, contact, data_store=data
         )
         plain = html_module.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", email_body))).strip()
-        delivery["email"] = send_email_html(contact.get("mail"), subject, plain, email_html)
+        delivery["email"] = _crm_send_email_html(
+            contact.get("mail"), subject, plain, email_html,
+            template=email_template,
+        )
         if delivery["email"]:
             _crm_activity(contact, "email", f"E-mail « {template_name} » envoyé", subject, email_html)
     return delivery
@@ -16194,6 +16310,22 @@ def _crm_templates_payload(data):
     }
 
 
+def _crm_request_payload():
+    if request.mimetype == "multipart/form-data":
+        return request.form.to_dict(flat=True)
+    return request.get_json(silent=True) or {}
+
+
+def _crm_payload_boolean(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().casefold() in {"1", "true", "oui", "yes", "on"}
+
+
+def _crm_attachment_error_response(exc):
+    return jsonify({"error": str(exc)}), 413 if isinstance(exc, OverflowError) else 400
+
+
 @app.route("/api/crm/templates", methods=["GET", "POST"])
 @login_required
 @_crm_serialized
@@ -16201,13 +16333,28 @@ def crm_templates():
     data = load_data()
     if request.method == "GET":
         return jsonify(_crm_templates_payload(data))
-    payload = request.get_json(silent=True) or {}; kind = payload.get("type")
+    payload = _crm_request_payload(); kind = payload.get("type")
     if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
+    uploaded = request.files.get("attachment")
+    if kind == "sms" and uploaded and uploaded.filename:
+        return jsonify({"error": "Les pièces jointes sont réservées aux e-mails."}), 400
     item = {"id": str(uuid.uuid4()), "nom": str(payload.get("nom", "Sans titre")).strip(),
             "sujet": str(payload.get("sujet", "")).strip(), "contenu": str(payload.get("contenu", "")),
             "categorie": str(payload.get("categorie", "Général")).strip() or "Général",
             "usage_count": 0, "versions": [], "created_at": _crm_now()}
-    data[f"crm_{kind}_templates"].append(item); save_data(data)
+    stored_attachment = None
+    if uploaded and uploaded.filename:
+        try:
+            stored_attachment = _crm_store_email_attachment(uploaded)
+        except (ValueError, OverflowError) as exc:
+            return _crm_attachment_error_response(exc)
+        item["piece_jointe"] = stored_attachment
+    data[f"crm_{kind}_templates"].append(item)
+    try:
+        save_data(data)
+    except Exception:
+        _crm_delete_email_attachment(stored_attachment)
+        raise
     return jsonify(item), 201
 
 
@@ -16607,8 +16754,31 @@ def crm_callback_request(request_id):
     return jsonify(response)
 
 
+@app.get("/api/crm/templates/<template_id>/attachment")
+@login_required
+def crm_template_attachment(template_id):
+    template = next((
+        item for item in load_data().get("crm_email_templates", [])
+        if item.get("id") == template_id
+    ), None)
+    if not template:
+        return jsonify({"error": "Modèle introuvable"}), 404
+    metadata = template.get("piece_jointe")
+    path = _crm_email_attachment_path(metadata)
+    if not path:
+        return jsonify({"error": "Pièce jointe introuvable"}), 404
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=metadata.get("nom") or os.path.basename(path),
+        mimetype=metadata.get("type") or "application/octet-stream",
+        conditional=True,
+    )
+
+
 @app.route("/api/crm/templates/<template_id>", methods=["PATCH", "DELETE"])
 @login_required
+@_crm_serialized
 def crm_template(template_id):
     data = load_data()
     for kind in ("email", "sms"):
@@ -16617,16 +16787,28 @@ def crm_template(template_id):
         if not item:
             continue
         if request.method == "DELETE":
+            old_attachment = item.get("piece_jointe")
             items.remove(item)
             save_data(data)
+            _crm_delete_email_attachment(old_attachment)
             return "", 204
-        payload = request.get_json(silent=True) or {}
+        payload = _crm_request_payload()
         name = str(payload.get("nom", item.get("nom", ""))).strip()
         content = str(payload.get("contenu", item.get("contenu", "")))
         if not name:
             return jsonify({"error": "Le nom du modèle est obligatoire"}), 400
         if not content.strip():
             return jsonify({"error": "Le contenu du modèle est obligatoire"}), 400
+        uploaded = request.files.get("attachment")
+        if kind == "sms" and uploaded and uploaded.filename:
+            return jsonify({"error": "Les pièces jointes sont réservées aux e-mails."}), 400
+        new_attachment = None
+        if kind == "email" and uploaded and uploaded.filename:
+            try:
+                new_attachment = _crm_store_email_attachment(uploaded)
+            except (ValueError, OverflowError) as exc:
+                return _crm_attachment_error_response(exc)
+        old_attachment = item.get("piece_jointe")
         item.setdefault("versions", []).insert(0, {
             "nom": item.get("nom", ""), "sujet": item.get("sujet", ""),
             "contenu": item.get("contenu", ""), "date": item.get("updated_at") or item.get("created_at") or _crm_now(),
@@ -16634,7 +16816,17 @@ def crm_template(template_id):
         item["versions"] = item["versions"][:20]
         item.update({"nom": name, "sujet": str(payload.get("sujet", item.get("sujet", ""))).strip() if kind == "email" else "", "contenu": content,
                      "categorie": str(payload.get("categorie", item.get("categorie", "Général"))).strip() or "Général", "updated_at": _crm_now()})
-        save_data(data)
+        if new_attachment:
+            item["piece_jointe"] = new_attachment
+        elif kind == "email" and _crm_payload_boolean(payload.get("remove_attachment")):
+            item.pop("piece_jointe", None)
+        try:
+            save_data(data)
+        except Exception:
+            _crm_delete_email_attachment(new_attachment)
+            raise
+        if old_attachment and old_attachment != item.get("piece_jointe"):
+            _crm_delete_email_attachment(old_attachment)
         return jsonify(item)
     return jsonify({"error": "Modèle introuvable"}), 404
 
@@ -16818,7 +17010,9 @@ def crm_send_cnaps_form(contact_id):
     plain = html_module.unescape(
         re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
     ).strip()
-    if not send_email_html(recipient, subject, plain, branded):
+    if not _crm_send_email_html(
+        recipient, subject, plain, branded, template=template,
+    ):
         return jsonify({"error": "L’envoi du formulaire a échoué. Vérifiez la configuration et l’adresse e-mail."}), 502
 
     sent_at = _crm_now()
@@ -16836,16 +17030,47 @@ def crm_send_cnaps_form(contact_id):
 def crm_send_message(contact_id):
     data = load_data(); contact = _crm_contact(data, contact_id)
     if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    payload = request.get_json(silent=True) or {}; kind = payload.get("type")
+    payload = _crm_request_payload(); kind = str(payload.get("type") or "").strip().lower()
     template_id = str(payload.get("template_id") or "").strip()
+    selected_template = next((
+        item for item in data.get(f"crm_{kind}_templates", [])
+        if item.get("id") == template_id
+    ), None) if kind in {"email", "sms"} and template_id else None
     body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     if kind == "email":
+        try:
+            manual_attachment = _crm_read_email_attachment(request.files.get("attachment"))
+        except (ValueError, OverflowError) as exc:
+            return _crm_attachment_error_response(exc)
         body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
         subject = _crm_resolve_message_variables(subject, contact, data_store=data)
         branded = _crm_email_html(body, contact)
-        ok = send_email_html(contact.get("mail"), subject, body, branded)
+        if manual_attachment:
+            with tempfile.TemporaryDirectory(prefix="crm-email-attachment-") as attachment_dir:
+                attachment_path = os.path.join(
+                    attachment_dir, manual_attachment["filename"],
+                )
+                with open(attachment_path, "wb") as attachment_file:
+                    attachment_file.write(manual_attachment["content"])
+                ok = _crm_send_email_html(
+                    contact.get("mail"), subject, body, branded,
+                    template=selected_template,
+                    attachments_paths=[attachment_path],
+                )
+        else:
+            include_template_attachment = _crm_payload_boolean(
+                payload.get("include_template_attachment"), default=True,
+            )
+            ok = _crm_send_email_html(
+                contact.get("mail"), subject, body, branded,
+                template=selected_template,
+                attachments_paths=None if include_template_attachment else [],
+            )
         preview = branded
     elif kind == "sms":
+        uploaded = request.files.get("attachment")
+        if uploaded and uploaded.filename:
+            return jsonify({"error": "Les pièces jointes sont réservées aux e-mails."}), 400
         body = _crm_resolve_message_variables(body, contact, data_store=data)
         ok = send_sms(contact.get("telephone"), body); preview = body
     else: return jsonify({"error": "Type invalide"}), 400
@@ -16857,14 +17082,9 @@ def crm_send_message(contact_id):
         ("E-mail envoyé" if kind == "email" else "SMS envoyé")
     )
     _crm_activity(contact, kind, activity_title, subject if kind == "email" else body, preview)
-    if template_id:
-        for template_kind in ("email", "sms"):
-            template = next((item for item in data.get(f"crm_{template_kind}_templates", [])
-                             if item.get("id") == template_id), None)
-            if template:
-                template["usage_count"] = int(template.get("usage_count") or 0) + 1
-                template["last_used_at"] = _crm_now()
-                break
+    if selected_template:
+        selected_template["usage_count"] = int(selected_template.get("usage_count") or 0) + 1
+        selected_template["last_used_at"] = _crm_now()
     contact["updated_at"] = _crm_now(); save_data(data)
     return jsonify(contact)
 
@@ -16954,13 +17174,21 @@ def crm_send_test_email():
     recipient = str(payload.get("destinataire", "")).strip()
     subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     body = str(payload.get("contenu", ""))
+    template_id = str(payload.get("template_id") or "").strip()
+    template = next((
+        item for item in load_data().get("crm_email_templates", [])
+        if item.get("id") == template_id
+    ), None) if template_id else None
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
         return jsonify({"error": "Renseignez une adresse e-mail valide."}), 400
     if not body.strip():
         return jsonify({"error": "Le contenu de l’e-mail est vide."}), 400
     plain = re.sub(r"<[^>]+>", " ", body)
     plain = html_module.unescape(re.sub(r"\s+", " ", plain)).strip()
-    if not send_email_html(recipient, subject or "Intégrale Academy", plain, body):
+    if not _crm_send_email_html(
+        recipient, subject or "Intégrale Academy", plain, body,
+        template=template,
+    ):
         return jsonify({"error": "L’envoi du mail de test a échoué."}), 502
     return jsonify({"message": "E-mail de test envoyé"})
 

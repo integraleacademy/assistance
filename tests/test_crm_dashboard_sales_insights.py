@@ -94,7 +94,7 @@ def test_compact_api_exposes_tracking_without_the_full_form():
     assert "key not in CRM_GOOGLE_ADS_IDENTIFIER_KEYS" in summary
     assert 'summary["google_ads_tracking"] = google_ads_tracking' in summary
     assert 'summary["formulaire"]' not in summary
-    assert 'CRM_ASSET_VERSION = "20260901-contact-copy-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260901-email-attachments-1"' in backend
 
 
 def test_sales_dashboard_panels_are_responsive_and_actionable():
