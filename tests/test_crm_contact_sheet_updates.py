@@ -137,10 +137,11 @@ def test_contact_identity_is_edited_in_the_header_without_a_duplicate_block():
     for marker in (
         "input('prenom','Prénom','text'",
         "input('nom','Nom','text'",
-        "input('telephone','Téléphone','tel'",
-        "input('mail','E-mail','email'",
+        "coordinate('telephone','Téléphone','tel'",
+        "coordinate('mail','E-mail','email'",
     ):
         assert marker in javascript
+    assert 'data-copy-field="${name}"' in javascript
     assert "headerContactEditor.oninput=handleContactInput" in javascript
     assert 'class="form-section section-user"' not in javascript
     assert ".contact-header-editor input{" in stylesheet

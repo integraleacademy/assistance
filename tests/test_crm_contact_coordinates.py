@@ -63,8 +63,13 @@ for(const [value,expected] of cases){
     assert 'form="contactForm" data-header-contact-field name="${name}"' in javascript
     assert "input('prenom','Prénom','text'" in javascript
     assert "input('nom','Nom','text'" in javascript
-    assert "input('telephone','Téléphone','tel'" in javascript
-    assert "input('mail','E-mail','email'" in javascript
+    assert "coordinate('telephone','Téléphone','tel'" in javascript
+    assert "coordinate('mail','E-mail','email'" in javascript
+    assert 'data-copy-field="${name}"' in javascript
+    assert "document.querySelectorAll('[data-copy-contact],[data-copy-field]')" in javascript
+    assert "button.closest('label')?.querySelector('input')?.value" in javascript
+    assert "Numéro de téléphone copié" in javascript
+    assert "Adresse e-mail copiée" in javascript
     assert "headerContactEditor.oninput=handleContactInput" in javascript
     assert "form.prenom.value=c.prenom" in javascript
     assert 'class="form-section section-user"' not in javascript
@@ -73,5 +78,7 @@ for(const [value,expected] of cases){
     assert ".contact-header-editor{display:grid" in stylesheet
     assert ".contact-header-name-fields,.contact-header-coordinate-fields" in stylesheet
     assert ".contact-header-editor input{" in stylesheet
+    assert ".contact-header-coordinate-control{display:flex" in stylesheet
+    assert ".contact-header-coordinate-control .contact-copy{" in stylesheet
     assert template.count("copy_coordinates_version='20260825-copy-contact-coordinates-1'") == 2
-    assert 'CRM_ASSET_VERSION = "20260901-contact-sheet-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260901-contact-copy-1"' in backend
