@@ -7410,7 +7410,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260901-email-attachments-1"
+CRM_ASSET_VERSION = "20260901-contact-sheet-rules-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -9676,6 +9676,7 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
     response.setdefault("reste_a_charge_perso", "")
     response.setdefault("cpf_palier", "")
     response.setdefault("montant_accorde_ft", "")
+    response.setdefault("cnaps_nub", "")
     response.setdefault("cnaps_birth_year", "")
     if not response.get("financement_perso_possible"):
         response["financement_perso_possible"] = str(
@@ -14188,7 +14189,7 @@ CRM_CONTACT_SUMMARY_FIELDS = (
     "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
     "identite_creation", "identite_ok", "inscrit_ft", "desp_type",
     "carte_pro", "titre_sejour", "titre_sejour_cnaps", "garde_vue",
-    "antecedents", "compte_cnaps", "integration_dracar",
+    "antecedents", "compte_cnaps", "cnaps_nub", "integration_dracar",
     "origine", "source", "source_detail", "source_history", "commercial", "tags",
     "prix_vente", "cout_estime", "relance_date", "prochaine_action_manuelle",
     "archived_at",
@@ -14448,7 +14449,7 @@ def _crm_create_contact_locked():
         "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
         "formation": str(payload.get("formation", "APS")), "lieu": str(payload.get("lieu") or "Paris"),
         "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
-        "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "",
+        "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_nub": "",
         "cnaps_username": "", "cnaps_birth_year": "", "cnaps_password": "",
         "integration_dracar": "",
         "desp_type": "", "identite_creation": "", "cpf_montant": "",
@@ -15201,7 +15202,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         payload.get("relance_motif") if "relance_motif" in payload else None
     )
     allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
-               "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_username", "cnaps_birth_year", "cnaps_password",
+               "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_nub", "cnaps_username", "cnaps_birth_year", "cnaps_password",
                "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
                "financement_ft", "statut_demande_financement_ft", "montant_accorde_ft",
                "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
@@ -15241,6 +15242,13 @@ def _crm_patch_contact_locked(data, contact, contact_id):
             }), 400
     if "cpf_palier" in payload:
         payload["cpf_palier"] = str(payload.get("cpf_palier") or "").strip()[:120]
+    if "cnaps_nub" in payload:
+        cnaps_nub = re.sub(r"\s+", "", str(payload.get("cnaps_nub") or ""))
+        if cnaps_nub and (not cnaps_nub.isdigit() or len(cnaps_nub) > 7):
+            return jsonify({
+                "error": "Le NUB doit comporter au maximum 7 chiffres."
+            }), 400
+        payload["cnaps_nub"] = cnaps_nub
     if "cnaps_birth_year" in payload:
         birth_year = str(payload.get("cnaps_birth_year") or "").strip()
         current_year = datetime.date.today().year
@@ -16640,7 +16648,7 @@ def crm_bootstrap():
     response = jsonify({
         "contacts": contacts,
         "templates": _crm_templates_payload(data),
-        "formation_sessions": get_formation_sessions(data),
+        "formation_sessions": get_upcoming_formation_sessions(data),
         "notifications": _crm_notifications_payload(
             data, user_email,
         ),
@@ -17023,6 +17031,86 @@ def crm_send_cnaps_form(contact_id):
     contact["updated_at"] = sent_at
     save_data(data)
     return jsonify(contact)
+
+
+def _crm_france_travail_funding_template(contact):
+    """Return the exact model configured for an eligible FT funding file."""
+    formation = str(contact.get("formation") or "").strip().upper()
+    journey = str(contact.get("desp_type") or "").strip().upper()
+    if formation == "A3P":
+        return "Financement FT 3P"
+    if formation == "DESP" and journey == "INITIAL":
+        return "Financement FT DESP"
+    return ""
+
+
+@app.route(
+    "/api/crm/contacts/<contact_id>/france-travail-funding-file",
+    methods=["POST"],
+)
+@login_required
+@_crm_serialized
+def crm_send_france_travail_funding_file(contact_id):
+    """Send the configured A3P or DESP initial France Travail file."""
+    data = load_data()
+    contact = _crm_contact(data, contact_id)
+    if not contact:
+        return jsonify({"error": "Contact introuvable"}), 404
+    if str(contact.get("financement_ft") or "").strip().upper() != "OUI":
+        return jsonify({
+            "error": "Indiquez d’abord que la personne souhaite un financement France Travail."
+        }), 409
+    template_name = _crm_france_travail_funding_template(contact)
+    if not template_name:
+        return jsonify({
+            "error": "Cet envoi est réservé aux formations A3P et DESP initial."
+        }), 409
+    recipient = str(contact.get("mail") or "").strip()
+    if not recipient:
+        return jsonify({
+            "error": "Renseignez l’adresse e-mail du contact avant l’envoi."
+        }), 409
+    template = _crm_named_template(data, "email", template_name)
+    if not template:
+        return jsonify({
+            "error": (
+                f"Le modèle e-mail « {template_name} » est introuvable dans "
+                "/crm/modeles."
+            )
+        }), 409
+    body = _crm_resolve_message_variables(
+        template.get("contenu"), contact, html=True, data_store=data,
+    )
+    if not body.strip():
+        return jsonify({
+            "error": f"Le modèle e-mail « {template_name} » est vide."
+        }), 409
+    subject = _crm_resolve_message_variables(
+        template.get("sujet") or template_name, contact, data_store=data,
+    )
+    branded = _crm_email_html(body, contact)
+    plain = html_module.unescape(
+        re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+    ).strip()
+    if not _crm_send_email_html(
+        recipient, subject, plain, branded, template=template,
+    ):
+        return jsonify({
+            "error": (
+                f"L’envoi du modèle « {template_name} » a échoué. "
+                "Vérifiez la configuration et l’adresse e-mail."
+            )
+        }), 502
+
+    sent_at = _crm_now()
+    _crm_activity(
+        contact, "email", f"E-mail « {template_name} » envoyé", subject, branded,
+    )
+    template["usage_count"] = int(template.get("usage_count") or 0) + 1
+    template["last_used_at"] = sent_at
+    contact["updated_at"] = sent_at
+    save_data(data)
+    return jsonify({"contact": contact, "template_name": template_name})
 
 
 @app.route("/api/crm/contacts/<contact_id>/message", methods=["POST"])

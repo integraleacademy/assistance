@@ -1,0 +1,242 @@
+from pathlib import Path
+import subprocess
+
+import pytest
+
+import app as application
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CRM_JS = ROOT / "static" / "crm.js"
+CRM_CSS = ROOT / "static" / "crm.css"
+
+
+def crm_client(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
+    application._DATA_CACHE_PAYLOAD = None
+    application._DATA_CACHE_SIGNATURE = None
+    application._CRM_READ_MODEL_KEY = None
+    application._CRM_READ_MODEL_VALUE = None
+    application.app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
+    client = application.app.test_client()
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+    return client
+
+
+def create_contact(client, *, formation, desp_type="", financement_ft="OUI"):
+    contact = client.post(
+        "/api/crm/contacts",
+        json={
+            "prenom": "Lina",
+            "nom": "Martin",
+            "mail": "lina@example.com",
+            "formation": formation,
+        },
+    ).get_json()
+    response = client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"desp_type": desp_type, "financement_ft": financement_ft},
+    )
+    assert response.status_code == 200
+    return response.get_json()
+
+
+def install_ft_templates():
+    data = application.load_data()
+    data["crm_email_templates"] = [
+        {
+            "id": "ft-a3p",
+            "nom": "Financement FT 3P",
+            "sujet": "Financement A3P de {{ prenom }}",
+            "contenu": "<p>Dossier pour {{ formation }}</p>",
+            "usage_count": 0,
+        },
+        {
+            "id": "ft-desp",
+            "nom": "Financement FT DESP",
+            "sujet": "Financement DESP de {{ prenom }}",
+            "contenu": "<p>Dossier pour {{ formation }}</p>",
+            "usage_count": 0,
+        },
+    ]
+    application.save_data(data)
+
+
+def test_cnaps_nub_is_persisted_and_limited_to_seven_digits(tmp_path, monkeypatch):
+    client = crm_client(tmp_path, monkeypatch)
+    contact = create_contact(client, formation="APS", financement_ft="NON")
+
+    saved = client.patch(
+        f"/api/crm/contacts/{contact['id']}", json={"cnaps_nub": "1234567"},
+    )
+    too_long = client.patch(
+        f"/api/crm/contacts/{contact['id']}", json={"cnaps_nub": "12345678"},
+    )
+    letters = client.patch(
+        f"/api/crm/contacts/{contact['id']}", json={"cnaps_nub": "ABC1234"},
+    )
+
+    assert saved.status_code == 200
+    assert saved.get_json()["cnaps_nub"] == "1234567"
+    assert too_long.status_code == letters.status_code == 400
+    stored = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
+    assert stored["cnaps_nub"] == "1234567"
+
+
+@pytest.mark.parametrize(
+    ("formation", "desp_type", "template_name"),
+    [
+        ("A3P", "", "Financement FT 3P"),
+        ("DESP", "INITIAL", "Financement FT DESP"),
+    ],
+)
+def test_ft_funding_file_sends_the_training_template(
+    tmp_path, monkeypatch, formation, desp_type, template_name,
+):
+    client = crm_client(tmp_path, monkeypatch)
+    contact = create_contact(
+        client, formation=formation, desp_type=desp_type, financement_ft="OUI",
+    )
+    install_ft_templates()
+    deliveries = []
+    monkeypatch.setattr(
+        application,
+        "_crm_send_email_html",
+        lambda *args, **kwargs: deliveries.append((args, kwargs)) or True,
+    )
+
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/france-travail-funding-file"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["template_name"] == template_name
+    assert len(deliveries) == 1
+    args, kwargs = deliveries[0]
+    assert args[0] == "lina@example.com"
+    assert kwargs["template"]["nom"] == template_name
+    data = application.load_data()
+    template = next(
+        item for item in data["crm_email_templates"] if item["nom"] == template_name
+    )
+    stored = next(
+        item for item in data["crm_contacts"] if item["id"] == contact["id"]
+    )
+    assert template["usage_count"] == 1
+    assert template["last_used_at"] == stored["updated_at"]
+    assert stored["activities"][0]["title"] == f"E-mail « {template_name} » envoyé"
+
+
+@pytest.mark.parametrize(
+    ("formation", "desp_type", "financement_ft"),
+    [
+        ("APS", "", "OUI"),
+        ("DESP", "VAE", "OUI"),
+        ("A3P", "", "NON"),
+    ],
+)
+def test_ft_funding_file_rejects_ineligible_contacts(
+    tmp_path, monkeypatch, formation, desp_type, financement_ft,
+):
+    client = crm_client(tmp_path, monkeypatch)
+    contact = create_contact(
+        client,
+        formation=formation,
+        desp_type=desp_type,
+        financement_ft=financement_ft,
+    )
+    install_ft_templates()
+    monkeypatch.setattr(application, "_crm_send_email_html", lambda *args, **kwargs: True)
+
+    response = client.post(
+        f"/api/crm/contacts/{contact['id']}/france-travail-funding-file"
+    )
+
+    assert response.status_code == 409
+
+
+def test_crm_bootstrap_only_exposes_sessions_that_have_not_started(
+    tmp_path, monkeypatch,
+):
+    client = crm_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["formation_sessions"] = {
+        "cote_azur": {
+            "APS": [
+                {"label": "Du 1er janvier au 31 janvier 2020", "badge": ""},
+                {"label": "Du 1er janvier au 31 janvier 2099", "badge": ""},
+            ]
+        }
+    }
+    application.save_data(data)
+
+    response = client.get("/api/crm/bootstrap?section=contacts")
+
+    assert response.status_code == 200
+    labels = [
+        row["label"]
+        for row in response.get_json()["formation_sessions"]["cote_azur"]["APS"]
+    ]
+    assert labels == ["Du 1er janvier au 31 janvier 2099"]
+
+
+def test_contact_sheet_frontend_contract_for_requested_rules():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    styles = CRM_CSS.read_text(encoding="utf-8")
+    backend = (ROOT / "app.py").read_text(encoding="utf-8")
+
+    assert 'name="cnaps_nub"' in javascript
+    assert 'data-show="with-card"' in javascript
+    assert 'class="cnaps-panel conditional" data-show="without-card"' in javascript
+    assert "needsCnapsTracking" in javascript
+    assert "espace-consultation.cnaps.interieur.gouv.fr" in javascript
+    assert "Résumé IA ·" not in javascript
+    assert "['RDV',counts.appointments]" in javascript
+    assert "['RDV total'" not in javascript
+    assert 'id="sendFtFundingFile"' in javascript
+    assert 'data-show="ft-file-send"' in javascript
+    assert "isFranceTravailFundingFileEligible" in javascript
+    assert "france-travail-funding-file" in javascript
+    assert '"Financement FT 3P"' in backend
+    assert '"Financement FT DESP"' in backend
+    for tone in (
+        "formation-a3p", "formation-aps", "formation-vtc",
+        "formation-desp", "formation-ssiap",
+    ):
+        assert f".contact-journey-label.{tone}" in styles
+    assert 'disabled>${esc(selectedSession)} — date enregistrée, non proposée' in javascript
+
+
+def test_today_appointment_remains_in_the_spotlight_after_its_time():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    appointment_helpers = javascript[
+        javascript.index("const CALENDLY_APPOINTMENT_PAST_DELAY_MS="):
+        javascript.index("const esc=")
+    ]
+    paris_date_key = javascript[
+        javascript.index("const parisDateKey="):
+        javascript.index("\n", javascript.index("const parisDateKey="))
+    ]
+    groups = javascript[
+        javascript.index("function calendlyAppointmentGroups"):
+        javascript.index("function calendlyDateParts")
+    ]
+    script = appointment_helpers + paris_date_key + "\n" + groups + r"""
+const assert=require('node:assert/strict');
+const now=Date.parse('2026-09-01T15:00:00Z');
+const tomorrow={id:'tomorrow',start_time:'2026-09-02T08:00:00Z',status:'active'};
+const todayPast={id:'today',start_time:'2026-09-01T08:00:00Z',status:'active'};
+const result=calendlyAppointmentGroups([tomorrow,todayPast],now);
+assert.equal(result.today.id,'today');
+assert.equal(result.next.id,'tomorrow');
+assert.equal(result.past.some(item=>item.id==='today'),true);
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script], check=False, capture_output=True, text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "past.filter(a=>!spotlightIds.has(a.id))" in javascript
+

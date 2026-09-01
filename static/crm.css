@@ -550,6 +550,7 @@ details.form-section>summary>h3{display:flex;align-items:center;gap:9px;margin:0
 .ft-request-launch-button:hover,.ft-request-launch-button:focus-visible{border-color:#dca733;box-shadow:0 8px 20px #b9801622;outline:3px solid #f3bd4b2e;outline-offset:2px;transform:translateY(-1px)}
 .ft-request-launch-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:11px;background:linear-gradient(145deg,#ffbf3d,#e99416);color:#fff;font-size:19px;box-shadow:0 6px 13px #d8912635}
 .ft-request-launch-button b,.ft-request-launch-button small{display:block}.ft-request-launch-button b{font:800 12px Manrope}.ft-request-launch-button small{margin-top:3px;color:#8a6a2b;font-size:10px;font-weight:600;line-height:1.4}.ft-request-launch-button>i{color:#b47a0d;font-size:20px;font-style:normal}
+.ft-funding-file-action{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid #bfd2f5;border-radius:12px;background:#f2f6ff}.ft-funding-file-action .btn{flex:none}.ft-funding-file-action small{color:#647695;font-size:10px;line-height:1.45}.ft-funding-file-action .btn:disabled{cursor:wait;opacity:.7}
 .ft-request-modal{display:flex;flex-direction:column;width:min(900px,96vw);overflow:hidden}.ft-request-modal .modal-head,.ft-request-modal .modal-foot{flex:none}.ft-request-modal .modal-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;background:#f7f9fd}.ft-request-modal .modal-foot{background:#fff}
 .ft-request-intro{display:grid;grid-template-columns:46px minmax(0,1fr);gap:13px;margin-bottom:20px;padding:17px;border:1px solid #dce5f6;border-radius:14px;background:linear-gradient(135deg,#f1f5ff,#fff)}
 .ft-request-intro>span{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:linear-gradient(145deg,#356ae6,#745ce4);color:#fff;font-size:21px;box-shadow:0 7px 16px #4c63dc30}.ft-request-intro b{display:block;color:#253653;font:800 14px Manrope}.ft-request-intro p{margin:5px 0 0;color:#65758c;font-size:11px;line-height:1.55}
@@ -973,7 +974,9 @@ img,svg,video,canvas,iframe{max-width:100%}
 .contact-header-name-fields input{font:800 14px Manrope}
 .contact-header-editor input:hover{border-color:#b9c9e3;background:#fff}
 .contact-header-editor input:focus{border-color:#6f94e2;background:#fff;box-shadow:0 0 0 3px #356ae617}
-.contact-journey-label{display:inline-flex;align-items:center;min-height:27px;padding:5px 8px;border-radius:8px;background:#eef2f8;color:#52637a;font-size:10px;font-weight:750}
+.contact-journey-label{display:inline-flex;align-items:center;min-height:32px;padding:6px 11px;border:1px solid #d9e1ec;border-radius:9px;background:#eef2f8;color:#52637a;font:850 11px Manrope;box-shadow:0 3px 10px #1720330d}
+.contact-journey-label.formation-a3p{border-color:#a9ddca;background:#e5f7f0;color:#0e765b}.contact-journey-label.formation-aps{border-color:#b8cdf6;background:#e8f0ff;color:#2859bf}.contact-journey-label.formation-vtc{border-color:#cdbcf2;background:#f0ebff;color:#704cc4}.contact-journey-label.formation-desp{border-color:#f0c294;background:#fff0df;color:#b45d16}.contact-journey-label.formation-ssiap{border-color:#efb6bd;background:#ffeaed;color:#b52f42}
+.cnaps-nub-control{display:flex;align-items:stretch;gap:8px}.cnaps-nub-control input{min-width:0;flex:1}.cnaps-nub-control .btn{flex:none;white-space:nowrap}.cnaps-nub-field .field-help{margin-top:6px}
 .contact-next-row{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(250px,.7fr);gap:9px;min-width:0}
 .contact-next-row .next-action{grid-column:auto;margin:0}
 .next-telephone-appointment{display:flex;align-items:center;gap:10px;min-width:0;padding:9px 12px;border-left:4px solid #7c5ce7;border-radius:7px;background:#f1edff;color:#51399d}
@@ -991,4 +994,4 @@ img,svg,video,canvas,iframe{max-width:100%}
 .activity-publications-panel[hidden]{display:none!important}
 .contact-activity-panel .activity-publications-panel .card-head{background:linear-gradient(135deg,#f9fbff,#fff)}
 @media(max-width:1200px){.contact-next-row{grid-column:1/-1}}
-@media(max-width:760px){.contact-header-name-fields,.contact-header-coordinate-fields,.contact-next-row{grid-template-columns:1fr}.contact-header-name-fields{min-width:0}.next-telephone-appointment{align-items:flex-start;flex-direction:column;gap:4px}}
+@media(max-width:760px){.contact-header-name-fields,.contact-header-coordinate-fields,.contact-next-row{grid-template-columns:1fr}.contact-header-name-fields{min-width:0}.next-telephone-appointment{align-items:flex-start;flex-direction:column;gap:4px}.cnaps-nub-control,.ft-funding-file-action{align-items:stretch;flex-direction:column}.cnaps-nub-control .btn,.ft-funding-file-action .btn{width:100%}}
