@@ -1216,6 +1216,23 @@ function calendlyAppointmentGroups(ordered,now=Date.now()){
   const todayKey=parisDateKey(now),today=ordered.find(a=>a.status!=='canceled'&&!calendlyAppointmentHasResult(a)&&parisDateKey(a.start_time)===todayKey),next=upcoming.find(a=>a.id!==today?.id);
   return{upcoming,past,canceled,today,next};
 }
+function calendlyAppointmentDisplay(groups){
+  const seen=new Set(),today=groups.today;
+  let futureIndex=0;
+  const spotlight=[today,...groups.upcoming].filter(Boolean).filter(appointment=>{
+    const key=appointment.id??appointment;
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).map(appointment=>{
+    const isToday=appointment===today||(appointment.id&&appointment.id===today?.id);
+    return[isToday?'Rendez-vous du jour':futureIndex++===0?'Prochain rendez-vous':'Rendez-vous à venir',appointment];
+  });
+  const spotlightIds=new Set(spotlight.map(([,appointment])=>appointment.id??appointment));
+  const past=groups.past.filter(appointment=>!spotlightIds.has(appointment.id??appointment));
+  const canceled=groups.canceled;
+  return{spotlight,past,canceled,historyCount:past.length+canceled.length};
+}
 function calendlyDateParts(value){
   const date=value?new Date(value):new Date(NaN);
   if(Number.isNaN(date.getTime()))return{day:'—',month:'',time:'',short:'Date non renseignée'};
@@ -1291,11 +1308,10 @@ function renderCalendlyAppointments(c,items,integration){
   if(!list||!box)return;
   const now=Date.now();
   const ordered=sortedAppointments(items);
-  const{upcoming,past,canceled,today,next}=calendlyAppointmentGroups(ordered,now);
-  const spotlight=[today&&['Rendez-vous du jour',today],next&&['Prochain rendez-vous',next]].filter(Boolean);
+  const groups=calendlyAppointmentGroups(ordered,now);
+  const{spotlight,past,canceled,historyCount}=calendlyAppointmentDisplay(groups);
   const nextCard=spotlight.length?spotlight.map(([label,a])=>`<section class="next-appointment"><div class="next-appointment-label"><span></span> ${label}</div><div class="next-appointment-content"><div class="next-date"><span>${calendlyDateParts(a.start_time).day}</span><small>${esc(calendlyDateParts(a.start_time).month)}</small></div><div class="next-main"><div class="next-relative">${calendlyRelativeLabel(a.start_time)}</div><h3>${esc(a.name||'Rendez-vous Calendly')}</h3><p>${calendlyDate(a.start_time)}</p>${calendlyMeta(a)}</div><div class="next-appointment-side">${appointmentResponseControl(a,'Résultat du rendez-vous')}${calendlyActions(a,true)}</div></div></section>`).join(''):`<section class="next-appointment-empty"><span class="empty-calendar" aria-hidden="true">◷</span><div><b>Aucun prochain rendez-vous</b><small>Planifiez un nouveau créneau directement depuis cette fiche.</small></div><button type="button" class="btn blue" id="emptyCalendlyBook">Planifier un rendez-vous</button></section>`;
-  const spotlightIds=new Set(spotlight.map(([,a])=>a.id));
-  const sections=`<details class="appointment-history"><summary>Voir tous les rendez-vous <span>${Math.max(0,ordered.length-spotlight.length)}</span></summary><div class="appointment-sections">${calendlyAppointmentSection('Autres rendez-vous à venir',upcoming.filter(a=>!spotlightIds.has(a.id)),'upcoming')}${calendlyAppointmentSection('Rendez-vous passés',past.filter(a=>!spotlightIds.has(a.id)),'past')}${calendlyAppointmentSection('Rendez-vous annulés',canceled,'canceled')}</div></details>`;
+  const sections=historyCount?`<details class="appointment-history"><summary>Voir tous les rendez-vous <span>${historyCount}</span></summary><div class="appointment-sections">${calendlyAppointmentSection('Rendez-vous passés',past,'past')}${calendlyAppointmentSection('Rendez-vous annulés',canceled,'canceled')}</div></details>`:'';
   list.innerHTML=nextCard+sections;
   if(!integration.configured){
     box.innerHTML=`<div class="integration-banner warning"><div><b>Jeton Calendly non configuré</b><span>Ajoutez CALENDLY_ACCESS_TOKEN dans Render pour activer l’intégration.</span></div></div>`;
