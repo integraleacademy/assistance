@@ -56,7 +56,7 @@ def test_dashboard_drilldowns_preserve_period_and_filter_the_same_contacts():
         javascript.index("function dashboardGroup")
     ]
     script = f"""
-const crmOriginLabels=contact=>contact.origins;
+const dashboardOrigin=contact=>contact.origine;
 const isActiveLead=contact=>!['Converti','Disqualifié'].includes(contact.statut);
 const contactContactActivityKinds=new Set(['appel','email','sms','demande_rappel']);
 const crmAppointments=[{{contact_id:'google',status:'active',response_status:null}}];
@@ -69,11 +69,11 @@ let dashboardPeriod='month';
 {helpers}
 const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
 const contacts=[
- {{id:'meta',created_at:'2026-08-10T08:00:00Z',origins:['META'],statut:'Nouveaux',activities:[{{kind:'email'}}]}},
- {{id:'google',created_at:'2026-08-11T08:00:00Z',origins:['Google Ads'],statut:'Nouveaux',activities:[]}},
- {{id:'other',created_at:'2026-08-12T08:00:00Z',origins:['Site internet'],statut:'Converti',activities:[]}},
- {{id:'outside',created_at:'2026-07-12T08:00:00Z',origins:['META'],statut:'Nouveaux',activities:[]}},
- {{id:'overdue',created_at:'2025-01-01T08:00:00Z',origins:['Autre'],statut:'Nouveaux',relance_date:'2000-01-01',activities:[]}},
+ {{id:'meta',created_at:'2026-08-10T08:00:00Z',origine:'META',source_history:[{{origin:'Google Ads'}}],statut:'Nouveaux',activities:[{{kind:'email'}}]}},
+ {{id:'google',created_at:'2026-08-11T08:00:00Z',origine:'Google Ads',statut:'Nouveaux',activities:[]}},
+ {{id:'other',created_at:'2026-08-12T08:00:00Z',origine:'Site internet',statut:'Converti',activities:[]}},
+ {{id:'outside',created_at:'2026-07-12T08:00:00Z',origine:'META',statut:'Nouveaux',activities:[]}},
+ {{id:'overdue',created_at:'2025-01-01T08:00:00Z',origine:'Autre',statut:'Nouveaux',relance_date:'2000-01-01',activities:[]}},
 ];
 const range='&from=2026-08-01T00%3A00%3A00.000Z&to=2026-09-01T00%3A00%3A00.000Z';
 const ids=view=>dashboardDrilldownContacts(contacts,dashboardDrilldownState(`?dashboard_view=${{view}}${{range}}`)).map(contact=>contact.id);

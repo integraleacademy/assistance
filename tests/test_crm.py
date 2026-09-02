@@ -518,17 +518,16 @@ def test_sidebar_lead_count_only_includes_new_leads():
     assert "contacts.filter(isActiveLead).length;if(leadCount)leadCount.textContent=count" not in crm_js
 
 
-def test_dashboard_reports_meta_and_builds_origins_from_live_contacts():
+def test_dashboard_reports_meta_from_primary_origins_only():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
     assert "function dashboardOrigin(contact)" in crm_js
     assert "return'META'" in crm_js
     assert "primaryOrigins=dashboardOriginGroups(current)" in crm_js
-    assert "secondaryOrigins=dashboardOriginGroups(current,true)" in crm_js
+    assert "secondaryOrigins" not in crm_js
     assert "function dashboardOrigin(contact){return canonicalCrmOrigin(contact)}" in crm_js
-    assert "campaign_name" in crm_js
-    assert "ad_name" in crm_js
+    assert "return[canonicalCrmOriginValue(contact.origine||contact.source,contact)]" in crm_js
     assert "sourceCounts=['Google','Site internet','Simulateur VAE'" not in crm_js
 
 
@@ -654,7 +653,7 @@ def test_pistes_can_filter_by_origin_and_sort_by_score():
 
     assert 'id="originFilter"' in crm_js
     assert 'aria-label="Filtrer selon l’origine"' in crm_js
-    assert "crmOriginLabels(c).includes(origin)" in crm_js
+    assert "canonicalCrmOrigin(c)===origin" in crm_js
     assert 'data-score-sort' in crm_js
     assert "Trier les scores du plus grand au plus petit" in crm_js
     assert "Trier les scores du plus petit au plus grand" in crm_js
@@ -1744,10 +1743,11 @@ def test_tracking_card_can_expand_and_displays_secretariat_origin():
     assert 'name="commentaires"' not in tracking
     assert 'id="rephraseComments"' not in tracking
     assert (
-        "const originHistory=page.querySelector('#trackingCard .contact-origin-history')"
+        "const originField=page.querySelector('#trackingCard [name=\"origine\"]')?.closest('.field')"
         in crm_js
     )
-    assert "originHistory?.insertAdjacentHTML('afterend'" in crm_js
+    assert "originField?.insertAdjacentHTML('afterend'" in crm_js
+    assert "contact-origin-history" not in crm_js
     assert '#trackingCard textarea[name="commentaires"]' not in crm_js
 
 
