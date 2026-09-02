@@ -737,8 +737,8 @@ function activityTimeline(c){
   return items.sort((a,b)=>{const first=Date.parse(a.date||''),second=Date.parse(b.date||'');if(Number.isFinite(first)&&Number.isFinite(second)&&first!==second)return second-first;if(Number.isFinite(first)!==Number.isFinite(second))return Number.isFinite(second)?1:-1;return a._timelineIndex-b._timelineIndex});
 }
 const activityFilterDefinitions=[
-  {key:'appel',label:'Appels consignés',icon:'phone'},
   {key:'all',label:'Tout',icon:'activity'},
+  {key:'appel',label:'Appels consignés',icon:'phone'},
   {key:'sms',label:'SMS',icon:'message'},
   {key:'email',label:'Mails',icon:'mail'},
   {key:'rdv',label:'RDV',icon:'calendar'},

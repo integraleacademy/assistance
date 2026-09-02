@@ -21,6 +21,14 @@ def test_activity_journal_has_the_requested_filters_and_chronological_groups():
     for activity_filter in expected_filters:
         assert activity_filter in javascript
 
+    filter_definitions = javascript[
+        javascript.index("const activityFilterDefinitions=["):
+        javascript.index("function activityCategory")
+    ]
+    assert filter_definitions.index("{key:'all',label:'Tout',icon:'activity'}") < (
+        filter_definitions.index("{key:'appel',label:'Appels consignés',icon:'phone'}")
+    )
+
     assert "if(kind==='sms')return'sms'" in javascript
     assert "if(kind==='email')return'email'" in javascript
     assert "['calendly','rdv','appointment'].includes(kind)" in javascript
