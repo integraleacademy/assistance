@@ -481,6 +481,40 @@ def test_contact_header_score_uses_server_contract_and_refreshes_with_card():
     assert "@media(max-width:650px)" in stylesheet
 
 
+def test_contact_header_displays_and_refreshes_the_cnaps_status_next_to_pipeline_status():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    stylesheet = CRM_CSS.read_text(encoding="utf-8")
+
+    helpers = javascript[
+        javascript.index("const needsCnaps="):
+        javascript.index("const isActiveLead=")
+    ]
+    script = r"""
+const esc=value=>String(value);
+""" + helpers + r"""
+const assert=require('node:assert/strict');
+const badge=contactCnapsStatusMarkup({formation:'A3P',integration_score:{normalized_cnaps_status:'accepted'}});
+assert.match(badge,/CNAPS · Accepté/);
+assert.match(badge,/contact-cnaps-status accepted/);
+assert.match(contactCnapsStatusMarkup({formation:'APS',integration_score:{normalized_cnaps_status:'transmitted'}}),/CNAPS · Transmis/);
+assert.match(contactCnapsStatusMarkup({formation:'APS',integration_score:{normalized_cnaps_status:'unexpected'}}),/CNAPS · Inconnu/);
+assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=Path(__file__).parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "${badge(c.statut)}${contactCnapsStatusMarkup(c)}" in javascript
+    assert "renderContactCnapsStatus(c)" in javascript
+    for tone in ("accepted", "transmitted", "in_review", "registered", "refused", "no_result", "unknown"):
+        assert f".contact-cnaps-status.{tone}" in stylesheet
+
+
 def test_activity_log_centralizes_every_contact_event_and_delegates_more():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
