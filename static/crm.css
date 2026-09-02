@@ -811,13 +811,11 @@ img,svg,video,canvas,iframe{max-width:100%}
 .crm-score-sort-arrows.asc .up,.crm-score-sort-arrows.desc .down{color:#356ae6;opacity:1}
 
 
-/* Origines multiples : l'ordre visuel reflète la chronologie métier. */
+/* Origine principale affichée dans les listes et la fiche. */
 .workspace-origin-group{display:flex;align-items:flex-start;gap:5px;max-width:100%;flex-wrap:wrap}
 .workspace-origin-group .workspace-origin-badge{display:inline-flex;align-items:center;gap:4px;max-width:100%;white-space:normal;line-height:1.25}
 .workspace-origin-badge small{display:inline-flex;margin:0;padding:2px 4px;border-radius:99px;background:#ffffffb8;color:inherit;font-size:6px;font-weight:900;letter-spacing:.04em;text-transform:uppercase}
-.workspace-origin-badge.secondary{border:1px dashed currentColor;background:#fff;opacity:.88}
-.contact-origin-history>.workspace-origin-group,.contact-attribution>.workspace-origin-group{margin-top:7px}
-.contact-origin-history>small{display:block;margin-top:7px;color:#7b8799;font-size:10px;line-height:1.45}
+.contact-attribution>.workspace-origin-group{margin-top:7px}
 .contact-attribution .workspace-origin-badge{font-size:8px}
 @media(max-width:650px){
  .workspace-origin-group{align-items:stretch;flex-direction:column}
@@ -825,19 +823,9 @@ img,svg,video,canvas,iframe{max-width:100%}
 }
 
 
-/* Accueil CRM : attribution multicanale et indicateurs de vente actionnables. */
-.analytics-secondary-origins{border-color:#ddd5f4;background:linear-gradient(180deg,#fff,#fcfbff)}
-.analytics-secondary-origins .analytics-card-head>div>span{color:#7652b5}
+/* Accueil CRM : attribution principale et indicateurs de vente actionnables. */
 .analytics-origin-table td:first-child{min-width:150px}
 .analytics-origin-table td:nth-child(3) small{max-width:185px}
-.analytics-google{border-color:#d8eadb;background:linear-gradient(180deg,#fff,#fbfefb)}
-.analytics-google .analytics-card-head>div>span{color:#237447}
-.google-ads-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 20px 18px}
-.google-ads-summary article{min-width:0;padding:15px;border:1px solid #dfe9e2;border-radius:14px;background:#fff;box-shadow:0 4px 14px #17203308}
-.google-ads-summary span,.google-ads-summary b,.google-ads-summary small{display:block}
-.google-ads-summary span{color:#718096;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
-.google-ads-summary b{margin-top:7px;color:#1f6040;font:800 20px Manrope;overflow-wrap:anywhere}
-.google-ads-summary small{margin-top:4px;color:#7a8799;font-size:9px;line-height:1.4}
 .analytics-sales-priorities{border-color:#eadfca;background:linear-gradient(180deg,#fff,#fffdf9)}
 .sales-priority-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 20px 20px}
 .sales-priority-grid a{display:block;min-width:0;padding:16px;border:1px solid #ebe2d3;border-radius:14px;background:#fff;color:inherit;text-decoration:none;transition:.18s}
@@ -846,12 +834,11 @@ img,svg,video,canvas,iframe{max-width:100%}
 .sales-priority-grid span{color:#725f40;font-size:10px;font-weight:750}
 .sales-priority-grid b{margin:8px 0 4px;color:#2f2618;font:850 26px Manrope}
 .sales-priority-grid small{color:#817867;font-size:9px;line-height:1.45}
-.analytics-commercials .analytics-table td:first-child{min-width:170px}
 @media(max-width:900px){
- .google-ads-summary,.sales-priority-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .sales-priority-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:650px){
- .google-ads-summary,.sales-priority-grid{grid-template-columns:1fr;margin-left:14px;margin-right:14px}
+ .sales-priority-grid{grid-template-columns:1fr;margin-left:14px;margin-right:14px}
  .sales-priority-grid{padding-left:0;padding-right:0}
  .analytics-origin-table td:first-child{min-width:125px}
 }

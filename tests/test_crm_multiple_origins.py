@@ -119,12 +119,12 @@ def test_inbound_flows_summary_merge_and_wedof_use_the_shared_origin_recorder():
     ]
     assert 'make_primary=legacy_primary_repair' in attribution
     assert 'contact["origine"] = CRM_GOOGLE_ADS_ORIGIN' not in attribution
-    assert 'CRM_ASSET_VERSION = "20260901-cnaps-card-validity-persistence-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260902-primary-origin-dashboard-1"' in backend
     dashboard_patch = (ROOT / "static" / "crm_dashboard_origins.js").read_text(encoding="utf-8")
     assert "return gclid ? 'Google Ads'" not in dashboard_patch
 
 
-def test_workspace_orders_and_renders_primary_and_secondary_origins():
+def test_workspace_exposes_only_the_primary_origin():
     javascript = WORKSPACE_JS.read_text(encoding="utf-8")
     helpers = javascript[
         javascript.index("const workspaceOriginOptions="):
@@ -145,9 +145,10 @@ const contact={{
  ],
 }};
 assert(sourceLabel(contact)==='Google Ads','primary origin preserved');
-assert(JSON.stringify(sourceLabels(contact))===JSON.stringify(['Google Ads','Secrétariat','Simulateur VAE']),'ordered distinct origins');
+assert(JSON.stringify(sourceLabels(contact))===JSON.stringify(['Google Ads']),'secondary history stays hidden');
 const laterAds={{origine:'Secrétariat',gclid:'late-click',source_history:[{{origin:'Secrétariat'}},{{origin:'Google Ads'}}]}};
 assert(sourceLabel(laterAds)==='Secrétariat','late gclid does not replace primary');
+assert(JSON.stringify(sourceLabels(laterAds))===JSON.stringify(['Secrétariat']),'late Google Ads history is not exposed');
 const abandoned={{origine:'Formulaire abandonné',source_history:[{{origin:'formulaire_abandonne_demande_infos'}}]}};
 assert(sourceLabel(abandoned)==='Pistes abandonnées','abandoned form origin is canonicalized');
 assert(workspaceLeadOriginOptions.includes('Pistes abandonnées'),'abandoned leads stay available in the workspace filter');
@@ -161,13 +162,14 @@ console.log('CRM multiple origins helpers: OK');
     )
 
     assert "CRM multiple origins helpers: OK" in completed.stdout
-    assert "ctx.contacts.flatMap(sourceLabels)" in javascript
-    assert "!sourceLabels(contact).includes(filters.origin)" in javascript
-    assert "sourceLabels(contact).includes(calendarFilterOrigin.value)" in javascript
+    assert "ctx.contacts.map(sourceLabel)" in javascript
+    assert "sourceLabel(contact)!==filters.origin" in javascript
+    assert "sourceLabel(contact)===calendarFilterOrigin.value" in javascript
     assert "Principale" in javascript
-    assert "Secondaire" in javascript
-    assert "<span>ORIGINES</span>${originBadge(contact,ctx)}" in javascript
-    assert "La première origine détectée reste principale." in javascript
+    assert "<small>Secondaire</small>" not in javascript
+    assert "<span>ORIGINE PRINCIPALE</span>${originBadge(contact,ctx)}" in javascript
+    assert "Origine utilisée sur l’ensemble du CRM." in javascript
+    assert "source_history" not in helpers
 
 
 def test_abandoned_form_origin_is_available_in_native_lead_filter():
@@ -200,17 +202,17 @@ console.log('CRM abandoned leads origin filter: OK');
     assert "function leadOriginFilterOptions(){return[...crmLeadOriginFilterValues]}" in javascript
 
 
-def test_native_list_and_contact_sheet_show_all_origins_accessibly():
+def test_native_list_and_contact_sheet_show_only_primary_origin_accessibly():
     javascript = CRM_JS.read_text(encoding="utf-8")
     crm_css = CRM_CSS.read_text(encoding="utf-8")
     workspace_css = WORKSPACE_CSS.read_text(encoding="utf-8")
 
     assert "function crmOriginLabels(contact)" in javascript
-    assert "crmOriginLabels(c).includes(origin)" in javascript
-    assert 'aria-label="Origines de la piste"' in javascript
-    assert 'class="field full contact-origin-history"' in javascript
-    assert "La première détectée reste principale" in javascript
+    assert "canonicalCrmOrigin(c)===origin" in javascript
+    assert 'aria-label="Origine principale de la piste"' in javascript
+    assert 'class="field full contact-origin-history"' not in javascript
+    assert "source_history" not in javascript
     for stylesheet in (crm_css, workspace_css):
         assert ".workspace-origin-group{" in stylesheet
-        assert ".workspace-origin-badge.secondary{" in stylesheet
+        assert ".workspace-origin-badge.secondary{" not in stylesheet
         assert "@media(max-width:650px)" in stylesheet

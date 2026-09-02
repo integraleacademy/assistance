@@ -99,4 +99,4 @@ for(const [value,expected] of compactCases){
     assert ".contact-header-coordinate-telephone input{" in stylesheet
     assert "font:900 16px Manrope" in stylesheet
     assert template.count("copy_coordinates_version='20260825-copy-contact-coordinates-1'") == 2
-    assert 'CRM_ASSET_VERSION = "20260901-cnaps-card-validity-persistence-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260902-primary-origin-dashboard-1"' in backend
