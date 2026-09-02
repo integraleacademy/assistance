@@ -2186,6 +2186,58 @@ def test_information_form_creates_complete_crm_contact_and_activity_log(tmp_path
     assert activities["E-mail automatique envoyé"]["preview"]
 
 
+def test_information_form_creates_a_contact_when_existing_coordinates_are_ambiguous(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
+    application.app.config.update(TESTING=True, SERVER_NAME="localhost")
+    application.save_data({
+        **application.DEFAULT_DATA,
+        "crm_contacts": [
+            {
+                "id": contact_id, "prenom": "Lina", "nom": "MARTIN",
+                "mail": "lina@example.com", "telephone": "0612345678",
+                "activities": [],
+            }
+            for contact_id in ("duplicate-a", "duplicate-b")
+        ],
+    })
+    public_client = application.app.test_client()
+
+    with (
+        patch.object(application, "creer_piste_salesforce"),
+        patch.object(application, "send_email_html", return_value=True),
+        patch.object(application, "envoyer_sms_demande_infos_formation", return_value=True),
+    ):
+        response = public_client.post("/demande-informations-formations", data={
+            "nom": "Martin", "prenom": "Lina", "mail": "lina@example.com",
+            "telephone": "0612345678", "formation": "A3P", "centre": "cote_azur",
+            "dates": "Du 19 janvier au 16 mars 2027", "cpf_consulte": "NON",
+            "france_travail": "NON", "financement_perso": "NON",
+            "identite_numerique": "NON", "cnaps_ok": "NON", "garde_vue": "NON",
+            "titre_sejour": "NON", "souhaite_devis": "NON",
+        })
+
+    assert response.status_code == 302
+    data = application.load_data()
+    assert len(data["crm_contacts"]) == 3
+    created = next(
+        contact for contact in data["crm_contacts"]
+        if contact.get("source") == "demande_infos_formations"
+    )
+    assert created["mail"] == "lina@example.com"
+    assert {activity["title"] for activity in created["activities"]} >= {
+        "Formulaire de demande d’informations complété",
+        "Devis détaillé créé",
+        "E-mail automatique envoyé",
+        "SMS automatique envoyé",
+    }
+    inbound = data["crm_inbound_requests"][0]
+    assert inbound["status"] == "created"
+    assert inbound["contact_id"] == created["id"]
+    assert "coordonnée associée à plusieurs fiches" in inbound["review_reasons"]
+
+
 def test_information_form_attributes_google_ads_and_exposes_gclid(tmp_path, monkeypatch):
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     application.app.config.update(TESTING=True, SERVER_NAME="localhost")
