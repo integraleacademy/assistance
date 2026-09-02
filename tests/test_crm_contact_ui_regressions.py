@@ -496,6 +496,7 @@ const assert=require('node:assert/strict');
 const badge=contactCnapsStatusMarkup({formation:'A3P',integration_score:{normalized_cnaps_status:'accepted'}});
 assert.match(badge,/CNAPS · Accepté/);
 assert.match(badge,/contact-cnaps-status accepted/);
+assert.match(badge,/aria-label="Statut CNAPS : Accepté"/);
 assert.match(contactCnapsStatusMarkup({formation:'APS',integration_score:{normalized_cnaps_status:'transmitted'}}),/CNAPS · Transmis/);
 assert.match(contactCnapsStatusMarkup({formation:'APS',integration_score:{normalized_cnaps_status:'unexpected'}}),/CNAPS · Inconnu/);
 assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
@@ -511,6 +512,7 @@ assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
     assert completed.returncode == 0, completed.stderr
     assert "${badge(c.statut)}${contactCnapsStatusMarkup(c)}" in javascript
     assert "renderContactCnapsStatus(c)" in javascript
+    assert ".contact-cnaps-status[hidden]{display:none!important}" in stylesheet
     for tone in ("accepted", "transmitted", "in_review", "registered", "refused", "no_result", "unknown"):
         assert f".contact-cnaps-status.{tone}" in stylesheet
 
