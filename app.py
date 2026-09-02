@@ -13439,14 +13439,14 @@ def crm_calendly_update_appointment(appointment_id):
             if response_status == "no_answer":
                 contact["statut"] = "A relancer"
                 paris_today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
-                next_relance_date = (paris_today + datetime.timedelta(days=2)).isoformat()
+                next_relance_date = (paris_today + datetime.timedelta(days=7)).isoformat()
                 _crm_schedule_relance(
                     contact,
                     next_relance_date,
                     source="calendly_no_answer",
                     motif="Suite absence au rendez-vous",
                 )
-                _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+2")
+                _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+7")
             contact["updated_at"] = now
             if response_status == "no_answer":
                 delivery = _crm_send_appointment_followup(data, contact, "Pas de réponse appel")
