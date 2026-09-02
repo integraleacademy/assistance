@@ -354,7 +354,7 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
     updated_contact = client.get(f"/api/crm/contacts/{created.get_json()['contact_id']}").get_json()
     assert updated_contact["statut"] == "A relancer"
     expected_date = (application.datetime.datetime.now(application.pytz.timezone("Europe/Paris")).date()
-                     + application.datetime.timedelta(days=2)).isoformat()
+                     + application.datetime.timedelta(days=7)).isoformat()
     assert updated_contact["relance_date"] == expected_date
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
     assert "APS – Agent de Prévention et de Sécurité" in deliveries["sms"][0][1]
