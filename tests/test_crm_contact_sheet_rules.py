@@ -227,11 +227,20 @@ def test_today_appointment_stays_in_the_spotlight_until_a_result_is_saved():
 const assert=require('node:assert/strict');
 const now=Date.parse('2026-09-01T15:00:00Z');
 const tomorrow={id:'tomorrow',start_time:'2026-09-02T08:00:00Z',status:'active'};
+const later={id:'later',start_time:'2026-09-09T08:00:00Z',status:'active'};
 const todayPast={id:'today',start_time:'2026-09-01T08:00:00Z',status:'active'};
-const result=calendlyAppointmentGroups([tomorrow,todayPast],now);
+const completed={id:'completed',start_time:'2026-08-31T08:00:00Z',status:'active',response_status:'answered'};
+const canceled={id:'canceled',start_time:'2026-09-10T08:00:00Z',status:'canceled'};
+const result=calendlyAppointmentGroups([tomorrow,later,todayPast,completed,canceled],now);
 assert.equal(result.today.id,'today');
 assert.equal(result.next.id,'tomorrow');
 assert.equal(result.past.some(item=>item.id==='today'),true);
+const display=calendlyAppointmentDisplay(result);
+assert.deepEqual(display.spotlight.map(([,appointment])=>appointment.id),['today','tomorrow','later']);
+assert.deepEqual(display.spotlight.map(([label])=>label),['Rendez-vous du jour','Prochain rendez-vous','Rendez-vous à venir']);
+assert.deepEqual(display.past.map(appointment=>appointment.id),['completed']);
+assert.deepEqual(display.canceled.map(appointment=>appointment.id),['canceled']);
+assert.equal(display.historyCount,2);
 for(const response_status of ['answered','no_answer']){
  const treated=calendlyAppointmentGroups([tomorrow,{...todayPast,response_status}],now);
  assert.equal(treated.today,undefined);
@@ -246,4 +255,5 @@ for(const response_status of ['answered','no_answer']){
 
     assert completed.returncode == 0, completed.stderr
     assert "a.status!=='canceled'&&!calendlyAppointmentHasResult(a)" in javascript
-    assert "past.filter(a=>!spotlightIds.has(a.id))" in javascript
+    assert "const sections=historyCount?" in javascript
+    assert "Autres rendez-vous à venir" not in javascript
