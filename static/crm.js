@@ -1256,7 +1256,7 @@ function bindAppointmentResponseControls(items,onSaved){
       if(contact)renderContactNextTelephoneAppointment(contact);
       document.querySelector('#activityFilters')?.dispatchEvent(new Event('crm:refresh'));
       const sent=updated.delivery&&updated.delivery.sms&&updated.delivery.email;
-      toast(select.value==='no_answer'?(sent?'Sans réponse : relance à J+2 et messages envoyés':'Relance à J+2 créée ; vérifiez les coordonnées ou la configuration des envois'):'Résultat du rendez-vous enregistré',select.value==='no_answer'&&!sent);
+      toast(select.value==='no_answer'?(sent?'Sans réponse : relance à J+7 et messages envoyés':'Relance à J+7 créée ; vérifiez les coordonnées ou la configuration des envois'):'Résultat du rendez-vous enregistré',select.value==='no_answer'&&!sent);
       if(onSaved)onSaved();
     }catch(e){select.value=previous;select.disabled=false;toast(e.message,true)}
   });
