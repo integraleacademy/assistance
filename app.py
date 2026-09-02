@@ -7661,7 +7661,8 @@ def _crm_serialized(view):
 def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
                                 external_id=None, selected_contact_id=None,
                                 force_create=False, ordered_coordinates=False,
-                                record_activity=True):
+                                record_activity=True,
+                                create_on_ambiguity=False):
     """Point d'entrée unique, non destructif, pour toute nouvelle sollicitation CRM.
 
     Les coordonnées normalisées ne sont utilisées que pour chercher. Une valeur
@@ -7719,7 +7720,7 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
         "review_reasons": ambiguous_reasons, "resolved_at": None, "resolved_by": None,
     }
     created = False
-    if not contact and not ambiguous_reasons:
+    if not contact and (not ambiguous_reasons or create_on_ambiguity):
         contact = proposed_contact or {
             "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
             "nom": _crm_format_last_name(payload.get("nom")),
@@ -10169,7 +10170,7 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
     _crm_activity(contact, "devis", "Devis détaillé créé", f"Devis n° {devis_id}", quote_preview)
     matched, _, _ = find_or_create_crm_contact(
         data, fields, "demande_infos_formations", proposed_contact=contact,
-        external_id=demande_id,
+        external_id=demande_id, create_on_ambiguity=True,
     )
     if matched:
         completed_already_recorded = matched.get("source_demande_id") == demande_id
