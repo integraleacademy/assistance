@@ -2,366 +2,916 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Admin Hébergement — Intégrale Academy</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#111827">
+<title>Hébergements — Intégrale Academy</title>
 
 <style>
-
-    .nom-cell {
-    text-transform: uppercase;
-}
-
-.prenom-cell {
-    text-transform: capitalize;
-}
-
-body {
-    background:#f5f6f8;
-}
-
-/* ————————————————
-   CONTENEUR GLOBAL
-——————————————— */
-.container-admin {
-    max-width: 1650px;
-    margin:auto;
-}
-
-/* Logo */
-.logo-admin {
-    width:130px;
-    margin-bottom:20px;
-}
-
-/* Top bar */
-.top-bar {
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:25px;
-    gap:20px;
-    flex-wrap:wrap;
-}
-
-/* ————————————————
-   TABLE COMPACT
-——————————————— */
-.table-container {
-    background:white;
-    padding:22px;
-    border-radius:18px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.07);
-    width:100%;
-}
-
-.table th, .table td {
-    padding:6px 8px !important;
-    font-size:14px;
-    vertical-align:middle;
-}
-
-/* Session large */
-.col-session {
-    max-width:220px;
-    white-space:normal !important;
-}
-
-/* Numéro de clé */
-.key-input {
-    width:60px !important;
-    padding:3px 4px;
-    font-size:14px;
-}
-
-.row-actions {
-    min-width:205px;
-    flex-wrap:wrap;
-    justify-content:center;
-}
-
-.convention-action {
-    white-space:nowrap;
-    font-weight:600;
-}
-
-/* ————————————————
-   ALTERNANCE LIGNES (gris/blanc)
-——————————————— */
-.table tbody tr:nth-child(odd) {
-    background-color:#f7f7f7 !important;
-}
-.table tbody tr:nth-child(even) {
-    background-color:#ffffff !important;
-}
-
-.table tbody tr:hover {
-    background:#e9ecef !important;
-}
-
-/* ————————————————
-   BOUTONS ÉTAT DES CLÉS
-——————————————— */
-.btn-etat {
-    padding:4px 10px;
-    border-radius:6px;
-    font-size:13px;
-    font-weight:600;
-    border:1px solid #ccc;
-    background:#f8f8f8;
-    cursor:pointer;
-}
-
-.btn-etat.active { color:white; }
-
-.btn-etat.adonner.active {
-    background:#6c757d;
-    border-color:#6c757d;
-}
-
-.btn-etat.donnee.active {
-    background:#0d6efd;
-    border-color:#0d6efd;
-}
-
-.btn-etat.restituee.active {
-    background:#F4C45A;
-    border-color:#F4C45A;
-    color:black !important;
-}
-
-/* Impression */
-.filters-form {
-    display:flex;
-    flex:1;
-    gap:12px;
-    align-items:flex-end;
-    flex-wrap:wrap;
-}
-
-.search-block {
-    flex:1 1 320px;
-    min-width:280px;
-}
-
-.session-filter-block {
-    min-width:280px;
-}
-
-.print-session-note {
-    margin:0 0 14px;
-    color:#495057;
-    font-size:14px;
-}
-
-@media print {
-    button, .btn, form, .logo-admin, .top-bar, a, .filters-form {
-        display:none !important;
+    :root {
+        --navy-950: #111827;
+        --navy-900: #172033;
+        --navy-800: #243047;
+        --slate-700: #445069;
+        --slate-600: #667085;
+        --slate-500: #7b8498;
+        --slate-300: #d8dde7;
+        --slate-200: #e8ebf1;
+        --slate-100: #f1f3f7;
+        --slate-50: #f7f8fb;
+        --white: #ffffff;
+        --gold-600: #b9891c;
+        --gold-500: #d3a536;
+        --gold-100: #f8edcf;
+        --green-700: #19704a;
+        --green-100: #e8f6ef;
+        --red-700: #b42318;
+        --red-100: #feeeec;
+        --blue-700: #2457a7;
+        --blue-100: #e9f0fb;
+        --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
+        --shadow-md: 0 12px 32px rgba(26, 34, 51, .08);
+        --radius-lg: 18px;
     }
-    body { background:white !important; }
-    table { width:100% !important; font-size:14px; }
-    .print-session-note {
-        display:block !important;
-        text-align:left;
-        font-weight:600;
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--slate-50); }
+    body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+        color: var(--navy-950);
+        background:
+            radial-gradient(circle at 90% 0%, rgba(211, 165, 54, .08), transparent 25rem),
+            var(--slate-50);
+        font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
     }
-}
+
+    button, input, select { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    a { color: inherit; text-decoration: none; }
+    svg { display: block; width: 1.1rem; height: 1.1rem; flex: 0 0 auto; }
+
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .app-shell {
+        width: min(100%, 1780px);
+        margin: 0 auto;
+        padding: 22px 28px 48px;
+    }
+
+    .app-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 62px;
+        margin-bottom: 22px;
+    }
+
+    .brand-lockup, .brand-copy, .header-context, .hero-meta,
+    .panel-title-row, .person-profile, .contact-line, .row-actions,
+    .panel-footer-note { display: flex; align-items: center; }
+
+    .brand-lockup { gap: 13px; }
+    .brand-mark {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        overflow: hidden;
+        background: var(--white);
+        border: 1px solid var(--slate-200);
+        border-radius: 14px;
+        box-shadow: var(--shadow-sm);
+    }
+    .brand-mark img { width: 39px; height: 39px; object-fit: contain; }
+    .brand-copy { align-items: flex-start; flex-direction: column; gap: 2px; }
+    .brand-name { font-size: .94rem; font-weight: 780; letter-spacing: -.01em; }
+    .brand-area { color: var(--slate-600); font-size: .78rem; font-weight: 600; }
+
+    .header-context {
+        gap: 8px;
+        padding: 8px 11px;
+        color: var(--slate-700);
+        background: rgba(255, 255, 255, .78);
+        border: 1px solid var(--slate-200);
+        border-radius: 999px;
+        font-size: .77rem;
+        font-weight: 700;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .status-dot, .autosave-dot {
+        width: 7px;
+        height: 7px;
+        background: #22a06b;
+        border-radius: 50%;
+        box-shadow: 0 0 0 3px rgba(34, 160, 107, .12);
+    }
+
+    .hero {
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        min-height: 188px;
+        gap: 30px;
+        margin-bottom: 18px;
+        padding: 34px 38px;
+        overflow: hidden;
+        color: var(--white);
+        background: linear-gradient(128deg, #111827 0%, #1d2940 72%, #2b3850 100%);
+        border: 1px solid rgba(255, 255, 255, .06);
+        border-radius: 24px;
+        box-shadow: 0 20px 48px rgba(17, 24, 39, .16);
+    }
+
+    .hero::before, .hero::after {
+        position: absolute;
+        content: "";
+        border-radius: 50%;
+        pointer-events: none;
+    }
+    .hero::before {
+        top: -100px;
+        right: 4%;
+        width: 290px;
+        height: 290px;
+        background: radial-gradient(circle, rgba(211, 165, 54, .24), transparent 68%);
+    }
+    .hero::after {
+        right: 19%;
+        bottom: -150px;
+        width: 280px;
+        height: 280px;
+        border: 1px solid rgba(255, 255, 255, .08);
+    }
+    .hero-copy, .hero-meta { position: relative; z-index: 1; }
+    .eyebrow {
+        margin: 0 0 9px;
+        color: #e8c66e;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+    }
+    .hero h1 {
+        margin: 0;
+        font-size: clamp(2rem, 3.2vw, 3rem);
+        font-weight: 780;
+        letter-spacing: -.045em;
+        line-height: 1.04;
+    }
+    .hero-description {
+        max-width: 720px;
+        margin: 14px 0 0;
+        color: #cbd1dc;
+        font-size: .98rem;
+        line-height: 1.6;
+    }
+    .hero-meta {
+        flex: 0 0 auto;
+        gap: 10px;
+        padding: 11px 14px;
+        color: #f4f5f7;
+        background: rgba(255, 255, 255, .08);
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: 12px;
+        font-size: .78rem;
+        font-weight: 700;
+        backdrop-filter: blur(10px);
+    }
+    .hero-meta svg { color: #e8c66e; }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+    .stat-card {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 14px;
+        padding: 18px 20px;
+        background: rgba(255, 255, 255, .94);
+        border: 1px solid var(--slate-200);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+    }
+    .stat-icon {
+        display: grid;
+        width: 43px;
+        height: 43px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--navy-800);
+        background: var(--slate-100);
+        border-radius: 12px;
+    }
+    .stat-card.is-success .stat-icon { color: var(--green-700); background: var(--green-100); }
+    .stat-card.is-alert .stat-icon { color: var(--red-700); background: var(--red-100); }
+    .stat-card.is-gold .stat-icon { color: var(--gold-600); background: var(--gold-100); }
+    .stat-copy { min-width: 0; }
+    .stat-value {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 1.55rem;
+        font-weight: 780;
+        letter-spacing: -.04em;
+        line-height: 1;
+    }
+    .stat-label {
+        display: block;
+        overflow: hidden;
+        color: var(--slate-600);
+        font-size: .78rem;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .filters-panel, .bookings-panel {
+        background: rgba(255, 255, 255, .96);
+        border: 1px solid var(--slate-200);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+    }
+    .filters-panel {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 18px;
+        padding: 18px;
+    }
+    .filters-form {
+        display: grid;
+        grid-template-columns: minmax(260px, 1.2fr) minmax(270px, .8fr) auto;
+        align-items: end;
+        flex: 1 1 auto;
+        gap: 12px;
+        min-width: 0;
+    }
+    .filter-field { min-width: 0; }
+    .field-label {
+        display: block;
+        margin: 0 0 7px 2px;
+        color: var(--slate-700);
+        font-size: .71rem;
+        font-weight: 760;
+        letter-spacing: .025em;
+    }
+    .input-shell { position: relative; }
+    .input-shell svg {
+        position: absolute;
+        top: 50%;
+        left: 14px;
+        color: var(--slate-500);
+        transform: translateY(-50%);
+        pointer-events: none;
+    }
+    .form-control, .form-select {
+        width: 100%;
+        height: 43px;
+        color: var(--navy-950);
+        background-color: var(--white);
+        border: 1px solid var(--slate-300);
+        border-radius: 10px;
+        outline: none;
+        transition: border-color .16s ease, box-shadow .16s ease;
+    }
+    .form-control { padding: 0 14px 0 42px; }
+    .form-select { padding: 0 38px 0 13px; }
+    .form-control::placeholder { color: #98a0b1; }
+    .form-control:focus, .form-select:focus {
+        border-color: var(--gold-500);
+        box-shadow: 0 0 0 3px rgba(211, 165, 54, .15);
+    }
+
+    .toolbar-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+    .button, .action-button, .icon-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+    .button {
+        height: 43px;
+        padding: 0 15px;
+        border-radius: 10px;
+        font-size: .77rem;
+        font-weight: 750;
+        white-space: nowrap;
+    }
+    .button:hover, .action-button:hover, .icon-button:hover { transform: translateY(-1px); }
+    .button-primary {
+        color: var(--white);
+        background: var(--navy-950);
+        border-color: var(--navy-950);
+        box-shadow: 0 5px 12px rgba(17, 24, 39, .13);
+    }
+    .button-primary:hover { background: #253048; }
+    .button-secondary { color: var(--navy-800); background: var(--white); border-color: var(--slate-300); }
+    .button-secondary:hover { background: var(--slate-50); border-color: #c8ced9; }
+    .button-ghost { color: var(--slate-600); background: transparent; border-color: transparent; }
+    .button-ghost:hover { color: var(--navy-900); background: var(--slate-100); }
+
+    .bookings-panel { overflow: hidden; box-shadow: var(--shadow-md); }
+    .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 20px 22px;
+        border-bottom: 1px solid var(--slate-200);
+    }
+    .panel-title-row { flex-wrap: wrap; gap: 10px; }
+    .panel-header h2 { margin: 0; font-size: 1.05rem; font-weight: 780; letter-spacing: -.02em; }
+    .result-badge, .active-filter {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: .68rem;
+        font-weight: 760;
+    }
+    .result-badge { color: var(--slate-700); background: var(--slate-100); }
+    .active-filter {
+        max-width: min(450px, 44vw);
+        overflow: hidden;
+        color: #7b5b12;
+        background: var(--gold-100);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .autosave-copy {
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
+        gap: 8px;
+        color: var(--slate-600);
+        font-size: .7rem;
+        font-weight: 650;
+    }
+    .print-session-note { display: none; }
+    .table-scroll {
+        width: 100%;
+        overflow-x: auto;
+        scrollbar-color: #c7ccd6 transparent;
+        scrollbar-width: thin;
+    }
+    .booking-table { width: 100%; min-width: 1480px; border-collapse: separate; border-spacing: 0; }
+    .booking-table th {
+        position: sticky;
+        z-index: 2;
+        top: 0;
+        padding: 12px 14px;
+        color: var(--slate-600);
+        background: #fafbfc;
+        border-bottom: 1px solid var(--slate-200);
+        font-size: .66rem;
+        font-weight: 780;
+        letter-spacing: .05em;
+        text-align: left;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .booking-table td {
+        padding: 16px 14px;
+        background: var(--white);
+        border-bottom: 1px solid var(--slate-200);
+        font-size: .78rem;
+        vertical-align: middle;
+    }
+    .booking-table tbody tr:last-child td { border-bottom: 0; }
+    .booking-table tbody tr:hover td { background: #fcfcfd; }
+    .booking-table th:first-child, .booking-table td:first-child { padding-left: 22px; }
+    .booking-table th:last-child, .booking-table td:last-child { padding-right: 22px; }
+    .col-person { width: 220px; }
+    .col-contact { width: 225px; }
+    .col-session { width: 255px; }
+    .col-payment { width: 164px; }
+    .col-mode { width: 172px; }
+    .col-key { width: 78px; }
+    .col-key-state { width: 232px; }
+    .col-date { width: 130px; }
+    .col-actions { width: 164px; }
+
+    .person-profile { align-items: flex-start; gap: 11px; }
+    .avatar {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: #70520d;
+        background: linear-gradient(145deg, #fbf0d4, #f3dfac);
+        border: 1px solid #ecd18d;
+        border-radius: 11px;
+        font-size: .72rem;
+        font-weight: 820;
+        letter-spacing: .02em;
+    }
+    .person-name { min-width: 0; }
+    .editable {
+        display: block;
+        width: fit-content;
+        max-width: 100%;
+        min-height: 19px;
+        padding: 2px 4px;
+        margin-left: -4px;
+        overflow-wrap: anywhere;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        outline: none;
+        transition: background .14s ease, border-color .14s ease, box-shadow .14s ease;
+    }
+    .editable:hover { background: var(--slate-100); border-color: var(--slate-200); }
+    .editable:focus {
+        background: var(--white);
+        border-color: var(--gold-500);
+        box-shadow: 0 0 0 3px rgba(211, 165, 54, .13);
+    }
+    .nom-cell { font-weight: 780; text-transform: uppercase; }
+    .prenom-cell { color: var(--slate-600); font-size: .72rem; font-weight: 600; text-transform: capitalize; }
+    .contact-stack { display: grid; gap: 5px; }
+    .contact-line { min-width: 0; gap: 7px; color: var(--slate-700); }
+    .contact-line svg { width: .9rem; height: .9rem; color: var(--slate-500); }
+    .contact-line .editable { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .phone-value { color: var(--green-700); font-weight: 720; }
+    .session-editor { width: 100%; color: var(--slate-700); font-size: .74rem; font-weight: 650; line-height: 1.45; }
+
+    .choice-group {
+        display: inline-flex;
+        gap: 3px;
+        padding: 3px;
+        background: var(--slate-100);
+        border: 1px solid var(--slate-200);
+        border-radius: 9px;
+    }
+    .choice-button {
+        min-height: 29px;
+        padding: 0 9px;
+        color: var(--slate-600);
+        background: transparent;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: .66rem;
+        font-weight: 750;
+        white-space: nowrap;
+        transition: color .14s ease, background .14s ease, box-shadow .14s ease;
+    }
+    .choice-button:hover { color: var(--navy-900); background: rgba(255, 255, 255, .72); }
+    .choice-button.is-active {
+        color: var(--navy-900);
+        background: var(--white);
+        box-shadow: 0 1px 4px rgba(16, 24, 40, .12);
+    }
+    .choice-button.is-active.is-success { color: var(--green-700); background: var(--green-100); }
+    .choice-button.is-active.is-danger { color: var(--red-700); background: var(--red-100); }
+    .choice-button.is-active.is-blue { color: var(--blue-700); background: var(--blue-100); }
+    .choice-button.is-active.is-gold { color: #76570f; background: var(--gold-100); }
+    .key-state-group .choice-button { padding-inline: 8px; }
+    .key-input {
+        width: 57px;
+        height: 36px;
+        padding: 0 8px;
+        color: var(--navy-950);
+        background: var(--white);
+        border: 1px solid var(--slate-300);
+        border-radius: 9px;
+        outline: none;
+        text-align: center;
+        font-size: .75rem;
+        font-weight: 760;
+    }
+    .key-input:focus { border-color: var(--gold-500); box-shadow: 0 0 0 3px rgba(211, 165, 54, .13); }
+    .date-value { color: var(--slate-700); font-size: .7rem; font-weight: 650; line-height: 1.4; }
+    .muted-value { color: #a4aaba; }
+
+    .row-actions { flex-wrap: wrap; gap: 6px; }
+    .action-button {
+        min-height: 34px;
+        padding: 0 10px;
+        color: var(--white);
+        background: var(--navy-950);
+        border-color: var(--navy-950);
+        border-radius: 8px;
+        font-size: .68rem;
+        font-weight: 750;
+        white-space: nowrap;
+        box-shadow: 0 4px 9px rgba(17, 24, 39, .12);
+    }
+    .action-button:hover { background: var(--navy-800); }
+    .icon-button {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        color: var(--slate-700);
+        background: var(--white);
+        border-color: var(--slate-300);
+        border-radius: 8px;
+    }
+    .icon-button:hover { color: var(--blue-700); background: var(--blue-100); border-color: #cbdaf2; }
+    .icon-button.is-danger { color: var(--red-700); }
+    .icon-button.is-danger:hover { background: var(--red-100); border-color: #f5cbc6; }
+    .delete-form { margin: 0; }
+
+    .panel-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        padding: 13px 22px;
+        color: var(--slate-600);
+        background: #fafbfc;
+        border-top: 1px solid var(--slate-200);
+        font-size: .69rem;
+    }
+    .panel-footer-note { gap: 8px; }
+    .edit-hint { color: var(--slate-500); }
+
+    .empty-state { display: grid; min-height: 310px; padding: 45px 24px; place-items: center; text-align: center; }
+    .empty-state-inner { max-width: 430px; }
+    .empty-icon {
+        display: grid;
+        width: 54px;
+        height: 54px;
+        margin: 0 auto 16px;
+        place-items: center;
+        color: var(--gold-600);
+        background: var(--gold-100);
+        border-radius: 16px;
+    }
+    .empty-icon svg { width: 1.5rem; height: 1.5rem; }
+    .empty-state h3 { margin: 0 0 7px; font-size: 1rem; }
+    .empty-state p { margin: 0 0 18px; color: var(--slate-600); font-size: .8rem; line-height: 1.55; }
+
+    .save-toast {
+        position: fixed;
+        z-index: 20;
+        right: 24px;
+        bottom: 24px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        max-width: calc(100vw - 48px);
+        padding: 12px 15px;
+        color: var(--white);
+        background: var(--navy-950);
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: 11px;
+        box-shadow: 0 14px 36px rgba(17, 24, 39, .24);
+        font-size: .75rem;
+        font-weight: 700;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(10px);
+        transition: opacity .18s ease, transform .18s ease;
+    }
+    .save-toast.is-visible { opacity: 1; transform: translateY(0); }
+    .save-toast.is-error { background: #8f241d; }
+    .save-toast svg { color: #e8c66e; }
+
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+        outline: 3px solid rgba(36, 87, 167, .28);
+        outline-offset: 2px;
+    }
+
+    @media (max-width: 1240px) {
+        .filters-panel { align-items: stretch; flex-direction: column; }
+        .toolbar-actions { justify-content: flex-end; }
+    }
+
+    @media (max-width: 920px) {
+        .app-shell { padding: 18px 18px 38px; }
+        .hero { align-items: flex-start; flex-direction: column; padding: 30px; }
+        .hero-meta { align-self: stretch; width: fit-content; }
+        .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .filters-form { grid-template-columns: 1fr 1fr; }
+        .filters-form .button-primary { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 720px) {
+        .app-shell { padding-inline: 12px; }
+        .app-header { min-height: 52px; margin-bottom: 14px; }
+        .brand-mark { width: 42px; height: 42px; }
+        .brand-mark img { width: 34px; height: 34px; }
+        .brand-name { font-size: .86rem; }
+        .header-context { display: none; }
+        .hero { min-height: auto; padding: 25px 22px; border-radius: 19px; }
+        .hero h1 { font-size: 2rem; }
+        .hero-description { font-size: .88rem; }
+        .stats-grid { gap: 9px; }
+        .stat-card { gap: 10px; padding: 15px; border-radius: 14px; }
+        .stat-icon { width: 36px; height: 36px; }
+        .stat-value { font-size: 1.3rem; }
+        .stat-label { white-space: normal; }
+        .filters-panel { padding: 14px; }
+        .filters-form { grid-template-columns: 1fr; }
+        .filters-form .button-primary { grid-column: auto; }
+        .toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .toolbar-actions .button:last-child { grid-column: 1 / -1; }
+        .panel-header { align-items: flex-start; flex-direction: column; padding: 17px 16px; }
+        .autosave-copy { align-self: flex-start; }
+        .active-filter { max-width: calc(100vw - 64px); }
+        .table-scroll { padding: 12px; overflow: visible; background: var(--slate-50); }
+        .booking-table, .booking-table tbody { display: block; min-width: 0; }
+        .booking-table thead { display: none; }
+        .booking-table tbody { display: grid; gap: 12px; }
+        .booking-table tr {
+            display: block;
+            overflow: hidden;
+            background: var(--white);
+            border: 1px solid var(--slate-200);
+            border-radius: 14px;
+            box-shadow: var(--shadow-sm);
+        }
+        .booking-table td, .booking-table th:first-child, .booking-table td:first-child,
+        .booking-table th:last-child, .booking-table td:last-child { padding: 12px 14px; }
+        .booking-table td {
+            display: grid;
+            grid-template-columns: 105px minmax(0, 1fr);
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            background: var(--white);
+            border-bottom: 1px solid var(--slate-200);
+        }
+        .booking-table td::before {
+            content: attr(data-label);
+            color: var(--slate-500);
+            font-size: .64rem;
+            font-weight: 780;
+            letter-spacing: .035em;
+            text-transform: uppercase;
+        }
+        .booking-table td:first-child { display: block; background: #fafbfc; }
+        .booking-table td:first-child::before { display: none; }
+        .booking-table td:last-child { border-bottom: 0; }
+        .choice-group { width: fit-content; max-width: 100%; }
+        .row-actions { justify-content: flex-start; }
+        .panel-footer { align-items: flex-start; flex-direction: column; padding-inline: 16px; }
+    }
+
+    @media (max-width: 470px) {
+        .stats-grid { grid-template-columns: 1fr; }
+        .toolbar-actions { grid-template-columns: 1fr; }
+        .toolbar-actions .button:last-child { grid-column: auto; }
+        .button { width: 100%; }
+        .booking-table td { grid-template-columns: 88px minmax(0, 1fr); }
+        .key-state-group { flex-wrap: wrap; }
+    }
+
+    @media print {
+        @page { size: landscape; margin: 10mm; }
+        body { color: #000; background: #fff !important; }
+        .app-shell { width: 100%; max-width: none; padding: 0; }
+        .app-header, .hero, .stats-grid, .filters-panel, .autosave-copy,
+        .panel-footer, .actions-column, .save-toast { display: none !important; }
+        .bookings-panel { overflow: visible; border: 0; box-shadow: none; }
+        .panel-header { padding: 0 0 10px; border-bottom: 1px solid #aaa; }
+        .active-filter { color: #000; background: #eee; }
+        .print-session-note { display: block; margin: 0 0 10px; font-size: 10px; font-weight: 700; }
+        .table-scroll { overflow: visible; }
+        .booking-table { min-width: 0; font-size: 8px; }
+        .booking-table th, .booking-table td, .booking-table th:first-child,
+        .booking-table td:first-child, .booking-table th:last-child,
+        .booking-table td:last-child { padding: 5px; }
+        .booking-table th { position: static; font-size: 7px; }
+        .booking-table td { font-size: 8px; }
+        .avatar, .choice-group, .key-input { border-color: #aaa; box-shadow: none; }
+        .avatar { width: 28px; height: 28px; }
+        .choice-button { min-height: 22px; padding-inline: 5px; font-size: 7px; }
+        .editable { padding: 0; border: 0; }
+    }
 </style>
 </head>
 
-<body class="p-4">
+<body>
+{% set stats = namespace(payes=0, a_encaisser=0, cles_circulation=0) %}
+{% for item in hebergements %}
+    {% if item.paiement == 'Payé' %}
+        {% set stats.payes = stats.payes + 1 %}
+    {% else %}
+        {% set stats.a_encaisser = stats.a_encaisser + 1 %}
+    {% endif %}
+    {% if item.cle_etat == 'Donnee' %}
+        {% set stats.cles_circulation = stats.cles_circulation + 1 %}
+    {% endif %}
+{% endfor %}
 
-<div class="container-admin text-center">
-
-    <!-- LOGO -->
-    <img src="/static/logo.png" class="logo-admin">
-
-    <h3 class="mb-4">Gestion des hébergements APR</h3>
-
-    <!-- ZONE DU HAUT -->
-    <div class="top-bar">
-
-        <form method="GET" action="/admin_hebergement" class="filters-form">
-            <div class="search-block d-flex">
-                <input type="text" name="q" class="form-control me-2"
-                       value="{{ search_query }}"
-                       placeholder="Rechercher nom, email, session…">
-                <button class="btn btn-primary">Rechercher</button>
+<div class="app-shell">
+    <header class="app-header">
+        <div class="brand-lockup">
+            <div class="brand-mark">
+                <img src="/static/logo.png" alt="Logo Intégrale Academy">
             </div>
-
-            <div class="session-filter-block">
-                <label for="session_filter" class="form-label mb-1">Afficher une seule session</label>
-                <select id="session_filter" name="session_filter" class="form-select" onchange="this.form.submit()">
-                    <option value="">Toutes les sessions</option>
-                    {% for session_name in sessions_disponibles %}
-                    <option value="{{ session_name }}" {% if session_name == selected_session %}selected{% endif %}>{{ session_name }}</option>
-                    {% endfor %}
-                </select>
+            <div class="brand-copy">
+                <span class="brand-name">Intégrale Academy</span>
+                <span class="brand-area">Espace administration</span>
             </div>
-
-            {% if tri %}
-            <input type="hidden" name="tri" value="{{ tri }}">
-            {% endif %}
-        </form>
-
-        <!-- Actions -->
-        <div class="d-flex gap-2">
-            <a href="/admin_hebergement?tri=session{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if selected_session %}&session_filter={{ selected_session|urlencode }}{% endif %}" class="btn btn-secondary">
-                Trier par session
-            </a>
-            <a href="/admin_hebergement{% if selected_session or search_query or tri %}?{% endif %}{% if selected_session %}session_filter={{ selected_session|urlencode }}{% endif %}{% if search_query %}{% if selected_session %}&{% endif %}q={{ search_query|urlencode }}{% endif %}{% if tri %}{% if selected_session or search_query %}&{% endif %}tri={{ tri|urlencode }}{% endif %}" class="btn btn-outline-secondary">
-                Réinitialiser
-            </a>
-            <button onclick="window.print()" class="btn btn-dark">
-                🖨️ Imprimer{% if selected_session %} la session{% endif %}
-            </button>
         </div>
+        <div class="header-context" aria-label="État du service">
+            <span class="status-dot" aria-hidden="true"></span>
+            Hébergement APR · Puget-sur-Argens
+        </div>
+    </header>
 
-    </div>
+    <main>
+        <section class="hero" aria-labelledby="page-title">
+            <div class="hero-copy">
+                <p class="eyebrow">Opérations · Hébergement</p>
+                <h1 id="page-title">Pilotage des hébergements</h1>
+                <p class="hero-description">
+                    Suivez les réservations, les règlements et la restitution des clés depuis un espace unique.
+                    Chaque modification est enregistrée directement dans le dossier du stagiaire.
+                </p>
+            </div>
+            <div class="hero-meta">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path d="M12 21s7-5.2 7-12a7 7 0 1 0-14 0c0 6.8 7 12 7 12Z"></path>
+                    <circle cx="12" cy="9" r="2.4"></circle>
+                </svg>
+                54 chemin du Carreou
+            </div>
+        </section>
 
-    <!-- TABLEAU -->
-    <div class="table-container">
-        <p class="print-session-note">
-            {% if selected_session %}
-                Impression de la session : {{ selected_session }}
-            {% else %}
-                Impression de toutes les sessions affichées
-            {% endif %}
-        </p>
+        <section class="stats-grid" aria-label="Indicateurs des hébergements affichés">
+            <article class="stat-card">
+                <div class="stat-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                </div>
+                <div class="stat-copy"><strong class="stat-value">{{ hebergements|length }}</strong><span class="stat-label">Réservations affichées</span></div>
+            </article>
+            <article class="stat-card is-success">
+                <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></div>
+                <div class="stat-copy"><strong class="stat-value">{{ stats.payes }}</strong><span class="stat-label">Paiements encaissés</span></div>
+            </article>
+            <article class="stat-card is-alert">
+                <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></div>
+                <div class="stat-copy"><strong class="stat-value">{{ stats.a_encaisser }}</strong><span class="stat-label">Paiements à encaisser</span></div>
+            </article>
+            <article class="stat-card is-gold">
+                <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 8-8M16 4h3v3M14 9l2 2"></path></svg></div>
+                <div class="stat-copy"><strong class="stat-value">{{ stats.cles_circulation }}</strong><span class="stat-label">Clés en circulation</span></div>
+            </article>
+        </section>
 
-        <table class="table table-hover align-middle">
-            <thead class="table-light">
-                <tr>
-                    <th>Nom</th>
-                    <th>Prénom</th>
-                    <th>Téléphone</th>
-                    <th>Email</th>
-                    <th class="col-session">Session</th>
-                    <th>Paiement</th>
-                    <th>Mode</th>
-                    <th>Clé</th>
-                    <th>État clé</th>
-                    <th>Date paiement</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
+        <section class="filters-panel no-print" aria-label="Recherche et filtres">
+            <form method="GET" action="/admin_hebergement" class="filters-form">
+                <div class="filter-field">
+                    <label for="booking-search" class="field-label">Rechercher un stagiaire</label>
+                    <div class="input-shell">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+                        <input id="booking-search" type="search" name="q" class="form-control" value="{{ search_query }}" placeholder="Nom, prénom, email ou téléphone…">
+                    </div>
+                </div>
+                <div class="filter-field">
+                    <label for="session_filter" class="field-label">Session de formation</label>
+                    <select id="session_filter" name="session_filter" class="form-select" onchange="this.form.submit()">
+                        <option value="">Toutes les sessions</option>
+                        {% for session_name in sessions_disponibles %}
+                        <option value="{{ session_name }}" {% if session_name == selected_session %}selected{% endif %}>{{ session_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if tri %}<input type="hidden" name="tri" value="{{ tri }}">{% endif %}
+                <button type="submit" class="button button-primary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+                    Rechercher
+                </button>
+            </form>
 
-            <tbody>
-                {% for h in hebergements %}
-                <tr id="row-{{h.id}}">
+            <div class="toolbar-actions">
+                <a href="/admin_hebergement?tri=session{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if selected_session %}&session_filter={{ selected_session|urlencode }}{% endif %}" class="button button-secondary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M6 12h12M10 18h4"></path></svg>
+                    Trier
+                </a>
+                <a href="/admin_hebergement" class="button button-ghost">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>
+                    Réinitialiser
+                </a>
+                <button type="button" onclick="window.print()" class="button button-secondary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><path d="M6 14h12v7H6z"></path></svg>
+                    Imprimer
+                </button>
+            </div>
+        </section>
 
-<td class="nom-cell"
-    contenteditable="true"
-    onblur="updateField('{{h.id}}', 'nom', this.innerText)">
-    {{ h.nom.upper() }}
-</td>
+        <section class="bookings-panel" aria-labelledby="reservations-title">
+            <div class="panel-header">
+                <div class="panel-title-row">
+                    <h2 id="reservations-title">Réservations</h2>
+                    <span class="result-badge">{{ hebergements|length }} résultat{% if hebergements|length != 1 %}s{% endif %}</span>
+                    {% if selected_session %}<span class="active-filter" title="{{ selected_session }}">{{ selected_session }}</span>{% endif %}
+                </div>
+                <div class="autosave-copy"><span class="autosave-dot" aria-hidden="true"></span>Modifications enregistrées automatiquement</div>
+            </div>
 
+            <p class="print-session-note">
+                {% if selected_session %}Session imprimée : {{ selected_session }}{% else %}Toutes les sessions actuellement affichées{% endif %}
+            </p>
 
-<td class="prenom-cell"
-    contenteditable="true"
-    onblur="updateField('{{h.id}}', 'prenom', this.innerText)">
-    {{ h.prenom.title() }}
-</td>
-
-
-
-
-                  <td contenteditable="true"
-    onblur="updateField('{{h.id}}', 'telephone', this.innerText)"
-    class="text-success fw-bold">
-    {{h.telephone}}
-</td>
-
-
-                    <td contenteditable="true"
-    onblur="updateField('{{h.id}}', 'mail', this.innerText)">
-    {{h.mail}}
-</td>
-
-
-                    <td class="col-session"
-    contenteditable="true"
-    onblur="updateField('{{h.id}}', 'session', this.innerText)">
-    {{h.session}}
-</td>
-
-
-                    <!-- Paiement -->
-                    <td>
-                        <div class="btn-group">
-                            <button class="btn btn-sm {% if h.paiement == 'Payé' %}btn-success{% else %}btn-outline-success{% endif %}"
-                                    onclick="updatePaiement('{{h.id}}', 'Payé')">
-                                Payé
-                            </button>
-
-                            <button class="btn btn-sm {% if h.paiement != 'Payé' %}btn-danger{% else %}btn-outline-danger{% endif %}"
-                                    onclick="updatePaiement('{{h.id}}', 'Non payé')">
-                                Non payé
-                            </button>
-                        </div>
-                    </td>
-
-                    <!-- Mode paiement -->
-                    <td>
-                        <div class="btn-group">
-                            <button class="btn btn-sm {% if h.mode_paiement == 'Chèque' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
-                                    onclick="updateMode('{{h.id}}', 'Chèque')">
-                                Chèque
-                            </button>
-
-                            <button class="btn btn-sm {% if h.mode_paiement == 'Espèces' %}btn-warning{% else %}btn-outline-warning{% endif %}"
-                                    onclick="updateMode('{{h.id}}', 'Espèces')">
-                                Espèces
-                            </button>
-                        </div>
-                    </td>
-
-                    <!-- Numéro de clé -->
-                    <td>
-                        <input type="text" class="key-input"
-                               value="{{ h.cle_numero or '' }}"
-                               onchange="updateCleNumero('{{h.id}}', this.value)">
-                    </td>
-
-                    <!-- État clé -->
-                    <td>
-                        <div class="d-flex gap-1">
-                            <button 
-                                class="btn-etat adonner {% if h.cle_etat == 'A donner' %}active{% endif %}"
-                                onclick="updateCleEtat('{{h.id}}', 'A donner')">
-                                À donner
-                            </button>
-
-                            <button 
-                                class="btn-etat donnee {% if h.cle_etat == 'Donnee' %}active{% endif %}"
-                                onclick="updateCleEtat('{{h.id}}', 'Donnee')">
-                                Donnée
-                            </button>
-
-                            <button 
-                                class="btn-etat restituee {% if h.cle_etat == 'Restituee' %}active{% endif %}"
-                                onclick="updateCleEtat('{{h.id}}', 'Restituee')">
-                                Restituée
-                            </button>
-                        </div>
-                    </td>
-
-                    <!-- Date paiement -->
-                    <td>{{h.date_paiement or ''}}</td>
-
-                    <!-- Actions -->
-                    <td>
-                        <div class="row-actions d-flex gap-1 align-items-center">
-                            <a
-                                class="btn btn-outline-dark btn-sm convention-action"
-                                href="{{ url_for('admin_hebergement_convention', reservation_id=h.id) }}"
-                                title="Générer la convention d’hébergement préremplie pour {{ h.prenom }} {{ h.nom }}"
-                                aria-label="Générer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
-                                📄 Convention PDF
-                            </a>
-                            {% if h.cle_etat != 'Restituee' and h.mail %}
-                            {% set cle_numero = h.cle_numero or 'XXXX' %}
-                            {% set mail_subject %}Rappel restitution clé n°{{ cle_numero }}{% endset %}
-                            {% set mail_body %}Bonjour,
+            {% if hebergements %}
+            <div class="table-scroll">
+                <table class="booking-table">
+                    <thead>
+                        <tr>
+                            <th class="col-person">Stagiaire</th>
+                            <th class="col-contact">Contact</th>
+                            <th class="col-session">Session</th>
+                            <th class="col-payment">Paiement</th>
+                            <th class="col-mode">Mode</th>
+                            <th class="col-key">Clé</th>
+                            <th class="col-key-state">Suivi de clé</th>
+                            <th class="col-date">Date paiement</th>
+                            <th class="col-actions actions-column">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for h in hebergements %}
+                        <tr id="row-{{ h.id }}">
+                            <td data-label="Stagiaire">
+                                <div class="person-profile">
+                                    <div class="avatar" aria-hidden="true">{{ h.prenom[:1]|upper }}{{ h.nom[:1]|upper }}</div>
+                                    <div class="person-name">
+                                        <span class="editable nom-cell" contenteditable="true" role="textbox" tabindex="0" spellcheck="false" title="Cliquer pour modifier le nom" onblur="updateField('{{ h.id }}', 'nom', this.innerText)">{{ h.nom|upper }}</span>
+                                        <span class="editable prenom-cell" contenteditable="true" role="textbox" tabindex="0" spellcheck="false" title="Cliquer pour modifier le prénom" onblur="updateField('{{ h.id }}', 'prenom', this.innerText)">{{ h.prenom|title }}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td data-label="Contact">
+                                <div class="contact-stack">
+                                    <div class="contact-line">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2.1Z"></path></svg>
+                                        <span class="editable phone-value" contenteditable="true" role="textbox" tabindex="0" spellcheck="false" title="Cliquer pour modifier le téléphone" onblur="updateField('{{ h.id }}', 'telephone', this.innerText)">{{ h.telephone }}</span>
+                                    </div>
+                                    <div class="contact-line">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path></svg>
+                                        <span class="editable" contenteditable="true" role="textbox" tabindex="0" spellcheck="false" title="Cliquer pour modifier l’adresse email" onblur="updateField('{{ h.id }}', 'mail', this.innerText)">{{ h.mail }}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td data-label="Session">
+                                <span class="editable session-editor" contenteditable="true" role="textbox" tabindex="0" spellcheck="false" title="Cliquer pour modifier la session" onblur="updateField('{{ h.id }}', 'session', this.innerText)">{{ h.session }}</span>
+                            </td>
+                            <td data-label="Paiement">
+                                <div class="choice-group" aria-label="État du paiement de {{ h.prenom }} {{ h.nom }}">
+                                    <button type="button" class="choice-button {% if h.paiement == 'Payé' %}is-active is-success{% endif %}" aria-pressed="{{ 'true' if h.paiement == 'Payé' else 'false' }}" onclick="updatePaiement('{{ h.id }}', 'Payé')">Payé</button>
+                                    <button type="button" class="choice-button {% if h.paiement != 'Payé' %}is-active is-danger{% endif %}" aria-pressed="{{ 'true' if h.paiement != 'Payé' else 'false' }}" onclick="updatePaiement('{{ h.id }}', 'Non payé')">Non payé</button>
+                                </div>
+                            </td>
+                            <td data-label="Mode">
+                                <div class="choice-group" aria-label="Mode de paiement de {{ h.prenom }} {{ h.nom }}">
+                                    <button type="button" class="choice-button {% if h.mode_paiement == 'Chèque' %}is-active{% endif %}" aria-pressed="{{ 'true' if h.mode_paiement == 'Chèque' else 'false' }}" onclick="updateMode('{{ h.id }}', 'Chèque')">Chèque</button>
+                                    <button type="button" class="choice-button {% if h.mode_paiement == 'Espèces' %}is-active is-gold{% endif %}" aria-pressed="{{ 'true' if h.mode_paiement == 'Espèces' else 'false' }}" onclick="updateMode('{{ h.id }}', 'Espèces')">Espèces</button>
+                                </div>
+                            </td>
+                            <td data-label="Clé">
+                                <label class="sr-only" for="key-{{ h.id }}">Numéro de clé de {{ h.prenom }} {{ h.nom }}</label>
+                                <input id="key-{{ h.id }}" type="text" class="key-input" value="{{ h.cle_numero or '' }}" placeholder="—" onchange="updateCleNumero('{{ h.id }}', this.value)">
+                            </td>
+                            <td data-label="Suivi de clé">
+                                <div class="choice-group key-state-group" aria-label="État de la clé de {{ h.prenom }} {{ h.nom }}">
+                                    <button type="button" class="choice-button {% if h.cle_etat == 'A donner' %}is-active{% endif %}" aria-pressed="{{ 'true' if h.cle_etat == 'A donner' else 'false' }}" onclick="updateCleEtat('{{ h.id }}', 'A donner')">À donner</button>
+                                    <button type="button" class="choice-button {% if h.cle_etat == 'Donnee' %}is-active is-blue{% endif %}" aria-pressed="{{ 'true' if h.cle_etat == 'Donnee' else 'false' }}" onclick="updateCleEtat('{{ h.id }}', 'Donnee')">Donnée</button>
+                                    <button type="button" class="choice-button {% if h.cle_etat == 'Restituee' %}is-active is-gold{% endif %}" aria-pressed="{{ 'true' if h.cle_etat == 'Restituee' else 'false' }}" onclick="updateCleEtat('{{ h.id }}', 'Restituee')">Restituée</button>
+                                </div>
+                            </td>
+                            <td data-label="Date paiement">
+                                {% if h.date_paiement %}<span class="date-value">{{ h.date_paiement }}</span>{% else %}<span class="muted-value">Non renseignée</span>{% endif %}
+                            </td>
+                            <td data-label="Actions" class="actions-column">
+                                <div class="row-actions">
+                                    <a class="action-button convention-action" href="{{ url_for('admin_hebergement_convention', reservation_id=h.id) }}" title="Générer la convention d’hébergement préremplie pour {{ h.prenom }} {{ h.nom }}" aria-label="Générer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M8 13h8M8 17h6"></path></svg>
+                                        Convention PDF
+                                    </a>
+                                    {% if h.cle_etat != 'Restituee' and h.mail %}
+                                    {% set cle_numero = h.cle_numero or 'XXXX' %}
+                                    {% set mail_subject %}Rappel restitution clé n°{{ cle_numero }}{% endset %}
+                                    {% set mail_body %}Bonjour,
 
 Je fais suite à votre formation agent de protection physique des personnes.
 Après avoir fait le point sur les clés, il s'avère que vous n'avez pas rendu votre clé n°{{ cle_numero }}.
@@ -379,94 +929,91 @@ Je reste à votre disposition pour tous renseignements complémentaires et je vo
 Bien cordialement,
 
 Clément VAILLANT{% endset %}
-                            <a
-                                class="btn btn-outline-primary btn-sm"
-                                href="mailto:{{ h.mail }}?subject={{ mail_subject|trim|urlencode }}&body={{ mail_body|trim|urlencode }}"
-                                title="Envoyer un rappel de restitution de clé">
-                                ✉️
-                            </a>
-                            {% endif %}
+                                    <a class="icon-button" href="mailto:{{ h.mail }}?subject={{ mail_subject|trim|urlencode }}&body={{ mail_body|trim|urlencode }}" title="Envoyer un rappel de restitution de clé" aria-label="Envoyer un rappel de restitution de clé à {{ h.prenom }} {{ h.nom }}">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
+                                    </a>
+                                    {% endif %}
+                                    <form method="POST" action="/admin_hebergement" class="delete-form">
+                                        <input type="hidden" name="id" value="{{ h.id }}"><input type="hidden" name="action" value="delete">
+                                        <button type="submit" class="icon-button is-danger" title="Supprimer la réservation" aria-label="Supprimer la réservation de {{ h.prenom }} {{ h.nom }}">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"></path></svg>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
 
-                            <form method="POST" action="/admin_hebergement" class="mb-0">
-                                <input type="hidden" name="id" value="{{h.id}}">
-                                <input type="hidden" name="action" value="delete">
-                                <button class="btn btn-danger btn-sm" title="Supprimer">🗑️</button>
-                            </form>
-                        </div>
-                    </td>
+            <div class="panel-footer">
+                <div class="panel-footer-note">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>
+                    Cliquez sur les coordonnées ou la session pour les modifier directement.
+                </div>
+                <span class="edit-hint">{{ hebergements|length }} dossier{% if hebergements|length != 1 %}s{% endif %} affiché{% if hebergements|length != 1 %}s{% endif %}</span>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-inner">
+                    <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></div>
+                    <h3>Aucune réservation trouvée</h3>
+                    <p>Modifiez votre recherche ou réinitialisez les filtres pour afficher l’ensemble des hébergements.</p>
+                    <a href="/admin_hebergement" class="button button-primary">Réinitialiser les filtres</a>
+                </div>
+            </div>
+            {% endif %}
+        </section>
+    </main>
+</div>
 
-                </tr>
-                {% endfor %}
-            </tbody>
-
-        </table>
-
-    </div>
-
+<div id="save-toast" class="save-toast" role="status" aria-live="polite">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+    <span id="save-toast-message">Modification enregistrée</span>
 </div>
 
 <script>
+let toastTimer;
 
-function updatePaiement(id, value) {
-    const fd = new FormData();
-    fd.append("action", "paiement");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
+function showSaveToast(message, isError = false) {
+    const toast = document.getElementById("save-toast");
+    const copy = document.getElementById("save-toast-message");
+    if (!toast || !copy) return;
+
+    copy.textContent = message;
+    toast.classList.toggle("is-error", isError);
+    toast.classList.add("is-visible");
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2200);
 }
 
-function updateMode(id, value) {
+function postUpdate(fields, reloadPage = true) {
     const fd = new FormData();
-    fd.append("action", "mode");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
-}
+    Object.entries(fields).forEach(([key, value]) => fd.append(key, value));
 
-function updateCleNumero(id, value) {
-    const fd = new FormData();
-    fd.append("action", "cle_numero");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
-}
-
-function updateCleEtat(id, value) {
-    const fd = new FormData();
-    fd.append("action", "cle_etat");
-    fd.append("id", id);
-    fd.append("value", value);
-    fetch("/admin_hebergement", { method:"POST", body:fd })
-        .then(() => location.reload());
-}
-
-/* 🔹 NOUVELLE FONCTION POUR LES CELLULES ÉDITABLES */
-function updateField(id, field, value) {
-    const fd = new FormData();
-    fd.append("action", "update_field");
-    fd.append("id", id);
-    fd.append("field", field);
-    fd.append("value", value.trim());
-
-    fetch("/admin_hebergement", { method: "POST", body: fd })
+    return fetch("/admin_hebergement", { method: "POST", body: fd })
         .then(response => {
-            if (!response.ok) {
-                console.error("Erreur enregistrement");
+            if (!response.ok) throw new Error("Erreur d’enregistrement");
+            if (reloadPage) {
+                location.reload();
+            } else {
+                showSaveToast("Modification enregistrée");
             }
         })
-        .catch(err => console.error(err));
+        .catch(error => {
+            console.error(error);
+            showSaveToast("La modification n’a pas pu être enregistrée", true);
+        });
 }
-    
-    
 
+function updatePaiement(id, value) { return postUpdate({ action: "paiement", id, value }); }
+function updateMode(id, value) { return postUpdate({ action: "mode", id, value }); }
+function updateCleNumero(id, value) { return postUpdate({ action: "cle_numero", id, value }); }
+function updateCleEtat(id, value) { return postUpdate({ action: "cle_etat", id, value }); }
+function updateField(id, field, value) {
+    return postUpdate({ action: "update_field", id, field, value: value.trim() }, false);
+}
 </script>
-
 </body>
 </html>
-
-
-
-
