@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_file, send_from_directory, url_for, redirect, abort, jsonify, has_app_context
 from flask import render_template_string
-import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil, gzip, mimetypes
+import json, os, datetime, uuid, pytz, smtplib, re, copy, unicodedata, tempfile, traceback, html, base64, hashlib, hmac, time, sqlite3, threading, shutil, gzip, mimetypes, io
 import html as html_module
 from html.parser import HTMLParser
 from urllib.parse import quote, urlparse
@@ -6159,6 +6159,13 @@ HEBERGEMENT_SESSION_OPTIONS = (
     ("Du 1er septembre au 27 octobre 2026", _date(2026, 9, 1)),
     ("Du 9 novembre 2026 au 19 janvier 2027", _date(2026, 11, 9)),
 )
+HEBERGEMENT_SESSION_END_DATES = {
+    "Du 5 janvier au 16 mars 2026": _date(2026, 3, 16),
+    "Du 30 mars au 2 juin 2026": _date(2026, 6, 2),
+    "Du 8 juin au 4 août 2026": _date(2026, 8, 4),
+    "Du 1er septembre au 27 octobre 2026": _date(2026, 10, 27),
+    "Du 9 novembre 2026 au 19 janvier 2027": _date(2027, 1, 19),
+}
 _HEBERGEMENT_WEEKDAYS = (
     "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
 )
@@ -6196,6 +6203,60 @@ def _hebergement_arrival_label(session):
     if not start_date:
         return "la veille du premier jour de formation"
     return _format_hebergement_date_fr(start_date - datetime.timedelta(days=1))
+
+
+def _hebergement_session_dates(session):
+    start_date = next((
+        start_date
+        for label, start_date in HEBERGEMENT_SESSION_OPTIONS
+        if label == session
+    ), None)
+    return start_date, HEBERGEMENT_SESSION_END_DATES.get(session)
+
+
+def _hebergement_convention_context(reservation):
+    session_label = str(reservation.get("session") or "").strip()
+    start_date, end_date = _hebergement_session_dates(session_label)
+    reservation_id = re.sub(
+        r"[^A-Za-z0-9]", "", str(reservation.get("id") or "")
+    )
+    reference_suffix = (reservation_id[:8] or "ACOMPLETER").upper()
+    paris_tz = pytz.timezone("Europe/Paris")
+    generated_on = datetime.datetime.now(paris_tz).date()
+
+    return {
+        "contract_reference": f"HEB-CDA-{reference_suffix}",
+        "contract_version": "3 septembre 2026",
+        "generated_on": _format_hebergement_date_fr(generated_on),
+        "formation_label": "Agent de protection physique des personnes (A3P)",
+        "session_label": session_label or "À compléter",
+        "formation_start_label": (
+            _format_hebergement_date_fr(start_date) if start_date else "À compléter"
+        ),
+        "formation_end_label": (
+            _format_hebergement_date_fr(end_date) if end_date else "À compléter"
+        ),
+        "arrival_label": _hebergement_arrival_label(session_label),
+        "occupant": {
+            "nom": str(reservation.get("nom") or "").strip().upper(),
+            "prenom": str(reservation.get("prenom") or "").strip().title(),
+            "telephone": str(reservation.get("telephone") or "").strip(),
+            "mail": str(reservation.get("mail") or "").strip(),
+        },
+        "key_number": str(reservation.get("cle_numero") or "").strip(),
+        "payment_status": str(reservation.get("paiement") or "Non payé").strip(),
+        "payment_method": str(reservation.get("mode_paiement") or "").strip(),
+        "payment_date": str(reservation.get("date_paiement") or "").strip(),
+    }
+
+
+def _build_hebergement_convention_pdf(reservation):
+    from hebergement_contract import build_hebergement_contract_pdf
+
+    return build_hebergement_contract_pdf(
+        _hebergement_convention_context(reservation),
+        logo_path=os.path.join(app.static_folder, "logo.png"),
+    )
 
 
 def _hebergement_confirmation_email(prenom, session):
@@ -6394,6 +6455,36 @@ def hebergement_confirmation():
         session=session,
         arrival_label=_hebergement_arrival_label(session),
     )
+
+
+@app.get("/admin_hebergement/<reservation_id>/convention")
+@login_required
+def admin_hebergement_convention(reservation_id):
+    reservation = next((
+        item
+        for item in load_data().get("hebergements", [])
+        if str(item.get("id") or "") == str(reservation_id)
+    ), None)
+    if reservation is None:
+        abort(404)
+
+    pdf_content = _build_hebergement_convention_pdf(reservation)
+    occupant_filename = secure_filename(
+        f"{reservation.get('nom') or ''}_{reservation.get('prenom') or ''}"
+    ).strip("_")
+    if not occupant_filename:
+        occupant_filename = secure_filename(str(reservation_id)) or "stagiaire"
+
+    response = send_file(
+        io.BytesIO(pdf_content),
+        as_attachment=True,
+        download_name=f"Convention_hebergement_{occupant_filename}.pdf",
+        mimetype="application/pdf",
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.route("/admin_hebergement", methods=["GET", "POST"])
