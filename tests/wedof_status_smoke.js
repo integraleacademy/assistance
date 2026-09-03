@@ -8,8 +8,8 @@ const end = source.indexOf('function wedofCategory', start);
 assert.ok(start >= 0 && end > start, 'Bloc WEDOF introuvable');
 
 const context = {};
-vm.runInNewContext(`${source.slice(start, end)}\nglobalThis.helpers={wedofLabel,wedofValue,wedofFranceTravailStatus,wedofMainStatusLabel,wedofLatestResource,wedofFundingSummary};`, context);
-const {wedofLabel, wedofValue, wedofFranceTravailStatus, wedofMainStatusLabel, wedofLatestResource, wedofFundingSummary} = context.helpers;
+vm.runInNewContext(`${source.slice(start, end)}\nglobalThis.helpers={wedofLabel,wedofValue,wedofFranceTravailStatus,wedofMainStatusLabel,wedofLatestResource,wedofFundingSummary,contactWedofStatusDetails};`, context);
+const {wedofLabel, wedofValue, wedofFranceTravailStatus, wedofMainStatusLabel, wedofLatestResource, wedofFundingSummary, contactWedofStatusDetails} = context.helpers;
 
 const rejectedWithoutTitulaireSuite = 'Refusé sans suite par le titulaire';
 assert.equal(wedofLabel('Rejected Without Titulaire Suite'), rejectedWithoutTitulaireSuite);
@@ -45,6 +45,29 @@ assert.deepEqual(
   JSON.parse(JSON.stringify(wedofFundingSummary(williamFolders))),
   {latest:williamFolders[1],cpf:'validated',ft:'refusee'},
 );
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails([{payload:{state:'notProcessed'}}]))),
+  {state:'notprocessed',label:'CPF - À traiter',tone:'danger'},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails([{payload:{state:'validated'}}]))),
+  {state:'validated',label:'CPF - En attente d’acceptation du titulaire',tone:'warning'},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails([{payload:{state:'waitingAcceptation'}}]))),
+  {state:'waitingacceptation',label:'CPF - Demande financement FT en cours',tone:'orange'},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails([{payload:{state:'accepted'}}]))),
+  {state:'accepted',label:'CPF - Accepté',tone:'success'},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails([{
+    payload:{state:'validated',history:{refusedByFinancerDate:'2026-08-23'}},
+  }]))),
+  {state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'},
+);
+assert.equal(contactWedofStatusDetails([]), null);
 
 const serverMarkedLatest = [
   {stable_id:'newer-sync-but-historical',payload:{state:'serviceDoneValidated',createdAt:'2026-08-20'}},
@@ -52,4 +75,4 @@ const serverMarkedLatest = [
 ];
 assert.equal(wedofLatestResource(serverMarkedLatest).stable_id, 'server-authoritative');
 
-console.log('WEDOF France Travail status mapping: OK · latest folder only');
+console.log('WEDOF France Travail status mapping: OK · contact header · latest folder only');
