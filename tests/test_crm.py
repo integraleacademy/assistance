@@ -797,7 +797,6 @@ def test_contact_completeness_uses_the_real_conditional_requirements():
     assert "function contactCompletenessDetails(contact)" in workspace_js
     for marker in (
         "dates_formation",
-        "next_action",
         "cpf_montant",
         "identite_creation",
         "statut_demande_financement_ft",
@@ -807,6 +806,7 @@ def test_contact_completeness_uses_the_real_conditional_requirements():
         "integration_dracar",
     ):
         assert marker in workspace_js
+    assert "require('next_action'" not in workspace_js
     assert "enhanceContact:enhanceContactWithCompleteness" in workspace_js
     assert "refreshContactCompleteness(draft)" in workspace_js
     assert "details.missing.join(', ')" in workspace_js
