@@ -208,10 +208,10 @@ def test_tracking_and_activity_panels_use_the_requested_default_layout():
         '<summary>'
     ) in javascript
     assert '<label>Coût estimé (€)</label>' not in workspace
-    assert "let activityExpanded=false,activityFilter='appel'" in javascript
+    assert "let activityExpanded=false,activityFilter='all'" in javascript
     filters = javascript[javascript.index("const activityFilterDefinitions=["):]
-    assert filters.index("{key:'appel',label:'Appels consignés'") < filters.index(
-        "{key:'all',label:'Tout'"
+    assert filters.index("{key:'all',label:'Tout'") < filters.index(
+        "{key:'appel',label:'Appels consignés'"
     )
     assert (
         'class="publications-card activity-publications-panel" '

@@ -1003,3 +1003,18 @@ img,svg,video,canvas,iframe{max-width:100%}
 .contact-activity-panel .activity-publications-panel .card-head{background:linear-gradient(135deg,#f9fbff,#fff)}
 @media(max-width:1200px){.contact-next-row{grid-column:1/-1}}
 @media(max-width:760px){.contact-header-name-fields,.contact-header-coordinate-fields,.contact-next-row{grid-template-columns:1fr}.contact-header-name-fields{min-width:0}.next-telephone-appointment{align-items:flex-start;flex-direction:column;gap:4px}.cnaps-nub-control,.ft-funding-file-action{align-items:stretch;flex-direction:column}.cnaps-nub-control .btn,.ft-funding-file-action .btn{width:100%}}
+
+/* Fiche contact : formation et statuts regroupés au-dessus du menu Actions. */
+.contact-quick-actions{align-items:flex-end}
+.contact-header-actions-stack{display:grid;flex:0 0 240px;align-self:stretch;gap:7px;margin-left:auto}
+.contact-header-badges{display:grid;align-content:start;gap:6px;width:100%}
+.contact-header-badges .contact-journey-label{justify-content:center;width:100%;min-height:46px;padding:9px 14px;border-radius:12px;font-size:17px;letter-spacing:.025em;text-align:center}
+.contact-header-badges .contact-journey-label.formation-a3p{font-size:21px;letter-spacing:.08em}
+.contact-header-statuses{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0}
+.contact-header-statuses .badge,.contact-header-statuses .contact-cnaps-status{justify-content:center;min-height:27px;font-size:10px;white-space:nowrap}
+.contact-header-actions-stack .contact-actions{display:block;width:100%;margin:0;position:relative}
+.contact-header-actions-stack #actionsBtn{width:100%;min-height:36px}
+.contact-cnaps-status.professional_card{border-color:#8fd2bb;background:#dcf7ed;color:#087458}
+.activity-publication-feed{border-bottom:1px solid #e5eaf2;background:#f7f9fc}
+.activity-publications-panel .publication-compose{border-top:1px solid #e5eaf2;border-bottom:0}
+@media(max-width:650px){.contact-header-actions-stack{flex:1 1 100%;width:100%;margin-left:0}.contact-header-statuses{flex-wrap:wrap}.contact-header-badges .contact-journey-label{font-size:16px}.contact-header-badges .contact-journey-label.formation-a3p{font-size:20px}}

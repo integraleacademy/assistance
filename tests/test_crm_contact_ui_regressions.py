@@ -481,7 +481,7 @@ def test_contact_header_score_uses_server_contract_and_refreshes_with_card():
     assert "@media(max-width:650px)" in stylesheet
 
 
-def test_contact_header_displays_and_refreshes_the_cnaps_status_next_to_pipeline_status():
+def test_contact_header_groups_prominent_training_pipeline_and_cnaps_statuses_above_actions():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
 
@@ -498,6 +498,9 @@ assert.match(badge,/CNAPS · Accepté/);
 assert.match(badge,/contact-cnaps-status accepted/);
 assert.match(contactCnapsStatusMarkup({formation:'APS',integration_score:{normalized_cnaps_status:'transmitted'}}),/CNAPS · Transmis/);
 assert.match(contactCnapsStatusMarkup({formation:'APS',integration_score:{normalized_cnaps_status:'unexpected'}}),/CNAPS · Inconnu/);
+const professionalCard=contactCnapsStatusMarkup({formation:'A3P',carte_pro:'OUI',integration_score:{normalized_cnaps_status:'unknown'}});
+assert.match(professionalCard,/CNAPS - Carte professionnelle/);
+assert.match(professionalCard,/contact-cnaps-status professional_card/);
 assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
 """
     completed = subprocess.run(
@@ -510,8 +513,15 @@ assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
 
     assert completed.returncode == 0, completed.stderr
     assert "${badge(c.statut)}${contactCnapsStatusMarkup(c)}" in javascript
+    assert "function contactHeaderBadges(c)" in javascript
+    assert (
+        '<div class="contact-header-actions-stack">${contactHeaderBadges(c)}'
+        '<div class="contact-actions">'
+    ) in javascript
+    assert ".contact-header-badges .contact-journey-label.formation-a3p{font-size:21px" in stylesheet
+    assert ".contact-header-statuses{display:flex" in stylesheet
     assert "renderContactCnapsStatus(c)" in javascript
-    for tone in ("accepted", "transmitted", "in_review", "registered", "refused", "no_result", "unknown"):
+    for tone in ("accepted", "transmitted", "in_review", "registered", "refused", "no_result", "unknown", "professional_card"):
         assert f".contact-cnaps-status.{tone}" in stylesheet
 
 
