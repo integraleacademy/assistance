@@ -512,7 +512,10 @@ assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert "${badge(c.statut)}${contactCnapsStatusMarkup(c)}" in javascript
+    assert (
+        "${badge(c.statut)}${contactWedofStatusMarkup([],c)}"
+        "${contactCnapsStatusMarkup(c)}"
+    ) in javascript
     assert "function contactHeaderBadges(c)" in javascript
     assert (
         '<div class="contact-header-actions-stack">${contactHeaderBadges(c)}'
@@ -521,10 +524,13 @@ assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
     assert ".contact-header-badges .contact-journey-label.formation-a3p{font-size:21px" in stylesheet
     assert ".contact-header-statuses{display:flex" in stylesheet
     assert ".contact-header-badges{position:absolute;top:14px;right:18px;display:flex;align-items:flex-start" in stylesheet
-    assert ".contact-header-statuses{display:flex;flex:0 0 240px;order:-1" in stylesheet
-    assert ".contact-header-statuses .badge{flex:1 1 38%}" in stylesheet
-    assert ".contact-header-statuses .contact-cnaps-status{flex:1.65 1 62%}" in stylesheet
+    assert ".contact-header-statuses{display:flex;flex:0 1 auto;order:-1" in stylesheet
+    assert ".contact-header-statuses .contact-wedof-status{flex:0 0 auto" in stylesheet
     assert "renderContactCnapsStatus(c)" in javascript
+    assert "renderContactWedofStatus(c,resources)" in javascript
+    assert "renderContactWedofStatus(c,data.resources||[])" in javascript
+    assert ".contact-wedof-status.orange" in stylesheet
+    assert ".contact-wedof-status.danger" in stylesheet
     for tone in ("accepted", "transmitted", "in_review", "registered", "refused", "no_result", "unknown", "professional_card"):
         assert f".contact-cnaps-status.{tone}" in stylesheet
 
