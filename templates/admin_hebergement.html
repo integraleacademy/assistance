@@ -521,6 +521,36 @@
         box-shadow: 0 4px 9px rgba(17, 24, 39, .12);
     }
     .action-button:hover { background: var(--navy-800); }
+    .contract-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 25px;
+        padding: 0 8px;
+        color: #76570f;
+        background: var(--gold-100);
+        border-radius: 999px;
+        font-size: .59rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .contract-status::before {
+        width: 6px;
+        height: 6px;
+        content: "";
+        background: var(--gold-600);
+        border-radius: 50%;
+    }
+    .contract-status.is-ongoing, .contract-status.is-approval { color: var(--blue-700); background: var(--blue-100); }
+    .contract-status.is-ongoing::before, .contract-status.is-approval::before { background: var(--blue-700); }
+    .contract-status.is-done, .contract-status.is-signed { color: var(--green-700); background: var(--green-100); }
+    .contract-status.is-done::before, .contract-status.is-signed::before { background: var(--green-700); }
+    .contract-status.is-error, .contract-status.is-declined,
+    .contract-status.is-expired, .contract-status.is-canceled,
+    .contract-status.is-rejected { color: var(--red-700); background: var(--red-100); }
+    .contract-status.is-error::before, .contract-status.is-declined::before,
+    .contract-status.is-expired::before, .contract-status.is-canceled::before,
+    .contract-status.is-rejected::before { background: var(--red-700); }
     .icon-button {
         width: 34px;
         height: 34px;
@@ -903,10 +933,19 @@
                                 {% if h.date_paiement %}<span class="date-value">{{ h.date_paiement }}</span>{% else %}<span class="muted-value">Non renseignée</span>{% endif %}
                             </td>
                             <td data-label="Actions" class="actions-column">
+                                {% set stored_convention = h.get('convention_hebergement', {}) %}
+                                {% set convention_data = stored_convention if stored_convention is mapping else {} %}
+                                {% set stored_yousign = convention_data.get('yousign', {}) %}
+                                {% set yousign_data = stored_yousign if stored_yousign is mapping else {} %}
+                                {% set yousign_status = yousign_data.get('status', 'draft') %}
                                 <div class="row-actions">
-                                    <a class="action-button convention-action" href="{{ url_for('admin_hebergement_convention', reservation_id=h.id) }}" title="Générer la convention d’hébergement préremplie pour {{ h.prenom }} {{ h.nom }}" aria-label="Générer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M8 13h8M8 17h6"></path></svg>
-                                        Convention PDF
+                                    <a class="action-button convention-action" href="{{ url_for('admin_hebergement_convention_editor', reservation_id=h.id) }}" title="Préparer et faire signer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}" aria-label="Préparer et faire signer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M8 13h8M8 17h6M16.5 12.5l2 2 3.5-4"></path></svg>
+                                        {% if yousign_status in ['done', 'signed'] %}Convention signée{% elif yousign_status in ['approval', 'ongoing'] %}Suivre la signature{% else %}Préparer / signer{% endif %}
+                                    </a>
+                                    <span class="contract-status is-{{ yousign_status }}">{{ hebergement_yousign_status_label(yousign_status) }}</span>
+                                    <a class="icon-button" href="{{ url_for('admin_hebergement_convention', reservation_id=h.id) }}" title="Télécharger le PDF actuel" aria-label="Télécharger le PDF de la convention de {{ h.prenom }} {{ h.nom }}">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path></svg>
                                     </a>
                                     {% if h.cle_etat != 'Restituee' and h.mail %}
                                     {% set cle_numero = h.cle_numero or 'XXXX' %}

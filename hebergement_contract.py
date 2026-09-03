@@ -335,9 +335,23 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     formation = str(context.get("formation_label") or "À compléter")
     session = str(context.get("session_label") or "À compléter")
     arrival = str(context.get("arrival_label") or "la veille du premier jour de formation")
+    arrival_time = str(context.get("arrival_time") or "À compléter")
     start = str(context.get("formation_start_label") or "À compléter")
     end = str(context.get("formation_end_label") or "À compléter")
+    departure = str(context.get("departure_label") or end)
+    departure_time = str(context.get("departure_time") or "À compléter")
+    contract_date = str(context.get("contract_date_label") or "À compléter")
+    contract_time = str(context.get("contract_time") or "À compléter")
+    room = str(context.get("room") or "À compléter")
+    bed = str(context.get("bed") or "À compléter")
     key_number = str(context.get("key_number") or "").strip()
+    center_representative = str(
+        context.get("center_representative") or "Représentant habilité"
+    )
+    center_role = str(context.get("center_role") or "Intégrale Academy")
+    center_signature_title = (
+        f"POUR LE CENTRE - {center_representative}"
+    )
 
     brand_cells = []
     if logo_path and os.path.exists(logo_path):
@@ -399,8 +413,8 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             ("Formation", _safe(formation)),
             ("Session", _safe(session)),
             ("Période de formation", f"Du {_safe(start)} au {_safe(end)}"),
-            ("Occupation", f"Arrivée possible le {_safe(arrival)}, entre 08h00 et 17h00 - Heure de départ : ____ h ____"),
-            ("Affectation", f"Dortoir / chambre : __________________ &nbsp; Lit : ______ &nbsp; Clé n° : {_safe(key_number or '________')}"),
+            ("Occupation", f"Arrivée le {_safe(arrival)} à {_safe(arrival_time)} - Départ prévu le {_safe(departure)} à {_safe(departure_time)}"),
+            ("Affectation", f"Dortoir / chambre : {_safe(room)} &nbsp; Lit : {_safe(bed)} &nbsp; Clé n° : {_safe(key_number or 'À compléter')}"),
         ], styles),
         _heading("Entre les soussignés", styles),
         _body(
@@ -418,7 +432,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ),
         _key_value_table([
             ("Nom et prénom", _safe(occupant_name)),
-            ("Adresse personnelle", "________________________________________________________________<br/>________________________________________________________________"),
+            ("Adresse personnelle", f"{_safe(occupant.get('address'), 'À compléter')}<br/>{_safe(occupant.get('postal_code'))} {_safe(occupant.get('city'))}"),
             ("Téléphone", _safe(occupant.get("telephone"), "________________________________")),
             ("E-mail", _safe(occupant.get("mail"), "____________________________________________")),
         ], styles),
@@ -824,12 +838,12 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "aux drogues constituent des conditions essentielles de l'hébergement.",
             styles,
         ),
-        _body("<b>Fait à Puget-sur-Argens, le</b> ____________________ &nbsp;&nbsp; <b>à</b> ______ h ______", styles),
+        _body(f"<b>Fait à Puget-sur-Argens, le</b> {_safe(contract_date)} &nbsp;&nbsp; <b>à</b> {_safe(contract_time)}", styles),
         _signature_table(
-            "POUR LE CENTRE",
-            "Signature et cachet",
+            center_signature_title,
+            f"{center_role} - Signature et cachet",
             f"L'OCCUPANT - {occupant_name}",
-            "Signature précédée de la mention « Lu et approuvé »",
+            "Signature électronique Yousign - mention « Lu et approuvé »",
             styles,
         ),
         PageBreak(),
@@ -845,9 +859,9 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         _key_value_table([
             ("Occupant", _safe(occupant_name)),
             ("Formation / session", f"{_safe(formation)}<br/>{_safe(session)}"),
-            ("Arrivée", f"{_safe(arrival)} - Heure : ____ h ____"),
-            ("Affectation", f"Dortoir / chambre : ______________ &nbsp; Lit : ____ &nbsp; Clé / badge n° : {_safe(key_number or '______')}"),
-            ("Agent du Centre", "Nom et fonction : __________________________________________________"),
+            ("Arrivée", f"{_safe(arrival)} - Heure : {_safe(arrival_time)}"),
+            ("Affectation", f"Dortoir / chambre : {_safe(room)} &nbsp; Lit : {_safe(bed)} &nbsp; Clé / badge n° : {_safe(key_number or 'À compléter')}"),
+            ("Agent du Centre", f"{_safe(center_representative)} - {_safe(center_role)}"),
         ], styles),
         _heading("A. Participation financière - 300 €", styles),
         _body(
@@ -859,14 +873,21 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     payment_method = str(context.get("payment_method") or "")
     payment_status = str(context.get("payment_status") or "Non payé")
     payment_date = str(context.get("payment_date") or "")
+    payment_cheque_number = str(context.get("payment_cheque_number") or "")
+    payment_bank = str(context.get("payment_bank") or "")
+    payment_cheque_date = str(context.get("payment_cheque_date") or "")
+    receipt_issued = str(context.get("receipt_issued") or "")
+    receipt_reference = str(context.get("receipt_reference") or "")
     cash_box = "[X]" if payment_method == "Espèces" else "[ ]"
     cheque_box = "[X]" if payment_method == "Chèque" else "[ ]"
+    receipt_yes = "[X]" if receipt_issued == "Oui" else "[ ]"
+    receipt_no = "[X]" if receipt_issued == "Non" else "[ ]"
     story.extend([
         _key_value_table([
             ("Mode de règlement", f"{cash_box} Espèces dans une enveloppe au nom de l'Occupant &nbsp;&nbsp; {cheque_box} Chèque"),
-            ("Si chèque", "N° : ______________ &nbsp; Banque : ______________ &nbsp; Date : ____ / ____ / ______"),
+            ("Si chèque", f"N° : {_safe(payment_cheque_number, 'Non applicable')} &nbsp; Banque : {_safe(payment_bank, 'Non applicable')} &nbsp; Date : {_safe(payment_cheque_date, 'Non applicable')}"),
             ("Montant reçu", "300 € - trois cents euros"),
-            ("Reçu remis", "[ ] Oui &nbsp;&nbsp; [ ] Non &nbsp;&nbsp; N° de reçu / référence : __________________"),
+            ("Reçu remis", f"{receipt_yes} Oui &nbsp;&nbsp; {receipt_no} Non &nbsp;&nbsp; N° de reçu / référence : {_safe(receipt_reference, 'Sans référence')}"),
         ], styles),
         Paragraph(
             "Information enregistrée dans l'administration avant génération : paiement "
@@ -883,18 +904,20 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles,
         ),
         _key_value_table([
-            ("Titulaire du compte", "____________________________________________________________"),
-            ("Banque", "____________________________________________________________"),
-            ("N° du chèque", "________________________________"),
-            ("Date du chèque", "____ / ____ / ______"),
+            ("Titulaire du compte", _safe(context.get("deposit_holder"), "À compléter")),
+            ("Banque", _safe(context.get("deposit_bank"), "À compléter")),
+            ("N° du chèque", _safe(context.get("deposit_cheque_number"), "À compléter")),
+            ("Date du chèque", _safe(context.get("deposit_cheque_date"), "À compléter")),
             ("Montant", "200 € - deux cents euros"),
         ], styles),
         _heading("C. Remise des documents et moyens d'accès", styles),
     ])
+    handover = context.get("handover_checklist") or {}
+    mark = lambda key: "[X]" if handover.get(key) else "[ ]"
     checklist = Table([
-        [Paragraph("[ ] Convention signée en deux exemplaires", styles["Cell"]), Paragraph("[ ] Copie remise à l'Occupant", styles["Cell"])],
-        [Paragraph("[ ] État des lieux d'entrée complété", styles["Cell"]), Paragraph("[ ] Règles essentielles reconnues et signées", styles["Cell"])],
-        [Paragraph("[ ] Clé / badge remis", styles["Cell"]), Paragraph("[ ] Consignes de sécurité et issues de secours indiquées", styles["Cell"])],
+        [Paragraph(f"{mark('convention_reviewed')} Convention relue avec l'Occupant", styles["Cell"]), Paragraph(f"{mark('copy_delivery_planned')} Copie prévue pour l'Occupant", styles["Cell"])],
+        [Paragraph(f"{mark('inventory_completed')} État des lieux d'entrée complété", styles["Cell"]), Paragraph(f"{mark('rules_explained')} Règles essentielles reconnues et signées", styles["Cell"])],
+        [Paragraph(f"{mark('key_handed_over')} Clé / badge remis", styles["Cell"]), Paragraph(f"{mark('safety_explained')} Consignes de sécurité et issues de secours indiquées", styles["Cell"])],
     ], colWidths=[84 * mm, 84 * mm])
     checklist.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.45, LINE),
@@ -908,10 +931,10 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         checklist,
         Spacer(1, 7),
         _signature_table(
-            "REPRÉSENTANT DU CENTRE",
-            "Certifie les sommes et moyens d'accès reçus / remis",
+            f"CENTRE - {center_representative}",
+            f"{center_role} - certifie les sommes et moyens d'accès",
             f"OCCUPANT - {occupant_name}",
-            "Certifie les sommes remises, les documents reçus et la clé obtenue",
+            "Signature électronique : sommes remises, documents reçus et clé obtenue",
             styles,
             compact=True,
         ),
@@ -927,9 +950,17 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     story.extend([
         _key_value_table([
             ("Occupant", _safe(occupant_name)),
-            ("Affectation", f"Dortoir / chambre : ______________ &nbsp; Lit : ____ &nbsp; Clé n° : {_safe(key_number or '______')}"),
-            ("Entrée", f"{_safe(arrival)} - Heure : ____ h ____"),
-            ("Sortie", f"{_safe(end)} - Heure : ____ h ____"),
+            (
+                "Affectation",
+                f"Dortoir / chambre : {_safe(room, 'À compléter')} &nbsp; "
+                f"Lit : {_safe(bed, 'À compléter')} &nbsp; "
+                f"Clé n° : {_safe(key_number, 'À compléter')}",
+            ),
+            ("Entrée", f"{_safe(arrival)} - Heure : {_safe(arrival_time)}"),
+            (
+                "Sortie prévue",
+                f"{_safe(departure)} - Heure : {_safe(departure_time)}",
+            ),
         ], styles),
         Spacer(1, 5),
         Paragraph(
@@ -938,38 +969,19 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles["ContractSmall"],
         ),
     ])
-    inventory_items = [
-        "Clé, badge et moyen d'accès",
-        "Porte, serrure et poignée",
-        "Murs et plafond de l'espace de couchage",
-        "Sol et plinthes",
-        "Fenêtre, vitrage, fermeture et occultation",
-        "Lit, sommier et structure",
-        "Matelas",
-        "Protection / drap-housse fourni",
-        "Rangement et mobilier attribués",
-        "Éclairage, interrupteurs et prises visibles",
-        "Chauffage et ventilation visibles",
-        "Détecteur / équipement de sécurité visible",
-        "Douche et salle de bain",
-        "Toilettes",
-        "Cuisine et équipements communs",
-        "Machine à laver et sèche-linge",
-        "Espaces communs",
-        "Autre élément",
-    ]
+    inventory_items = context.get("inventory") or {}
     inventory_data = [[
         Paragraph("Élément contrôlé", styles["CellHeader"]),
         Paragraph("État à l'entrée", styles["CellHeader"]),
         Paragraph("État à la sortie", styles["CellHeader"]),
         Paragraph("Observations / coût éventuel", styles["CellHeader"]),
     ]]
-    for item in inventory_items:
+    for item in inventory_items.values():
         inventory_data.append([
-            Paragraph(f"<b>{_safe(item)}</b>", styles["Cell"]),
+            Paragraph(f"<b>{_safe(item.get('label'))}</b>", styles["Cell"]),
+            Paragraph(_safe(item.get("entry_state"), "B"), styles["Cell"]),
             Paragraph("________", styles["Cell"]),
-            Paragraph("________", styles["Cell"]),
-            Paragraph("", styles["Cell"]),
+            Paragraph(_safe(item.get("observations")), styles["Cell"]),
         ])
     inventory = Table(
         inventory_data,
@@ -996,20 +1008,26 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         Paragraph("ANNEXE 2 - SUITE", styles["ContractKicker"]),
         Paragraph("OBSERVATIONS ET SIGNATURES", styles["ContractTitle"]),
         _subheading("Observations générales à l'entrée", styles),
-        _body("________________________________________________________________________________<br/>________________________________________________________________________________<br/>________________________________________________________________________________", styles),
+        _body(_safe(context.get("entry_observations"), "Néant"), styles),
         _subheading("Observations générales à la sortie et sommes éventuellement retenues", styles),
         _body("________________________________________________________________________________<br/>________________________________________________________________________________<br/>________________________________________________________________________________", styles),
         _key_value_table([
-            ("Photographies annexées", "Entrée : [ ] Non &nbsp; [ ] Oui, nombre : ____ &nbsp;&nbsp; Sortie : [ ] Non &nbsp; [ ] Oui, nombre : ____"),
+            (
+                "Photographies annexées",
+                "Entrée : "
+                f"{'[X] Non' if str(context.get('entry_photos_count') or '0') == '0' else '[X] Oui'}"
+                f", nombre : {_safe(context.get('entry_photos_count'), '0')}"
+                " &nbsp;&nbsp; Sortie : [ ] Non &nbsp; [ ] Oui, nombre : ____",
+            ),
             ("Clés restituées", "[ ] Oui, le ____ / ____ / ______ à ____ h ____ &nbsp;&nbsp; [ ] Non"),
             ("Caution", "[ ] Chèque rendu &nbsp; [ ] Restitution différée &nbsp; [ ] Retenue envisagée : ______ €"),
         ], styles),
         _subheading("Signatures - état des lieux d'entrée", styles),
         _signature_table(
-            "CENTRE - ENTRÉE",
+            f"CENTRE - ENTRÉE - {center_representative}",
             "Certifie l'exactitude des constatations d'entrée",
-            "OCCUPANT - ENTRÉE",
-            "Certifie l'exactitude des constatations d'entrée",
+            f"OCCUPANT - ENTRÉE - {occupant_name}",
+            "Signature électronique Yousign : certifie les constatations d'entrée",
             styles,
             compact=True,
         ),
@@ -1060,7 +1078,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     ]]
     for label, declaration in acknowledgements:
         ack_data.append([
-            Paragraph("[ ]", styles["Cell"]),
+            Paragraph("[X]", styles["Cell"]),
             Paragraph(f"<b>{_safe(label)}</b>", styles["Cell"]),
             Paragraph(_safe(declaration), styles["Cell"]),
         ])
@@ -1081,12 +1099,16 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     story.extend([
         ack_table,
         _callout("Déclaration finale", FINAL_ACKNOWLEDGEMENT_COPY, styles),
-        _body("<b>Fait à Puget-sur-Argens, le</b> ______________________________", styles),
+        _body(
+            f"<b>Fait à Puget-sur-Argens, le</b> {_safe(contract_date)} "
+            f"<b>à</b> {_safe(contract_time)}",
+            styles,
+        ),
         _signature_table(
-            "POUR LE CENTRE",
-            "Signature et cachet",
+            f"POUR LE CENTRE - {center_representative}",
+            f"{center_role} - Signature et cachet",
             f"L'OCCUPANT - {occupant_name}",
-            "Signature précédée de la mention « Lu et approuvé »",
+            "Signature électronique Yousign - mention « Lu et approuvé »",
             styles,
         ),
     ])
