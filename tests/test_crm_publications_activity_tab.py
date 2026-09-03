@@ -81,4 +81,4 @@ def test_publications_are_integrated_into_the_activity_journal_tab():
     assert ".activity-publications-panel[hidden]{display:none!important}" in stylesheet
     assert ".activity-publication-feed{border-bottom:1px solid #e5eaf2" in stylesheet
     assert ".publication-compose-actions .publication-voice-button" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260903-wedof-header-status-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260903-ft-refusal-header-priority-1"' in backend

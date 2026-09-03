@@ -67,6 +67,20 @@ assert.deepEqual(
   }]))),
   {state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'},
 );
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails(
+    [{payload:{state:'validated'}}],
+    {statut_demande_financement_ft:'refusee',statut_demande_financement_ft_source:'manual'},
+  ))),
+  {state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails(
+    [{payload:{state:'validated'}}],
+    {statut_secondaire:'Financement FT refusé'},
+  ))),
+  {state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'},
+);
 assert.equal(contactWedofStatusDetails([]), null);
 
 const serverMarkedLatest = [
