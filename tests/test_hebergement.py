@@ -265,6 +265,10 @@ def test_admin_hebergement_displays_modern_dashboard_and_row_actions(monkeypatch
     assert 'class="stats-grid"' in body
     assert 'class="filters-panel no-print"' in body
     assert 'class="bookings-panel"' in body
+    assert ".app-shell {" in body
+    assert "width: 100%;" in body
+    assert ".app-header, .hero, .stats-grid, .filters-panel" in body
+    assert "width: min(100%, 1724px);" in body
     assert '@media (max-width: 720px)' in body
     assert 'data-label="Suivi de clé"' in body
     assert "Modifications enregistrées automatiquement" in body
