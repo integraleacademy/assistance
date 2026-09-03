@@ -42,6 +42,9 @@ def test_hebergement_page_presents_all_booking_conditions(monkeypatch):
     assert "aucun bruit après 22h00" in body
     assert "consommation d’alcool ou de drogue" in body
     assert "Aucune personne extérieure" in body
+    assert "À verser impérativement dès votre arrivée, lors de la remise des clés et de la signature du contrat d’hébergement." in body
+    assert "Chèque de caution à remettre impérativement dès votre arrivée, lors de la remise des clés et de la signature du contrat d’hébergement." in body
+    assert "J’ai pris connaissance des sommes à verser, du matériel à apporter et de l’ensemble des règles de l’hébergement." in body
     assert 'data-arrival="dimanche 8 novembre 2026"' in body
     assert 'name="conditions_arrivee" value="acceptees" required' in body
     assert 'name="reglement_hebergement" value="accepte" required' in body
@@ -78,8 +81,9 @@ def test_hebergement_booking_sends_complete_confirmation_email(monkeypatch):
         "Aucune remise de clés ne pourra être effectuée après 17h00",
         "par vos propres moyens une solution d’hébergement",
         "54 chemin du Carreou, 83480 Puget-sur-Argens",
-        "Participation financière : 300 €",
-        "chèque de caution distinct de 200 €",
+        "Participation financière : 300 €, à verser impérativement dès votre arrivée",
+        "chèque de caution distinct de 200 €, à remettre impérativement dès votre arrivée",
+        "remise des clés et de la signature du contrat d’hébergement",
         "Sac de couchage ou une couverture",
         "aucun bruit après 22h00",
         "aucune personne extérieure",
@@ -104,7 +108,8 @@ def test_hebergement_booking_sends_complete_confirmation_email(monkeypatch):
     confirmation_body = confirmation.data.decode()
     assert SESSION in confirmation_body
     assert "dimanche 8 novembre 2026, entre 08h00 et 17h00" in confirmation_body
-    assert "300 € + un chèque de caution de 200 €" in confirmation_body
+    assert "300 € à verser et un chèque de caution de 200 € à remettre" in confirmation_body
+    assert "remise des clés et de la signature du contrat d’hébergement" in confirmation_body
 
 
 def test_hebergement_email_escapes_user_content_in_html():
