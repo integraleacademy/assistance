@@ -73,6 +73,17 @@ body {
     font-size:14px;
 }
 
+.row-actions {
+    min-width:205px;
+    flex-wrap:wrap;
+    justify-content:center;
+}
+
+.convention-action {
+    white-space:nowrap;
+    font-weight:600;
+}
+
 /* ————————————————
    ALTERNANCE LIGNES (gris/blanc)
 ——————————————— */
@@ -339,7 +350,14 @@ body {
 
                     <!-- Actions -->
                     <td>
-                        <div class="d-flex gap-1 align-items-center">
+                        <div class="row-actions d-flex gap-1 align-items-center">
+                            <a
+                                class="btn btn-outline-dark btn-sm convention-action"
+                                href="{{ url_for('admin_hebergement_convention', reservation_id=h.id) }}"
+                                title="Générer la convention d’hébergement préremplie pour {{ h.prenom }} {{ h.nom }}"
+                                aria-label="Générer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
+                                📄 Convention PDF
+                            </a>
                             {% if h.cle_etat != 'Restituee' and h.mail %}
                             {% set cle_numero = h.cle_numero or 'XXXX' %}
                             {% set mail_subject %}Rappel restitution clé n°{{ cle_numero }}{% endset %}
