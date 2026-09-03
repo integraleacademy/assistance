@@ -6151,6 +6151,164 @@ def rappel():
 
     return render_template("rappel.html")
 
+HEBERGEMENT_ADDRESS = "Intégrale Academy, 54 chemin du Carreou, 83480 Puget-sur-Argens"
+HEBERGEMENT_SESSION_OPTIONS = (
+    ("Du 5 janvier au 16 mars 2026", _date(2026, 1, 5)),
+    ("Du 30 mars au 2 juin 2026", _date(2026, 3, 30)),
+    ("Du 8 juin au 4 août 2026", _date(2026, 6, 8)),
+    ("Du 1er septembre au 27 octobre 2026", _date(2026, 9, 1)),
+    ("Du 9 novembre 2026 au 19 janvier 2027", _date(2026, 11, 9)),
+)
+_HEBERGEMENT_WEEKDAYS = (
+    "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
+)
+_HEBERGEMENT_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
+def _format_hebergement_date_fr(value):
+    return (
+        f"{_HEBERGEMENT_WEEKDAYS[value.weekday()]} {value.day} "
+        f"{_HEBERGEMENT_MONTHS[value.month - 1]} {value.year}"
+    )
+
+
+def _hebergement_sessions_for_template():
+    return [
+        {
+            "label": label,
+            "arrival_label": _format_hebergement_date_fr(
+                start_date - datetime.timedelta(days=1)
+            ),
+        }
+        for label, start_date in HEBERGEMENT_SESSION_OPTIONS
+    ]
+
+
+def _hebergement_arrival_label(session):
+    start_date = next((
+        start_date
+        for label, start_date in HEBERGEMENT_SESSION_OPTIONS
+        if label == session
+    ), None)
+    if not start_date:
+        return "la veille du premier jour de formation"
+    return _format_hebergement_date_fr(start_date - datetime.timedelta(days=1))
+
+
+def _hebergement_confirmation_email(prenom, session):
+    arrival_label = _hebergement_arrival_label(session)
+    safe_prenom = html_module.escape(prenom or "")
+    safe_session = html_module.escape(session or "")
+    safe_arrival = html_module.escape(arrival_label)
+    safe_address = html_module.escape(HEBERGEMENT_ADDRESS)
+
+    subject = "Confirmation de votre hébergement – Intégrale Academy"
+    plain = (
+        f"Bonjour {prenom},\n\n"
+        "Votre réservation d’hébergement sur place pour la formation Agent de Protection "
+        "Physique des Personnes (A3P) est confirmée.\n\n"
+        "RÉCAPITULATIF DE VOTRE RÉSERVATION\n"
+        f"- Période de formation : {session}\n"
+        f"- Adresse : {HEBERGEMENT_ADDRESS}\n"
+        "- Hébergement collectif sur place pendant toute la durée de la formation, week-ends "
+        "et jours fériés inclus.\n\n"
+        "ARRIVÉE ET REMISE DES CLÉS\n"
+        f"La remise des clés peut avoir lieu le {arrival_label}, veille du début de votre "
+        "formation, impérativement entre 08h00 et 17h00. Aucune remise de clés ne pourra "
+        "être effectuée après 17h00.\n"
+        "Si vous ne pouvez pas vous présenter avant 17h00, vous devrez prévoir par vos "
+        "propres moyens une solution d’hébergement pour cette nuit et vous présenter au "
+        "centre le lendemain matin, à l’heure indiquée sur votre convocation.\n\n"
+        "À REMETTRE LE JOUR DE VOTRE ARRIVÉE\n"
+        "- Participation financière : 300 €, à régler lors de la remise des clés par chèque "
+        "ou en espèces, dans une enveloppe portant vos nom et prénom.\n"
+        "- Dépôt de garantie : un chèque de caution distinct de 200 €, destiné à couvrir "
+        "notamment toute dégradation, perte de clé ou matériel manquant. Il sera restitué "
+        "en l’absence de dommage après vérification.\n\n"
+        "CE QUE VOUS DEVEZ APPORTER\n"
+        "- Un sac de couchage ou une couverture (un drap-housse est fourni) ;\n"
+        "- Un oreiller ;\n"
+        "- Gel douche, savon et shampoing ;\n"
+        "- Lessive ;\n"
+        "- Des sacs-poubelle et du papier toilette complémentaires si nécessaire entre deux "
+        "passages de la société de nettoyage.\n\n"
+        "RÈGLES ESSENTIELLES DE L’HÉBERGEMENT\n"
+        "- Maintenir les locaux propres, rangés et respecter les espaces communs, le matériel "
+        "et les équipements ;\n"
+        "- Adopter une tenue correcte et ne pas circuler torse nu ou en sous-vêtements ;\n"
+        "- Ne pas fumer ni vapoter à l’intérieur du centre ;\n"
+        "- Respecter le voisinage : aucun bruit après 22h00, aucune fête et discrétion "
+        "obligatoire ;\n"
+        "- Ne pas introduire ni consommer d’alcool ou de drogue et ne pas pénétrer dans le "
+        "centre sous leur emprise ;\n"
+        "- Ne faire entrer aucune personne extérieure. L’accès est strictement réservé aux "
+        "stagiaires hébergés.\n\n"
+        "Tout manquement à ces règles peut entraîner des sanctions et la fin de la mise à "
+        "disposition de l’hébergement.\n\n"
+        "Nous vous remercions de prendre vos dispositions avant votre arrivée.\n\n"
+        "L’équipe Intégrale Academy"
+    )
+
+    html_body = _wrap_html(
+        '<p style="margin:0 0 6px;color:#b27a12;font-size:12px;font-weight:700;'
+        'letter-spacing:.08em;text-transform:uppercase;">Hébergement sur place</p>'
+        '<h1 style="margin:0 0 18px;color:#172033;font-size:25px;line-height:1.25;">'
+        "Votre réservation est confirmée</h1>",
+        f"""
+        <p style="margin:0 0 16px;">Bonjour <strong>{safe_prenom}</strong>,</p>
+        <p style="margin:0 0 20px;">Votre place dans notre hébergement collectif est confirmée pour votre formation <strong>Agent de Protection Physique des Personnes (A3P)</strong>.</p>
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;border-collapse:separate;border-spacing:0;background:#f7f8fb;border:1px solid #e5e8ef;border-radius:10px;overflow:hidden;">
+          <tr><td style="padding:14px 16px;border-bottom:1px solid #e5e8ef;color:#667085;width:32%;">Formation</td><td style="padding:14px 16px;border-bottom:1px solid #e5e8ef;color:#172033;font-weight:700;">A3P</td></tr>
+          <tr><td style="padding:14px 16px;border-bottom:1px solid #e5e8ef;color:#667085;">Période</td><td style="padding:14px 16px;border-bottom:1px solid #e5e8ef;color:#172033;font-weight:700;">{safe_session}</td></tr>
+          <tr><td style="padding:14px 16px;color:#667085;">Adresse</td><td style="padding:14px 16px;color:#172033;font-weight:700;">{safe_address}</td></tr>
+        </table>
+
+        <div style="margin:0 0 20px;padding:18px;background:#fff7e6;border:1px solid #f0c36d;border-left:5px solid #b27a12;border-radius:10px;">
+          <p style="margin:0 0 6px;color:#7a4d00;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Arrivée et remise des clés</p>
+          <p style="margin:0 0 8px;color:#172033;font-size:18px;line-height:1.4;"><strong>{safe_arrival}, entre 08h00 et 17h00 impérativement</strong></p>
+          <p style="margin:0;color:#5f430d;">Aucune remise de clés ne pourra être effectuée après 17h00. Si vous ne pouvez pas être présent avant cet horaire, vous devrez prévoir par vos propres moyens un hébergement pour cette nuit, puis vous présenter au centre le lendemain matin à l’heure indiquée sur votre convocation.</p>
+        </div>
+
+        <h2 style="margin:24px 0 10px;color:#172033;font-size:18px;">Paiement et caution à remettre à l’arrivée</h2>
+        <div style="margin:0 0 10px;padding:14px 16px;border:1px solid #dce3ef;border-radius:9px;">
+          <p style="margin:0 0 4px;color:#172033;font-weight:700;">Participation financière — 300 €</p>
+          <p style="margin:0;color:#475467;">À régler lors de la remise des clés, par chèque ou en espèces, dans une enveloppe portant vos nom et prénom. Le montant couvre toute la durée de la formation, week-ends et jours fériés inclus.</p>
+        </div>
+        <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #dce3ef;border-radius:9px;">
+          <p style="margin:0 0 4px;color:#172033;font-weight:700;">Chèque de caution — 200 €</p>
+          <p style="margin:0;color:#475467;">Prévoir un chèque distinct destiné à couvrir notamment toute dégradation, perte de clé ou matériel manquant. Il sera restitué en l’absence de dommage après vérification.</p>
+        </div>
+
+        <h2 style="margin:24px 0 10px;color:#172033;font-size:18px;">À apporter</h2>
+        <ul style="margin:0 0 20px;padding-left:20px;color:#344054;">
+          <li style="margin-bottom:5px;">Sac de couchage ou couverture — un drap-housse est fourni ;</li>
+          <li style="margin-bottom:5px;">Oreiller, gel douche, savon et shampoing ;</li>
+          <li style="margin-bottom:5px;">Lessive ;</li>
+          <li>Sacs-poubelle et papier toilette complémentaires si nécessaire entre deux passages de la société de nettoyage.</li>
+        </ul>
+
+        <h2 style="margin:24px 0 10px;color:#172033;font-size:18px;">Règles essentielles</h2>
+        <ul style="margin:0 0 18px;padding-left:20px;color:#344054;">
+          <li style="margin-bottom:5px;">Maintenir les locaux propres et rangés, et respecter les espaces communs, le matériel et les équipements ;</li>
+          <li style="margin-bottom:5px;">Adopter une tenue correcte et ne pas circuler torse nu ou en sous-vêtements ;</li>
+          <li style="margin-bottom:5px;">Ne pas fumer ni vapoter à l’intérieur du centre ;</li>
+          <li style="margin-bottom:5px;">Respecter le voisinage : aucun bruit après 22h00, aucune fête et discrétion obligatoire ;</li>
+          <li style="margin-bottom:5px;">Ne pas introduire ni consommer d’alcool ou de drogue et ne pas pénétrer dans le centre sous leur emprise ;</li>
+          <li>Ne faire entrer aucune personne extérieure : l’accès est strictement réservé aux stagiaires hébergés.</li>
+        </ul>
+        <div style="margin:0 0 20px;padding:14px 16px;background:#fff1f0;border:1px solid #f4b4ae;border-radius:9px;color:#8a1c13;">
+          <strong>Important :</strong> tout manquement à ces règles peut entraîner des sanctions et la fin de la mise à disposition de l’hébergement.
+        </div>
+        <p style="margin:0;color:#344054;">Nous vous remercions de prendre vos dispositions avant votre arrivée.<br><br><strong>L’équipe Intégrale Academy</strong></p>
+        """
+    )
+    return subject, plain, html_body
+
+
 @app.route("/hebergement", methods=["GET", "POST"])
 def hebergement():
     data = load_data()
@@ -6172,7 +6330,9 @@ def hebergement():
         if nb_places_session >= 10:
             return render_template(
                 "hebergement.html",
-                erreur_session="❌ Notre hébergement est complet (10 places déjà réservées sur 10 places disponibles)."
+                erreur_session="Notre hébergement est complet pour cette session (10 places réservées sur 10).",
+                hebergement_sessions=_hebergement_sessions_for_template(),
+                form_values=request.form,
             )
 
         # ✅ ENREGISTREMENT
@@ -6195,25 +6355,7 @@ def hebergement():
         save_data(data)
 
         # --- Mail candidat ---
-        subject = "🏨 Votre réservation d’hébergement a bien été enregistrée"
-        plain = (
-            f"Bonjour {prenom},\n\n"
-            "Votre demande de réservation d’hébergement pour votre formation APR a bien été prise en compte.\n\n"
-            f"📅 Dates sélectionnées : {session}\n"
-            "💶 Le paiement de 300€ devra être effectué lors de votre arrivée (chèque ou espèces), à préparer dans une enveloppe portant votre nom et votre prénom.\n\n"
-            "À très bientôt,\nIntégrale Academy"
-        )
-
-        html = _wrap_html(
-            "<h2>🏨 Réservation d’hébergement confirmée</h2>",
-            f"""
-            <p>Bonjour <strong>{prenom}</strong>,</p>
-            <p>Nous avons bien pris en compte votre réservation (hébergement formation Agent de Protection Physique des Personnes).</p>
-            <p><strong>📅 Dates :</strong> {session}</p>
-            <p><strong>💶 Le paiement de 300€ devra être effectué lors de votre arrivée (chèque ou espèces), à préparer dans une enveloppe portant votre nom et votre prénom.</p>
-            <p>L’équipe Intégrale Academy</p>
-            """
-        )
+        subject, plain, html = _hebergement_confirmation_email(prenom, session)
 
         try:
             send_email_html(mail, subject, plain, html)
@@ -6231,15 +6373,24 @@ def hebergement():
         except:
             pass
 
-        return redirect(url_for("hebergement_confirmation"))
+        return redirect(url_for("hebergement_confirmation", session=session))
 
-    return render_template("hebergement.html")
+    return render_template(
+        "hebergement.html",
+        hebergement_sessions=_hebergement_sessions_for_template(),
+        form_values={},
+    )
 
 
 
 @app.route("/hebergement_confirmation")
 def hebergement_confirmation():
-    return render_template("hebergement_confirmation.html")
+    session = request.args.get("session", "").strip()
+    return render_template(
+        "hebergement_confirmation.html",
+        session=session,
+        arrival_label=_hebergement_arrival_label(session),
+    )
 
 
 @app.route("/admin_hebergement", methods=["GET", "POST"])
