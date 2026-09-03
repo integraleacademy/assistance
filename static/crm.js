@@ -1087,8 +1087,8 @@ function contactWedofStatusDetails(resources=[],c={}){
  if(!latest)return null;
  const payload=latest.payload||{},state=wedofNormalizeCode(wedofState(payload))||'unknown',history=wedofHistoryCodes(payload),ftStatus=wedofFranceTravailStatus(payload);
  const hasFtEvidence=state==='waitingacceptation'||history.some(code=>code.includes('waitingacceptation')||code.includes('financer')||code.includes('financeur'));
- const persistedFtRefusal=String(c?.statut_demande_financement_ft||'')==='refusee'&&c?.statut_demande_financement_ft_source!=='manual';
- if(ftStatus==='refusee'&&(hasFtEvidence||persistedFtRefusal))return{state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'};
+ const persistedFtRefusal=String(c?.statut_demande_financement_ft||'').trim()==='refusee'||String(c?.statut_secondaire||'').trim()==='Financement FT refusé';
+ if(persistedFtRefusal||(ftStatus==='refusee'&&hasFtEvidence))return{state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'};
  return{state,...(wedofContactHeaderStatuses[state]||{label:`CPF - ${wedofMainStatusLabel(payload)||'Statut inconnu'}`,tone:'neutral'})};
 }
 function contactWedofStatusMarkup(resources=[],c={}){const details=contactWedofStatusDetails(resources,c);return details?`<span class="contact-wedof-status ${details.tone}" id="contactWedofStatus" aria-label="Statut WEDOF : ${esc(details.label)}">${esc(details.label)}</span>`:'<span class="contact-wedof-status" id="contactWedofStatus" hidden></span>'}
