@@ -40,6 +40,10 @@ def test_publications_are_integrated_into_the_activity_journal_tab():
     assert javascript.count('id="publishBtn"') == 1
     assert javascript.count('id="rephrasePublication"') == 1
     assert javascript.count('id="publicationFeed"') == 1
+    assert activity_panel.index('id="publicationFeed"') < activity_panel.index(
+        'id="publicationText"'
+    )
+    assert 'class="feed activity-publication-feed" id="publicationFeed"' in activity_panel
 
     assert "bindMentions(publicationText)" in javascript
     assert (
@@ -50,7 +54,6 @@ def test_publications_are_integrated_into_the_activity_journal_tab():
     assert "publishBtn.onclick=publish" in javascript
     assert "publicationText.onkeydown=" in javascript
     assert "rephrasePublication.onclick=async" in javascript
-    assert "bindPublicationFeed(c,publicationFeed,renderActivityFeed)" in javascript
     assert "/api/crm/contacts/${c.id}/publications" in javascript
     assert "document.querySelector('#publicationFeed')" in javascript
 
@@ -61,20 +64,21 @@ def test_publications_are_integrated_into_the_activity_journal_tab():
         in javascript
     )
     assert "const activities=activityTimeline(c)" in javascript
-    assert "bindPublicationFeed(c,publicationFeed,renderActivityFeed)" in javascript
     assert "mergeContactInStore(c.id,updated);renderActivityFeed()" in javascript
-    assert "let activityExpanded=false,activityFilter='appel'" in javascript
+    assert "let activityExpanded=false,activityFilter='all'" in javascript
     assert "showPublications=activityFilter==='publication'" in javascript
     assert "activityFeedRoot.hidden=showPublications" in javascript
     assert "activityPublicationsPanel.hidden=!showPublications" in javascript
+    assert "activityPublicationFeed.innerHTML=feed(current,true,'publication')" in javascript
 
     filters = javascript[javascript.index("const activityFilterDefinitions=["):]
-    assert filters.index("{key:'appel',label:'Appels consignés'") < filters.index(
-        "{key:'all',label:'Tout'"
+    assert filters.index("{key:'all',label:'Tout'") < filters.index(
+        "{key:'appel',label:'Appels consignés'"
     )
 
     assert ".wedof-panel[hidden]{display:none}" in stylesheet
     assert ".contact-activity-panel{display:grid;align-content:start;gap:18px}" in stylesheet
     assert ".activity-publications-panel[hidden]{display:none!important}" in stylesheet
+    assert ".activity-publication-feed{border-bottom:1px solid #e5eaf2" in stylesheet
     assert ".publication-compose-actions .publication-voice-button" in stylesheet
     assert 'CRM_ASSET_VERSION = "20260902-primary-origin-dashboard-1"' in backend
