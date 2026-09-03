@@ -401,7 +401,8 @@ console.log('CRM manual next action: OK');
     assert "MANUELLE" in javascript
     assert ".next-action.manual" in stylesheet
     assert "background:#fff4dc" in stylesheet
-    assert "hasValue(contact.prochaine_action_manuelle)" in workspace
+    assert "const manual=String(contact.prochaine_action_manuelle||'').trim()" in workspace
+    assert "if(manual)return manual" in workspace
 
 
 def test_contact_header_displays_only_the_active_relaunch_motif():
