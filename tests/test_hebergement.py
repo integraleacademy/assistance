@@ -1,6 +1,7 @@
 import copy
 
 import app as application
+import hebergement_contract as contract_generator
 
 
 SESSION = "Du 9 novembre 2026 au 19 janvier 2027"
@@ -150,3 +151,98 @@ def test_full_session_keeps_the_form_and_sends_no_email(monkeypatch):
     assert len(data_store["hebergements"]) == 10
     assert saved == []
     assert deliveries == []
+
+def test_admin_hebergement_displays_a_convention_action_on_each_row(monkeypatch):
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["hebergements"] = [
+        {
+            "id": "reservation-1",
+            "nom": "Martin",
+            "prenom": "Lina",
+            "telephone": "06 00 00 00 00",
+            "mail": "lina@example.com",
+            "session": "Du 1er septembre au 27 octobre 2026",
+            "paiement": "Non payé",
+            "mode_paiement": "",
+            "cle_numero": "",
+            "cle_etat": "A donner",
+            "date_paiement": "",
+        },
+        {
+            "id": "reservation-2",
+            "nom": "Bernard",
+            "prenom": "Noé",
+            "telephone": "06 11 11 11 11",
+            "mail": "noe@example.com",
+            "session": SESSION,
+            "paiement": "Payé",
+            "mode_paiement": "Chèque",
+            "cle_numero": "7",
+            "cle_etat": "Donnee",
+            "date_paiement": "08/11/2026 10:00",
+        },
+    ]
+    client, _, _, _ = _client(monkeypatch, data)
+    with client.session_transaction() as flask_session:
+        flask_session["user_email"] = "clement@integraleacademy.com"
+
+    response = client.get("/admin_hebergement")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert body.count("📄 Convention PDF") == 2
+    assert 'href="/admin_hebergement/reservation-1/convention"' in body
+    assert 'href="/admin_hebergement/reservation-2/convention"' in body
+
+
+def test_admin_hebergement_generates_a_prefilled_pdf_convention(monkeypatch):
+    reservation = {
+        "id": "reservation-1",
+        "nom": "Martin",
+        "prenom": "Lina",
+        "telephone": "06 00 00 00 00",
+        "mail": "lina@example.com",
+        "session": "Du 1er septembre au 27 octobre 2026",
+        "paiement": "Payé",
+        "mode_paiement": "Espèces",
+        "cle_numero": "12",
+        "cle_etat": "Donnee",
+        "date_paiement": "31/08/2026 09:30",
+    }
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["hebergements"] = [reservation]
+    client, _, _, _ = _client(monkeypatch, data)
+    with client.session_transaction() as flask_session:
+        flask_session["user_email"] = "clement@integraleacademy.com"
+
+    context = application._hebergement_convention_context(reservation)
+    assert context["arrival_label"] == "lundi 31 août 2026"
+    assert context["formation_start_label"] == "mardi 1 septembre 2026"
+    assert context["formation_end_label"] == "mardi 27 octobre 2026"
+    assert context["occupant"]["nom"] == "MARTIN"
+    assert context["key_number"] == "12"
+
+    assert "300 € doit être versée dès l'arrivée" in contract_generator.PARTICIPATION_COPY
+    assert "chèque de caution distinct de 200 € doit être remis dès l'arrivée" in contract_generator.DEPOSIT_COPY
+    assert "par ses propres moyens une solution d'hébergement" in contract_generator.ARRIVAL_LATE_COPY
+    assert "sommes à verser" in contract_generator.FINAL_ACKNOWLEDGEMENT_COPY
+
+    response = client.get("/admin_hebergement/reservation-1/convention")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.data.startswith(b"%PDF-")
+    assert len(response.data) > 30_000
+    assert "attachment;" in response.headers["Content-Disposition"]
+    assert "Convention_hebergement_Martin_Lina.pdf" in response.headers["Content-Disposition"]
+    assert response.headers["Cache-Control"] == "private, no-store, max-age=0"
+
+
+def test_admin_hebergement_convention_returns_404_for_unknown_booking(monkeypatch):
+    client, _, _, _ = _client(monkeypatch)
+    with client.session_transaction() as flask_session:
+        flask_session["user_email"] = "clement@integraleacademy.com"
+
+    response = client.get("/admin_hebergement/missing/convention")
+
+    assert response.status_code == 404
