@@ -1744,6 +1744,23 @@ def _crm_read_email_attachment(uploaded):
     }
 
 
+def _crm_read_email_attachments(uploaded_files):
+    """Validate manual files and enforce the 20 MB limit across the whole e-mail."""
+    attachments = []
+    total_bytes = 0
+    for uploaded in uploaded_files or []:
+        attachment = _crm_read_email_attachment(uploaded)
+        if not attachment:
+            continue
+        total_bytes += len(attachment["content"])
+        if total_bytes > CRM_EMAIL_ATTACHMENT_MAX_BYTES:
+            raise OverflowError(
+                "L’ensemble des pièces jointes ne doit pas dépasser 20 Mo."
+            )
+        attachments.append(attachment)
+    return attachments
+
+
 def _crm_store_email_attachment(uploaded):
     attachment = _crm_read_email_attachment(uploaded)
     if not attachment:
@@ -8792,7 +8809,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260903-ft-refusal-header-priority-1"
+CRM_ASSET_VERSION = "20260903-multiple-email-attachments-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -18628,23 +18645,28 @@ def crm_send_message(contact_id):
     body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     if kind == "email":
         try:
-            manual_attachment = _crm_read_email_attachment(request.files.get("attachment"))
+            manual_attachments = _crm_read_email_attachments(
+                request.files.getlist("attachment")
+            )
         except (ValueError, OverflowError) as exc:
             return _crm_attachment_error_response(exc)
         body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
         subject = _crm_resolve_message_variables(subject, contact, data_store=data)
         branded = _crm_email_html(body, contact)
-        if manual_attachment:
+        if manual_attachments:
             with tempfile.TemporaryDirectory(prefix="crm-email-attachment-") as attachment_dir:
-                attachment_path = os.path.join(
-                    attachment_dir, manual_attachment["filename"],
-                )
-                with open(attachment_path, "wb") as attachment_file:
-                    attachment_file.write(manual_attachment["content"])
+                attachment_paths = []
+                for index, attachment in enumerate(manual_attachments):
+                    file_dir = os.path.join(attachment_dir, str(index))
+                    os.makedirs(file_dir, exist_ok=False)
+                    attachment_path = os.path.join(file_dir, attachment["filename"])
+                    with open(attachment_path, "xb") as attachment_file:
+                        attachment_file.write(attachment["content"])
+                    attachment_paths.append(attachment_path)
                 ok = _crm_send_email_html(
                     contact.get("mail"), subject, body, branded,
                     template=selected_template,
-                    attachments_paths=[attachment_path],
+                    attachments_paths=attachment_paths,
                 )
         else:
             include_template_attachment = _crm_payload_boolean(
@@ -18657,8 +18679,8 @@ def crm_send_message(contact_id):
             )
         preview = branded
     elif kind == "sms":
-        uploaded = request.files.get("attachment")
-        if uploaded and uploaded.filename:
+        uploaded = request.files.getlist("attachment")
+        if any(item and item.filename for item in uploaded):
             return jsonify({"error": "Les pièces jointes sont réservées aux e-mails."}), 400
         body = _crm_resolve_message_variables(body, contact, data_store=data)
         ok = send_sms(contact.get("telephone"), body); preview = body

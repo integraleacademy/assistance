@@ -152,6 +152,64 @@ def test_template_attachment_is_sent_and_manual_file_overrides_it(tmp_path, monk
     assert deliveries[3]["names"] == ["programme.pdf"]
 
 
+def test_multiple_manual_attachments_are_all_sent_and_keep_duplicate_names(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    contact = test_client.post(
+        "/api/crm/contacts", json={"prenom": "Lina"},
+    ).get_json()
+    contact = test_client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "lina@example.com"},
+    ).get_json()
+    delivered = {}
+
+    def fake_send(to, subject, plain, html, attachments_paths=None):
+        paths = list(attachments_paths or [])
+        delivered["names"] = [Path(path).name for path in paths]
+        delivered["contents"] = [Path(path).read_bytes() for path in paths]
+        return True
+
+    monkeypatch.setattr(application, "send_email_html", fake_send)
+    response = test_client.post(
+        f"/api/crm/contacts/{contact['id']}/message",
+        data={
+            "type": "email", "sujet": "Documents", "contenu": "Bonjour",
+            "attachment": [
+                (BytesIO(b"first"), "document.pdf"),
+                (BytesIO(b"second"), "document.pdf"),
+            ],
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert delivered["names"] == ["document.pdf", "document.pdf"]
+    assert delivered["contents"] == [b"first", b"second"]
+
+
+def test_multiple_manual_attachments_share_the_total_size_limit(tmp_path, monkeypatch):
+    test_client = client(tmp_path, monkeypatch)
+    contact = test_client.post(
+        "/api/crm/contacts", json={"prenom": "Lina"},
+    ).get_json()
+    monkeypatch.setattr(application, "CRM_EMAIL_ATTACHMENT_MAX_BYTES", 5)
+
+    response = test_client.post(
+        f"/api/crm/contacts/{contact['id']}/message",
+        data={
+            "type": "email", "sujet": "Documents", "contenu": "Bonjour",
+            "attachment": [
+                (BytesIO(b"123"), "un.pdf"),
+                (BytesIO(b"456"), "deux.pdf"),
+            ],
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 413
+    assert "ensemble des pièces jointes" in response.get_json()["error"]
+
+
 def test_saved_attachment_follows_an_automatic_template_send(tmp_path, monkeypatch):
     test_client = client(tmp_path, monkeypatch)
     template = create_email_template(test_client).get_json()
@@ -221,12 +279,14 @@ def test_crm_email_attachment_controls_are_exposed_in_both_interfaces():
 
     for marker in (
         'id="tplAttachment" type="file"',
-        'id="messageAttachment" type="file"',
-        "formData.append('attachment'",
+        'id="messageAttachment" type="file" multiple',
+        "manualAttachments.forEach(file=>formData.append('attachment'",
+        "draftState.attachments=[...manualAttachments]",
+        "data-remove-message-attachment",
         "include_template_attachment",
         "templateAttachmentBadge",
         "Pièce jointe du modèle",
-        "Une pièce jointe maximum, jusqu’à 20 Mo",
+        "Plusieurs fichiers acceptés, jusqu’à 20 Mo au total",
     ):
         assert marker in javascript
     for selector in (
