@@ -14836,11 +14836,44 @@ def _crm_upload_notion_attachment(token, notion_version, attachment):
     return upload_id
 
 
+def _crm_development_support_subject(rewritten_actions, original_actions):
+    """Extract a useful Notion title from the AI's formatted response."""
+    rewritten = re.sub(
+        r"(?i)<br\s*/?>", "\n", str(rewritten_actions or "")
+    ).replace("\r", "\n")
+    lines = []
+    for raw_line in rewritten.splitlines():
+        line = re.sub(r"[*_`]", "", raw_line)
+        line = re.sub(r"^\s*(?:#{1,6}\s*|[-–—>]\s*)", "", line).strip()
+        if line:
+            lines.append(line)
+
+    for index, line in enumerate(lines):
+        objective = re.match(r"(?i)^objectif\s*:?\s*(.*)$", line)
+        if not objective:
+            continue
+        subject = objective.group(1).strip(" \t:–—-")
+        if not subject:
+            for following_line in lines[index + 1:]:
+                if re.match(
+                        r"(?i)^(?:modifications demandées|critères observables)\s*:?",
+                        following_line):
+                    break
+                subject = following_line
+                break
+        if subject:
+            return re.sub(r"\s+", " ", subject).strip().rstrip(".;")
+
+    fallback = str(original_actions or "").strip()
+    candidate = lines[0] if lines else fallback
+    return re.sub(r"\s+", " ", candidate).strip().rstrip(".;")
+
+
 def _crm_development_support_page(
         platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True,
         attachment_upload_id="", attachment_filename="", attachment_content_type=""):
     user = current_user() or {}
-    subject = re.sub(r"^[#*\\s-]+", "", str(rewritten_actions).splitlines()[0]).strip()
+    subject = _crm_development_support_subject(rewritten_actions, original_actions)
     title = f"{platform} — {subject or original_actions}"[:100]
     paragraph = lambda value: {"object": "block", "type": "paragraph",
         "paragraph": {"rich_text": _crm_notion_rich_text(value)}}
