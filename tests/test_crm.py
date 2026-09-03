@@ -298,11 +298,33 @@ def test_development_support_rewrites_and_creates_notion_page(tmp_path, monkeypa
     assert properties["Plateforme"]["select"]["name"] == "Gestion stagiaires"
     assert properties["Statut"]["select"]["name"] == "À traiter"
     assert properties["Type"]["select"]["name"] == "À faire"
+    assert response.get_json()["title"] == "Gestion stagiaires — faciliter la qualification"
     children_text = json.dumps(notion["children"], ensure_ascii=False)
     assert "faciliter la qualification" in children_text
     assert "Ajouter un bouton de validation" in children_text
     assert "https://example.com/stagiaires/42" in children_text
     assert "Clément VAILLANT" in children_text
+
+
+def test_development_support_title_uses_text_below_markdown_objective():
+    with application.app.test_request_context("/"):
+        application.session["user_email"] = "clement@integraleacademy.com"
+        notion = application._crm_development_support_page(
+            "CRM",
+            "https://example.com/crm/pistes",
+            "Remettre la modification des publications.",
+            (
+                "**Objectif :**  \n"
+                "Restaurer la modification et la suppression des publications.\n\n"
+                "**Modifications demandées :**  \n"
+                "Ajouter les deux actions sur chaque publication."
+            ),
+        )
+
+    title_parts = notion["properties"]["Pensée"]["title"]
+    title = "".join(part["text"]["content"] for part in title_parts)
+    assert title == "CRM — Restaurer la modification et la suppression des publications"
+    assert "Objectif" not in title
 
 
 def test_development_support_uploads_attachment_to_notion(tmp_path, monkeypatch):
