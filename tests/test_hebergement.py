@@ -152,7 +152,8 @@ def test_full_session_keeps_the_form_and_sends_no_email(monkeypatch):
     assert saved == []
     assert deliveries == []
 
-def test_admin_hebergement_displays_a_convention_action_on_each_row(monkeypatch):
+
+def test_admin_hebergement_displays_modern_dashboard_and_row_actions(monkeypatch):
     data = copy.deepcopy(application.DEFAULT_DATA)
     data["hebergements"] = [
         {
@@ -190,9 +191,25 @@ def test_admin_hebergement_displays_a_convention_action_on_each_row(monkeypatch)
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert body.count("📄 Convention PDF") == 2
+    assert "Pilotage des hébergements" in body
+    assert "Réservations affichées" in body
+    assert "Paiements encaissés" in body
+    assert "Paiements à encaisser" in body
+    assert "Clés en circulation" in body
+    assert 'class="stats-grid"' in body
+    assert 'class="filters-panel no-print"' in body
+    assert 'class="bookings-panel"' in body
+    assert '@media (max-width: 720px)' in body
+    assert 'data-label="Suivi de clé"' in body
+    assert "Modifications enregistrées automatiquement" in body
+    assert body.count("Convention PDF") == 2
     assert 'href="/admin_hebergement/reservation-1/convention"' in body
     assert 'href="/admin_hebergement/reservation-2/convention"' in body
+    assert "function updatePaiement" in body
+    assert "function updateMode" in body
+    assert "function updateCleNumero" in body
+    assert "function updateCleEtat" in body
+    assert "function updateField" in body
 
 
 def test_admin_hebergement_generates_a_prefilled_pdf_convention(monkeypatch):
