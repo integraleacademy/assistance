@@ -1004,13 +1004,13 @@ img,svg,video,canvas,iframe{max-width:100%}
 @media(max-width:1200px){.contact-next-row{grid-column:1/-1}}
 @media(max-width:760px){.contact-header-name-fields,.contact-header-coordinate-fields,.contact-next-row{grid-template-columns:1fr}.contact-header-name-fields{min-width:0}.next-telephone-appointment{align-items:flex-start;flex-direction:column;gap:4px}.cnaps-nub-control,.ft-funding-file-action{align-items:stretch;flex-direction:column}.cnaps-nub-control .btn,.ft-funding-file-action .btn{width:100%}}
 
-/* Fiche contact : formation et statuts regroupés au-dessus du menu Actions. */
+/* Fiche contact : formation et statuts alignés en haut, au-dessus du menu Actions. */
 .contact-quick-actions{align-items:center}
 .contact-header-actions-stack{display:block;flex:0 0 240px;margin-left:auto}
-.contact-header-badges{position:absolute;top:14px;right:18px;display:grid;align-content:start;gap:6px;width:240px}
-.contact-header-badges .contact-journey-label{justify-content:center;width:100%;min-height:46px;padding:9px 14px;border-radius:12px;font-size:17px;letter-spacing:.025em;text-align:center}
+.contact-header-badges{position:absolute;top:14px;right:18px;display:flex;align-items:flex-start;gap:6px;width:auto}
+.contact-header-badges .contact-journey-label{flex:0 0 240px;justify-content:center;width:240px;min-height:46px;padding:9px 14px;border-radius:12px;font-size:17px;letter-spacing:.025em;text-align:center}
 .contact-header-badges .contact-journey-label.formation-a3p{font-size:21px;letter-spacing:.08em}
-.contact-header-statuses{display:flex;align-items:stretch;justify-content:center;gap:6px;width:100%;min-width:0}
+.contact-header-statuses{display:flex;flex:0 0 240px;order:-1;align-items:stretch;justify-content:center;gap:6px;width:240px;min-width:0}
 .contact-header-statuses .badge{flex:1 1 38%}
 .contact-header-statuses .contact-cnaps-status{flex:1.65 1 62%}
 .contact-header-statuses .badge,.contact-header-statuses .contact-cnaps-status{justify-content:center;min-width:0;min-height:27px;padding:5px 6px;font-size:9px;line-height:1;white-space:nowrap}
@@ -1019,5 +1019,5 @@ img,svg,video,canvas,iframe{max-width:100%}
 .contact-cnaps-status.professional_card{border-color:#8fd2bb;background:#dcf7ed;color:#087458}
 .activity-publication-feed{border-bottom:1px solid #e5eaf2;background:#f7f9fc}
 .activity-publications-panel .publication-compose{border-top:1px solid #e5eaf2;border-bottom:0}
-@media(max-width:1200px){.contact-quick-actions{align-items:flex-end}.contact-header-actions-stack{display:grid;flex:0 0 240px;width:240px;gap:7px;margin-left:auto}.contact-header-badges{position:static;width:100%}}
+@media(max-width:1200px){.contact-quick-actions{align-items:flex-end}.contact-header-actions-stack{display:grid;flex:0 0 240px;width:240px;gap:7px;margin-left:auto}.contact-header-badges{position:static;display:grid;width:100%}.contact-header-badges .contact-journey-label,.contact-header-statuses{width:100%}.contact-header-statuses{order:0}}
 @media(max-width:650px){.contact-header-actions-stack{flex:1 1 100%;width:100%;margin-left:0}.contact-header-statuses{flex-wrap:wrap}.contact-header-badges .contact-journey-label{font-size:16px}.contact-header-badges .contact-journey-label.formation-a3p{font-size:20px}}

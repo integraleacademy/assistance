@@ -520,7 +520,8 @@ assert.match(contactCnapsStatusMarkup({formation:'VTC'}),/hidden/);
     ) in javascript
     assert ".contact-header-badges .contact-journey-label.formation-a3p{font-size:21px" in stylesheet
     assert ".contact-header-statuses{display:flex" in stylesheet
-    assert ".contact-header-badges{position:absolute;top:14px;right:18px" in stylesheet
+    assert ".contact-header-badges{position:absolute;top:14px;right:18px;display:flex;align-items:flex-start" in stylesheet
+    assert ".contact-header-statuses{display:flex;flex:0 0 240px;order:-1" in stylesheet
     assert ".contact-header-statuses .badge{flex:1 1 38%}" in stylesheet
     assert ".contact-header-statuses .contact-cnaps-status{flex:1.65 1 62%}" in stylesheet
     assert "renderContactCnapsStatus(c)" in javascript
