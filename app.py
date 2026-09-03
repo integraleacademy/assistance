@@ -6222,12 +6222,15 @@ def _hebergement_confirmation_email(prenom, session):
         "Si vous ne pouvez pas vous présenter avant 17h00, vous devrez prévoir par vos "
         "propres moyens une solution d’hébergement pour cette nuit et vous présenter au "
         "centre le lendemain matin, à l’heure indiquée sur votre convocation.\n\n"
-        "À REMETTRE LE JOUR DE VOTRE ARRIVÉE\n"
-        "- Participation financière : 300 €, à régler lors de la remise des clés par chèque "
-        "ou en espèces, dans une enveloppe portant vos nom et prénom.\n"
-        "- Dépôt de garantie : un chèque de caution distinct de 200 €, destiné à couvrir "
-        "notamment toute dégradation, perte de clé ou matériel manquant. Il sera restitué "
-        "en l’absence de dommage après vérification.\n\n"
+        "À REMETTRE IMPÉRATIVEMENT DÈS VOTRE ARRIVÉE\n"
+        "- Participation financière : 300 €, à verser impérativement dès votre arrivée, "
+        "lors de la remise des clés et de la signature du contrat d’hébergement. Le règlement "
+        "s’effectue par chèque ou en espèces, dans une enveloppe portant vos nom et prénom.\n"
+        "- Dépôt de garantie : un chèque de caution distinct de 200 €, à remettre "
+        "impérativement dès votre arrivée, lors de la remise des clés et de la signature du "
+        "contrat d’hébergement. Il est destiné à couvrir notamment toute dégradation, perte "
+        "de clé ou matériel manquant et sera restitué en l’absence de dommage après "
+        "vérification.\n\n"
         "CE QUE VOUS DEVEZ APPORTER\n"
         "- Un sac de couchage ou une couverture (un drap-housse est fourni) ;\n"
         "- Un oreiller ;\n"
@@ -6273,14 +6276,14 @@ def _hebergement_confirmation_email(prenom, session):
           <p style="margin:0;color:#5f430d;">Aucune remise de clés ne pourra être effectuée après 17h00. Si vous ne pouvez pas être présent avant cet horaire, vous devrez prévoir par vos propres moyens un hébergement pour cette nuit, puis vous présenter au centre le lendemain matin à l’heure indiquée sur votre convocation.</p>
         </div>
 
-        <h2 style="margin:24px 0 10px;color:#172033;font-size:18px;">Paiement et caution à remettre à l’arrivée</h2>
+        <h2 style="margin:24px 0 10px;color:#172033;font-size:18px;">Paiement et caution à remettre dès l’arrivée</h2>
         <div style="margin:0 0 10px;padding:14px 16px;border:1px solid #dce3ef;border-radius:9px;">
           <p style="margin:0 0 4px;color:#172033;font-weight:700;">Participation financière — 300 €</p>
-          <p style="margin:0;color:#475467;">À régler lors de la remise des clés, par chèque ou en espèces, dans une enveloppe portant vos nom et prénom. Le montant couvre toute la durée de la formation, week-ends et jours fériés inclus.</p>
+          <p style="margin:0;color:#475467;"><strong>À verser impérativement dès votre arrivée, lors de la remise des clés et de la signature du contrat d’hébergement.</strong> Le règlement s’effectue par chèque ou en espèces, dans une enveloppe portant vos nom et prénom. Le montant couvre toute la durée de la formation, week-ends et jours fériés inclus.</p>
         </div>
         <div style="margin:0 0 20px;padding:14px 16px;border:1px solid #dce3ef;border-radius:9px;">
           <p style="margin:0 0 4px;color:#172033;font-weight:700;">Chèque de caution — 200 €</p>
-          <p style="margin:0;color:#475467;">Prévoir un chèque distinct destiné à couvrir notamment toute dégradation, perte de clé ou matériel manquant. Il sera restitué en l’absence de dommage après vérification.</p>
+          <p style="margin:0;color:#475467;"><strong>À remettre impérativement dès votre arrivée, lors de la remise des clés et de la signature du contrat d’hébergement.</strong> Ce chèque distinct est destiné à couvrir notamment toute dégradation, perte de clé ou matériel manquant. Il sera restitué en l’absence de dommage après vérification.</p>
         </div>
 
         <h2 style="margin:24px 0 10px;color:#172033;font-size:18px;">À apporter</h2>
