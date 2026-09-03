@@ -1,46 +1,188 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Réservation confirmée</title>
-  <style>
-    body {
-      background:#fdfaf5;
-      font-family:Arial;
-      padding:40px;
-      text-align:center;
-    }
-    .box {
-      max-width:500px;
-      margin:auto;
-      background:white;
-      padding:25px;
-      border-radius:15px;
-      box-shadow:0 4px 15px rgba(0,0,0,0.1);
-    }
-    h2 {color:#198754;}
-    button {
-      margin-top:20px;
-      padding:12px 18px;
-      border:none;
-      border-radius:8px;
-      background:#0d6efd;
-      color:white;
-      cursor:pointer;
-      font-size:16px;
-    }
-    button:hover {
-      background:#0b5ed7;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Réservation confirmée | Intégrale Academy</title>
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            display: grid;
+            place-items: center;
+            padding: 28px 18px;
+            background:
+                radial-gradient(circle at 15% 8%, rgba(190, 136, 28, 0.13), transparent 28%),
+                #f4f6f9;
+            color: #172033;
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .confirmation-card {
+            width: min(680px, 100%);
+            overflow: hidden;
+            border: 1px solid #e4e8ef;
+            border-radius: 24px;
+            background: #ffffff;
+            box-shadow: 0 24px 70px rgba(16, 24, 39, 0.13);
+        }
+
+        .confirmation-head {
+            padding: 34px 36px 30px;
+            background: linear-gradient(135deg, #121c2d, #243651);
+            color: #ffffff;
+            text-align: center;
+        }
+
+        .logo {
+            display: block;
+            width: 78px;
+            height: auto;
+            margin: 0 auto 24px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            background: #ffffff;
+        }
+
+        .success-mark {
+            display: inline-grid;
+            width: 56px;
+            height: 56px;
+            margin-bottom: 15px;
+            place-items: center;
+            border-radius: 50%;
+            background: #e9f8f0;
+            color: #176b4d;
+            font-size: 28px;
+            font-weight: 850;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(28px, 6vw, 38px);
+            line-height: 1.2;
+            letter-spacing: -0.035em;
+        }
+
+        .confirmation-head p {
+            margin: 10px auto 0;
+            max-width: 500px;
+            color: #d6deea;
+            line-height: 1.6;
+        }
+
+        .confirmation-body {
+            padding: 30px 36px 36px;
+        }
+
+        .email-note {
+            margin: 0 0 21px;
+            color: #475467;
+            line-height: 1.6;
+            text-align: center;
+        }
+
+        .summary {
+            overflow: hidden;
+            margin-bottom: 17px;
+            border: 1px solid #e4e8ef;
+            border-radius: 14px;
+            background: #f8f9fb;
+        }
+
+        .summary-row {
+            display: grid;
+            grid-template-columns: 145px minmax(0, 1fr);
+            gap: 18px;
+            padding: 14px 16px;
+            border-bottom: 1px solid #e4e8ef;
+        }
+
+        .summary-row:last-child { border-bottom: 0; }
+        .summary-row span { color: #667085; }
+        .summary-row strong { color: #172033; }
+
+        .reminder {
+            margin: 0 0 22px;
+            padding: 17px 18px;
+            border: 1px solid #efcd85;
+            border-left: 5px solid #b68118;
+            border-radius: 12px;
+            background: #fff6df;
+            color: #60450f;
+            line-height: 1.55;
+        }
+
+        .reminder strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #172033;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 50px;
+            border-radius: 11px;
+            background: #a87312;
+            color: #ffffff;
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        .back-link:hover { background: #8b5e0b; }
+
+        @media (max-width: 580px) {
+            .confirmation-head,
+            .confirmation-body { padding-inline: 21px; }
+
+            .summary-row {
+                grid-template-columns: 1fr;
+                gap: 3px;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div class="box">
-    <h2>🎉 Votre réservation est confirmée</h2>
-    <p>Merci ! Votre demande de réservation d’hébergement a bien été prise en compte.</p>
-    <p>Un e-mail de confirmation vous a été envoyé.</p>
+    <main class="confirmation-card">
+        <div class="confirmation-head">
+            <img class="logo" src="/static/logo.png" alt="Intégrale Academy">
+            <span class="success-mark" aria-hidden="true">✓</span>
+            <h1>Votre réservation est confirmée</h1>
+            <p>Votre place dans l’hébergement sur site a bien été enregistrée.</p>
+        </div>
 
-    <button onclick="window.location='/'">Retour au site</button>
-  </div>
+        <div class="confirmation-body">
+            <p class="email-note">Un e-mail récapitulatif vient de vous être envoyé avec les horaires d’arrivée, les montants à prévoir, le matériel à apporter et toutes les règles de l’hébergement.</p>
+
+            <div class="summary">
+                {% if session %}
+                <div class="summary-row">
+                    <span>Votre session</span>
+                    <strong>{{ session }}</strong>
+                </div>
+                {% endif %}
+                <div class="summary-row">
+                    <span>Remise des clés</span>
+                    <strong>{{ arrival_label }}, entre 08h00 et 17h00</strong>
+                </div>
+                <div class="summary-row">
+                    <span>À apporter</span>
+                    <strong>300 € + un chèque de caution de 200 €</strong>
+                </div>
+            </div>
+
+            <div class="reminder">
+                <strong>Aucune arrivée ne sera possible après 17h00.</strong>
+                Si vous ne pouvez pas respecter ce créneau, prévoyez un hébergement par vos propres moyens pour la nuit précédant la formation.
+            </div>
+
+            <a class="back-link" href="/">Retour à l’accueil</a>
+        </div>
+    </main>
 </body>
 </html>
