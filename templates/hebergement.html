@@ -3,202 +3,1027 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Réservation hébergement – Formation A3P</title>
-
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="description" content="Réservez votre hébergement sur place pour la formation A3P d’Intégrale Academy.">
+    <title>Hébergement sur place – Formation A3P | Intégrale Academy</title>
 
     <style>
+        :root {
+            --navy-950: #101827;
+            --navy-900: #172033;
+            --navy-700: #344054;
+            --slate-600: #667085;
+            --slate-300: #d5dae4;
+            --slate-200: #e7eaf0;
+            --slate-100: #f3f5f8;
+            --white: #ffffff;
+            --gold-700: #8b5e0b;
+            --gold-600: #a87312;
+            --gold-500: #bd871b;
+            --gold-100: #fff6df;
+            --red-700: #a52a22;
+            --red-100: #fff1ef;
+            --green-700: #176b4d;
+            --shadow-sm: 0 10px 28px rgba(16, 24, 39, 0.08);
+            --shadow-lg: 0 24px 70px rgba(16, 24, 39, 0.13);
+        }
+
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
         body {
-            background:#f4f5f7;
-            font-family: Arial, sans-serif;
+            margin: 0;
+            background: #f7f8fb;
+            color: var(--navy-900);
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .container {
-            max-width: 750px;
+        a { color: inherit; }
+
+        .topbar {
+            background: rgba(255, 255, 255, 0.96);
+            border-bottom: 1px solid var(--slate-200);
         }
 
-        .card {
-            border-radius: 18px;
-            border: none;
-            padding: 30px;
-            box-shadow: 0 8px 28px rgba(0,0,0,0.09);
-            background:white;
+        .topbar-inner,
+        .page-shell {
+            width: min(1180px, calc(100% - 40px));
+            margin: 0 auto;
         }
 
-        /* Logo */
-        .logo {
-            max-width: 150px;
-            display:block;
-            margin: 0 auto 20px auto;
+        .topbar-inner {
+            min-height: 84px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
         }
 
-        /* Encadré règlement */
-        .encadre {
-            background:#fff3cd;
-            border-left:6px solid #f4c45a;
-            padding:16px 18px;
-            border-radius:10px;
-            margin-top:20px;
-            margin-bottom:25px;
-            font-size:16px;
-            color:#876500;
-            line-height:1.5;
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 14px;
+            text-decoration: none;
         }
+
+        .brand img {
+            display: block;
+            width: 62px;
+            height: auto;
+        }
+
+        .brand-divider {
+            width: 1px;
+            height: 30px;
+            background: var(--slate-200);
+        }
+
+        .brand-label {
+            color: var(--slate-600);
+            font-size: 14px;
+            font-weight: 650;
+        }
+
+        .topbar-link {
+            color: var(--navy-900);
+            font-size: 14px;
+            font-weight: 750;
+            text-decoration: none;
+        }
+
+        .topbar-link:hover { color: var(--gold-700); }
+
+        .page-shell { padding: 34px 0 70px; }
+
+        .hero {
+            position: relative;
+            overflow: hidden;
+            min-height: 365px;
+            padding: 58px 60px;
+            border-radius: 28px;
+            background:
+                radial-gradient(circle at 88% 18%, rgba(214, 165, 67, 0.29), transparent 29%),
+                linear-gradient(135deg, #111a2a 0%, #1c2940 62%, #263853 100%);
+            color: var(--white);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .hero::after {
+            content: "";
+            position: absolute;
+            right: -95px;
+            bottom: -155px;
+            width: 360px;
+            height: 360px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 50%;
+            box-shadow: 0 0 0 45px rgba(255, 255, 255, 0.025), 0 0 0 90px rgba(255, 255, 255, 0.02);
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            max-width: 740px;
+        }
+
+        .eyebrow {
+            margin: 0 0 13px;
+            color: #e2b85e;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .hero h1 {
+            max-width: 700px;
+            margin: 0;
+            font-size: clamp(38px, 5.2vw, 64px);
+            line-height: 1.05;
+            letter-spacing: -0.045em;
+        }
+
+        .hero-copy {
+            max-width: 660px;
+            margin: 22px 0 0;
+            color: #d9dfeb;
+            font-size: 18px;
+            line-height: 1.65;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 16px;
+            margin-top: 30px;
+        }
+
+        .primary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 50px;
+            padding: 0 22px;
+            border-radius: 12px;
+            background: #d5a33c;
+            color: #172033;
+            font-weight: 800;
+            text-decoration: none;
+            transition: transform 160ms ease, background 160ms ease;
+        }
+
+        .primary-link:hover {
+            transform: translateY(-1px);
+            background: #e2b653;
+        }
+
+        .hero-note {
+            color: #cbd3e1;
+            font-size: 14px;
+        }
+
+        .quick-facts {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin: -34px 28px 42px;
+        }
+
+        .fact-card {
+            display: block;
+            min-height: 154px;
+            padding: 22px;
+            border: 1px solid var(--slate-200);
+            border-radius: 17px;
+            background: var(--white);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .fact-icon,
+        .section-icon,
+        .rule-icon {
+            display: inline-flex;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            background: var(--gold-100);
+            color: var(--gold-700);
+            font-weight: 850;
+        }
+
+        .fact-icon {
+            width: max-content;
+            height: 30px;
+            margin-bottom: 10px;
+            padding: 0 9px;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .fact-card strong {
+            display: block;
+            margin-bottom: 2px;
+            color: var(--navy-900);
+            font-size: 19px;
+            line-height: 1.35;
+        }
+
+        .fact-card > div > span {
+            display: block;
+            color: var(--slate-600);
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .content-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 400px;
+            align-items: start;
+            gap: 26px;
+        }
+
+        .information-column {
+            display: grid;
+            gap: 22px;
+        }
+
+        .panel,
+        .booking-card {
+            border: 1px solid var(--slate-200);
+            border-radius: 20px;
+            background: var(--white);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .panel { padding: 30px; }
+
+        .section-heading {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+
+        .section-icon {
+            width: 44px;
+            height: 44px;
+            font-size: 14px;
+        }
+
+        .section-heading h2 {
+            margin: 0;
+            color: var(--navy-900);
+            font-size: 23px;
+            line-height: 1.3;
+            letter-spacing: -0.02em;
+        }
+
+        .section-heading p {
+            margin: 4px 0 0;
+            color: var(--slate-600);
+            font-size: 15px;
+        }
+
+        .arrival-banner {
+            padding: 22px;
+            border: 1px solid #efcc83;
+            border-left: 5px solid var(--gold-500);
+            border-radius: 14px;
+            background: var(--gold-100);
+        }
+
+        .arrival-banner-label {
+            margin: 0 0 5px;
+            color: var(--gold-700);
+            font-size: 12px;
+            font-weight: 850;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .arrival-banner strong {
+            display: block;
+            color: var(--navy-900);
+            font-size: 22px;
+            line-height: 1.35;
+        }
+
+        .arrival-banner p:last-child {
+            margin: 11px 0 0;
+            color: #634813;
+        }
+
+        .late-arrival {
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr);
+            gap: 15px;
+            margin-top: 16px;
+            padding: 19px;
+            border: 1px solid #f3c3be;
+            border-radius: 13px;
+            background: var(--red-100);
+        }
+
+        .late-arrival-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            background: #f9d6d2;
+            color: var(--red-700);
+            font-size: 20px;
+            font-weight: 850;
+        }
+
+        .late-arrival strong {
+            display: block;
+            color: var(--red-700);
+            font-size: 16px;
+        }
+
+        .late-arrival p {
+            margin: 3px 0 0;
+            color: #712620;
+            font-size: 15px;
+        }
+
+        .money-grid,
+        .rules-grid,
+        .amenities-grid {
+            display: grid;
+            gap: 14px;
+        }
+
+        .money-grid,
+        .amenities-grid,
+        .rules-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .money-card {
+            padding: 20px;
+            border: 1px solid var(--slate-200);
+            border-radius: 14px;
+            background: var(--slate-100);
+        }
+
+        .money-card .amount {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--navy-900);
+            font-size: 26px;
+            font-weight: 850;
+            letter-spacing: -0.03em;
+        }
+
+        .money-card h3 {
+            margin: 0 0 8px;
+            font-size: 16px;
+        }
+
+        .money-card p {
+            margin: 0;
+            color: var(--slate-600);
+            font-size: 14px;
+        }
+
+        .payment-reminder {
+            margin: 15px 0 0;
+            padding: 14px 16px;
+            border-radius: 11px;
+            background: #edf4ff;
+            color: #244c7a;
+            font-size: 14px;
+        }
+
+        .compact-list,
+        .rule-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .compact-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .compact-list li {
+            position: relative;
+            padding-left: 26px;
+            color: var(--navy-700);
+            font-size: 15px;
+        }
+
+        .compact-list li::before {
+            content: "✓";
+            position: absolute;
+            top: 0;
+            left: 0;
+            color: var(--green-700);
+            font-weight: 850;
+        }
+
+        .subpanel {
+            padding: 20px;
+            border: 1px solid var(--slate-200);
+            border-radius: 14px;
+        }
+
+        .subpanel h3 {
+            margin: 0 0 13px;
+            font-size: 17px;
+        }
+
+        .subpanel-note {
+            margin: 13px 0 0;
+            color: var(--slate-600);
+            font-size: 13px;
+        }
+
+        .rule-card {
+            padding: 21px;
+            border: 1px solid var(--slate-200);
+            border-radius: 14px;
+            background: #fbfcfd;
+        }
+
+        .rule-card-header {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            margin-bottom: 14px;
+        }
+
+        .rule-icon {
+            min-width: 36px;
+            height: 36px;
+            padding: 0 8px;
+            font-size: 10px;
+        }
+
+        .rule-card h3 {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .rule-list {
+            display: grid;
+            gap: 11px;
+        }
+
+        .rule-list li {
+            position: relative;
+            padding-left: 18px;
+            color: var(--navy-700);
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        .rule-list li::before {
+            content: "";
+            position: absolute;
+            top: 9px;
+            left: 0;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--gold-500);
+        }
+
+        .rules-warning {
+            margin-top: 16px;
+            padding: 18px 19px;
+            border: 1px solid #f0bbb6;
+            border-radius: 13px;
+            background: var(--red-100);
+            color: #75251f;
+            font-size: 14px;
+        }
+
+        .rules-warning strong { color: var(--red-700); }
+
+        .booking-card {
+            position: sticky;
+            top: 24px;
+            overflow: hidden;
+        }
+
+        .booking-head {
+            padding: 27px 27px 22px;
+            background: var(--navy-900);
+            color: var(--white);
+        }
+
+        .booking-head p:first-child {
+            margin: 0 0 6px;
+            color: #dfb352;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .booking-head h2 {
+            margin: 0;
+            font-size: 25px;
+            letter-spacing: -0.025em;
+        }
+
+        .booking-head p:last-child {
+            margin: 7px 0 0;
+            color: #cfd6e3;
+            font-size: 14px;
+        }
+
+        .booking-body { padding: 25px 27px 28px; }
+
+        .error-alert {
+            margin: 0 0 18px;
+            padding: 13px 15px;
+            border: 1px solid #f0b3ad;
+            border-radius: 10px;
+            background: var(--red-100);
+            color: var(--red-700);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 15px;
+        }
+
+        .field-full { grid-column: 1 / -1; }
 
         label {
-            font-weight:600;
-            margin-top:10px;
+            display: block;
+            margin: 0 0 6px;
+            color: var(--navy-900);
+            font-size: 14px;
+            font-weight: 750;
         }
 
-        input, select {
-            font-size:16px;
-            padding:12px;
+        input,
+        select {
+            display: block;
+            width: 100%;
+            min-height: 48px;
+            border: 1px solid #cbd1dc;
+            border-radius: 10px;
+            background: var(--white);
+            color: var(--navy-900);
+            font: inherit;
+            font-size: 15px;
+            outline: none;
+            padding: 10px 12px;
+            transition: border 150ms ease, box-shadow 150ms ease;
         }
 
-        /* --- Bouton CTA (version affinée) --- */
-        .btn-submit {
-            background:#0D6EFD;
-            border:none;
-            padding:12px;            /* Hauteur réduite */
-            border-radius:10px;
-            font-size:17px;           /* Police réduite */
-            font-weight:600;
-            color:white !important;
-            transition:0.2s ease-in-out;
-            box-shadow:0 3px 14px rgba(13,110,253,0.25);
+        input:focus,
+        select:focus {
+            border-color: var(--gold-500);
+            box-shadow: 0 0 0 4px rgba(189, 135, 27, 0.13);
         }
 
-        .btn-submit:hover {
-            background:#0B5ED7 !important;
+        .selected-arrival {
+            display: none;
+            margin-top: 10px;
+            padding: 12px 13px;
+            border: 1px solid #efd28f;
+            border-radius: 9px;
+            background: var(--gold-100);
+            color: #64480f;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .selected-arrival.is-visible { display: block; }
+
+        .form-financials {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin: 19px 0;
+        }
+
+        .form-financial {
+            padding: 12px 13px;
+            border-radius: 10px;
+            background: var(--slate-100);
+        }
+
+        .form-financial strong,
+        .form-financial span { display: block; }
+        .form-financial strong { font-size: 17px; }
+
+        .form-financial span {
+            color: var(--slate-600);
+            font-size: 12px;
+        }
+
+        .checkbox-list {
+            display: grid;
+            gap: 12px;
+            margin: 0 0 19px;
+        }
+
+        .checkbox-row {
+            display: grid;
+            grid-template-columns: 19px minmax(0, 1fr);
+            align-items: start;
+            gap: 10px;
+            margin: 0;
+            color: var(--navy-700);
+            font-size: 13px;
+            font-weight: 500;
+            line-height: 1.45;
+            cursor: pointer;
+        }
+
+        .checkbox-row input {
+            width: 18px;
+            height: 18px;
+            min-height: 0;
+            margin: 1px 0 0;
+            accent-color: var(--gold-600);
+        }
+
+        .submit-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 52px;
+            border: 0;
+            border-radius: 11px;
+            background: var(--gold-600);
+            color: var(--white);
+            cursor: pointer;
+            font: inherit;
+            font-size: 15px;
+            font-weight: 800;
+            transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+        }
+
+        .submit-button:hover {
             transform: translateY(-1px);
-            box-shadow:0 6px 18px rgba(13,110,253,0.35);
+            background: var(--gold-700);
+            box-shadow: 0 9px 22px rgba(139, 94, 11, 0.22);
         }
 
-        @media (max-width: 600px) {
-            .card {
-                padding:20px;
-                border-radius:14px;
+        .form-note {
+            margin: 12px 0 0;
+            color: var(--slate-600);
+            font-size: 12px;
+            text-align: center;
+        }
+
+        footer {
+            padding: 26px 20px 34px;
+            border-top: 1px solid var(--slate-200);
+            background: var(--white);
+            color: var(--slate-600);
+            font-size: 13px;
+            text-align: center;
+        }
+
+        @media (max-width: 980px) {
+            .content-layout { grid-template-columns: 1fr; }
+            .booking-card { position: static; }
+            .quick-facts { margin-inline: 18px; }
+        }
+
+        @media (max-width: 760px) {
+            .topbar-inner,
+            .page-shell { width: min(100% - 24px, 1180px); }
+            .topbar-inner { min-height: 72px; }
+            .brand img { width: 54px; }
+            .brand-divider,
+            .brand-label,
+            .topbar-link { display: none; }
+            .page-shell { padding-top: 16px; }
+
+            .hero {
+                min-height: 0;
+                padding: 38px 25px 66px;
+                border-radius: 21px;
             }
 
-            h3 {
-                font-size:22px;
+            .hero-copy { font-size: 16px; }
+
+            .hero-actions {
+                align-items: stretch;
+                flex-direction: column;
             }
 
-            .btn-submit {
-                font-size:16px;
-                padding:11px;
+            .quick-facts {
+                grid-template-columns: 1fr;
+                margin: -38px 14px 30px;
             }
 
-            .encadre {
-                font-size:14px;
-                padding:14px;
-            }
+            .fact-card { min-height: 0; }
+            .panel { padding: 23px 20px; }
+
+            .money-grid,
+            .rules-grid,
+            .amenities-grid,
+            .form-grid { grid-template-columns: 1fr; }
+
+            .field-full { grid-column: auto; }
+            .arrival-banner strong { font-size: 19px; }
+            .late-arrival { grid-template-columns: 1fr; }
+
+            .booking-head,
+            .booking-body { padding-inline: 21px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            *, *::before, *::after { transition-duration: 0.01ms !important; }
         }
     </style>
 </head>
 
 <body>
-
-<div class="container mt-4 mb-5">
-
-    <div class="text-center mb-3">
-        <img src="/static/logo.png" class="logo">
-    </div>
-
-    <div class="card">
-
-        <h3 class="text-center mb-3">
-            🏨 Réservation hébergement – Formation APR
-        </h3>
-
-        <p class="mb-3">
-            Vous souhaitez être hébergé lors de votre formation 
-            <strong>Agent de Protection Physique des Personnes (A3P)</strong> ?
-        </p>
-
-        <p>
-            Notre établissement propose un hébergement sur place comprenant :
-            <b>dortoir collectif, douches, cuisine équipée, salle de bain, toilettes, machine à laver et sèche-linge.</b>
-        </p>
-
-        <p>
-            La participation financière est de <b>300 euros</b> pour toute la durée de la formation (samedis, dimanches et jours fériés inclus).
-        </p>
-
-        <div class="encadre">
-            ⚠️ <strong>Important :</strong><br>
-            Le paiement devra être effectué <strong> impérativement le jour de votre arrivée</strong> (chèque ou espèces).<br>
-            👉 A préparer <strong>dans une enveloppe portant votre nom et prénom</strong>.
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a class="brand" href="/" aria-label="Accueil Intégrale Academy">
+                <img src="/static/logo.png" alt="Intégrale Academy">
+                <span class="brand-divider" aria-hidden="true"></span>
+                <span class="brand-label">Hébergement stagiaires</span>
+            </a>
+            <a class="topbar-link" href="#informations">Consulter les conditions</a>
         </div>
+    </header>
 
-        {% if erreur_session %}
-<div class="alert alert-danger text-center fw-bold mb-3">
-    {{ erreur_session }}
-</div>
-{% endif %}
+    <main class="page-shell">
+        <section class="hero" aria-labelledby="page-title">
+            <div class="hero-content">
+                <p class="eyebrow">Formation A3P · Puget-sur-Argens</p>
+                <h1 id="page-title">Votre hébergement, directement sur place</h1>
+                <p class="hero-copy">Une solution collective pratique pendant toute votre formation Agent de Protection Physique des Personnes, au sein même d’Intégrale Academy.</p>
+                <div class="hero-actions">
+                    <a class="primary-link" href="#reservation">Réserver une place</a>
+                    <span class="hero-note">Places limitées · Confirmation immédiate par e-mail</span>
+                </div>
+            </div>
+        </section>
 
+        <section class="quick-facts" aria-label="Informations principales">
+            <article class="fact-card">
+                <span class="fact-icon" aria-hidden="true">300 €</span>
+                <div>
+                    <strong>Participation unique</strong>
+                    <span>Pour toute la formation, week-ends et jours fériés inclus.</span>
+                </div>
+            </article>
+            <article class="fact-card">
+                <span class="fact-icon" aria-hidden="true">200 €</span>
+                <div>
+                    <strong>Chèque de caution</strong>
+                    <span>À remettre séparément lors de la remise des clés.</span>
+                </div>
+            </article>
+            <article class="fact-card">
+                <span class="fact-icon" aria-hidden="true">ICI</span>
+                <div>
+                    <strong>Au centre de formation</strong>
+                    <span>54 chemin du Carreou, 83480 Puget-sur-Argens.</span>
+                </div>
+            </article>
+        </section>
 
-        <form action="/hebergement" method="POST">
+        <div class="content-layout" id="informations">
+            <div class="information-column">
+                <section class="panel" aria-labelledby="arrival-title">
+                    <div class="section-heading">
+                        <span class="section-icon" aria-hidden="true">01</span>
+                        <div>
+                            <h2 id="arrival-title">Arrivée et remise des clés</h2>
+                            <p>Les horaires sont stricts : prenez vos dispositions avant votre déplacement.</p>
+                        </div>
+                    </div>
 
-            <label>👤 Nom :</label>
-            <input type="text" name="nom" class="form-control" required>
+                    <div class="arrival-banner">
+                        <p class="arrival-banner-label">Créneau d’arrivée autorisé</p>
+                        <strong>La veille du premier jour de formation, entre 08h00 et 17h00 impérativement</strong>
+                        <p>Présentez-vous directement à l’accueil d’Intégrale Academy, 54 chemin du Carreou, 83480 Puget-sur-Argens.</p>
+                    </div>
 
-            <label>👤 Prénom :</label>
-            <input type="text" name="prenom" class="form-control" required>
+                    <div class="late-arrival">
+                        <span class="late-arrival-mark" aria-hidden="true">!</span>
+                        <div>
+                            <strong>Aucune remise de clés après 17h00</strong>
+                            <p>Si vous ne pouvez pas arriver avant 17h00, vous devrez prévoir par vos propres moyens une solution d’hébergement pour cette nuit, puis vous présenter au centre le lendemain matin à l’heure indiquée sur votre convocation.</p>
+                        </div>
+                    </div>
+                </section>
 
-            <label>📱 Téléphone portable :</label>
-            <input type="text" name="telephone" class="form-control" required>
+                <section class="panel" aria-labelledby="payment-title">
+                    <div class="section-heading">
+                        <span class="section-icon" aria-hidden="true">02</span>
+                        <div>
+                            <h2 id="payment-title">Participation financière et caution</h2>
+                            <p>Les deux éléments sont à remettre le jour de votre arrivée, lors de la remise des clés.</p>
+                        </div>
+                    </div>
 
-            <label>📧 Email :</label>
-            <input type="email" name="email" class="form-control" required>
+                    <div class="money-grid">
+                        <article class="money-card">
+                            <span class="amount">300 €</span>
+                            <h3>Participation à l’hébergement</h3>
+                            <p>Paiement par chèque ou en espèces, à préparer dans une enveloppe portant vos nom et prénom.</p>
+                        </article>
+                        <article class="money-card">
+                            <span class="amount">200 €</span>
+                            <h3>Dépôt de garantie</h3>
+                            <p>Chèque de caution distinct couvrant notamment les dégradations, la perte d’une clé ou du matériel manquant.</p>
+                        </article>
+                    </div>
+                    <p class="payment-reminder"><strong>À retenir :</strong> le chèque de caution sera restitué en l’absence de dommage après vérification des locaux, du matériel et de la clé.</p>
+                </section>
 
-            <label>📅 Dates de formation :</label>
-            <select name="session" class="form-select" required>
-                <option value="Du 5 janvier au 16 mars 2026">Du 5 janvier au 16 mars 2026</option>
-                <option value="Du 30 mars au 2 juin 2026">Du 30 mars au 2 juin 2026</option>
-                <option value="Du 8 juin au 4 août 2026">Du 8 juin au 4 août 2026</option>
-                <option value="Du 1er septembre au 27 octobre 2026">Du 1er septembre au 27 octobre 2026</option>
-                <option value="Du 9 novembre 2026 au 19 janvier 2027">Du 9 novembre 2026 au 19 janvier 2027</option>
-            </select>
+                <section class="panel" aria-labelledby="equipment-title">
+                    <div class="section-heading">
+                        <span class="section-icon" aria-hidden="true">03</span>
+                        <div>
+                            <h2 id="equipment-title">Sur place et à prévoir</h2>
+                            <p>L’hébergement est collectif. Voici ce qui est disponible et ce que vous devez apporter.</p>
+                        </div>
+                    </div>
 
-            <p id="info-session" style="font-size:14px;color:#555;margin-top:6px;"></p>
+                    <div class="amenities-grid">
+                        <article class="subpanel">
+                            <h3>Équipements disponibles</h3>
+                            <ul class="compact-list">
+                                <li>Dortoir collectif</li>
+                                <li>Douches, salle de bain et toilettes</li>
+                                <li>Cuisine équipée</li>
+                                <li>Machine à laver et sèche-linge</li>
+                                <li>Drap-housse fourni pour le matelas</li>
+                            </ul>
+                        </article>
+                        <article class="subpanel">
+                            <h3>À mettre dans vos bagages</h3>
+                            <ul class="compact-list">
+                                <li>Sac de couchage ou couverture</li>
+                                <li>Oreiller</li>
+                                <li>Gel douche, savon et shampoing</li>
+                                <li>Lessive</li>
+                                <li>Sacs-poubelle et papier toilette d’appoint</li>
+                            </ul>
+                            <p class="subpanel-note">Les consommables d’appoint sont à prévoir en cas de rupture entre deux passages de la société de nettoyage.</p>
+                        </article>
+                    </div>
+                </section>
 
+                <section class="panel" aria-labelledby="rules-title">
+                    <div class="section-heading">
+                        <span class="section-icon" aria-hidden="true">04</span>
+                        <div>
+                            <h2 id="rules-title">Règles de vie à respecter</h2>
+                            <p>Ces règles garantissent la sécurité, le calme et de bonnes conditions de séjour pour tous.</p>
+                        </div>
+                    </div>
 
-            <button class="btn btn-submit w-100 mt-4">
-                ✔️ Valider ma réservation
-            </button>
-        </form>
+                    <div class="rules-grid">
+                        <article class="rule-card">
+                            <div class="rule-card-header">
+                                <span class="rule-icon" aria-hidden="true">VIE</span>
+                                <h3>Vie collective</h3>
+                            </div>
+                            <ul class="rule-list">
+                                <li>Entretenir les locaux, maintenir la propreté et ranger les espaces communs.</li>
+                                <li>Respecter les locaux, le matériel et tous les équipements mis à disposition.</li>
+                                <li>Adopter une tenue correcte : ne pas circuler torse nu ou en sous-vêtements, avant, pendant ou après les heures de formation.</li>
+                                <li>Il est strictement interdit de fumer ou de vapoter à l’intérieur du centre.</li>
+                            </ul>
+                        </article>
+                        <article class="rule-card">
+                            <div class="rule-card-header">
+                                <span class="rule-icon" aria-hidden="true">CALME</span>
+                                <h3>Sécurité et respect</h3>
+                            </div>
+                            <ul class="rule-list">
+                                <li>Respecter la tranquillité du voisinage : aucun bruit après 22h00, aucune fête et discrétion obligatoire.</li>
+                                <li>L’introduction ou la consommation d’alcool ou de drogue dans les locaux est formellement interdite.</li>
+                                <li>Il est interdit de pénétrer ou de séjourner dans le centre en état d’ivresse ou sous l’emprise de drogue.</li>
+                                <li>Aucune personne extérieure — famille, amis ou connaissances — ne peut être introduite. L’accès est réservé aux stagiaires hébergés.</li>
+                            </ul>
+                        </article>
+                    </div>
 
-    </div>
-</div>
+                    <div class="rules-warning">
+                        <strong>Important :</strong> l’hébergement est proposé pour rendre service. Tout manquement aux règles peut entraîner des sanctions et la fin de la mise à disposition de l’hébergement. Chaque stagiaire doit adopter un comportement respectueux de la vie en collectivité.
+                    </div>
+                </section>
+            </div>
+
+            <aside class="booking-card" id="reservation" aria-labelledby="booking-title">
+                <div class="booking-head">
+                    <p>Demande en ligne</p>
+                    <h2 id="booking-title">Réserver mon hébergement</h2>
+                    <p>Complétez le formulaire pour recevoir votre confirmation détaillée par e-mail.</p>
+                </div>
+
+                <div class="booking-body">
+                    {% if erreur_session %}
+                    <div class="error-alert" role="alert">{{ erreur_session }}</div>
+                    {% endif %}
+
+                    <form action="/hebergement" method="POST">
+                        <div class="form-grid">
+                            <div>
+                                <label for="prenom">Prénom</label>
+                                <input id="prenom" type="text" name="prenom" autocomplete="given-name" value="{{ form_values.get('prenom', '') }}" required>
+                            </div>
+                            <div>
+                                <label for="nom">Nom</label>
+                                <input id="nom" type="text" name="nom" autocomplete="family-name" value="{{ form_values.get('nom', '') }}" required>
+                            </div>
+                            <div class="field-full">
+                                <label for="telephone">Téléphone portable</label>
+                                <input id="telephone" type="tel" name="telephone" autocomplete="tel" inputmode="tel" value="{{ form_values.get('telephone', '') }}" required>
+                            </div>
+                            <div class="field-full">
+                                <label for="email">Adresse e-mail</label>
+                                <input id="email" type="email" name="email" autocomplete="email" value="{{ form_values.get('email', '') }}" required>
+                            </div>
+                            <div class="field-full">
+                                <label for="session">Dates de formation</label>
+                                <select id="session" name="session" aria-describedby="selected-arrival" required>
+                                    <option value="" disabled {% if not form_values.get('session') %}selected{% endif %}>Sélectionnez votre session</option>
+                                    {% for session_option in hebergement_sessions %}
+                                    <option value="{{ session_option.label }}" data-arrival="{{ session_option.arrival_label }}" {% if form_values.get('session') == session_option.label %}selected{% endif %}>{{ session_option.label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="selected-arrival" id="selected-arrival" aria-live="polite"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-financials" aria-label="Montants à prévoir">
+                            <div class="form-financial">
+                                <strong>300 €</strong>
+                                <span>Chèque ou espèces</span>
+                            </div>
+                            <div class="form-financial">
+                                <strong>200 €</strong>
+                                <span>Chèque de caution</span>
+                            </div>
+                        </div>
+
+                        <div class="checkbox-list">
+                            <label class="checkbox-row">
+                                <input type="checkbox" name="conditions_arrivee" value="acceptees" required>
+                                <span>J’ai compris que la remise des clés s’effectue uniquement la veille de la formation entre 08h00 et 17h00, sans arrivée possible après 17h00.</span>
+                            </label>
+                            <label class="checkbox-row">
+                                <input type="checkbox" name="reglement_hebergement" value="accepte" required>
+                                <span>J’ai pris connaissance des montants à remettre, du matériel à apporter et de l’ensemble des règles de l’hébergement.</span>
+                            </label>
+                        </div>
+
+                        <button class="submit-button" type="submit">Confirmer ma réservation</button>
+                        <p class="form-note">Une copie complète des conditions vous sera envoyée par e-mail.</p>
+                    </form>
+                </div>
+            </aside>
+        </div>
+    </main>
+
+    <footer>Intégrale Academy · 54 chemin du Carreou · 83480 Puget-sur-Argens</footer>
 
     <script>
-const places = {{ places_restantes | default({}) | tojson | safe }};
-const select = document.querySelector('select[name="session"]');
-const info = document.getElementById("info-session");
+        const sessionSelect = document.getElementById("session");
+        const selectedArrival = document.getElementById("selected-arrival");
 
-if (select && info) {
-    select.addEventListener("change", () => {
-        const s = select.value;
-        if (places[s] !== undefined) {
-            if (places[s] <= 0) {
-                info.textContent = "❌ Session complète";
-                info.style.color = "#b30000";
-            } else {
-                info.textContent = "Places restantes : " + places[s] + " / 10";
-                info.style.color = "#555";
+        function updateSelectedArrival() {
+            if (!sessionSelect || !selectedArrival) return;
+            const selectedOption = sessionSelect.options[sessionSelect.selectedIndex];
+            const arrival = selectedOption ? selectedOption.dataset.arrival : "";
+            if (!arrival) {
+                selectedArrival.textContent = "";
+                selectedArrival.classList.remove("is-visible");
+                return;
             }
-        } else {
-            info.textContent = "";
+            selectedArrival.innerHTML = "<strong>Remise des clés :</strong> " + arrival + ", entre 08h00 et 17h00 impérativement.";
+            selectedArrival.classList.add("is-visible");
         }
-    });
-}
-</script>
 
-
+        if (sessionSelect) {
+            sessionSelect.addEventListener("change", updateSelectedArrival);
+            updateSelectedArrival();
+        }
+    </script>
 </body>
 </html>
-
-
-
-
