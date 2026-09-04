@@ -476,7 +476,7 @@ function callbackRequestsTable(rows){
   return`<section class="card callback-request-empty"><span aria-hidden="true">☎</span><b>${emptyTitle}</b><p>Aucune « Autre demande » ne correspond à ce filtre ou à votre recherche.</p></section>`;
  }
  return `<section class="card table-card callback-request-card"><div class="table-wrap" tabindex="0" aria-label="Liste des demandes de rappel"><table class="callback-request-table"><thead><tr><th>Appelant</th><th>Coordonnées</th><th>Demande</th><th>Rendez-vous</th><th>Fiche CRM</th><th>Reçue le</th><th>Statut</th><th>Action</th></tr></thead><tbody>${rows.map(row=>{
-  const processed=row.status==='processed',contactMarkup=row.crm_contact_id?`<div class="callback-request-link"><span class="callback-request-linked">Fiche existante</span><b>${esc(row.crm_contact_name||row.display_name)}</b>${row.crm_contact_status?`<small>${esc(row.crm_contact_status)}</small>`:''}<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Ouvrir la fiche</a></div>`:'<div class="callback-request-link"><span class="callback-request-unlinked">Aucune piste existante</span><small>Aucune piste créée automatiquement</small></div>',phone=row.telephone?`<a href="tel:${encodeURIComponent(row.telephone)}">${esc(formatContactPhone(row.telephone))}</a>`:'<span>—</span>',email=row.email?`<a href="mailto:${encodeURIComponent(row.email)}">${esc(row.email)}</a>`:'',statusMarkup=processed?`<div class="callback-request-status processed"><b>✓ Traité</b>${row.processed_at?`<small>${fmt(row.processed_at)}${row.processed_by?` · ${esc(row.processed_by)}`:''}</small>`:''}</div>`:'<div class="callback-request-status pending"><b>● Non traitée</b><small>Action requise</small></div>';
+  const processed=row.status==='processed',contactMarkup=row.crm_contact_id?`<div class="callback-request-link"><span class="callback-request-linked">Fiche existante</span><b>${esc(row.crm_contact_name||row.display_name)}</b>${row.crm_contact_status?`<small>${esc(row.crm_contact_status)}</small>`:''}<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Ouvrir la fiche</a></div>`:'<div class="callback-request-link"><span class="callback-request-unlinked">Aucune piste existante</span><small>Créez une fiche en conservant cette demande.</small><button class="btn blue callback-request-convert" type="button">Convertir en fiche</button></div>',phone=row.telephone?`<a href="tel:${encodeURIComponent(row.telephone)}">${esc(formatContactPhone(row.telephone))}</a>`:'<span>—</span>',email=row.email?`<a href="mailto:${encodeURIComponent(row.email)}">${esc(row.email)}</a>`:'',statusMarkup=processed?`<div class="callback-request-status processed"><b>✓ Traité</b>${row.processed_at?`<small>${fmt(row.processed_at)}${row.processed_by?` · ${esc(row.processed_by)}`:''}</small>`:''}</div>`:'<div class="callback-request-status pending"><b>● Non traitée</b><small>Action requise</small></div>';
   return`<tr class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td><span class="callback-request-note">${esc(row.notes||'Aucune précision renseignée.')}</span></td><td>${esc(row.rdv||'—')}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td><button class="btn ${processed?'':'blue'} callback-request-action" type="button" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button></td></tr>`;
  }).join('')}</tbody></table></div></section>`;
 }
@@ -503,6 +503,18 @@ function drawCallbackRequests(){
    drawCallbackRequests();
    toast(nextStatus==='processed'?'Demande marquée comme traitée':'Demande rouverte');
   }catch(error){button.disabled=false;button.textContent=nextStatus==='processed'?'Marquer comme traitée':'Rouvrir';toast(error.message,true)}
+ });
+ results.querySelectorAll('.callback-request-convert').forEach(button=>button.onclick=async()=>{
+  const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,oldLabel=button.textContent;
+  if(!requestId)return;
+  button.disabled=true;button.textContent='Création…';
+  try{
+   const result=await api(`/api/crm/callback-requests/${encodeURIComponent(requestId)}/convert`,{method:'POST',body:'{}'}),index=callbackRequests.findIndex(item=>String(item.id)===String(requestId));
+   if(index>=0)callbackRequests[index]=result.request;
+   if(result.contact){const contactIndex=contacts.findIndex(item=>String(item.id)===String(result.contact.id));contactIndex>=0?Object.assign(contacts[contactIndex],result.contact):contacts.unshift(result.contact)}
+   if(result.callback_pending_count!==undefined)callbackRequestPendingCount=Math.max(0,Number(result.callback_pending_count)||0);
+   updateCallbackRequestNavCount();drawCallbackRequests();toast(result.created?'Fiche prospect créée':'Fiche prospect déjà liée');
+  }catch(error){button.disabled=false;button.textContent=oldLabel;toast(error.message,true)}
  });
 }
 function callbackRequestsPage(){

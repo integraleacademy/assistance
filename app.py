@@ -11633,7 +11633,8 @@ def _secretariat_session_details(entry):
     return centre_code, session_label
 
 
-def _crm_create_contact_from_secretariat(data, entry, crm_payload):
+def _crm_create_contact_from_secretariat(
+        data, entry, crm_payload, *, create_on_ambiguity=False):
     """Crée une piste CRM interne à partir d'un appel saisi au secrétariat."""
     now = _crm_now()
     formation_key = str(entry.get("formation") or "").strip()
@@ -11694,6 +11695,7 @@ def _crm_create_contact_from_secretariat(data, entry, crm_payload):
     matched, _, _ = find_or_create_crm_contact(
         data, reconciliation_payload, "assistant-secretariat",
         proposed_contact=contact, external_id=entry.get("id"),
+        create_on_ambiguity=create_on_ambiguity,
     )
     return matched
 
@@ -18205,6 +18207,75 @@ def crm_callback_requests():
         "callback_requests": _crm_callback_requests_payload(data),
         "callback_pending_count": _crm_callback_pending_count(data),
     })
+
+
+@app.post("/api/crm/callback-requests/<request_id>/convert")
+@login_required
+@_serialize_secretariat_delivery
+@_crm_serialized
+def crm_convert_callback_request(request_id):
+    """Create and link one CRM lead while preserving the callback request."""
+    data = load_data()
+    entry = next((
+        item for item in data.get("secretariat_demandes", [])
+        if isinstance(item, dict)
+        and item.get("type") == "autre"
+        and str(item.get("id") or "") == str(request_id)
+    ), None)
+    if entry is None:
+        return jsonify({"error": "Demande de rappel introuvable."}), 404
+
+    _, contact = _crm_prepare_callback_request(data, entry)
+    created = False
+    if contact is None:
+        raw_name = str(entry.get("nom") or "").strip()
+        name_parts = raw_name.split(None, 1)
+        first_name = str(entry.get("prenom") or "").strip()
+        last_name = str(entry.get("nom_famille") or "").strip()
+        if not first_name and len(name_parts) > 1:
+            first_name = name_parts[0]
+        if not last_name:
+            if first_name:
+                last_name = raw_name
+            else:
+                last_name = (
+                    name_parts[1] if len(name_parts) > 1
+                    else (name_parts[0] if name_parts else "Sans nom")
+                )
+        crm_payload = {
+            "prenom": first_name,
+            "nom": last_name,
+            "mail": str(entry.get("email") or "").strip(),
+            "telephone": str(entry.get("telephone") or "").strip(),
+            "formation": str(entry.get("formation") or "").strip(),
+            "source_formulaire": "assistant-secretariat",
+            "origine": "Secrétariat",
+        }
+        contact_count_before = len(data.get("crm_contacts", []))
+        contact = _crm_create_contact_from_secretariat(
+            data, entry, crm_payload, create_on_ambiguity=True,
+        )
+        created = len(data.get("crm_contacts", [])) > contact_count_before
+        if contact is None:
+            return jsonify({
+                "error": "La demande ne peut pas être convertie en fiche CRM.",
+            }), 409
+
+    entry["crm_contact_id"] = str(contact.get("id") or "")
+    _crm_prepare_callback_request(data, entry)
+    _crm_ensure_secretariat_publication(contact, entry)
+    contact["updated_at"] = _crm_now()
+    save_data(data)
+    row = next(
+        item for item in _crm_callback_requests_payload(data)
+        if item["id"] == str(request_id)
+    )
+    return jsonify({
+        "request": row,
+        "contact": _crm_contact_detail_response(copy.deepcopy(contact), data),
+        "created": created,
+        "callback_pending_count": _crm_callback_pending_count(data),
+    }), 201 if created else 200
 
 
 @app.patch("/api/crm/callback-requests/<request_id>")
