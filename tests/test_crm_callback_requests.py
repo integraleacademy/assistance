@@ -243,6 +243,107 @@ def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
     assert receipt["callback_status"] == "pending"
 
 
+def test_callback_request_can_create_and_link_one_prospect(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["secretariat_demandes"] = [{
+        "id": "callback-convert", "type": "autre",
+        "prenom": "cassandre", "nom": "menard",
+        "email": "cassandre@example.com", "telephone": "0611223344",
+        "notes": "Souhaite des informations sur une formation.",
+        "rdv": "Non souhaité", "callback_status": "pending",
+        "created_at": "2026-09-04T09:15:00+02:00",
+    }]
+    application.save_data(data)
+
+    created = client.post(
+        "/api/crm/callback-requests/callback-convert/convert",
+        json={},
+    )
+
+    assert created.status_code == 201
+    payload = created.get_json()
+    assert payload["created"] is True
+    assert payload["request"]["crm_contact_id"] == payload["contact"]["id"]
+    assert payload["request"]["status"] == "pending"
+    assert payload["contact"]["prenom"] == "Cassandre"
+    assert payload["contact"]["nom"] == "MENARD"
+    assert payload["contact"]["mail"] == "cassandre@example.com"
+    assert payload["contact"]["telephone"] == "0611223344"
+
+    stored = application.load_data()
+    assert len(stored["crm_contacts"]) == 1
+    request = stored["secretariat_demandes"][0]
+    assert request["crm_contact_id"] == payload["contact"]["id"]
+    assert request["callback_status"] == "pending"
+    contact = stored["crm_contacts"][0]
+    receipt = next(
+        activity for activity in contact["activities"]
+        if activity.get("callback_request_id") == "callback-convert"
+        and activity.get("callback_event") == "received"
+    )
+    assert receipt["detail"] == (
+        "Demande : Souhaite des informations sur une formation.\n"
+        "Rendez-vous : Non souhaité"
+    )
+    assert any(
+        publication.get("source_secretariat_id") == "callback-convert"
+        and publication.get("texte") == (
+            "Souhaite des informations sur une formation."
+        )
+        for publication in contact["publications"]
+    )
+
+    repeated = client.post(
+        "/api/crm/callback-requests/callback-convert/convert",
+        json={},
+    )
+
+    assert repeated.status_code == 200
+    assert repeated.get_json()["created"] is False
+    stored = application.load_data()
+    assert len(stored["crm_contacts"]) == 1
+    assert sum(
+        activity.get("callback_request_id") == "callback-convert"
+        and activity.get("callback_event") == "received"
+        for activity in stored["crm_contacts"][0]["activities"]
+    ) == 1
+
+
+def test_callback_conversion_reuses_linked_contact_and_reports_missing_request(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post("/api/crm/contacts", json={
+        "prenom": "Nadia", "nom": "Durand",
+        "mail": "nadia@example.com", "telephone": "0601020304",
+    }).get_json()
+    data = application.load_data()
+    data["secretariat_demandes"] = [{
+        "id": "callback-linked-convert", "type": "autre",
+        "nom": "Nadia Durand", "email": "nadia@example.com",
+        "telephone": "0601020304", "notes": "Demande existante",
+        "crm_contact_id": contact["id"], "callback_status": "processed",
+    }]
+    application.save_data(data)
+
+    linked = client.post(
+        "/api/crm/callback-requests/callback-linked-convert/convert",
+        json={},
+    )
+    missing = client.post(
+        "/api/crm/callback-requests/unknown/convert",
+        json={},
+    )
+
+    assert linked.status_code == 200
+    assert linked.get_json()["created"] is False
+    assert linked.get_json()["contact"]["id"] == contact["id"]
+    assert linked.get_json()["request"]["status"] == "processed"
+    assert missing.status_code == 404
+    assert missing.get_json()["error"] == "Demande de rappel introuvable."
+    assert len(application.load_data()["crm_contacts"]) == 1
+
+
 def test_callback_workspace_repairs_legacy_call_activity_without_duplicate(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
@@ -295,7 +396,10 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert "function callbackRequestsPage()" in javascript
     assert "if(C.section==='demandes-rappel')return callbackRequestsPage();" in javascript
     assert "callbackRequests=snapshot.callback_requests||[]" in javascript
-    assert "Aucune piste créée automatiquement" in javascript
+    assert "Créez une fiche en conservant cette demande." in javascript
+    assert "Convertir en fiche" in javascript
+    assert "callback-request-convert" in javascript
+    assert "/convert" in javascript
     assert 'href="/crm/contacts?fiche=' in javascript
     assert "Marquer comme traitée" in javascript
     assert 'data-callback-filter="pending"' in javascript
