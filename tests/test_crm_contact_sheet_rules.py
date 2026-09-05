@@ -1,3 +1,4 @@
+from io import BytesIO
 from pathlib import Path
 import subprocess
 
@@ -42,25 +43,32 @@ def create_contact(client, *, formation, desp_type="", financement_ft="OUI"):
     return response.get_json()
 
 
-def install_ft_templates():
-    data = application.load_data()
-    data["crm_email_templates"] = [
-        {
-            "id": "ft-a3p",
-            "nom": "Financement FT 3P",
-            "sujet": "Financement A3P de {{ prenom }}",
-            "contenu": "<p>Dossier pour {{ formation }}</p>",
-            "usage_count": 0,
-        },
-        {
-            "id": "ft-desp",
-            "nom": "Financement FT DESP",
-            "sujet": "Financement DESP de {{ prenom }}",
-            "contenu": "<p>Dossier pour {{ formation }}</p>",
-            "usage_count": 0,
-        },
-    ]
-    application.save_data(data)
+def install_ft_templates(client):
+    templates = (
+        (
+            "Financement FT A3P",
+            "Financement A3P de {{ prenom }}",
+            "Demande-de-financement-Formation-A3P.pdf",
+        ),
+        (
+            "Financement FT DESP",
+            "Financement DESP de {{ prenom }}",
+            "Demande_de_financement_DESP.pdf",
+        ),
+    )
+    for name, subject, attachment_name in templates:
+        response = client.post(
+            "/api/crm/templates",
+            data={
+                "type": "email",
+                "nom": name,
+                "sujet": subject,
+                "contenu": "<p>Dossier pour {{ formation }}</p>",
+                "attachment": (BytesIO(b"PDF funding form"), attachment_name),
+            },
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 201
 
 
 def test_cnaps_nub_is_persisted_and_limited_to_seven_digits(tmp_path, monkeypatch):
@@ -85,26 +93,42 @@ def test_cnaps_nub_is_persisted_and_limited_to_seven_digits(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize(
-    ("formation", "desp_type", "template_name"),
+    ("formation", "desp_type", "template_name", "attachment_name"),
     [
-        ("A3P", "", "Financement FT 3P"),
-        ("DESP", "INITIAL", "Financement FT DESP"),
+        (
+            "A3P",
+            "",
+            "Financement FT A3P",
+            "Demande-de-financement-Formation-A3P.pdf",
+        ),
+        (
+            "DESP",
+            "INITIAL",
+            "Financement FT DESP",
+            "Demande_de_financement_DESP.pdf",
+        ),
     ],
 )
 def test_ft_funding_file_sends_the_training_template(
-    tmp_path, monkeypatch, formation, desp_type, template_name,
+    tmp_path, monkeypatch, formation, desp_type, template_name, attachment_name,
 ):
     client = crm_client(tmp_path, monkeypatch)
     contact = create_contact(
         client, formation=formation, desp_type=desp_type, financement_ft="OUI",
     )
-    install_ft_templates()
+    install_ft_templates(client)
     deliveries = []
-    monkeypatch.setattr(
-        application,
-        "_crm_send_email_html",
-        lambda *args, **kwargs: deliveries.append((args, kwargs)) or True,
-    )
+
+    def fake_send(to, subject, plain, html, attachments_paths=None):
+        paths = [Path(path) for path in attachments_paths or []]
+        deliveries.append({
+            "to": to,
+            "attachment_names": [path.name for path in paths],
+            "attachment_contents": [path.read_bytes() for path in paths],
+        })
+        return True
+
+    monkeypatch.setattr(application, "send_email_html", fake_send)
 
     response = client.post(
         f"/api/crm/contacts/{contact['id']}/france-travail-funding-file"
@@ -113,9 +137,9 @@ def test_ft_funding_file_sends_the_training_template(
     assert response.status_code == 200
     assert response.get_json()["template_name"] == template_name
     assert len(deliveries) == 1
-    args, kwargs = deliveries[0]
-    assert args[0] == "lina@example.com"
-    assert kwargs["template"]["nom"] == template_name
+    assert deliveries[0]["to"] == "lina@example.com"
+    assert deliveries[0]["attachment_names"] == [attachment_name]
+    assert deliveries[0]["attachment_contents"] == [b"PDF funding form"]
     data = application.load_data()
     template = next(
         item for item in data["crm_email_templates"] if item["nom"] == template_name
@@ -146,7 +170,7 @@ def test_ft_funding_file_rejects_ineligible_contacts(
         desp_type=desp_type,
         financement_ft=financement_ft,
     )
-    install_ft_templates()
+    install_ft_templates(client)
     monkeypatch.setattr(application, "_crm_send_email_html", lambda *args, **kwargs: True)
 
     response = client.post(
@@ -199,7 +223,7 @@ def test_contact_sheet_frontend_contract_for_requested_rules():
     assert 'data-show="ft-file-send"' in javascript
     assert "isFranceTravailFundingFileEligible" in javascript
     assert "france-travail-funding-file" in javascript
-    assert '"Financement FT 3P"' in backend
+    assert '"Financement FT A3P"' in backend
     assert '"Financement FT DESP"' in backend
     for tone in (
         "formation-a3p", "formation-aps", "formation-vtc",
