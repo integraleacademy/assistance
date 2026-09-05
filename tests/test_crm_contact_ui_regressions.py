@@ -139,6 +139,8 @@ def test_pistes_open_in_current_tab_and_keep_new_tab_shortcuts():
     assert "window.open(contactSheetUrl(id),'_blank','noopener')" in javascript
     assert "const isLeadRow=C.section==='pistes'" in bind_rows
     assert "const opensNewTab=C.section==='calendrier'" in bind_rows
+    assert "const linkedLead=event.target.closest('a.crm-row-link')" in bind_rows
+    assert "event.preventDefault();showContact(row.dataset.id)" in bind_rows
     assert "if(isLeadRow&&(event.ctrlKey||event.metaKey))" in bind_rows
     assert "opensNewTab?openContactInNewTab(row.dataset.id):showContact(row.dataset.id)" in bind_rows
     assert "(!isLeadRow&&!opensNewTab)" in bind_rows
@@ -148,8 +150,10 @@ def test_pistes_open_in_current_tab_and_keep_new_tab_shortcuts():
     assert "event.target.closest('input,button,select,textarea,label,a')" in javascript
     assert "event.button!==1" in javascript
     assert ".global-results a" in stylesheet
+    assert ".crm-row-link-cell{padding:0}" in stylesheet
+    assert ".crm-row-link{display:block" in stylesheet
     assert "Cette fiche n’existe plus ou n’est plus accessible." in javascript
-    assert template.count("pistes_open_version='20260905-same-tab-1'") == 1
+    assert template.count("pistes_open_version='20260905-native-links-1'") == 1
 
     script = f"""
 const assert=require('node:assert/strict');
@@ -170,6 +174,15 @@ bindRows();
 const plainClick={{target:{{closest:()=>null}},ctrlKey:false,metaKey:false}};
 rows[0].onclick(plainClick);
 assert.deepEqual(calls.pop(),['same-tab','lead-1']);
+let prevented=false;
+const linkedTarget={{closest:selector=>selector==='a.crm-row-link'?{{}}:null}};
+rows[0].onclick({{...plainClick,target:linkedTarget,preventDefault:()=>{{prevented=true}}}});
+assert.equal(prevented,true);
+assert.deepEqual(calls.pop(),['same-tab','lead-1']);
+prevented=false;
+rows[0].onclick({{...plainClick,target:linkedTarget,ctrlKey:true,preventDefault:()=>{{prevented=true}}}});
+assert.equal(prevented,false);
+assert.equal(calls.length,0);
 rows[0].onclick({{...plainClick,ctrlKey:true}});
 assert.deepEqual(calls.pop(),['new-tab','lead-1']);
 rows[0].onauxclick({{target:{{closest:()=>null}},button:1}});
@@ -179,6 +192,50 @@ rows=[makeRow('appointment-1','#calendarContent')];
 bindRows();
 rows[0].onclick(plainClick);
 assert.deepEqual(calls.pop(),['new-tab','appointment-1']);
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_piste_table_cells_are_native_links_for_the_browser_context_menu():
+    javascript = CRM_JS.read_text(encoding="utf-8")
+    table_helper = javascript[
+        javascript.index("function table("):
+        javascript.index("const dashboardPeriods=")
+    ]
+    script = f"""
+const assert=require('node:assert/strict');
+const selectedLeadIds=new Set();
+const esc=value=>String(value??'');
+const displayName=contact=>contact.name;
+const initials=()=> 'LO';
+const contactCoordinateSummary=()=> 'lead@example.com';
+const listOriginBadge=()=> '<span>Site internet</span>';
+const listActivityBadges=()=> '<span>Aucune activité</span>';
+const despJourneyBadge=()=> '';
+const leadScoreCell=()=> '<span>10</span>';
+const leadCompletenessCell=()=> '<span>50 %</span>';
+const contactPipelineStatusMarkup=()=> '<span>Nouveaux</span>';
+const fmt=()=> '5 septembre 2026';
+const scoreSortHeader=()=> '<th>SCORE</th>';
+const contactSheetUrl=(id,section)=>`/crm/contacts?fiche=${{encodeURIComponent(id)}}${{section==='pistes'?'&retour=pistes':''}}`;
+{table_helper}
+const contact={{id:'lead /1',name:'Lead One',formation:'A3P',lieu:"Côte d’Azur"}};
+const markup=table([contact],{{selectable:true,showCompleteness:true,showDespJourney:true}});
+const href='/crm/contacts?fiche=lead%20%2F1&retour=pistes';
+assert.equal((markup.match(/class="crm-row-link(?: |")/g)||[]).length,8);
+assert.equal(markup.split(`href="${{href}}"`).length-1,8);
+assert.equal((markup.match(/tabindex="-1"/g)||[]).length,7);
+assert.match(markup,/class="crm-row-link crm-row-link-primary"[^>]+aria-label="Ouvrir la fiche de Lead One"/);
+assert.doesNotMatch(markup,/crm-row-link[^>]+target="_blank"/);
+assert.match(markup,/class="lead-select-cell"><input type="checkbox"/);
+const contactsMarkup=table([contact],{{selectable:false}});
+assert.doesNotMatch(contactsMarkup,/crm-row-link/);
 """
 
     completed = subprocess.run(
@@ -918,7 +975,7 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert "function listQualificationFlag(contact)" in crm_js
     assert "${listQualificationFlag(contact)}${scoreBadge(contact)}" in crm_js
     assert "${listQualificationFlag(contact)}<b>${esc(displayName(contact))}" in crm_js
-    assert "<td>${leadScoreCell(c)}</td>" in crm_js
+    assert "cell(c,leadScoreCell(c))" in crm_js
     assert "<span>${globalContactName(c)}<small>" in crm_js
     assert "<b>${esc(displayName(c))}</b>${listQualificationFlag(c)}" not in crm_js
     assert 'class="contact-flag-badge is-list ${flag}"' in crm_js
