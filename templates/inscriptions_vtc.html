@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Parcours guidé d'inscription à la formation Chauffeur VTC avec un financement CPF intégral.">
+  <title>Inscription VTC avec le CPF | Intégrale Academy</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17152f;
+      --muted: #69677f;
+      --line: #e7e5f2;
+      --surface: #ffffff;
+      --soft: #f7f6fb;
+      --purple: #6d28d9;
+      --purple-dark: #5220ad;
+      --purple-soft: #f3edff;
+      --green: #12805c;
+      --green-soft: #ecfdf5;
+      --orange: #b45309;
+      --orange-soft: #fff7ed;
+      --shadow: 0 24px 70px rgba(39, 27, 78, .13);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 5%, rgba(109, 40, 217, .12), transparent 28rem),
+        radial-gradient(circle at 92% 92%, rgba(18, 128, 92, .09), transparent 26rem),
+        #f8f8fc;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, a { font: inherit; }
+    button { color: inherit; }
+    [hidden] { display: none !important; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 22px 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .brand img {
+      display: block;
+      width: auto;
+      height: 44px;
+      object-fit: contain;
+    }
+
+    .brand span {
+      padding-left: 12px;
+      border-left: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .support {
+      color: var(--muted);
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .support strong { color: var(--ink); }
+
+    .page {
+      display: grid;
+      grid-template-columns: minmax(0, .88fr) minmax(520px, 1.12fr);
+      gap: 54px;
+      align-items: center;
+      width: min(1120px, calc(100% - 40px));
+      margin: 24px auto 64px;
+    }
+
+    .hero { padding: 20px 2px; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 20px;
+      padding: 8px 12px;
+      border: 1px solid #ddd1fb;
+      border-radius: 999px;
+      color: var(--purple-dark);
+      background: rgba(255, 255, 255, .7);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--purple);
+      box-shadow: 0 0 0 4px rgba(109, 40, 217, .12);
+      content: "";
+    }
+
+    h1 {
+      max-width: 660px;
+      margin: 0;
+      font-size: clamp(40px, 5vw, 66px);
+      line-height: .98;
+      letter-spacing: -.055em;
+    }
+
+    h1 em {
+      color: var(--purple);
+      font-style: normal;
+    }
+
+    .lead {
+      max-width: 600px;
+      margin: 24px 0 30px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.65;
+    }
+
+    .reassurance {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .reassurance li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #46435e;
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .check {
+      display: grid;
+      flex: 0 0 26px;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--green);
+      background: var(--green-soft);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .wizard {
+      overflow: hidden;
+      border: 1px solid rgba(221, 216, 236, .9);
+      border-radius: 28px;
+      background: rgba(255, 255, 255, .96);
+      box-shadow: var(--shadow);
+    }
+
+    .wizard-head {
+      padding: 25px 30px 22px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, #fbfaff, #f7f4ff);
+    }
+
+    .progress-copy {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 13px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .progress-track {
+      overflow: hidden;
+      height: 7px;
+      border-radius: 999px;
+      background: #e8e4f2;
+    }
+
+    .progress-bar {
+      width: 33.333%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--purple), #945cf0);
+      transition: width .28s ease;
+    }
+
+    .panel {
+      min-height: 450px;
+      padding: 34px 36px 36px;
+      animation: reveal .28s ease both;
+    }
+
+    @keyframes reveal {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .step-label {
+      display: block;
+      margin-bottom: 9px;
+      color: var(--purple);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(25px, 3vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -.025em;
+    }
+
+    .question-note {
+      margin: 13px 0 24px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    .choices { display: grid; gap: 12px; }
+
+    .choice {
+      position: relative;
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 14px;
+      align-items: start;
+      padding: 18px;
+      border: 1.5px solid var(--line);
+      border-radius: 17px;
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+
+    .choice:hover {
+      border-color: #c6b4ee;
+      box-shadow: 0 10px 24px rgba(64, 44, 104, .08);
+      transform: translateY(-1px);
+    }
+
+    .choice:has(input:checked) {
+      border-color: var(--purple);
+      background: var(--purple-soft);
+      box-shadow: 0 0 0 3px rgba(109, 40, 217, .09);
+    }
+
+    .choice input {
+      width: 20px;
+      height: 20px;
+      margin: 2px 0 0;
+      accent-color: var(--purple);
+    }
+
+    .choice strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 16px;
+    }
+
+    .choice small {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .status-card {
+      margin: 22px 0;
+      padding: 18px;
+      border: 1px solid #fed7aa;
+      border-radius: 17px;
+      color: #78350f;
+      background: var(--orange-soft);
+      line-height: 1.55;
+    }
+
+    .status-card strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--orange);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 11px;
+      align-items: center;
+      margin-top: 24px;
+    }
+
+    .btn {
+      display: inline-flex;
+      min-height: 49px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 19px;
+      border: 0;
+      border-radius: 13px;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-primary {
+      color: #fff;
+      background: var(--purple);
+      box-shadow: 0 10px 24px rgba(109, 40, 217, .24);
+    }
+
+    .btn-primary:hover { background: var(--purple-dark); }
+
+    .btn-secondary {
+      border: 1px solid var(--line);
+      color: #4b4662;
+      background: #fff;
+    }
+
+    .cpf-steps {
+      display: grid;
+      gap: 12px;
+      margin: 22px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .cpf-steps li {
+      display: grid;
+      grid-template-columns: 30px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 13px 14px;
+      border-radius: 14px;
+      background: var(--soft);
+      color: #49455c;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .cpf-steps b {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 9px;
+      color: var(--purple);
+      background: #fff;
+    }
+
+    .after-box {
+      margin-top: 18px;
+      padding: 15px 16px;
+      border: 1px solid #bbf7d0;
+      border-radius: 15px;
+      color: #14532d;
+      background: var(--green-soft);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .privacy {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 900px) {
+      .page { grid-template-columns: 1fr; gap: 18px; margin-top: 0; }
+      .hero { padding-bottom: 8px; }
+      h1 { max-width: 720px; }
+      .lead { margin-bottom: 22px; }
+      .reassurance { grid-template-columns: repeat(3, 1fr); }
+      .reassurance li { align-items: flex-start; font-size: 13px; }
+    }
+
+    @media (max-width: 620px) {
+      .topbar, .page { width: min(100% - 24px, 1120px); }
+      .topbar { padding: 14px 0; }
+      .brand img { height: 37px; }
+      .brand span, .support { display: none; }
+      .page { margin-bottom: 28px; }
+      h1 { font-size: 39px; }
+      .lead { font-size: 16px; }
+      .reassurance { grid-template-columns: 1fr; gap: 9px; }
+      .wizard { border-radius: 21px; }
+      .wizard-head { padding: 20px 21px 18px; }
+      .panel { min-height: 0; padding: 27px 21px 25px; }
+      .actions { align-items: stretch; flex-direction: column; }
+      .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Accueil Intégrale Academy">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="Intégrale Academy">
+      <span>Formation Chauffeur VTC</span>
+    </a>
+    <a class="support" href="tel:+33422470768">Une question ? <strong>04 22 47 07 68</strong></a>
+  </header>
+
+  <main class="page">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">Inscription en ligne</p>
+      <h1 id="page-title">Démarrez votre projet <em>Chauffeur VTC</em></h1>
+      <p class="lead">Vérifiez votre situation en quelques instants. Si toutes les conditions sont réunies, nous vous guidons directement jusqu’à la demande d’inscription sur Mon Compte Formation.</p>
+      <ul class="reassurance" aria-label="Les avantages du parcours">
+        <li><span class="check" aria-hidden="true">✓</span><span>Parcours simple et guidé</span></li>
+        <li><span class="check" aria-hidden="true">✓</span><span>Traitement automatique du dossier</span></li>
+        <li><span class="check" aria-hidden="true">✓</span><span>Confirmation par e-mail et SMS</span></li>
+      </ul>
+    </section>
+
+    <section class="wizard" aria-label="Vérification avant inscription VTC">
+      <div class="wizard-head">
+        <div class="progress-copy">
+          <span id="progressLabel">Étape 1 sur 3</span>
+          <span id="progressStatus">Financement</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="1" aria-valuemax="3" aria-valuenow="1" aria-label="Progression de l'inscription">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+      </div>
+
+      <section class="panel" id="financingPanel" data-step="1">
+        <span class="step-label">Vérification du financement</span>
+        <h2 tabindex="-1">Votre solde CPF finance-t-il 100 % de la formation ?</h2>
+        <p class="question-note">Consultez le montant disponible dans votre compte CPF avant de répondre.</p>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="cpf_full" value="yes">
+            <span><strong>Oui, la formation est financée à 100 %</strong><small>Mon solde CPF couvre la totalité du coût demandé.</small></span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="cpf_full" value="no">
+            <span><strong>Non, pas entièrement</strong><small>Il reste un montant à financer ou je ne connais pas encore mon solde.</small></span>
+          </label>
+        </div>
+        <p class="privacy">Aucune donnée personnelle n’est demandée sur cette page. Votre dossier sera créé directement dans l’environnement sécurisé de Mon Compte Formation.</p>
+      </section>
+
+      <section class="panel" id="financingStopPanel" data-step="1" hidden>
+        <span class="step-label">Accompagnement nécessaire</span>
+        <h2 tabindex="-1">Un échange téléphonique est nécessaire avant l’inscription</h2>
+        <div class="status-card">
+          <strong>Le parcours automatique s’arrête ici.</strong>
+          Un conseiller doit étudier avec vous le reste à financer et les solutions possibles avant la création du dossier CPF.
+        </div>
+        <div class="actions">
+          <a class="btn btn-primary" href="{{ url_for('demande_informations_formations', formation='VTC') }}">Demander mon rendez-vous téléphonique</a>
+          <button class="btn btn-secondary" type="button" data-back="financing">Modifier ma réponse</button>
+        </div>
+      </section>
+
+      <section class="panel" id="identityPanel" data-step="2" hidden>
+        <span class="step-label">Connexion sécurisée</span>
+        <h2 tabindex="-1">Votre Identité Numérique La Poste est-elle fonctionnelle ?</h2>
+        <p class="question-note">Elle doit être active et vous permettre de vous connecter à Mon Compte Formation avec FranceConnect+.</p>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="digital_identity" value="yes">
+            <span><strong>Oui, elle fonctionne</strong><small>Je peux valider une connexion FranceConnect+ avec mon Identité Numérique.</small></span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="digital_identity" value="no">
+            <span><strong>Non, je ne l’ai pas ou elle ne fonctionne pas</strong><small>J’ai besoin d’aide avant de créer mon dossier CPF.</small></span>
+          </label>
+        </div>
+        <div class="actions">
+          <button class="btn btn-secondary" type="button" data-back="financing">Retour</button>
+        </div>
+      </section>
+
+      <section class="panel" id="identityStopPanel" data-step="2" hidden>
+        <span class="step-label">Accompagnement nécessaire</span>
+        <h2 tabindex="-1">Votre Identité Numérique doit d’abord être opérationnelle</h2>
+        <div class="status-card">
+          <strong>Le parcours automatique s’arrête ici.</strong>
+          Sans Identité Numérique La Poste fonctionnelle, vous ne pourrez pas confirmer votre inscription sur Mon Compte Formation. Notre équipe va vous guider.
+        </div>
+        <div class="actions">
+          <a class="btn btn-primary" href="{{ url_for('demande_informations_formations', formation='VTC') }}">Demander mon rendez-vous téléphonique</a>
+          <button class="btn btn-secondary" type="button" data-back="identity">Modifier ma réponse</button>
+        </div>
+      </section>
+
+      <section class="panel" id="cpfPanel" data-step="3" hidden>
+        <span class="step-label">Création du dossier</span>
+        <h2 tabindex="-1">Vous pouvez maintenant demander votre inscription</h2>
+        <ol class="cpf-steps">
+          <li><b>1</b><span>Ouvrez l’offre officielle Intégrale Academy sur Mon Compte Formation.</span></li>
+          <li><b>2</b><span>Connectez-vous avec FranceConnect+ et votre Identité Numérique La Poste.</span></li>
+          <li><b>3</b><span>Vérifiez les informations de la formation, puis envoyez votre demande d’inscription.</span></li>
+          <li><b>4</b><span>Surveillez vos e-mails et vos SMS : nous vous préviendrons dès que votre dossier sera prêt à être confirmé.</span></li>
+          <li><b>5</b><span>Retournez alors dans votre compte CPF et validez définitivement l’inscription. Votre dossier passera au statut « Accepté ».</span></li>
+        </ol>
+        <div class="after-box"><strong>Important :</strong> la demande n’est définitive qu’après votre dernière validation dans Mon Compte Formation.</div>
+        <div class="actions">
+          <a class="btn btn-primary" id="cpfRegistrationLink" href="{{ cpf_registration_url }}" target="_blank" rel="noopener noreferrer">Créer mon dossier CPF <span aria-hidden="true">↗</span></a>
+          <button class="btn btn-secondary" type="button" data-back="identity">Retour</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const panels = Array.from(document.querySelectorAll('.panel'));
+      const progressBar = document.getElementById('progressBar');
+      const progressLabel = document.getElementById('progressLabel');
+      const progressStatus = document.getElementById('progressStatus');
+      const progressTrack = document.querySelector('[role="progressbar"]');
+      const labels = { 1: 'Financement', 2: 'Identité numérique', 3: 'Dossier CPF' };
+
+      function showPanel(id, step) {
+        panels.forEach((panel) => { panel.hidden = panel.id !== id; });
+        progressBar.style.width = `${(step / 3) * 100}%`;
+        progressLabel.textContent = `Étape ${step} sur 3`;
+        progressStatus.textContent = labels[step];
+        progressTrack.setAttribute('aria-valuenow', String(step));
+        document.getElementById(id).querySelector('h2').focus({ preventScroll: true });
+      }
+
+      document.querySelectorAll('input[name="cpf_full"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+          document.querySelectorAll('input[name="digital_identity"]').forEach((item) => { item.checked = false; });
+          showPanel(radio.value === 'yes' ? 'identityPanel' : 'financingStopPanel', radio.value === 'yes' ? 2 : 1);
+        });
+      });
+
+      document.querySelectorAll('input[name="digital_identity"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+          showPanel(radio.value === 'yes' ? 'cpfPanel' : 'identityStopPanel', radio.value === 'yes' ? 3 : 2);
+        });
+      });
+
+      document.querySelectorAll('[data-back]').forEach((button) => {
+        button.addEventListener('click', () => {
+          if (button.dataset.back === 'financing') {
+            document.querySelectorAll('input[name="cpf_full"], input[name="digital_identity"]').forEach((item) => { item.checked = false; });
+            showPanel('financingPanel', 1);
+            return;
+          }
+          document.querySelectorAll('input[name="digital_identity"]').forEach((item) => { item.checked = false; });
+          showPanel('identityPanel', 2);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -478,6 +478,12 @@ PLAN_FORMATIONS = {
     "SSIAP": "SSIAP 1 – Agent de sécurité incendie"
 }
 
+VTC_CPF_REGISTRATION_URL = (
+    "https://www.moncompteformation.gouv.fr/espace-prive/html/#/formation/"
+    "recherche/84089988400026_vtc2022/84089988400026_vtc2022mixte"
+    "?contexteFormation=ACTIVITE_PROFESSIONNELLE"
+)
+
 PLAN_TARIFS = {
     "A3P": TRAINING_PRICES_CENTS["A3P"] // 100,
     "APS": TRAINING_PRICES_CENTS["APS"] // 100,
@@ -4190,6 +4196,15 @@ def api_secretariat_assistant():
     payload["question"] = payload.get("message", "")
     with app.test_request_context(json=payload):
         return api_secretariat_ai_question(formation_code)
+
+
+@app.get("/inscriptions")
+def inscriptions_vtc():
+    """Parcours public d'inscription CPF réservé à la formation VTC."""
+    return render_template(
+        "inscriptions_vtc.html",
+        cpf_registration_url=VTC_CPF_REGISTRATION_URL,
+    )
 
 
 @app.route("/demande-informations-formations", methods=["GET", "POST"])

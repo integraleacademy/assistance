@@ -1805,10 +1805,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const secretariatParams = new URLSearchParams(window.location.search);
     if (secretariatParams.get('secretariat') === '1') {
       document.getElementById('sourceSecretariat').value = '1';
-      const preselectedFormation = secretariatParams.get('formation');
-      if (preselectedFormation && Array.from(formation.options).some((option) => option.value === preselectedFormation)) {
-        formation.value = preselectedFormation;
-      }
+    }
+    const preselectedFormation = secretariatParams.get('formation');
+    if (preselectedFormation && Array.from(formation.options).some((option) => option.value === preselectedFormation)) {
+      formation.value = preselectedFormation;
     }
 
     cpfConsulte.dispatchEvent(new Event('change'));
