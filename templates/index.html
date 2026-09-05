@@ -78,7 +78,6 @@
     .topbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 24px;
       padding: 26px 0;
     }
@@ -92,10 +91,10 @@
     }
 
     .brand img {
-      width: 54px;
-      height: 54px;
+      width: 80px;
+      height: 80px;
       border: 1px solid rgba(23, 25, 29, 0.08);
-      border-radius: 15px;
+      border-radius: 20px;
       box-shadow: 0 8px 20px rgba(23, 25, 29, 0.08);
       object-fit: cover;
     }
@@ -115,30 +114,6 @@
       color: var(--ink-muted);
       font-size: 0.78rem;
       font-weight: 650;
-    }
-
-    .topbar-cta {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 42px;
-      padding: 0 15px;
-      border: 1px solid rgba(23, 25, 29, 0.10);
-      border-radius: 999px;
-      color: var(--ink);
-      background: rgba(255, 255, 255, 0.72);
-      box-shadow: 0 8px 24px rgba(23, 25, 29, 0.05);
-      font-size: 0.86rem;
-      font-weight: 750;
-      text-decoration: none;
-      backdrop-filter: blur(12px);
-      transition: border-color 180ms ease, transform 180ms ease, background 180ms ease;
-    }
-
-    .topbar-cta:hover {
-      border-color: rgba(23, 25, 29, 0.22);
-      background: #fff;
-      transform: translateY(-1px);
     }
 
     .hero {
@@ -310,16 +285,9 @@
     }
 
     .standard-card h2 {
-      margin-bottom: 10px;
+      margin-bottom: 22px;
       font-size: 1.55rem;
       letter-spacing: -0.035em;
-    }
-
-    .standard-card > p:not(.standard-label) {
-      margin-bottom: 22px;
-      color: rgba(255, 255, 255, 0.67);
-      font-size: 0.92rem;
-      line-height: 1.65;
     }
 
     .standard-contact {
@@ -653,25 +621,9 @@
       }
 
       .brand img {
-        width: 47px;
-        height: 47px;
-        border-radius: 13px;
-      }
-
-      .topbar-cta {
-        width: 42px;
-        min-height: 42px;
-        padding: 0;
-        justify-content: center;
-      }
-
-      .topbar-cta span {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
-        white-space: nowrap;
+        width: 66px;
+        height: 66px;
+        border-radius: 17px;
       }
 
       .hero {
@@ -743,17 +695,11 @@
   <div class="page-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="Accueil du centre d'aide Intégrale Academy">
-        <img src="/static/logo.png" alt="" width="54" height="54">
+        <img src="/static/logo.png" alt="" width="80" height="80">
         <span class="brand-copy">
           <span class="brand-name">Intégrale Academy</span>
           <span class="brand-area">Centre d’assistance</span>
         </span>
-      </a>
-      <a class="topbar-cta" href="tel:+33422470768" aria-label="Appeler le standard au 04 22 47 07 68">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span>Appeler le standard</span>
       </a>
     </header>
 
@@ -787,7 +733,6 @@
           </div>
           <p class="standard-label">Accueil général</p>
           <h2 id="standard-title">Standard Intégrale Academy</h2>
-          <p>Vous hésitez sur le service à contacter&nbsp;? Notre standard vous dirige vers la bonne personne.</p>
           <div class="standard-contact">
             <a href="tel:+33422470768" aria-label="Appeler le standard au 04 22 47 07 68">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/></svg>

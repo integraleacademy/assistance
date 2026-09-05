@@ -30,8 +30,9 @@ def test_assistance_homepage_keeps_standard_without_online_form_or_cannes_promot
 
     assert "04 22 47 07 68" in source
     assert "ecole@integraleacademy.com" in source
-    assert '<a class="topbar-cta" href="tel:+33422470768"' in source
-    assert "Appeler le standard" in source
+    assert 'width="80" height="80"' in source
+    assert "topbar-cta" not in source
+    assert "Vous hésitez sur le service à contacter" not in source
     assert "<form" not in source
     assert "Demande en ligne" not in source
     assert "toggleJustificatif" not in source
