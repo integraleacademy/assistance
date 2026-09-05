@@ -10235,6 +10235,126 @@ def _crm_calendly_new_contact(data, payload, appointment):
     return contact
 
 
+def _crm_calendly_local_day(appointment):
+    start_time = str(appointment.get("start_time") or "").strip()
+    if not start_time:
+        return ""
+    try:
+        appointment_at = datetime.datetime.fromisoformat(
+            start_time.replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return ""
+
+    paris = pytz.timezone("Europe/Paris")
+    if appointment_at.tzinfo is None:
+        appointment_at = paris.localize(appointment_at)
+    else:
+        appointment_at = appointment_at.astimezone(paris)
+    return appointment_at.date().isoformat()
+
+
+def _crm_calendly_duplicate_booking_contact(data, appointment):
+    """Find the unique contact for an obvious duplicate booking.
+
+    Names alone are not sufficient because homonyms are legitimate.  Calendly
+    sometimes stores two bookings for the same person with different contact
+    details, though, so reuse a contact only when the invitee name, event name
+    and Paris calendar day all match another already-linked appointment.
+    """
+    signature = (
+        _crm_normalize_name(appointment.get("invitee_name")),
+        _crm_normalize_name(appointment.get("name")),
+        _crm_calendly_local_day(appointment),
+    )
+    if not all(signature):
+        return None
+
+    contact_ids = {
+        item.get("contact_id")
+        for item in data.get("crm_calendly_appointments", [])
+        if item is not appointment
+        and (
+            _crm_normalize_name(item.get("invitee_name")),
+            _crm_normalize_name(item.get("name")),
+            _crm_calendly_local_day(item),
+        ) == signature
+        and _crm_contact(data, item.get("contact_id"))
+    }
+    if len(contact_ids) != 1:
+        return None
+    return _crm_contact(data, next(iter(contact_ids)))
+
+
+def _crm_calendly_cached_payload(appointment):
+    return {
+        "name": appointment.get("invitee_name") or "",
+        "scheduled_event": {"name": appointment.get("name") or ""},
+    }
+
+
+def _crm_repair_cached_calendly_contacts(data):
+    """Attach every active cached orphan, not only the current API page."""
+    repairable = [
+        appointment
+        for appointment in data.get("crm_calendly_appointments", [])
+        if not _crm_contact(data, appointment.get("contact_id"))
+        and _crm_calendly_appointment_is_today_or_future(appointment)
+    ]
+    for appointment in repairable:
+        if _crm_contact(data, appointment.get("contact_id")):
+            continue
+
+        contact = _crm_calendly_contact_by_email(
+            data, appointment.get("invitee_email")
+        )
+        if not contact:
+            contact = _crm_calendly_contact_by_phone(
+                data, appointment.get("invitee_phone")
+            )
+        if not contact:
+            contact = _crm_calendly_duplicate_booking_contact(data, appointment)
+
+        payload = _crm_calendly_cached_payload(appointment)
+        if not contact:
+            contact = _crm_calendly_new_contact(data, payload, appointment)
+        if not contact:
+            continue
+
+        inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
+        if inferred_formation and not str(contact.get("formation") or "").strip():
+            contact["formation"] = inferred_formation
+            if inferred_desp_type:
+                contact["desp_type"] = inferred_desp_type
+            _crm_workspace_backfill(contact)
+            contact["updated_at"] = _crm_now()
+
+        _crm_calendly_relink_appointments(data, contact)
+        if appointment.get("contact_id") != contact.get("id"):
+            appointment["contact_id"] = contact.get("id")
+            appointment["updated_at"] = _crm_now()
+            if (contact.get("statut") or "Nouveaux") not in {
+                "Converti", "Disqualifié"
+            }:
+                _crm_schedule_relance(
+                    contact,
+                    "",
+                    source="calendly_appointment",
+                    actor_name="Calendly",
+                )
+                _crm_sync_contact_calendly_status(
+                    data,
+                    contact,
+                    prefer_appointment=True,
+                )
+
+    return sum(
+        1
+        for appointment in repairable
+        if _crm_contact(data, appointment.get("contact_id"))
+    )
+
+
 def _crm_calendly_relink_appointments(data, contact):
     email = _crm_normalize_email(contact.get("mail"))
     phone = _crm_normalize_phone(contact.get("telephone"))
@@ -10444,6 +10564,8 @@ def _crm_upsert_calendly_appointment(
         contact = _crm_calendly_contact_by_email(data, appointment.get("invitee_email"))
     if not contact:
         contact = _crm_calendly_contact_by_phone(data, appointment.get("invitee_phone"))
+    if not contact:
+        contact = _crm_calendly_duplicate_booking_contact(data, appointment)
     contact_created = False
     if not contact and _crm_calendly_appointment_is_today_or_future(appointment):
         contact = _crm_calendly_new_contact(data, payload, appointment)
@@ -15427,6 +15549,7 @@ def crm_calendly_sync():
                 )
                 if contact:
                     matched += 1
+            repaired = _crm_repair_cached_calendly_contacts(latest_data)
             next_cursor = (event_page.get("pagination") or {}).get("next_page_token")
             integration_state = latest_data.setdefault("crm_calendly", {})
             integration_state["sync_cursor"] = next_cursor
@@ -15442,6 +15565,7 @@ def crm_calendly_sync():
             "appointments": len(imported_payloads),
             "new_appointments": after_count - before_count,
             "matched": matched,
+            "repaired_appointments": repaired,
         })
     except (CalendlyAPIError, RuntimeError) as exc:
         return _calendly_route_error(exc)

@@ -538,6 +538,61 @@ def test_webhook_creates_one_lead_for_unmatched_future_appointments(
     assert {item["contact_id"] for item in appointments} == {contact_id}
 
 
+def test_webhook_reuses_contact_for_same_booking_name_event_and_day(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    first_payload = calendly_payload(email="tusher-one@example.com")
+    first_payload.update({
+        "name": "Tusher Tuhin",
+        "first_name": "Tusher",
+        "last_name": "Tuhin",
+        "text_reminder_number": "+33611111111",
+    })
+    first_payload["scheduled_event"].update({
+        "name": "RDV téléphonique formation garde du corps (APR)",
+        "start_time": "2099-08-12T12:15:00Z",
+        "end_time": "2099-08-12T12:30:00Z",
+    })
+    first = signed_webhook(
+        client,
+        monkeypatch,
+        "invitee.created",
+        first_payload,
+    )
+
+    second_payload = calendly_payload(email="tusher-two@example.com")
+    second_payload.update({
+        "uri": "https://api.calendly.com/scheduled_events/EVENT2/invitees/INVITEE2",
+        "event": "https://api.calendly.com/scheduled_events/EVENT2",
+        "name": "Tusher Tuhin",
+        "first_name": "Tusher",
+        "last_name": "Tuhin",
+        "text_reminder_number": "+33622222222",
+    })
+    second_payload["scheduled_event"].update({
+        "uri": second_payload["event"],
+        "name": "RDV téléphonique formation garde du corps (APR)",
+        "start_time": "2099-08-12T12:45:00Z",
+        "end_time": "2099-08-12T13:00:00Z",
+    })
+    second = signed_webhook(
+        client,
+        monkeypatch,
+        "invitee.created",
+        second_payload,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.get_json()["contact_id"] == first.get_json()["contact_id"]
+    assert len(client.get("/api/crm/contacts").get_json()) == 1
+    appointments = client.get("/api/crm/calendly/appointments").get_json()["appointments"]
+    assert len(appointments) == 2
+    assert {item["contact_id"] for item in appointments} == {
+        first.get_json()["contact_id"]
+    }
+
+
 def test_webhook_keeps_unidentifiable_appointment_without_creating_a_lead(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
@@ -1006,7 +1061,9 @@ def test_full_sync_creates_a_lead_for_a_stored_unmatched_future_appointment(
     def fake_calendly(method, path, **kwargs):
         if path == "/scheduled_events":
             return {
-                "collection": [first_event, second_event, third_event],
+                # EVENT3 is intentionally absent from the current API page: a
+                # full sync must still repair its previously cached orphan.
+                "collection": [first_event, second_event],
                 "pagination": {"next_page_token": None},
             }
         if path.endswith("/EVENT1/invitees"):
@@ -1017,11 +1074,6 @@ def test_full_sync_creates_a_lead_for_a_stored_unmatched_future_appointment(
             invitee["event"] = second_event["uri"]
             invitee["text_reminder_number"] = "+33699999999"
             return {"collection": [invitee], "pagination": {"next_page_token": None}}
-        if path.endswith("/EVENT3/invitees"):
-            return {
-                "collection": [unmatched_invitee],
-                "pagination": {"next_page_token": None},
-            }
         raise AssertionError(f"Unexpected Calendly call: {method} {path}")
 
     monkeypatch.setattr(application, "_calendly_request", fake_calendly)
@@ -1030,6 +1082,7 @@ def test_full_sync_creates_a_lead_for_a_stored_unmatched_future_appointment(
 
     assert response.status_code == 200
     assert response.get_json()["complete"] is True
+    assert response.get_json()["repaired_appointments"] == 1
     sync_state = application.load_data()["crm_calendly"]
     assert sync_state["last_sync_at"]
     assert sync_state["last_full_sync_at"] == sync_state["last_sync_at"]
