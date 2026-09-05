@@ -3,119 +3,1326 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Demande d'assistance - Intégrale Academy</title>
+  <meta name="theme-color" content="#17191d">
+  <title>Centre d'aide | Intégrale Academy</title>
   <style>
-    body {
-      background-color: #fdfaf5;
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 20px;
+    :root {
+      --ink: #17191d;
+      --ink-soft: #555d68;
+      --ink-muted: #737b86;
+      --paper: #ffffff;
+      --canvas: #f6f4ef;
+      --canvas-deep: #eeeae2;
+      --line: #e8e4dc;
+      --gold: #f1c25d;
+      --gold-deep: #b77b16;
+      --gold-soft: #fff6df;
+      --blue: #2457d6;
+      --blue-soft: #eef3ff;
+      --success: #11705b;
+      --success-soft: #eaf7f2;
+      --shadow-lg: 0 30px 80px rgba(27, 31, 38, 0.11);
+      --shadow-md: 0 14px 38px rgba(27, 31, 38, 0.08);
+      --radius-xl: 30px;
+      --radius-lg: 22px;
     }
-    .container {
-      max-width: 500px;
-      margin: 20px auto;
-      background: white;
-      padding: 25px;
-      border-radius: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-      text-align: center;
-    }
-    img.logo {
-      max-width: 120px;
-      margin-bottom: 15px;
-    }
-    h2 {
-      color: #0d6efd;
-      margin-bottom: 10px;
-      font-size: 22px;
-    }
-    h3 {
-      margin-bottom: 20px;
-      color: #555;
-      font-size: 15px;
-    }
-    label {
-      display: block;
-      text-align: left;
-      margin: 10px 0 5px;
-      font-weight: bold;
-      font-size: 14px;
-    }
-    input, select, textarea, button {
-      width: 100%;
-      padding: 12px;
-      margin-bottom: 15px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      font-size: 16px; /* ✅ empêche zoom iOS */
+
+    * {
       box-sizing: border-box;
     }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-width: 320px;
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 3%, rgba(241, 194, 93, 0.23), transparent 28rem),
+        radial-gradient(circle at 95% 15%, rgba(36, 87, 214, 0.10), transparent 32rem),
+        var(--canvas);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    button,
+    input,
+    select,
     textarea {
+      font: inherit;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 12px;
+      left: 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      color: #fff;
+      background: var(--ink);
+      transform: translateY(-150%);
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    .page-shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 26px 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 13px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .brand img {
+      width: 54px;
+      height: 54px;
+      border: 1px solid rgba(23, 25, 29, 0.08);
+      border-radius: 15px;
+      box-shadow: 0 8px 20px rgba(23, 25, 29, 0.08);
+      object-fit: cover;
+    }
+
+    .brand-copy {
+      display: grid;
+      gap: 1px;
+    }
+
+    .brand-name {
+      font-size: 0.98rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-area {
+      color: var(--ink-muted);
+      font-size: 0.78rem;
+      font-weight: 650;
+    }
+
+    .topbar-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 15px;
+      border: 1px solid rgba(23, 25, 29, 0.10);
+      border-radius: 999px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: 0 8px 24px rgba(23, 25, 29, 0.05);
+      font-size: 0.86rem;
+      font-weight: 750;
+      text-decoration: none;
+      backdrop-filter: blur(12px);
+      transition: border-color 180ms ease, transform 180ms ease, background 180ms ease;
+    }
+
+    .topbar-cta:hover {
+      border-color: rgba(23, 25, 29, 0.22);
+      background: #fff;
+      transform: translateY(-1px);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+      gap: 48px;
+      align-items: center;
+      min-height: 520px;
+      padding: 56px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      border-radius: var(--radius-xl);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow-lg);
+      backdrop-filter: blur(18px);
+    }
+
+    .hero::before,
+    .hero::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .hero::before {
+      width: 330px;
+      height: 330px;
+      right: -145px;
+      top: -165px;
+      border: 72px solid rgba(241, 194, 93, 0.18);
+    }
+
+    .hero::after {
+      width: 160px;
+      height: 160px;
+      left: 48%;
+      bottom: -125px;
+      border: 44px solid rgba(36, 87, 214, 0.07);
+    }
+
+    .hero-copy,
+    .standard-card {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow,
+    .section-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0 0 19px;
+      color: var(--gold-deep);
+      font-size: 0.76rem;
+      font-weight: 850;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 0 6px rgba(241, 194, 93, 0.20);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 720px;
+      margin-bottom: 24px;
+      font-size: clamp(2.65rem, 5.8vw, 4.9rem);
+      line-height: 0.98;
+      letter-spacing: -0.065em;
+    }
+
+    h1 span {
+      display: block;
+      color: var(--gold-deep);
+    }
+
+    .hero-lead {
+      max-width: 650px;
+      margin-bottom: 28px;
+      color: var(--ink-soft);
+      font-size: clamp(1.02rem, 1.6vw, 1.2rem);
+      line-height: 1.7;
+    }
+
+    .hero-highlights {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .hero-highlight {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #4c535d;
+      background: rgba(255, 255, 255, 0.70);
+      font-size: 0.82rem;
+      font-weight: 720;
+    }
+
+    .hero-highlight svg {
+      width: 16px;
+      height: 16px;
+      color: var(--success);
+    }
+
+    .standard-card {
+      padding: 30px;
+      border-radius: 24px;
+      color: #fff;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.07), transparent 48%),
+        var(--ink);
+      box-shadow: 0 25px 55px rgba(23, 25, 29, 0.23);
+    }
+
+    .standard-card::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 92px;
+      height: 92px;
+      border-radius: 0 24px 0 90px;
+      background: var(--gold);
+      opacity: 0.95;
+    }
+
+    .standard-icon {
+      display: grid;
+      width: 48px;
+      height: 48px;
+      margin-bottom: 24px;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 15px;
+      color: var(--gold);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .standard-icon svg {
+      width: 23px;
+      height: 23px;
+    }
+
+    .standard-label {
+      margin-bottom: 8px;
+      color: rgba(255, 255, 255, 0.61);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .standard-card h2 {
+      margin-bottom: 10px;
+      font-size: 1.55rem;
+      letter-spacing: -0.035em;
+    }
+
+    .standard-card > p:not(.standard-label) {
+      margin-bottom: 22px;
+      color: rgba(255, 255, 255, 0.67);
+      font-size: 0.92rem;
+      line-height: 1.65;
+    }
+
+    .standard-contact {
+      display: grid;
+      gap: 10px;
+    }
+
+    .standard-contact a {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 54px;
+      padding: 0 15px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.07);
+      font-size: 0.9rem;
+      font-weight: 750;
+      text-decoration: none;
+      transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+    }
+
+    .standard-contact a:hover {
+      border-color: rgba(241, 194, 93, 0.55);
+      background: rgba(255, 255, 255, 0.11);
+      transform: translateY(-1px);
+    }
+
+    .standard-contact svg {
+      width: 19px;
+      height: 19px;
+      flex: 0 0 auto;
+      color: var(--gold);
+    }
+
+    .directory {
+      padding: 96px 0 32px;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 32px;
+      margin-bottom: 30px;
+    }
+
+    .section-heading h2,
+    .support-copy h2 {
+      margin-bottom: 0;
+      font-size: clamp(2rem, 4vw, 3.25rem);
+      line-height: 1.08;
+      letter-spacing: -0.05em;
+    }
+
+    .section-heading > p {
+      max-width: 470px;
+      margin-bottom: 4px;
+      color: var(--ink-soft);
+      font-size: 0.98rem;
+      line-height: 1.7;
+    }
+
+    .contact-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .contact-card {
+      display: flex;
+      min-height: 480px;
+      padding: 31px;
+      position: relative;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--paper);
+      box-shadow: var(--shadow-md);
+      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .contact-card:hover {
+      border-color: #d8d0c1;
+      box-shadow: 0 22px 52px rgba(27, 31, 38, 0.11);
+      transform: translateY(-3px);
+    }
+
+    .contact-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 31px;
+      right: 31px;
+      height: 4px;
+      border-radius: 0 0 999px 999px;
+      background: var(--gold);
+    }
+
+    .contact-card--blue::before {
+      background: var(--blue);
+    }
+
+    .contact-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 27px;
+    }
+
+    .avatar {
+      display: grid;
+      width: 58px;
+      height: 58px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 18px;
+      color: #5d410d;
+      background: var(--gold-soft);
+      font-size: 0.9rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+
+    .contact-card--blue .avatar {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .expertise-tag {
+      padding: 8px 11px;
+      border-radius: 999px;
+      color: #725314;
+      background: var(--gold-soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      text-align: right;
+    }
+
+    .contact-card--blue .expertise-tag {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .contact-card h3 {
+      margin-bottom: 4px;
+      font-size: 1.48rem;
+      line-height: 1.18;
+      letter-spacing: -0.035em;
+    }
+
+    .role {
+      min-height: 48px;
+      margin-bottom: 15px;
+      color: var(--ink);
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .contact-description {
+      margin-bottom: 24px;
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+      line-height: 1.65;
+    }
+
+    .contact-list {
+      display: grid;
+      gap: 2px;
+      margin: auto 0 22px;
+    }
+
+    .contact-list a {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      gap: 11px;
+      align-items: center;
+      min-height: 49px;
+      padding: 7px 5px;
+      border-radius: 12px;
+      text-decoration: none;
+      transition: background 180ms ease;
+    }
+
+    .contact-list a:hover {
+      background: var(--canvas);
+    }
+
+    .contact-list-icon {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 11px;
+      color: #60481a;
+      background: var(--gold-soft);
+    }
+
+    .contact-card--blue .contact-list-icon {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .contact-list-icon svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .contact-label {
+      display: block;
+      color: var(--ink-muted);
+      font-size: 0.68rem;
+      font-weight: 750;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .contact-value {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--ink);
+      font-size: 0.88rem;
+      font-weight: 730;
+    }
+
+    .link-arrow {
+      color: #9aa0a8;
+    }
+
+    .card-actions {
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 10px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 48px;
+      padding: 0 16px;
+      border: 1px solid transparent;
+      border-radius: 13px;
+      font-size: 0.86rem;
+      font-weight: 800;
+      text-align: center;
+      text-decoration: none;
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .button svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button-primary {
+      color: #fff;
+      background: var(--ink);
+    }
+
+    .button-primary:hover {
+      background: #2a2d32;
+    }
+
+    .button-secondary {
+      border-color: var(--line);
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .button-secondary:hover {
+      border-color: #cdc6b9;
+      background: var(--canvas);
+    }
+
+    .support-section {
+      display: grid;
+      grid-template-columns: minmax(0, 0.72fr) minmax(520px, 1.28fr);
+      gap: 64px;
+      align-items: start;
+      margin: 72px 0 96px;
+      padding: 64px;
+      border-radius: var(--radius-xl);
+      background: var(--canvas-deep);
+    }
+
+    .support-copy {
+      position: sticky;
+      top: 28px;
+    }
+
+    .support-copy > p:not(.section-kicker) {
+      margin: 21px 0 28px;
+      color: var(--ink-soft);
+      font-size: 0.97rem;
+      line-height: 1.72;
+    }
+
+    .process-list {
+      display: grid;
+      gap: 13px;
+      margin: 0 0 28px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .process-list li {
+      display: grid;
+      grid-template-columns: 35px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .step-number {
+      display: grid;
+      width: 33px;
+      height: 33px;
+      place-items: center;
+      border: 1px solid rgba(23, 25, 29, 0.10);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.58);
+      font-size: 0.75rem;
+      font-weight: 850;
+    }
+
+    .process-list strong,
+    .process-list span:not(.step-number) {
+      display: block;
+    }
+
+    .process-list strong {
+      margin: 1px 0 2px;
+      font-size: 0.86rem;
+    }
+
+    .process-list span:not(.step-number) {
+      color: var(--ink-muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .opportunity-link {
+      display: block;
+      padding: 17px;
+      border: 1px solid rgba(17, 112, 91, 0.13);
+      border-radius: 16px;
+      color: #104f42;
+      background: var(--success-soft);
+      text-decoration: none;
+      transition: border-color 180ms ease, transform 180ms ease;
+    }
+
+    .opportunity-link:hover {
+      border-color: rgba(17, 112, 91, 0.30);
+      transform: translateY(-1px);
+    }
+
+    .opportunity-link small,
+    .opportunity-link strong,
+    .opportunity-link span {
+      display: block;
+    }
+
+    .opportunity-link small {
+      margin-bottom: 2px;
+      color: #4f7e73;
+      font-size: 0.7rem;
+      font-weight: 760;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .opportunity-link strong {
+      margin-bottom: 7px;
+      font-size: 0.9rem;
+    }
+
+    .opportunity-link span {
+      color: var(--success);
+      font-size: 0.79rem;
+      font-weight: 800;
+    }
+
+    .form-shell {
+      padding: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.82);
+      border-radius: 25px;
+      background: var(--paper);
+      box-shadow: var(--shadow-md);
+    }
+
+    .form-heading {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 27px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .form-heading-icon {
+      display: grid;
+      width: 46px;
+      height: 46px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 14px;
+      color: #684b12;
+      background: var(--gold-soft);
+    }
+
+    .form-heading-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .form-heading h2 {
+      margin-bottom: 2px;
+      font-size: 1.25rem;
+      letter-spacing: -0.025em;
+    }
+
+    .form-heading p {
+      margin-bottom: 0;
+      color: var(--ink-muted);
+      font-size: 0.81rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 19px;
+    }
+
+    .field {
+      min-width: 0;
+    }
+
+    .field-full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 7px;
+      color: #31353b;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .required {
+      color: var(--gold-deep);
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 50px;
+      padding: 12px 14px;
+      border: 1px solid #dcd8d0;
+      border-radius: 12px;
+      outline: none;
+      color: var(--ink);
+      background: #fbfbfa;
+      font-size: 16px;
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: #a0a5ac;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: #c99a3b;
+      background: #fff;
+      box-shadow: 0 0 0 4px rgba(241, 194, 93, 0.18);
+    }
+
+    textarea {
+      min-height: 145px;
       resize: vertical;
-      line-height: 1.4;
+      line-height: 1.55;
     }
-    button {
-      background-color: #0d6efd;
-      color: white;
-      border: none;
+
+    input[type="file"] {
+      min-height: auto;
+      padding: 8px;
+      color: var(--ink-soft);
+      background: #fff;
+      font-size: 0.8rem;
+    }
+
+    input[type="file"]::file-selector-button {
+      margin-right: 11px;
+      padding: 9px 12px;
+      border: 0;
+      border-radius: 9px;
+      color: var(--ink);
+      background: var(--canvas-deep);
+      font: inherit;
+      font-weight: 750;
       cursor: pointer;
-      font-weight: bold;
-      transition: background 0.3s;
     }
-    button:hover {
-      background-color: #0b5ed7;
+
+    #justificatifDiv {
+      grid-column: 1 / -1;
+      padding: 15px;
+      border: 1px dashed #d8d2c7;
+      border-radius: 14px;
+      background: #faf9f6;
+    }
+
+    .submit-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 23px;
+    }
+
+    .form-note {
+      margin: 0;
+      color: var(--ink-muted);
+      font-size: 0.72rem;
+    }
+
+    .submit-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 51px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 13px;
+      color: #fff;
+      background: var(--ink);
+      box-shadow: 0 11px 24px rgba(23, 25, 29, 0.18);
+      font-size: 0.85rem;
+      font-weight: 820;
+      cursor: pointer;
+      transition: background 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+    }
+
+    .submit-button:hover {
+      background: #2d3035;
+      box-shadow: 0 14px 28px rgba(23, 25, 29, 0.23);
+      transform: translateY(-1px);
+    }
+
+    .submit-button svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .site-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 0 40px;
+      color: var(--ink-muted);
+      font-size: 0.78rem;
+    }
+
+    .site-footer strong {
+      color: var(--ink);
+    }
+
+    :focus-visible {
+      outline: 3px solid rgba(36, 87, 214, 0.35);
+      outline-offset: 3px;
+    }
+
+    @media (max-width: 980px) {
+      .hero {
+        grid-template-columns: 1fr;
+        min-height: auto;
+        padding: 48px;
+      }
+
+      .standard-card {
+        max-width: 560px;
+      }
+
+      .section-heading {
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .section-heading > p {
+        max-width: 620px;
+      }
+
+      .support-section {
+        grid-template-columns: 1fr;
+        gap: 38px;
+        padding: 48px;
+      }
+
+      .support-copy {
+        position: static;
+      }
+
+      .process-list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .page-shell {
+        width: min(100% - 24px, 620px);
+      }
+
+      .topbar {
+        padding: 17px 1px;
+      }
+
+      .brand img {
+        width: 47px;
+        height: 47px;
+        border-radius: 13px;
+      }
+
+      .topbar-cta {
+        width: 42px;
+        min-height: 42px;
+        padding: 0;
+        justify-content: center;
+      }
+
+      .topbar-cta span {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      .hero {
+        gap: 36px;
+        padding: 33px 23px 23px;
+        border-radius: 24px;
+      }
+
+      h1 {
+        margin-bottom: 19px;
+      }
+
+      .hero-lead {
+        font-size: 0.98rem;
+      }
+
+      .hero-highlight {
+        font-size: 0.74rem;
+      }
+
+      .standard-card {
+        padding: 25px;
+      }
+
+      .directory {
+        padding-top: 68px;
+      }
+
+      .contact-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .contact-card {
+        min-height: auto;
+        padding: 27px 23px;
+      }
+
+      .contact-card::before {
+        left: 23px;
+        right: 23px;
+      }
+
+      .role {
+        min-height: 0;
+      }
+
+      .support-section {
+        margin: 52px 0 64px;
+        padding: 29px 18px 18px;
+        border-radius: 24px;
+      }
+
+      .process-list {
+        grid-template-columns: 1fr;
+      }
+
+      .form-shell {
+        padding: 24px 18px;
+        border-radius: 20px;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .field-full,
+      #justificatifDiv {
+        grid-column: auto;
+      }
+
+      .submit-row {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .submit-button {
+        width: 100%;
+      }
+
+      .site-footer {
+        align-items: start;
+        flex-direction: column;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <img src="/static/logo.png" alt="Logo Intégrale Academy" class="logo">
-    <h2>📋 Demande d'assistance</h2>
-    <h3>Merci de compléter les informations ci-dessous :</h3>
-    <p><a href="{{ url_for('poei_agent_securite_cannes') }}" style="display:inline-block;margin:0 0 14px;padding:10px 14px;border-radius:999px;background:#edf7f1;color:#123c2f;text-decoration:none;font-weight:bold;">Formation + emploi Cannes</a></p>
-    <form method="POST" enctype="multipart/form-data">
-      <label>Nom :</label>
-      <input type="text" name="nom" required>
-      <label>Prénom :</label>
-      <input type="text" name="prenom" required>
-      <label>Téléphone :</label>
-      <input type="text" name="telephone" required>
-      <label>Email :</label>
-      <input type="email" name="mail" required>
-      <label>Motif de la demande :</label>
-      <select name="motif" id="motif" required onchange="toggleJustificatif()">
-        <option value="Attestation">Demande d’attestation / certificat</option>
-        <option value="Diplome">Demande de diplôme</option>
-        <option value="Absence">Absence(s)</option>
-        <option value="Contrats">Contrat d'apprentissage</option>
-        <option value="Autre">Autre demande</option>
-      </select>
+  <a class="skip-link" href="#contenu">Aller au contenu</a>
 
-      <div id="justificatifDiv" style="display:none; margin-top:15px;">
-        <label>Justificatif d’absence (PDF ou image) :</label>
-        <input type="file" name="justificatif" accept=".pdf,.jpg,.jpeg,.png">
-      </div>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Accueil du centre d'aide Intégrale Academy">
+        <img src="/static/logo.png" alt="" width="54" height="54">
+        <span class="brand-copy">
+          <span class="brand-name">Intégrale Academy</span>
+          <span class="brand-area">Centre d’assistance</span>
+        </span>
+      </a>
+      <a class="topbar-cta" href="#demande">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M7 8h10M7 12h7M12 20l-3.4-3H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3.6L12 20Z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Déposer une demande</span>
+      </a>
+    </header>
 
-      <label>Votre demande (détails) :</label>
-      <textarea name="details" rows="4" required></textarea>
+    <main id="contenu">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-dot"></span> Nous sommes là pour vous orienter</p>
+          <h1 id="page-title">Vous avez besoin <span>d’aide&nbsp;?</span></h1>
+          <p class="hero-lead">
+            Trouvez tout de suite le bon interlocuteur selon votre besoin, ou transmettez-nous votre demande en ligne.
+          </p>
+          <div class="hero-highlights" aria-label="Avantages du centre d'assistance">
+            <span class="hero-highlight">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Contacts directs
+            </span>
+            <span class="hero-highlight">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Orientation par sujet
+            </span>
+            <span class="hero-highlight">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Demande en ligne
+            </span>
+          </div>
+        </div>
 
-      <button type="submit">Envoyer ma demande</button>
-    </form>
+        <aside class="standard-card" aria-labelledby="standard-title">
+          <div class="standard-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <p class="standard-label">Accueil général</p>
+          <h2 id="standard-title">Standard Intégrale Academy</h2>
+          <p>Vous hésitez sur le service à contacter&nbsp;? Notre standard vous dirige vers la bonne personne.</p>
+          <div class="standard-contact">
+            <a href="tel:+33422470768" aria-label="Appeler le standard au 04 22 47 07 68">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              04 22 47 07 68
+            </a>
+            <a href="mailto:ecole@integraleacademy.com">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m4 6 8 6 8-6M5 19h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              ecole@integraleacademy.com
+            </a>
+          </div>
+        </aside>
+      </section>
+
+      <section class="directory" aria-labelledby="directory-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">01 — Le bon contact</p>
+            <h2 id="directory-title">Trouvez votre interlocuteur</h2>
+          </div>
+          <p>Choisissez la personne qui correspond à votre besoin pour obtenir un accompagnement adapté.</p>
+        </div>
+
+        <div class="contact-grid">
+          <article class="contact-card">
+            <div class="contact-card-top">
+              <div class="avatar" aria-hidden="true">AC</div>
+              <span class="expertise-tag">BTS &amp; relations clients</span>
+            </div>
+            <h3>Aurélie CHAUSSEZ</h3>
+            <p class="role">Chargée des relations clients et Responsable des BTS</p>
+            <p class="contact-description">Pour les BTS, l’alternance, les relations entreprises et le suivi de la relation client.</p>
+
+            <div class="contact-list">
+              <a href="tel:+33487830615" aria-label="Appeler Aurélie Chaussez sur sa ligne directe au 04 87 83 06 15">
+                <span class="contact-list-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span><span class="contact-label">Ligne directe</span><span class="contact-value">04 87 83 06 15</span></span>
+                <span class="link-arrow" aria-hidden="true">↗</span>
+              </a>
+              <a href="tel:+33769390457" aria-label="Appeler Aurélie Chaussez au 07 69 39 04 57">
+                <span class="contact-list-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2"/><path d="M10 18.5h4" stroke-linecap="round"/></svg></span>
+                <span><span class="contact-label">Téléphone mobile</span><span class="contact-value">07 69 39 04 57</span></span>
+                <span class="link-arrow" aria-hidden="true">↗</span>
+              </a>
+              <a href="mailto:aurelie@integraleacademy.com">
+                <span class="contact-list-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m4 6 8 6 8-6M5 19h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2Z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span><span class="contact-label">E-mail</span><span class="contact-value">aurelie@integraleacademy.com</span></span>
+                <span class="link-arrow" aria-hidden="true">↗</span>
+              </a>
+            </div>
+
+            <div class="card-actions">
+              <a class="button button-primary" href="tel:+33487830615">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Appeler Aurélie
+              </a>
+              <a class="button button-secondary" href="mailto:aurelie@integraleacademy.com">Écrire</a>
+            </div>
+          </article>
+
+          <article class="contact-card contact-card--blue">
+            <div class="contact-card-top">
+              <div class="avatar" aria-hidden="true">CM</div>
+              <span class="expertise-tag">Formations &amp; inscriptions</span>
+            </div>
+            <h3>Cassandre MENARD</h3>
+            <p class="role">Responsable commerciale</p>
+            <p class="contact-description">Pour une inscription en formation, les possibilités de financement et le suivi de votre dossier.</p>
+
+            <div class="contact-list">
+              <a href="tel:+33487830616" aria-label="Appeler Cassandre Menard sur sa ligne directe au 04 87 83 06 16">
+                <span class="contact-list-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span><span class="contact-label">Ligne directe</span><span class="contact-value">04 87 83 06 16</span></span>
+                <span class="link-arrow" aria-hidden="true">↗</span>
+              </a>
+              <a href="tel:+33743582264" aria-label="Appeler Cassandre Menard au 07 43 58 22 64">
+                <span class="contact-list-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2"/><path d="M10 18.5h4" stroke-linecap="round"/></svg></span>
+                <span><span class="contact-label">Téléphone mobile</span><span class="contact-value">07 43 58 22 64</span></span>
+                <span class="link-arrow" aria-hidden="true">↗</span>
+              </a>
+              <a href="mailto:cassandre@integraleacademy.com">
+                <span class="contact-list-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m4 6 8 6 8-6M5 19h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2Z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span><span class="contact-label">E-mail</span><span class="contact-value">cassandre@integraleacademy.com</span></span>
+                <span class="link-arrow" aria-hidden="true">↗</span>
+              </a>
+            </div>
+
+            <div class="card-actions">
+              <a class="button button-primary" href="tel:+33487830616">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Appeler Cassandre
+              </a>
+              <a class="button button-secondary" href="mailto:cassandre@integraleacademy.com">Écrire</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="support-section" id="demande" aria-labelledby="support-title">
+        <div class="support-copy">
+          <p class="section-kicker">02 — Demande en ligne</p>
+          <h2 id="support-title">Une demande administrative&nbsp;?</h2>
+          <p>Utilisez le formulaire pour une attestation, un diplôme, une absence, un contrat d’apprentissage ou toute autre demande.</p>
+
+          <ol class="process-list">
+            <li><span class="step-number">01</span><span><strong>Renseignez vos coordonnées</strong><span>Pour permettre à notre équipe de vous répondre.</span></span></li>
+            <li><span class="step-number">02</span><span><strong>Précisez votre besoin</strong><span>Choisissez le motif et ajoutez les détails utiles.</span></span></li>
+            <li><span class="step-number">03</span><span><strong>Envoyez votre demande</strong><span>Un accusé de réception vous sera adressé par e-mail.</span></span></li>
+          </ol>
+
+          <a class="opportunity-link" href="{{ url_for('poei_agent_securite_cannes') }}">
+            <small>Opportunité Côte d’Azur</small>
+            <strong>Formation + emploi à Cannes</strong>
+            <span>Découvrir le dispositif →</span>
+          </a>
+        </div>
+
+        <div class="form-shell">
+          <div class="form-heading">
+            <span class="form-heading-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 3.5h10A2.5 2.5 0 0 1 19.5 6v12A2.5 2.5 0 0 1 17 20.5H7A2.5 2.5 0 0 1 4.5 18V6A2.5 2.5 0 0 1 7 3.5Z"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>
+            <div>
+              <h2>Demande d’assistance</h2>
+              <p>Complétez les informations ci-dessous.</p>
+            </div>
+          </div>
+
+          <form method="POST" enctype="multipart/form-data">
+            <div class="form-grid">
+              <div class="field">
+                <label for="nom">Nom <span class="required" aria-hidden="true">*</span></label>
+                <input id="nom" type="text" name="nom" autocomplete="family-name" placeholder="Votre nom" required>
+              </div>
+              <div class="field">
+                <label for="prenom">Prénom <span class="required" aria-hidden="true">*</span></label>
+                <input id="prenom" type="text" name="prenom" autocomplete="given-name" placeholder="Votre prénom" required>
+              </div>
+              <div class="field">
+                <label for="telephone">Téléphone <span class="required" aria-hidden="true">*</span></label>
+                <input id="telephone" type="tel" name="telephone" autocomplete="tel" inputmode="tel" placeholder="06 00 00 00 00" required>
+              </div>
+              <div class="field">
+                <label for="mail">E-mail <span class="required" aria-hidden="true">*</span></label>
+                <input id="mail" type="email" name="mail" autocomplete="email" placeholder="nom@exemple.fr" required>
+              </div>
+              <div class="field field-full">
+                <label for="motif">Motif de la demande <span class="required" aria-hidden="true">*</span></label>
+                <select name="motif" id="motif" required onchange="toggleJustificatif()">
+                  <option value="Attestation">Demande d’attestation / certificat</option>
+                  <option value="Diplome">Demande de diplôme</option>
+                  <option value="Absence">Absence(s)</option>
+                  <option value="Contrats">Contrat d'apprentissage</option>
+                  <option value="Autre">Autre demande</option>
+                </select>
+              </div>
+              <div id="justificatifDiv" style="display:none;">
+                <label for="justificatif">Justificatif d’absence <span>PDF ou image</span></label>
+                <input id="justificatif" type="file" name="justificatif" accept=".pdf,.jpg,.jpeg,.png">
+              </div>
+              <div class="field field-full">
+                <label for="details">Votre demande en détail <span class="required" aria-hidden="true">*</span></label>
+                <textarea id="details" name="details" rows="5" placeholder="Décrivez votre demande avec les informations utiles à son traitement…" required></textarea>
+              </div>
+            </div>
+
+            <div class="submit-row">
+              <p class="form-note">Les champs marqués d’un * sont obligatoires.</p>
+              <button class="submit-button" type="submit">
+                Envoyer ma demande
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m5 12 14-7-4.5 14-3-5.5L5 12Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span><strong>Intégrale Academy</strong> — Centre d’assistance</span>
+      <span>Le bon interlocuteur, au bon moment.</span>
+    </footer>
   </div>
 
   <script>
-    // Afficher le champ justificatif uniquement pour "Absence"
     function toggleJustificatif() {
-      let motif = document.getElementById("motif").value;
-      let justificatifDiv = document.getElementById("justificatifDiv");
-      justificatifDiv.style.display = (motif === "Absence") ? "block" : "none";
+      const motif = document.getElementById("motif").value;
+      const justificatifDiv = document.getElementById("justificatifDiv");
+      justificatifDiv.style.display = motif === "Absence" ? "block" : "none";
     }
 
-    // ✅ Fix iOS : empêche le zoom et les remontées automatiques
-    document.querySelectorAll("input, textarea, select").forEach(el => {
-      el.addEventListener("focus", () => {
+    document.querySelectorAll("input, textarea, select").forEach((element) => {
+      element.addEventListener("focus", () => {
         setTimeout(() => {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
         }, 300);
       });
     });
