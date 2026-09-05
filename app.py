@@ -10150,6 +10150,91 @@ def _crm_calendly_formation(payload):
     return "", ""
 
 
+def _crm_calendly_new_contact(data, payload, appointment):
+    """Create the minimal CRM record required for an unmatched future booking."""
+    email = str(appointment.get("invitee_email") or "").strip()
+    phone = str(appointment.get("invitee_phone") or "").strip()
+    normalized_phone = _crm_normalize_phone(phone)
+    has_email = bool(_crm_normalize_email(email) and "@" in email)
+    has_phone = 8 <= len(normalized_phone) <= 15
+    if not has_email and not has_phone:
+        return None
+
+    first_name = str(payload.get("first_name") or "").strip()
+    last_name = str(payload.get("last_name") or "").strip()
+    full_name = str(payload.get("name") or appointment.get("invitee_name") or "").strip()
+    if full_name and (not first_name or not last_name):
+        parts = full_name.split(maxsplit=1)
+        first_name = first_name or parts[0]
+        last_name = last_name or (parts[1] if len(parts) > 1 else "")
+
+    formation, desp_type = _crm_calendly_formation(payload)
+    now = _crm_now()
+    contact = {
+        "id": str(uuid.uuid4()),
+        "prenom": _crm_format_first_name(first_name),
+        "nom": _crm_format_last_name(last_name),
+        "telephone": phone,
+        "mail": email,
+        "formation": formation,
+        "lieu": "",
+        "statut": "RDV programmé",
+        "dates_formation": "",
+        "cpf": "",
+        "carte_pro": "",
+        "antecedents": "",
+        "garde_vue": "",
+        "titre_sejour": "",
+        "titre_sejour_cnaps": "",
+        "compte_cnaps": "",
+        "cnaps_nub": "",
+        "cnaps_card_validity": None,
+        "cnaps_username": "",
+        "cnaps_birth_year": "",
+        "cnaps_password": "",
+        "integration_dracar": "",
+        "desp_type": desp_type,
+        "identite_creation": "",
+        "cpf_montant": "",
+        "cpf_palier": "",
+        "identite_ok": "",
+        "financement_ft": "",
+        "statut_demande_financement_ft": "",
+        "montant_accorde_ft": "",
+        "financement_perso_possible": "",
+        "refus_ft_perso": "",
+        "reste_a_charge_perso": "",
+        "origine": "Calendly",
+        "commercial": "",
+        "inscrit_ft": "",
+        "commentaires": "Fiche créée automatiquement depuis un rendez-vous Calendly.",
+        "relance_date": "",
+        "prochaine_action_manuelle": "",
+        "relances": [],
+        "statut_secondaire": "",
+        "created_at": now,
+        "updated_at": now,
+        "activities": [],
+    }
+    _crm_workspace_backfill(contact)
+    _crm_record_origin(
+        contact,
+        "Calendly",
+        source="calendly",
+        external_id=appointment.get("invitee_uri") or "",
+        date=now,
+    )
+    _crm_activity(
+        contact,
+        "creation",
+        "Piste créée depuis Calendly",
+        "Rendez-vous Calendly reçu",
+        author_name="Calendly",
+    )
+    data.setdefault("crm_contacts", []).insert(0, contact)
+    return contact
+
+
 def _crm_calendly_relink_appointments(data, contact):
     email = _crm_normalize_email(contact.get("mail"))
     phone = _crm_normalize_phone(contact.get("telephone"))
@@ -10359,6 +10444,10 @@ def _crm_upsert_calendly_appointment(
         contact = _crm_calendly_contact_by_email(data, appointment.get("invitee_email"))
     if not contact:
         contact = _crm_calendly_contact_by_phone(data, appointment.get("invitee_phone"))
+    contact_created = False
+    if not contact and _crm_calendly_appointment_is_today_or_future(appointment):
+        contact = _crm_calendly_new_contact(data, payload, appointment)
+        contact_created = contact is not None
     appointment["contact_id"] = contact.get("id") if contact else None
 
     inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
@@ -10369,6 +10458,8 @@ def _crm_upsert_calendly_appointment(
 
     if not existing:
         appointments.append(appointment)
+    if contact_created:
+        _crm_calendly_relink_appointments(data, contact)
 
     changed = (
         not existing
@@ -15323,27 +15414,28 @@ def crm_calendly_sync():
             for invitee in invitees:
                 imported_payloads.append({**invitee, "scheduled_event": scheduled_event})
 
-        latest_data = load_data()
-        before_count = len(latest_data.get("crm_calendly_appointments", []))
-        matched = 0
-        for imported_payload in imported_payloads:
-            _, contact = _crm_upsert_calendly_appointment(
-                latest_data,
-                imported_payload,
-                source="sync",
-                record_activity=False,
-            )
-            if contact:
-                matched += 1
-        next_cursor = (event_page.get("pagination") or {}).get("next_page_token")
-        integration_state = latest_data.setdefault("crm_calendly", {})
-        integration_state["sync_cursor"] = next_cursor
-        integration_state["sync_complete"] = not bool(next_cursor)
-        integration_state["last_sync_at"] = _crm_now()
-        if not next_cursor:
-            integration_state["last_full_sync_at"] = integration_state["last_sync_at"]
-        save_data(latest_data)
-        after_count = len(latest_data.get("crm_calendly_appointments", []))
+        with _CRM_RECONCILIATION_LOCK:
+            latest_data = load_data()
+            before_count = len(latest_data.get("crm_calendly_appointments", []))
+            matched = 0
+            for imported_payload in imported_payloads:
+                _, contact = _crm_upsert_calendly_appointment(
+                    latest_data,
+                    imported_payload,
+                    source="sync",
+                    record_activity=False,
+                )
+                if contact:
+                    matched += 1
+            next_cursor = (event_page.get("pagination") or {}).get("next_page_token")
+            integration_state = latest_data.setdefault("crm_calendly", {})
+            integration_state["sync_cursor"] = next_cursor
+            integration_state["sync_complete"] = not bool(next_cursor)
+            integration_state["last_sync_at"] = _crm_now()
+            if not next_cursor:
+                integration_state["last_full_sync_at"] = integration_state["last_sync_at"]
+            save_data(latest_data)
+            after_count = len(latest_data.get("crm_calendly_appointments", []))
         return jsonify({
             "complete": not bool(next_cursor),
             "processed_events": len(event_page.get("collection") or []),
@@ -15356,6 +15448,7 @@ def crm_calendly_sync():
 
 
 @app.route("/api/crm/calendly/webhook", methods=["POST"])
+@_crm_serialized
 def crm_calendly_webhook():
     raw_body = request.get_data(cache=True)
     signature = request.headers.get("Calendly-Webhook-Signature", "")
