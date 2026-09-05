@@ -12,7 +12,6 @@
       --ink-muted: #737b86;
       --paper: #ffffff;
       --canvas: #f6f4ef;
-      --canvas-deep: #eeeae2;
       --line: #e8e4dc;
       --gold: #f1c25d;
       --gold-deep: #b77b16;
@@ -20,7 +19,6 @@
       --blue: #2457d6;
       --blue-soft: #eef3ff;
       --success: #11705b;
-      --success-soft: #eaf7f2;
       --shadow-lg: 0 30px 80px rgba(27, 31, 38, 0.11);
       --shadow-md: 0 14px 38px rgba(27, 31, 38, 0.08);
       --radius-xl: 30px;
@@ -50,13 +48,6 @@
 
     a {
       color: inherit;
-    }
-
-    button,
-    input,
-    select,
-    textarea {
-      font: inherit;
     }
 
     svg {
@@ -366,7 +357,7 @@
     }
 
     .directory {
-      padding: 96px 0 32px;
+      padding: 96px 0 80px;
     }
 
     .section-heading {
@@ -377,8 +368,7 @@
       margin-bottom: 30px;
     }
 
-    .section-heading h2,
-    .support-copy h2 {
+    .section-heading h2 {
       margin-bottom: 0;
       font-size: clamp(2rem, 4vw, 3.25rem);
       line-height: 1.08;
@@ -612,293 +602,6 @@
       background: var(--canvas);
     }
 
-    .support-section {
-      display: grid;
-      grid-template-columns: minmax(0, 0.72fr) minmax(520px, 1.28fr);
-      gap: 64px;
-      align-items: start;
-      margin: 72px 0 96px;
-      padding: 64px;
-      border-radius: var(--radius-xl);
-      background: var(--canvas-deep);
-    }
-
-    .support-copy {
-      position: sticky;
-      top: 28px;
-    }
-
-    .support-copy > p:not(.section-kicker) {
-      margin: 21px 0 28px;
-      color: var(--ink-soft);
-      font-size: 0.97rem;
-      line-height: 1.72;
-    }
-
-    .process-list {
-      display: grid;
-      gap: 13px;
-      margin: 0 0 28px;
-      padding: 0;
-      list-style: none;
-    }
-
-    .process-list li {
-      display: grid;
-      grid-template-columns: 35px minmax(0, 1fr);
-      gap: 12px;
-      align-items: start;
-    }
-
-    .step-number {
-      display: grid;
-      width: 33px;
-      height: 33px;
-      place-items: center;
-      border: 1px solid rgba(23, 25, 29, 0.10);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.58);
-      font-size: 0.75rem;
-      font-weight: 850;
-    }
-
-    .process-list strong,
-    .process-list span:not(.step-number) {
-      display: block;
-    }
-
-    .process-list strong {
-      margin: 1px 0 2px;
-      font-size: 0.86rem;
-    }
-
-    .process-list span:not(.step-number) {
-      color: var(--ink-muted);
-      font-size: 0.78rem;
-      line-height: 1.45;
-    }
-
-    .opportunity-link {
-      display: block;
-      padding: 17px;
-      border: 1px solid rgba(17, 112, 91, 0.13);
-      border-radius: 16px;
-      color: #104f42;
-      background: var(--success-soft);
-      text-decoration: none;
-      transition: border-color 180ms ease, transform 180ms ease;
-    }
-
-    .opportunity-link:hover {
-      border-color: rgba(17, 112, 91, 0.30);
-      transform: translateY(-1px);
-    }
-
-    .opportunity-link small,
-    .opportunity-link strong,
-    .opportunity-link span {
-      display: block;
-    }
-
-    .opportunity-link small {
-      margin-bottom: 2px;
-      color: #4f7e73;
-      font-size: 0.7rem;
-      font-weight: 760;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-
-    .opportunity-link strong {
-      margin-bottom: 7px;
-      font-size: 0.9rem;
-    }
-
-    .opportunity-link span {
-      color: var(--success);
-      font-size: 0.79rem;
-      font-weight: 800;
-    }
-
-    .form-shell {
-      padding: 34px;
-      border: 1px solid rgba(255, 255, 255, 0.82);
-      border-radius: 25px;
-      background: var(--paper);
-      box-shadow: var(--shadow-md);
-    }
-
-    .form-heading {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      margin-bottom: 27px;
-      padding-bottom: 24px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .form-heading-icon {
-      display: grid;
-      width: 46px;
-      height: 46px;
-      flex: 0 0 auto;
-      place-items: center;
-      border-radius: 14px;
-      color: #684b12;
-      background: var(--gold-soft);
-    }
-
-    .form-heading-icon svg {
-      width: 22px;
-      height: 22px;
-    }
-
-    .form-heading h2 {
-      margin-bottom: 2px;
-      font-size: 1.25rem;
-      letter-spacing: -0.025em;
-    }
-
-    .form-heading p {
-      margin-bottom: 0;
-      color: var(--ink-muted);
-      font-size: 0.81rem;
-    }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 19px;
-    }
-
-    .field {
-      min-width: 0;
-    }
-
-    .field-full {
-      grid-column: 1 / -1;
-    }
-
-    label {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 7px;
-      color: #31353b;
-      font-size: 0.78rem;
-      font-weight: 800;
-    }
-
-    .required {
-      color: var(--gold-deep);
-    }
-
-    input,
-    select,
-    textarea {
-      width: 100%;
-      min-height: 50px;
-      padding: 12px 14px;
-      border: 1px solid #dcd8d0;
-      border-radius: 12px;
-      outline: none;
-      color: var(--ink);
-      background: #fbfbfa;
-      font-size: 16px;
-      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
-    }
-
-    input::placeholder,
-    textarea::placeholder {
-      color: #a0a5ac;
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      border-color: #c99a3b;
-      background: #fff;
-      box-shadow: 0 0 0 4px rgba(241, 194, 93, 0.18);
-    }
-
-    textarea {
-      min-height: 145px;
-      resize: vertical;
-      line-height: 1.55;
-    }
-
-    input[type="file"] {
-      min-height: auto;
-      padding: 8px;
-      color: var(--ink-soft);
-      background: #fff;
-      font-size: 0.8rem;
-    }
-
-    input[type="file"]::file-selector-button {
-      margin-right: 11px;
-      padding: 9px 12px;
-      border: 0;
-      border-radius: 9px;
-      color: var(--ink);
-      background: var(--canvas-deep);
-      font: inherit;
-      font-weight: 750;
-      cursor: pointer;
-    }
-
-    #justificatifDiv {
-      grid-column: 1 / -1;
-      padding: 15px;
-      border: 1px dashed #d8d2c7;
-      border-radius: 14px;
-      background: #faf9f6;
-    }
-
-    .submit-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      margin-top: 23px;
-    }
-
-    .form-note {
-      margin: 0;
-      color: var(--ink-muted);
-      font-size: 0.72rem;
-    }
-
-    .submit-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      min-height: 51px;
-      padding: 0 20px;
-      border: 0;
-      border-radius: 13px;
-      color: #fff;
-      background: var(--ink);
-      box-shadow: 0 11px 24px rgba(23, 25, 29, 0.18);
-      font-size: 0.85rem;
-      font-weight: 820;
-      cursor: pointer;
-      transition: background 180ms ease, transform 180ms ease, box-shadow 180ms ease;
-    }
-
-    .submit-button:hover {
-      background: #2d3035;
-      box-shadow: 0 14px 28px rgba(23, 25, 29, 0.23);
-      transform: translateY(-1px);
-    }
-
-    .submit-button svg {
-      width: 18px;
-      height: 18px;
-    }
-
     .site-footer {
       display: flex;
       align-items: center;
@@ -938,19 +641,6 @@
         max-width: 620px;
       }
 
-      .support-section {
-        grid-template-columns: 1fr;
-        gap: 38px;
-        padding: 48px;
-      }
-
-      .support-copy {
-        position: static;
-      }
-
-      .process-list {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
     }
 
     @media (max-width: 760px) {
@@ -1028,39 +718,6 @@
         min-height: 0;
       }
 
-      .support-section {
-        margin: 52px 0 64px;
-        padding: 29px 18px 18px;
-        border-radius: 24px;
-      }
-
-      .process-list {
-        grid-template-columns: 1fr;
-      }
-
-      .form-shell {
-        padding: 24px 18px;
-        border-radius: 20px;
-      }
-
-      .form-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .field-full,
-      #justificatifDiv {
-        grid-column: auto;
-      }
-
-      .submit-row {
-        align-items: stretch;
-        flex-direction: column;
-      }
-
-      .submit-button {
-        width: 100%;
-      }
-
       .site-footer {
         align-items: start;
         flex-direction: column;
@@ -1092,11 +749,11 @@
           <span class="brand-area">Centre d’assistance</span>
         </span>
       </a>
-      <a class="topbar-cta" href="#demande">
+      <a class="topbar-cta" href="tel:+33422470768" aria-label="Appeler le standard au 04 22 47 07 68">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <path d="M7 8h10M7 12h7M12 20l-3.4-3H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3.6L12 20Z" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8.2 3.5H5.6A2.1 2.1 0 0 0 3.5 5.6v.8c0 7.8 6.3 14.1 14.1 14.1h.8a2.1 2.1 0 0 0 2.1-2.1v-2.6l-4.3-1.1-1.1 2.2a11.7 11.7 0 0 1-8-8l2.2-1.1-1.1-4.3Z" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span>Déposer une demande</span>
+        <span>Appeler le standard</span>
       </a>
     </header>
 
@@ -1106,7 +763,7 @@
           <p class="eyebrow"><span class="eyebrow-dot"></span> Nous sommes là pour vous orienter</p>
           <h1 id="page-title">Vous avez besoin <span>d’aide&nbsp;?</span></h1>
           <p class="hero-lead">
-            Trouvez tout de suite le bon interlocuteur selon votre besoin, ou transmettez-nous votre demande en ligne.
+            Trouvez tout de suite le bon interlocuteur selon votre besoin et contactez directement notre équipe.
           </p>
           <div class="hero-highlights" aria-label="Avantages du centre d'assistance">
             <span class="hero-highlight">
@@ -1119,7 +776,7 @@
             </span>
             <span class="hero-highlight">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Demande en ligne
+              Équipe dédiée
             </span>
           </div>
         </div>
@@ -1228,82 +885,6 @@
         </div>
       </section>
 
-      <section class="support-section" id="demande" aria-labelledby="support-title">
-        <div class="support-copy">
-          <p class="section-kicker">02 — Demande en ligne</p>
-          <h2 id="support-title">Une demande administrative&nbsp;?</h2>
-          <p>Utilisez le formulaire pour une attestation, un diplôme, une absence, un contrat d’apprentissage ou toute autre demande.</p>
-
-          <ol class="process-list">
-            <li><span class="step-number">01</span><span><strong>Renseignez vos coordonnées</strong><span>Pour permettre à notre équipe de vous répondre.</span></span></li>
-            <li><span class="step-number">02</span><span><strong>Précisez votre besoin</strong><span>Choisissez le motif et ajoutez les détails utiles.</span></span></li>
-            <li><span class="step-number">03</span><span><strong>Envoyez votre demande</strong><span>Un accusé de réception vous sera adressé par e-mail.</span></span></li>
-          </ol>
-
-          <a class="opportunity-link" href="{{ url_for('poei_agent_securite_cannes') }}">
-            <small>Opportunité Côte d’Azur</small>
-            <strong>Formation + emploi à Cannes</strong>
-            <span>Découvrir le dispositif →</span>
-          </a>
-        </div>
-
-        <div class="form-shell">
-          <div class="form-heading">
-            <span class="form-heading-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 3.5h10A2.5 2.5 0 0 1 19.5 6v12A2.5 2.5 0 0 1 17 20.5H7A2.5 2.5 0 0 1 4.5 18V6A2.5 2.5 0 0 1 7 3.5Z"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>
-            <div>
-              <h2>Demande d’assistance</h2>
-              <p>Complétez les informations ci-dessous.</p>
-            </div>
-          </div>
-
-          <form method="POST" enctype="multipart/form-data">
-            <div class="form-grid">
-              <div class="field">
-                <label for="nom">Nom <span class="required" aria-hidden="true">*</span></label>
-                <input id="nom" type="text" name="nom" autocomplete="family-name" placeholder="Votre nom" required>
-              </div>
-              <div class="field">
-                <label for="prenom">Prénom <span class="required" aria-hidden="true">*</span></label>
-                <input id="prenom" type="text" name="prenom" autocomplete="given-name" placeholder="Votre prénom" required>
-              </div>
-              <div class="field">
-                <label for="telephone">Téléphone <span class="required" aria-hidden="true">*</span></label>
-                <input id="telephone" type="tel" name="telephone" autocomplete="tel" inputmode="tel" placeholder="06 00 00 00 00" required>
-              </div>
-              <div class="field">
-                <label for="mail">E-mail <span class="required" aria-hidden="true">*</span></label>
-                <input id="mail" type="email" name="mail" autocomplete="email" placeholder="nom@exemple.fr" required>
-              </div>
-              <div class="field field-full">
-                <label for="motif">Motif de la demande <span class="required" aria-hidden="true">*</span></label>
-                <select name="motif" id="motif" required onchange="toggleJustificatif()">
-                  <option value="Attestation">Demande d’attestation / certificat</option>
-                  <option value="Diplome">Demande de diplôme</option>
-                  <option value="Absence">Absence(s)</option>
-                  <option value="Contrats">Contrat d'apprentissage</option>
-                  <option value="Autre">Autre demande</option>
-                </select>
-              </div>
-              <div id="justificatifDiv" style="display:none;">
-                <label for="justificatif">Justificatif d’absence <span>PDF ou image</span></label>
-                <input id="justificatif" type="file" name="justificatif" accept=".pdf,.jpg,.jpeg,.png">
-              </div>
-              <div class="field field-full">
-                <label for="details">Votre demande en détail <span class="required" aria-hidden="true">*</span></label>
-                <textarea id="details" name="details" rows="5" placeholder="Décrivez votre demande avec les informations utiles à son traitement…" required></textarea>
-              </div>
-            </div>
-
-            <div class="submit-row">
-              <p class="form-note">Les champs marqués d’un * sont obligatoires.</p>
-              <button class="submit-button" type="submit">
-                Envoyer ma demande
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m5 12 14-7-4.5 14-3-5.5L5 12Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </div>
-          </form>
-        </div>
-      </section>
     </main>
 
     <footer class="site-footer">
@@ -1312,20 +893,5 @@
     </footer>
   </div>
 
-  <script>
-    function toggleJustificatif() {
-      const motif = document.getElementById("motif").value;
-      const justificatifDiv = document.getElementById("justificatifDiv");
-      justificatifDiv.style.display = motif === "Absence" ? "block" : "none";
-    }
-
-    document.querySelectorAll("input, textarea, select").forEach((element) => {
-      element.addEventListener("focus", () => {
-        setTimeout(() => {
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 300);
-      });
-    });
-  </script>
 </body>
 </html>
