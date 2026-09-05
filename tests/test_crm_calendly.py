@@ -1199,8 +1199,11 @@ def test_calendar_appointments_open_linked_contacts_in_new_tabs():
         crm_js.index("function plannedRelances")
     ]
 
-    assert "C.section==='calendrier'&&row.closest('#calendarContent')" in bind_rows
-    assert "row.dataset.openNewTab?openContactInNewTab(row.dataset.id)" in bind_rows
+    assert (
+        "const opensNewTab=C.section==='calendrier'"
+        "&&Boolean(row.closest('#calendarContent'))"
+    ) in bind_rows
+    assert "opensNewTab?openContactInNewTab(row.dataset.id)" in bind_rows
 
 
 def test_calendly_appointment_stays_upcoming_for_two_hours_after_start():

@@ -126,13 +126,22 @@ def test_message_preview_can_return_to_the_preserved_email_or_sms_draft():
     assert "const show=content=>previewModal(" in javascript
 
 
-def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
+def test_pistes_open_in_current_tab_and_keep_new_tab_shortcuts():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
+    template = CRM_TEMPLATE.read_text(encoding="utf-8")
+    bind_rows = javascript[
+        javascript.index("function bindRows()"):
+        javascript.index("function plannedRelances")
+    ]
 
     assert "const contactSheetUrl=(id,section=C.section)=>" in javascript
     assert "window.open(contactSheetUrl(id),'_blank','noopener')" in javascript
-    assert "C.section==='pistes'&&row.closest('#resultTable')" in javascript
+    assert "const isLeadRow=C.section==='pistes'" in bind_rows
+    assert "const opensNewTab=C.section==='calendrier'" in bind_rows
+    assert "if(isLeadRow&&(event.ctrlKey||event.metaKey))" in bind_rows
+    assert "opensNewTab?openContactInNewTab(row.dataset.id):showContact(row.dataset.id)" in bind_rows
+    assert "(!isLeadRow&&!opensNewTab)" in bind_rows
     assert "link.target='_blank';link.rel='noopener'" in javascript
     assert "new MutationObserver(prepareGlobalContactLinks)" in javascript
     assert "event.target.closest('a[data-global-id]')" in javascript
@@ -140,6 +149,44 @@ def test_pistes_and_global_people_open_encoded_contact_links_in_new_tabs():
     assert "event.button!==1" in javascript
     assert ".global-results a" in stylesheet
     assert "Cette fiche n’existe plus ou n’est plus accessible." in javascript
+    assert template.count("pistes_open_version='20260905-same-tab-1'") == 1
+
+    script = f"""
+const assert=require('node:assert/strict');
+const calls=[];
+const C={{section:'pistes'}};
+const openContactInNewTab=id=>calls.push(['new-tab',id]);
+const showContact=id=>calls.push(['same-tab',id]);
+const contactSheetUrl=id=>`/crm/contacts?fiche=${{id}}`;
+const makeRow=(id,container)=>({{
+ dataset:{{id}},
+ closest:selector=>selector===container?{{}}:null,
+ querySelector:()=>null,
+}});
+let rows=[makeRow('lead-1','#resultTable')];
+const document={{querySelectorAll:()=>rows,createElement:()=>({{}})}};
+{bind_rows}
+bindRows();
+const plainClick={{target:{{closest:()=>null}},ctrlKey:false,metaKey:false}};
+rows[0].onclick(plainClick);
+assert.deepEqual(calls.pop(),['same-tab','lead-1']);
+rows[0].onclick({{...plainClick,ctrlKey:true}});
+assert.deepEqual(calls.pop(),['new-tab','lead-1']);
+rows[0].onauxclick({{target:{{closest:()=>null}},button:1}});
+assert.deepEqual(calls.pop(),['new-tab','lead-1']);
+C.section='calendrier';
+rows=[makeRow('appointment-1','#calendarContent')];
+bindRows();
+rows[0].onclick(plainClick);
+assert.deepEqual(calls.pop(),['new-tab','appointment-1']);
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_contact_back_navigation_preserves_the_safe_source_section():
