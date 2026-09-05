@@ -51,7 +51,22 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .cnaps-field-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:7px}.cnaps-field-actions .btn{padding:7px 9px;font-size:11px}.cnaps-field-actions .btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .cpf-declared-values{display:grid;grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .field-help{display:block;margin-top:6px;color:var(--muted);font-size:10px}
+.call-composer-bg{z-index:110}
 .call-modal{width:min(700px,100%)}
+.call-composer-heading{min-width:0;flex:1}
+.call-composer-heading h2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call-composer-heading small{display:none;align-items:center;gap:6px;margin-top:3px;color:#718096;font-size:10px}
+.call-modal-minimize{display:inline-flex;align-items:center;gap:7px;min-height:36px;margin-left:12px;padding:7px 10px;border:1px solid #c9d6eb;border-radius:8px;background:#f5f8ff;color:#285fc8;font:700 11px 'DM Sans',sans-serif;cursor:pointer}
+.call-modal-minimize:hover,.call-modal-minimize:focus-visible{border-color:#7fa2e4;background:#eaf1ff;outline:2px solid #356ae62b;outline-offset:1px}
+.call-modal-minimize-icon{font-size:15px;line-height:1}
+.call-modal .close{margin-left:4px}
+.call-draft-status{display:block;min-height:15px;margin-top:5px;color:#138064;font-size:10px;line-height:1.45}
+.call-composer-bg.is-minimized{place-items:end;z-index:80;padding:22px;background:transparent;pointer-events:none}
+.call-composer-bg.is-minimized .call-modal{width:min(440px,calc(100vw - 44px));max-height:none;overflow:hidden;border:1px solid #cfd9e9;border-radius:14px;box-shadow:0 16px 45px #10213a2e;pointer-events:auto}
+.call-modal.is-minimized .modal-head{min-height:68px;padding:12px 14px;border-bottom:0;cursor:pointer}
+.call-modal.is-minimized .call-composer-heading h2{font-size:15px}
+.call-modal.is-minimized .call-composer-heading small{display:flex}
+.call-modal.is-minimized .call-modal-minimize{background:#356ae6;border-color:#356ae6;color:#fff}
 .call-note-heading,.voice-input-heading{gap:12px;margin-bottom:7px}
 .call-note-heading label,.voice-input-heading label{margin:0}
 .voice-input-button{display:inline-flex;align-items:center;gap:8px;flex:none;padding:7px 10px;border:1px solid #b9cbed;border-radius:9px;background:#f5f8ff;color:#285fc8;font:750 11px 'DM Sans',sans-serif;cursor:pointer;transition:border-color .15s,background .15s,color .15s,box-shadow .15s}
@@ -787,6 +802,10 @@ img,svg,video,canvas,iframe{max-width:100%}
  .modal-body{min-height:0;overflow:auto;padding:16px;-webkit-overflow-scrolling:touch}
  .modal-foot{flex:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px 16px}
  .modal-foot>.btn,.modal-foot>button{width:100%;min-height:44px;white-space:normal}
+ .call-composer-bg.is-minimized{place-items:end stretch;padding:8px;padding-bottom:max(8px,env(safe-area-inset-bottom))}
+ .call-composer-bg.is-minimized .call-modal{width:100%;max-width:none;border-radius:14px 14px 10px 10px}
+ .call-modal.is-minimized .modal-head{min-height:64px;padding:10px 12px}
+ .call-modal-minimize{min-height:40px;margin-left:6px}
  .message-modal,.preview-modal,.calendly-modal,.relaunch-modal{width:100%}
  .message-modal .modal-body{padding:16px}
  .message-modal textarea,.modal textarea{min-height:120px}
