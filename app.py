@@ -18627,7 +18627,7 @@ def _crm_france_travail_funding_template(contact):
     formation = str(contact.get("formation") or "").strip().upper()
     journey = str(contact.get("desp_type") or "").strip().upper()
     if formation == "A3P":
-        return "Financement FT 3P"
+        return "Financement FT A3P"
     if formation == "DESP" and journey == "INITIAL":
         return "Financement FT DESP"
     return ""
