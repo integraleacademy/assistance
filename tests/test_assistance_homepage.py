@@ -25,14 +25,15 @@ def test_assistance_homepage_routes_visitors_to_the_right_contact():
     assert "07 43 58 22 64" in source
 
 
-def test_assistance_homepage_keeps_standard_and_existing_form_contract():
+def test_assistance_homepage_keeps_standard_without_online_form_or_cannes_promotion():
     source = _homepage_source()
 
     assert "04 22 47 07 68" in source
     assert "ecole@integraleacademy.com" in source
-    assert 'method="POST"' in source
-    assert 'enctype="multipart/form-data"' in source
-    for field_name in ("nom", "prenom", "telephone", "mail", "motif", "details", "justificatif"):
-        assert f'name="{field_name}"' in source
-    assert "toggleJustificatif()" in source
-    assert "url_for('poei_agent_securite_cannes')" in source
+    assert '<a class="topbar-cta" href="tel:+33422470768"' in source
+    assert "Appeler le standard" in source
+    assert "<form" not in source
+    assert "Demande en ligne" not in source
+    assert "toggleJustificatif" not in source
+    assert "Cannes" not in source
+    assert "poei_agent_securite_cannes" not in source
