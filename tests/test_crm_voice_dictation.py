@@ -12,6 +12,13 @@ def _voice_function():
     return source[start:end]
 
 
+def _call_draft_functions():
+    source = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
+    start = source.index("const CRM_CALL_DRAFT_PREFIX=")
+    end = source.index("\nfunction callModal(", start)
+    return source[start:end]
+
+
 def test_call_modal_exposes_accessible_voice_dictation_controls():
     javascript = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
     stylesheet = (ROOT / "static" / "crm.css").read_text(encoding="utf-8")
@@ -29,7 +36,7 @@ def test_call_modal_exposes_accessible_voice_dictation_controls():
         "stopVoiceDictation.stop(true)",
         "await stopVoiceDictation.whenSettled()",
         "Dites « point », « virgule » ou « à la ligne » pour ponctuer.",
-        "stopVoiceDictation();closeModal()",
+        "dismiss({cancelled:false,preserveDraft:false})",
     ):
         assert marker in javascript
 
@@ -40,6 +47,86 @@ def test_call_modal_exposes_accessible_voice_dictation_controls():
         "@media(prefers-reduced-motion:reduce)",
     ):
         assert selector in stylesheet
+
+
+def test_call_modal_is_minimizable_and_keeps_an_immediate_local_draft():
+    javascript = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "static" / "crm.css").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "crm.html").read_text(encoding="utf-8")
+    call_modal = javascript.split("function callModal", 1)[1].split(
+        "function messageTemplateOptions", 1
+    )[0]
+
+    assert '<div id="callComposerRoot"></div>' in template
+    assert template.count("call_composer_version='20260905-call-draft-1'") == 2
+    for marker in (
+        'class="modal-bg call-composer-bg"',
+        'id="minimizeCall"',
+        "callNote.addEventListener('input',persistDraft)",
+        "saveCallDraft(draftKey,callNote.value)",
+        "background.classList.toggle('is-minimized',minimized)",
+        "dialog.setAttribute('aria-modal',String(!minimized))",
+        "body.hidden=minimized;foot.hidden=minimized",
+        "activeCallComposerExpand=()=>setMinimized(false)",
+        "stopVoiceDictation.stop(false)",
+        "clearCallDraft(draftKey)",
+        "persistDraft();toast(e.message,true)",
+        "Brouillon précédent restauré.",
+    ):
+        assert marker in call_modal
+
+    for selector in (
+        ".call-composer-bg.is-minimized",
+        ".call-composer-bg.is-minimized .call-modal",
+        ".call-modal.is-minimized .modal-head",
+        ".call-draft-status",
+    ):
+        assert selector in stylesheet
+
+
+def test_call_draft_storage_survives_reopening_and_falls_back_to_memory():
+    harness = r"""
+const assert = require('assert');
+const storage = new Map();
+const C = {user_email: 'agent@example.com'};
+global.localStorage = {
+  getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+  setItem(key, value) { storage.set(key, String(value)); },
+  removeItem(key) { storage.delete(key); }
+};
+
+const key = callDraftKey(
+  {id: 'contact/42'},
+  {appointment: {id: 'appointment/7'}}
+);
+assert.ok(key.includes('agent%40example.com'));
+assert.ok(key.includes('contact%2F42'));
+assert.ok(key.includes('appointment%3Aappointment%2F7'));
+const saved = saveCallDraft(key, 'Compte-rendu en cours');
+assert.strictEqual(saved.persisted, true);
+assert.strictEqual(JSON.parse(storage.get(key)).text, 'Compte-rendu en cours');
+
+callDraftMemory.clear();
+assert.strictEqual(readCallDraft(key).text, 'Compte-rendu en cours');
+
+localStorage.setItem = () => { throw new Error('quota'); };
+const memoryOnly = saveCallDraft(key, 'Texte dicté conservé');
+assert.strictEqual(memoryOnly.persisted, false);
+storage.set(key, '{invalide');
+assert.strictEqual(readCallDraft(key).text, 'Texte dicté conservé');
+
+clearCallDraft(key);
+assert.strictEqual(callDraftMemory.has(key), false);
+assert.strictEqual(storage.has(key), false);
+"""
+    completed = subprocess.run(
+        ["node", "-e", _call_draft_functions() + "\n" + harness],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_message_and_publication_fields_reuse_the_voice_dictation_controls():

@@ -1,4 +1,5 @@
 const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['Prochain RDV inscription','POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Prochain RDV inscription','Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Transition pro','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],callbackRequests=[],callbackRequestPendingCount=0,crmAppointments=[],crmSettings={},statusFilter='',callbackRequestFilter='pending',callbackRequestSearch='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='month',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='',activeCalendlyContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
+const callComposerRoot=document.querySelector('#callComposerRoot');
 const CALENDLY_AVAILABILITY_WINDOW_DAYS=7;
 const CALENDLY_APPOINTMENT_PAST_DELAY_MS=2*60*60*1000;
 const CALENDLY_COMPLETED_RESPONSE_STATUSES=new Set(['answered','no_answer']);
@@ -1678,14 +1679,77 @@ function bindVoiceDictation(field,button,status,options={}){
  destroy.whenSettled=()=>completionPromise;
  return destroy
 }
+const CRM_CALL_DRAFT_PREFIX='crm-call-draft-v1';
+const callDraftMemory=new Map();
+let activeCallComposerKey='',activeCallComposerClose=null,activeCallComposerExpand=null;
+function callDraftKey(c,options={}){
+ const owner=String(C.user_email||C.user_name||'session'),context=options.appointment?.id?`appointment:${options.appointment.id}`:options.relance?.id?`relance:${options.relance.id}`:'manual';
+ return`${CRM_CALL_DRAFT_PREFIX}:${encodeURIComponent(owner)}:${encodeURIComponent(c.id)}:${encodeURIComponent(context)}`
+}
+function readCallDraft(key){
+ let draft=callDraftMemory.get(key)||null;
+ try{
+  const stored=localStorage.getItem(key),parsed=stored?JSON.parse(stored):null;
+  if(parsed&&typeof parsed.text==='string'){draft=parsed;callDraftMemory.set(key,parsed)}
+ }catch(_){/* Le brouillon mémoire reste disponible si le stockage local est indisponible. */}
+ return draft&&typeof draft.text==='string'?draft:null
+}
+function saveCallDraft(key,text){
+ const draft={text:String(text??''),updated_at:new Date().toISOString()};
+ if(!draft.text){
+  callDraftMemory.delete(key);
+  try{localStorage.removeItem(key);return{...draft,persisted:true}}catch(_){return{...draft,persisted:false}}
+ }
+ callDraftMemory.set(key,draft);
+ try{localStorage.setItem(key,JSON.stringify(draft));return{...draft,persisted:true}}catch(_){return{...draft,persisted:false}}
+}
+function clearCallDraft(key){
+ callDraftMemory.delete(key);
+ try{localStorage.removeItem(key)}catch(_){/* Le brouillon validé est déjà retiré de la mémoire. */}
+}
 function callModal(c,options={}){
- modal(options.relance?'Consigner l’appel de relance':'Consigner un appel',`<div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}<div class="field call-note-field"><div class="field-label-row call-note-heading"><label for="callNote">Compte-rendu</label><button class="voice-input-button" id="dictateCall" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le résumé</span></button></div><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…"></textarea><small class="voice-input-status" id="dictateCallStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small></div>${crmPresetMarkup('call_note_presets')}`,`<button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button>`,'call-modal');
- const callNote=document.querySelector('#callNote'),voiceButton=document.querySelector('#dictateCall'),voiceStatus=document.querySelector('#dictateCallStatus'),aiButton=document.querySelector('#aiBtn'),logButton=document.querySelector('#logCall');
+ const draftKey=callDraftKey(c,options);
+ if(activeCallComposerKey===draftKey&&activeCallComposerExpand){activeCallComposerExpand();return}
+ if(activeCallComposerClose)activeCallComposerClose();
+ stopActiveVoiceDictation();
+ const restoredDraft=readCallDraft(draftKey),title=options.relance?'Consigner l’appel de relance':'Consigner un appel';
+ callComposerRoot.innerHTML=`<div class="modal-bg call-composer-bg"><div class="modal call-modal" role="dialog" aria-modal="true" aria-labelledby="callComposerTitle" data-call-draft-key="${esc(draftKey)}"><div class="modal-head"><div class="call-composer-heading"><h2 id="callComposerTitle">${title}</h2><small><span>${esc(displayName(c))}</span><span aria-hidden="true">•</span><span id="callDraftMiniStatus">Brouillon auto-enregistré</span></small></div><button class="call-modal-minimize" id="minimizeCall" type="button" aria-expanded="true"><span class="call-modal-minimize-icon" aria-hidden="true">—</span><span data-call-minimize-label>Réduire</span></button><button class="close" type="button" aria-label="Fermer la consignation — le brouillon sera conservé" title="Fermer (brouillon conservé)">×</button></div><div class="modal-body"><div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}<div class="field call-note-field"><div class="field-label-row call-note-heading"><label for="callNote">Compte-rendu</label><button class="voice-input-button" id="dictateCall" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le résumé</span></button></div><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…">${esc(restoredDraft?.text||'')}</textarea><small class="voice-input-status" id="dictateCallStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small><small class="call-draft-status" id="callDraftStatus" aria-live="polite">${restoredDraft?'Brouillon précédent restauré.':'Votre brouillon est enregistré automatiquement pendant la saisie.'}</small></div>${crmPresetMarkup('call_note_presets')}</div><div class="modal-foot"><button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button></div></div></div>`;
+ const background=callComposerRoot.querySelector('.call-composer-bg'),dialog=callComposerRoot.querySelector('.call-modal'),body=dialog.querySelector('.modal-body'),foot=dialog.querySelector('.modal-foot'),heading=dialog.querySelector('.modal-head'),callNote=dialog.querySelector('#callNote'),voiceButton=dialog.querySelector('#dictateCall'),voiceStatus=dialog.querySelector('#dictateCallStatus'),draftStatus=dialog.querySelector('#callDraftStatus'),miniStatus=dialog.querySelector('#callDraftMiniStatus'),minimizeButton=dialog.querySelector('#minimizeCall'),minimizeLabel=minimizeButton.querySelector('[data-call-minimize-label]'),minimizeIcon=minimizeButton.querySelector('.call-modal-minimize-icon'),closeButton=dialog.querySelector('.close'),aiButton=dialog.querySelector('#aiBtn'),logButton=dialog.querySelector('#logCall');
  const stopVoiceDictation=bindVoiceDictation(callNote,voiceButton,voiceStatus,{onComplete:async text=>(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:text,mode:'correction_dictee'})})).texte});
+ const persistDraft=()=>{
+  const saved=saveCallDraft(draftKey,callNote.value),time=new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit'}).format(new Date(saved.updated_at));
+  draftStatus.textContent=saved.persisted?`Brouillon enregistré automatiquement à ${time}.`:'Brouillon conservé dans cet onglet ; le stockage de ce navigateur est indisponible.';
+  miniStatus.textContent=saved.persisted?`Enregistré à ${time}`:'Conservé dans cet onglet'
+ };
+ const setMinimized=minimized=>{
+  if(minimized&&voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(false);
+  persistDraft();
+  background.classList.toggle('is-minimized',minimized);
+  dialog.classList.toggle('is-minimized',minimized);
+  dialog.setAttribute('aria-modal',String(!minimized));
+  body.hidden=minimized;foot.hidden=minimized;
+  minimizeButton.setAttribute('aria-expanded',String(!minimized));
+  minimizeLabel.textContent=minimized?'Reprendre':'Réduire';
+  minimizeIcon.textContent=minimized?'↗':'—';
+  if(!minimized){callNote.focus();callNote.setSelectionRange(callNote.value.length,callNote.value.length)}
+ };
+ const dismiss=({cancelled=true,preserveDraft=true}={})=>{
+  if(activeCallComposerKey!==draftKey)return;
+  if(preserveDraft)persistDraft();
+  stopVoiceDictation();
+  callComposerRoot.innerHTML='';
+  activeCallComposerKey='';activeCallComposerClose=null;activeCallComposerExpand=null;
+  if(cancelled&&options.onCancel)options.onCancel()
+ };
+ activeCallComposerKey=draftKey;activeCallComposerClose=dismiss;activeCallComposerExpand=()=>setMinimized(false);
+ callNote.addEventListener('input',persistDraft);
  bindCrmPresetGroup('call_note_presets',callNote);
- document.querySelector('.close').onclick=()=>{stopVoiceDictation();closeModal();if(options.onCancel)options.onCancel()};
- aiButton.onclick=async()=>{if(voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(false);await stopVoiceDictation.whenSettled();if(!callNote.value.trim())return toast('Saisissez d’abord une note',true);aiButton.disabled=true;aiButton.textContent='Reformulation…';try{callNote.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:callNote.value})})).texte}catch(e){toast(e.message,true)}finally{aiButton.disabled=false;aiButton.textContent='✦ Reformuler avec l’IA'}};
- logButton.onclick=async()=>{logButton.disabled=true;if(voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(true);await stopVoiceDictation.whenSettled();if(!callNote.value.trim()){logButton.disabled=false;return toast('Saisissez un compte-rendu',true)}try{const result=await api(`/api/crm/contacts/${c.id}/appel`,{method:'POST',body:JSON.stringify({commentaire:callNote.value,appointment_id:options.appointment?.id,relance_id:options.relance?.id})});Object.assign(c,result.contact||result);mergeContactInStore(c.id,result.contact||result);stopVoiceDictation();closeModal();if(options.onSaved)options.onSaved(result);showContact(c.id,options.returnTab||'contactInfoTab');const sent=result.delivery?.sms&&result.delivery?.email;toast(options.appointment?(sent?'Appel consigné ; e-mail et SMS envoyés':'Appel consigné ; vérifiez les coordonnées ou la configuration des envois'):options.relance?'Appel consigné · relance classée « A répondu »':'Appel consigné',!!options.appointment&&!sent)}catch(e){logButton.disabled=false;toast(e.message,true)}};
+ minimizeButton.onclick=()=>setMinimized(!dialog.classList.contains('is-minimized'));
+ heading.onclick=event=>{if(dialog.classList.contains('is-minimized')&&!event.target.closest('button'))setMinimized(false)};
+ closeButton.onclick=()=>dismiss();
+ aiButton.onclick=async()=>{if(voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(false);await stopVoiceDictation.whenSettled();if(!callNote.value.trim())return toast('Saisissez d’abord une note',true);aiButton.disabled=true;aiButton.textContent='Reformulation…';try{callNote.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:callNote.value})})).texte;callNote.dispatchEvent(new Event('input',{bubbles:true}))}catch(e){toast(e.message,true)}finally{aiButton.disabled=false;aiButton.textContent='✦ Reformuler avec l’IA'}};
+ logButton.onclick=async()=>{logButton.disabled=true;if(voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(true);await stopVoiceDictation.whenSettled();if(!callNote.value.trim()){logButton.disabled=false;return toast('Saisissez un compte-rendu',true)}try{const result=await api(`/api/crm/contacts/${c.id}/appel`,{method:'POST',body:JSON.stringify({commentaire:callNote.value,appointment_id:options.appointment?.id,relance_id:options.relance?.id})});Object.assign(c,result.contact||result);mergeContactInStore(c.id,result.contact||result);clearCallDraft(draftKey);dismiss({cancelled:false,preserveDraft:false});if(options.onSaved)options.onSaved(result);showContact(c.id,options.returnTab||'contactInfoTab');const sent=result.delivery?.sms&&result.delivery?.email;toast(options.appointment?(sent?'Appel consigné ; e-mail et SMS envoyés':'Appel consigné ; vérifiez les coordonnées ou la configuration des envois'):options.relance?'Appel consigné · relance classée « A répondu »':'Appel consigné',!!options.appointment&&!sent)}catch(e){logButton.disabled=false;persistDraft();toast(e.message,true)}};
+ if(restoredDraft)callNote.setSelectionRange(callNote.value.length,callNote.value.length);
 }
 function messageTemplateOptions(list,formation,showOthers=false){
  const name=String(formation||'').trim(),needle=name.toLocaleLowerCase('fr-FR'),isMetaA3p=x=>String(x.id||'').startsWith('automatic-meta-a3p-'),isRelaunch=x=>String(x.nom||'').trim().toLocaleLowerCase('fr-FR')==='relance';
