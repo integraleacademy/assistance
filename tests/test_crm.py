@@ -296,7 +296,7 @@ def test_development_support_rewrites_and_creates_notion_page(tmp_path, monkeypa
     properties = notion["properties"]
     assert properties["Domaine"]["select"]["name"] == "Développement web"
     assert properties["Plateforme"]["select"]["name"] == "Gestion stagiaires"
-    assert properties["Statut"]["select"]["name"] == "À traiter"
+    assert properties["Statut"]["select"]["name"] == "À ANALYSER"
     assert properties["Type"]["select"]["name"] == "À faire"
     assert response.get_json()["title"] == "Gestion stagiaires — faciliter la qualification"
     children_text = json.dumps(notion["children"], ensure_ascii=False)
