@@ -187,6 +187,9 @@ const abandoned={
 assert(canonicalCrmOrigin(abandoned)==='Pistes abandonnées','historical value is canonicalized');
 assert(crmOriginLabels(abandoned).includes('Pistes abandonnées'),'the lead matches the filter');
 assert(leadOriginFilterOptions().includes('Pistes abandonnées'),'the option is visible');
+const calendly={origine:'Calendly'};
+assert(canonicalCrmOrigin(calendly)==='Calendly','Calendly is not folded into Other');
+assert(leadOriginFilterOptions().includes('Calendly'),'Calendly is available in the lead filter');
 assert(canonicalCrmOriginValue('Google Ads')==='Google Ads','other origins stay unchanged');
 console.log('CRM abandoned leads origin filter: OK');
 """

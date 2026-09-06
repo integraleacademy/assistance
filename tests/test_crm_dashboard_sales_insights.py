@@ -34,7 +34,7 @@ const contacts=[
 assert(JSON.stringify(crmOriginLabels(contacts[0]))===JSON.stringify(['Google Ads']),'only the primary origin is exposed');
 assert(JSON.stringify(crmOriginLabels(contacts[1]))===JSON.stringify(['META']),'history never changes visible attribution');
 const primary=dashboardOriginGroups(contacts);
-assert(primary.length===8,'all canonical origins remain visible');
+assert(primary.length===9,'all canonical origins remain visible');
 assert(primary.find(row=>row.label==='Secrétariat').count===0,'secretariat zero row visible');
 assert(primary.find(row=>row.label==='Google Ads').count===1,'one primary Google Ads lead');
 assert(primary.find(row=>row.label==='META').count===1,'one primary META lead');
@@ -56,7 +56,7 @@ def test_dashboard_renders_only_requested_primary_origin_and_sales_sections():
     for marker in (
         "Origines principales",
         "Une seule origine principale est utilisée pour chaque piste.",
-        "Les huit origines CRM restent visibles, même à zéro.",
+        "Les neuf origines CRM restent visibles, même à zéro.",
         "Priorités de vente",
         "Jamais contactées",
         "Sans prochaine action",
