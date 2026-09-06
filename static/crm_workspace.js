@@ -62,7 +62,7 @@ const hasContact=contact=>(contact.activities||[]).some(item=>['appel','email','
 const isOverdue=contact=>contact.relance_date&&new Date(`${contact.relance_date}T23:59:59`)<new Date();
 function priority(contact){let score=0;if(!hasContact(contact))score+=35;if(isOverdue(contact))score+=30;score+=Math.min(20,daysSince(lastActivity(contact)?.date||contact.created_at));if(contactCompleteness(contact)<60)score+=5;return Math.min(100,score)}
 function duplicateMap(contacts){const map=new Map();contacts.forEach(contact=>{const keys=[normalize(contact.mail),String(contact.telephone||'').replace(/\D/g,''),normalize(`${contact.prenom} ${contact.nom}`)].filter(value=>value.length>3);keys.forEach(key=>map.set(key,[...(map.get(key)||[]),contact.id]))});const duplicates=new Map();map.forEach(ids=>{if(ids.length>1)ids.forEach(id=>duplicates.set(id,[...new Set([...(duplicates.get(id)||[]),...ids.filter(other=>other!==id)])]))});return duplicates}
-const workspaceOriginOptions=['META','Google Ads','Site internet','Bouche à oreilles','Mon Compte Formation','Secrétariat','Simulateur VAE','Autre'];
+const workspaceOriginOptions=['META','Google Ads','Site internet','Bouche à oreilles','Mon Compte Formation','Secrétariat','Simulateur VAE','Calendly','Autre'];
 const workspaceLeadOriginOptions=[...workspaceOriginOptions.slice(0,-1),'Pistes abandonnées','Autre'];
 function canonicalSourceLabel(value,contact={}){
  const raw=String(value||'').trim(),normalized=normalize(raw);
