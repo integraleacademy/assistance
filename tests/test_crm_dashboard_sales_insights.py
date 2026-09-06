@@ -70,7 +70,9 @@ def test_dashboard_renders_only_requested_primary_origin_and_sales_sections():
         "Quelles publicités génèrent les meilleurs prospects ?",
     ):
         assert marker not in javascript
-    assert "dashboardOriginTable(primaryOrigins,current.length)" in javascript
+    assert "dashboardOriginTable(primaryOrigins,current.length,ranges.current)" in javascript
+    assert 'analytics-origin-drilldown' in javascript
+    assert "group.converted?" in javascript
     assert "secondaryOrigins" not in javascript
     assert "dashboardGoogleAdsTable" not in javascript
     assert "dashboardCommercialTable" not in javascript
@@ -89,7 +91,7 @@ def test_compact_api_exposes_tracking_without_the_full_form():
     assert "key not in CRM_GOOGLE_ADS_IDENTIFIER_KEYS" in summary
     assert 'summary["google_ads_tracking"] = google_ads_tracking' in summary
     assert 'summary["formulaire"]' not in summary
-    assert 'CRM_ASSET_VERSION = "20260903-ft-refusal-header-priority-1"' in backend
+    assert 'CRM_ASSET_VERSION = "20260906-origin-converted-drilldown-1"' in backend
 
 
 def test_sales_dashboard_panels_are_responsive_and_actionable():
