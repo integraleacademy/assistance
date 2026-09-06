@@ -42,11 +42,13 @@ def test_dashboard_origin_patch_keeps_four_responsive_kpi_columns():
 def test_crm_origin_options_are_canonical_and_legacy_values_are_mapped():
     crm = read("static/crm.js")
     workspace = read("static/crm_workspace.js")
-    expected = "['META','Google Ads','Site internet','Bouche à oreilles','Mon Compte Formation','Secrétariat','Simulateur VAE','Autre']"
+    expected = "['META','Google Ads','Site internet','Bouche à oreilles','Mon Compte Formation','Secrétariat','Simulateur VAE','Calendly','Autre']"
 
     assert f"const crmOriginFilterValues={expected}" in crm
     assert f"const workspaceOriginOptions={expected}" in workspace
     assert "function canonicalCrmOrigin(contact)" in crm
+    assert "calendly_origin_version='20260906-1'" in read("templates/crm.html")
+    assert read("templates/crm.html").count("calendly_origin_version='20260906-1'") == 2
     assert "return'Autre'" in crm
     assert "return'Autre'" in workspace
     assert "observed" not in crm[crm.index("function leadOriginFilterOptions"):crm.index("const dashboardHasContact")]
