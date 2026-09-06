@@ -70,7 +70,9 @@ def test_dashboard_renders_only_requested_primary_origin_and_sales_sections():
         "Quelles publicités génèrent les meilleurs prospects ?",
     ):
         assert marker not in javascript
-    assert "dashboardOriginTable(primaryOrigins,current.length)" in javascript
+    assert "dashboardOriginTable(primaryOrigins,current.length,ranges.current)" in javascript
+    assert 'analytics-origin-drilldown' in javascript
+    assert "group.converted?" in javascript
     assert "secondaryOrigins" not in javascript
     assert "dashboardGoogleAdsTable" not in javascript
     assert "dashboardCommercialTable" not in javascript

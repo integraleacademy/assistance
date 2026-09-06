@@ -43,7 +43,11 @@ def test_dashboard_kpis_link_to_exact_filtered_lead_views():
     assert "dashboardView?dashboardDrilldownContacts" in javascript
     assert "dashboard-drilldown-banner" in javascript
     assert "Voir les pistes →" in javascript
+    assert "origin-converted" in javascript
+    assert "analytics-origin-drilldown" in javascript
+    assert "dashboardOriginTable(primaryOrigins,current.length,ranges.current)" in javascript
     assert "a.analytics-kpi:hover" in stylesheet
+    assert ".analytics-origin-drilldown:focus-visible" in stylesheet
     assert ".dashboard-drilldown-banner{" in stylesheet
     assert "20260830-dashboard-drilldowns-1" in template
     assert "repeat(4,minmax(0,1fr))" in (ROOT / "static" / "crm_dashboard_origins.css").read_text(encoding="utf-8")
@@ -57,6 +61,7 @@ def test_dashboard_drilldowns_preserve_period_and_filter_the_same_contacts():
     ]
     script = f"""
 const dashboardOrigin=contact=>contact.origine;
+const crmOriginFilterValues=['META','Google Ads','Mon Compte Formation','Site internet','Simulateur VAE','Secrétariat','Bouche à oreilles','Pistes abandonnées','Autre'];
 const isActiveLead=contact=>!['Converti','Disqualifié'].includes(contact.statut);
 const contactContactActivityKinds=new Set(['appel','email','sms','demande_rappel']);
 const crmAppointments=[{{contact_id:'google',status:'active',response_status:null}}];
@@ -84,11 +89,16 @@ assert(ids('other').join(',')==='other','other view excludes META and Google Ads
 assert(ids('converted').join(',')==='other','conversion view exposes converted contacts');
 assert(ids('appointments').join(',')==='google','appointment view exposes booked contacts');
 assert(ids('contacted').join(',')==='meta','contacted view exposes contacted contacts');
+const originConvertedState=dashboardDrilldownState(`?dashboard_view=origin-converted&origin=Site+internet${{range}}`);
+assert(dashboardDrilldownContacts(contacts,originConvertedState).map(contact=>contact.id).join(',')==='other','origin registered view keeps only converted contacts from the selected primary origin');
+assert(dashboardDrilldownState(`?dashboard_view=origin-converted&origin=Unknown${{range}}`)===null,'origin registered view rejects an unknown origin');
 const overdueState=dashboardDrilldownState('?dashboard_view=overdue');
 assert(dashboardDrilldownContacts(contacts,overdueState).map(contact=>contact.id).join(',')==='overdue','overdue callbacks cover all periods');
 assert(dashboardDrilldownState('?dashboard_view=meta')===null,'dated views reject a missing period');
 const url=dashboardDrilldownUrl('meta',{{start:new Date('2026-08-01T00:00:00Z'),end:new Date('2026-09-01T00:00:00Z')}});
 assert(url.includes('dashboard_view=meta')&&url.includes('from=')&&url.includes('to='),'dashboard links carry their range');
+const originUrl=dashboardDrilldownUrl('origin-converted',{{start:new Date('2026-08-01T00:00:00Z'),end:new Date('2026-09-01T00:00:00Z')}},{{origin:'Site internet'}});
+assert(originUrl.includes('dashboard_view=origin-converted')&&originUrl.includes('origin=Site+internet'),'origin registered links carry the selected primary origin');
 console.log('CRM dashboard drilldowns: OK');
 """
     completed = subprocess.run(
