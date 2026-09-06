@@ -16231,6 +16231,7 @@ CRM_DEVELOPMENT_SUPPORT_PLATFORMS = {
     "Site internet officiel": "Site internet officiel",
 }
 CRM_NOTION_DATA_SOURCE_ID = "7f12fe92-dbc4-40c8-af4e-77578b5dbfc0"
+CRM_DEVELOPMENT_SUPPORT_NOTION_STATUS = "À ANALYSER"
 CRM_NOTION_ATTACHMENT_PROPERTY = "fichier"
 CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 CRM_DEVELOPMENT_SUPPORT_ATTACHMENT_EXTENSIONS = frozenset({
@@ -16368,7 +16369,10 @@ def _crm_development_support_page(
             "Pensée": {"type": "title", "title": _crm_notion_rich_text(title)},
             "Domaine": {"type": "select", "select": {"name": "Développement web"}},
             "Plateforme": {"type": "select", "select": {"name": platform}},
-            "Statut": {"type": "select", "select": {"name": "À traiter"}},
+            "Statut": {
+                "type": "select",
+                "select": {"name": CRM_DEVELOPMENT_SUPPORT_NOTION_STATUS},
+            },
             "Type": {"type": "select", "select": {"name": "À faire"}},
         },
         "children": [
