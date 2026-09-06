@@ -1974,7 +1974,7 @@ function developmentSupportModal(){
   try{
    const result=await api('/api/crm/development-support',{method:'POST',headers:{},timeout:90000,body:new FormData(form)});
    const attachmentText=result.attachment_uploaded?' La pièce jointe a également été ajoutée à la page.':'';
-   modal('Demande envoyée',`<p>La demande a été reformulée et ajoutée à Notion avec le statut <strong>À traiter</strong>.${attachmentText}</p><p><a class="btn blue" href="${esc(result.url)}" target="_blank" rel="noopener noreferrer">Ouvrir dans Notion</a></p>`,`<button class="btn" id="developmentSupportDone">Fermer</button>`,'development-support-modal');
+   modal('Demande envoyée',`<p>La demande a été reformulée et ajoutée à Notion avec le statut <strong>À ANALYSER</strong>.${attachmentText}</p><p><a class="btn blue" href="${esc(result.url)}" target="_blank" rel="noopener noreferrer">Ouvrir dans Notion</a></p>`,`<button class="btn" id="developmentSupportDone">Fermer</button>`,'development-support-modal');
    document.querySelector('#developmentSupportDone').onclick=closeModal;
   }catch(error){
    submit.disabled=false;cancel.disabled=false;submit.textContent='ENVOYER';toast(error.message,true);
