@@ -17836,6 +17836,9 @@ def _crm_france_travail_request_context(contact, payload):
     }
 
 
+CRM_FRANCE_TRAVAIL_REQUEST_MAX_CHARACTERS = 2000
+
+
 @app.route("/api/crm/contacts/<contact_id>/generer-demande-ft", methods=["POST"])
 @login_required
 def crm_generate_france_travail_request(contact_id):
@@ -17850,7 +17853,7 @@ def crm_generate_france_travail_request(contact_id):
     facts = _crm_france_travail_request_context(contact, payload)
     system_prompt = """Rédige en français une demande de financement persuasive, crédible et directement adressée à un conseiller France Travail, au nom du candidat et à la première personne.
 
-Le texte doit être prêt à copier-coller : commence par « Bonjour, », ne mets ni objet, ni titre, ni Markdown, et termine par une formule de disponibilité, des remerciements, « Bien cordialement, » puis le nom complet du candidat lorsqu’il est renseigné. Produis environ 350 à 500 mots, avec des paragraphes courts.
+Le texte doit être prêt à copier-coller : commence par « Bonjour, », ne mets ni objet, ni titre, ni Markdown, et termine par une formule de disponibilité, des remerciements, « Bien cordialement, » puis le nom complet du candidat lorsqu’il est renseigné. Le texte final ne doit jamais dépasser 2 000 caractères, espaces compris. Vise 1 500 à 1 800 caractères, avec des paragraphes courts.
 
 Explique clairement la formation sollicitée, le choix du centre, le projet professionnel, la cohérence du parcours, l’utilité concrète de la formation pour l’accès à l’emploi et la motivation du candidat. Valorise les atouts cochés uniquement lorsqu’ils sont vrais. Si « ancien_militaire » est vrai, souligne les compétences transférables sans inventer d’armée, de grade, de mission ni de durée. Si « carte_professionnelle_cnaps » est vrai, mentionne une carte professionnelle CNAPS sans inventer sa catégorie ni son ancienneté. Si des perspectives d’embauche sont indiquées, reste exactement au niveau de précision fourni.
 
@@ -17861,7 +17864,15 @@ N’invente aucun fait, chiffre de marché, employeur, promesse d’embauche, sa
             json.dumps({"informations_factuelles_autorisees": facts}, ensure_ascii=False),
             1100,
         )
-        return jsonify({"texte": generated})
+        generated = str(generated or "").strip()
+        if len(generated) > CRM_FRANCE_TRAVAIL_REQUEST_MAX_CHARACTERS:
+            return jsonify({
+                "error": "Le texte généré dépasse la limite de 2 000 caractères. Régénérez une version plus courte."
+            }), 422
+        return jsonify({
+            "texte": generated,
+            "max_characters": CRM_FRANCE_TRAVAIL_REQUEST_MAX_CHARACTERS,
+        })
     except Exception as exc:
         app.logger.warning(
             "france_travail_request_generation contact=%s error=%s",
