@@ -3515,6 +3515,33 @@ def test_france_travail_request_generator_uses_explicit_profile_facts(
     assert captured["max_tokens"] == 1100
 
 
+def test_france_travail_request_generator_enforces_2000_character_limit(
+        tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch)
+    contact = c.post("/api/crm/contacts", json={
+        "prenom": "Lina", "nom": "Martin", "formation": "APS",
+    }).get_json()
+
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "é" * 2000)
+    accepted = c.post(
+        f"/api/crm/contacts/{contact['id']}/generer-demande-ft",
+        json={},
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.get_json()["texte"] == "é" * 2000
+    assert accepted.get_json()["max_characters"] == 2000
+
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "é" * 2001)
+    refused = c.post(
+        f"/api/crm/contacts/{contact['id']}/generer-demande-ft",
+        json={},
+    )
+
+    assert refused.status_code == 422
+    assert "2 000 caractères" in refused.get_json()["error"]
+
+
 def test_france_travail_request_generator_is_conditional_and_copyable():
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         javascript = source.read()
