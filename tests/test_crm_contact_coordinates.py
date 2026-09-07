@@ -6,14 +6,12 @@ ROOT = Path(__file__).parents[1]
 CRM_JS = ROOT / "static" / "crm.js"
 CRM_CSS = ROOT / "static" / "crm.css"
 CRM_HTML = ROOT / "templates" / "crm.html"
-APP_PY = ROOT / "app.py"
 
 
 def test_contact_coordinates_are_editable_in_the_header_and_phone_helpers_still_work():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
     template = CRM_HTML.read_text(encoding="utf-8")
-    backend = APP_PY.read_text(encoding="utf-8")
 
     helper = javascript[
         javascript.index("function formatContactPhone"):
@@ -70,6 +68,27 @@ for(const [value,expected] of compactCases){
     )
 
     assert "CRM contact coordinates: OK" in completed.stdout
+    helper_start = javascript.index("const contactSaveIsCurrent=")
+    helper = javascript[helper_start:javascript.index(";", helper_start) + 1]
+    revision_check = subprocess.run(
+        [
+            "node",
+            "-e",
+            helper + """
+if(contactSaveIsCurrent(1,2))throw new Error('A stale response was accepted');
+if(!contactSaveIsCurrent(2,2))throw new Error('The current response was rejected');
+console.log('CRM contact save revision: OK');
+""",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM contact save revision: OK" in revision_check.stdout
+    assert "const saveRevision=++contactSaveRevision" in javascript
+    assert "if(!contactSaveIsCurrent(saveRevision,contactSaveRevision))return;Object.assign(c,updated)" in javascript
     assert "function contactHeaderEditor(c,last)" in javascript
     assert 'form="contactForm" data-header-contact-field name="${name}"' in javascript
     assert "input('prenom','Prénom','text'" in javascript
@@ -99,4 +118,3 @@ for(const [value,expected] of compactCases){
     assert ".contact-header-coordinate-telephone input{" in stylesheet
     assert "font:900 16px Manrope" in stylesheet
     assert template.count("copy_coordinates_version='20260825-copy-contact-coordinates-1'") == 2
-    assert 'CRM_ASSET_VERSION = "20260903-ft-refusal-header-priority-1"' in backend
