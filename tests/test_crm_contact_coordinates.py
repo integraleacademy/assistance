@@ -70,6 +70,27 @@ for(const [value,expected] of compactCases){
     )
 
     assert "CRM contact coordinates: OK" in completed.stdout
+    helper_start = javascript.index("const contactSaveIsCurrent=")
+    helper = javascript[helper_start:javascript.index(";", helper_start) + 1]
+    revision_check = subprocess.run(
+        [
+            "node",
+            "-e",
+            helper + """
+if(contactSaveIsCurrent(1,2))throw new Error('A stale response was accepted');
+if(!contactSaveIsCurrent(2,2))throw new Error('The current response was rejected');
+console.log('CRM contact save revision: OK');
+""",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CRM contact save revision: OK" in revision_check.stdout
+    assert "const saveRevision=++contactSaveRevision" in javascript
+    assert "if(!contactSaveIsCurrent(saveRevision,contactSaveRevision))return;Object.assign(c,updated)" in javascript
     assert "function contactHeaderEditor(c,last)" in javascript
     assert 'form="contactForm" data-header-contact-field name="${name}"' in javascript
     assert "input('prenom','Prénom','text'" in javascript
