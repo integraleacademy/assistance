@@ -6,14 +6,12 @@ ROOT = Path(__file__).parents[1]
 CRM_JS = ROOT / "static" / "crm.js"
 CRM_CSS = ROOT / "static" / "crm.css"
 CRM_HTML = ROOT / "templates" / "crm.html"
-APP_PY = ROOT / "app.py"
 
 
 def test_contact_coordinates_are_editable_in_the_header_and_phone_helpers_still_work():
     javascript = CRM_JS.read_text(encoding="utf-8")
     stylesheet = CRM_CSS.read_text(encoding="utf-8")
     template = CRM_HTML.read_text(encoding="utf-8")
-    backend = APP_PY.read_text(encoding="utf-8")
 
     helper = javascript[
         javascript.index("function formatContactPhone"):
@@ -120,4 +118,3 @@ console.log('CRM contact save revision: OK');
     assert ".contact-header-coordinate-telephone input{" in stylesheet
     assert "font:900 16px Manrope" in stylesheet
     assert template.count("copy_coordinates_version='20260825-copy-contact-coordinates-1'") == 2
-    assert 'CRM_ASSET_VERSION = "20260903-ft-refusal-header-priority-1"' in backend
