@@ -8824,7 +8824,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260906-origin-converted-drilldown-1"
+CRM_ASSET_VERSION = "20260908-free-email-layout-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -18082,6 +18082,11 @@ def _crm_templates_payload(data):
         "automatic_email": automatic_email,
         "automatic_meta": automatic_meta,
         "email_starter": email_starter,
+        "email_free_starter": render_template(
+            "crm_email_wrapper.html", prenom="{{ prenom }}",
+            formation="{{ formation }}",
+            contenu="<!-- EMAIL_CONTENT_START --><!-- EMAIL_CONTENT_END -->",
+        ),
     }
 
 
