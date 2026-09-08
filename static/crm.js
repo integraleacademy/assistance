@@ -1806,6 +1806,33 @@ function messageTemplateOptions(list,formation,showOthers=false){
  return html
 }
 function smsPreviewHtml(content){return `<style>html,body{margin:0}.sms-preview{box-sizing:border-box;min-height:100vh;padding:48px 24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033}.sms-preview-label{margin:0 auto 12px;max-width:420px;color:#718096;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.sms-preview-bubble{max-width:420px;margin:auto;padding:16px 18px;border-radius:20px 20px 5px 20px;background:#356ae6;color:#fff;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;box-shadow:0 8px 24px #356ae633}.sms-preview small{display:block;max-width:420px;margin:10px auto;color:#718096;text-align:right}</style><div class="sms-preview"><p class="sms-preview-label">Aperçu du SMS</p><div class="sms-preview-bubble">${esc(content)}</div><small>${String(content||'').length} caractère(s)</small></div>`}
+const freeEmailFields=[['HEADER_TITLE','Titre du bandeau'],['HEADER_SUBTITLE','Sous-titre'],['HEADER_TAGLINE','Accroche du bandeau'],['GREETING','Formule de salutation'],['SIGNATURE','Signature',true],['FOOTER_TAGLINE','Accroche en bas du mail'],['FOOTER_DETAILS','Coordonnées et mentions',true],['FOOTER_NOTICE','Texte complémentaire',true],['BRAND','Nom au-dessus du titre'],['WEBSITE_LABEL','Texte du lien vers le site']];
+function freeEmailPattern(key){return new RegExp(`<!-- EMAIL_${key}_START -->([\\s\\S]*?)<!-- EMAIL_${key}_END -->`)}
+function freeEmailFieldText(html,key){
+ const container=document.createElement('div');container.innerHTML=html;
+ if(key==='SIGNATURE')container.querySelector('td[width="48"]')?.remove();
+ return emailContentToText(container.innerHTML).replace(/\n[ \t]+/g,'\n').replace(/[ \t]+\n/g,'\n').trim()
+}
+function freeEmailFieldsMarkup(starter,values={}){
+ const fields=freeEmailFields.map(([key,label,multiline])=>{
+  const match=starter.match(freeEmailPattern(key));if(!match)return '';
+  const value=values[key]??freeEmailFieldText(match[1],key),id=`freeEmail${key}`;
+  return `<div class="field"><label for="${id}">${label}</label>${multiline?`<textarea id="${id}" data-free-email-field="${key}" rows="4" style="min-height:100px">${esc(value)}</textarea>`:`<input id="${id}" data-free-email-field="${key}" value="${esc(value)}">`}</div>`
+ });
+ return `<fieldset class="email-header-fields" id="freeEmailLayout"><legend>Personnaliser le mail libre</legend><small class="field-help">Modifiez ou effacez les textes pour cet envoi. Les variables {{ prenom }} et {{ formation }} sont remplacées automatiquement.</small>${fields.slice(0,3).join('')}<details class="email-code-details"><summary>Salutation, signature et pied de page</summary>${fields.slice(3).join('')}</details></fieldset>`
+}
+function buildFreeEmailHtml(starter,content,values){
+ let html=starter;
+ freeEmailFields.forEach(([key])=>{
+  const pattern=freeEmailPattern(key),match=html.match(pattern);
+  if(match&&Object.hasOwn(values,key)&&values[key]!==freeEmailFieldText(match[1],key)){
+   const text=esc(values[key]).replace(/\r\n?|\n/g,'<br>');
+   html=html.replace(pattern,()=>`<!-- EMAIL_${key}_START -->${text}<!-- EMAIL_${key}_END -->`)
+  }
+ });
+ const body=/<\/?[a-z][^>]*>/i.test(content)?content:emailContentToHtml(content);
+ return html.replace(emailContentPattern,()=>`<!-- EMAIL_CONTENT_START -->${body}<!-- EMAIL_CONTENT_END -->`)
+}
 function messageModal(c,type,draft={}){
  const isMail=type==='email',initialDraft={contenu:String(draft.contenu??''),sujet:String(draft.sujet??'Intégrale Academy — Votre formation'),template_id:String(draft.template_id??'')},isMeta=[c.origine,c.source].some(value=>String(value||'').trim().toLocaleUpperCase('fr-FR')==='META'),isA3p=String(c.formation||'').trim().toLocaleUpperCase('fr-FR')==='A3P',automaticMeta=(isMeta||isA3p)?(templates.automatic_meta||[]).filter(t=>t.type===type):[],modelPool=[...(isMail?templates.automatic_email||[]:[]),...automaticMeta,...templates[type]],list=[...new Map(modelPool.map(template=>[String(template.id),template])).values()];
  let manualAttachments=Array.isArray(draft.attachments)?draft.attachments.filter(file=>file&&typeof file.name==='string'):(draft.attachment&&typeof draft.attachment.name==='string'?[draft.attachment]:[]),includeTemplateAttachment=draft.include_template_attachment!==false;
@@ -1813,6 +1840,11 @@ function messageModal(c,type,draft={}){
  const generateButton=document.querySelector('#generateMessage'),templateSelect=document.querySelector('#tpl'),messageField=document.querySelector('#msg'),subjectField=document.querySelector('#subject'),previewButton=document.querySelector('#messagePreview'),sendButton=document.querySelector('#sendMessage'),voiceButton=document.querySelector('#dictateMessage'),voiceStatus=document.querySelector('#dictateMessageStatus'),attachmentInput=document.querySelector('#messageAttachment'),attachmentState=document.querySelector('#messageAttachmentState');
  if(initialDraft.template_id&&![...templateSelect.options].some(option=>option.value===initialDraft.template_id))templateSelect.innerHTML=messageTemplateOptions(list,c.formation,true);
  if(initialDraft.template_id&&[...templateSelect.options].some(option=>option.value===initialDraft.template_id))templateSelect.value=initialDraft.template_id;
+ const freeStarter=isMail?templates.email_free_starter||'':'',isFreeEmail=()=>!!freeStarter&&!templateSelect.value&&!/<(?:!doctype|html)\b/i.test(messageField.value);
+ if(freeStarter)messageField.closest('.message-body-field').insertAdjacentHTML('beforebegin',freeEmailFieldsMarkup(freeStarter,draft.email_layout||{}));
+ const layoutRoot=document.querySelector('#freeEmailLayout'),emailLayoutValues=()=>Object.fromEntries([...(layoutRoot?.querySelectorAll('[data-free-email-field]')||[])].map(input=>[input.dataset.freeEmailField,input.value]));
+ const syncEmailLayout=()=>{if(layoutRoot)layoutRoot.hidden=!isFreeEmail()},messageContent=()=>isFreeEmail()?buildFreeEmailHtml(freeStarter,messageField.value,emailLayoutValues()):messageField.value;
+ messageField.addEventListener('input',syncEmailLayout);templateSelect.addEventListener('change',()=>queueMicrotask(syncEmailLayout));syncEmailLayout();
  const selectedTemplate=()=>list.find(x=>String(x.id)===String(templateSelect.value));
  const renderAttachmentState=()=>{
   if(!isMail||!attachmentState)return;
@@ -1829,10 +1861,10 @@ function messageModal(c,type,draft={}){
  renderAttachmentState();
  const destroyVoiceDictation=bindVoiceDictation(messageField,voiceButton,voiceStatus),pauseVoiceDictation=()=>{if(voiceButton.getAttribute('aria-pressed')==='true')voiceButton.click()};
  document.querySelector('.close').onclick=()=>{destroyVoiceDictation();closeModal()};
- generateButton.onclick=async()=>{pauseVoiceDictation();generateButton.disabled=true;generateButton.textContent='Génération…';try{messageField.value=(await api(`/api/crm/contacts/${c.id}/generer-message`,{method:'POST',body:JSON.stringify({type,instructions:messageField.value})})).texte}catch(e){toast(e.message,true)}finally{generateButton.disabled=false;generateButton.textContent='✦ Générer avec l’IA'}};
+ generateButton.onclick=async()=>{pauseVoiceDictation();generateButton.disabled=true;generateButton.textContent='Génération…';try{messageField.value=(await api(`/api/crm/contacts/${c.id}/generer-message`,{method:'POST',body:JSON.stringify({type,instructions:messageField.value})})).texte;syncEmailLayout()}catch(e){toast(e.message,true)}finally{generateButton.disabled=false;generateButton.textContent='✦ Générer avec l’IA'}};
  templateSelect.onchange=()=>{pauseVoiceDictation();if(templateSelect.value==='__other_templates__'){templateSelect.innerHTML=messageTemplateOptions(list,c.formation,true);templateSelect.value='';renderAttachmentState();return}const t=list.find(x=>x.id===templateSelect.value);includeTemplateAttachment=true;if(t){messageField.value=t.contenu;if(isMail)subjectField.value=t.sujet}renderAttachmentState()};
- previewButton.onclick=async()=>{pauseVoiceDictation();previewButton.disabled=true;const draftState={contenu:messageField.value,sujet:isMail?subjectField.value:'',template_id:templateSelect.value};draftState.attachments=[...manualAttachments];draftState.include_template_attachment=includeTemplateAttachment;try{if(isMail){const result=await api(`/api/crm/contacts/${c.id}/message-preview`,{method:'POST',body:JSON.stringify({contenu:messageField.value})});destroyVoiceDictation();previewModal(result.html,true,null,null,()=>messageModal(c,type,draftState))}else{destroyVoiceDictation();previewModal(smsPreviewHtml(messageField.value),false,null,{contenu:messageField.value,destinataire:c.telephone},()=>messageModal(c,type,draftState))}}catch(e){toast(e.message,true)}finally{previewButton.disabled=false}};
- sendButton.onclick=async()=>{pauseVoiceDictation();sendButton.disabled=true;try{let options;if(isMail){const formData=new FormData();formData.append('type',type);formData.append('contenu',messageField.value);formData.append('sujet',subjectField.value);formData.append('template_id',templateSelect.value);formData.append('include_template_attachment',String(includeTemplateAttachment));manualAttachments.forEach(file=>formData.append('attachment',file,file.name));options={method:'POST',headers:{},body:formData}}else{options={method:'POST',body:JSON.stringify({type,contenu:messageField.value,sujet:'',template_id:templateSelect.value})}}Object.assign(c,await api(`/api/crm/contacts/${c.id}/message`,options));destroyVoiceDictation();closeModal();showContact(c.id);toast(`${isMail?'E-mail':'SMS'} envoyé`)}catch(e){toast(e.message,true);sendButton.disabled=false}}
+ previewButton.onclick=async()=>{pauseVoiceDictation();previewButton.disabled=true;const draftState={contenu:messageField.value,sujet:isMail?subjectField.value:'',template_id:templateSelect.value};draftState.email_layout=emailLayoutValues();draftState.attachments=[...manualAttachments];draftState.include_template_attachment=includeTemplateAttachment;try{if(isMail){const result=await api(`/api/crm/contacts/${c.id}/message-preview`,{method:'POST',body:JSON.stringify({contenu:messageContent()})});destroyVoiceDictation();previewModal(result.html,true,null,null,()=>messageModal(c,type,draftState))}else{destroyVoiceDictation();previewModal(smsPreviewHtml(messageField.value),false,null,{contenu:messageField.value,destinataire:c.telephone},()=>messageModal(c,type,draftState))}}catch(e){toast(e.message,true)}finally{previewButton.disabled=false}};
+ sendButton.onclick=async()=>{pauseVoiceDictation();sendButton.disabled=true;try{let options;if(isMail){const formData=new FormData();formData.append('type',type);formData.append('contenu',messageContent());formData.append('sujet',subjectField.value);formData.append('template_id',templateSelect.value);formData.append('include_template_attachment',String(includeTemplateAttachment));manualAttachments.forEach(file=>formData.append('attachment',file,file.name));options={method:'POST',headers:{},body:formData}}else{options={method:'POST',body:JSON.stringify({type,contenu:messageField.value,sujet:'',template_id:templateSelect.value})}}Object.assign(c,await api(`/api/crm/contacts/${c.id}/message`,options));destroyVoiceDictation();closeModal();showContact(c.id);toast(`${isMail?'E-mail':'SMS'} envoyé`)}catch(e){toast(e.message,true);sendButton.disabled=false}}
 }
 function bulkMessageModal(type){
  const isMail=type==='email',selected=contacts.filter(contact=>selectedLeadIds.has(String(contact.id))&&isActiveLead(contact)),eligible=selected.filter(contact=>String((isMail?contact.mail:contact.telephone)||'').trim()),missing=selected.filter(contact=>!eligible.includes(contact));
