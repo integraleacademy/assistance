@@ -434,7 +434,7 @@
   <main class="page">
     <section class="hero" aria-labelledby="page-title">
       <p class="eyebrow">Inscription en ligne</p>
-      <h1 id="page-title">Démarrez votre projet <em>Chauffeur VTC</em></h1>
+      <h1 id="page-title">Démarrez votre formation <em>Chauffeur VTC</em></h1>
       <p class="lead">Vérifiez votre situation en quelques instants. Si toutes les conditions sont réunies, nous vous guidons directement jusqu’à la demande d’inscription sur Mon Compte Formation.</p>
       <ul class="reassurance" aria-label="Les avantages du parcours">
         <li><span class="check" aria-hidden="true">✓</span><span>Parcours simple et guidé</span></li>
@@ -456,16 +456,16 @@
 
       <section class="panel" id="financingPanel" data-step="1">
         <span class="step-label">Vérification du financement</span>
-        <h2 tabindex="-1">Votre solde CPF finance-t-il 100 % de la formation ?</h2>
-        <p class="question-note">Consultez le montant disponible dans votre compte CPF avant de répondre.</p>
+        <h2 tabindex="-1">Disposez-vous d’au moins 1 500 euros sur votre compte CPF ?</h2>
+        <p class="question-note">La formation Chauffeur VTC coûte 1 500 euros. Consultez le montant disponible sur votre compte CPF avant de répondre.</p>
         <div class="choices">
           <label class="choice">
             <input type="radio" name="cpf_full" value="yes">
-            <span><strong>Oui, la formation est financée à 100 %</strong><small>Mon solde CPF couvre la totalité du coût demandé.</small></span>
+            <span><strong>Oui, je dispose d’au moins 1 500 euros</strong><small>Mon compte CPF affiche un solde de 1 500 euros ou plus.</small></span>
           </label>
           <label class="choice">
             <input type="radio" name="cpf_full" value="no">
-            <span><strong>Non, pas entièrement</strong><small>Il reste un montant à financer ou je ne connais pas encore mon solde.</small></span>
+            <span><strong>Non, ou je ne connais pas mon solde</strong><small>J’ai moins de 1 500 euros sur mon compte CPF, ou je dois vérifier le montant disponible.</small></span>
           </label>
         </div>
         <p class="privacy">Aucune donnée personnelle n’est demandée sur cette page. Votre dossier sera créé directement dans l’environnement sécurisé de Mon Compte Formation.</p>
@@ -476,7 +476,7 @@
         <h2 tabindex="-1">Un échange téléphonique est nécessaire avant l’inscription</h2>
         <div class="status-card">
           <strong>Le parcours automatique s’arrête ici.</strong>
-          Un conseiller doit étudier avec vous le reste à financer et les solutions possibles avant la création du dossier CPF.
+          Un conseiller vérifie avec vous votre solde CPF et les solutions possibles pour financer la formation à 1 500 euros.
         </div>
         <div class="actions">
           <a class="btn btn-primary" href="{{ url_for('demande_informations_formations', formation='VTC') }}">Demander mon rendez-vous téléphonique</a>

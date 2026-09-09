@@ -8,7 +8,12 @@ def test_vtc_inscriptions_page_is_public_and_contains_the_official_cpf_offer():
 
     assert response.status_code == 200
     page = response.get_data(as_text=True)
-    assert "Démarrez votre projet <em>Chauffeur VTC</em>" in page
+    assert "Démarrez votre formation <em>Chauffeur VTC</em>" in page
+    assert "Disposez-vous d’au moins 1 500 euros sur votre compte CPF ?" in page
+    assert "La formation Chauffeur VTC coûte 1 500 euros." in page
+    assert "Oui, je dispose d’au moins 1 500 euros" in page
+    assert "Non, ou je ne connais pas mon solde" in page
+    assert "100 %" not in page
     assert application.VTC_CPF_REGISTRATION_URL in page
     assert 'id="cpfRegistrationLink"' in page
     assert 'target="_blank" rel="noopener noreferrer"' in page
