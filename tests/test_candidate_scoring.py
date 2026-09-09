@@ -58,7 +58,7 @@ def test_candidate_score_styles_are_bundled():
     assert ".integration-score-card.incomplete" in css
 
 
-def test_v8_uses_80_percent_financial_and_20_percent_regulatory():
+def test_v9_uses_80_percent_financial_and_20_percent_regulatory():
     declared = calculate_candidate_integration_score(
         financial_contact(carte_pro="OUI")
     )
@@ -67,7 +67,7 @@ def test_v8_uses_80_percent_financial_and_20_percent_regulatory():
         {"has_active_professional_title": True},
     )
 
-    assert CANDIDATE_SCORING_VERSION == declared["version"] == 8
+    assert CANDIDATE_SCORING_VERSION == declared["version"] == 9
     assert declared["financial_score"] == 100
     assert declared["regulatory_score"] == 100
     assert declared["score"] == 100
@@ -274,8 +274,8 @@ def test_unknown_financing_gets_a_lower_bound_without_inventing_money():
         "formation": "SSIAP 1", "cpf": "OUI",
     })
     confirmed_none = calculate_candidate_integration_score({
-        "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "NON",
-        "financement_perso_possible": "NON",
+        "formation": "SSIAP 1", "cpf": "OUI", "cpf_montant": "0",
+        "financement_ft": "NON", "financement_perso_possible": "NON",
     })
 
     assert unknown["financial_score"] == 0
@@ -495,7 +495,7 @@ def test_amount_is_ignored_when_cpf_is_explicitly_no():
         "formation": "SSIAP 1", "cpf": "NON", "cpf_montant": "1000",
         "financement_ft": "NON", "financement_perso_possible": "OUI",
     })
-    assert result["cpf_coverage_percent"] == 0
+    assert result["cpf_coverage_percent"] is None
     assert financial_points(result, "funding_coverage") == 0
     assert any("indiqué NON" in warning for warning in result["warnings"])
 
