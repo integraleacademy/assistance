@@ -6194,20 +6194,6 @@ def rappel():
     return render_template("rappel.html")
 
 HEBERGEMENT_ADDRESS = "Intégrale Academy, 54 chemin du Carreou, 83480 Puget-sur-Argens"
-HEBERGEMENT_SESSION_OPTIONS = (
-    ("Du 5 janvier au 16 mars 2026", _date(2026, 1, 5)),
-    ("Du 30 mars au 2 juin 2026", _date(2026, 3, 30)),
-    ("Du 8 juin au 4 août 2026", _date(2026, 6, 8)),
-    ("Du 1er septembre au 27 octobre 2026", _date(2026, 9, 1)),
-    ("Du 9 novembre 2026 au 19 janvier 2027", _date(2026, 11, 9)),
-)
-HEBERGEMENT_SESSION_END_DATES = {
-    "Du 5 janvier au 16 mars 2026": _date(2026, 3, 16),
-    "Du 30 mars au 2 juin 2026": _date(2026, 6, 2),
-    "Du 8 juin au 4 août 2026": _date(2026, 8, 4),
-    "Du 1er septembre au 27 octobre 2026": _date(2026, 10, 27),
-    "Du 9 novembre 2026 au 19 janvier 2027": _date(2027, 1, 19),
-}
 _HEBERGEMENT_WEEKDAYS = (
     "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
 )
@@ -6309,36 +6295,48 @@ def _format_hebergement_date_fr(value):
     )
 
 
-def _hebergement_sessions_for_template():
-    return [
-        {
+def _hebergement_sessions_for_template(data_store=None, today=None, *, include_past=False):
+    """Use the on-site A3P calendar, keeping booking labels without exam details."""
+    sessions = (
+        get_formation_sessions(data_store)
+        if include_past
+        else get_upcoming_formation_sessions(data_store, today=today)
+    )
+    options = {}
+    for row in sessions.get("cote_azur", {}).get("A3P", []):
+        label = re.split(
+            r"\s*[-–—]\s*examen\b",
+            str(row.get("label") or ""),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip()
+        start_date, end_date = _hebergement_session_dates(label)
+        if not start_date or not end_date:
+            continue
+        options[label] = {
             "label": label,
+            "start_date": start_date,
+            "end_date": end_date,
             "arrival_label": _format_hebergement_date_fr(
                 start_date - datetime.timedelta(days=1)
             ),
         }
-        for label, start_date in HEBERGEMENT_SESSION_OPTIONS
-    ]
+    return sorted(options.values(), key=lambda option: (option["start_date"], option["label"]))
 
 
 def _hebergement_arrival_label(session):
-    start_date = next((
-        start_date
-        for label, start_date in HEBERGEMENT_SESSION_OPTIONS
-        if label == session
-    ), None)
+    start_date, _end_date = _hebergement_session_dates(session)
     if not start_date:
         return "la veille du premier jour de formation"
     return _format_hebergement_date_fr(start_date - datetime.timedelta(days=1))
 
 
 def _hebergement_session_dates(session):
-    start_date = next((
-        start_date
-        for label, start_date in HEBERGEMENT_SESSION_OPTIONS
-        if label == session
-    ), None)
-    return start_date, HEBERGEMENT_SESSION_END_DATES.get(session)
+    # Read the saved period too, so old bookings survive calendar edits/deletions.
+    start_date, end_date = _session_date_range(session)
+    if not start_date or not end_date or end_date < start_date:
+        return None, None
+    return start_date, end_date
 
 
 def _hebergement_now_iso():
@@ -6601,8 +6599,7 @@ def _hebergement_signature_validation_errors(record):
         for key, label in required.items()
         if not str(fields.get(key) or "").strip()
     ]
-    valid_sessions = {label for label, _start in HEBERGEMENT_SESSION_OPTIONS}
-    if fields.get("session") not in valid_sessions:
+    if not all(_hebergement_session_dates(fields.get("session"))):
         errors.append("Sélectionnez une session de formation valide.")
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", fields.get("mail", "")):
         errors.append("L'adresse e-mail du signataire est invalide.")
@@ -6912,6 +6909,7 @@ def _hebergement_confirmation_email(prenom, session):
 def hebergement():
     data = load_data()
     paris_tz = pytz.timezone("Europe/Paris")
+    hebergement_sessions = _hebergement_sessions_for_template(data)
 
     if request.method == "POST":
         nom = request.form.get("nom", "").strip()
@@ -6919,6 +6917,14 @@ def hebergement():
         telephone = request.form.get("telephone", "").strip()
         mail = request.form.get("email", "").strip()
         session = request.form.get("session", "").strip()
+
+        if session not in {option["label"] for option in hebergement_sessions}:
+            return render_template(
+                "hebergement.html",
+                erreur_session="Cette session n’est plus disponible. Sélectionnez une session à venir.",
+                hebergement_sessions=hebergement_sessions,
+                form_values=request.form,
+            )
 
         # 🚫 LIMITE DE 10 PLACES PAR SESSION (SÉCURISÉ CÔTÉ SERVEUR)
         nb_places_session = len([
@@ -6930,7 +6936,7 @@ def hebergement():
             return render_template(
                 "hebergement.html",
                 erreur_session="Notre hébergement est complet pour cette session (10 places réservées sur 10).",
-                hebergement_sessions=_hebergement_sessions_for_template(),
+                hebergement_sessions=hebergement_sessions,
                 form_values=request.form,
             )
 
@@ -6976,7 +6982,7 @@ def hebergement():
 
     return render_template(
         "hebergement.html",
-        hebergement_sessions=_hebergement_sessions_for_template(),
+        hebergement_sessions=hebergement_sessions,
         form_values={},
     )
 
@@ -7293,6 +7299,23 @@ def admin_hebergement_convention_editor(reservation_id):
                 reservation_id=reservation_id,
             ))
 
+    session_options = [
+        option["label"]
+        for option in _hebergement_sessions_for_template(data, include_past=True)
+    ]
+    for saved_label in (reservation.get("session"), record["fields"].get("session")):
+        if saved_label and saved_label not in session_options:
+            session_options.append(saved_label)
+    session_schedule = {}
+    for label in session_options:
+        start_date, end_date = _hebergement_session_dates(label)
+        if start_date and end_date:
+            session_schedule[label] = {
+                "contract_date": start_date.isoformat(),
+                "arrival_date": (start_date - datetime.timedelta(days=1)).isoformat(),
+                "departure_date": end_date.isoformat(),
+            }
+
     return render_template(
         "admin_hebergement_convention_editor.html",
         reservation=reservation,
@@ -7305,20 +7328,8 @@ def admin_hebergement_convention_editor(reservation_id):
         form_locked=_hebergement_yousign_is_locked(record["yousign"]),
         yousign_configured=is_yousign_configured(),
         yousign_sandbox=is_yousign_sandbox(),
-        session_options=[label for label, _start in HEBERGEMENT_SESSION_OPTIONS],
-        session_schedule={
-            label: {
-                "contract_date": start_date.isoformat(),
-                "arrival_date": (
-                    start_date - datetime.timedelta(days=1)
-                ).isoformat(),
-                "departure_date": (
-                    HEBERGEMENT_SESSION_END_DATES[label].isoformat()
-                    if label in HEBERGEMENT_SESSION_END_DATES else ""
-                ),
-            }
-            for label, start_date in HEBERGEMENT_SESSION_OPTIONS
-        },
+        session_options=session_options,
+        session_schedule=session_schedule,
     )
 
 
