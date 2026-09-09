@@ -4,9 +4,10 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 8
+CANDIDATE_SCORING_VERSION = 9
 FINANCIAL_WEIGHT = 80
 REGULATORY_WEIGHT = 20
+PERSONAL_CAPACITY_FINANCIAL_FLOOR = 50
 
 FT_REQUEST_PROGRESS_POINTS = {
     "aucune_demande": 0,
@@ -190,7 +191,8 @@ def calculate_financial_readiness_score(contact):
     price_cents = TRAINING_PRICES_CENTS.get(code)
     warnings, blockers, actions = [], [], []
 
-    exact_text = str(contact.get("cpf_montant") or "").strip()
+    exact_value = contact.get("cpf_montant")
+    exact_text = "" if exact_value is None else str(exact_value).strip()
     exact_known = bool(exact_text)
     declared_cents = _amount_cents(exact_text) if exact_known else 0
     tier = parse_cpf_tier(contact.get("cpf_palier")) if not exact_known else None
@@ -201,10 +203,16 @@ def calculate_financial_readiness_score(contact):
         cpf_max_cents = tier["max_cents"]
     else:
         cpf_min_cents = cpf_max_cents = 0
-    # Une absence de montant ne vaut jamais 0 €. Le zéro n'est considéré comme
-    # connu que lorsque le candidat indique explicitement ne pas utiliser de CPF.
-    cpf_amount_known = exact_known or tier is not None or cpf is False
-    reliable_remainder = exact_known or cpf is False
+    # ``cpf`` répond à « Compte CPF consulté ? ». NON ne signifie ni un solde
+    # nul ni un refus d'utiliser le CPF. Un ancien montant contradictoire reste
+    # conservé sur la fiche, mais n'est pas présenté comme un solde confirmé.
+    cpf_amount_known = (exact_known or tier is not None) and cpf is not False
+    # L'engagement historique explicite sur le reste à charge lorsque CPF=NON
+    # portait sur le tarif complet, sans CPF mobilisé. On le conserve ; ce champ
+    # est distinct de la simple capacité à payer « tout ou partie ».
+    reliable_remainder = (exact_known and cpf_amount_known) or (
+        cpf is False and personal_remainder is True
+    )
     personal_remainder_confirmed = personal_remainder is True and reliable_remainder
 
     if cpf is False:
@@ -238,11 +246,12 @@ def calculate_financial_readiness_score(contact):
                 "level": None, "label": "Score indisponible — tarif de la formation non configuré",
                 "indication": "Tarif de référence requis", "operational_status": "action_required",
                 "score_complete": False, "training_code": code, "training_price_eur": None,
-                "cpf_amount_eur": _euros(declared_cents) if exact_known else None,
+                "cpf_consulted": cpf, "cpf_amount_known": cpf_amount_known,
+                "cpf_amount_eur": _euros(declared_cents) if exact_known and cpf_amount_known else None,
                 "cpf_amount_min_eur": _euros(cpf_min_cents) if cpf_amount_known else None,
                 "cpf_amount_max_eur": (_euros(cpf_max_cents)
                                         if cpf_amount_known and cpf_max_cents is not None else None),
-                "cpf_amount_estimated": bool(tier), "cpf_range_open_ended": bool(tier and tier["max_cents"] is None),
+                "cpf_amount_estimated": bool(tier) and cpf_amount_known, "cpf_range_open_ended": bool(tier and cpf_amount_known and tier["max_cents"] is None),
                 "cpf_coverage_percent": None, "cpf_coverage_min_percent": None,
                 "cpf_coverage_max_percent": None, "remaining_to_finance_eur": None,
                 "remaining_to_finance_min_eur": None, "remaining_to_finance_max_eur": None,
@@ -275,6 +284,16 @@ def calculate_financial_readiness_score(contact):
         secured_cents = price_cents
     secured_cents = min(secured_cents, price_cents)
     unsecured_cents = max(price_cents - secured_cents, 0)
+    capacity_to_quantify = (personal_capacity is True
+                            and personal_remainder is not False
+                            and not personal_remainder_confirmed
+                            and unsecured_cents > 0)
+    if cpf is False and unsecured_cents > 0:
+        warnings.append("Le compte CPF n’a pas été consulté : son solde est inconnu, pas nul.")
+        actions.append("Consulter le compte CPF pour connaître le solde disponible")
+    if capacity_to_quantify:
+        warnings.append("La capacité de paiement personnel est déclarée, mais son montant reste à confirmer ; aucun montant personnel n’est compté comme acquis.")
+        actions.append("Préciser le montant que le candidat peut financer personnellement")
     coverage_points_raw = Decimal(secured_cents * 80) / price_cents
     cpf_share = Decimal(useful_min_cents) / price_cents
 
@@ -393,6 +412,8 @@ def calculate_financial_readiness_score(contact):
     confidence_checks = [price_cents is not None, cpf is not None, wants_ft is not None]
     if cpf is True:
         confidence_checks.append(exact_known or tier is not None)
+    elif cpf is False and unsecured_cents > 0:
+        confidence_checks.append(False)
     if cpf_route:
         confidence_checks.extend((created is not None, functional is not None))
     if wants_ft is True:
@@ -407,17 +428,22 @@ def calculate_financial_readiness_score(contact):
         ("funding_coverage", "Couverture financière sécurisée ou estimée", coverage_points, 80),
         ("funding_progress", "Solution CPF et avancement du complément", progress_points, 20),
     ]
-    # Le score est une borne basse fondée exclusivement sur les faits connus.
-    # Une réponse absente ne devient jamais un fait négatif ou un montant de
-    # 0 € : elle rapporte simplement 0 point tant qu'elle n'est pas renseignée.
-    # Les montants et statuts restent donc à ``None`` dans le résultat, tandis
-    # que la confiance et ``score_complete`` signalent le caractère provisoire.
+    # La participation personnelle déclarée est un signal commercial positif,
+    # pas un montant acquis. Son plancher de potentiel reste distinct des
+    # points de couverture et n'ajoute jamais d'euros à ``secured_cents``.
     score = min(100, sum(row[2] for row in breakdown))
-    score_complete = confidence == 100 and tier is None
+    capacity_credit = max(0, PERSONAL_CAPACITY_FINANCIAL_FLOOR - score) if capacity_to_quantify else 0
+    adjustments = ([{
+        "key": "personal_capacity_declared",
+        "label": "Capacité de paiement personnel déclarée — montant à confirmer",
+        "points": capacity_credit,
+    }] if capacity_credit else [])
+    score += capacity_credit
+    score_complete = confidence == 100 and tier is None and not capacity_to_quantify
     level, label, indication = _score_level(score)
     if not score_complete:
         label = "Score provisoire — informations à compléter"
-        indication = "Borne basse calculée à partir des éléments connus"
+        indication = "Potentiel estimé à partir des informations et capacités déclarées"
     pending_funding = ft_status in {
         "a_preparer", "transmise", "en_cours_instruction",
     } or (ft_status == "acceptee" and unsecured_cents > 0)
@@ -428,12 +454,13 @@ def calculate_financial_readiness_score(contact):
             "level": level, "label": label, "indication": indication,
             "operational_status": status, "score_complete": score_complete,
             "training_code": code, "training_price_eur": _euros(price_cents),
-            "cpf_amount_eur": _euros(declared_cents) if exact_known else None,
+            "cpf_consulted": cpf, "cpf_amount_known": cpf_amount_known,
+            "cpf_amount_eur": _euros(declared_cents) if exact_known and cpf_amount_known else None,
             "cpf_amount_min_eur": _euros(cpf_min_cents) if cpf_amount_known else None,
             "cpf_amount_max_eur": (_euros(cpf_max_cents)
                                     if cpf_amount_known and cpf_max_cents is not None else None),
-            "cpf_amount_estimated": bool(tier),
-            "cpf_range_open_ended": bool(tier and tier["max_cents"] is None),
+            "cpf_amount_estimated": bool(tier) and cpf_amount_known,
+            "cpf_range_open_ended": bool(tier and cpf_amount_known and tier["max_cents"] is None),
             "cpf_coverage_percent": coverage_min if cpf_amount_known else None,
             "cpf_coverage_min_percent": coverage_min if cpf_amount_known else None,
             "cpf_coverage_max_percent": coverage_max if cpf_amount_known else None,
@@ -450,6 +477,7 @@ def calculate_financial_readiness_score(contact):
             "unsecured_amount_eur": (_euros(unsecured_cents)
                                       if cpf_amount_known or secured_cents >= price_cents else None),
             "financial_data_confidence_percent": confidence,
+            "financial_adjustments": adjustments,
             "breakdown": [{"key": k, "label": l, "points": p, "max_points": m} for k, l, p, m in breakdown],
             "blockers": _unique(blockers), "warnings": _unique(warnings),
             "next_actions": _unique(actions)}
@@ -672,7 +700,7 @@ def calculate_candidate_integration_score(contact, cnaps_snapshot=None):
         result["level"], result["label"], result["indication"] = _score_level(global_score)
         if score_estimated:
             result["label"] = "Score provisoire — informations à compléter"
-            result["indication"] = "Borne basse calculée à partir des éléments connus"
+            result["indication"] = "Potentiel estimé à partir des informations et capacités déclarées"
     if result["blockers"]:
         result["operational_status"] = "blocked"
     elif global_score is None:
