@@ -1848,15 +1848,18 @@ def _formation_sms_context(formation_code: str) -> dict:
     }
 
 
-def build_training_information_sms_text(formation_code: str) -> str:
+def build_training_information_sms_text(formation_code: str, *, include_phone_booking=True) -> str:
     context = _formation_sms_context(formation_code)
+    booking_text = (
+        "Je vous invite à réserver un RDV téléphonique avec un membre de notre équipe qui pourra vous renseigner "
+        f"et vous présenter en détails notre formation : {context['calendly']}\n"
+    ) if include_phone_booking else ""
     return (
         "Bonjour, \n"
         f"Je fais suite à votre demande d’informations concernant notre formation {context['formation_name']}. "
         "Je viens de vous adresser par mail toutes les informations utiles (pensez à vérifier vos courriers indésirables). \n"
-        "Je vous invite à réserver un RDV téléphonique avec un membre de notre équipe qui pourra vous renseigner "
-        f"et vous présenter en détails notre formation : {context['calendly']}\n"
-        "Vous pouvez également nous contacter par téléphone du lundi au vendredi de 09h00 à 17h00 au 04 22 47 07 68. \n"
+        + booking_text
+        + "Vous pouvez également nous contacter par téléphone du lundi au vendredi de 09h00 à 17h00 au 04 22 47 07 68. \n"
         "Je vous souhaite une bonne journée, \n"
         "Clément VAILLANT - Directeur Intégrale Academy"
     )
@@ -2598,6 +2601,7 @@ def _centre_legal_block(centre_code: str) -> str:
 
 def build_a3p_email_html(
     prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
+    *, include_phone_booking=True,
 ):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
@@ -2613,15 +2617,21 @@ def build_a3p_email_html(
     return _render_email_template(
         "a3p.html", prenom=prenom, centre_display=centre_display,
         session_html=session_html, devis_button_html=devis_button_html,
+        phone_booking_html=(_render_email_template("a3p_phone_booking.html")
+                            if include_phone_booking else ""),
     )
 
 
 def _a3p_information_email_content(
     prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
+    *, include_phone_booking=True,
 ):
     """Return the A3P message shared by the public form and META leads."""
     session_date = _format_selected_session_date(dates_txt)
     centre_label, centre_address = _centre_label_and_address(centre_code)
+    booking_text = (
+        "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
+    ) if include_phone_booking else ""
     plain = (
         f"Bonjour {prenom},\n\n"
         "Je fais suite à votre demande de renseignements concernant notre formation Agent de Protection Physique des Personnes (A3P – Bodyguard), titre reconnu par l’État (RNCP38002 – niveau 4).\n"
@@ -2633,14 +2643,17 @@ def _a3p_information_email_content(
         "Identité Numérique La Poste requise pour le CPF.\n"
         "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
-        "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
-        "Je reste à votre disposition pour toute information complémentaire.\n\n"
+        + booking_text
+        + "Je reste à votre disposition pour toute information complémentaire.\n\n"
         "Clément VAILLANT\nDirecteur – Intégrale Academy"
     )
     return (
         "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
         plain,
-        build_a3p_email_html(prenom, dates_txt, centre_code, devis_url, data_store),
+        build_a3p_email_html(
+            prenom, dates_txt, centre_code, devis_url, data_store,
+            include_phone_booking=include_phone_booking,
+        ),
     )
 
 
@@ -9943,11 +9956,29 @@ def _meta_salesforce_payload(meta_lead_id, fields, crm_payload, answer_rows):
     }
 
 
-def _send_meta_a3p_information(contact):
-    """Send and log the same A3P email and SMS as the public information form."""
+META_PHONE_BOOKING_MIN_SCORE = 30
+
+
+def _meta_phone_booking_allowed(contact, data_store=None):
+    """Use the current integration score without any extra network lookup."""
+    snapshot = (data_store or {}).get("crm_cnaps_scoring_snapshots", {}).get(
+        str(contact.get("id"))
+    )
+    try:
+        score = calculate_candidate_integration_score(contact, snapshot).get("score")
+    except Exception:
+        app.logger.exception("Score META indisponible : messages envoyés sans invitation au rendez-vous")
+        return False
+    return isinstance(score, (int, float)) and META_PHONE_BOOKING_MIN_SCORE <= score <= 100
+
+
+def _send_meta_a3p_information(contact, data_store=None):
+    """Send both messages to every new META lead; gate only the booking CTA."""
+    include_phone_booking = _meta_phone_booking_allowed(contact, data_store)
     centre_code = _normalize_centre_code(contact.get("lieu"))
     subject, plain, html = _a3p_information_email_content(
         contact.get("prenom", ""), contact.get("dates_formation", ""), centre_code, "",
+        data_store, include_phone_booking=include_phone_booking,
     )
     delivery = {"email": False, "sms": False}
     if contact.get("mail"):
@@ -9961,7 +9992,9 @@ def _send_meta_a3p_information(contact):
             subject, html,
         )
     if contact.get("telephone"):
-        sms_body = build_training_information_sms_text("A3P")
+        sms_body = build_training_information_sms_text(
+            "A3P", include_phone_booking=include_phone_booking,
+        )
         try:
             delivery["sms"] = bool(send_sms(contact["telephone"], sms_body))
         except Exception:
@@ -10072,7 +10105,7 @@ def meta_zapier_leads():
             inbound["custom_answers"] = copy.deepcopy(custom_answers)
             inbound["mapped_fields"] = copy.deepcopy(submission["mapped_fields"])
             if created and _meta_requires_a3p_information(contact):
-                submission["automatic_delivery"] = _send_meta_a3p_information(contact)
+                submission["automatic_delivery"] = _send_meta_a3p_information(contact, data)
             if created:
                 data.setdefault("crm_notifications", []).insert(0, {
                     "id": str(uuid.uuid4()), "date": received_at, "kind": "meta_lead",
