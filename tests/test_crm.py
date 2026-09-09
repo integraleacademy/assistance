@@ -225,7 +225,8 @@ def test_administration_menu_displays_brevo_sms_balance():
     assert 'body:new FormData(form)' in crm_js
     assert "headers:{}" in crm_js
     assert "attachment_uploaded" in crm_js
-    assert "20260825-development-support-inline-images-2" in template
+    assert "20260906-development-support-a-analyser-1" in template
+    assert "statut <strong>À ANALYSER</strong>" in crm_js
 
 
 def test_team_user_can_open_development_support(tmp_path, monkeypatch):
