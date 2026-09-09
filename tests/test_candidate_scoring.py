@@ -58,7 +58,7 @@ def test_candidate_score_styles_are_bundled():
     assert ".integration-score-card.incomplete" in css
 
 
-def test_v7_uses_60_percent_financial_and_40_percent_regulatory():
+def test_v8_uses_80_percent_financial_and_20_percent_regulatory():
     declared = calculate_candidate_integration_score(
         financial_contact(carte_pro="OUI")
     )
@@ -67,7 +67,7 @@ def test_v7_uses_60_percent_financial_and_40_percent_regulatory():
         {"has_active_professional_title": True},
     )
 
-    assert CANDIDATE_SCORING_VERSION == declared["version"] == 7
+    assert CANDIDATE_SCORING_VERSION == declared["version"] == 8
     assert declared["financial_score"] == 100
     assert declared["regulatory_score"] == 100
     assert declared["score"] == 100
@@ -164,8 +164,8 @@ def test_unknown_regulatory_state_keeps_a_numeric_provisional_lower_bound():
 
     assert result["financial_score"] == 100
     assert result["regulatory_score"] is None
-    assert result["score"] == 60
-    assert result["level"] == "qualify"
+    assert result["score"] == 80
+    assert result["level"] == "good"
     assert result["score_estimated"] is True
     assert result["score_complete"] is False
     assert "Score provisoire" in result["label"]
@@ -177,7 +177,7 @@ def test_cnaps_refusal_is_zero_and_blocking():
         financial_contact(carte_pro="NON"), {"raw_status": "REFUSÉ"}
     )
     assert result["regulatory_score"] == 0
-    assert result["score"] == 60
+    assert result["score"] == 80
     assert result["operational_status"] == "blocked"
     assert any("refus" in blocker.lower() for blocker in result["blockers"])
 
@@ -254,7 +254,7 @@ def test_open_cpf_tier_is_scored_from_lower_bound_and_displayed_as_range():
     assert result["cpf_coverage_max_percent"] == 100
     assert result["remaining_to_finance_min_eur"] == 0
     assert result["remaining_to_finance_max_eur"] == 200
-    assert result["financial_score"] == 81
+    assert result["financial_score"] == 96
     assert result["score_estimated"] is True
 
 
@@ -313,7 +313,7 @@ def test_every_supported_training_has_a_numeric_score_with_missing_answers(
     assert result["remaining_to_finance_eur"] is None
 
 
-def test_identity_only_changes_score_when_cpf_is_used():
+def test_identity_changes_actions_and_readiness_without_discounting_available_funds():
     no_cpf = {
         "formation": "SSIAP 1", "cpf": "NON", "financement_ft": "NON",
         "financement_perso_possible": "OUI",
@@ -334,8 +334,11 @@ def test_identity_only_changes_score_when_cpf_is_used():
     cpf_ready = calculate_candidate_integration_score(financial_contact(
         formation="SSIAP 1", cpf_amount="1230",
     ))
-    assert financial_points(cpf_not_ready, "route_readiness") == 0
-    assert financial_points(cpf_ready, "route_readiness") == 20
+    assert cpf_not_ready["financial_score"] == cpf_ready["financial_score"] == 100
+    assert cpf_not_ready["operational_status"] == "action_required"
+    assert cpf_ready["operational_status"] == "ready"
+    assert any("identité numérique" in action.lower()
+               for action in cpf_not_ready["next_actions"])
 
 
 def test_france_travail_actual_status_changes_progress_and_readiness():
@@ -354,7 +357,7 @@ def test_france_travail_actual_status_changes_progress_and_readiness():
 
     assert [scores[key]["financial_score"] for key in (
         "a_preparer", "transmise", "en_cours_instruction", "acceptee",
-    )] == [20, 33, 40, 46]
+    )] == [5, 11, 15, 17]
     assert all(result["operational_status"] == "action_required"
                for result in scores.values())
     accepted = calculate_candidate_integration_score({
@@ -368,7 +371,7 @@ def test_france_travail_actual_status_changes_progress_and_readiness():
     assert accepted["operational_status"] == "ready"
 
 
-def test_route_readiness_label_matches_the_selected_funding_solution():
+def test_funding_status_matches_the_selected_funding_solution():
     cpf = calculate_candidate_integration_score(financial_contact(
         formation="SSIAP 1", cpf_amount="1230",
     ))
@@ -381,15 +384,10 @@ def test_route_readiness_label_matches_the_selected_funding_solution():
         "financement_perso_possible": "OUI", "reste_a_charge_perso": "OUI",
     })
 
-    assert financial_label(cpf, "route_readiness") == (
-        "Identité numérique CPF opérationnelle"
-    )
-    assert financial_label(france_travail, "route_readiness") == (
-        "Démarches France Travail réalisées"
-    )
-    assert financial_label(personal, "route_readiness") == (
-        "Paiement personnel confirmé"
-    )
+    assert cpf["funding_solution_status"] == "fully_covered_by_cpf"
+    assert france_travail["funding_solution_status"] == "pending_france_travail"
+    assert personal["funding_solution_status"] == "secured_personal"
+
 
 
 def test_france_travail_status_and_amount_are_ignored_when_route_is_refused():
