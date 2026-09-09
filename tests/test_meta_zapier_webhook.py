@@ -1,3 +1,5 @@
+import pytest
+
 import app as application
 
 
@@ -156,11 +158,12 @@ def test_new_a3p_meta_lead_receives_public_form_email_and_sms_without_quote(tmp_
     assert emails[0][0] == "LINA@Example.FR"
     expected = application._a3p_information_email_content(
         "Lina", contact["dates_formation"], "cote_azur", "",
+        include_phone_booking=False,
     )
     assert emails[0][1:] == expected
     assert "Télécharger mon devis détaillé" not in emails[0][3]
     assert "/plan/" not in emails[0][3]
-    assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P"))]
+    assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P", include_phone_booking=False))]
     titles = [activity["title"] for activity in contact["activities"]]
     assert "Devis détaillé créé" not in titles
     assert "E-mail automatique envoyé" in titles
@@ -195,10 +198,107 @@ def test_unmapped_meta_lead_still_receives_a3p_email_and_sms(tmp_path, monkeypat
     assert contact["lieu"] == "Côte d’Azur"
     assert submission["automatic_delivery"] == {"email": True, "sms": True}
     assert emails and "A3P" in emails[0][1]
-    assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P"))]
+    assert sms == [("+33 6 12 34 56 78", application.build_training_information_sms_text("A3P", include_phone_booking=False))]
     assert {activity["title"] for activity in contact["activities"]} >= {
         "E-mail automatique envoyé", "SMS automatique envoyé",
     }
+
+
+@pytest.mark.parametrize("score,booking_allowed", [
+    (0, False), (29, False), (30, True), (58, True), (100, True),
+    (None, False), ("indisponible", False),
+])
+def test_every_meta_lead_gets_both_messages_but_booking_starts_at_30(
+        tmp_path, monkeypatch, score, booking_allowed):
+    client = setup_client(tmp_path, monkeypatch)
+    emails, sms = [], []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
+    monkeypatch.setattr(application, "calculate_candidate_integration_score", lambda *args: {
+        "score": score, "financial_score": 100 if not booking_allowed else 0,
+    })
+
+    response = post(client, lead())
+
+    assert response.status_code == 201
+    assert len(emails) == len(sms) == 1
+    assert application.load_data()["crm_meta_lead_submissions"][0]["automatic_delivery"] == {
+        "email": True, "sms": True,
+    }
+    for content in (emails[0][2], emails[0][3], sms[0][1]):
+        assert ("calendly.com/integraleacademy/apr" in content) is booking_allowed
+        assert ("rendez-vous" in content.lower() or "rdv téléphonique" in content.lower()) is booking_allowed
+        assert "score" not in content.lower()
+    assert "Dossier de présentation" in emails[0][2]
+    assert "4200" in emails[0][2]
+    assert "formation" in sms[0][1]
+    assert "{phone_booking_html}" not in emails[0][3]
+
+    replay = post(client, lead())
+    assert replay.status_code == 200
+    assert replay.get_json()["result"] == "already_processed"
+    assert len(emails) == len(sms) == 1
+
+
+@pytest.mark.parametrize("answers,expected_score,booking_allowed", [
+    ({"cpf": "OUI", "cpf_palier": "3000 à 4000 euros", "financement_ft": "OUI"}, 58, True),
+    ({"cpf": "NON", "financement_ft": "OUI", "financement_perso_possible": "OUI"}, 40, True),
+    ({"cpf": "NON", "financement_ft": "OUI", "financement_perso_possible": "NON"}, 2, False),
+])
+def test_booking_uses_the_actual_score_after_meta_answers_are_applied(
+        tmp_path, monkeypatch, answers, expected_score, booking_allowed):
+    client = setup_client(tmp_path, monkeypatch)
+    emails, sms = [], []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
+
+    response = post(client, lead(**answers))
+
+    assert response.status_code == 201
+    contact = application.load_data()["crm_contacts"][0]
+    assert application.calculate_candidate_integration_score(contact)["score"] == expected_score
+    assert ("calendly.com" in emails[0][3]) is booking_allowed
+    assert ("calendly.com" in sms[0][1]) is booking_allowed
+
+
+def test_score_failure_does_not_prevent_meta_email_and_sms(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    emails, sms = [], []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
+
+    def unavailable(*args):
+        raise RuntimeError("Scoring temporarily unavailable")
+
+    monkeypatch.setattr(application, "calculate_candidate_integration_score", unavailable)
+    assert post(client, lead()).status_code == 201
+    assert len(emails) == len(sms) == 1
+    assert "calendly.com" not in emails[0][3] + sms[0][1]
+
+
+def test_booking_recomputes_score_with_cached_cnaps_instead_of_stored_score(monkeypatch):
+    calls = []
+    contact = {"id": "meta-test", "formation": "A3P", "integration_score": {"score": 99}}
+    snapshot = {"raw_status": "TRANSMIS"}
+    monkeypatch.setattr(application, "calculate_candidate_integration_score", lambda c, s: (
+        calls.append((c, s)) or {"score": 29}
+    ))
+    assert application._meta_phone_booking_allowed(contact, {
+        "crm_cnaps_scoring_snapshots": {"meta-test": snapshot},
+    }) is False
+    assert calls == [(contact, snapshot)]
+
+
+def test_public_a3p_information_keeps_booking_by_default(tmp_path, monkeypatch):
+    setup_client(tmp_path, monkeypatch)
+    default = application._a3p_information_email_content("Lina", "", "cote_azur", "")
+    explicit = application._a3p_information_email_content(
+        "Lina", "", "cote_azur", "", include_phone_booking=True,
+    )
+    assert default == explicit
+    assert "calendly.com/integraleacademy/apr" in default[1]
+    assert "calendly.com/integraleacademy/apr" in default[2]
+    assert "calendly.com/integraleacademy/apr" in application.build_training_information_sms_text("A3P")
 
 
 def test_failed_meta_a3p_deliveries_remain_visible_in_activity_journal(tmp_path, monkeypatch):
