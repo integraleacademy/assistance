@@ -961,12 +961,15 @@
                             </div>
                             <div class="field-full">
                                 <label for="session">Dates de formation</label>
-                                <select id="session" name="session" aria-describedby="selected-arrival" required>
+                                <select id="session" name="session" aria-describedby="selected-arrival" required {% if not hebergement_sessions %}disabled{% endif %}>
                                     <option value="" disabled {% if not form_values.get('session') %}selected{% endif %}>Sélectionnez votre session</option>
                                     {% for session_option in hebergement_sessions %}
                                     <option value="{{ session_option.label }}" data-arrival="{{ session_option.arrival_label }}" {% if form_values.get('session') == session_option.label %}selected{% endif %}>{{ session_option.label }}</option>
                                     {% endfor %}
                                 </select>
+                                {% if not hebergement_sessions %}
+                                <p class="form-note" role="status">Aucune session A3P à venir n’est actuellement proposée pour l’hébergement.</p>
+                                {% endif %}
                                 <div class="selected-arrival" id="selected-arrival" aria-live="polite"></div>
                             </div>
                         </div>
@@ -993,7 +996,7 @@
                             </label>
                         </div>
 
-                        <button class="submit-button" type="submit">Confirmer ma réservation</button>
+                        <button class="submit-button" type="submit" {% if not hebergement_sessions %}disabled{% endif %}>Confirmer ma réservation</button>
                         <p class="form-note">Une copie complète des conditions vous sera envoyée par e-mail.</p>
                     </form>
                 </div>

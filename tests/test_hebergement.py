@@ -1,12 +1,26 @@
 import copy
+import datetime
 import io
 import zipfile
+
+import pytest
 
 import app as application
 import hebergement_contract as contract_generator
 
 
 SESSION = "Du 9 novembre 2026 au 19 janvier 2027"
+
+
+@pytest.fixture(autouse=True)
+def fixed_booking_date(monkeypatch):
+    class FixedDateTime(datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 9, 9, 10, tzinfo=datetime.timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr(application.datetime, "datetime", FixedDateTime)
 
 
 def _client(monkeypatch, data=None):
@@ -115,6 +129,177 @@ def test_hebergement_page_presents_all_booking_conditions(monkeypatch):
     assert 'data-arrival="dimanche 8 novembre 2026"' in body
     assert 'name="conditions_arrivee" value="acceptees" required' in body
     assert 'name="reglement_hebergement" value="accepte" required' in body
+
+
+def test_hebergement_uses_only_upcoming_on_site_a3p_admin_sessions(monkeypatch):
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["formation_sessions"] = {
+        "cote_azur": {
+            "A3P": [
+                {"label": "Du 19 janvier au 16 mars 2027"},
+                {"label": "Du 1er septembre au 27 octobre 2026"},
+                {"label": "Du 8 juin au 4 août 2026"},
+                {"label": "Du 10 novembre 2026 au 14 janvier 2027 - examen le 15 janvier 2027"},
+                {"label": "Du 9 au 30 septembre 2026"},
+                {"label": "Du 19 janvier au 16 mars 2027"},
+                {"label": "Dates à confirmer"},
+                {"label": "Du 31 février au 16 mars 2027"},
+                {"label": "Du 20 mars au 16 mars 2027"},
+            ],
+            "APS": [{"label": "Du 1er au 30 décembre 2026"}],
+        },
+        "auvergne": {"A3P": [{"label": "Du 21 octobre au 17 décembre 2026"}]},
+    }
+    original_sessions = copy.deepcopy(data["formation_sessions"])
+    client, _, saved, deliveries = _client(monkeypatch, data)
+
+    body = client.get("/hebergement").get_data(as_text=True)
+
+    assert 'value="Du 9 au 30 septembre 2026"' in body
+    assert 'data-arrival="mardi 8 septembre 2026"' in body
+    assert 'value="Du 10 novembre 2026 au 14 janvier 2027"' in body
+    assert 'data-arrival="lundi 9 novembre 2026"' in body
+    assert body.count('value="Du 19 janvier au 16 mars 2027"') == 1
+    assert body.index('value="Du 9 au 30 septembre 2026"') < body.index(
+        'value="Du 10 novembre 2026 au 14 janvier 2027"'
+    ) < body.index('value="Du 19 janvier au 16 mars 2027"')
+    for hidden in (
+        "Du 1er septembre au 27 octobre 2026",
+        "Du 8 juin au 4 août 2026",
+        SESSION,
+        "Du 1er au 30 décembre 2026",
+        "Du 21 octobre au 17 décembre 2026",
+        "Dates à confirmer",
+        "Du 31 février au 16 mars 2027",
+        "Du 20 mars au 16 mars 2027",
+    ):
+        assert hidden not in body
+    assert data["formation_sessions"] == original_sessions
+    assert saved == deliveries == []
+
+
+def test_hebergement_follows_admin_add_update_and_delete_without_static_fallback(monkeypatch):
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["formation_sessions"] = {"cote_azur": {"A3P": []}}
+    client, _, _, _ = _client(monkeypatch, data)
+    with client.session_transaction() as flask_session:
+        flask_session["user_email"] = "clement@integraleacademy.com"
+    form = {
+        "centre": "cote_azur", "formation": "A3P", "idx": "0",
+        "label": "Du 19 janvier au 16 mars 2027",
+    }
+
+    assert client.post("/admin/formation-sessions", data={**form, "action": "add"}).status_code == 302
+    assert form["label"] in client.get("/hebergement").get_data(as_text=True)
+
+    updated_label = "Du 23 mars au 4 juin 2027"
+    assert client.post("/admin/formation-sessions", data={
+        **form, "action": "update", "label": updated_label,
+    }).status_code == 302
+    body = client.get("/hebergement").get_data(as_text=True)
+    assert updated_label in body
+    assert form["label"] not in body
+    assert 'data-arrival="lundi 22 mars 2027"' in body
+
+    assert client.post("/admin/formation-sessions", data={**form, "action": "delete"}).status_code == 302
+    body = client.get("/hebergement").get_data(as_text=True)
+    assert updated_label not in body
+    assert SESSION not in body
+    assert "Aucune session A3P à venir" in body
+    assert 'class="submit-button" type="submit" disabled' in body
+
+
+@pytest.mark.parametrize("unavailable_session", [
+    "Du 1er septembre au 27 octobre 2026",
+    "Du 8 juin au 4 août 2026",
+    SESSION,
+    "Du 21 octobre au 17 décembre 2026",
+    "Du 1er au 30 décembre 2026",
+    "Session inconnue",
+    "",
+])
+def test_hebergement_rejects_outdated_or_unknown_form_submissions(monkeypatch, unavailable_session):
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["formation_sessions"] = {
+        "cote_azur": {
+            "A3P": [
+                {"label": "Du 1er septembre au 27 octobre 2026"},
+                {"label": "Du 10 novembre 2026 au 14 janvier 2027"},
+            ],
+            "APS": [{"label": "Du 1er au 30 décembre 2026"}],
+        },
+        "auvergne": {"A3P": [{"label": "Du 21 octobre au 17 décembre 2026"}]},
+    }
+    client, data_store, saved, deliveries = _client(monkeypatch, data)
+
+    response = client.post("/hebergement", data={
+        "prenom": "Lina", "nom": "Martin", "email": "lina@example.com",
+        "session": unavailable_session,
+    })
+
+    assert response.status_code == 200
+    assert "Cette session n’est plus disponible" in response.get_data(as_text=True)
+    assert 'value="Lina"' in response.get_data(as_text=True)
+    assert data_store["hebergements"] == []
+    assert saved == deliveries == []
+
+
+def test_new_admin_session_booking_uses_its_dates_in_email_confirmation_and_convention(monkeypatch):
+    training_session = "Du 10 novembre 2026 au 14 janvier 2027"
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["formation_sessions"] = {"cote_azur": {"A3P": [{"label": training_session}]}}
+    client, data_store, _, deliveries = _client(monkeypatch, data)
+
+    response = client.post("/hebergement", data={
+        "nom": "Martin", "prenom": "Lina", "telephone": "06 00 00 00 00",
+        "email": "lina@example.com", "session": training_session,
+    })
+
+    assert response.status_code == 302
+    assert len(deliveries) == 2
+    assert "lundi 9 novembre 2026" in deliveries[0][2]
+    assert training_session in deliveries[0][2]
+    assert "lundi 9 novembre 2026" in client.get(response.headers["Location"]).get_data(as_text=True)
+    reservation = data_store["hebergements"][0]
+    fields = application._hebergement_convention_record(reservation)["fields"]
+    assert fields["contract_date"] == "2026-11-10"
+    assert fields["arrival_date"] == "2026-11-09"
+    assert fields["departure_date"] == "2027-01-14"
+
+    with client.session_transaction() as flask_session:
+        flask_session["user_email"] = "clement@integraleacademy.com"
+    body = client.get(f"/admin_hebergement/{reservation['id']}/convention/preparer").get_data(as_text=True)
+    assert f'value="{training_session}"' in body
+    assert '"arrival_date": "2026-11-09"' in body
+    assert '"departure_date": "2027-01-14"' in body
+
+    form = {
+        **_complete_convention_form(),
+        "session": training_session, "contract_date": "2026-11-09",
+        "arrival_date": "2026-11-09", "departure_date": "2027-01-14",
+        "payment_date": "2026-11-09", "deposit_cheque_date": "2026-11-09",
+    }
+    record = application._hebergement_convention_from_form(reservation, form)
+    assert application._hebergement_signature_validation_errors(record) == []
+
+
+def test_existing_booking_keeps_its_dates_after_admin_session_removal(monkeypatch):
+    reservation = _reservation(session="Du 5 janvier au 16 mars 2026")
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["hebergements"] = [reservation]
+    data["formation_sessions"] = {"cote_azur": {"A3P": []}}
+    client, _, _, _ = _client(monkeypatch, data)
+    with client.session_transaction() as flask_session:
+        flask_session["user_email"] = "clement@integraleacademy.com"
+
+    response = client.get("/admin_hebergement/reservation-1/convention/preparer")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert f'value="{reservation["session"]}"' in body
+    assert '"arrival_date": "2026-01-04"' in body
+    assert '"departure_date": "2026-03-16"' in body
+    assert application._hebergement_arrival_label(reservation["session"]) == "dimanche 4 janvier 2026"
 
 
 def test_hebergement_booking_sends_complete_confirmation_email(monkeypatch):
