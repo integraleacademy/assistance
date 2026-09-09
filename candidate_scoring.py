@@ -4,7 +4,9 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 7
+CANDIDATE_SCORING_VERSION = 8
+FINANCIAL_WEIGHT = 80
+REGULATORY_WEIGHT = 20
 
 FT_REQUEST_PROGRESS_POINTS = {
     "aucune_demande": 0,
@@ -153,6 +155,17 @@ def _money(cents):
     return f"{int(amount):,}".replace(",", " ") + decimals + " €"
 
 
+def _rounded_points(values):
+    """Arrondit le total une seule fois, puis répartit les points affichés."""
+    points = [int(value) for value in values]
+    total = int(sum(values).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    order = sorted(range(len(values)),
+                   key=lambda index: values[index] - points[index], reverse=True)
+    for index in order[:total - sum(points)]:
+        points[index] += 1
+    return points
+
+
 def calculate_financial_readiness_score(contact):
     """Calcule la maturité financière, quelle que soit l'origine de la piste."""
     cpf = _boolean(contact.get("cpf"))
@@ -262,14 +275,14 @@ def calculate_financial_readiness_score(contact):
         secured_cents = price_cents
     secured_cents = min(secured_cents, price_cents)
     unsecured_cents = max(price_cents - secured_cents, 0)
-    coverage_points = min(50, int((Decimal(secured_cents * 50) / price_cents).quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
+    coverage_points_raw = Decimal(secured_cents * 80) / price_cents
+    cpf_share = Decimal(useful_min_cents) / price_cents
 
     cpf_route = (cpf is True or exact_known or tier is not None) and useful_max_for_display > 0
     conservative_cpf_full = useful_min_cents >= price_cents
     ft_route = (wants_ft is True or ft_status in FT_REQUEST_STATUSES) and ft_status not in {
         "refusee", "annulee", "aucune_demande",
     }
-    personal_route = personal_remainder_confirmed or personal_capacity is True
 
     personal_progress = 30 if personal_remainder_confirmed else 18 if personal_capacity is True else 0
     if conservative_cpf_full:
@@ -300,36 +313,20 @@ def calculate_financial_readiness_score(contact):
         progress_points = personal_progress
         funding_status = "personal_capacity_declared" if personal_capacity is True else "unknown"
 
-    route_scores = []
-    if conservative_cpf_full:
-        cpf_operational = (8 if created is True else 0) + (12 if functional is True else 0)
-        route_scores.append(cpf_operational)
-    else:
-        if cpf_route:
-            cpf_operational = (8 if created is True else 0) + (12 if functional is True else 0)
-            route_scores.append(cpf_operational)
-        if ft_route:
-            registration_points = 8 if registered is True or ft_status in {
-                "transmise", "en_cours_instruction", "acceptee",
-            } else 0
-            request_points = {
-                "a_preparer": 4, "transmise": 8,
-                "en_cours_instruction": 10, "acceptee": 12,
-            }.get(ft_status, 2 if wants_ft is True else 0)
-            route_scores.append(min(20, registration_points + request_points))
-        elif personal_route:
-            route_scores.append(20 if personal_remainder_confirmed else 10)
-    operational_points = int((Decimal(sum(route_scores)) / len(route_scores)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if route_scores else 0
-    if conservative_cpf_full:
-        route_readiness_label = "Identité numérique CPF opérationnelle"
-    elif ft_route:
-        route_readiness_label = "Démarches France Travail réalisées"
-    elif personal_route:
-        route_readiness_label = "Paiement personnel confirmé"
-    elif cpf_route:
-        route_readiness_label = "Identité numérique CPF opérationnelle"
-    else:
-        route_readiness_label = "Démarches de financement à définir"
+    # Le CPF disponible constitue déjà une solution pour sa part du tarif.
+    # L'avancement FT/personnel ne concerne que le complément, sans transformer
+    # une demande en attente en argent accordé dans ``secured_cents``.
+    progress_points_raw = (
+        cpf_share * 20
+        + (1 - cpf_share) * Decimal(progress_points) * 20 / 30
+    )
+    # Les démarches d'identité numérique et d'inscription restent dans les
+    # actions, la complétude et le statut opérationnel. Elles ne diminuent pas
+    # la valeur des fonds disponibles, même quand le CPF remplace une autre
+    # source de financement déjà confirmée.
+    coverage_points, progress_points = _rounded_points([
+        coverage_points_raw, progress_points_raw,
+    ])
 
     if cpf_route:
         if created is None:
@@ -407,9 +404,8 @@ def calculate_financial_readiness_score(contact):
     confidence = int((Decimal(sum(bool(item) for item in confidence_checks) * 100) / len(confidence_checks)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
     breakdown = [
-        ("funding_coverage", "Couverture financière sécurisée ou estimée", coverage_points, 50),
-        ("funding_progress", "Avancement de la solution de financement", progress_points, 30),
-        ("route_readiness", route_readiness_label, operational_points, 20),
+        ("funding_coverage", "Couverture financière sécurisée ou estimée", coverage_points, 80),
+        ("funding_progress", "Solution CPF et avancement du complément", progress_points, 20),
     ]
     # Le score est une borne basse fondée exclusivement sur les faits connus.
     # Une réponse absente ne devient jamais un fait négatif ou un montant de
@@ -630,6 +626,8 @@ def calculate_candidate_integration_score(contact, cnaps_snapshot=None):
     financial_score = financial.get("score")
     applicable = regulatory["applicable"]
     regulatory_score = regulatory.get("score")
+    financial_weight = FINANCIAL_WEIGHT if applicable else 100
+    regulatory_weight = REGULATORY_WEIGHT if applicable else 0
     if financial_score is None:
         global_score = None
     elif applicable:
@@ -637,12 +635,12 @@ def calculate_candidate_integration_score(contact, cnaps_snapshot=None):
         # sa contribution minimale provisoire vaut 0. Le score global reste
         # ainsi triable et lisible sans présenter l'information comme connue.
         regulatory_lower_bound = regulatory_score if regulatory_score is not None else 0
-        global_score = max(0, min(100, int((Decimal(financial_score) * Decimal("0.60") + Decimal(regulatory_lower_bound) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))))
+        global_score = max(0, min(100, int(((Decimal(financial_score) * financial_weight + Decimal(regulatory_lower_bound) * regulatory_weight) / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))))
     else:
         global_score = financial_score
     financial_confidence = financial.get("financial_data_confidence_percent", 0)
     regulatory_confidence = regulatory.get("data_confidence_percent", 100 if not applicable else 0)
-    confidence = int((Decimal(financial_confidence) * Decimal("0.60") + Decimal(regulatory_confidence) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if applicable else financial_confidence
+    confidence = int(((Decimal(financial_confidence) * financial_weight + Decimal(regulatory_confidence) * regulatory_weight) / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     score_complete = bool(financial.get("score_complete")) and bool(regulatory.get("score_complete"))
     score_estimated = global_score is not None and (
         bool(financial.get("cpf_amount_estimated"))
@@ -652,13 +650,13 @@ def calculate_candidate_integration_score(contact, cnaps_snapshot=None):
     result.update({
         "score": global_score, "financial_score": financial_score,
         "financial_score_complete": bool(financial.get("score_complete")),
-        "financial_weight": 60 if applicable else 100,
-        "financial_contribution": None if financial_score is None else int((Decimal(financial_score) * Decimal("0.60" if applicable else "1")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
+        "financial_weight": financial_weight,
+        "financial_contribution": None if financial_score is None else int((Decimal(financial_score) * financial_weight / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
         "financial_breakdown": financial.get("breakdown", []),
         "regulatory_applicable": applicable, "regulatory_score": regulatory_score,
         "regulatory_score_complete": bool(regulatory.get("score_complete")),
-        "regulatory_weight": 40 if applicable else 0,
-        "regulatory_contribution": (None if regulatory_score is None else int((Decimal(regulatory_score) * Decimal("0.40")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))) if applicable else 0,
+        "regulatory_weight": regulatory_weight,
+        "regulatory_contribution": (None if regulatory_score is None else int((Decimal(regulatory_score) * regulatory_weight / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))) if applicable else 0,
         "regulatory_status": regulatory["status"], "regulatory_label": regulatory["label"],
         "regulatory_source": regulatory.get("source"),
         "regulatory_data_confidence_percent": regulatory_confidence,
