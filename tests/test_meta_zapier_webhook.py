@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 import app as application
@@ -239,9 +241,14 @@ def test_every_meta_lead_gets_both_messages_but_booking_starts_at_30(
         if booking_allowed:
             assert content.count("https://calendly.com/integraleacademy/apr") == 1
             assert content.index("Réserver mon rendez-vous téléphonique") < content.index("Cette formation permet")
-            assert "conseiller formation" in content
-            assert "France Travail" in content
+            visible_text = " ".join(re.sub(r"<[^>]+>", " ", content).split())
+            assert (
+                "Nous vous invitons à prendre un rendez-vous téléphonique avec un membre de notre équipe. "
+                "Il vous présentera en détail notre formation et répondra à toutes vos questions."
+            ) in visible_text
+            assert "Pour préparer votre entrée en formation" not in content
     if booking_allowed:
+        assert "France Travail" in emails[0][3]
         for topic in ("La formation", "Les dates", "Les tarifs", "Le financement"):
             assert topic in emails[0][3]
         assert "📞 Prochaine étape" not in emails[0][3]

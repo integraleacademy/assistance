@@ -2638,9 +2638,8 @@ def _a3p_information_email_content(
     ) if include_phone_booking else ""
     prominent_booking_text = (
         "\nVOTRE RENDEZ-VOUS TÉLÉPHONIQUE\n"
-        "Pour préparer votre entrée en formation, prenez rendez-vous avec un conseiller formation. "
-        "Il vous présentera le programme, les dates, les tarifs et les possibilités de financement "
-        "(CPF, France Travail, apport personnel), et répondra à vos questions.\n"
+        "Nous vous invitons à prendre un rendez-vous téléphonique avec un membre de notre équipe. "
+        "Il vous présentera en détail notre formation et répondra à toutes vos questions.\n"
         "Réserver mon rendez-vous téléphonique : https://calendly.com/integraleacademy/apr\n"
         "Choisissez le créneau qui vous convient.\n\n"
     ) if include_phone_booking and prominent_phone_booking else ""
