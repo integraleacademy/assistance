@@ -863,7 +863,7 @@ def test_contact_relance_tracking_is_actionable_and_visually_scoped():
 def test_pipeline_overview_displays_primary_and_secondary_steps():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
-    assert "pipelineOverviewStatuses=()=>[...new Set([...S,...SECONDARY_STATUSES])]" in javascript
+    assert "status==='Nouveaux'?[status,NEW_META_PIPELINE_STATUS]:[status]" in javascript
     assert "pipelineOverviewStatuses().map(s=>" in javascript
     assert (
         "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length"
@@ -875,6 +875,7 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
         javascript.index("const manualNextActionValue=")
     ]
     script = f"""
+const canonicalCrmOrigin=()=> 'Autre';
 {pipeline_helpers}
 const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
 const active={{statut:'Nouveau',statut_secondaire:'Transition pro'}};
