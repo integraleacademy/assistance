@@ -2601,7 +2601,7 @@ def _centre_legal_block(centre_code: str) -> str:
 
 def build_a3p_email_html(
     prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
-    *, include_phone_booking=True,
+    *, include_phone_booking=True, prominent_phone_booking=False,
 ):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
@@ -2618,13 +2618,17 @@ def build_a3p_email_html(
         "a3p.html", prenom=prenom, centre_display=centre_display,
         session_html=session_html, devis_button_html=devis_button_html,
         phone_booking_html=(_render_email_template("a3p_phone_booking.html")
-                            if include_phone_booking else ""),
+                            if include_phone_booking and not prominent_phone_booking else ""),
+        prominent_phone_booking_html=(
+            _render_email_template("a3p_meta_phone_booking.html")
+            if include_phone_booking and prominent_phone_booking else ""
+        ),
     )
 
 
 def _a3p_information_email_content(
     prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
-    *, include_phone_booking=True,
+    *, include_phone_booking=True, prominent_phone_booking=False,
 ):
     """Return the A3P message shared by the public form and META leads."""
     session_date = _format_selected_session_date(dates_txt)
@@ -2632,10 +2636,19 @@ def _a3p_information_email_content(
     booking_text = (
         "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
     ) if include_phone_booking else ""
+    prominent_booking_text = (
+        "\nVOTRE RENDEZ-VOUS TÉLÉPHONIQUE\n"
+        "Pour préparer votre entrée en formation, prenez rendez-vous avec un conseiller formation. "
+        "Il vous présentera le programme, les dates, les tarifs et les possibilités de financement "
+        "(CPF, France Travail, apport personnel), et répondra à vos questions.\n"
+        "Réserver mon rendez-vous téléphonique : https://calendly.com/integraleacademy/apr\n"
+        "Choisissez le créneau qui vous convient.\n\n"
+    ) if include_phone_booking and prominent_phone_booking else ""
     plain = (
         f"Bonjour {prenom},\n\n"
         "Je fais suite à votre demande de renseignements concernant notre formation Agent de Protection Physique des Personnes (A3P – Bodyguard), titre reconnu par l’État (RNCP38002 – niveau 4).\n"
-        "Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que garde du corps, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle Agent de protection physique des personnes délivrée par le CNAPS (Ministère de l'intérieur).\n\n"
+        + prominent_booking_text
+        + "Cette formation permet d’acquérir toutes les compétences nécessaires pour intervenir en tant que garde du corps, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle Agent de protection physique des personnes délivrée par le CNAPS (Ministère de l'intérieur).\n\n"
         "Durée et organisation : 328 heures de formation.\n"
         + (f"Session : {session_date}\n" if session_date else "")
         + f"Lieu : {centre_label} — {centre_address}\n\n"
@@ -2643,7 +2656,7 @@ def _a3p_information_email_content(
         "Identité Numérique La Poste requise pour le CPF.\n"
         "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
-        + booking_text
+        + (booking_text if not prominent_phone_booking else "")
         + "Je reste à votre disposition pour toute information complémentaire.\n\n"
         "Clément VAILLANT\nDirecteur – Intégrale Academy"
     )
@@ -2653,6 +2666,7 @@ def _a3p_information_email_content(
         build_a3p_email_html(
             prenom, dates_txt, centre_code, devis_url, data_store,
             include_phone_booking=include_phone_booking,
+            prominent_phone_booking=prominent_phone_booking,
         ),
     )
 
@@ -9979,6 +9993,7 @@ def _send_meta_a3p_information(contact, data_store=None):
     subject, plain, html = _a3p_information_email_content(
         contact.get("prenom", ""), contact.get("dates_formation", ""), centre_code, "",
         data_store, include_phone_booking=include_phone_booking,
+        prominent_phone_booking=True,
     )
     delivery = {"email": False, "sms": False}
     if contact.get("mail"):
@@ -18101,6 +18116,7 @@ def _crm_templates_payload(data):
     ]
     meta_a3p_subject, _, meta_a3p_html = _a3p_information_email_content(
         "{{ prenom }}", "", "cote_azur", "", data,
+        prominent_phone_booking=True,
     )
     automatic_meta = [
         {
