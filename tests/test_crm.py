@@ -1974,6 +1974,8 @@ def test_crm_templates_include_meta_a3p_email_and_sms(tmp_path, monkeypatch):
     assert email["sujet"] == "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
     assert "{{ prenom }}" in email["contenu"]
     assert "Télécharger mon devis détaillé" not in email["contenu"]
+    assert email["contenu"].index("Réserver mon rendez-vous téléphonique") < email["contenu"].index("Cette formation permet")
+    assert email["contenu"].count("https://calendly.com/integraleacademy/apr") == 1
     assert sms["contenu"] == application.build_training_information_sms_text("A3P")
     assert "https://calendly.com/integraleacademy/apr" in sms["contenu"]
 

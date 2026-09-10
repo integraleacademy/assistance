@@ -233,6 +233,18 @@ def test_every_meta_lead_gets_both_messages_but_booking_starts_at_30(
     assert "4200" in emails[0][2]
     assert "formation" in sms[0][1]
     assert "{phone_booking_html}" not in emails[0][3]
+    assert "{prominent_phone_booking_html}" not in emails[0][3]
+    for content in (emails[0][2], emails[0][3]):
+        assert ("Réserver mon rendez-vous téléphonique" in content) is booking_allowed
+        if booking_allowed:
+            assert content.count("https://calendly.com/integraleacademy/apr") == 1
+            assert content.index("Réserver mon rendez-vous téléphonique") < content.index("Cette formation permet")
+            assert "conseiller formation" in content
+            assert "France Travail" in content
+    if booking_allowed:
+        for topic in ("La formation", "Les dates", "Les tarifs", "Le financement"):
+            assert topic in emails[0][3]
+        assert "📞 Prochaine étape" not in emails[0][3]
 
     replay = post(client, lead())
     assert replay.status_code == 200
@@ -298,6 +310,8 @@ def test_public_a3p_information_keeps_booking_by_default(tmp_path, monkeypatch):
     assert default == explicit
     assert "calendly.com/integraleacademy/apr" in default[1]
     assert "calendly.com/integraleacademy/apr" in default[2]
+    assert default[2].index("Dossier de présentation") < default[2].index("calendly.com/integraleacademy/apr")
+    assert "Réserver mon rendez-vous téléphonique" not in default[2]
     assert "calendly.com/integraleacademy/apr" in application.build_training_information_sms_text("A3P")
 
 
