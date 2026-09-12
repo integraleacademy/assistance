@@ -123,7 +123,6 @@ salesforce_tasks_import.register_salesforce_tasks_import(
 )
 register_salesforce_anomaly_followups_import(
     app,
-    migration_module=salesforce_migration,
     current_user_fn=legacy_app.current_user,
     load_data_fn=legacy_app.load_data,
     login_required_fn=legacy_app.login_required,
