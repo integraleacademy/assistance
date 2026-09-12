@@ -4,6 +4,7 @@ import app as legacy_app
 import crm_salesforce_migration as salesforce_migration
 import crm_salesforce_tasks_import as salesforce_tasks_import
 
+from crm_memory_optimizations import install_crm_memory_optimizations
 from crm_aircall_ai import register_aircall_ai_crm
 from crm_aircall_call_capture_patch import install_aircall_call_capture_patch
 from crm_aircall_caller_context import register_aircall_caller_context
@@ -50,6 +51,7 @@ from secretariat_followup_patch import register_secretariat_followup_patch
 
 
 app = legacy_app.app
+install_crm_memory_optimizations(legacy_app)
 install_crm_location_normalization(legacy_app)
 install_crm_pipeline_status_consistency(legacy_app)
 register_secretariat_followup_patch(legacy_app)
@@ -121,6 +123,7 @@ salesforce_tasks_import.register_salesforce_tasks_import(
 )
 register_salesforce_anomaly_followups_import(
     app,
+    migration_module=salesforce_migration,
     current_user_fn=legacy_app.current_user,
     load_data_fn=legacy_app.load_data,
     login_required_fn=legacy_app.login_required,
