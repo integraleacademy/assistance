@@ -533,7 +533,7 @@ def test_existing_meta_submissions_are_backfilled_without_overwriting_manual_val
 
     contact = data["crm_contacts"][0]
     assert changed is True
-    assert contact["formation"] == "A3P"
+    assert contact["formation"] == "APS"
     assert contact["lieu"] == "Côte d’Azur"
     assert contact["origine"] == "META"
     assert contact["cpf"] == "OUI"
@@ -542,7 +542,7 @@ def test_existing_meta_submissions_are_backfilled_without_overwriting_manual_val
     assert application._crm_prepare_contacts(data)[0] is False
 
 
-def test_editing_meta_contact_preserves_origin_training_and_location(tmp_path, monkeypatch):
+def test_editing_meta_contact_preserves_origin_location_and_selected_training(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     response = post(client, lead(leadgen_id="meta-edit-protection"))
     contact_id = response.get_json()["contact_id"]
@@ -554,7 +554,7 @@ def test_editing_meta_contact_preserves_origin_training_and_location(tmp_path, m
         json={
             "commentaires": "Informations vérifiées par téléphone.",
             "origine": "",
-            "formation": "APS",
+            "formation": "Chauffeur VTC",
             "lieu": "Paris",
         },
     )
@@ -563,8 +563,19 @@ def test_editing_meta_contact_preserves_origin_training_and_location(tmp_path, m
     contact = updated.get_json()
     assert contact["commentaires"] == "Informations vérifiées par téléphone."
     assert contact["origine"] == "META"
-    assert contact["formation"] == "A3P"
+    assert contact["formation"] == "Chauffeur VTC"
     assert contact["lieu"] == "Côte d’Azur"
+
+    reloaded = client.get(f"/api/crm/contacts/{contact_id}")
+    assert reloaded.status_code == 200
+    assert reloaded.get_json()["formation"] == "Chauffeur VTC"
+
+    unchanged = client.patch(
+        f"/api/crm/contacts/{contact_id}",
+        json={"commentaires": "Deuxième sauvegarde."},
+    )
+    assert unchanged.status_code == 200
+    assert unchanged.get_json()["formation"] == "Chauffeur VTC"
 
 
 def test_meta_backfill_keeps_the_latest_source_context_and_is_idempotent():
