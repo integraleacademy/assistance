@@ -8562,12 +8562,14 @@ def envoyer_plan_financement(devis_id):
 
 
     # Envoi email
-    send_email_html(
+    email_sent = bool(send_email_html(
         to_emails=email,
         subject=subject,
         plain_text=plain,
         html_body=html
-    )
+    ))
+    if email_sent:
+        _crm_record_quote_email_sent(data, devis, subject, html)
 
     # ---------------------------------
     # Statut + sauvegarde
@@ -11425,6 +11427,56 @@ def _crm_activity(
         "title": title, "detail": detail, "preview": preview,
         "author": author_name,
     })
+
+
+def _crm_contact_for_quote_email(data, quote):
+    """Return the only CRM contact that can safely be linked to this quote."""
+    contacts = [
+        contact for contact in data.get("crm_contacts", [])
+        if isinstance(contact, dict)
+    ]
+    quote_id = str(quote.get("id") or "").strip()
+    linked = [
+        contact for contact in contacts
+        if quote_id and str(contact.get("source_devis_id") or "").strip() == quote_id
+    ]
+    if len(linked) == 1:
+        return linked[0]
+    if linked:
+        return None
+
+    email = _crm_normalize_email(quote.get("mail"))
+    phone = _crm_normalize_phone(quote.get("telephone"))
+    matches = [
+        contact for contact in contacts
+        if (
+            email and _crm_normalize_email(contact.get("mail")) == email
+        ) or (
+            phone and _crm_normalize_phone(contact.get("telephone")) == phone
+        )
+    ]
+    if len(matches) != 1 or not _crm_names_compatible(matches[0], quote):
+        return None
+    return matches[0]
+
+
+def _crm_record_quote_email_sent(data, quote, subject, html_body):
+    """Append a successful quote delivery to the matching CRM activity journal."""
+    contact = _crm_contact_for_quote_email(data, quote)
+    if not contact:
+        return False
+    detail = "\n".join(filter(None, (
+        f"Objet : {str(subject or '').strip()}",
+        f"Destinataire : {str(quote.get('mail') or '').strip()}",
+    )))
+    _crm_activity(
+        contact, "email", "E-mail « Devis détaillé » envoyé",
+        detail, html_body,
+    )
+    activity = contact["activities"][0]
+    activity["source_devis_id"] = str(quote.get("id") or "").strip()
+    contact["updated_at"] = activity["date"]
+    return True
 
 
 def _crm_edit_call_activity(activity, detail):
