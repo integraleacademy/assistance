@@ -42,10 +42,10 @@ def client(tmp_path, monkeypatch, data):
 def test_sending_quote_adds_email_activity_to_linked_crm_contact(tmp_path, monkeypatch):
     data, _, _ = quote_data()
     test_client = client(tmp_path, monkeypatch, data)
-    delivered = {}
+    delivered = []
 
     def send(to_emails, subject, plain_text, html_body):
-        delivered.update(to=to_emails, subject=subject, html=html_body)
+        delivered.append({"to": to_emails, "subject": subject, "html": html_body})
         return True
 
     monkeypatch.setattr(application, "send_email_html", send)
@@ -54,11 +54,15 @@ def test_sending_quote_adds_email_activity_to_linked_crm_contact(tmp_path, monke
 
     stored = application.load_data()
     activity = stored["crm_contacts"][0]["activities"][0]
+    quote_email = next(
+        message for message in delivered
+        if message["subject"] == "📄 Votre devis détaillé — Intégrale Academy"
+    )
     assert activity["kind"] == "email"
     assert activity["title"] == "E-mail « Devis détaillé » envoyé"
-    assert f"Objet : {delivered['subject']}" in activity["detail"]
+    assert f"Objet : {quote_email['subject']}" in activity["detail"]
     assert "Destinataire : lina@example.com" in activity["detail"]
-    assert activity["preview"] == delivered["html"]
+    assert activity["preview"] == quote_email["html"]
     assert activity["source_devis_id"] == "quote-1"
     assert activity["date"]
     assert stored["crm_contacts"][0]["updated_at"] == activity["date"]
