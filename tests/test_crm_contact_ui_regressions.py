@@ -711,6 +711,7 @@ def test_publication_owner_can_open_save_or_cancel_an_inline_edit():
         'data-save-publication-edit',
         "method:'PATCH'",
         "Le texte de la publication est requis",
+        "toast('Publication modifiée')",
     ):
         assert marker in javascript
     assert ".publication-editor[hidden]" in stylesheet
