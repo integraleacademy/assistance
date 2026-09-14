@@ -11461,15 +11461,19 @@ CRM_RELANCE_STATUSES = {"scheduled", "answered", "no_answer", "reprogrammed", "c
 CRM_RELANCE_MOTIF_MAX_LENGTH = 160
 
 
-def _crm_relance_date(value):
+def _crm_relance_date(value, *, weekdays_only=False):
     """Return a normalized ISO date or raise a user-facing validation error."""
     normalized = str(value or "").strip()
     if not normalized:
         return ""
     try:
-        datetime.date.fromisoformat(normalized)
+        parsed = datetime.date.fromisoformat(normalized)
     except ValueError as exc:
         raise ValueError("La date de relance est invalide.") from exc
+    if weekdays_only and parsed.weekday() >= 5:
+        raise ValueError(
+            "Les relances ne peuvent pas être programmées le samedi ou le dimanche."
+        )
     return normalized
 
 
@@ -16744,9 +16748,12 @@ def crm_contacts_bulk():
             contact["archived_at"] = ""
         elif action == "relance":
             try:
+                requested_date = _crm_relance_date(
+                    payload.get("value"), weekdays_only=True,
+                )
                 planned, _ = _crm_schedule_relance(
                     contact,
-                    payload.get("value"),
+                    requested_date,
                     source="bulk",
                     motif=payload.get("motif"),
                 )
@@ -17004,6 +17011,13 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     _crm_ensure_relances(contact)
     relance_date_supplied = "relance_date" in payload
     requested_relance_date = payload.get("relance_date")
+    if relance_date_supplied:
+        try:
+            requested_relance_date = _crm_relance_date(
+                requested_relance_date, weekdays_only=True,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
     requested_relance_motif = (
         payload.get("relance_motif") if "relance_motif" in payload else None
     )
@@ -17459,7 +17473,9 @@ def crm_relance_no_answer(contact_id, relance_id):
 
     payload = request.get_json(silent=True) or {}
     try:
-        next_date = _crm_relance_date(payload.get("next_date"))
+        next_date = _crm_relance_date(
+            payload.get("next_date"), weekdays_only=True,
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     if not next_date:
