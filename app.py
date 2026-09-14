@@ -9388,12 +9388,11 @@ def _crm_is_meta_contact(contact):
 
 
 def _crm_enforce_meta_defaults(contact):
-    """Conserve la provenance et les valeurs communes à toutes les pistes META."""
+    """Conserve la provenance et le lieu communs aux pistes META."""
     if not _crm_is_meta_contact(contact):
         return False
     expected = {
         "origine": "META",
-        "formation": _META_DEFAULT_FORMATION,
         "lieu": _META_DEFAULT_LOCATION,
     }
     changed = False
@@ -16993,12 +16992,11 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     if contact.get("source") == "wedof_cpf":
         payload["origine"] = "Mon Compte Formation"
     # L'ancien sélecteur ne proposait pas META et envoyait une valeur vide lors
-    # de chaque sauvegarde automatique. La provenance META, ainsi que les
-    # valeurs communes à cette campagne, restent désormais immuables.
+    # de chaque sauvegarde automatique. La provenance et le lieu de campagne
+    # restent protégés, mais la formation peut être corrigée par l'équipe.
     if _crm_is_meta_contact(contact):
         payload.update({
             "origine": "META",
-            "formation": _META_DEFAULT_FORMATION,
             "lieu": _META_DEFAULT_LOCATION,
         })
     _crm_ensure_relances(contact)
