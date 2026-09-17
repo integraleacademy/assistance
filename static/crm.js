@@ -480,6 +480,17 @@ function sessionFilterRows(){const centreLabels={paris:'Paris',cote_azur:'Côte 
 function sessionFilterValue(row){return [row.formation,row.lieu,row.label].join(sessionFilterSeparator)}
 function callbackRequestInitials(row){return String(row.display_name||'?').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toUpperCase()||'?'}
 function callbackRequestReceivedAt(row){if(row.created_at){const date=new Date(row.created_at);if(!Number.isNaN(date.getTime()))return fmt(row.created_at)}return esc(row.date||'—')}
+function callbackRequestAppointment(row){
+ if(row.rdv_status==='scheduled'){
+  const detail=[row.rdv_name,row.rdv_host_name?`Avec ${row.rdv_host_name}`:''].filter(Boolean).join(' · ');
+  return `<div class="callback-request-appointment is-scheduled"><span><i aria-hidden="true"></i>Programmé</span><b>${esc(row.rdv||[row.rdv_date,row.rdv_time].filter(Boolean).join(' à ')||'Horaire confirmé')}</b>${detail?`<small>${esc(detail)}</small>`:''}</div>`;
+ }
+ return `<div class="callback-request-appointment is-empty"><span>Aucun créneau confirmé</span>${row.rdv?`<small>${esc(row.rdv)}</small>`:''}</div>`;
+}
+function callbackRequestCommentRow(row){
+ const audit=row.comment_updated_at?`${fmt(row.comment_updated_at)}${row.comment_updated_by?` · ${esc(row.comment_updated_by)}`:''}`:'';
+ return `<tr class="callback-request-comment-row ${row.comment?'has-comment':''}" data-callback-request="${esc(row.id)}"><td colspan="8"><div class="callback-request-comment-panel"><div class="callback-request-comment-display"><b>Commentaire interne</b>${row.comment?`<p>${esc(row.comment)}</p>${audit?`<small>${audit}</small>`:''}`:'<p>Aucune indication ajoutée pour l’équipe.</p>'}</div><div class="callback-request-comment-editor"><textarea maxlength="2000" aria-label="Commentaire interne pour cette demande" placeholder="Ajouter une indication visible par vos collègues…">${esc(row.comment||'')}</textarea><button class="btn callback-request-comment-save" type="button">Enregistrer</button></div></div></td></tr>`;
+}
 async function saveCallbackRequestStatus(requestId,nextStatus){
  const result=await api(`/api/crm/callback-requests/${encodeURIComponent(requestId)}`,{method:'PATCH',body:JSON.stringify({status:nextStatus})}),index=callbackRequests.findIndex(item=>String(item.id)===String(requestId));
  if(index>=0)callbackRequests[index]=result.request;
@@ -496,7 +507,7 @@ function callbackRequestsTable(rows){
  }
  return `<section class="card table-card callback-request-card"><div class="table-wrap" tabindex="0" aria-label="Liste des demandes de rappel"><table class="callback-request-table"><thead><tr><th>Appelant</th><th>Coordonnées</th><th>Demande</th><th>Rendez-vous</th><th>Fiche CRM</th><th>Reçue le</th><th>Statut</th><th>Action</th></tr></thead><tbody>${rows.map(row=>{
   const processed=row.status==='processed',contactMarkup=row.crm_contact_id?`<div class="callback-request-link"><span class="callback-request-linked">Fiche existante</span><b>${esc(row.crm_contact_name||row.display_name)}</b>${row.crm_contact_status?`<small>${esc(row.crm_contact_status)}</small>`:''}<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Ouvrir la fiche</a></div>`:'<div class="callback-request-link"><span class="callback-request-unlinked">Aucune piste existante</span><small>Créez une fiche en conservant cette demande.</small><button class="btn blue callback-request-convert" type="button">Convertir en fiche</button></div>',phone=row.telephone?`<a href="tel:${encodeURIComponent(row.telephone)}">${esc(formatContactPhone(row.telephone))}</a>`:'<span>—</span>',email=row.email?`<a href="mailto:${encodeURIComponent(row.email)}">${esc(row.email)}</a>`:'',statusMarkup=processed?`<div class="callback-request-status processed"><b>✓ Traité</b>${row.processed_at?`<small>${fmt(row.processed_at)}${row.processed_by?` · ${esc(row.processed_by)}`:''}</small>`:''}</div>`:'<div class="callback-request-status pending"><b>● Non traitée</b><small>Action requise</small></div>';
-  return`<tr class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td><span class="callback-request-note">${esc(row.notes||'Aucune précision renseignée.')}</span></td><td>${esc(row.rdv||'—')}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td><button class="btn ${processed?'':'blue'} callback-request-action" type="button" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button></td></tr>`;
+  return`<tr class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td><span class="callback-request-note">${esc(row.notes||'Aucune précision renseignée.')}</span></td><td>${callbackRequestAppointment(row)}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td><button class="btn ${processed?'':'blue'} callback-request-action" type="button" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button></td></tr>${callbackRequestCommentRow(row)}`;
  }).join('')}</tbody></table></div></section>`;
 }
 function drawCallbackRequests(){
@@ -509,7 +520,7 @@ function drawCallbackRequests(){
  if(pendingLabel)pendingLabel.textContent=`demande${pending>1?'s':''} en attente`;
  if(processedLabel)processedLabel.textContent=`demande${processed>1?'s':''} clôturée${processed>1?'s':''}`;
  document.querySelectorAll('[data-callback-filter]').forEach(button=>{const value=button.dataset.callbackFilter,total=value==='pending'?pending:value==='processed'?processed:callbackRequests.length,buttonCount=button.querySelector('span');if(buttonCount)buttonCount.textContent=total});
- const query=normalizeGlobalSearch(callbackRequestSearch),filtered=callbackRequests.filter(row=>callbackRequestFilter==='all'||(callbackRequestFilter==='processed'?row.status==='processed':row.status!=='processed')).filter(row=>normalizeGlobalSearch([row.display_name,row.telephone,row.email,row.notes,row.rdv,row.crm_contact_name,row.crm_contact_status,row.processed_by].join(' ')).includes(query));
+ const query=normalizeGlobalSearch(callbackRequestSearch),filtered=callbackRequests.filter(row=>callbackRequestFilter==='all'||(callbackRequestFilter==='processed'?row.status==='processed':row.status!=='processed')).filter(row=>normalizeGlobalSearch([row.display_name,row.telephone,row.email,row.notes,row.rdv,row.comment,row.crm_contact_name,row.crm_contact_status,row.processed_by].join(' ')).includes(query));
  results.innerHTML=callbackRequestsTable(filtered);
  count.textContent=`${filtered.length} demande${filtered.length>1?'s':''}`;
  results.querySelectorAll('.callback-request-action').forEach(button=>button.onclick=async()=>{
@@ -522,6 +533,16 @@ function drawCallbackRequests(){
    drawCallbackRequests();
    toast(nextStatus==='processed'?'Demande marquée comme traitée':'Demande rouverte');
   }catch(error){button.disabled=false;button.textContent=nextStatus==='processed'?'Marquer comme traitée':'Rouvrir';toast(error.message,true)}
+ });
+ results.querySelectorAll('.callback-request-comment-save').forEach(button=>button.onclick=async()=>{
+  const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,textarea=row?.querySelector('textarea'),comment=textarea?.value.trim()||'';
+  if(!requestId||!textarea)return;
+  button.disabled=true;textarea.disabled=true;button.textContent='Enregistrement…';
+  try{
+   const result=await api(`/api/crm/callback-requests/${encodeURIComponent(requestId)}`,{method:'PATCH',body:JSON.stringify({comment})}),index=callbackRequests.findIndex(item=>String(item.id)===String(requestId));
+   if(index>=0)callbackRequests[index]=result.request;
+   drawCallbackRequests();toast(comment?'Commentaire interne enregistré':'Commentaire interne supprimé');
+  }catch(error){button.disabled=false;textarea.disabled=false;button.textContent='Enregistrer';toast(error.message,true)}
  });
  results.querySelectorAll('.callback-request-convert').forEach(button=>button.onclick=async()=>{
   const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,oldLabel=button.textContent;

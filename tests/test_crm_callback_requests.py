@@ -102,7 +102,7 @@ def test_callback_workspace_replaces_calendly_placeholder_with_cached_date(
         "id": "callback-calendly", "type": "autre",
         "nom": "Mohamed Ajej Bhiri", "email": "sassou3000@outlook.fr",
         "telephone": "0646490258", "notes": "Question sur son dossier APS.",
-        "rdv": "Calendly proposé", "crm_contact_id": contact["id"],
+        "rdv": "Non souhaité", "crm_contact_id": contact["id"],
         "created_at": "2026-08-25T09:13:00+02:00",
     }]
     data["crm_calendly_appointments"] = [{
@@ -118,6 +118,11 @@ def test_callback_workspace_replaces_calendly_placeholder_with_cached_date(
     assert response.status_code == 200
     row = response.get_json()["callback_requests"][0]
     assert row["rdv"] == "31/08/2099 à 09:00"
+    assert row["rdv_status"] == "scheduled"
+    assert row["rdv_mode"] == "Appel téléphonique"
+    assert row["rdv_name"] == (
+        "RDV téléphonique formation agent de sécurité privée"
+    )
     stored = application.load_data()
     request = stored["secretariat_demandes"][0]
     assert request["rdv"] == "31/08/2099 à 09:00"
@@ -129,6 +134,120 @@ def test_callback_workspace_replaces_calendly_placeholder_with_cached_date(
         if activity.get("callback_request_id") == "callback-calendly"
     )
     assert "Rendez-vous : 31/08/2099 à 09:00" in receipt["detail"]
+
+
+def test_callback_workspace_live_refresh_shows_appointment_taken_later(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post("/api/crm/contacts", json={
+        "prenom": "Nadia", "nom": "Durand",
+        "mail": "nadia@example.com", "telephone": "0611223344",
+    }).get_json()
+    data = application.load_data()
+    data["secretariat_demandes"] = [{
+        "id": "callback-later-booking", "type": "autre",
+        "nom": "Nadia Durand", "email": "nadia@example.com",
+        "telephone": "0611223344", "notes": "Souhaite être rappelée.",
+        "rdv": "Calendly proposé", "crm_contact_id": contact["id"],
+        "created_at": "2026-09-17T08:00:00+02:00",
+    }]
+    application.save_data(data)
+
+    before_booking = client.get(
+        "/api/crm/contacts/updates?section=demandes-rappel"
+    ).get_json()["callback_requests"][0]
+    assert before_booking["rdv"] == "Calendly proposé"
+    assert before_booking["rdv_status"] == ""
+
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [{
+        "id": "appointment-later", "contact_id": contact["id"],
+        "status": "active", "start_time": "2099-09-20T12:30:00Z",
+        "name": "Rendez-vous téléphonique APS",
+        "host_name": "Cassandre MENARD",
+        "location": {"kind": "phone_call"},
+    }]
+    application.save_data(data)
+
+    after_booking = client.get(
+        "/api/crm/contacts/updates?section=demandes-rappel"
+    ).get_json()["callback_requests"][0]
+    assert after_booking["rdv"] == "20/09/2099 à 13:30"
+    assert after_booking["rdv_status"] == "scheduled"
+    assert after_booking["rdv_host_name"] == "Cassandre MENARD"
+
+    data = application.load_data()
+    data["crm_calendly_appointments"][0]["start_time"] = (
+        "2099-09-21T13:00:00Z"
+    )
+    application.save_data(data)
+
+    after_reschedule = client.get(
+        "/api/crm/contacts/updates?section=demandes-rappel"
+    ).get_json()["callback_requests"][0]
+    assert after_reschedule["rdv"] == "21/09/2099 à 14:00"
+    assert application.load_data()["secretariat_demandes"][0]["rdv"] == (
+        "21/09/2099 à 14:00"
+    )
+
+
+def test_callback_request_internal_comment_is_shared_and_concurrency_safe(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    data["secretariat_demandes"] = [{
+        "id": "callback-comment", "type": "autre",
+        "nom": "Lina Martin", "telephone": "0600000000",
+        "callback_status": "pending",
+        "callback_status_updated_at": "2026-09-17T08:00:00+02:00",
+        "created_at": "2026-09-17T08:00:00+02:00",
+    }]
+    application.save_data(data)
+    stale_snapshot = application.load_data()
+
+    response = client.patch(
+        "/api/crm/callback-requests/callback-comment",
+        json={"comment": "Ne pas rappeler avant 14 h : dossier vu avec Cassandre."},
+    )
+
+    assert response.status_code == 200
+    row = response.get_json()["request"]
+    assert row["status"] == "pending"
+    assert row["comment"] == (
+        "Ne pas rappeler avant 14 h : dossier vu avec Cassandre."
+    )
+    assert row["comment_updated_at"]
+    assert row["comment_updated_by"]
+    stored = application.load_data()["secretariat_demandes"][0]
+    assert stored["callback_comment"] == row["comment"]
+
+    stale_snapshot["secretariat_demandes"][0]["notes"] = (
+        "Modification concurrente à conserver"
+    )
+    application.save_data(stale_snapshot)
+    stored = application.load_data()["secretariat_demandes"][0]
+    assert stored["notes"] == "Modification concurrente à conserver"
+    assert stored["callback_comment"] == row["comment"]
+
+    cleared = client.patch(
+        "/api/crm/callback-requests/callback-comment",
+        json={"comment": ""},
+    )
+    assert cleared.status_code == 200
+    assert cleared.get_json()["request"]["comment"] == ""
+    assert application.load_data()["secretariat_demandes"][0][
+        "callback_comment"
+    ] == ""
+
+    empty = client.patch(
+        "/api/crm/callback-requests/callback-comment", json={},
+    )
+    too_long = client.patch(
+        "/api/crm/callback-requests/callback-comment",
+        json={"comment": "x" * 2001},
+    )
+    assert empty.status_code == 400
+    assert too_long.status_code == 400
 
 
 def test_callback_request_can_be_processed_and_reopened(tmp_path, monkeypatch):
@@ -394,6 +513,8 @@ def test_callback_workspace_ui_explains_lead_linking():
     template = (ROOT / "templates" / "crm.html").read_text(encoding="utf-8")
 
     assert "function callbackRequestsPage()" in javascript
+    assert "function callbackRequestAppointment(row)" in javascript
+    assert "function callbackRequestCommentRow(row)" in javascript
     assert "if(C.section==='demandes-rappel')return callbackRequestsPage();" in javascript
     assert "callbackRequests=snapshot.callback_requests||[]" in javascript
     assert "Créez une fiche en conservant cette demande." in javascript
@@ -404,6 +525,8 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert "Marquer comme traitée" in javascript
     assert 'data-callback-filter="pending"' in javascript
     assert "/api/crm/callback-requests/" in javascript
+    assert "callback-request-comment-save" in javascript
+    assert "JSON.stringify({comment})" in javascript
     assert "'demande_rappel'" in javascript
     assert "data-callback-action" in javascript
     assert "async function saveCallbackRequestStatus" in javascript
@@ -413,6 +536,8 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert 'id="callbackRequestNavCount"' in template
     assert ".callback-request-table" in stylesheet
     assert ".callback-request-status.pending" in stylesheet
+    assert ".callback-request-appointment.is-scheduled" in stylesheet
+    assert ".callback-request-comment-row.has-comment" in stylesheet
     assert ".feed-item.callback-activity" in stylesheet
     assert ".feed-callback-action" in stylesheet
     assert ".callback-nav-count" in stylesheet

@@ -1251,6 +1251,11 @@ _CALLBACK_LIFECYCLE_FIELDS = (
     "callback_processed_by",
     "statut",
 )
+_CALLBACK_COMMENT_FIELDS = (
+    "callback_comment",
+    "callback_comment_updated_at",
+    "callback_comment_updated_by",
+)
 
 
 def _normalize_data_payload(payload):
@@ -1347,6 +1352,17 @@ def _callback_lifecycle_revision(entry):
     return 0.0
 
 
+def _callback_comment_revision(entry):
+    """Return the durable revision of a callback team's internal comment."""
+    raw_value = str(entry.get("callback_comment_updated_at") or "").strip()
+    if not raw_value:
+        return 0.0
+    try:
+        return datetime.datetime.fromisoformat(raw_value).timestamp()
+    except ValueError:
+        return 0.0
+
+
 def _preserve_newer_callback_lifecycle(data, persisted):
     """Protect callback status/audit data from an older concurrent snapshot."""
     if not isinstance(data, dict) or not isinstance(persisted, dict):
@@ -1380,15 +1396,25 @@ def _preserve_newer_callback_lifecycle(data, persisted):
             outgoing_by_id[request_id] = outgoing_entries[-1]
             protected_request_ids.add(request_id)
             continue
+        protected = False
         if (_callback_lifecycle_revision(current)
-                <= _callback_lifecycle_revision(outgoing)):
-            continue
-        for field in _CALLBACK_LIFECYCLE_FIELDS:
-            if field in current:
-                outgoing[field] = copy.deepcopy(current[field])
-            else:
-                outgoing.pop(field, None)
-        protected_request_ids.add(request_id)
+                > _callback_lifecycle_revision(outgoing)):
+            for field in _CALLBACK_LIFECYCLE_FIELDS:
+                if field in current:
+                    outgoing[field] = copy.deepcopy(current[field])
+                else:
+                    outgoing.pop(field, None)
+            protected = True
+        if (_callback_comment_revision(current)
+                > _callback_comment_revision(outgoing)):
+            for field in _CALLBACK_COMMENT_FIELDS:
+                if field in current:
+                    outgoing[field] = copy.deepcopy(current[field])
+                else:
+                    outgoing.pop(field, None)
+            protected = True
+        if protected:
+            protected_request_ids.add(request_id)
 
     if not protected_request_ids:
         return
@@ -8863,7 +8889,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260908-free-email-layout-1"
+CRM_ASSET_VERSION = "20260917-callback-rdv-comments-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -16227,6 +16253,15 @@ def _crm_create_contact_locked():
 @login_required
 def crm_contact_updates():
     """Retourne uniquement les données utiles au rafraîchissement collaboratif."""
+    section = request.args.get("section", "")
+    if section == "demandes-rappel":
+        # Calendly peut recevoir une réservation après l'appel du secrétariat.
+        # Réconcilier la demande avant chaque rafraîchissement de cette page
+        # évite de conserver un libellé ou une date de rendez-vous obsolète.
+        with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
+            stored_data = load_data()
+            if _crm_backfill_callback_requests(stored_data):
+                save_data(stored_data)
     data = _crm_prepared_read_model()
     appointment_counts = _crm_appointment_counts_by_contact(data)
     appointments = _crm_calendly_appointments_payload(data)["appointments"]
@@ -16255,7 +16290,6 @@ def crm_contact_updates():
             "activities": selected.get("activities", []),
             "publications": selected.get("publications", []),
         }
-    section = request.args.get("section", "")
     payload = {
         "contacts": summaries,
         "selected": selected_payload,
@@ -18307,20 +18341,7 @@ def _crm_callback_request_contact(data, entry):
 
 
 def _crm_hydrate_callback_request_appointment(data, entry, contact):
-    """Replace a stale Calendly placeholder with the cached confirmed date."""
-    raw_label = str(entry.get("rdv") or "").strip()
-    normalized_label = unicodedata.normalize("NFKD", raw_label)
-    normalized_label = "".join(
-        char for char in normalized_label if not unicodedata.combining(char)
-    )
-    normalized_label = re.sub(
-        r"[^a-z0-9]+", " ", normalized_label.casefold(),
-    ).strip()
-    if normalized_label not in {
-        "", "calendly propose", "rendez vous reserve via calendly",
-    }:
-        return False
-
+    """Keep the callback row aligned with its next confirmed phone booking."""
     match = _crm_next_phone_appointment(data, entry, contact)
     if not match:
         return False
@@ -18333,6 +18354,7 @@ def _crm_hydrate_callback_request_appointment(data, entry, contact):
         "rdv_mode": "Appel téléphonique",
         "rdv_name": appointment.get("name") or "Rendez-vous téléphonique",
         "rdv_host_name": appointment.get("host_name") or "",
+        "rdv_source": "calendly",
     }
     changed = False
     for key, value in expected.items():
@@ -18479,6 +18501,19 @@ def _crm_callback_requests_payload(data):
             "email": str(entry.get("email") or ""),
             "notes": str(entry.get("notes") or ""),
             "rdv": str(entry.get("rdv") or ""),
+            "rdv_status": str(entry.get("rdv_status") or ""),
+            "rdv_date": str(entry.get("rdv_date") or ""),
+            "rdv_time": str(entry.get("rdv_time") or ""),
+            "rdv_mode": str(entry.get("rdv_mode") or ""),
+            "rdv_name": str(entry.get("rdv_name") or ""),
+            "rdv_host_name": str(entry.get("rdv_host_name") or ""),
+            "comment": str(entry.get("callback_comment") or ""),
+            "comment_updated_at": str(
+                entry.get("callback_comment_updated_at") or ""
+            ),
+            "comment_updated_by": str(
+                entry.get("callback_comment_updated_by") or ""
+            ),
             "crm_contact_id": contact_id,
             "crm_contact_name": (
                 f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip()
@@ -18671,26 +18706,45 @@ def crm_callback_request(request_id):
         return jsonify({"error": "Demande de rappel introuvable."}), 404
 
     payload = request.get_json(silent=True) or {}
-    requested_status = str(payload.get("status") or "").strip().lower()
-    if requested_status not in CRM_CALLBACK_STATUSES:
-        return jsonify({"error": "Le statut de la demande est invalide."}), 400
+    status_requested = "status" in payload
+    comment_requested = "comment" in payload
+    if not status_requested and not comment_requested:
+        return jsonify({
+            "error": "Aucune modification de la demande n'a été transmise.",
+        }), 400
 
     previous_status = _crm_callback_request_status(entry)
-    entry["callback_status"] = requested_status
+    requested_status = previous_status
+    if status_requested:
+        requested_status = str(payload.get("status") or "").strip().lower()
+    if status_requested and requested_status not in CRM_CALLBACK_STATUSES:
+        return jsonify({"error": "Le statut de la demande est invalide."}), 400
+    comment = str(payload.get("comment") or "").strip()
+    if comment_requested and len(comment) > 2000:
+        return jsonify({
+            "error": "Le commentaire interne ne peut pas dépasser 2 000 caractères.",
+        }), 400
+
     now = _crm_now()
-    entry["callback_status_updated_at"] = _crm_callback_status_timestamp()
     user = current_user() or {}
     actor = user.get("name") or user.get("email") or "Équipe Intégrale"
-    if requested_status == CRM_CALLBACK_PROCESSED:
-        if previous_status != requested_status or not entry.get("callback_processed_at"):
-            entry["callback_processed_at"] = now
-            entry["callback_processed_by"] = actor
-    else:
-        entry["callback_processed_at"] = ""
-        entry["callback_processed_by"] = ""
+    if status_requested:
+        entry["callback_status"] = requested_status
+        entry["callback_status_updated_at"] = _crm_callback_status_timestamp()
+        if requested_status == CRM_CALLBACK_PROCESSED:
+            if previous_status != requested_status or not entry.get("callback_processed_at"):
+                entry["callback_processed_at"] = now
+                entry["callback_processed_by"] = actor
+        else:
+            entry["callback_processed_at"] = ""
+            entry["callback_processed_by"] = ""
+    if comment_requested:
+        entry["callback_comment"] = comment
+        entry["callback_comment_updated_at"] = _crm_callback_status_timestamp()
+        entry["callback_comment_updated_by"] = actor if comment else ""
 
     _, contact = _crm_prepare_callback_request(data, entry)
-    if previous_status != requested_status and contact:
+    if status_requested and previous_status != requested_status and contact:
         title = (
             "Demande de rappel traitée"
             if requested_status == CRM_CALLBACK_PROCESSED
