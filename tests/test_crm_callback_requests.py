@@ -535,9 +535,14 @@ def test_callback_workspace_ui_explains_lead_linking():
     assert "snapshot.callback_pending_count" in javascript
     assert 'id="callbackRequestNavCount"' in template
     assert ".callback-request-table" in stylesheet
+    assert '<col class="callback-request-col-action">' in javascript
+    assert ".callback-request-table{min-width:1180px;table-layout:fixed}" in stylesheet
+    assert ".callback-request-col-action{width:8.5%}" in stylesheet
+    assert ".callback-request-action{width:100%;min-width:0" in stylesheet
     assert ".callback-request-status.pending" in stylesheet
     assert ".callback-request-appointment.is-scheduled" in stylesheet
     assert ".callback-request-comment-row.has-comment" in stylesheet
+    assert ".callback-request-comment-editor{display:flex;align-items:stretch;gap:8px;min-width:0}" in stylesheet
     assert ".feed-item.callback-activity" in stylesheet
     assert ".feed-callback-action" in stylesheet
     assert ".callback-nav-count" in stylesheet
