@@ -111,7 +111,16 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .callback-request-filters{align-items:center;margin:0}
 .callback-request-filters .filter-result-count{margin-left:auto}
 .callback-request-card{overflow:hidden}
-.callback-request-table{min-width:1460px}
+.callback-request-table{min-width:1180px;table-layout:fixed}
+.callback-request-table .callback-request-col-caller{width:11%}
+.callback-request-table .callback-request-col-contact{width:11.5%}
+.callback-request-table .callback-request-col-note{width:22.5%}
+.callback-request-table .callback-request-col-appointment{width:18%}
+.callback-request-table .callback-request-col-crm{width:10.5%}
+.callback-request-table .callback-request-col-received{width:9.5%}
+.callback-request-table .callback-request-col-status{width:8.5%}
+.callback-request-table .callback-request-col-action{width:8.5%}
+.callback-request-table th,.callback-request-table td{padding-inline:12px;overflow-wrap:anywhere}
 .callback-request-table td{vertical-align:top}
 .callback-request-table tbody tr:hover{background:#f8faff}
 .callback-request-table tbody tr.is-pending{background:#fffcf5;box-shadow:inset 4px 0 #e6a52e}
@@ -121,7 +130,7 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .callback-request-contact a{color:#355fba;text-decoration:none;word-break:break-word}
 .callback-request-contact a:hover{text-decoration:underline}
 .callback-request-note{display:block;max-width:400px;color:#4d5d74;line-height:1.55;white-space:pre-wrap}
-.callback-request-appointment{display:grid;justify-items:start;gap:5px;min-width:190px}
+.callback-request-appointment{display:grid;justify-items:start;gap:5px;min-width:0}
 .callback-request-appointment>span{display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
 .callback-request-appointment>span i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px currentColor;opacity:.75}
 .callback-request-appointment b{font-size:12px;line-height:1.45;color:#1e3558}
@@ -131,32 +140,32 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .callback-request-appointment.is-empty>span{color:#8a95a5}
 .callback-request-comment-row td{padding:0 16px 14px;border-top:0;background:inherit}
 .callback-request-comment-row:hover td{background:inherit}
-.callback-request-comment-panel{display:grid;grid-template-columns:minmax(250px,1fr) minmax(390px,1.5fr);align-items:center;gap:14px;padding:10px 12px;border:1px dashed #d8dee8;border-radius:10px;background:#fff}
+.callback-request-comment-panel{display:grid;grid-template-columns:minmax(180px,.55fr) minmax(0,1.45fr);align-items:center;gap:14px;padding:10px 12px;border:1px dashed #d8dee8;border-radius:10px;background:#fff}
 .callback-request-comment-display{min-width:0;color:#8a5260}
 .callback-request-comment-display b{display:block;color:#a9394c;font-size:10px;letter-spacing:.04em;text-transform:uppercase}
 .callback-request-comment-display p{margin:4px 0 0;font-size:12px;line-height:1.45;white-space:pre-wrap}
 .callback-request-comment-display small{display:block;margin-top:4px;color:#a36c77;font-size:9px}
 .callback-request-comment-row.has-comment .callback-request-comment-panel{border-style:solid;border-color:#f0b8c2;background:#fff5f6;box-shadow:inset 3px 0 #d84b61}
 .callback-request-comment-row.has-comment .callback-request-comment-display p{color:#a31f37;font-weight:700}
-.callback-request-comment-editor{display:flex;align-items:stretch;gap:8px}
-.callback-request-comment-editor textarea{flex:1;min-height:42px;max-height:110px;resize:vertical;border:1px solid #e2b6bf;border-radius:8px;padding:9px 10px;background:#fff;color:#4b2430;font:inherit;font-size:11px;line-height:1.4}
+.callback-request-comment-editor{display:flex;align-items:stretch;gap:8px;min-width:0}
+.callback-request-comment-editor textarea{flex:1;min-width:0;width:100%;min-height:42px;max-height:110px;resize:vertical;border:1px solid #e2b6bf;border-radius:8px;padding:9px 10px;background:#fff;color:#4b2430;font:inherit;font-size:11px;line-height:1.4}
 .callback-request-comment-editor textarea:focus{border-color:#cf5369;outline:2px solid #cf53691f}
 .callback-request-comment-editor .btn{flex:none;align-self:stretch;border-color:#dc9aa7;color:#a52f44}
 .callback-request-comment-editor .btn:hover{background:#fff0f2}
 .callback-request-comment-editor .btn:disabled,.callback-request-comment-editor textarea:disabled{cursor:wait;opacity:.65}
 .callback-request-link b{font-size:12px}
 .callback-request-link small{color:#7c899b;font-size:10px}
-.callback-request-link .btn{margin-top:3px;padding:6px 9px;color:#2859c3;font-size:10px;text-decoration:none;white-space:nowrap}
+.callback-request-link .btn{margin-top:3px;padding:6px 9px;color:#2859c3;font-size:10px;line-height:1.3;text-align:center;text-decoration:none;white-space:normal}
 .callback-request-linked,.callback-request-unlinked{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:800}
 .callback-request-linked{background:#e7f7f1;color:#13775f}
 .callback-request-unlinked{background:#f0f3f7;color:#64738a}
-.callback-request-table time{color:#617087;font-size:11px;white-space:nowrap}
-.callback-request-status{display:grid;justify-items:start;gap:4px;min-width:105px}
+.callback-request-table time{color:#617087;font-size:11px;line-height:1.4;white-space:normal}
+.callback-request-status{display:grid;justify-items:start;gap:4px;min-width:0}
 .callback-request-status b{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;font-size:10px;white-space:nowrap}
 .callback-request-status small{color:#7c899b;font-size:9px;line-height:1.35}
 .callback-request-status.pending b{background:#fff0cf;color:#986000}
 .callback-request-status.processed b{background:#e2f6ee;color:#13775f}
-.callback-request-action{min-width:130px;white-space:nowrap}
+.callback-request-action{width:100%;min-width:0;padding-inline:8px;line-height:1.3;white-space:normal}
 .callback-request-action:disabled{cursor:wait;opacity:.7}
 .callback-request-empty{display:grid;justify-items:center;gap:7px;padding:48px 20px;text-align:center}
 .callback-request-empty>span{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:#edf3ff;color:#356ae6;font-size:21px}
