@@ -1272,6 +1272,85 @@ def test_explicit_ft_rejection_without_history_updates_secondary_timeline(
     assert update["statut_secondaire"] == "Financement FT refusé"
 
 
+def test_solicitation_refusal_overrides_manual_ft_instruction(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="solicitation@example.test")
+    ft_folder = folder(
+        "ft-solicitation-refused", "solicitation@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    ft_folder["state"] = "validated"
+    ft_folder["history"] = {
+        "notProcessedDate": "2026-09-14T13:58:00Z",
+        "validatedDate": "2026-09-14T14:00:00Z",
+    }
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    manually_started = client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"statut_secondaire": "Financement FT en cours"},
+    ).get_json()
+    assert manually_started["statut_demande_financement_ft"] == (
+        "en_cours_instruction"
+    )
+    assert manually_started["statut_demande_financement_ft_source"] == "manual"
+
+    ft_folder["trainingActionInfo"]["solicitations"] = [{
+        "amount": 3580,
+        "fundingType": 9,
+        "refusalReason": "3",
+        "returnDate": "2026-09-16T09:34:56.085Z",
+        "status": "refused",
+        "submissionDate": "2026-09-14T14:03:21.47Z",
+    }]
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    refused = next(
+        row for row in application.load_data()["crm_contacts"]
+        if row["id"] == contact["id"]
+    )
+    assert refused["statut_demande_financement_ft"] == "refusee"
+    assert refused["statut_secondaire"] == "Financement FT refusé"
+    assert refused.get("statut_demande_financement_ft_source") != "manual"
+    assert refused.get("statut_secondaire_source") != "manual"
+    assert refused["statut"] == "A relancer"
+    assert len([
+        relance for relance in refused["relances"]
+        if relance.get("status") == "scheduled"
+        and relance.get("source") == "wedof_ft_refusal"
+    ]) == 1
+
+
+def test_solicitation_refusal_preserves_non_provisional_manual_ft_status(
+        tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = create_contact(client, email="manual-ft@example.test")
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"statut_demande_financement_ft": "acceptee"},
+    )
+    refused_folder = folder(
+        "ft-manual-status", "manual-ft@example.test",
+        first_name="Lina", last_name="Martin",
+    )
+    refused_folder["state"] = "validated"
+    refused_folder["trainingActionInfo"]["solicitations"] = [
+        {"fundingType": 9, "status": "refused"},
+    ]
+
+    application._wedof_store_page(
+        [refused_folder], application.load_data(), 1,
+    )
+
+    preserved = next(
+        row for row in application.load_data()["crm_contacts"]
+        if row["id"] == contact["id"]
+    )
+    assert preserved["statut_demande_financement_ft"] == "acceptee"
+    assert preserved["statut_demande_financement_ft_source"] == "manual"
+
+
 def test_ft_status_reads_nested_wedof_history():
     payload = {
         "registrationState": "validated",
@@ -1304,6 +1383,23 @@ def test_ft_status_reads_nested_wedof_history():
     assert application._wedof_france_travail_status({
         "state": "validated",
         "history": {"refusedByFinancerDate": None},
+    }) == ""
+    assert application._wedof_france_travail_status({
+        "state": "validated",
+        "history": {"validatedDate": "2026-09-14T14:00:00Z"},
+        "trainingActionInfo": {
+            "solicitations": [{
+                "fundingType": 9,
+                "status": "refused",
+                "refusalReason": "3",
+            }],
+        },
+    }) == "refusee"
+    assert application._wedof_france_travail_status({
+        "state": "validated",
+        "trainingActionInfo": {
+            "solicitations": [{"fundingType": 9, "status": "accepted"}],
+        },
     }) == ""
 
 
