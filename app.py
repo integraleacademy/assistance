@@ -8889,7 +8889,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260917-callback-layout-2"
+CRM_ASSET_VERSION = "20260918-wedof-solicitation-refusal-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -13967,9 +13967,21 @@ def _wedof_store_page_locked(
                 current_funding_status = _wedof_france_travail_status(
                     folder, previous_status=previous_status_evidence,
                 )
+                # « En cours » reste une étape provisoire : une décision de
+                # refus remontée par WEDOF doit pouvoir la clôturer, même si
+                # cette étape avait été sélectionnée manuellement. Les autres
+                # choix manuels restent protégés.
+                manual_funding_is_provisional = (
+                    contact.get("statut_demande_financement_ft_source")
+                    == CRM_MANUAL_STATUS_SOURCE
+                    and contact.get("statut_demande_financement_ft")
+                    == "en_cours_instruction"
+                )
                 if (current_funding_status == "refusee"
-                        and contact.get("statut_demande_financement_ft_source")
-                        != CRM_MANUAL_STATUS_SOURCE):
+                        and (contact.get(
+                            "statut_demande_financement_ft_source"
+                        ) != CRM_MANUAL_STATUS_SOURCE
+                        or manual_funding_is_provisional)):
                     stored_funding_was_refused = (
                         contact.get("statut_demande_financement_ft")
                         == "refusee"
@@ -13977,11 +13989,25 @@ def _wedof_store_page_locked(
                     if not stored_funding_was_refused:
                         contact["statut_demande_financement_ft"] = "refusee"
                         crm_changed = True
-                    if (contact.get("statut_secondaire_source")
+                    if manual_funding_is_provisional:
+                        contact.pop(
+                            "statut_demande_financement_ft_source", None,
+                        )
+                        crm_changed = True
+                    manual_secondary_is_provisional = (
+                        contact.get("statut_secondaire_source")
+                        == CRM_MANUAL_STATUS_SOURCE
+                        and contact.get("statut_secondaire")
+                        == "Financement FT en cours"
+                    )
+                    if ((contact.get("statut_secondaire_source")
                             != CRM_MANUAL_STATUS_SOURCE
+                            or manual_secondary_is_provisional)
                             and contact.get("statut_secondaire")
                             != "Financement FT refusé"):
                         contact["statut_secondaire"] = "Financement FT refusé"
+                        if manual_secondary_is_provisional:
+                            contact.pop("statut_secondaire_source", None)
                         crm_changed = True
                     if previous_funding_status != "refusee":
                         _crm_add_funding_refusal_notifications(
@@ -14552,10 +14578,41 @@ def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
         raise
 
 
+def _wedof_normalize_code(value):
+    return re.sub(r"[^a-z0-9]", "", unicodedata.normalize(
+        "NFD", str(value or "")
+    ).encode("ascii", "ignore").decode().lower())
+
+
+def _wedof_solicitation_statuses(payload):
+    """Lit les décisions de financement imbriquées dans le dossier WEDOF."""
+    training_info = payload.get("trainingActionInfo")
+    if not isinstance(training_info, dict):
+        return set()
+    solicitations = training_info.get("solicitations")
+    statuses = set()
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key in ("status", "state", "result"):
+                candidate = value.get(key)
+                if candidate not in (None, "", False) and not isinstance(
+                        candidate, (dict, list, tuple)):
+                    statuses.add(_wedof_normalize_code(candidate))
+            for nested in value.values():
+                if isinstance(nested, (dict, list, tuple)):
+                    visit(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                visit(nested)
+
+    visit(solicitations)
+    return statuses
+
+
 def _wedof_france_travail_status(payload, previous_status=""):
     """Déduit le statut FT d'un dossier WEDOF sans dépendre du statut commercial."""
-    normalize = lambda value: re.sub(r"[^a-z0-9]", "", unicodedata.normalize(
-        "NFD", str(value or "")).encode("ascii", "ignore").decode().lower())
+    normalize = _wedof_normalize_code
     state = normalize(payload.get("state") or payload.get("status")
                       or payload.get("registrationState"))
     history = payload.get("history") or payload.get("stateHistory") or payload.get("events") or []
@@ -14579,7 +14636,11 @@ def _wedof_france_travail_status(payload, previous_status=""):
 
     # Un refus explicite est une preuve suffisante en lui-même, y compris
     # lorsque WEDOF ne fournit pas l'historique de l'instruction FT.
-    if re.search(r"refus|reject", state):
+    solicitation_has_refusal = any(
+        re.search(r"refus|reject", status)
+        for status in _wedof_solicitation_statuses(payload)
+    )
+    if re.search(r"refus|reject", state) or solicitation_has_refusal:
         return "refusee"
     history_has_financer_refusal = any(
         ("financer" in marker or "financeur" in marker)

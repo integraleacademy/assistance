@@ -35,6 +35,23 @@ assert.equal(wedofFranceTravailStatus({registrationState:'validated',events:{cha
 assert.equal(wedofFranceTravailStatus({state:'cancelled',history:{waitingAcceptationDate:'2026-08-11'}}), 'annulee');
 assert.equal(wedofFranceTravailStatus({state:'accepted',history:{refusedByFinancerDate:'2026-08-23'}}), 'refusee');
 assert.equal(wedofFranceTravailStatus({state:'validated',history:{refusedByFinancerDate:null}}), '');
+const solicitationRefusal = {
+  state:'validated',
+  history:{validatedDate:'2026-09-14T14:00:00Z'},
+  trainingActionInfo:{solicitations:[{
+    amount:3580,
+    fundingType:9,
+    refusalReason:'3',
+    returnDate:'2026-09-16T09:34:56.085Z',
+    status:'refused',
+    submissionDate:'2026-09-14T14:03:21.47Z',
+  }]},
+};
+assert.equal(wedofFranceTravailStatus(solicitationRefusal), 'refusee');
+assert.equal(wedofFranceTravailStatus({
+  state:'validated',
+  trainingActionInfo:{solicitations:[{fundingType:9,status:'accepted'}]},
+}), '');
 
 const williamFolders = [
   {stable_id:'40609198536',payload:{state:'serviceDoneValidated',createdAt:'2025-11-25T07:41:00+01:00'}},
@@ -64,6 +81,12 @@ assert.deepEqual(
 assert.deepEqual(
   JSON.parse(JSON.stringify(contactWedofStatusDetails([{
     payload:{state:'validated',history:{refusedByFinancerDate:'2026-08-23'}},
+  }]))),
+  {state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(contactWedofStatusDetails([{
+    payload:solicitationRefusal,
   }]))),
   {state:'ft-refused',label:'CPF - Demande FT refusée',tone:'danger'},
 );
