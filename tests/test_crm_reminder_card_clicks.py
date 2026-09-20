@@ -6,10 +6,13 @@ ROOT = Path(__file__).parents[1]
 WORKSPACE_JS = ROOT / "static" / "crm_workspace.js"
 WORKSPACE_CSS = ROOT / "static" / "crm_workspace.css"
 CRM_TEMPLATE = ROOT / "templates" / "crm.html"
+
+
 def test_reminder_cards_open_from_free_space_and_keyboard_without_hijacking_controls():
     javascript = WORKSPACE_JS.read_text(encoding="utf-8")
     stylesheet = WORKSPACE_CSS.read_text(encoding="utf-8")
     template = CRM_TEMPLATE.read_text(encoding="utf-8")
+
     helpers = javascript[
         javascript.index("function reminderCardControl"):
         javascript.index("function remindersPage")
