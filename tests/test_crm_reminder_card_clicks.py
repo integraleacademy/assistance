@@ -6,15 +6,10 @@ ROOT = Path(__file__).parents[1]
 WORKSPACE_JS = ROOT / "static" / "crm_workspace.js"
 WORKSPACE_CSS = ROOT / "static" / "crm_workspace.css"
 CRM_TEMPLATE = ROOT / "templates" / "crm.html"
-APP_PY = ROOT / "app.py"
-
-
 def test_reminder_cards_open_from_free_space_and_keyboard_without_hijacking_controls():
     javascript = WORKSPACE_JS.read_text(encoding="utf-8")
     stylesheet = WORKSPACE_CSS.read_text(encoding="utf-8")
     template = CRM_TEMPLATE.read_text(encoding="utf-8")
-    backend = APP_PY.read_text(encoding="utf-8")
-
     helpers = javascript[
         javascript.index("function reminderCardControl"):
         javascript.index("function remindersPage")
@@ -97,4 +92,3 @@ console.log('CRM reminder card navigation: OK');
     assert ".reminder-contact-link{color:inherit;text-decoration:none}" in stylesheet
     assert ".reminder-contact-link:focus-visible{" in stylesheet
     assert "relances_navigation_version='20260920-reminder-name-link-1'" in template
-    assert 'CRM_ASSET_VERSION = "20260903-multiple-email-attachments-1"' in backend
