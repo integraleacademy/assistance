@@ -84,7 +84,9 @@ console.log('CRM reminder card navigation: OK');
     assert 'role="link" tabindex="0" aria-label="Ouvrir le suivi des relances de ' in javascript
     assert "open=bindReminderCardNavigation(card,contact,ctx)" in javascript
     assert "bindReminderLinkNavigation(card.querySelector('[data-reminder-open]'),open)" in javascript
+    assert "bindReminderLinkNavigation(card.querySelector('[data-reminder-name]'),open)" in javascript
     assert '<a class="btn" data-reminder-open href="${contactUrl}">Ouvrir</a>' in javascript
+    assert '<h3><a class="reminder-contact-link" data-reminder-name href="${contactUrl}">${ctx.esc(ctx.displayName(contact))}</a></h3>' in javascript
     assert 'contactUrl=`/crm/contacts?fiche=${encodeURIComponent(contact.id)}`' in javascript
     assert "ctx.relaunchModal(contact,{returnTab:'contactRelanceTab'})" in javascript
     assert "ctx.callModal(contact,{relance,returnTab:'contactRelanceTab'})" in javascript
@@ -92,5 +94,7 @@ console.log('CRM reminder card navigation: OK');
     assert ".reminder-command:hover{" in stylesheet
     assert ".reminder-command:focus-visible{" in stylesheet
     assert ".reminder-command-actions a.btn{text-decoration:none}" in stylesheet
-    assert "relances_navigation_version='20260903-1'" in template
+    assert ".reminder-contact-link{color:inherit;text-decoration:none}" in stylesheet
+    assert ".reminder-contact-link:focus-visible{" in stylesheet
+    assert "relances_navigation_version='20260920-reminder-name-link-1'" in template
     assert 'CRM_ASSET_VERSION = "20260903-multiple-email-attachments-1"' in backend
