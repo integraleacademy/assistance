@@ -8889,7 +8889,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260921-pistes-cpf-pending-1"
+CRM_ASSET_VERSION = "20260921-pistes-missing-relance-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -16361,6 +16361,7 @@ def crm_contact_updates():
             "statut": contact.get("statut"),
             "statut_secondaire": contact.get("statut_secondaire", ""),
             "cpf_status": wedof_cpf_states.get(str(contact.get("id") or ""), ""),
+            "relance_date": contact.get("relance_date", ""),
             "statut_demande_financement_ft": contact.get(
                 "statut_demande_financement_ft", ""
             ),

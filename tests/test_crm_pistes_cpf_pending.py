@@ -138,7 +138,7 @@ const contacts = [
 const before = JSON.stringify(contacts);
 """ + production + r"""
 assert.deepEqual(pipelineOverviewStatuses(),
-  ['Nouveaux','Nouveaux META','A relancer','CPF à traiter','Transition pro']);
+  ['Nouveaux','Nouveaux META','A relancer','À relancer sans relance programmée','CPF à traiter','Transition pro']);
 const rows = crmActiveContacts().filter(c=>contactHasPipelineStatus(c,'CPF à traiter'));
 assert.deepEqual(rows.map(c=>c.id), ['pending','meta']);
 assert.deepEqual(rows.filter(c=>contactHasPipelineStatus(c,'A relancer')).map(c=>c.id), ['pending']);
@@ -155,7 +155,7 @@ def test_cpf_poll_refreshes_queue_without_reloading_or_losing_search():
         pytest.skip("Node.js is required for the CRM browser helpers")
     source = (ROOT / "static/crm.js").read_text(encoding="utf-8")
     helpers = source[source.index("const isActiveLead="):source.index("const manualNextActionValue=")]
-    refresh = source[source.index("function refreshCpfPipelineQueue()"):
+    refresh = source[source.index("function refreshPipelineQueues()"):
                      source.index("document.addEventListener('visibilitychange'")]
     script = r"""
 const assert = require('node:assert/strict');
@@ -201,7 +201,7 @@ const api=async(url)=>url.startsWith('/api/crm/contacts/updates')?{contacts:upda
  assert.equal(input.value,'Martin');
  // A contact sheet in use is not redrawn by the pipeline refresh helper.
  location.search='?fiche=one';
- refreshCpfPipelineQueue();
+ refreshPipelineQueues();
  assert.equal(searches,2);
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
