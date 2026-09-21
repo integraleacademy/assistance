@@ -8889,7 +8889,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260918-wedof-solicitation-refusal-1"
+CRM_ASSET_VERSION = "20260921-pistes-cpf-pending-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -13084,6 +13084,7 @@ _WEDOF_POLLER_STOP = threading.Event()
 _WEDOF_FUNDING_CACHE_LOCK = threading.RLock()
 _WEDOF_FUNDING_CACHE_KEY = None
 _WEDOF_FUNDING_CACHE_VALUE = None
+_WEDOF_CPF_STATE_CACHE_VALUE = {}
 _WEDOF_FUNDING_CACHE_AT = 0.0
 WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS = 30 * 60
 WEDOF_CONTACT_REFRESH_LOCK_SECONDS = 2 * 60
@@ -14728,17 +14729,17 @@ def _wedof_effective_funding_status(
     return status
 
 
-def _wedof_funding_statuses_by_contact(data):
-    """Calcule tous les statuts FT en un seul parcours du cache WEDOF.
+def _wedof_funding_statuses_by_contact(data, *, include_cpf=False):
+    """Calcule les statuts FT et CPF en un seul parcours du cache WEDOF.
 
     L'ancienne implémentation relisait et décodait la table complète pour chaque
     contact. Cette fonction construit d'abord un index des contacts par identité,
     puis ne décode chaque dossier WEDOF qu'une seule fois.
     """
     global _WEDOF_FUNDING_CACHE_AT, _WEDOF_FUNDING_CACHE_KEY
-    global _WEDOF_FUNDING_CACHE_VALUE
+    global _WEDOF_FUNDING_CACHE_VALUE, _WEDOF_CPF_STATE_CACHE_VALUE
     if not os.path.exists(_wedof_db_path()):
-        return {}
+        return ({}, {}) if include_cpf else {}
 
     contacts = data.get("crm_contacts", [])
     identity_signature = tuple(
@@ -14754,7 +14755,8 @@ def _wedof_funding_statuses_by_contact(data):
         if (_WEDOF_FUNDING_CACHE_VALUE is not None
                 and _WEDOF_FUNDING_CACHE_KEY == cache_key
                 and time.monotonic() - _WEDOF_FUNDING_CACHE_AT < 300):
-            return dict(_WEDOF_FUNDING_CACHE_VALUE)
+            funding = dict(_WEDOF_FUNDING_CACHE_VALUE)
+            return (funding, dict(_WEDOF_CPF_STATE_CACHE_VALUE)) if include_cpf else funding
 
     known_contact_ids = {
         str(contact.get("id")) for contact in contacts if contact.get("id")
@@ -14769,6 +14771,7 @@ def _wedof_funding_statuses_by_contact(data):
             contacts_by_name.setdefault(key, []).append(str(contact.get("id")))
 
     statuses_by_contact = {}
+    latest_cpf_by_contact = {}
     with _wedof_connect() as db:
         rows = db.execute("""
             SELECT r.stable_id, r.payload_json, r.remote_date, r.synced_at,
@@ -14790,6 +14793,10 @@ def _wedof_funding_statuses_by_contact(data):
                 )
                 continue
             funding_status = _wedof_france_travail_status(payload)
+            cpf_state = _wedof_normalize_code(
+                payload.get("state") or payload.get("status")
+                or payload.get("registrationState")
+            )
             recency = _wedof_folder_recency_key(
                 payload,
                 fallback=row["remote_date"] or row["synced_at"],
@@ -14804,6 +14811,9 @@ def _wedof_funding_statuses_by_contact(data):
                 statuses_by_contact.setdefault(target_id, []).append(
                     (recency, funding_status, row["stable_id"])
                 )
+                latest_cpf = latest_cpf_by_contact.get(target_id)
+                if latest_cpf is None or recency > latest_cpf[0]:
+                    latest_cpf_by_contact[target_id] = (recency, cpf_state)
 
     contacts_by_id = {
         str(contact.get("id") or ""): contact for contact in contacts
@@ -14816,11 +14826,25 @@ def _wedof_funding_statuses_by_contact(data):
             fallback_status=contact.get("statut_demande_financement_ft"),
             fallback_folder_id=contact.get("source_wedof_folder_id"),
         )
+    cpf_states = {
+        contact_id: state for contact_id, (_, state) in latest_cpf_by_contact.items()
+    }
     with _WEDOF_FUNDING_CACHE_LOCK:
         _WEDOF_FUNDING_CACHE_KEY = (_wedof_db_signature(), identity_signature)
         _WEDOF_FUNDING_CACHE_VALUE = dict(result)
+        _WEDOF_CPF_STATE_CACHE_VALUE = dict(cpf_states)
         _WEDOF_FUNDING_CACHE_AT = time.monotonic()
-    return result
+    return (result, cpf_states) if include_cpf else result
+
+
+def _wedof_cpf_states_by_contact(data):
+    """Expose le statut CPF local sans rendre les lectures CRM dépendantes du cache."""
+    try:
+        _, states = _wedof_funding_statuses_by_contact(data, include_cpf=True)
+        return states
+    except Exception as exc:
+        app.logger.warning("Lecture des statuts CPF ignorée (%s)", type(exc).__name__)
+        return {}
 
 
 def _wedof_status_payload(test_connection=True):
@@ -16111,7 +16135,7 @@ def _crm_compact_contact_activities(contact):
 
 def _crm_contact_summary_response(contact, data, *, funding_status=None,
                                   activities=None, publications=None,
-                                  appointment_count=0):
+                                  appointment_count=0, cpf_status=""):
     """Construit une fiche légère ; le détail complet reste chargé à la demande."""
     summary = {
         key: contact.get(key)
@@ -16119,6 +16143,7 @@ def _crm_contact_summary_response(contact, data, *, funding_status=None,
         if key in contact
     }
     summary["qualification_flag"] = str(contact.get("qualification_flag") or "")
+    summary["cpf_status"] = cpf_status
     if (funding_status
             and contact.get("statut_demande_financement_ft_source")
             != CRM_MANUAL_STATUS_SOURCE):
@@ -16192,6 +16217,7 @@ def _crm_contact_summaries_payload(data, section="", *, prepared=False):
         changed, wedof_funding_statuses = False, {}
     else:
         changed, wedof_funding_statuses = _crm_prepare_contacts(data)
+    wedof_cpf_states = _wedof_cpf_states_by_contact(data)
     appointment_counts = _crm_appointment_counts_by_contact(data)
     include_activity = str(section or "").strip().lower() in CRM_ACTIVITY_SECTIONS
     activity_by_contact = {}
@@ -16226,6 +16252,7 @@ def _crm_contact_summaries_payload(data, section="", *, prepared=False):
             contact,
             data,
             funding_status=wedof_funding_statuses.get(contact_id),
+            cpf_status=wedof_cpf_states.get(contact_id, ""),
             activities=(activity_by_contact.get(contact_id, [])
                         if include_activity else None),
             publications=(publication_by_contact.get(contact_id, [])
@@ -16324,6 +16351,7 @@ def crm_contact_updates():
             if _crm_backfill_callback_requests(stored_data):
                 save_data(stored_data)
     data = _crm_prepared_read_model()
+    wedof_cpf_states = _wedof_cpf_states_by_contact(data)
     appointment_counts = _crm_appointment_counts_by_contact(data)
     appointments = _crm_calendly_appointments_payload(data)["appointments"]
 
@@ -16332,6 +16360,7 @@ def crm_contact_updates():
             "id": contact.get("id"),
             "statut": contact.get("statut"),
             "statut_secondaire": contact.get("statut_secondaire", ""),
+            "cpf_status": wedof_cpf_states.get(str(contact.get("id") or ""), ""),
             "statut_demande_financement_ft": contact.get(
                 "statut_demande_financement_ft", ""
             ),
