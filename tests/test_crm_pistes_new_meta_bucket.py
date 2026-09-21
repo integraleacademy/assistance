@@ -48,7 +48,7 @@ const leads = [
 const before = JSON.stringify(leads);
 const ids = status => leads.filter(lead => contactHasPipelineStatus(lead, status)).map(lead => lead.id);
 
-assert.deepEqual(pipelineOverviewStatuses(), ['Nouveaux', 'Nouveaux META', 'A relancer', 'Transition pro']);
+assert.deepEqual(pipelineOverviewStatuses(), ['Nouveaux', 'Nouveaux META', 'A relancer', 'À relancer sans relance programmée', 'Transition pro']);
 assert.deepEqual(ids('Nouveaux'), ['explicit-google', 'site']);
 assert.deepEqual(ids('Nouveaux META'), ['meta', 'facebook', 'instagram', 'meta-source', 'meta-secondary']);
 assert.deepEqual(ids('A relancer'), ['meta-relance']);

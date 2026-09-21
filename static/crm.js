@@ -107,6 +107,7 @@ function renderContactCnapsStatus(c){const current=document.querySelector('#cont
 const isActiveLead=c=>!['Converti','Disqualifié'].includes(c.statut);
 const NEW_META_PIPELINE_STATUS='Nouveaux META';
 const CPF_PENDING_PIPELINE_STATUS='CPF à traiter';
+const MISSING_RELANCE_PIPELINE_STATUS='À relancer sans relance programmée';
 const contactPipelineStatuses=c=>{
  const statuses=new Set([c.statut,c.statut_secondaire].filter(Boolean));
  const fundingStatus=String(c.financement_ft||'').trim().toUpperCase()==='OUI'?String(c.statut_demande_financement_ft||'').trim():'';
@@ -118,6 +119,7 @@ const contactHasAnyPipelineStatus=(c,status)=>contactPipelineStatuses(c).include
 const contactHasPipelineStatus=(c,status)=>{
  if(!isActiveLead(c))return false;
  if(status===CPF_PENDING_PIPELINE_STATUS)return c.cpf_status==='notprocessed';
+ if(status===MISSING_RELANCE_PIPELINE_STATUS)return !c.archived_at&&relanceStatusDetails(c)?.tone==='missing';
  const isMeta=canonicalCrmOrigin(c)==='META';
  if(status===NEW_META_PIPELINE_STATUS)return isMeta&&contactHasAnyPipelineStatus(c,'Nouveaux');
  if(status==='Nouveaux')return !isMeta&&contactHasAnyPipelineStatus(c,status);
@@ -204,7 +206,7 @@ const contactPipelineStatusMarkup=c=>{
  const appointmentDate=nextProgrammedAppointmentDate(c),relanceMarkup=contactRelanceStatusMarkup(c);
  return `<div class="pipeline-status-stack">${contactPipelineStatuses(c).map(badge).join(' ')}${appointmentDate?`<small class="pipeline-appointment-date">${esc(appointmentDate)}</small>`:''}${relanceMarkup}</div>`;
 };
-const pipelineOverviewStatuses=()=>[...new Set([...S.flatMap(status=>status==='Nouveaux'?[status,NEW_META_PIPELINE_STATUS]:[status]),...SECONDARY_STATUSES].map(status=>status==='Disqualifié'?CPF_PENDING_PIPELINE_STATUS:status))];
+const pipelineOverviewStatuses=()=>[...new Set([...S.flatMap(status=>status==='Nouveaux'?[status,NEW_META_PIPELINE_STATUS]:[status]),...SECONDARY_STATUSES].map(status=>status==='Disqualifié'?CPF_PENDING_PIPELINE_STATUS:status).flatMap(status=>status==='A relancer'?[status,MISSING_RELANCE_PIPELINE_STATUS]:[status]))];
 const timelineButtons=(statuses,current,kind)=>statuses.map((status,index)=>`<button type="button" data-${kind}-step="${esc(status)}" class="${status===current?'current':index<statuses.indexOf(current)?'done':''}">${esc(status)}</button>`).join('');
 const secondaryTimelineRow=current=>`<div class="timeline-row"><div class="timeline timeline-secondary">${timelineButtons(SECONDARY_STATUSES,current,'secondary')}</div><button type="button" class="timeline-toggle timeline-remove" id="removeSecondaryTimeline" aria-label="Retirer la deuxième timeline" title="Retirer la deuxième timeline">−</button></div>`;
 const contactTimelines=c=>`<div class="timelines"><div class="timeline-row"><div class="timeline timeline-primary">${timelineButtons(S,c.statut,'primary')}</div>${c.statut_secondaire?'':`<button type="button" class="timeline-toggle timeline-add" id="addSecondaryTimeline" aria-label="Ajouter une deuxième timeline" title="Ajouter une deuxième timeline">+</button>`}</div>${c.statut_secondaire?secondaryTimelineRow(c.statut_secondaire):''}</div>`;
@@ -2116,10 +2118,13 @@ async function refreshPipelineAppointments(now=Date.now()){
  }finally{pipelineAppointmentRefreshInFlight=false}
 }
 function scheduleCrmRefresh(delay=CRM_REFRESH_INTERVAL_MS){clearTimeout(crmRefreshTimer);crmRefreshTimer=setTimeout(refreshCrmSnapshot,delay)}
-function refreshCpfPipelineQueue(){
+function refreshPipelineQueues(){
  if(C.section!=='pistes'||new URLSearchParams(location.search).has('fiche'))return;
- const count=document.querySelector(`[data-status="${CPF_PENDING_PIPELINE_STATUS}"] b`);
- if(count)count.textContent=crmActiveContacts().filter(c=>contactHasPipelineStatus(c,CPF_PENDING_PIPELINE_STATUS)).length;
+ const activeContacts=crmActiveContacts();
+ for(const status of [CPF_PENDING_PIPELINE_STATUS,'A relancer',MISSING_RELANCE_PIPELINE_STATUS]){
+  const count=document.querySelector(`[data-status="${status}"] b`);
+  if(count)count.textContent=activeContacts.filter(c=>contactHasPipelineStatus(c,status)).length;
+ }
  document.querySelector('#listSearch')?.dispatchEvent(new Event('input',{bubbles:true}));
 }
 async function refreshCrmSnapshot(){
@@ -2133,7 +2138,7 @@ async function refreshCrmSnapshot(){
   if(!id)await refreshPipelineAppointments();
   const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
   const updates=snapshot.contacts||[];
-  const cpfChanged=updates.some(update=>Object.prototype.hasOwnProperty.call(update,'cpf_status')&&contactInStore(update.id)?.cpf_status!==update.cpf_status);
+  const pipelineChanged=updates.some(update=>['cpf_status','relance_date','statut','statut_secondaire'].some(field=>Object.prototype.hasOwnProperty.call(update,field)&&contactInStore(update.id)?.[field]!==update[field]));
   const hasAppointments=Array.isArray(snapshot.appointments);
   const appointmentsChanged=hasAppointments&&window.CRMAppointmentState.signature(snapshot.appointments)!==window.CRMAppointmentState.signature(crmAppointments);
   if(hasAppointments&&(appointmentsChanged||C.section==='calendrier'))crmAppointments=snapshot.appointments;
@@ -2145,7 +2150,7 @@ async function refreshCrmSnapshot(){
    contacts=fresh.map(summary=>{
     const detail=detailed.get(String(summary.id));
     if(!detail)return summary;
-    const merged={...summary,...detail,cpf_status:summary.cpf_status};
+    const merged={...summary,...detail,cpf_status:summary.cpf_status,relance_date:summary.relance_date,statut:summary.statut,statut_secondaire:summary.statut_secondaire};
     delete merged._summary;
     return merged;
    });
@@ -2159,7 +2164,7 @@ async function refreshCrmSnapshot(){
   }
   updateLeadCount();
   updateVisibleAppointmentData();
-  if(membershipChanged||cpfChanged)refreshCpfPipelineQueue();
+  if(membershipChanged||pipelineChanged)refreshPipelineQueues();
   if(C.section==='calendrier'&&!id&&hasAppointments)renderCalendarAppointments(crmAppointments);
   const current=id?contactInStore(id):null;
   if(current){
