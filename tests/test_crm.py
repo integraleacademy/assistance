@@ -1168,8 +1168,9 @@ def test_crm_frontend_uses_the_single_bootstrap_endpoint():
     assert "Promise.all" not in init
 
 
+@pytest.mark.parametrize("activity_section", ["notifications", "fil-actu"])
 def test_crm_bootstrap_is_compact_and_contact_details_are_loaded_on_demand(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, activity_section):
     c = client(tmp_path, monkeypatch)
     created = c.post(
         "/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}
@@ -1205,12 +1206,20 @@ def test_crm_bootstrap_is_compact_and_contact_details_are_loaded_on_demand(
     assert compact["publications"] == []
     assert len(compact_response.data) < 150_000
 
-    activity_response = c.get("/api/crm/bootstrap?section=fil-actu")
+    activity_response = c.get(f"/api/crm/bootstrap?section={activity_section}")
     activity_contact = activity_response.get_json()["contacts"][0]
     assert activity_contact["activities"][0]["title"] == "E-mail envoyé"
     assert "preview" not in activity_contact["activities"][0]
     assert activity_contact["publications"][0]["texte"] == "Publication visible"
     assert len(activity_response.data) < 150_000
+
+    navigation_response = c.get(f"/api/crm/contacts?section={activity_section}")
+    navigation_contact = navigation_response.get_json()[0]
+    assert navigation_contact["activities"][0]["title"] == "E-mail envoyé"
+    assert navigation_contact["activities"][0]["detail"] == "Informations transmises"
+    assert "preview" not in navigation_contact["activities"][0]
+    assert navigation_contact["publications"][0]["texte"] == "Publication visible"
+    assert len(navigation_response.data) < 150_000
 
     detail_response = c.get(f"/api/crm/contacts/{created['id']}")
     detail = detail_response.get_json()

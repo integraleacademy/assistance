@@ -50,7 +50,7 @@ def test_sidebar_navigation_reuses_the_loaded_crm_snapshot():
     assert "history.pushState({crmSection:section}" in router
     assert "render();" in router
     assert "refreshCrmSectionData(section);" in router
-    assert "api('/api/crm/contacts?section=fil-actu')" in router
+    assert "api(`/api/crm/contacts?section=${encodeURIComponent(section)}`)" in router
     assert "api('/api/crm/callback-requests')" in router
     assert "event.preventDefault();" in router
     assert "location.reload()" not in router
