@@ -44,11 +44,13 @@ def _sync_quote_contact_training(contact, quote_id, centre_code, centre_label, c
         "auvergne": "Auvergne",
         "paris": "Paris",
     }.get(_text(centre_code), _text(city or centre_label))
-    contact.update({
-        "source_devis_id": quote_id,
+    contact["source_devis_id"] = quote_id
+    for field, value in {
         "dates_formation": session,
         "lieu": crm_location,
-    })
+    }.items():
+        if _text(contact.get(field)).casefold() in {"", "non renseigné", "non renseigne"}:
+            contact[field] = value
 
 
 def register_secretariat_followup_patch(app_module):
