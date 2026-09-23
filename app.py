@@ -3874,7 +3874,7 @@ _SECRETARIAT_DELIVERY_LOCK = threading.Lock()
 def _serialize_secretariat_delivery(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        with _SECRETARIAT_DELIVERY_LOCK:
+        with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
             return view(*args, **kwargs)
     return wrapped
 
@@ -12000,10 +12000,8 @@ def _secretariat_session_details(entry):
     return centre_code, session_label
 
 
-def _crm_create_contact_from_secretariat(
-        data, entry, crm_payload, *, create_on_ambiguity=False):
-    """Crée une piste CRM interne à partir d'un appel saisi au secrétariat."""
-    now = _crm_now()
+def _crm_secretariat_answer_values(entry):
+    """Map actual submitted answers, shared by live submissions and recovery."""
     formation_key = str(entry.get("formation") or "").strip()
     formation = {
         "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
@@ -12016,15 +12014,9 @@ def _crm_create_contact_from_secretariat(
         "cote_azur": "Côte d’Azur",
         "auvergne": "Auvergne",
     }.get(centre_code, "")
-    contact = {
-        "id": str(uuid.uuid4()),
-        "prenom": _crm_format_first_name(crm_payload.get("prenom")),
-        "nom": _crm_format_last_name(crm_payload.get("nom")),
-        "telephone": str(entry.get("telephone") or "").strip(),
-        "mail": str(entry.get("email") or "").strip(),
+    return {
         "formation": formation,
         "lieu": lieu,
-        "statut": "Nouveaux",
         "dates_formation": session_label,
         "cpf": str(entry.get("cpf_consulte") or "").strip(),
         "cpf_montant": normalize_cpf_amount(entry.get("cpf_montant")),
@@ -12034,12 +12026,80 @@ def _crm_create_contact_from_secretariat(
         "antecedents": str(entry.get("garde_vue") or "").strip(),
         "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
         "identite_creation": str(entry.get("identite_numerique") or "").strip(),
-        "identite_ok": "",
         "financement_ft": str(entry.get("france_travail") or "").strip(),
-        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
         "financement_perso_possible": str(entry.get("ft_refus_ok") or "").strip(),
         "refus_ft_perso": str(entry.get("ft_refus_ok") or "").strip(),
         "reste_a_charge_perso": str(entry.get("financement_perso") or "").strip(),
+    }
+
+
+def _crm_secretariat_answers_match_contact(contact, entry):
+    """A durable request ID alone cannot authorize filling qualification fields."""
+    email = _crm_normalize_email(entry.get("email") or entry.get("mail"))
+    phone = _crm_normalize_phone(entry.get("telephone"))
+    stored_email = _crm_normalize_email(contact.get("mail"))
+    stored_phone = _crm_normalize_phone(contact.get("telephone"))
+    agrees = (email and email == stored_email) or (phone and phone == stored_phone)
+    disagrees = (email and stored_email and email != stored_email) or (phone and stored_phone and phone != stored_phone)
+    if not agrees or disagrees:
+        return False
+    first = _crm_normalize_name(entry.get("prenom"))
+    stored_first = _crm_normalize_name(contact.get("prenom"))
+    if first and stored_first and first != stored_first:
+        return False
+    # The saved form uses a full name; the inbound snapshot uses a surname.
+    name = _crm_normalize_name(entry.get("nom_famille") or entry.get("nom"))
+    stored_name = _crm_normalize_name(contact.get("nom"))
+    if name and stored_name and name not in {stored_name, stored_first + stored_name}:
+        return False
+    return True
+
+
+def _crm_recover_secretariat_answers(data, *, dry_run=True):
+    from crm_secretariat_answers import recover_answers
+    return recover_answers(
+        data, map_answers=_crm_secretariat_answer_values,
+        is_empty=_crm_is_empty, normalize_amount=normalize_cpf_amount,
+        matches_contact=_crm_secretariat_answers_match_contact,
+        now=_crm_now(), dry_run=dry_run,
+    )
+
+
+def _crm_restore_secretariat_answers_once():
+    """Run the non-destructive, versioned recovery before serving CRM traffic."""
+    from crm_secretariat_answers import REPAIR_KEY, VERSION
+    with _CRM_RECONCILIATION_LOCK:
+        data = load_data()
+        if (data.get(REPAIR_KEY) or {}).get("version") == VERSION:
+            return data[REPAIR_KEY]
+        report = _crm_recover_secretariat_answers(data, dry_run=False)
+        report["completed_at"] = _crm_now()
+        data[REPAIR_KEY] = report
+        save_data(data)
+        app.logger.warning(
+            "secretariat_answers_repair version=%s contacts=%s fields=%s conflicts=%s skipped=%s",
+            VERSION, report["contacts"], report["fields"],
+            len(report["conflicts"]), len(report["skipped"]),
+        )
+        return report
+
+
+def _crm_create_contact_from_secretariat(
+        data, entry, crm_payload, *, create_on_ambiguity=False):
+    """Create or complete the safely matched CRM record from a secretary call."""
+    from crm_secretariat_answers import apply_answers
+    now = _crm_now()
+    values = _crm_secretariat_answer_values(entry)
+    contact = {
+        "id": str(uuid.uuid4()),
+        "prenom": _crm_format_first_name(crm_payload.get("prenom")),
+        "nom": _crm_format_last_name(crm_payload.get("nom")),
+        "telephone": str(entry.get("telephone") or "").strip(),
+        "mail": str(entry.get("email") or "").strip(),
+        **values,
+        "statut": "Nouveaux",
+        "identite_ok": "",
+        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
         "origine": "Secrétariat",
         "inscrit_ft": "",
         "commentaires": str(entry.get("notes") or "").strip(),
@@ -12058,12 +12118,38 @@ def _crm_create_contact_from_secretariat(
     reconciliation_payload = {**dict(entry), "mail": entry.get("email"),
                               "nom": crm_payload.get("nom"),
                               "prenom": crm_payload.get("prenom"),
-                              "lieu": lieu, "formation": formation}
-    matched, _, _ = find_or_create_crm_contact(
+                              "lieu": values["lieu"], "formation": values["formation"]}
+    matched, inbound, created = find_or_create_crm_contact(
         data, reconciliation_payload, "assistant-secretariat",
         proposed_contact=contact, external_id=entry.get("id"),
         create_on_ambiguity=create_on_ambiguity,
     )
+    if inbound.get("status") == "pending_review":
+        entry["crm_contact_id"] = ""
+        return None
+    if matched:
+        if not created and not _crm_secretariat_answers_match_contact(matched, reconciliation_payload):
+            inbound["status"] = "pending_review"
+            inbound.setdefault("review_reasons", []).append(
+                "Réponses du secrétariat non intégrées : identité ou coordonnées différentes de la fiche liée."
+            )
+            entry["crm_contact_id"] = ""
+            return None
+        entry["crm_contact_id"] = matched["id"]
+        if not created:
+            changes, conflicts = apply_answers(
+                matched, values, is_empty=_crm_is_empty,
+                normalize_amount=normalize_cpf_amount,
+            )
+            differences = inbound.setdefault("differences", [])
+            new_conflicts = [field for field in conflicts if field not in differences]
+            differences.extend(new_conflicts)
+            if changes or new_conflicts:
+                detail = "Champs complétés : " + ", ".join(changes) + "." if changes else ""
+                if new_conflicts:
+                    detail += " Informations différentes conservées pour vérification : " + ", ".join(new_conflicts) + "."
+                _crm_activity(matched, "inbound_request", "Réponses du secrétariat intégrées", detail)
+                matched["updated_at"] = now
     return matched
 
 
