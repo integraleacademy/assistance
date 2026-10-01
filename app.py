@@ -8869,10 +8869,9 @@ def lookup_hebergement():
 
 
 
-CRM_MANUAL_APPOINTMENT_STATUS = "RDV programm√© sans rendez-vous"
 CRM_STATUSES = [
     "Nouveaux", "Blocage", "RDV programm√©",
-    CRM_MANUAL_APPOINTMENT_STATUS, "En cours",
+    "RDV programm√© sans rendez-vous", "En cours",
     "A relancer", "Disqualifi√©", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifi√©", "Converti"}
@@ -8920,6 +8919,7 @@ def _crm_migrate_registration_appointment_status(contact):
 
 def _crm_statuses(data=None):
     """Retourne le pipeline personnalisable, compl√©t√© des statuts syst√®me."""
+    manual_appointment_status = "RDV programm√© sans rendez-vous"
     configured = (data or {}).get("crm_statuses")
     if not isinstance(configured, list):
         return list(CRM_STATUSES)
@@ -8929,14 +8929,14 @@ def _crm_statuses(data=None):
         if (label and label not in clean and label not in CRM_RESERVED_STATUSES
                 and label not in CRM_SECONDARY_ONLY_STATUSES):
             clean.append(label)
-    for required_status in (CRM_MANUAL_APPOINTMENT_STATUS, "En cours"):
+    for required_status in (manual_appointment_status, "En cours"):
         if required_status in clean:
             clean.remove(required_status)
     insertion_index = (
         clean.index("RDV programm√©") + 1
         if "RDV programm√©" in clean else len(clean)
     )
-    clean.insert(insertion_index, CRM_MANUAL_APPOINTMENT_STATUS)
+    clean.insert(insertion_index, manual_appointment_status)
     clean.insert(insertion_index + 1, "En cours")
     clean.extend(status for status in CRM_STATUSES if status in CRM_RESERVED_STATUSES)
     return clean
@@ -9654,9944 +9654,71 @@ def _meta_crm_question_field(question):
     if "formation" in key and not any(term in key for term in ("date", "lieu", "centre")):
         return "formation"
     if any(term in key for term in ("commentaire", "precision", "projetformation", "besoinparticulier")):
-        return "commentaires"
-    return ""
-
-
-def _meta_answer_rows(fields, custom_answers):
-    rows, seen = [], set()
-
-    def add(question, value):
-        answer = _meta_scalar(value)
-        if not answer:
-            return
-        marker = (_meta_key(question), answer.casefold())
-        if marker in seen:
-            return
-        seen.add(marker)
-        rows.append({"question": str(question).strip(), "answer": answer})
-
-    for question, value in custom_answers.items():
-        add(question, value)
-    for field, label in (
-        ("formation", "Formation souhait√©e"), ("centre", "Centre souhait√©"),
-        ("lieu", "Lieu souhait√©"), ("dates", "Dates souhait√©es"),
-        ("dates_formation", "Dates souhait√©es"), ("city", "Ville"),
-        ("zip_code", "Code postal"), ("postal_code", "Code postal"),
-    ):
-        if fields.get(field):
-            add(label, fields[field])
-    return rows
-
-
-def _meta_crm_payload(fields, custom_answers):
-    """Traduit les r√©ponses visibles du formulaire META vers les champs du CRM."""
-    crm = {
-        "prenom": fields.get("first_name", ""), "nom": fields.get("last_name", ""),
-        "mail": fields.get("email", ""), "telephone": fields.get("phone_number", ""),
-    }
-    answer_rows = _meta_answer_rows(fields, custom_answers)
-
-    def set_yes_no(field, value):
-        normalized = _meta_yes_no(value)
-        if normalized and not crm.get(field):
-            crm[field] = normalized
-
-    def apply(field, value):
-        if field == "formation":
-            formation, desp_type = _meta_formation(value)
-            if formation and not crm.get("formation"):
-                crm["formation"] = formation
-            if desp_type and not crm.get("desp_type"):
-                crm["desp_type"] = desp_type
-        elif field == "lieu":
-            if (place := _meta_place(value)) and not crm.get("lieu"):
-                crm["lieu"] = place
-        elif field == "dates_formation":
-            normalized = _meta_words(value)
-            if normalized and not any(term in normalized for term in ("a definir", "ne sais pas", "pas encore")):
-                raw = _meta_scalar(value)
-                if " ‚Äî " in raw and _meta_place(raw.split(" ‚Äî ", 1)[0]):
-                    raw = raw.split(" ‚Äî ", 1)[1].strip()
-                crm.setdefault("dates_formation", raw)
-        elif field in {"cpf_montant", "montant_accorde_ft"}:
-            try:
-                amount_text = re.sub(r"[^0-9,\.\s]", "", _meta_scalar(value)).strip()
-                amount = normalize_cpf_amount(amount_text)
-            except ValueError:
-                amount = ""
-            if amount and not crm.get(field):
-                crm[field] = amount
-        elif field == "cpf_palier":
-            tier = _meta_scalar(value)
-            if tier and not crm.get("cpf_palier"):
-                crm["cpf_palier"] = tier
-        elif field == "desp_type":
-            normalized = _meta_words(value)
-            if "vae" in normalized or "validation des acquis" in normalized:
-                crm.setdefault("desp_type", "VAE")
-            elif "initial" in normalized:
-                crm.setdefault("desp_type", "INITIAL")
-        elif field == "statut_demande_financement_ft":
-            if (status := _meta_funding_status(value)) and not crm.get(field):
-                crm[field] = status
-        elif field == "commentaires":
-            text = _meta_scalar(value)
-            if text and not crm.get(field):
-                crm[field] = text
-        elif field in {
-            "cpf", "carte_pro", "titre_sejour", "garde_vue", "antecedents",
-            "compte_cnaps", "identite_creation", "identite_ok", "financement_ft",
-            "financement_perso_possible",
-            "refus_ft_perso", "reste_a_charge_perso", "inscrit_ft",
-        }:
-            set_yes_no(field, value)
-
-    for direct_field in ("formation", "centre", "lieu", "dates", "dates_formation"):
-        if fields.get(direct_field):
-            apply({"centre": "lieu", "dates": "dates_formation"}.get(direct_field, direct_field), fields[direct_field])
-    for row in answer_rows:
-        if _meta_question_excluded_from_scoring(row["question"]):
-            continue
-        mapped_field = _meta_crm_question_field(row["question"])
-        if mapped_field == "cpf_montant" and _meta_is_cpf_tier(row["answer"]):
-            mapped_field = "cpf_palier"
-        apply(mapped_field, row["answer"])
-        question, answer = _meta_words(row["question"]), _meta_words(row["answer"])
-        if "financ" in question or "prise en charge" in question:
-            if "cpf" in answer:
-                crm.setdefault("cpf", "OUI")
-            if "france travail" in answer or "pole emploi" in answer:
-                crm.setdefault("financement_ft", "OUI")
-
-    if not crm.get("formation"):
-        for key in ("form_name", "campaign_name", "adset_name", "ad_name"):
-            formation, desp_type = _meta_formation(fields.get(key))
-            if formation:
-                crm["formation"] = formation
-                if desp_type:
-                    crm["desp_type"] = desp_type
-                break
-    if not crm.get("lieu"):
-        for key in ("form_name", "campaign_name", "adset_name", "ad_name"):
-            if place := _meta_place(fields.get(key)):
-                crm["lieu"] = place
-                break
-    # Le formulaire instantan√© META actuellement utilis√© est exclusivement
-    # consacr√© √† l'A3P sur la C√¥te d'Azur. Ces valeurs fiables priment sur les
-    # libell√©s variables (ou absents) transmis par Meta/Zapier.
-    crm["formation"] = _META_DEFAULT_FORMATION
-    crm["lieu"] = _META_DEFAULT_LOCATION
-    return crm, answer_rows
-
-
-def _meta_resolve_session(data, crm_payload):
-    """Aligne une r√©ponse libre META sur le libell√© de session r√©ellement s√©lectionnable."""
-    raw = str(crm_payload.get("dates_formation") or "").strip()
-    formation = str(crm_payload.get("formation") or "").strip()
-    if not raw or not formation:
-        return crm_payload
-    formation_code = {
-        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "Chauffeur VTC": "VTC",
-        "DESP": "DESP_VAE" if crm_payload.get("desp_type") == "VAE" else "DESP_INIT",
-    }.get(formation)
-    if not formation_code:
-        return crm_payload
-    requested_centre = (
-        _normalize_centre_code(crm_payload.get("lieu")) if crm_payload.get("lieu") else ""
-    )
-    centres = [requested_centre] if requested_centre else list(get_formation_sessions(data))
-    raw_key = _meta_words(raw)
-    matches = []
-    for centre_code in centres:
-        for row in get_formation_sessions(data).get(centre_code, {}).get(formation_code, []):
-            label = str(row.get("label") or "").strip() if isinstance(row, dict) else ""
-            label_key = _meta_words(label)
-            if not label_key:
-                continue
-            if (raw_key == label_key or (len(raw_key) >= 12 and raw_key in label_key)
-                    or (len(label_key) >= 12 and label_key in raw_key)):
-                matches.append((centre_code, label))
-                continue
-            raw_range, label_range = _session_date_range(raw), _session_date_range(label)
-            if all(raw_range) and raw_range == label_range:
-                matches.append((centre_code, label))
-    if len(matches) == 1:
-        centre_code, label = matches[0]
-        crm_payload["dates_formation"] = label
-        crm_payload.setdefault("lieu", {
-            "paris": "Paris", "cote_azur": "C√¥te d‚ÄôAzur", "auvergne": "Auvergne",
-        }.get(centre_code, centre_code))
-    return crm_payload
-
-
-def _meta_source_details(fields, received_at=""):
-    if not fields:
-        return {}
-    return {
-        key: value for key, value in {
-            "form_name": fields.get("form_name", ""),
-            "campaign_name": fields.get("campaign_name", ""),
-            "ad_name": fields.get("ad_name", ""),
-            "received_at": received_at,
-        }.items() if value
-    }
-
-
-def _meta_apply_contact_answers(contact, crm_payload, answer_rows, *, fields=None, received_at=""):
-    """Compl√®te seulement les champs vides et rattache toutes les r√©ponses √† la fiche."""
-    changed, completed = False, []
-    for field in _META_CRM_COMPLETION_FIELDS:
-        incoming = crm_payload.get(field)
-        if _crm_is_empty(incoming) or not _crm_is_empty(contact.get(field)):
-            continue
-        contact[field] = incoming
-        completed.append(field)
-        changed = True
-
-    existing_rows = contact.get("meta_answers")
-    if not isinstance(existing_rows, list):
-        existing_rows = []
-        if answer_rows:
-            changed = True
-    normalized_rows = [row for row in existing_rows if isinstance(row, dict)]
-    known = {
-        (_meta_key(row.get("question")), str(row.get("answer") or "").strip().casefold())
-        for row in normalized_rows
-    }
-    for row in answer_rows:
-        marker = (_meta_key(row.get("question")), str(row.get("answer") or "").strip().casefold())
-        if not all(marker) or marker in known:
-            continue
-        stored = dict(row)
-        if received_at:
-            stored["received_at"] = received_at
-        normalized_rows.append(stored)
-        known.add(marker)
-        changed = True
-    if contact.get("meta_answers") != normalized_rows:
-        contact["meta_answers"] = normalized_rows
-        changed = True
-
-    source = _meta_source_details(fields or {}, received_at)
-    if source and contact.get("meta_source") != source:
-        contact["meta_source"] = source
-        changed = True
-    if changed:
-        contact["updated_at"] = _crm_now()
-    return changed, completed
-
-
-def _crm_backfill_meta_submissions(data):
-    """R√©pare automatiquement les pistes d√©j√† cr√©√©es avant le mapping des r√©ponses."""
-    changed, source_contacts = False, set()
-    for submission in data.get("crm_meta_lead_submissions", []):
-        if not isinstance(submission, dict):
-            continue
-        contact = _crm_contact(data, submission.get("contact_id"))
-        raw_payload = submission.get("raw_payload")
-        if not contact or not isinstance(raw_payload, dict):
-            continue
-        fields, custom_answers = _parse_meta_lead_payload(raw_payload)
-        stored_answers = submission.get("custom_answers")
-        if isinstance(stored_answers, dict):
-            custom_answers = {**stored_answers, **custom_answers}
-        crm_payload, answer_rows = _meta_crm_payload(fields, custom_answers)
-        _meta_resolve_session(data, crm_payload)
-        contact_id = str(contact.get("id") or "")
-        source_fields = fields if contact_id not in source_contacts else None
-        source_contacts.add(contact_id)
-        applied, _ = _meta_apply_contact_answers(
-            contact, crm_payload, answer_rows, fields=source_fields,
-            received_at=str(submission.get("received_at") or ""),
-        )
-        if applied:
-            changed = True
-    return changed
-
-
-def _meta_activity_detail(fields, answer_rows=None, completed_fields=None):
-    details = []
-    for key, label in (("form_name", "Formulaire"), ("campaign_name", "Campagne"),
-                       ("ad_name", "Publicit√©")):
-        if fields.get(key):
-            details.append(f"{label} : {fields[key]}")
-    if answer_rows:
-        details.append(f"{len(answer_rows)} r√©ponse(s) au formulaire")
-    if completed_fields:
-        details.append("Champs compl√©t√©s : " + ", ".join(completed_fields))
-    return " ¬∑ ".join(details)
-
-
-def _meta_salesforce_payload(meta_lead_id, fields, crm_payload, answer_rows):
-    """Construit la piste Salesforce √† partir du mapping CRM du formulaire META."""
-    formation = str(crm_payload.get("formation") or "").strip()
-    if formation == "DESP":
-        formation_salesforce = (
-            "DESP_VAE" if crm_payload.get("desp_type") == "VAE" else "DESP_INIT"
-        )
-    else:
-        formation_salesforce = {
-            "APS": "APS",
-            "A3P": "A3P",
-            "SSIAP 1": "SSIAP",
-            "Chauffeur VTC": "VTC",
-        }.get(formation, "")
-
-    centre = {
-        "cote d azur": "cote_azur",
-        "paris": "paris",
-        "auvergne": "auvergne",
-    }.get(_meta_words(crm_payload.get("lieu")), "")
-
-    details = [
-        "PROSPECT META - FORMULAIRE INSTANTAN√â FACEBOOK / INSTAGRAM",
-        f"Identifiant Meta : {meta_lead_id}",
-    ]
-    for key, label in (
-        ("form_name", "Formulaire"),
-        ("campaign_name", "Campagne"),
-        ("adset_name", "Ensemble de publicit√©s"),
-        ("ad_name", "Publicit√©"),
-        ("platform", "Plateforme"),
-    ):
-        if fields.get(key):
-            details.append(f"{label} : {fields[key]}")
-    if answer_rows:
-        details.append("")
-        details.append("R√©ponses au formulaire :")
-        details.extend(
-            f"- {row.get('question', '')} : {row.get('answer', '')}"
-            for row in answer_rows
-        )
-
-    desp_type = str(crm_payload.get("desp_type") or "").strip()
-    return {
-        "prenom": str(crm_payload.get("prenom") or "").strip(),
-        "nom": str(crm_payload.get("nom") or "").strip() or "Sans nom",
-        "mail": str(crm_payload.get("mail") or "").strip(),
-        "telephone": str(crm_payload.get("telephone") or "").strip(),
-        "formation": formation_salesforce,
-        "type_formation": f"DESP {desp_type}" if desp_type else formation,
-        "centre": centre,
-        "dates": str(crm_payload.get("dates_formation") or "").strip(),
-        "cpf_consulte": str(crm_payload.get("cpf") or "").strip(),
-        "cpf_montant": str(crm_payload.get("cpf_montant") or "").strip(),
-        "cnaps_ok": str(crm_payload.get("carte_pro") or "").strip(),
-        "garde_vue": str(crm_payload.get("garde_vue") or "").strip(),
-        "identite_numerique": str(
-            crm_payload.get("identite_ok")
-            or crm_payload.get("identite_creation")
-            or ""
-        ).strip(),
-        "france_travail": str(crm_payload.get("financement_ft") or "").strip(),
-        "ft_refus_ok": str(
-            crm_payload.get("financement_perso_possible")
-            or crm_payload.get("refus_ft_perso")
-            or ""
-        ).strip(),
-        "financement_perso": str(
-            crm_payload.get("reste_a_charge_perso") or ""
-        ).strip(),
-        "origine": "META",
-        "source_formulaire": "meta-zapier-leads",
-        "meta_lead_id": str(meta_lead_id),
-        "infos_complementaires": "\n".join(details),
-    }
-
-
-META_PHONE_BOOKING_MIN_SCORE = 30
-
-
-def _meta_phone_booking_allowed(contact, data_store=None):
-    """Use the current integration score without any extra network lookup."""
-    snapshot = (data_store or {}).get("crm_cnaps_scoring_snapshots", {}).get(
-        str(contact.get("id"))
-    )
-    try:
-        score = calculate_candidate_integration_score(contact, snapshot).get("score")
-    except Exception:
-        app.logger.exception("Score META indisponible : messages envoy√©s sans invitation au rendez-vous")
-        return False
-    return isinstance(score, (int, float)) and META_PHONE_BOOKING_MIN_SCORE <= score <= 100
-
-
-def _send_meta_a3p_information(contact, data_store=None):
-    """Send both messages to every new META lead; gate only the booking CTA."""
-    include_phone_booking = _meta_phone_booking_allowed(contact, data_store)
-    centre_code = _normalize_centre_code(contact.get("lieu"))
-    subject, plain, html = _a3p_information_email_content(
-        contact.get("prenom", ""), contact.get("dates_formation", ""), centre_code, "",
-        data_store, include_phone_booking=include_phone_booking,
-        prominent_phone_booking=True,
-    )
-    delivery = {"email": False, "sms": False}
-    if contact.get("mail"):
-        try:
-            delivery["email"] = bool(send_email_html(contact["mail"], subject, plain, html))
-        except Exception:
-            app.logger.exception("√âchec de l'e-mail automatique A3P pour une piste META")
-        _crm_activity(
-            contact, "email" if delivery["email"] else "erreur",
-            "E-mail automatique envoy√©" if delivery["email"] else "√âchec de l‚Äôe-mail automatique",
-            subject, html,
-        )
-    if contact.get("telephone"):
-        sms_body = build_training_information_sms_text(
-            "A3P", include_phone_booking=include_phone_booking,
-        )
-        try:
-            delivery["sms"] = bool(send_sms(contact["telephone"], sms_body))
-        except Exception:
-            app.logger.exception("√âchec du SMS automatique A3P pour une piste META")
-        _crm_activity(
-            contact, "sms" if delivery["sms"] else "erreur",
-            "SMS automatique envoy√©" if delivery["sms"] else "√âchec du SMS automatique",
-            sms_body,
-        )
-    contact["updated_at"] = _crm_now()
-    return delivery
-
-
-def _meta_requires_a3p_information(contact):
-    """Keep the A3P follow-up when META omits the training answer.
-
-    The current A3P instant form can reach the webhook without a usable
-    formation label.  An explicitly mapped different course must still be
-    respected, but a missing value must not silently skip the requested A3P
-    e-mail and SMS.
-    """
-    formation = str(contact.get("formation") or "").strip()
-    return not formation or formation == "A3P"
-
-
-@app.post("/api/integrations/meta/zapier-leads")
-def meta_zapier_leads():
-    """Endpoint public : le secret d√©di√© remplace l'authentification de session/CSRF."""
-    supplied_secret = request.headers.get("X-Zapier-Secret")
-    if supplied_secret is None:
-        return jsonify({"success": False, "error": "unauthorized"}), 403
-    configured_secret = os.getenv("ZAPIER_META_WEBHOOK_SECRET", "")
-    if not configured_secret:
-        app.logger.error("Le secret du webhook Meta/Zapier n'est pas configur√©.")
-        return jsonify({"success": False, "error": "internal_error"}), 500
-    if not hmac.compare_digest(supplied_secret.encode(), configured_secret.encode()):
-        return jsonify({"success": False, "error": "unauthorized"}), 403
-    if not request.is_json:
-        return jsonify({"success": False, "error": "Le corps doit √™tre un objet JSON."}), 400
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify({"success": False, "error": "Le corps JSON doit √™tre un objet."}), 400
-    fields, custom_answers = _parse_meta_lead_payload(payload)
-    meta_lead_id = fields.get("leadgen_id") or fields.get("lead_id") or fields.get("id")
-    if not meta_lead_id:
-        return jsonify({"success": False, "error": "Identifiant Meta manquant (leadgen_id, lead_id ou id)."}), 400
-    if not fields.get("email") and not fields.get("phone_number"):
-        return jsonify({"success": False, "error": "Une adresse e-mail ou un t√©l√©phone est requis."}), 400
-
-    salesforce_payload = None
-    try:
-        with _CRM_RECONCILIATION_LOCK:
-            data = load_data()
-            submissions = data.setdefault("crm_meta_lead_submissions", [])
-            duplicate = next((row for row in submissions
-                              if str(row.get("meta_lead_id")) == str(meta_lead_id)), None)
-            if duplicate:
-                return jsonify({"success": True, "result": "already_processed",
-                                "contact_id": duplicate.get("contact_id")}), 200
-            already_inbound = next((row for row in data.get("crm_inbound_requests", [])
-                                    if row.get("source") == "meta_zapier"
-                                    and row.get("external_id") == str(meta_lead_id)), None)
-            if already_inbound:
-                return jsonify({"success": True, "result": "already_processed",
-                                "contact_id": already_inbound.get("contact_id")}), 200
-
-            crm_payload, answer_rows = _meta_crm_payload(fields, custom_answers)
-            _meta_resolve_session(data, crm_payload)
-            contact, inbound, created = find_or_create_crm_contact(
-                data, crm_payload, "meta_zapier", external_id=meta_lead_id,
-                ordered_coordinates=True, record_activity=False,
-            )
-            if contact is None:
-                return jsonify({"success": False, "error": "Rapprochement CRM ambigu."}), 400
-            received_at = _crm_now()
-            _, completed_fields = _meta_apply_contact_answers(
-                contact, crm_payload, answer_rows, fields=fields, received_at=received_at,
-            )
-            if created:
-                contact["statut"] = "Nouveaux"
-                contact["origine"] = "META"
-                contact["source"] = "META"
-                contact["source_detail"] = "Facebook / Instagram Lead Ads"
-                contact["received_at"] = received_at
-                salesforce_payload = _meta_salesforce_payload(
-                    meta_lead_id, fields, crm_payload, answer_rows,
-                )
-            title = ("Piste cr√©√©e automatiquement depuis un formulaire instantan√© Meta via Zapier."
-                     if created else
-                     "Nouvelle demande re√ßue depuis un formulaire instantan√© Meta via Zapier.")
-            _crm_activity(
-                contact, "meta_lead", title,
-                _meta_activity_detail(fields, answer_rows, completed_fields),
-            )
-            submission = {
-                "meta_lead_id": str(meta_lead_id), "contact_id": contact["id"],
-                "received_at": received_at, "created_time": fields.get("created_time", ""),
-                **{key: fields.get(key, "") for key in (
-                    "page_id", "form_id", "form_name", "ad_id", "ad_name", "adset_id",
-                    "adset_name", "campaign_id", "campaign_name", "platform")},
-                "raw_payload": copy.deepcopy(payload), "custom_answers": custom_answers,
-                "mapped_fields": {
-                    key: crm_payload[key] for key in _META_CRM_COMPLETION_FIELDS
-                    if not _crm_is_empty(crm_payload.get(key))
-                },
-            }
-            submissions.insert(0, submission)
-            inbound["custom_answers"] = copy.deepcopy(custom_answers)
-            inbound["mapped_fields"] = copy.deepcopy(submission["mapped_fields"])
-            if created and _meta_requires_a3p_information(contact):
-                submission["automatic_delivery"] = _send_meta_a3p_information(contact, data)
-            if created:
-                data.setdefault("crm_notifications", []).insert(0, {
-                    "id": str(uuid.uuid4()), "date": received_at, "kind": "meta_lead",
-                    "text": title, "read": False, "contact_id": contact["id"],
-                    "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
-                })
-            save_data(data)
-        if salesforce_payload:
-            # La soumission META est enregistr√©e avant l'appel externe : un retry
-            # Zapier avec le m√™me leadgen_id ne peut donc pas cr√©er deux pistes.
-            try:
-                creer_piste_salesforce(salesforce_payload)
-            except Exception:
-                app.logger.exception(
-                    "√âchec de la cr√©ation Salesforce pour le prospect META %s",
-                    meta_lead_id,
-                )
-        return jsonify({"success": True, "result": "created" if created else "attached",
-                        "contact_id": contact["id"]}), 201 if created else 200
-    except Exception:
-        app.logger.exception("√âchec du traitement du webhook Meta/Zapier")
-        return jsonify({"success": False, "error": "internal_error"}), 500
-
-
-def _crm_calendly_payload_phone(payload):
-    direct = str(payload.get("text_reminder_number") or "").strip()
-    if _crm_normalize_phone(direct):
-        return direct
-    phone_words = ("t√©l√©phone", "telephone", "phone", "mobile", "portable")
-    for answer in payload.get("questions_and_answers") or []:
-        if not isinstance(answer, dict):
-            continue
-        question = str(answer.get("question") or "").casefold()
-        if not any(word in question for word in phone_words):
-            continue
-        value = answer.get("answer")
-        values = value if isinstance(value, list) else [value]
-        for candidate in values:
-            candidate = str(candidate or "").strip()
-            if 8 <= len(_crm_normalize_phone(candidate)) <= 15:
-                return candidate
-    return ""
-
-
-def _crm_calendly_contact_by_email(data, email):
-    email = _crm_normalize_email(email)
-    if not email:
-        return None
-    return next(
-        (contact for contact in data.get("crm_contacts", [])
-         if _crm_normalize_email(contact.get("mail")) == email),
-        None,
-    )
-
-
-def _crm_calendly_contact_by_phone(data, phone):
-    phone = _crm_normalize_phone(phone)
-    if not phone:
-        return None
-    return next(
-        (contact for contact in data.get("crm_contacts", [])
-         if _crm_normalize_phone(contact.get("telephone")) == phone),
-        None,
-    )
-
-
-def _crm_calendly_formation(payload):
-    """Infer the CRM formation from the Calendly event's public name."""
-    scheduled_event = payload.get("scheduled_event") or {}
-    event_name = str(scheduled_event.get("name") or "")
-    normalized = unicodedata.normalize("NFKD", event_name).encode("ascii", "ignore").decode().casefold()
-    compact = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
-    words = set(compact.split())
-
-    # Match the most specific courses first (notably SSIAP before APS).
-    if "chauffeur" in words and "vtc" in words or "vtc" in words:
-        return "Chauffeur VTC", ""
-    if "ssiap" in words or "incendie" in words:
-        return "SSIAP 1", ""
-    if "dirigeant" in words or "desp" in words:
-        return "DESP", "VAE" if "vae" in words else "INITIAL"
-    if "a3p" in words or "apr" in words or "protection rapprochee" in compact or "garde du corps" in compact:
-        return "A3P", ""
-    if "aps" in words or "agent de securite" in compact or "agent de prevention" in compact:
-        return "APS", ""
-    return "", ""
-
-
-def _crm_calendly_new_contact(data, payload, appointment):
-    """Create the minimal CRM record required for an unmatched future booking."""
-    email = str(appointment.get("invitee_email") or "").strip()
-    phone = str(appointment.get("invitee_phone") or "").strip()
-    normalized_phone = _crm_normalize_phone(phone)
-    has_email = bool(_crm_normalize_email(email) and "@" in email)
-    has_phone = 8 <= len(normalized_phone) <= 15
-    if not has_email and not has_phone:
-        return None
-
-    first_name = str(payload.get("first_name") or "").strip()
-    last_name = str(payload.get("last_name") or "").strip()
-    full_name = str(payload.get("name") or appointment.get("invitee_name") or "").strip()
-    if full_name and (not first_name or not last_name):
-        parts = full_name.split(maxsplit=1)
-        first_name = first_name or parts[0]
-        last_name = last_name or (parts[1] if len(parts) > 1 else "")
-
-    formation, desp_type = _crm_calendly_formation(payload)
-    now = _crm_now()
-    contact = {
-        "id": str(uuid.uuid4()),
-        "prenom": _crm_format_first_name(first_name),
-        "nom": _crm_format_last_name(last_name),
-        "telephone": phone,
-        "mail": email,
-        "formation": formation,
-        "lieu": "",
-        "statut": "RDV programm√©",
-        "dates_formation": "",
-        "cpf": "",
-        "carte_pro": "",
-        "antecedents": "",
-        "garde_vue": "",
-        "titre_sejour": "",
-        "titre_sejour_cnaps": "",
-        "compte_cnaps": "",
-        "cnaps_nub": "",
-        "cnaps_card_validity": None,
-        "cnaps_username": "",
-        "cnaps_birth_year": "",
-        "cnaps_password": "",
-        "integration_dracar": "",
-        "desp_type": desp_type,
-        "identite_creation": "",
-        "cpf_montant": "",
-        "cpf_palier": "",
-        "identite_ok": "",
-        "financement_ft": "",
-        "statut_demande_financement_ft": "",
-        "montant_accorde_ft": "",
-        "financement_perso_possible": "",
-        "refus_ft_perso": "",
-        "reste_a_charge_perso": "",
-        "origine": "Calendly",
-        "commercial": "",
-        "inscrit_ft": "",
-        "commentaires": "Fiche cr√©√©e automatiquement depuis un rendez-vous Calendly.",
-        "relance_date": "",
-        "prochaine_action_manuelle": "",
-        "relances": [],
-        "statut_secondaire": "",
-        "created_at": now,
-        "updated_at": now,
-        "activities": [],
-    }
-    _crm_workspace_backfill(contact)
-    _crm_record_origin(
-        contact,
-        "Calendly",
-        source="calendly",
-        external_id=appointment.get("invitee_uri") or "",
-        date=now,
-    )
-    _crm_activity(
-        contact,
-        "creation",
-        "Piste cr√©√©e depuis Calendly",
-        "Rendez-vous Calendly re√ßu",
-        author_name="Calendly",
-    )
-    data.setdefault("crm_contacts", []).insert(0, contact)
-    return contact
-
-
-def _crm_calendly_local_day(appointment):
-    start_time = str(appointment.get("start_time") or "").strip()
-    if not start_time:
-        return ""
-    try:
-        appointment_at = datetime.datetime.fromisoformat(
-            start_time.replace("Z", "+00:00")
-        )
-    except (TypeError, ValueError):
-        return ""
-
-    paris = pytz.timezone("Europe/Paris")
-    if appointment_at.tzinfo is None:
-        appointment_at = paris.localize(appointment_at)
-    else:
-        appointment_at = appointment_at.astimezone(paris)
-    return appointment_at.date().isoformat()
-
-
-def _crm_calendly_duplicate_booking_contact(data, appointment):
-    """Find the unique contact for an obvious duplicate booking.
-
-    Names alone are not sufficient because homonyms are legitimate.  Calendly
-    sometimes stores two bookings for the same person with different contact
-    details, though, so reuse a contact only when the invitee name, event name
-    and Paris calendar day all match another already-linked appointment.
-    """
-    signature = (
-        _crm_normalize_name(appointment.get("invitee_name")),
-        _crm_normalize_name(appointment.get("name")),
-        _crm_calendly_local_day(appointment),
-    )
-    if not all(signature):
-        return None
-
-    contact_ids = {
-        item.get("contact_id")
-        for item in data.get("crm_calendly_appointments", [])
-        if item is not appointment
-        and (
-            _crm_normalize_name(item.get("invitee_name")),
-            _crm_normalize_name(item.get("name")),
-            _crm_calendly_local_day(item),
-        ) == signature
-        and _crm_contact(data, item.get("contact_id"))
-    }
-    if len(contact_ids) != 1:
-        return None
-    return _crm_contact(data, next(iter(contact_ids)))
-
-
-def _crm_calendly_cached_payload(appointment):
-    return {
-        "name": appointment.get("invitee_name") or "",
-        "scheduled_event": {"name": appointment.get("name") or ""},
-    }
-
-
-def _crm_repair_cached_calendly_contacts(data):
-    """Attach every active cached orphan, not only the current API page."""
-    repairable = [
-        appointment
-        for appointment in data.get("crm_calendly_appointments", [])
-        if not _crm_contact(data, appointment.get("contact_id"))
-        and _crm_calendly_appointment_is_today_or_future(appointment)
-    ]
-    for appointment in repairable:
-        if _crm_contact(data, appointment.get("contact_id")):
-            continue
-
-        contact = _crm_calendly_contact_by_email(
-            data, appointment.get("invitee_email")
-        )
-        if not contact:
-            contact = _crm_calendly_contact_by_phone(
-                data, appointment.get("invitee_phone")
-            )
-        if not contact:
-            contact = _crm_calendly_duplicate_booking_contact(data, appointment)
-
-        payload = _crm_calendly_cached_payload(appointment)
-        if not contact:
-            contact = _crm_calendly_new_contact(data, payload, appointment)
-        if not contact:
-            continue
-
-        inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
-        if inferred_formation and not str(contact.get("formation") or "").strip():
-            contact["formation"] = inferred_formation
-            if inferred_desp_type:
-                contact["desp_type"] = inferred_desp_type
-            _crm_workspace_backfill(contact)
-            contact["updated_at"] = _crm_now()
-
-        _crm_calendly_relink_appointments(data, contact)
-        if appointment.get("contact_id") != contact.get("id"):
-            appointment["contact_id"] = contact.get("id")
-            appointment["updated_at"] = _crm_now()
-            if (contact.get("statut") or "Nouveaux") not in {
-                "Converti", "Disqualifi√©"
-            }:
-                _crm_schedule_relance(
-                    contact,
-                    "",
-                    source="calendly_appointment",
-                    actor_name="Calendly",
-                )
-                _crm_sync_contact_calendly_status(
-                    data,
-                    contact,
-                    prefer_appointment=True,
-                )
-
-    return sum(
-        1
-        for appointment in repairable
-        if _crm_contact(data, appointment.get("contact_id"))
-    )
-
-
-def _crm_calendly_relink_appointments(data, contact):
-    email = _crm_normalize_email(contact.get("mail"))
-    phone = _crm_normalize_phone(contact.get("telephone"))
-    if not email and not phone:
-        return False
-    changed = False
-    newly_linked_active = False
-    for appointment in data.get("crm_calendly_appointments", []):
-        assigned_contact = _crm_contact(data, appointment.get("contact_id"))
-        same_email = bool(email) and (
-            _crm_normalize_email(appointment.get("invitee_email")) == email
-        )
-        same_phone = bool(phone) and (
-            _crm_normalize_phone(appointment.get("invitee_phone")) == phone
-        )
-        if (
-            (same_email or same_phone)
-            and not assigned_contact
-        ):
-            appointment["contact_id"] = contact.get("id")
-            appointment["updated_at"] = _crm_now()
-            newly_linked_active = (
-                newly_linked_active
-                or _crm_calendly_appointment_is_today_or_future(appointment)
-            )
-            changed = True
-
-    if (
-        newly_linked_active
-        and (contact.get("statut") or "Nouveaux")
-        not in {"Converti", "Disqualifi√©"}
-    ):
-        _, relance_changed = _crm_schedule_relance(
-            contact,
-            "",
-            source="calendly_appointment",
-            actor_name="Calendly",
-        )
-        status_changed = _crm_sync_contact_calendly_status(
-            data,
-            contact,
-            prefer_appointment=True,
-        )
-        if relance_changed and not status_changed:
-            contact["updated_at"] = _crm_now()
-        changed = changed or relance_changed or status_changed
-    return changed
-
-
-def _crm_calendly_datetime_label(value):
-    try:
-        parsed = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = pytz.UTC.localize(parsed)
-        local = parsed.astimezone(pytz.timezone("Europe/Paris"))
-        return local.strftime("%d/%m/%Y √† %H:%M")
-    except (TypeError, ValueError):
-        return str(value or "Date non renseign√©e")
-
-
-def _crm_calendly_cancellation_date(payload, now=None):
-    """Return the cancellation day in Paris, preferring Calendly's timestamp."""
-    cancellation = payload.get("cancellation") or {}
-    raw_timestamp = (
-        cancellation.get("created_at")
-        if isinstance(cancellation, dict)
-        else ""
-    ) or payload.get("updated_at")
-    paris = pytz.timezone("Europe/Paris")
-    try:
-        cancelled_at = datetime.datetime.fromisoformat(
-            str(raw_timestamp or "").replace("Z", "+00:00")
-        )
-        if cancelled_at.tzinfo is None:
-            cancelled_at = pytz.UTC.localize(cancelled_at)
-        cancelled_at = cancelled_at.astimezone(paris)
-    except (TypeError, ValueError):
-        cancelled_at = now or datetime.datetime.now(paris)
-        if cancelled_at.tzinfo is None:
-            cancelled_at = paris.localize(cancelled_at)
-        else:
-            cancelled_at = cancelled_at.astimezone(paris)
-    return cancelled_at.date().isoformat()
-
-
-def _crm_calendly_booking_supersedes_active_relance(contact, appointment):
-    """Return whether an existing booking is newer than the open follow-up.
-
-    Full synchronizations replay appointments that may already be in the local
-    cache.  Comparing creation timestamps repairs pre-existing inconsistent
-    data without cancelling a follow-up deliberately created after booking.
-    Missing or malformed timestamps are left untouched rather than risking
-    destructive history changes.
-    """
-    booked_at = (
-        appointment.get("created_at")
-        or appointment.get("calendly_created_at")
-        or ""
-    )
-    try:
-        booked_at = datetime.datetime.fromisoformat(
-            str(booked_at).replace("Z", "+00:00")
-        )
-        if booked_at.tzinfo is None:
-            booked_at = pytz.UTC.localize(booked_at)
-        else:
-            booked_at = booked_at.astimezone(pytz.UTC)
-    except (TypeError, ValueError):
-        return False
-
-    _crm_ensure_relances(contact)
-    for relance in contact.get("relances", []):
-        if relance.get("status") != "scheduled":
-            continue
-        try:
-            created_at = datetime.datetime.fromisoformat(
-                str(relance.get("created_at") or "").replace("Z", "+00:00")
-            )
-            if created_at.tzinfo is None:
-                created_at = pytz.UTC.localize(created_at)
-            else:
-                created_at = created_at.astimezone(pytz.UTC)
-        except (TypeError, ValueError):
-            continue
-        # Equal second-resolution timestamps are ambiguous; preserving the
-        # follow-up is safer than cancelling a potentially later manual action.
-        if created_at < booked_at:
-            return True
-    return False
-
-
-def _crm_upsert_calendly_appointment(
-    data,
-    payload,
-    *,
-    webhook_event="",
-    source="webhook",
-    contact_id=None,
-    record_activity=True,
-):
-    scheduled_event = payload.get("scheduled_event") or {}
-    invitee_uri = str(payload.get("uri") or "").strip()
-    event_uri = str(payload.get("event") or scheduled_event.get("uri") or "").strip()
-    email = str(payload.get("email") or "").strip()
-    appointments = data.setdefault("crm_calendly_appointments", [])
-    existing = next(
-        (
-            item for item in appointments
-            if invitee_uri and item.get("invitee_uri") == invitee_uri
-        ),
-        None,
-    )
-    if not existing and event_uri and email:
-        existing = next(
-            (
-                item for item in appointments
-                if item.get("event_uri") == event_uri
-                and _crm_normalize_email(item.get("invitee_email")) == _crm_normalize_email(email)
-            ),
-            None,
-        )
-
-    previous_status = existing.get("status") if existing else None
-    previous_start = existing.get("start_time") if existing else None
-    invitee_phone = _crm_calendly_payload_phone(payload)
-    status = str(payload.get("status") or scheduled_event.get("status") or "active")
-    if webhook_event == "invitee.canceled" or scheduled_event.get("status") == "canceled":
-        status = "canceled"
-    memberships = scheduled_event.get("event_memberships") or []
-    host = memberships[0] if memberships else {}
-    now = _crm_now()
-    appointment = existing or {
-        "id": str(uuid.uuid4()),
-        "created_at": now,
-    }
-    appointment.update({
-        "invitee_uri": invitee_uri,
-        "event_uri": event_uri,
-        "event_type_uri": scheduled_event.get("event_type") or appointment.get("event_type_uri") or "",
-        "name": scheduled_event.get("name") or appointment.get("name") or "Rendez-vous Calendly",
-        "start_time": scheduled_event.get("start_time") or appointment.get("start_time") or "",
-        "end_time": scheduled_event.get("end_time") or appointment.get("end_time") or "",
-        "status": status,
-        "invitee_name": payload.get("name") or appointment.get("invitee_name") or "",
-        "invitee_email": email or appointment.get("invitee_email") or "",
-        "invitee_phone": invitee_phone or appointment.get("invitee_phone") or "",
-        "invitee_timezone": payload.get("timezone") or appointment.get("invitee_timezone") or "",
-        "host_name": host.get("user_name") or appointment.get("host_name") or "",
-        "host_email": host.get("user_email") or appointment.get("host_email") or "",
-        "location": scheduled_event.get("location") or appointment.get("location"),
-        "cancel_url": payload.get("cancel_url") or appointment.get("cancel_url") or "",
-        "reschedule_url": payload.get("reschedule_url") or appointment.get("reschedule_url") or "",
-        "rescheduled": bool(payload.get("rescheduled")),
-        "old_invitee": payload.get("old_invitee"),
-        "new_invitee": payload.get("new_invitee"),
-        "cancellation": payload.get("cancellation"),
-        "calendly_created_at": payload.get("created_at") or appointment.get("calendly_created_at") or "",
-        "calendly_updated_at": payload.get("updated_at") or appointment.get("calendly_updated_at") or "",
-        "source": source,
-        "updated_at": now,
-    })
-
-    contact = _crm_contact(data, contact_id) if contact_id else None
-    if not contact and appointment.get("contact_id"):
-        contact = _crm_contact(data, appointment.get("contact_id"))
-    if not contact:
-        contact = _crm_calendly_contact_by_email(data, appointment.get("invitee_email"))
-    if not contact:
-        contact = _crm_calendly_contact_by_phone(data, appointment.get("invitee_phone"))
-    if not contact:
-        contact = _crm_calendly_duplicate_booking_contact(data, appointment)
-    contact_created = False
-    if not contact and _crm_calendly_appointment_is_today_or_future(appointment):
-        contact = _crm_calendly_new_contact(data, payload, appointment)
-        contact_created = contact is not None
-    appointment["contact_id"] = contact.get("id") if contact else None
-
-    inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
-    if contact and inferred_formation and not str(contact.get("formation") or "").strip():
-        contact["formation"] = inferred_formation
-        if inferred_desp_type:
-            contact["desp_type"] = inferred_desp_type
-
-    if not existing:
-        appointments.append(appointment)
-    if contact_created:
-        _crm_calendly_relink_appointments(data, contact)
-
-    changed = (
-        not existing
-        or previous_status != appointment.get("status")
-        or previous_start != appointment.get("start_time")
-    )
-    appointment_became_active = bool(
-        contact
-        and (contact.get("statut") or "Nouveaux")
-        not in {"Converti", "Disqualifi√©"}
-        and str(appointment.get("status") or "active").lower()
-        not in {"canceled", "cancelled"}
-        and (
-            not existing
-            or str(previous_status or "").lower() in {"canceled", "cancelled"}
-            or previous_start != appointment.get("start_time")
-            or _crm_calendly_booking_supersedes_active_relance(
-                contact,
-                appointment,
-            )
-        )
-        and _crm_calendly_appointment_is_today_or_future(appointment)
-    )
-    relance_changed = False
-    if appointment_became_active:
-        _, relance_changed = _crm_schedule_relance(
-            contact,
-            "",
-            source="calendly_appointment",
-            actor_name="Calendly",
-        )
-
-    cancellation_relance_changed = False
-    cancellation_has_active_replacement = False
-    cancellation_automation_pending = bool(
-        contact
-        and webhook_event == "invitee.canceled"
-        and not appointment.get("cancellation_followup_processed_at")
-    )
-    if cancellation_automation_pending:
-        cancellation_has_active_replacement = any(
-            item is not appointment
-            and item.get("contact_id") == contact.get("id")
-            and _crm_calendly_appointment_is_today_or_future(item)
-            for item in appointments
-        )
-        if (
-            not cancellation_has_active_replacement
-            and (contact.get("statut") or "Nouveaux")
-            not in {"Converti", "Disqualifi√©"}
-        ):
-            cancellation_date = _crm_calendly_cancellation_date(payload)
-            _, cancellation_relance_changed = _crm_schedule_relance(
-                contact,
-                cancellation_date,
-                source="calendly_cancellation",
-                actor_name="Calendly",
-                motif="Suite annulation du rendez-vous",
-            )
-            appointment["cancellation_followup_date"] = cancellation_date
-        appointment["cancellation_followup_processed_at"] = now
-        appointment["updated_at"] = now
-        changed = True
-
-    old_status = (contact.get("statut") or "Nouveaux") if contact else ""
-    status_changed = bool(
-        contact
-        and _crm_sync_contact_calendly_status(
-            data,
-            contact,
-            prefer_appointment=(
-                appointment_became_active
-                or cancellation_has_active_replacement
-            ),
-        )
-    )
-    pipeline_changed = (
-        relance_changed
-        or cancellation_relance_changed
-        or status_changed
-    )
-    if (
-        contact
-        and pipeline_changed
-        and record_activity
-        and old_status != contact.get("statut")
-    ):
-        _crm_activity(
-            contact,
-            "statut",
-            f"Statut : {contact['statut']}",
-            f"Ancien statut : {old_status}",
-        )
-    if contact and record_activity and changed:
-        if appointment.get("status") == "canceled":
-            title = "Rendez-vous Calendly annul√©"
-        elif appointment.get("rescheduled") or appointment.get("old_invitee"):
-            title = "Rendez-vous Calendly reprogramm√©"
-        else:
-            title = "Rendez-vous Calendly planifi√©"
-        detail = (
-            f"{appointment.get('name') or 'Rendez-vous'} ‚Äî "
-            f"{_crm_calendly_datetime_label(appointment.get('start_time'))}"
-        )
-        _crm_activity(contact, "calendly", title, detail)
-    if contact and (pipeline_changed or (record_activity and changed)):
-        contact["updated_at"] = now
-    return appointment, contact
-
-
-def _crm_calendly_appointment_is_today_or_future(appointment, now=None):
-    """Return whether a non-cancelled appointment is on/after today in Paris."""
-    if str(appointment.get("status") or "active").lower() in {"canceled", "cancelled"}:
-        return False
-    if str(appointment.get("response_status") or "").lower() == "no_answer":
-        return False
-    start_time = str(appointment.get("start_time") or "").strip()
-    if not start_time:
-        return False
-    try:
-        appointment_at = datetime.datetime.fromisoformat(
-            start_time.replace("Z", "+00:00")
-        )
-    except (TypeError, ValueError):
-        return False
-
-    paris = pytz.timezone("Europe/Paris")
-    if appointment_at.tzinfo is None:
-        appointment_at = paris.localize(appointment_at)
-    else:
-        appointment_at = appointment_at.astimezone(paris)
-
-    reference = now or datetime.datetime.now(paris)
-    if reference.tzinfo is None:
-        reference = paris.localize(reference)
-    else:
-        reference = reference.astimezone(paris)
-    return appointment_at.date() >= reference.date()
-
-
-def _crm_sync_contact_calendly_status(
-        data, contact, now=None, *, prefer_appointment=False, appointments=None):
-    """Align the pipeline with current/future appointments and open follow-ups.
-
-    The appointment rule is deliberately based on the calendar day in Paris:
-    an appointment earlier today remains visible, but one from a previous day
-    does not. Final statuses always win. The ingest path cancels the follow-ups
-    that existed when a booking becomes active; this reconciler never repeats
-    that side effect on later reads or synchronizations. Later follow-ups keep
-    their historical priority unless the appointment has just become active.
-    An appointment marked ``no_answer`` no longer wins over its J+2 follow-up. A stale
-    ``RDV programm√©`` without an eligible appointment or follow-up is repaired
-    to ``En cours``.
-    """
-    candidates = (data.get("crm_calendly_appointments", [])
-                  if appointments is None else appointments)
-    has_active_appointment = any(
-        item.get("contact_id") == contact.get("id")
-        and _crm_calendly_appointment_is_today_or_future(item, now)
-        for item in candidates
-    )
-    current_status = contact.get("statut") or "Nouveaux"
-    if current_status in {"Disqualifi√©", "Converti"}:
-        return False
-    if has_active_appointment:
-        if (
-            current_status == "RDV programm√©"
-            or (current_status == "A relancer" and not prefer_appointment)
-        ):
-            return False
-        next_status = "RDV programm√©"
-    elif contact.get("relance_date"):
-        if current_status == "A relancer":
-            return False
-        next_status = "A relancer"
-    elif current_status == "RDV programm√©":
-        next_status = "En cours"
-    else:
-        return False
-    contact["statut"] = next_status
-    contact["updated_at"] = _crm_now()
-    return True
-
-
-def _crm_calendly_fetch_contact_appointments(data, contact):
-    """Fetch the events Calendly associates with this contact.
-
-    The e-mail entered in Calendly is not necessarily the one collected by the
-    secretary (a shared/company address is sometimes used).  Try Calendly's
-    efficient e-mail filter first, then fall back to the phone number contained
-    in the invitee answers when it did not find anything.
-    """
-    email = _crm_normalize_email(contact.get("mail"))
-    phone = _crm_normalize_phone(contact.get("telephone"))
-    if not email and not phone:
-        return [], {"method": "phone_cache", "processed_events": 0}
-
-    context = _calendly_context_from_data(data)
-    params = {
-        "count": 100,
-        "sort": "start_time:desc",
-    }
-    if email:
-        params["invitee_email"] = email
-    if context.get("scope") == "user":
-        params["user"] = context["user"]
-    else:
-        params["organization"] = context["organization"]
-
-    scheduled_events = _calendly_paginated_collection(
-        "/scheduled_events",
-        params=params,
-        max_pages=100,
-    )
-    payloads = []
-    for scheduled_event in scheduled_events:
-        event_uuid = _calendly_resource_uuid(
-            scheduled_event.get("uri"),
-            "scheduled_events",
-        )
-        if not event_uuid:
-            continue
-        invitee_params = {"count": 100}
-        if email:
-            invitee_params["email"] = email
-        invitees = _calendly_paginated_collection(
-            f"/scheduled_events/{event_uuid}/invitees",
-            params=invitee_params,
-            max_pages=100,
-        )
-        for invitee in invitees:
-            if (email and _crm_normalize_email(invitee.get("email")) == email) or (
-                phone and _crm_normalize_phone(_crm_calendly_payload_phone(invitee)) == phone
-            ):
-                payloads.append({**invitee, "scheduled_event": scheduled_event})
-
-    # An e-mail-filtered query cannot return a booking made with a different
-    # address.  Scan the active events only when needed and identify the
-    # invitee by the telephone answer collected by Calendly.
-    matched_by_phone = False
-    if not payloads and phone and email:
-        phone_params = {
-            "count": 100,
-            "sort": "start_time:asc",
-            "status": "active",
-            "min_start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        }
-        if context.get("scope") == "user":
-            phone_params["user"] = context["user"]
-        else:
-            phone_params["organization"] = context["organization"]
-        phone_events = _calendly_paginated_collection(
-            "/scheduled_events", params=phone_params, max_pages=100
-        )
-        for scheduled_event in phone_events:
-            event_uuid = _calendly_resource_uuid(scheduled_event.get("uri"), "scheduled_events")
-            if not event_uuid:
-                continue
-            invitees = _calendly_paginated_collection(
-                f"/scheduled_events/{event_uuid}/invitees",
-                params={"count": 100},
-                max_pages=100,
-            )
-            for invitee in invitees:
-                if _crm_normalize_phone(_crm_calendly_payload_phone(invitee)) == phone:
-                    payloads.append({**invitee, "scheduled_event": scheduled_event})
-                    matched_by_phone = True
-    return payloads, {
-        "method": "phone" if matched_by_phone or not email else "email",
-        "processed_events": len(scheduled_events),
-    }
-
-
-def _calendly_phone_number(value):
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    digits = re.sub(r"\D", "", raw)
-    if digits.startswith("00"):
-        digits = digits[2:]
-    if len(digits) == 10 and digits.startswith("0"):
-        digits = f"33{digits[1:]}"
-    if digits.startswith("33") or raw.startswith("+"):
-        normalized = f"+{digits}"
-        if re.fullmatch(r"\+[1-9]\d{7,14}", normalized):
-            return normalized
-    return ""
-
-
-def _calendly_booking_location(event_type, requested_location, contact):
-    locations = event_type.get("locations") or []
-    if not locations:
-        return None
-    requested_location = requested_location if isinstance(requested_location, dict) else {}
-    requested_kind = str(requested_location.get("kind") or "").strip()
-    selected = next(
-        (location for location in locations if location.get("kind") == requested_kind),
-        locations[0],
-    )
-    kind = selected.get("kind")
-    if not kind:
-        return None
-    if kind == "outbound_call":
-        phone = _calendly_phone_number(
-            requested_location.get("location") or contact.get("telephone")
-        )
-        if not phone:
-            raise ValueError("Le num√©ro de t√©l√©phone est requis pour ce type de rendez-vous.")
-        return {"kind": kind, "location": phone}
-    if kind == "ask_invitee":
-        location_value = str(requested_location.get("location") or "").strip()
-        if not location_value:
-            raise ValueError("Renseignez le lieu ou le moyen de contact du rendez-vous.")
-        return {"kind": kind, "location": location_value}
-    if kind in {"physical", "custom"}:
-        location_value = str(selected.get("location") or requested_location.get("location") or "").strip()
-        if not location_value:
-            raise ValueError("Ce type de rendez-vous ne contient aucun lieu utilisable.")
-        return {"kind": kind, "location": location_value}
-    return {"kind": kind}
-
-
-def _calendly_question_answers(event_type, submitted_answers):
-    submitted_answers = submitted_answers if isinstance(submitted_answers, dict) else {}
-    answers = []
-    text_reminder_number = ""
-    for question in event_type.get("custom_questions") or []:
-        if not question.get("enabled"):
-            continue
-        position = question.get("position")
-        value = submitted_answers.get(str(position), submitted_answers.get(position, ""))
-        if isinstance(value, list):
-            value = "\n".join(str(item).strip() for item in value if str(item).strip())
-        value = str(value or "").strip()
-        if question.get("required") and not value:
-            raise ValueError(f"R√©pondez √† la question obligatoire : {question.get('name')}.")
-        if value and question.get("type") == "phone_number":
-            normalized_phone = _calendly_phone_number(value)
-            if not normalized_phone:
-                raise ValueError(
-                    f"Le num√©ro saisi pour la question ¬´ {question.get('name')} ¬ª est invalide."
-                )
-            value = normalized_phone
-            if not text_reminder_number:
-                text_reminder_number = normalized_phone
-        if value:
-            answers.append({
-                "question": question.get("name"),
-                "answer": value,
-                "position": position,
-            })
-    return answers, text_reminder_number
-
-
-def _calendly_signature_is_valid(raw_body, signature_header):
-    signing_key = _calendly_signing_key()
-    if not signing_key or not signature_header:
-        return False
-    parts = {}
-    for item in signature_header.split(","):
-        key, separator, value = item.strip().partition("=")
-        if separator:
-            parts[key] = value
-    timestamp = parts.get("t")
-    signature = parts.get("v1")
-    if not timestamp or not signature:
-        return False
-    try:
-        if abs(time.time() - int(timestamp)) > 300:
-            return False
-    except ValueError:
-        return False
-    signed_payload = timestamp.encode("utf-8") + b"." + raw_body
-    expected = hmac.new(
-        signing_key.encode("utf-8"),
-        signed_payload,
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
-
-
-def _crm_now():
-    return datetime.datetime.now(pytz.timezone("Europe/Paris")).isoformat(timespec="seconds")
-
-
-def _crm_format_first_name(value):
-    """Normalise un pr√©nom tout en conservant les s√©parateurs compos√©s."""
-    text = str(value or "").strip().lower()
-    return re.sub(r"(^|[\s'-])([a-z√†-√∂√∏-√ø])",
-                  lambda match: match.group(1) + match.group(2).upper(), text)
-
-
-def _crm_format_last_name(value):
-    """Affiche syst√©matiquement les noms de famille en capitales."""
-    return str(value or "").strip().upper()
-
-
-def _crm_contact(data, contact_id):
-    return next((c for c in data["crm_contacts"] if c.get("id") == contact_id), None)
-
-
-def _crm_backfill_information_request_answers(contact):
-    """Restore regulatory answers omitted from older information-form leads."""
-    form = contact.get("formulaire")
-    if contact.get("source") != "demande_infos_formations" or not isinstance(form, dict):
-        return False
-    changed = False
-    for key in ("garde_vue", "titre_sejour"):
-        value = str(form.get(key) or "").strip()
-        if value and not str(contact.get(key) or "").strip():
-            contact[key] = value
-            changed = True
-    return changed
-
-
-CRM_GOOGLE_ADS_ORIGIN = "Google Ads"
-CRM_GOOGLE_ADS_IDENTIFIER_KEYS = ("gclid", "wbraid", "gbraid")
-CRM_GOOGLE_ADS_TRACKING_KEYS = (
-    *CRM_GOOGLE_ADS_IDENTIFIER_KEYS,
-    "gad_source",
-    "gad_campaignid",
-    "utm_source",
-    "utm_medium",
-    "utm_campaign",
-)
-
-
-def _crm_google_ads_tracking_fields(fields):
-    """Normalize the Google Ads parameters accepted from public forms."""
-    source = fields or {}
-    return {
-        key: str(source.get(key) or "").strip()[:512]
-        for key in CRM_GOOGLE_ADS_TRACKING_KEYS
-    }
-
-
-def _crm_information_request_google_ads_identifier(fields):
-    """Return the first Google click identifier and its type."""
-    normalized = _crm_google_ads_tracking_fields(fields)
-    for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS:
-        if normalized[key]:
-            return key.upper(), normalized[key]
-    return "", ""
-
-
-def _crm_information_request_gclid(fields):
-    """Return the Google click identifier captured by the public form."""
-    return _crm_google_ads_tracking_fields(fields)["gclid"]
-
-
-def _crm_information_request_is_google_ads(fields):
-    """Detect paid Google traffic even when iOS uses WBRAID/GBRAID."""
-    normalized = _crm_google_ads_tracking_fields(fields)
-    if any(normalized[key] for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS):
-        return True
-    if normalized["gad_source"] == "1" or normalized["gad_campaignid"]:
-        return True
-    source = normalized["utm_source"].casefold().replace(" ", "_")
-    medium = normalized["utm_medium"].casefold().replace(" ", "_")
-    return source in {"google", "google_ads", "googleads", "adwords"} and medium in {
-        "cpc", "ppc", "paid", "paid_search", "paidsearch",
-    }
-
-
-CRM_ORIGIN_SOURCE_LABELS = {
-    "assistant-secretariat": "Secr√©tariat",
-    "assistant_secretariat": "Secr√©tariat",
-    "simulateur_vae_desp": "Simulateur VAE",
-    "simulateur-eligibilite-vae-desp": "Simulateur VAE",
-    "wedof_cpf": "Mon Compte Formation",
-    "demande_formulaire_abandonne": "Formulaire abandonn√©",
-}
-
-
-def _crm_origin_key(value):
-    """Return an accent-insensitive key used to deduplicate CRM origins."""
-    normalized = unicodedata.normalize("NFKD", str(value or "").strip())
-    normalized = "".join(
-        character for character in normalized
-        if not unicodedata.combining(character)
-    )
-    return re.sub(r"[^a-z0-9]+", " ", normalized.casefold()).strip()
-
-
-def _crm_canonical_origin(value):
-    """Map persisted labels and technical sources to the CRM's visible origins."""
-    raw = str(value or "").strip()
-    key = _crm_origin_key(raw)
-    if not key:
-        return ""
-    if raw in CRM_ORIGIN_SOURCE_LABELS:
-        return CRM_ORIGIN_SOURCE_LABELS[raw]
-    if key in {"meta", "facebook", "instagram"} or key.startswith("meta "):
-        return "META"
-    if "google" in key or key in {"adwords", "googleads"}:
-        return "Google Ads"
-    if "wedof" in key or "compte formation" in key or key == "cpf":
-        return "Mon Compte Formation"
-    if "simulateur" in key and "vae" in key:
-        return "Simulateur VAE"
-    if "secretariat" in key:
-        return "Secr√©tariat"
-    if "bouche" in key and "oreille" in key:
-        return "Bouche √† oreilles"
-    if key in {"site", "site web", "site internet", "demande infos formations"}:
-        return "Site internet"
-    if "formulaire" in key and "abandon" in key:
-        return "Formulaire abandonn√©"
-    if key == "ajout manuel":
-        return "Ajout manuel"
-    if key == "calendly":
-        return "Calendly"
-    if key == "poei":
-        return "POEI"
-    return raw
-
-
-def _crm_record_origin(contact, origin, *, source="", external_id="",
-                       context=None, date=None, make_primary=False):
-    """Persist one distinct origin while keeping the first detected as primary."""
-    if not isinstance(contact, dict):
-        return False
-    canonical = _crm_canonical_origin(origin)
-    if not canonical:
-        return False
-    before_origin = contact.get("origine")
-    before_history = copy.deepcopy(contact.get("source_history"))
-    history = contact.get("source_history")
-    if not isinstance(history, list):
-        history = []
-    history = [item for item in history if isinstance(item, dict)]
-
-    current_primary = _crm_canonical_origin(contact.get("origine"))
-    if make_primary or not current_primary:
-        current_primary = canonical
-        contact["origine"] = canonical
-
-    def origin_for(item):
-        return _crm_canonical_origin(item.get("origin") or item.get("origine"))
-
-    def build_entry(label, *, entry_source="", entry_external_id="",
-                    entry_context=None, entry_date=None):
-        details = entry_context if isinstance(entry_context, dict) else {}
-        return {
-            "origin": label,
-            "source": str(entry_source or details.get("source") or "").strip(),
-            "external_id": str(
-                entry_external_id or details.get("external_id") or ""
-            ).strip(),
-            "campaign": str(
-                details.get("campaign") or details.get("campaign_name") or ""
-            ).strip(),
-            "ad": str(details.get("ad") or details.get("ad_name") or "").strip(),
-            "form": str(
-                details.get("form") or details.get("form_name") or ""
-            ).strip(),
-            "date": (
-                entry_date or details.get("date") or details.get("received_at")
-                or contact.get("created_at") or _crm_now()
-            ),
-        }
-
-    # Historical imports and repeated webhooks may contain several entries
-    # for the same visible origin. Collapse them while retaining the earliest
-    # position and enriching it with any context found later.
-    deduplicated = []
-    by_origin = {}
-    for item in history:
-        item_origin = origin_for(item)
-        marker = _crm_origin_key(item_origin)
-        if not marker:
-            continue
-        if marker not in by_origin:
-            item["origin"] = item_origin
-            by_origin[marker] = item
-            deduplicated.append(item)
-            continue
-        existing = by_origin[marker]
-        for key in ("source", "external_id", "campaign", "ad", "form", "date"):
-            if not existing.get(key) and item.get(key):
-                existing[key] = item[key]
-    history = deduplicated
-
-    primary_index = next(
-        (index for index, item in enumerate(history)
-         if _crm_origin_key(origin_for(item)) == _crm_origin_key(current_primary)),
-        None,
-    )
-    if primary_index is None:
-        history.insert(0, build_entry(
-            current_primary,
-            entry_source=contact.get("source"),
-            entry_context=contact.get("meta_source"),
-            entry_date=contact.get("created_at"),
-        ))
-    elif primary_index:
-        history.insert(0, history.pop(primary_index))
-    history[0]["origin"] = current_primary
-
-    canonical_index = next(
-        (index for index, item in enumerate(history)
-         if _crm_origin_key(origin_for(item)) == _crm_origin_key(canonical)),
-        None,
-    )
-    if canonical_index is None:
-        history.append(build_entry(
-            canonical,
-            entry_source=source,
-            entry_external_id=external_id,
-            entry_context=context,
-            entry_date=date,
-        ))
-    else:
-        entry = history[canonical_index]
-        entry["origin"] = canonical
-        details = context if isinstance(context, dict) else {}
-        updates = {
-            "source": source or details.get("source"),
-            "external_id": external_id or details.get("external_id"),
-            "campaign": details.get("campaign") or details.get("campaign_name"),
-            "ad": details.get("ad") or details.get("ad_name"),
-            "form": details.get("form") or details.get("form_name"),
-            "date": date or details.get("date") or details.get("received_at"),
-        }
-        for key, value in updates.items():
-            if value and not entry.get(key):
-                entry[key] = str(value).strip() if key != "date" else value
-
-    if make_primary:
-        promoted_index = next(
-            index for index, item in enumerate(history)
-            if _crm_origin_key(origin_for(item)) == _crm_origin_key(canonical)
-        )
-        if promoted_index:
-            history.insert(0, history.pop(promoted_index))
-        contact["origine"] = canonical
-    contact["source_history"] = history
-    return (
-        contact.get("origine") != before_origin
-        or contact.get("source_history") != before_history
-    )
-
-
-def _crm_information_request_origin(fields):
-    """Resolve the CRM origin without misclassifying secretariat submissions."""
-    if str((fields or {}).get("source_secretariat") or "") == "1":
-        return "Secr√©tariat"
-    return CRM_GOOGLE_ADS_ORIGIN if _crm_information_request_is_google_ads(fields) else "Site internet"
-
-
-def _crm_apply_information_request_attribution(contact, fields):
-    """Persist Google Ads metadata without replacing an earlier primary origin."""
-    if not isinstance(fields, dict):
-        return False
-    if (
-        str(fields.get("source_secretariat") or "") == "1"
-        or not _crm_information_request_is_google_ads(fields)
-    ):
-        return False
-
-    normalized = _crm_google_ads_tracking_fields(fields)
-    identifier_type, identifier = _crm_information_request_google_ads_identifier(fields)
-    changed = False
-    for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS:
-        if normalized[key] and contact.get(key) != normalized[key]:
-            contact[key] = normalized[key]
-            changed = True
-    if identifier and contact.get("google_ads_identifier") != identifier:
-        contact["google_ads_identifier"] = identifier
-        changed = True
-    if identifier_type and contact.get("google_ads_identifier_type") != identifier_type:
-        contact["google_ads_identifier_type"] = identifier_type
-        changed = True
-
-    # Old information-request records sometimes stored "Site internet" even
-    # though their original payload already contained a Google Ads identifier.
-    # Repair only that single-origin legacy case; on a reconciled contact Google
-    # Ads is appended as a secondary origin and never promoted.
-    existing_origins = {
-        _crm_origin_key(_crm_canonical_origin(item.get("origin")))
-        for item in contact.get("source_history", [])
-        if isinstance(item, dict) and item.get("origin")
-    }
-    legacy_primary_repair = (
-        contact.get("source") == "demande_infos_formations"
-        and _crm_canonical_origin(contact.get("origine")) == "Site internet"
-        and existing_origins.issubset({_crm_origin_key("Site internet")})
-    )
-    context = {
-        "campaign": normalized.get("utm_campaign", ""),
-        "ad": normalized.get("utm_content", ""),
-        "form": str(fields.get("form_name") or fields.get("form") or "").strip(),
-    }
-    if _crm_record_origin(
-        contact,
-        CRM_GOOGLE_ADS_ORIGIN,
-        source="demande_infos_formations",
-        external_id=contact.get("source_demande_id", ""),
-        context=context,
-        make_primary=legacy_primary_repair,
-    ):
-        changed = True
-    if changed:
-        contact["updated_at"] = _crm_now()
-    return changed
-
-
-def _crm_backfill_information_request_attribution(contact):
-    """Repair contacts created before GCLID was promoted to a first-class field."""
-    form = contact.get("formulaire")
-    if contact.get("source") != "demande_infos_formations" or not isinstance(form, dict):
-        return False
-    return _crm_apply_information_request_attribution(contact, form)
-
-
-def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
-                          funding_status=None):
-    _crm_backfill_information_request_answers(contact)
-    _crm_backfill_information_request_attribution(contact)
-    _crm_ensure_relances(contact)
-    response = dict(contact)
-    response.setdefault("reste_a_charge_perso", "")
-    response.setdefault("cpf_palier", "")
-    response.setdefault("montant_accorde_ft", "")
-    response.setdefault("cnaps_nub", "")
-    response.setdefault("cnaps_card_validity", None)
-    response.setdefault("cnaps_birth_year", "")
-    if not response.get("financement_perso_possible"):
-        response["financement_perso_possible"] = str(
-            contact.get("refus_ft_perso") or ""
-        )
-    response.setdefault("qualification_flag", "")
-    # Le statut WEDOF est calcul√© une seule fois pour toute la liste des contacts
-    # puis inject√© ici. Ne jamais relire toute la base WEDOF depuis cette fonction :
-    # elle est appel√©e une fois par piste et transformerait la requ√™te en N √ó M.
-    if (funding_status
-            and contact.get("statut_demande_financement_ft_source")
-            != CRM_MANUAL_STATUS_SOURCE):
-        response["statut_demande_financement_ft"] = funding_status
-    snapshot = regulatory_snapshot
-    if snapshot is None and data is not None:
-        snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact.get("id")))
-    response["integration_score"] = calculate_candidate_integration_score(response, snapshot)
-    return response
-
-
-def _crm_contact_detail_response(contact, data=None, regulatory_snapshot=None,
-                                 funding_status=None):
-    """Build the interactive sheet without embedding historical HTML bodies."""
-    response = _crm_contact_response(
-        contact,
-        data,
-        regulatory_snapshot=regulatory_snapshot,
-        funding_status=funding_status,
-    )
-    # The original public form may contain a large technical/raw payload. Its
-    # useful answers are already promoted to first-class CRM fields.
-    response.pop("formulaire", None)
-    compact_activities = []
-    for raw_activity in response.get("activities", []):
-        if not isinstance(raw_activity, dict):
-            continue
-        activity = {
-            key: value for key, value in raw_activity.items() if key != "preview"
-        }
-        if raw_activity.get("preview"):
-            activity["has_preview"] = True
-        compact_activities.append(activity)
-    response["activities"] = compact_activities
-    response["activity_count"] = len(compact_activities)
-    return response
-
-
-def _crm_activity(
-        contact, kind, title, detail="", preview="", author_name=None):
-    if not author_name:
-        try:
-            author_name = (current_user() or {}).get(
-                "name", "√âquipe Int√©grale"
-            )
-        except RuntimeError:
-            # Les synchronisations WEDOF s'ex√©cutent aussi hors requ√™te Flask.
-            author_name = "√âquipe Int√©grale"
-    contact.setdefault("activities", []).insert(0, {
-        "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
-        "title": title, "detail": detail, "preview": preview,
-        "author": author_name,
-    })
-
-
-def _crm_contact_for_quote_email(data, quote):
-    """Return the only CRM contact that can safely be linked to this quote."""
-    contacts = [
-        contact for contact in data.get("crm_contacts", [])
-        if isinstance(contact, dict)
-    ]
-    quote_id = str(quote.get("id") or "").strip()
-    linked = [
-        contact for contact in contacts
-        if quote_id and str(contact.get("source_devis_id") or "").strip() == quote_id
-    ]
-    if len(linked) == 1:
-        return linked[0]
-    if linked:
-        return None
-
-    email = _crm_normalize_email(quote.get("mail"))
-    phone = _crm_normalize_phone(quote.get("telephone"))
-    matches = [
-        contact for contact in contacts
-        if (
-            email and _crm_normalize_email(contact.get("mail")) == email
-        ) or (
-            phone and _crm_normalize_phone(contact.get("telephone")) == phone
-        )
-    ]
-    if len(matches) != 1 or not _crm_names_compatible(matches[0], quote):
-        return None
-    return matches[0]
-
-
-def _crm_record_quote_email_sent(data, quote, subject, html_body):
-    """Append a successful quote delivery to the matching CRM activity journal."""
-    contact = _crm_contact_for_quote_email(data, quote)
-    if not contact:
-        return False
-    detail = "\n".join(filter(None, (
-        f"Objet : {str(subject or '').strip()}",
-        f"Destinataire : {str(quote.get('mail') or '').strip()}",
-    )))
-    _crm_activity(
-        contact, "email", "E-mail ¬´ Devis d√©taill√© ¬ª envoy√©",
-        detail, html_body,
-    )
-    activity = contact["activities"][0]
-    activity["source_devis_id"] = str(quote.get("id") or "").strip()
-    contact["updated_at"] = activity["date"]
-    return True
-
-
-def _crm_edit_call_activity(activity, detail):
-    """Update a call note while retaining every previous text as an audit trail."""
-    normalized = str(detail or "").strip()
-    if not normalized:
-        raise ValueError("Le compte-rendu de l‚Äôappel est requis")
-    if activity.get("kind") != "appel":
-        return False, "invalid_kind"
-    previous = str(activity.get("detail") or "").strip()
-    if previous == normalized:
-        return False, "unchanged"
-    now = _crm_now()
-    editor = (current_user() or {}).get("name", "√âquipe Int√©grale")
-    edits = activity.get("edits")
-    if not isinstance(edits, list):
-        edits = []
-        activity["edits"] = edits
-    edits.insert(0, {
-        "detail": previous,
-        "edited_at": now,
-        "edited_by": editor,
-    })
-    activity.update({
-        "detail": normalized,
-        "edited_at": now,
-        "edited_by": editor,
-    })
-    return True, "updated"
-
-
-CRM_RELANCE_STATUSES = {"scheduled", "answered", "no_answer", "reprogrammed", "cancelled"}
-CRM_RELANCE_MOTIF_MAX_LENGTH = 160
-
-
-def _crm_relance_date(value, *, weekdays_only=False):
-    """Return a normalized ISO date or raise a user-facing validation error."""
-    normalized = str(value or "").strip()
-    if not normalized:
-        return ""
-    try:
-        parsed = datetime.date.fromisoformat(normalized)
-    except ValueError as exc:
-        raise ValueError("La date de relance est invalide.") from exc
-    if weekdays_only and parsed.weekday() >= 5:
-        raise ValueError(
-            "Les relances ne peuvent pas √™tre programm√©es le samedi ou le dimanche."
-        )
-    return normalized
-
-
-def _crm_relance_motif(value):
-    """Return a compact user-facing relance reason or reject oversized input."""
-    normalized = " ".join(str(value or "").split())
-    if len(normalized) > CRM_RELANCE_MOTIF_MAX_LENGTH:
-        raise ValueError(
-            "Le motif de relance ne peut pas d√©passer "
-            f"{CRM_RELANCE_MOTIF_MAX_LENGTH} caract√®res."
-        )
-    return normalized
-
-
-def _crm_refresh_relance_date(contact):
-    """Keep the historical scalar field aligned with the next open follow-up."""
-    scheduled_dates = [
-        str(item.get("scheduled_date") or "")
-        for item in contact.get("relances", [])
-        if isinstance(item, dict) and item.get("status") == "scheduled"
-        and str(item.get("scheduled_date") or "")
-    ]
-    next_date = min(scheduled_dates) if scheduled_dates else ""
-    changed = str(contact.get("relance_date") or "") != next_date
-    contact["relance_date"] = next_date
-    return changed
-
-
-def _crm_ensure_relances(contact):
-    """Migrate the legacy ``relance_date`` field to an auditable relance list."""
-    changed = False
-    raw_relances = contact.get("relances")
-    if not isinstance(raw_relances, list):
-        raw_relances = []
-        changed = True
-
-    normalized = []
-    cancelled_dates = set()
-    seen_ids = set()
-    for raw in raw_relances:
-        if not isinstance(raw, dict):
-            changed = True
-            continue
-        item = dict(raw)
-        relance_id = str(item.get("id") or "").strip()
-        if not relance_id or relance_id in seen_ids:
-            relance_id = str(uuid.uuid4())
-            item["id"] = relance_id
-            changed = True
-        seen_ids.add(relance_id)
-        status = str(item.get("status") or "scheduled").strip()
-        if status not in CRM_RELANCE_STATUSES:
-            status = "scheduled"
-            item["status"] = status
-            changed = True
-        if status == "cancelled":
-            # Une annulation est une suppression m√©tier : les anciennes traces
-            # cr√©√©es par le flux historique ne doivent plus √™tre expos√©es ni
-            # compt√©es comme des relances.
-            try:
-                cancelled_date = _crm_relance_date(item.get("scheduled_date"))
-            except ValueError:
-                cancelled_date = ""
-            if cancelled_date:
-                cancelled_dates.add(cancelled_date)
-            changed = True
-            continue
-        try:
-            scheduled_date = _crm_relance_date(item.get("scheduled_date"))
-        except ValueError:
-            scheduled_date = ""
-        if item.get("scheduled_date") != scheduled_date:
-            item["scheduled_date"] = scheduled_date
-            changed = True
-        if "motif" in item:
-            # Les donn√©es historiques restent lisibles m√™me si elles ont √©t√©
-            # √©crites avant l'ajout de la validation c√¥t√© API.
-            motif = " ".join(str(item.get("motif") or "").split())[
-                :CRM_RELANCE_MOTIF_MAX_LENGTH
-            ]
-            if item.get("motif") != motif:
-                item["motif"] = motif
-                changed = True
-        if "created_at" not in item:
-            item["created_at"] = contact.get("updated_at") or contact.get("created_at") or _crm_now()
-            changed = True
-        if "created_by" not in item:
-            item["created_by"] = "√âquipe Int√©grale"
-            changed = True
-        normalized.append(item)
-
-    if contact.get("relances") != normalized:
-        changed = True
-    contact["relances"] = normalized
-
-    try:
-        legacy_date = _crm_relance_date(contact.get("relance_date"))
-    except ValueError:
-        legacy_date = ""
-        contact["relance_date"] = ""
-        changed = True
-    if legacy_date and legacy_date not in cancelled_dates and not any(
-        item.get("status") == "scheduled" and item.get("scheduled_date") == legacy_date
-        for item in normalized
-    ):
-        normalized.insert(0, {
-            "id": str(uuid.uuid4()),
-            "scheduled_date": legacy_date,
-            "status": "scheduled",
-            "created_at": contact.get("updated_at") or contact.get("created_at") or _crm_now(),
-            "created_by": "Historique CRM",
-            "source": "legacy",
-        })
-        changed = True
-
-    active = [
-        (index, item) for index, item in enumerate(normalized)
-        if item.get("status") == "scheduled"
-    ]
-    if len(active) > 1:
-        dated = [
-            (index, item) for index, item in active
-            if item.get("scheduled_date")
-        ]
-        _, nearest = min(
-            dated or active,
-            key=lambda entry: (entry[1].get("scheduled_date") or "", entry[0]),
-        )
-        completed_at = _crm_now()
-        for _, item in active:
-            if item is nearest:
-                continue
-            item.update({
-                "status": "reprogrammed",
-                "completed_at": completed_at,
-                "completed_by": "Automatisation CRM",
-            })
-        changed = True
-
-    if _crm_refresh_relance_date(contact):
-        changed = True
-    return changed
-
-
-def _crm_schedule_relance(
-        contact, scheduled_date, *, source="manual", parent_relance_id=None,
-        actor_name=None, motif=None):
-    """Schedule or remove open actions while preserving completed attempts."""
-    scheduled_date = _crm_relance_date(scheduled_date)
-    if not scheduled_date:
-        # L'annulation explicite doit supprimer toutes les relances qui √©taient
-        # encore ouvertes avant que le normaliseur n'historise les doublons.
-        raw_relances = contact.get("relances")
-        changed = not isinstance(raw_relances, list)
-        if not isinstance(raw_relances, list):
-            raw_relances = []
-        remaining = [
-            item for item in raw_relances
-            if not (
-                isinstance(item, dict)
-                and str(item.get("status") or "scheduled").strip()
-                == "scheduled"
-            )
-        ]
-        if remaining != raw_relances:
-            changed = True
-        contact["relances"] = remaining
-        if str(contact.get("relance_date") or "").strip():
-            contact["relance_date"] = ""
-            changed = True
-        if _crm_ensure_relances(contact):
-            changed = True
-        return None, changed
-
-    normalized_motif = None if motif is None else _crm_relance_motif(motif)
-    changed = _crm_ensure_relances(contact)
-    now = _crm_now()
-    actor_name = actor_name or (current_user() or {}).get(
-        "name", "√âquipe Int√©grale"
-    )
-    active = [
-        item for item in contact["relances"]
-        if item.get("status") == "scheduled"
-    ]
-
-    same = next((item for item in active if item.get("scheduled_date") == scheduled_date), None)
-    for item in active:
-        if item is same:
-            continue
-        item.update({
-            "status": "reprogrammed",
-            "completed_at": now,
-            "completed_by": actor_name,
-        })
-        changed = True
-
-    if same is None:
-        same = {
-            "id": str(uuid.uuid4()),
-            "scheduled_date": scheduled_date,
-            "status": "scheduled",
-            "created_at": now,
-            "created_by": actor_name,
-            "source": source,
-        }
-        if normalized_motif:
-            same["motif"] = normalized_motif
-        if parent_relance_id:
-            same["parent_relance_id"] = parent_relance_id
-        contact["relances"].insert(0, same)
-        changed = True
-    elif normalized_motif is not None and same.get("motif", "") != normalized_motif:
-        if normalized_motif:
-            same["motif"] = normalized_motif
-        else:
-            same.pop("motif", None)
-        changed = True
-
-    if _crm_refresh_relance_date(contact):
-        changed = True
-    return same, changed
-
-
-def _crm_schedule_ft_refusal_relance(
-        contact, *, source, stable_id="", now=None):
-    """Planifie la relance ouvr√©e suivant un nouveau refus France Travail."""
-    if contact.get("statut") in {"Converti", "Disqualifi√©"}:
-        return None, False
-
-    paris = pytz.timezone("Europe/Paris")
-    current = now or datetime.datetime.now(paris)
-    if current.tzinfo is None:
-        current = paris.localize(current)
-    else:
-        current = current.astimezone(paris)
-    scheduled_day = current.date()
-    if scheduled_day.weekday() >= 5:
-        scheduled_day += datetime.timedelta(days=7 - scheduled_day.weekday())
-    scheduled_date = scheduled_day.isoformat()
-    actor_name = "France Travail" if source == "wedof_ft_refusal" else None
-    planned, changed = _crm_schedule_relance(
-        contact,
-        scheduled_date,
-        source=source,
-        actor_name=actor_name,
-        motif="Suite refus FT",
-    )
-
-    metadata = {
-        "funding_refusal_source": source,
-    }
-    if stable_id:
-        metadata["source_wedof_folder_id"] = str(stable_id)
-    for key, value in metadata.items():
-        if planned.get(key) != value:
-            planned[key] = value
-            changed = True
-
-    if contact.get("statut") != "A relancer":
-        contact["statut"] = "A relancer"
-        changed = True
-
-    if changed:
-        display_date = scheduled_day.strftime("%d/%m/%Y")
-        detail = (
-            "Financement France Travail refus√©. "
-            f"Relance pr√©vue le {display_date}."
-        )
-        if stable_id:
-            detail += f" Dossier WEDOF : {stable_id}."
-        _crm_activity(
-            contact,
-            "relance",
-            "Relance France Travail planifi√©e",
-            detail,
-            author_name=actor_name,
-        )
-    return planned, changed
-
-
-def _crm_complete_relance(contact, relance, status, *, note=""):
-    """Close a scheduled follow-up exactly once and refresh the next action."""
-    if status not in {"answered", "no_answer"}:
-        raise ValueError("R√©sultat de relance invalide.")
-    if relance.get("status") != "scheduled":
-        return False
-    relance.update({
-        "status": status,
-        "completed_at": _crm_now(),
-        "completed_by": (current_user() or {}).get("name", "√âquipe Int√©grale"),
-    })
-    if note:
-        relance["note"] = note
-    _crm_refresh_relance_date(contact)
-    return True
-
-
-def _crm_delete_relance(contact, relance):
-    """Permanently remove one planned follow-up from this contact."""
-    if relance.get("status") != "scheduled":
-        return False
-    relances = contact.get("relances")
-    if not isinstance(relances, list):
-        return False
-    for index, item in enumerate(relances):
-        if item is relance:
-            del relances[index]
-            _crm_refresh_relance_date(contact)
-            return True
-    return False
-
-
-def _crm_create_contact_from_information_request(data, fields, demande_id, devis_id, devis_url):
-    """Cr√©e la fiche CRM compl√®te et son journal lors d'une demande d'informations."""
-    now = _crm_now()
-    is_secretariat = str(fields.get("source_secretariat") or "") == "1"
-    google_ads_tracking = (
-        {key: "" for key in CRM_GOOGLE_ADS_TRACKING_KEYS}
-        if is_secretariat
-        else _crm_google_ads_tracking_fields(fields)
-    )
-    google_ads_identifier_type, google_ads_identifier = (
-        ("", "")
-        if is_secretariat
-        else _crm_information_request_google_ads_identifier(fields)
-    )
-    formation_key = str(fields.get("formation") or "").strip()
-    formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
-        "VTC": "Chauffeur VTC",
-    }.get(formation_key, formation_key)
-    lieu = {
-        "paris": "Paris", "cote_azur": "C√¥te d‚ÄôAzur", "auvergne": "Auvergne",
-    }.get(str(fields.get("centre") or "").strip(), str(fields.get("centre") or "").strip())
-    contact = {
-        "id": str(uuid.uuid4()),
-        "prenom": _crm_format_first_name(fields.get("prenom")),
-        "nom": _crm_format_last_name(fields.get("nom")),
-        "telephone": str(fields.get("telephone") or "").strip(),
-        "mail": str(fields.get("mail") or "").strip(),
-        "formation": formation,
-        "lieu": lieu,
-        "statut": "Nouveaux",
-        "dates_formation": str(fields.get("dates") or "").strip(),
-        "cpf": str(fields.get("cpf_consulte") or "").strip(),
-        "cpf_montant": normalize_cpf_amount(fields.get("cpf_montant")),
-        "carte_pro": str(fields.get("cnaps_ok") or "").strip(),
-        "titre_sejour": str(fields.get("titre_sejour") or "").strip(),
-        "garde_vue": str(fields.get("garde_vue") or "").strip(),
-        "antecedents": str(fields.get("garde_vue") or "").strip(),
-        "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
-        "identite_creation": str(fields.get("identite_numerique") or "").strip(),
-        # Le formulaire public confirme uniquement la d√©marche de cr√©ation ; son
-        # fonctionnement et l'inscription FT sont des faits distincts √† v√©rifier.
-        "identite_ok": "",
-        "financement_ft": str(fields.get("france_travail") or "").strip(),
-        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
-        "financement_perso_possible": str(fields.get("ft_refus_ok") or "").strip(),
-        "refus_ft_perso": str(fields.get("ft_refus_ok") or "").strip(),
-        "reste_a_charge_perso": "",
-        "origine": _crm_information_request_origin(fields),
-        "gclid": google_ads_tracking["gclid"],
-        "wbraid": google_ads_tracking["wbraid"],
-        "gbraid": google_ads_tracking["gbraid"],
-        "google_ads_identifier": google_ads_identifier,
-        "google_ads_identifier_type": google_ads_identifier_type,
-        "inscrit_ft": "",
-        "commentaires": "",
-        "relance_date": "",
-        "created_at": now,
-        "updated_at": now,
-        "activities": [],
-        "source": "demande_infos_formations",
-        "source_demande_id": demande_id,
-        "source_devis_id": devis_id,
-        "formulaire": dict(fields),
-    }
-    _crm_activity(contact, "creation", "Formulaire de demande d‚Äôinformations compl√©t√©", "Fiche cr√©√©e automatiquement avec le statut Nouveau")
-    quote_preview = (
-        f'<div style="padding:24px"><h2>Devis d√©taill√©</h2><p>{formation or "Formation"}</p>'
-        f'<p><a href="{devis_url}" target="_blank">Ouvrir le devis</a></p></div>'
-    )
-    _crm_activity(contact, "devis", "Devis d√©taill√© cr√©√©", f"Devis n¬∞ {devis_id}", quote_preview)
-    matched, _, _ = find_or_create_crm_contact(
-        data, fields, "demande_infos_formations", proposed_contact=contact,
-        external_id=demande_id, create_on_ambiguity=True,
-    )
-    if matched:
-        completed_already_recorded = matched.get("source_demande_id") == demande_id
-        safe_fields = (
-            "formation", "lieu", "dates_formation", "cpf", "cpf_montant",
-            "carte_pro", "titre_sejour", "garde_vue", "antecedents",
-            "desp_type", "identite_creation", "financement_ft",
-            "refus_ft_perso", "reste_a_charge_perso",
-        )
-        for key in safe_fields:
-            if _crm_is_empty(matched.get(key)) and not _crm_is_empty(contact.get(key)):
-                matched[key] = contact[key]
-        preserve_abandoned_origin = (
-            matched.get("source") == ABANDONED_DEMANDE_SOURCE
-            or any(
-                item.get("source") == ABANDONED_DEMANDE_SOURCE
-                for item in matched.get("source_history", [])
-            )
-        )
-        original_origin = matched.get("origine")
-        _crm_apply_information_request_attribution(matched, fields)
-        if preserve_abandoned_origin:
-            matched["origine"] = original_origin or ABANDONED_FORM_LABEL
-        if preserve_abandoned_origin and not completed_already_recorded:
-            matched.setdefault("activities", []).extend(
-                copy.deepcopy(contact.get("activities") or [])
-            )
-            matched["source_demande_id"] = demande_id
-            matched["source_devis_id"] = devis_id
-            matched["formulaire"] = dict(fields)
-            matched["updated_at"] = now
-    return matched
-
-
-def _secretariat_session_details(entry):
-    """Return the CRM centre code and date label selected by the secretary."""
-    preferred_session = str(entry.get("formation_date_souhaitee") or "").strip()
-    session_label = str(entry.get("formation_session_label") or "").strip()
-    raw_centre = str(entry.get("formation_centre") or "").strip()
-    centre_code = _normalize_centre_code(raw_centre) if raw_centre else ""
-
-    # The full, visible choice is the most reliable value: unlike data attributes,
-    # it is also present in legacy submissions. It wins if the two values disagree.
-    normalized_preference = unicodedata.normalize("NFKD", preferred_session)
-    normalized_preference = "".join(
-        character for character in normalized_preference
-        if not unicodedata.combining(character)
-    ).casefold()
-    normalized_preference = re.sub(r"[^a-z0-9]+", " ", normalized_preference).strip()
-    if "cote d azur" in normalized_preference:
-        centre_code = "cote_azur"
-    elif "auvergne" in normalized_preference:
-        centre_code = "auvergne"
-    elif "paris" in normalized_preference:
-        centre_code = "paris"
-
-    if not session_label and " ‚Äî " in preferred_session:
-        session_label = preferred_session.split(" ‚Äî ", 1)[1].strip()
-    if not session_label:
-        session_label = preferred_session
-    return centre_code, session_label
-
-
-def _crm_secretariat_answer_values(entry):
-    """Map actual submitted answers, shared by live submissions and recovery."""
-    formation_key = str(entry.get("formation") or "").strip()
-    formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
-        "VTC": "Chauffeur VTC",
-    }.get(formation_key, formation_key)
-    centre_code, session_label = _secretariat_session_details(entry)
-
-    lieu = {
-        "paris": "Paris",
-        "cote_azur": "C√¥te d‚ÄôAzur",
-        "auvergne": "Auvergne",
-    }.get(centre_code, "")
-    return {
-        "formation": formation,
-        "lieu": lieu,
-        "dates_formation": session_label,
-        "cpf": str(entry.get("cpf_consulte") or "").strip(),
-        "cpf_montant": normalize_cpf_amount(entry.get("cpf_montant")),
-        "carte_pro": str(entry.get("cnaps_ok") or "").strip(),
-        "titre_sejour": str(entry.get("titre_sejour") or "").strip(),
-        "garde_vue": str(entry.get("garde_vue") or "").strip(),
-        "antecedents": str(entry.get("garde_vue") or "").strip(),
-        "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
-        "identite_creation": str(entry.get("identite_numerique") or "").strip(),
-        "financement_ft": str(entry.get("france_travail") or "").strip(),
-        "financement_perso_possible": str(entry.get("ft_refus_ok") or "").strip(),
-        "refus_ft_perso": str(entry.get("ft_refus_ok") or "").strip(),
-        "reste_a_charge_perso": str(entry.get("financement_perso") or "").strip(),
-    }
-
-
-def _crm_secretariat_answers_match_contact(contact, entry):
-    """A durable request ID alone cannot authorize filling qualification fields."""
-    email = _crm_normalize_email(entry.get("email") or entry.get("mail"))
-    phone = _crm_normalize_phone(entry.get("telephone"))
-    stored_email = _crm_normalize_email(contact.get("mail"))
-    stored_phone = _crm_normalize_phone(contact.get("telephone"))
-    agrees = (email and email == stored_email) or (phone and phone == stored_phone)
-    disagrees = (email and stored_email and email != stored_email) or (phone and stored_phone and phone != stored_phone)
-    if not agrees or disagrees:
-        return False
-    first = _crm_normalize_name(entry.get("prenom"))
-    stored_first = _crm_normalize_name(contact.get("prenom"))
-    if first and stored_first and first != stored_first:
-        return False
-    # The saved form uses a full name; the inbound snapshot uses a surname.
-    name = _crm_normalize_name(entry.get("nom_famille") or entry.get("nom"))
-    stored_name = _crm_normalize_name(contact.get("nom"))
-    if name and stored_name and name not in {stored_name, stored_first + stored_name}:
-        return False
-    return True
-
-
-def _crm_recover_secretariat_answers(data, *, dry_run=True):
-    from crm_secretariat_answers import recover_answers
-    return recover_answers(
-        data, map_answers=_crm_secretariat_answer_values,
-        is_empty=_crm_is_empty, normalize_amount=normalize_cpf_amount,
-        matches_contact=_crm_secretariat_answers_match_contact,
-        now=_crm_now(), dry_run=dry_run,
-    )
-
-
-def _crm_restore_secretariat_answers_once():
-    """Run the non-destructive, versioned recovery before serving CRM traffic."""
-    from crm_secretariat_answers import REPAIR_KEY, VERSION
-    with _CRM_RECONCILIATION_LOCK:
-        data = load_data()
-        if (data.get(REPAIR_KEY) or {}).get("version") == VERSION:
-            return data[REPAIR_KEY]
-        report = _crm_recover_secretariat_answers(data, dry_run=False)
-        report["completed_at"] = _crm_now()
-        data[REPAIR_KEY] = report
-        save_data(data)
-        app.logger.warning(
-            "secretariat_answers_repair version=%s contacts=%s fields=%s conflicts=%s skipped=%s",
-            VERSION, report["contacts"], report["fields"],
-            len(report["conflicts"]), len(report["skipped"]),
-        )
-        return report
-
-
-def _crm_create_contact_from_secretariat(
-        data, entry, crm_payload, *, create_on_ambiguity=False):
-    """Create or complete the safely matched CRM record from a secretary call."""
-    from crm_secretariat_answers import apply_answers
-    now = _crm_now()
-    values = _crm_secretariat_answer_values(entry)
-    contact = {
-        "id": str(uuid.uuid4()),
-        "prenom": _crm_format_first_name(crm_payload.get("prenom")),
-        "nom": _crm_format_last_name(crm_payload.get("nom")),
-        "telephone": str(entry.get("telephone") or "").strip(),
-        "mail": str(entry.get("email") or "").strip(),
-        **values,
-        "statut": "Nouveaux",
-        "identite_ok": "",
-        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
-        "origine": "Secr√©tariat",
-        "inscrit_ft": "",
-        "commentaires": str(entry.get("notes") or "").strip(),
-        "relance_date": "",
-        "created_at": now,
-        "updated_at": now,
-        "activities": [],
-        "source": "assistant-secretariat",
-        "source_secretariat_id": entry.get("id"),
-        "formulaire": dict(entry),
-    }
-    detail = "Appel enregistr√© par le secr√©tariat"
-    if entry.get("rdv"):
-        detail += f" ¬∑ Rendez-vous : {entry['rdv']}"
-    _crm_activity(contact, "creation", "Piste cr√©√©e depuis le secr√©tariat", detail)
-    reconciliation_payload = {**dict(entry), "mail": entry.get("email"),
-                              "nom": crm_payload.get("nom"),
-                              "prenom": crm_payload.get("prenom"),
-                              "lieu": values["lieu"], "formation": values["formation"]}
-    matched, inbound, created = find_or_create_crm_contact(
-        data, reconciliation_payload, "assistant-secretariat",
-        proposed_contact=contact, external_id=entry.get("id"),
-        create_on_ambiguity=create_on_ambiguity,
-    )
-    if inbound.get("status") == "pending_review":
-        entry["crm_contact_id"] = ""
-        return None
-    if matched:
-        if not created and not _crm_secretariat_answers_match_contact(matched, reconciliation_payload):
-            inbound["status"] = "pending_review"
-            inbound.setdefault("review_reasons", []).append(
-                "R√©ponses du secr√©tariat non int√©gr√©es : identit√© ou coordonn√©es diff√©rentes de la fiche li√©e."
-            )
-            entry["crm_contact_id"] = ""
-            return None
-        entry["crm_contact_id"] = matched["id"]
-        if not created:
-            changes, conflicts = apply_answers(
-                matched, values, is_empty=_crm_is_empty,
-                normalize_amount=normalize_cpf_amount,
-            )
-            differences = inbound.setdefault("differences", [])
-            new_conflicts = [field for field in conflicts if field not in differences]
-            differences.extend(new_conflicts)
-            if changes or new_conflicts:
-                detail = "Champs compl√©t√©s : " + ", ".join(changes) + "." if changes else ""
-                if new_conflicts:
-                    detail += " Informations diff√©rentes conserv√©es pour v√©rification : " + ", ".join(new_conflicts) + "."
-                _crm_activity(matched, "inbound_request", "R√©ponses du secr√©tariat int√©gr√©es", detail)
-                matched["updated_at"] = now
-    return matched
-
-
-def _crm_ensure_secretariat_publication(contact, entry):
-    """Publish the secretary's call details once on the matched CRM contact."""
-    text = str(entry.get("notes") or "").strip()
-    if not contact or not text:
-        return None
-
-    request_id = str(entry.get("id") or "").strip()
-    publication_id = str(entry.get("crm_publication_id") or "").strip()
-    publications = contact.setdefault("publications", [])
-    publication = next((
-        item for item in publications
-        if isinstance(item, dict) and (
-            (publication_id and str(item.get("id") or "") == publication_id)
-            or (
-                request_id
-                and str(item.get("source_secretariat_id") or "") == request_id
-            )
-        )
-    ), None)
-
-    if publication is None:
-        publication = {
-            "id": str(uuid.uuid4()),
-            "date": str(entry.get("created_at") or _crm_now()),
-            "texte": text,
-            "author": "Secr√©tariat",
-            "author_email": "",
-            "likes": [],
-            "comments": [],
-            "source": "assistant-secretariat",
-            "source_secretariat_id": request_id,
-        }
-        publications.insert(0, publication)
-    else:
-        publication.update({
-            "texte": text,
-            "author": "Secr√©tariat",
-            "author_email": "",
-            "source": "assistant-secretariat",
-            "source_secretariat_id": request_id,
-        })
-
-    entry["crm_publication_id"] = publication["id"]
-    contact["updated_at"] = _crm_now()
-    return publication
-
-
-def _secretariat_information_template(data, kind, formation_code):
-    """Return the CRM ``Informations <formation>`` template for a call."""
-    formation_code = str(formation_code or "").strip()
-    formation = SECRETARIAT_FORMATIONS.get(formation_code, {})
-    # Les codes techniques du secr√©tariat ne sont pas toujours ceux employ√©s
-    # dans la biblioth√®que CRM (par exemple DESP_INIT et DESP_VAE y sont
-    # g√©n√©ralement regroup√©s sous ¬´ Informations DESP ¬ª).
-    aliases = {
-        "SSIAP": ["SSIAP 1"],
-        "DESP_INIT": ["DESP initial", "DESP"],
-        "DESP_VAE": ["VAE DESP", "DESP VAE", "DESP"],
-        "VTC": ["Chauffeur VTC"],
-    }.get(formation_code, [])
-    names = [
-        f"informations {formation_code}",
-        f"informations {formation.get('short', '')}",
-        f"informations {formation.get('label', '')}",
-        *(f"informations {alias}" for alias in aliases),
-    ]
-
-    def normalise(value):
-        value = unicodedata.normalize("NFKD", str(value or ""))
-        value = "".join(char for char in value if not unicodedata.combining(char))
-        return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-
-    expected = list(dict.fromkeys(normalise(name) for name in names
-                                  if normalise(name) != "informations"))
-    templates = data.get(f"crm_{kind}_templates", [])
-    return next((template for name in expected for template in templates
-                 if normalise(template.get("nom")) == name), None)
-
-
-def _crm_next_phone_appointment(data, entry, contact=None, now=None):
-    """Return the next cached phone appointment matching a secretariat call."""
-    contact = contact or {}
-    contact_id = str(contact.get("id") or "").strip()
-    emails = {
-        _crm_normalize_email(value)
-        for value in (contact.get("mail"), entry.get("email"))
-        if _crm_normalize_email(value)
-    }
-    phones = {
-        _crm_normalize_phone(value)
-        for value in (contact.get("telephone"), entry.get("telephone"))
-        if _crm_normalize_phone(value)
-    }
-    paris = pytz.timezone("Europe/Paris")
-    now = now or datetime.datetime.now(paris)
-    if now.tzinfo is None:
-        now = paris.localize(now)
-    else:
-        now = now.astimezone(paris)
-    matches = []
-    for appointment in data.get("crm_calendly_appointments", []):
-        same_contact = bool(contact_id) and str(appointment.get("contact_id") or "") == contact_id
-        same_email = _crm_normalize_email(appointment.get("invitee_email")) in emails
-        same_phone = _crm_normalize_phone(appointment.get("invitee_phone")) in phones
-        if not (same_contact or same_email or same_phone):
-            continue
-        if str(appointment.get("status") or "active").casefold() in {"canceled", "cancelled"}:
-            continue
-        location = appointment.get("location") or {}
-        if isinstance(location, dict):
-            location_kind = str(location.get("kind") or location.get("type") or "").casefold()
-        else:
-            location_kind = str(location).casefold()
-        # Use the common stem as Calendly event names usually contain
-        # "t√©l√©phonique" rather than the noun "t√©l√©phone".  The previous
-        # exact terms did not match "RDV t√©l√©phonique ..." when the event had
-        # no explicit location.
-        phone_terms = ("phone", "call", "appel", "t√©l√©phoni", "telephoni")
-        appointment_name = str(appointment.get("name") or "").casefold()
-        if not any(term in location_kind or term in appointment_name for term in phone_terms):
-            continue
-        try:
-            start = datetime.datetime.fromisoformat(
-                str(appointment.get("start_time") or "").replace("Z", "+00:00")
-            )
-            if start.tzinfo is None:
-                start = pytz.UTC.localize(start)
-            start = start.astimezone(paris)
-        except (TypeError, ValueError):
-            continue
-        if start <= now:
-            continue
-        matches.append((start, appointment))
-
-    if not matches:
-        return None
-    return min(matches, key=lambda item: item[0])
-
-
-def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
-    """Copy the next phone appointment from the CRM into the follow-up facts.
-
-    Calendly can receive the booking between the first secretariat form and the
-    final CRM submission.  Consequently the browser's payload is not the source
-    of truth here: the appointment cached on the CRM contact is looked up again
-    immediately before the summary e-mail is generated.
-    """
-    match = _crm_next_phone_appointment(data, entry, contact)
-    if not match:
-        return None
-    start, appointment = match
-    contact_id = str(contact.get("id") or "").strip()
-    entry.update({
-        "rdv": _crm_calendly_datetime_label(appointment.get("start_time")),
-        "rdv_status": "scheduled",
-        "rdv_date": start.strftime("%d/%m/%Y"),
-        "rdv_time": start.strftime("%H:%M"),
-        "rdv_mode": "Appel t√©l√©phonique",
-        "rdv_url": "",
-        "rdv_name": appointment.get("name") or "Rendez-vous t√©l√©phonique",
-        "rdv_host_name": appointment.get("host_name") or "",
-    })
-    # Repair a stale/unassigned Calendly link so the appointment is visible on
-    # the CRM record that was just created from the secretariat submission.
-    linked_contact = _crm_contact(data, appointment.get("contact_id"))
-    already_linked = str(appointment.get("contact_id") or "") == contact_id
-    if contact_id and (not linked_contact or already_linked):
-        appointment["contact_id"] = contact_id
-        appointment["updated_at"] = _crm_now()
-    contact["formulaire"] = {**(contact.get("formulaire") or {}), **entry}
-    contact["updated_at"] = _crm_now()
-    return appointment
-
-
-def _secretariat_refresh_calendly_appointments(data, entry, contact):
-    """Refresh the CRM record from Calendly before building the summary email.
-
-    The webhook cache is normally current, but a booking made while the
-    secretary is completing the form can arrive after the final button is
-    clicked.  A targeted lookup closes that race.  Calendly failures remain
-    non-blocking: the already cached appointments are still used by the next
-    step and the delivery can continue.
-    """
-    state = data.get("crm_calendly") or {}
-    can_lookup = bool(
-        _calendly_token()
-        and state.get("user")
-        and state.get("organization")
-        and (
-            _crm_normalize_email(contact.get("mail") or entry.get("email"))
-            or _crm_normalize_phone(contact.get("telephone") or entry.get("telephone"))
-        )
-    )
-    if not can_lookup:
-        return 0
-
-    try:
-        payloads, _lookup = _crm_calendly_fetch_contact_appointments(data, contact)
-    except (CalendlyAPIError, RuntimeError) as exc:
-        entry["calendly_lookup_warning"] = str(exc)
-        return 0
-
-    for payload in payloads:
-        _crm_upsert_calendly_appointment(
-            data,
-            payload,
-            source="secretariat_targeted_lookup",
-            contact_id=contact.get("id"),
-            record_activity=False,
-        )
-    _crm_calendly_relink_appointments(data, contact)
-    _crm_sync_contact_calendly_status(data, contact)
-    return len(payloads)
-
-
-def _mask_delivery_recipient(value, kind):
-    value = str(value or "").strip()
-    if kind == "email" and "@" in value:
-        local, domain = value.split("@", 1)
-        return f"{local[:2]}***@{domain}"
-    digits = re.sub(r"\D", "", value)
-    return f"***{digits[-4:]}" if digits else "absent"
-
-
-def _secretariat_automatic_information_template(data, entry, contact):
-    """Build the existing automatic form e-mail for a secretariat call."""
-    formation_code = str(entry.get("formation") or "").strip()
-    prenom = _secretariat_display_first_name(
-        contact.get("prenom") or entry.get("prenom")
-        or str(entry.get("nom") or "").split(" ")[0]
-    )
-    dates = str(
-        entry.get("formation_session_label")
-        or entry.get("formation_date_souhaitee")
-        or ""
-    ).strip()
-    centre_code, _ = _secretariat_session_details(entry)
-    devis_url = str(entry.get("devis_url") or contact.get("devis_url") or "").strip()
-
-    if formation_code == "DESP_VAE":
-        template_id = "automatic-desp-vae"
-        subject = "üìù VAE ‚Äì Dirigeant d‚ÄôEntreprise de S√©curit√© Priv√©e (RNCP40385)"
-        body = build_vae_desp_email_html(prenom, devis_url)
-    elif formation_code == "A3P":
-        template_id = "automatic-a3p"
-        subject, _, body = _a3p_information_email_content(
-            prenom, dates, centre_code, devis_url, data,
-        )
-    elif formation_code == "APS":
-        template_id = "automatic-aps"
-        subject = "üëÆ‚Äç‚ôÇÔ∏è Formation Agent de S√©curit√© Priv√©e (APS)"
-        body = build_aps_email_html(prenom, dates, centre_code, devis_url)
-    elif formation_code == "SSIAP":
-        template_id = "automatic-ssiap1"
-        subject = "üî• Formation Agent de s√©curit√© incendie SSIAP 1"
-        body = build_ssiap1_email_html(
-            prenom, dates, centre_code, devis_url,
-            entry.get("ssiap_secourisme_valide", ""),
-        )
-    elif formation_code == "VTC":
-        template_id = "automatic-vtc"
-        subject = "üöó Formation Chauffeur VTC"
-        body = build_vtc_email_html(prenom, centre_code, devis_url)
-    elif formation_code == "DESP_INIT":
-        template_id = "automatic-desp-initial"
-        subject = "Votre demande de renseignements ‚Äì Formation DESP initial"
-        body = build_desp_init_email_html(
-            prenom, dates, centre_code, devis_url, data,
-        )
-    else:
-        # Les BTS n'ont pas encore de mod√®le automatique d√©di√© dans le CRM.
-        # On reprend donc le message g√©n√©rique d√©j√† envoy√© par le formulaire
-        # public, afin qu'une absence de mod√®le personnalis√© ne bloque jamais
-        # silencieusement l'e-mail du secr√©tariat.
-        formation = _secretariat_formation_config(formation_code)
-        formation_label = formation.get("label") or formation.get("short") or "Formation Int√©grale Academy"
-        session_html = (
-            f"<p>Session souhait√©e : <strong>{html_module.escape(dates)}</strong></p>"
-            if dates else ""
-        )
-        devis_html = (
-            '<p style="text-align:center;">'
-            f'<a href="{html_module.escape(devis_url, quote=True)}" '
-            'style="display:inline-block;padding:12px 18px;background:#0d6efd;color:#fff;'
-            'border-radius:10px;text-decoration:none;font-weight:700;">'
-            "Je t√©l√©charge mon devis d√©taill√©</a></p>"
-            if devis_url else ""
-        )
-        template_id = f"automatic-secretariat-{formation_code.lower().replace('_', '-')}"
-        subject = "Votre demande de renseignements ‚Äì Int√©grale Academy"
-        body = _wrap_html(
-            "<h1>‚ú® Merci pour votre demande</h1>",
-            f"""
-            <p>Bonjour <strong>{html_module.escape(prenom)}</strong>,</p>
-            <p>Je fais suite √† votre demande de renseignements concernant notre formation
-            <strong>{html_module.escape(formation_label)}</strong>. Nous vous remercions de nous avoir contact√© !</p>
-            {session_html}
-            <p>Vous pouvez consulter le dossier de pr√©sentation de nos formations :</p>
-            <p><a href="{SECRETARIAT_DOSSIER_URL}">{SECRETARIAT_DOSSIER_URL}</a></p>
-            {devis_html}
-            <p>Notre √©quipe reste √† votre disposition au <strong>04 22 47 07 68</strong>.</p>
-            <p>Je vous souhaite une bonne journ√©e,</p>
-            <p><strong>Cl√©ment VAILLANT</strong><br>Directeur Int√©grale Academy</p>
-            """,
-        )
-
-    return {
-        "id": template_id,
-        "nom": f"E-mail automatique {formation_code}",
-        "formation": formation_code,
-        "sujet": subject,
-        "contenu": body,
-    }
-
-
-def _secretariat_information_email(data, entry, contact):
-    """Build the CRM information e-mail matching the selected training."""
-    template = _secretariat_information_template(
-        data, "email", entry.get("formation"),
-    )
-    if not template:
-        template = _secretariat_automatic_information_template(data, entry, contact)
-
-    body = _crm_resolve_message_variables(
-        template.get("contenu", ""), contact, html=True, data_store=data,
-    ).strip()
-    quote_url = str(entry.get("devis_url") or contact.get("devis_url") or "").strip()
-    for variable in ("{{ lien_devis }}", "{{lien_devis}}"):
-        body = body.replace(variable, html_module.escape(quote_url, quote=True))
-
-    subject = _crm_resolve_message_variables(
-        template.get("sujet") or "Int√©grale Academy",
-        contact,
-        data_store=data,
-    ).strip()
-    plain = html_module.unescape(
-        re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
-    ).strip()
-
-    if re.search(r"<(?:!doctype|html)\b", body, re.IGNORECASE):
-        branded = body
-    else:
-        formation = _secretariat_formation_config(entry.get("formation"))
-        branded = render_template(
-            "crm_email_wrapper.html",
-            prenom=contact.get("prenom") or entry.get("prenom") or "",
-            formation=formation.get("label") or formation.get("short") or "",
-            contenu=body,
-            email_header_title="Informations sur votre formation",
-            email_header_subtitle=formation.get("label") or formation.get("short") or "",
-        )
-    return template, subject, plain, branded
-
-
-def _send_secretariat_information_messages(data, entry, contact):
-    """Deliver each channel independently and persist an idempotent audit trail."""
-    results = {}
-    for kind, recipient_key, provider in (("email", "email", "SMTP/Brevo"), ("sms", "telephone", "Brevo")):
-        recipient = entry.get(recipient_key)
-        status_key = f"{kind}_summary_status"
-        sent_key = f"{kind}_summary_sent_at"
-        error_key = f"{kind}_summary_error"
-        attempted_key = f"{kind}_summary_attempted_at"
-        legacy_sent_key = f"information_{kind}_sent_at"
-        if entry.get(sent_key) or entry.get(legacy_sent_key) or entry.get(f"information_{kind}_template_id"):
-            results[kind] = "already_sent"
-            continue
-        if not recipient or (kind == "sms" and not _normaliser_telephone_sms(recipient)):
-            entry[status_key] = "failed"
-            entry[error_key] = "Destinataire absent ou invalide"
-            entry[attempted_key] = _crm_now()
-            results[kind] = "recipient_missing"
-            continue
-
-        information_email = None
-        if kind == "email":
-            try:
-                information_email = _secretariat_information_email(data, entry, contact)
-            except Exception as exc:
-                entry[status_key] = "failed"
-                entry[error_key] = str(exc)[:500]
-                entry[attempted_key] = _crm_now()
-                results[kind] = "failed"
-                save_data(data)
-                continue
-            if not information_email:
-                entry[status_key] = "failed"
-                entry[error_key] = "Aucun mod√®le d‚Äôinformation ne correspond √† la formation"
-                entry[attempted_key] = _crm_now()
-                results[kind] = "template_missing"
-                save_data(data)
-                continue
-
-        entry[status_key] = "sending"
-        entry[error_key] = ""
-        entry[attempted_key] = _crm_now()
-        save_data(data)
-        try:
-            if kind == "email":
-                template, subject, body, branded = information_email
-                ok = _crm_send_email_html(
-                    recipient, subject, body, branded, template=template,
-                )
-                preview, detail, title = branded, subject, "E-mail d‚Äôinformation envoy√©"
-            else:
-                body = _build_secretariat_followup_sms(entry.get("formation"))
-                ok = send_sms(recipient, body)
-                preview, detail, title = body, body, "SMS envoy√©"
-        except Exception as exc:
-            ok = False
-            entry[error_key] = str(exc)[:500]
-        now = _crm_now()
-        results[kind] = "sent" if ok else "failed"
-        if ok:
-            entry[status_key] = "sent"
-            entry[sent_key] = now
-            entry[legacy_sent_key] = now
-            entry[f"information_{kind}_content"] = body
-            if kind == "email":
-                entry["information_email_template_id"] = template.get("id")
-                template["usage_count"] = int(template.get("usage_count") or 0) + 1
-                template["last_used_at"] = now
-            _crm_activity(contact, kind, title, detail, preview)
-            contact["updated_at"] = now
-            if kind == "email" and entry.get("devis_id"):
-                quote = next((row for row in data.get("demandes", [])
-                              if row.get("id") == entry["devis_id"]), None)
-                if quote:
-                    quote["statut_devis"] = "Envoy√©"
-                    quote["date_envoi_plan"] = now
-        else:
-            entry[status_key] = "failed"
-            entry[error_key] = entry.get(error_key) or "Le fournisseur a refus√© ou n‚Äôa pas confirm√© l‚Äôenvoi"
-        print(f"secretariat_delivery submission={entry.get('id')} recipient={_mask_delivery_recipient(recipient, kind)} provider={provider} status={entry[status_key]} error={entry.get(error_key, '')}")
-        save_data(data)
-    return results
-
-
-def _secretariat_formation_config(formation_code):
-    code = str(formation_code or "").strip()
-    return SECRETARIAT_FORMATIONS.get(code) or {
-        "short": "Formation", "label": PLAN_FORMATIONS.get(code) or "Formation Int√©grale Academy",
-        "dossier_url": SECRETARIAT_DOSSIER_URL, "planning_url": SECRETARIAT_PLANNING_URL,
-    }
-
-
-def _secretariat_formation_name(formation_code):
-    return _secretariat_formation_config(formation_code)["label"]
-
-
-def _build_secretariat_followup_sms(formation_code):
-    formation_name = _secretariat_formation_name(formation_code)
-    return (
-        "Je fais suite √† notre √©change t√©l√©phonique au sujet de notre formation "
-        f"{formation_name}. Merci de votre int√©r√™t !\n\n"
-        "‚ñ∂Ô∏è Vous pouvez t√©l√©charger d√®s maintenant notre dossier de pr√©sentation "
-        "(programme d√©taill√©, dates, tarifs) en cliquant ici :\n\n"
-        f"üëâ {SECRETARIAT_DOSSIER_URL}\n\n"
-        "‚ÑπÔ∏è Si vous souhaitez financer la formation via votre Compte Personnel de "
-        "Formation (CPF), il vous faudra cr√©er votre Identit√© Num√©rique La Poste.\n\n"
-        "N‚Äôh√©sitez pas √† me contacter si vous avez la moindre question, je serai ravi d‚Äôy r√©pondre üòâ\n\n"
-        "Bonne journ√©e,\n\nCassandre MENARD\nResponsable commerciale Int√©grale Academy\n04 22 47 07 68"
-    )
-
-
-def _yes(value):
-    return str(value or "").strip().upper() in {"OUI", "YES", "TRUE", "1"}
-
-
-def _secretariat_display_first_name(value):
-    """Format a first name without ever transliterating away its accents."""
-    value = re.sub(r"\s+", " ", str(value or "").strip())
-    if not value:
-        return ""
-    formatted = "-".join(part[:1].upper() + part[1:].lower() for part in value.split("-"))
-    return {"clement": "Cl√©ment"}.get(formatted.casefold(), formatted)
-
-
-def _secretariat_upcoming_session_groups(formation_code, selected_session=""):
-    selected = str(selected_session or "").strip()
-    groups = []
-    sessions = get_upcoming_formation_sessions(load_data())
-    for centre_code, centre_name in FORMATION_CENTRES.items():
-        rows = sessions.get(centre_code, {}).get(str(formation_code or "").strip(), [])
-        labelled = []
-        for row in rows:
-            label = str(row.get("label") or "").strip()
-            exam = str(row.get("date_examen") or "").strip()
-            if not label:
-                continue
-            display = label
-            if exam and "examen" not in label.casefold():
-                display = f"{label} - examen le {exam}"
-            labelled.append({
-                "label": display,
-                "selected": selected in {label, display, f"{centre_name} ‚Äî {label}"},
-            })
-        if labelled:
-            groups.append({"centre": centre_name, "sessions": labelled})
-    return groups
-
-
-def _ensure_secretariat_quote(data, entry, contact):
-    """Create or reconnect the single financing quote belonging to a call."""
-    if not _yes(entry.get("devis")):
-        return None
-    demandes = data.setdefault("demandes", [])
-    quote = next((row for row in demandes if row.get("id") == entry.get("devis_id")), None)
-    if quote is None:
-        quote = next((row for row in demandes
-                      if row.get("source_secretariat_id") == entry.get("id")), None)
-    if quote is None:
-        quote_id, token = str(uuid.uuid4()), uuid.uuid4().hex
-        details = {
-            "formation": entry.get("formation", ""),
-            "dates": entry.get("formation_session_label") or entry.get("formation_date_souhaitee", ""),
-            "centre": entry.get("formation_centre", ""),
-            "date_examen": entry.get("formation_date_examen", ""),
-            "cpf_montant": entry.get("cpf_montant", ""),
-            "france_travail": entry.get("france_travail", ""),
-            "identite_numerique": entry.get("identite_numerique", ""),
-            "ssiap_secourisme_valide": entry.get("ssiap_secourisme_valide", ""),
-        }
-        quote = {
-            "id": quote_id, "token_plan": token,
-            "source_secretariat_id": entry.get("id"),
-            "nom": entry.get("nom_famille") or str(entry.get("nom") or "").strip(),
-            "prenom": _secretariat_display_first_name(entry.get("prenom") or str(entry.get("nom") or "").split(" ")[0]),
-            "telephone": entry.get("telephone", ""), "mail": entry.get("email", ""),
-            "motif": "Demande de devis d√©taill√©",
-            "details": json.dumps(details, ensure_ascii=False),
-            "date": datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M"),
-            "statut": "Non trait√©", "statut_devis": "A envoyer", "attribution": "",
-            "commentaire": "", "commentaire_admin": "", "mail_confirme": "",
-            "mail_erreur": "", "mail_contenu": "", "mail_html": "",
-            "pieces_jointes": [], "reponses": [], "is_doublon": False,
-            "rappel_date": "", "plage": "", "notation_interne": "",
-            "echeancier_manuel": [], "pdf_path": "",
-        }
-        demandes.append(quote)
-        quote_url = url_for("plan_public", token=token, _external=True)
-        _crm_activity(contact, "devis", "Devis d√©taill√© cr√©√©", quote_url,
-                      f'<p><a href="{quote_url}" target="_blank">Ouvrir le devis</a></p>')
-    quote_url = url_for("plan_public", token=quote["token_plan"], _external=True)
-    entry["devis_id"], entry["devis_url"] = quote["id"], quote_url
-    contact["source_devis_id"], contact["devis_url"] = quote["id"], quote_url
-    return quote
-
-
-def _secretariat_rdv(entry):
-    status = str(entry.get("rdv_status") or entry.get("appointment_status") or "").lower().strip()
-    if status in {"declined", "not_requested", "none"}:
-        return None
-    if status == "scheduled":
-        mode = str(entry.get("rdv_mode") or "").lower().strip()
-        if mode and not any(term in mode for term in ("appel", "t√©l√©phone", "telephone", "phone")):
-            return None
-        date_value = str(entry.get("rdv_date") or "").strip()
-        time_value = str(entry.get("rdv_time") or "00:00").strip()
-        if date_value:
-            parsed = None
-            for pattern in ("%d/%m/%Y %H:%M", "%d %B %Y %H:%M", "%Y-%m-%d %H:%M"):
-                try:
-                    parsed = datetime.datetime.strptime(f"{date_value} {time_value}", pattern)
-                    break
-                except ValueError:
-                    continue
-            if parsed is not None:
-                paris = pytz.timezone("Europe/Paris")
-                if paris.localize(parsed) <= datetime.datetime.now(paris):
-                    return None
-        day, month = "", ""
-        if date_value:
-            match = re.match(r"^(\d{1,2})/(\d{1,2})/\d{4}$", date_value)
-            if match:
-                day = match.group(1).zfill(2)
-                month_number = int(match.group(2))
-                if 1 <= month_number <= 12:
-                    month = ("JANV.", "F√âVR.", "MARS", "AVR.", "MAI", "JUIN", "JUIL.",
-                             "AO√õT", "SEPT.", "OCT.", "NOV.", "D√âC.")[month_number - 1]
-            else:
-                words = date_value.split()
-                if words:
-                    day = words[0].zfill(2) if words[0].isdigit() else ""
-                if len(words) > 1:
-                    month = words[1].upper()
-        return {"status": status, "date": entry.get("rdv_date"), "time": entry.get("rdv_time"),
-                "mode": entry.get("rdv_mode"), "url": entry.get("rdv_url") or entry.get("calendly_url"),
-                "name": entry.get("rdv_name") or "Rendez-vous t√©l√©phonique",
-                "host_name": entry.get("rdv_host_name") or "", "day": day, "month": month}
-    if status == "proposed":
-        return {"status": status}
-    return None
-
-
-def _secretariat_email_fallback(entry):
-    formation = _secretariat_formation_name(entry.get("formation"))
-    session = str(entry.get("formation_date_souhaitee") or "").strip()
-    paragraphs = [
-        (f"Vous souhaitez des renseignements concernant la formation {formation}, notamment pour la session {session}. Notre √©quipe v√©rifiera avec vous les disponibilit√©s et les pr√©requis applicables."
-         if session else f"Vous souhaitez des renseignements concernant la formation {formation}. Notre √©quipe vous aidera √† choisir la session adapt√©e et v√©rifiera avec vous les disponibilit√©s et les pr√©requis."),
-        "Vous trouverez ci-dessous vos rep√®res fiables et les actions concr√®tes pour avancer. Notre √©quipe reste disponible pour vous accompagner sans pr√©sumer de l‚Äôaccord d‚Äôun organisme financeur ou administratif.",
-    ]
-    financing = ""
-    cpf = _parse_cpf_value(entry.get("cpf_montant"))
-    price = PLAN_TARIFS.get(entry.get("formation"), 0)
-    if cpf and price and cpf >= price:
-        financing = "Votre montant CPF d√©clar√© couvre le tarif, sous r√©serve du solde r√©el disponible au moment de l‚Äôinscription."
-    elif cpf and price:
-        financing = f"Votre montant CPF d√©clar√© finance une partie du tarif ; le reste √† couvrir est de {price - cpf:,} ‚Ç¨ TTC.".replace(",", " ")
-    if _yes(entry.get("france_travail")):
-        ft_status = str(entry.get("france_travail_status") or "").lower().strip()
-        if ft_status in {"submitted", "transmitted", "transmise", "deposee", "d√©pos√©e"}:
-            wished = "Votre demande de financement aupr√®s de France Travail a √©t√© transmise ; sa d√©cision reste n√©cessaire."
-        elif ft_status in {"pending", "en_cours", "en attente"}:
-            wished = "Votre demande de financement France Travail est en cours d‚Äôinstruction par l‚Äôorganisme."
-        elif ft_status in {"approved", "accepted", "acceptee", "accept√©e"}:
-            wished = "Votre demande de financement France Travail est indiqu√©e comme accept√©e."
-        else:
-            wished = "Vous souhaitez √©tudier avec notre √©quipe la possibilit√© d‚Äôune demande de financement aupr√®s de France Travail."
-        financing = f"{financing} {wished}".strip()
-    cnaps = ""
-    formation_code = str(entry.get("formation") or "").strip().upper()
-    if formation_code in {"APS", "A3P"}:
-        cnaps_status = str(entry.get("cnaps_status") or "").lower().strip()
-        if cnaps_status in {"submitted", "transmitted", "transmise"}:
-            cnaps = "Votre demande d‚Äôautorisation pr√©alable CNAPS a √©t√© transmise. Notre √©quipe reste disponible pendant son instruction."
-        elif cnaps_status in {"approved", "accepted", "acceptee", "accept√©e"}:
-            cnaps = "Votre autorisation CNAPS est indiqu√©e comme accept√©e ; notre √©quipe v√©rifiera avec vous le justificatif n√©cessaire."
-        elif _yes(entry.get("cnaps_ok")):
-            cnaps = "Votre carte professionnelle est valide ; notre √©quipe v√©rifiera avec vous les justificatifs n√©cessaires."
-        else:
-            cnaps = f"Si vous ne disposez pas encore d‚Äôune carte professionnelle, l‚Äô√©tape attendue avant l‚Äôentr√©e en formation {formation_code} est l‚Äôautorisation pr√©alable CNAPS. Notre √©quipe vous accompagne dans cette d√©marche."
-    steps = ["Consulter le dossier de pr√©sentation et le planning."]
-    if session: steps.append("Confirmer avec notre √©quipe la session souhait√©e.")
-    if _yes(entry.get("cpf_consulte")): steps.append("V√©rifier que votre Identit√© Num√©rique La Poste est fonctionnelle avant toute inscription CPF.")
-    if formation_code in {"APS", "A3P"} and not _yes(entry.get("cnaps_ok")): steps.append("Pr√©parer avec notre √©quipe la d√©marche d‚Äôautorisation pr√©alable CNAPS.")
-    return {"summary_paragraphs": paragraphs, "financing_message": financing,
-            "cnaps_message": cnaps, "next_steps": steps[:4]}
-
-
-def _validate_secretariat_ai_content(raw, fallback, entry=None, prospect_first_name=""):
-    try:
-        value = json.loads(raw) if isinstance(raw, str) else raw
-        paragraphs = value.get("summary_paragraphs")
-        steps = value.get("next_steps")
-        if not isinstance(paragraphs, list) or not 2 <= len(paragraphs) <= 4 or not isinstance(steps, list):
-            raise ValueError("structure invalide")
-        forbidden = ("<", "bonjour", "cassandre menard", "le candidat", "la candidate",
-                     "le prospect", "la personne souhaite", "il souhaite", "elle souhaite",
-                     "il devra", "elle devra")
-        duplicate_introductions = ("merci pour le temps", "merci pour le temps consacr√©",
-                                   "lors de notre √©change", "notre √©change au sujet de")
-        clean_paragraphs = [str(p).strip() for p in paragraphs if str(p).strip()]
-        if not 2 <= len(clean_paragraphs) <= 4:
-            raise ValueError("nombre de paragraphes invalide")
-        if not clean_paragraphs[0].casefold().startswith("vous souhaitez des renseignements concernant la formation"):
-            raise ValueError("formulation de la demande invalide")
-        all_content = clean_paragraphs + [str(value.get("financing_message") or "").strip(),
-                                          str(value.get("cnaps_message") or "").strip()]
-        all_content += [str(step).strip() for step in steps]
-        if any(any(token in text.lower() for token in forbidden) for text in all_content):
-            raise ValueError("contenu interdit")
-        if any(any(token in text.casefold() for token in duplicate_introductions)
-               for text in clean_paragraphs):
-            raise ValueError("introduction r√©p√©t√©e")
-        first_name = str(prospect_first_name or "").strip()
-        if first_name and any(re.search(rf"(?<!\w){re.escape(first_name)}(?!\w)", text, re.I)
-                              for text in all_content):
-            raise ValueError("pr√©nom du destinataire interdit")
-        result = {"summary_paragraphs": clean_paragraphs,
-                "financing_message": str(value.get("financing_message") or "").strip(),
-                "cnaps_message": str(value.get("cnaps_message") or "").strip(),
-                "next_steps": [str(step).strip() for step in steps if str(step).strip()][:4]}
-        ft_status = str((entry or {}).get("france_travail_status") or "").lower().strip()
-        if not ft_status and re.search(r"(demande.{0,30}(transmise|d√©pos√©e|en cours|en attente|valid√©e|accept√©e))", result["financing_message"], re.I):
-            raise ValueError("statut France Travail non prouv√©")
-        formation_code = str((entry or {}).get("formation") or "").strip().upper()
-        if formation_code not in {"APS", "A3P"}:
-            result["cnaps_message"] = ""
-            result["next_steps"] = [step for step in result["next_steps"]
-                                    if not re.search(r"CNAPS|carte professionnelle", step, re.I)]
-        return result
-    except (ValueError, TypeError, json.JSONDecodeError, AttributeError):
-        return fallback
-
-
-def _secretariat_project_rows(entry, config):
-    rows = [("Formation", config["label"]), ("Session et centre", entry.get("formation_date_souhaitee"))]
-    if entry.get("cpf_montant"): rows.append(("Budget CPF d√©clar√©", f"{entry['cpf_montant']} ‚Ç¨"))
-    funding = []
-    if _yes(entry.get("france_travail")): funding.append("√©tude d‚Äôune possibilit√© de financement France Travail souhait√©e")
-    if _yes(entry.get("financement_perso")): funding.append("financement personnel possible")
-    if funding: rows.append(("Financement envisag√©", " ; ".join(funding)))
-    if _yes(entry.get("devis")): rows.append(("Devis", "Un devis a √©t√© demand√©"))
-    return [(label, value) for label, value in rows if str(value or "").strip()]
-
-
-def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-academy-logo"):
-    config = _secretariat_formation_config(entry.get("formation"))
-    fallback = _secretariat_email_fallback(entry)
-    facts = {key: entry.get(key, "") for key in ("formation_date_souhaitee", "formation_session_label", "formation_centre", "formation_date_examen", "devis", "rdv_status", "rdv_date", "rdv_time", "rdv_mode", "cpf_consulte", "cpf_montant", "france_travail", "france_travail_status", "ft_refus_ok", "financement_perso", "identite_numerique", "cnaps_ok", "cnaps_status", "notes")}
-    facts.update({"code": entry.get("formation"), "intitule": config.get("label"),
-                  "adresse_centre": config.get("location", ""), "tarif": config.get("price", ""),
-                  "duree": config.get("duration", ""),
-                  "objectif_certification": config.get("certification") or config.get("purpose", "")})
-    formation_code = str(entry.get("formation") or "").strip().upper()
-    if formation_code not in {"APS", "A3P"}:
-        facts = {key: value for key, value in facts.items() if key not in {"cnaps_ok", "cnaps_status"}}
-    system = """Tu produis uniquement un objet JSON valide avec summary_paragraphs (2 √† 3 paragraphes, 130 √† 220 mots au total), financing_message, cnaps_message et next_steps (2 √† 4 √©l√©ments). Fran√ßais naturel, professionnel, chaleureux et clair. Aucun HTML, Markdown, puce dans les paragraphes, salutation ou signature. Vous r√©digez un message adress√© directement au destinataire. Employez exclusivement vous, votre et vos. Ne mentionnez jamais son pr√©nom et ne parlez jamais de lui √† la troisi√®me personne. N'invente aucune information et utilise les notes uniquement comme source factuelle, sans reproduire de note interne. L‚Äôintroduction de remerciement est d√©j√† affich√©e avant votre texte. Ne la r√©p√©tez jamais. Le premier paragraphe doit commencer directement par ‚ÄúVous souhaitez des renseignements concernant la formation‚Ä¶‚Äù. Ne pr√©sente jamais la demande de renseignements comme un souhait de s‚Äôinscrire, d‚Äôint√©grer ou de suivre la formation. N‚Äôutilisez pas les expressions ‚ÄúMerci pour le temps‚Äù, ‚Äúlors de notre √©change‚Äù ou ‚Äúnotre √©change au sujet de‚Äù. Un souhait France Travail n'est jamais une demande d√©pos√©e, en cours ou valid√©e. Sans statut explicite, indiquez : ¬´ Vous souhaitez √©tudier avec notre √©quipe la possibilit√© d‚Äôune demande de financement aupr√®s de France Travail. ¬ª Le CNAPS est applicable uniquement aux formations APS et A3P : pour toute autre formation, renvoie une cha√Æne vide dans cnaps_message et n'ajoute aucune √©tape CNAPS ou carte professionnelle. Distingue absence de carte, autorisation pr√©alable, demande transmise, expiration et refus CNAPS. Ne r√©p√®te pas mot pour mot le tableau factuel."""
-    user = json.dumps({"code_formation": formation_code, "intitule_formation": config["label"],
-                       "faits_autorises": facts}, ensure_ascii=False)
-    first_name = _secretariat_display_first_name(entry.get("prenom") or contact.get("prenom") or str(entry.get("nom") or "").split(" ")[0])
-    try:
-        content = _validate_secretariat_ai_content(
-            _crm_ai(system, user, max_tokens=900), fallback, entry, first_name
-        )
-    except Exception as exc:
-        print("Compte rendu IA indisponible, fallback d√©terministe :", exc)
-        content = fallback
-    subject = f"Votre projet {config.get('short') or config['label']} ‚Äì le r√©sum√© de notre √©change"
-    context = dict(prenom=first_name, formation=config, entry=entry,
-                   content=content, project_rows=_secretariat_project_rows(entry, config), appointment=_secretariat_rdv(entry),
-                   upcoming_sessions=_secretariat_upcoming_session_groups(formation_code, entry.get("formation_date_souhaitee", "")),
-                   quote_url=entry.get("devis_url", ""), logo_src=logo_src, ai_url=SECRETARIAT_AI_URL)
-    html_body = render_template(
-        "emails/email_resume_echange_integrale.html",
-        **context
-    )
-    plain = render_template("emails/email_resume_echange_integrale.txt", **context)
-    return subject, plain, html_body
-
-
-def _secretariat_preview_data(scheduled=False):
-    return ({
-        "id": "preview-secretariat", "formation": "APS", "nom": "Cl√©ment Martin",
-        "email": "preview@example.invalid", "telephone": "0600000000",
-        "formation_date_souhaitee": "C√¥te d‚ÄôAzur ‚Äî du 7 septembre au 9 octobre 2026",
-        "cpf_consulte": "OUI", "cpf_montant": "2000", "france_travail": "OUI",
-        "financement_perso": "OUI", "identite_numerique": "OUI", "cnaps_ok": "NON",
-        "devis": "OUI", "rdv_status": "scheduled" if scheduled else "none",
-        "rdv_date": "15 septembre 2026" if scheduled else "", "rdv_time": "10:30" if scheduled else "",
-        "rdv_mode": "visioconf√©rence" if scheduled else "",
-    }, {"prenom": "Cl√©ment"})
-
-
-@app.route("/admin/secretariat/email-preview")
-@login_required
-def secretariat_email_preview():
-    entry, contact = _secretariat_preview_data(request.args.get("scenario") == "scheduled")
-    _, _, html_body = _build_secretariat_followup_email(
-        entry, contact, logo_src=url_for("static", filename="logo.png", _external=True)
-    )
-    return html_body
-
-
-@app.route("/api/admin/secretariat/email-preview/send", methods=["POST"])
-@login_required
-def send_secretariat_email_preview():
-    recipient = str((request.get_json(silent=True) or {}).get("email") or "").strip()
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient):
-        return jsonify({"ok": False, "error": "Adresse de test invalide"}), 400
-    entry, contact = _secretariat_preview_data(False)
-    subject, plain, html_body = _build_secretariat_followup_email(entry, contact)
-    if not send_email_html(recipient, f"[TEST] {subject}", plain, html_body):
-        return jsonify({"ok": False, "error": "√âchec de l‚Äôenvoi de test"}), 502
-    return jsonify({"ok": True})
-
-def _crm_no_answer_message(contact):
-    """Build the shared e-mail/SMS follow-up sent after an unanswered call."""
-    formation = str(contact.get("formation") or "votre formation").strip()
-    desp_type = str(contact.get("desp_type") or "").strip().upper()
-    formation_key = {
-        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP": "SSIAP",
-        "Chauffeur VTC": "VTC", "VTC": "VTC",
-    }.get(formation)
-    if formation == "DESP":
-        formation_key = "DESP_VAE" if desp_type == "VAE" else "DESP_INIT"
-    config = SECRETARIAT_FORMATIONS.get(formation_key, {})
-    full_name = PLAN_FORMATIONS.get(formation_key) or config.get("label") or config.get("short") or formation
-    calendly_url = config.get("calendly") or "https://calendly.com/integraleacademy/formation"
-    return (
-        "Bonjour,\n\n"
-        f"J‚Äôai tent√© de vous joindre concernant notre formation {full_name}, mais je n‚Äôai malheureusement pas r√©ussi √† vous joindre.\n\n"
-        "Vous pouvez nous rappeler au 04 22 47 07 68 afin que nous puissions vous pr√©senter notre formation en d√©tails et r√©pondre √† toutes vos questions. "
-        "Vous pouvez √©galement me contacter sur mon portable au 07 43 58 22 64.\n\n"
-        "Vous pouvez √©galement r√©server directement un cr√©neau t√©l√©phonique avec notre √©quipe en cliquant sur le lien suivant : "
-        f"{calendly_url}\n\n"
-        "Nous restons √† votre disposition et vous remercions par avance pour votre retour.\n\n"
-        "Bien cordialement,\n\nCassandre MENARD\nResponsable commerciale Int√©grale Academy"
-    )
-
-
-def _crm_named_template(data, kind, name):
-    """Return a message template by its user-facing name (case insensitive)."""
-    expected = str(name).strip().casefold()
-    return next((item for item in data.get(f"crm_{kind}_templates", [])
-                 if str(item.get("nom") or "").strip().casefold() == expected), None)
-
-
-CRM_QUICK_REMINDER_TEMPLATE = "Rappel dans 5min"
-
-
-def _crm_send_appointment_followup(data, contact, template_name):
-    """Send the e-mail and SMS bearing the configured appointment template name."""
-    delivery = {"sms": False, "email": False}
-    sms_template = _crm_named_template(data, "sms", template_name)
-    email_template = _crm_named_template(data, "email", template_name)
-    # Historical databases may not yet contain the newly named templates. Keep
-    # the existing missed-call follow-up operational until an administrator
-    # saves its custom versions in the library.
-    if template_name == "Pas de r√©ponse appel":
-        fallback = _crm_no_answer_message(contact)
-        sms_template = sms_template or {"contenu": fallback}
-        email_template = email_template or {
-            "sujet": f"Int√©grale Academy ‚Äî Votre formation {contact.get('formation') or ''}".strip(),
-            "contenu": fallback,
-        }
-    if sms_template and contact.get("telephone"):
-        sms_body = _crm_resolve_message_variables(
-            sms_template.get("contenu"), contact, data_store=data
-        )
-        delivery["sms"] = send_sms(contact.get("telephone"), sms_body)
-        if delivery["sms"]:
-            _crm_activity(contact, "sms", f"SMS ¬´ {template_name} ¬ª envoy√©", sms_body, sms_body)
-    if email_template and contact.get("mail"):
-        email_body = _crm_resolve_message_variables(
-            email_template.get("contenu"), contact, html=True, data_store=data
-        )
-        email_html = _crm_email_html(email_body, contact)
-        subject = _crm_resolve_message_variables(
-            email_template.get("sujet") or template_name, contact, data_store=data
-        )
-        plain = html_module.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", email_body))).strip()
-        delivery["email"] = _crm_send_email_html(
-            contact.get("mail"), subject, plain, email_html,
-            template=email_template,
-        )
-        if delivery["email"]:
-            _crm_activity(contact, "email", f"E-mail ¬´ {template_name} ¬ª envoy√©", subject, email_html)
-    return delivery
-
-
-def _crm_send_ft_refusal_messages(data, contact):
-    """Envoie les mod√®les e-mail et SMS lors d'un nouveau refus France Travail."""
-    if has_app_context():
-        return _crm_send_appointment_followup(data, contact, "FT refus√©")
-    with app.app_context():
-        return _crm_send_appointment_followup(data, contact, "FT refus√©")
-
-
-def _crm_ai(system_prompt, user_prompt, max_tokens=500):
-    """Single, testable entry point for the CRM writing assistants."""
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY non configur√©e")
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=20)
-    response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        messages=[{"role": "system", "content": system_prompt},
-                  {"role": "user", "content": user_prompt}],
-        temperature=0.2, max_tokens=max_tokens,
-    )
-    result = (response.choices[0].message.content or "").strip()
-    if not result:
-        raise ValueError("R√©ponse vide du service IA")
-    return result
-
-
-def _candidate_ai_content(response, allow_markdown=False):
-    choices = getattr(response, "choices", None)
-    if not choices:
-        raise CandidateAIResponseError("empty_response")
-    choice = choices[0]
-    if getattr(choice, "finish_reason", None) == "length":
-        raise CandidateAIResponseError("truncated_response", "L‚Äôanalyse g√©n√©r√©e √©tait incompl√®te. Veuillez r√©essayer.")
-    message = getattr(choice, "message", None)
-    if message is None:
-        raise CandidateAIResponseError("empty_response")
-    if getattr(message, "refusal", None):
-        raise CandidateAIResponseError("model_refusal")
-    content = (getattr(message, "content", None) or "").strip()
-    if not content:
-        raise CandidateAIResponseError("empty_response")
-    if allow_markdown:
-        content = re.sub(r"^\s*```(?:json)?\s*", "", content, count=1, flags=re.I)
-        content = re.sub(r"\s*```\s*$", "", content, count=1).strip()
-        start, end = content.find("{"), content.rfind("}")
-        if start < 0 or end < start:
-            raise CandidateAIResponseError("invalid_json")
-        content = content[start:end + 1]
-    return content
-
-
-def _json_schema_unsupported(exc):
-    """N'autorise le repli que pour le 400 explicite du fournisseur."""
-    if getattr(exc, "status_code", None) != 400:
-        return False
-    provider_text = " ".join(str(value) for value in (
-        getattr(exc, "message", ""), getattr(exc, "body", ""), exc))
-    lowered = provider_text.lower()
-    return "json_schema" in lowered and any(marker in lowered for marker in (
-        "not supported", "does not support", "unsupported", "n'est pas pris en charge"))
-
-
-def _crm_ai_structured(system_prompt, user_prompt):
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY non configur√©e")
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=20)
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    common = {"model": model, "messages": [{"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}], "temperature": 0.2, "max_tokens": 1600}
-    structured_format = {"type": "json_schema", "json_schema": {
-        "name": "candidate_ai_analysis", "strict": True, "schema": CANDIDATE_AI_RESPONSE_SCHEMA}}
-    try:
-        response = client.chat.completions.create(**common, response_format=structured_format)
-        content = _candidate_ai_content(response)
-    except Exception as exc:
-        if not _json_schema_unsupported(exc):
-            raise
-        response = client.chat.completions.create(**common, response_format={"type": "json_object"})
-        content = _candidate_ai_content(response, allow_markdown=True)
-    try:
-        decoded = json.loads(content)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise CandidateAIResponseError("invalid_json") from exc
-    return validate_candidate_ai_analysis(decoded)
-
-
-_CRM_AI_ANALYSIS_LOCKS = {}
-_CRM_AI_ANALYSIS_LOCKS_GUARD = threading.Lock()
-
-
-def build_candidate_ai_context(contact_id, data=None, now=None, *, fetch_live_vae=True):
-    data = data or load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        raise KeyError(contact_id)
-    try:
-        wedof = _wedof_contact_resources(contact_id, data)
-    except Exception:
-        wedof = []
-    vae_tracking = None
-    if (fetch_live_vae
-            and str(contact.get("formation") or "").strip().upper() == "DESP"
-            and str(contact.get("desp_type") or "").strip().upper() == "VAE"):
-        try:
-            from crm_cnaps_tracking import proxy_reglementaire
-            remote = proxy_reglementaire(app, contact, http_get=requests.get, http_post=requests.post)
-            response = remote[0] if isinstance(remote, tuple) else remote
-            status = remote[1] if isinstance(remote, tuple) else response.status_code
-            payload = response.get_json(silent=True) if status == 200 else None
-            vae_tracking = payload.get("vae") if isinstance(payload, dict) else None
-        except Exception as exc:
-            # L'indisponibilit√© du SI stagiaires ne doit pas bloquer toute l'analyse.
-            app.logger.warning("Suivi VAE indisponible pour l'analyse IA (%s)", type(exc).__name__)
-            vae_tracking = None
-    return _build_candidate_ai_context(
-        contact, data, calculate_candidate_integration_score(
-            contact, data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))),
-        wedof, now, vae_tracking)
-
-
-def generate_candidate_ai_analysis(context):
-    """G√©n√®re une sortie structur√©e puis conserve la validation m√©tier locale."""
-    user_message = json.dumps({"candidate_context": context}, ensure_ascii=False)
-    model_result = _crm_ai_structured(AI_CANDIDATE_SYSTEM_PROMPT, user_message)
-    return finalize_candidate_ai_analysis(model_result, context)
-
-
-def get_candidate_ai_analysis_state(contact_id, data=None):
-    data = data or load_data()
-    stored = data.get("crm_ai_candidate_analyses", {}).get(contact_id)
-    enabled = bool(os.getenv("OPENAI_API_KEY"))
-    if not stored:
-        return {"enabled": enabled, "status": "never_generated" if enabled else "unavailable",
-            "stale": False, "result": None,
-            "message": None if enabled else "Analyse IA indisponible : la configuration du service IA est manquante."}
-    # L'affichage d'une analyse existante ne doit jamais d√©clencher un appel
-    # vers Gestion Stagiaires. Les donn√©es r√©glementaires d√©j√† enregistr√©es
-    # dans le CRM suffisent √† d√©terminer si l'analyse locale est p√©rim√©e.
-    stale = (stored.get("source_hash") != compute_candidate_ai_source_hash(
-        build_candidate_ai_context(contact_id, data, fetch_live_vae=False))
-             or stored.get("analysis_version") != AI_CANDIDATE_ANALYSIS_VERSION
-             or stored.get("prompt_version") != AI_CANDIDATE_PROMPT_VERSION)
-    return {"enabled": enabled, "status": "stale" if stale else "fresh", "stale": stale,
-        "generated_at": stored.get("generated_at"), "generated_by": stored.get("generated_by_name"),
-        "analysis_version": stored.get("analysis_version"), "prompt_version": stored.get("prompt_version"),
-        "result": stored.get("result"), "message": stored.get("last_error")}
-
-
-def _gestion_stagiaires_payload(contact):
-    """Contrat JSON envoy√© √† l'application Gestion stagiaires."""
-    from crm_cnaps_tracking import crm_contact_identity
-    return {
-        "source": "integrale-connect-crm", "crm_contact_id": contact["id"],
-        **crm_contact_identity(contact),
-        "formation": contact.get("formation", ""), "parcours": contact.get("desp_type", ""),
-        "centre": contact.get("lieu", ""), "session": contact.get("dates_formation", ""),
-        "commentaires": contact.get("commentaires", ""),
-    }
-
-
-# --------------- WEDOF (cache local en lecture seule) ---------------
-class WedofAPIError(RuntimeError):
-    """Erreur WEDOF dont le message peut √™tre retourn√© sans divulguer la cl√©."""
-
-    def __init__(self, message, status_code=None):
-        super().__init__(message)
-        self.status_code = status_code
-
-
-_WEDOF_SYNC_LOCK = threading.Lock()
-_WEDOF_POLLER_STARTED = False
-_WEDOF_POLLER_STOP = threading.Event()
-_WEDOF_FUNDING_CACHE_LOCK = threading.RLock()
-_WEDOF_FUNDING_CACHE_KEY = None
-_WEDOF_FUNDING_CACHE_VALUE = None
-_WEDOF_CPF_STATE_CACHE_VALUE = {}
-_WEDOF_FUNDING_CACHE_AT = 0.0
-WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS = 30 * 60
-WEDOF_CONTACT_REFRESH_LOCK_SECONDS = 2 * 60
-WEDOF_CONTACT_REFRESH_RETRY_SECONDS = 5 * 60
-
-
-def _wedof_db_path():
-    """Place le cache √† c√¥t√© de data.json, sauf surcharge explicite."""
-    return os.getenv("WEDOF_DB_PATH") or os.path.join(
-        os.path.dirname(DATA_FILE) or ".", "wedof.sqlite3"
-    )
-
-
-def _wedof_db_signature():
-    """Track both SQLite and its WAL because synchronisation runs in WAL mode."""
-    path = os.path.abspath(_wedof_db_path())
-    signature = [path]
-    for candidate in (path, f"{path}-wal"):
-        try:
-            stat = os.stat(candidate)
-            signature.append((stat.st_ino, stat.st_size, stat.st_mtime_ns))
-        except OSError:
-            signature.append(None)
-    return tuple(signature)
-
-
-def _wedof_connect():
-    path = _wedof_db_path()
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    connection = sqlite3.connect(path, timeout=10)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 10000")
-    connection.execute("PRAGMA journal_mode = WAL")
-    connection.execute("PRAGMA foreign_keys = ON")
-    connection.executescript("""
-        CREATE TABLE IF NOT EXISTS wedof_resources (
-            resource_type TEXT NOT NULL,
-            stable_id TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
-            remote_date TEXT,
-            synced_at TEXT NOT NULL,
-            PRIMARY KEY (resource_type, stable_id)
-        );
-        CREATE TABLE IF NOT EXISTS wedof_contact_links (
-            contact_id TEXT NOT NULL,
-            resource_type TEXT NOT NULL,
-            resource_id TEXT NOT NULL,
-            attendee_id TEXT,
-            match_method TEXT NOT NULL,
-            linked_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (resource_type, resource_id),
-            FOREIGN KEY (resource_type, resource_id)
-                REFERENCES wedof_resources(resource_type, stable_id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_wedof_links_contact
-            ON wedof_contact_links(contact_id);
-        CREATE TABLE IF NOT EXISTS wedof_sync_state (
-            sync_key TEXT PRIMARY KEY,
-            value_json TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS wedof_webhook_deliveries (
-            delivery_id TEXT PRIMARY KEY,
-            processed_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS wedof_contact_refresh_state (
-            resource_type TEXT NOT NULL,
-            resource_id TEXT NOT NULL,
-            last_attempt_at REAL NOT NULL DEFAULT 0,
-            last_success_at REAL NOT NULL DEFAULT 0,
-            last_error TEXT NOT NULL DEFAULT '',
-            lease_token TEXT NOT NULL DEFAULT '',
-            lease_expires_at REAL NOT NULL DEFAULT 0,
-            PRIMARY KEY (resource_type, resource_id)
-        );
-    """)
-    connection.commit()
-    return connection
-
-
-def _wedof_now():
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-
-
-def _wedof_resource_age_seconds(resource):
-    """Retourne l'√¢ge du cache d'un dossier, ou ``None`` si la date est illisible."""
-    value = str((resource or {}).get("synced_at") or "").strip()
-    if not value:
-        return None
-    try:
-        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
-    return max(0.0, time.time() - parsed.timestamp())
-
-
-def _wedof_begin_contact_refresh(resource_id, *, automatic):
-    """Prend un bail SQLite partag√© par tous les workers CRM.
-
-    Le compteur central prot√®ge le quota entre applications. Ce bail plus fin
-    √©vite en compl√©ment que deux onglets ou workers relisent simultan√©ment le
-    m√™me dossier. Apr√®s un √©chec automatique, un court d√©lai emp√™che une rafale
-    de nouvelles tentatives √† chaque ouverture de fiche.
-    """
-    now = time.time()
-    token = uuid.uuid4().hex
-    with _wedof_connect() as db:
-        db.execute("BEGIN IMMEDIATE")
-        row = db.execute("""
-            SELECT last_attempt_at, last_error, lease_expires_at
-            FROM wedof_contact_refresh_state
-            WHERE resource_type='registrationFolder' AND resource_id=?
-        """, (resource_id,)).fetchone()
-        if row and float(row["lease_expires_at"] or 0) > now:
-            return {"acquired": False, "reason": "refresh_in_progress"}
-        if (automatic and row and str(row["last_error"] or "")
-                and now - float(row["last_attempt_at"] or 0)
-                < WEDOF_CONTACT_REFRESH_RETRY_SECONDS):
-            retry_after = max(
-                1,
-                int(WEDOF_CONTACT_REFRESH_RETRY_SECONDS
-                    - (now - float(row["last_attempt_at"] or 0))),
-            )
-            return {
-                "acquired": False,
-                "reason": "retry_cooldown",
-                "retry_after_seconds": retry_after,
-            }
-        db.execute("""
-            INSERT INTO wedof_contact_refresh_state
-                (resource_type, resource_id, last_attempt_at, last_error,
-                 lease_token, lease_expires_at)
-            VALUES ('registrationFolder', ?, ?, 'refresh_in_progress', ?, ?)
-            ON CONFLICT(resource_type, resource_id) DO UPDATE SET
-                last_attempt_at=excluded.last_attempt_at,
-                last_error=excluded.last_error,
-                lease_token=excluded.lease_token,
-                lease_expires_at=excluded.lease_expires_at
-        """, (
-            resource_id, now, token,
-            now + WEDOF_CONTACT_REFRESH_LOCK_SECONDS,
-        ))
-    return {"acquired": True, "token": token}
-
-
-def _wedof_finish_contact_refresh(resource_id, token, *, error=""):
-    """Lib√®re le bail et m√©morise le succ√®s ou l'√©chec de la tentative."""
-    clean_error = _wedof_clean(error) if error else ""
-    now = time.time()
-    with _wedof_connect() as db:
-        db.execute("""
-            UPDATE wedof_contact_refresh_state
-            SET lease_token='', lease_expires_at=0,
-                last_success_at=CASE WHEN ?='' THEN ? ELSE last_success_at END,
-                last_error=?
-            WHERE resource_type='registrationFolder' AND resource_id=?
-              AND lease_token=?
-        """, (clean_error, now, clean_error, resource_id, token))
-
-
-def _wedof_cancel_contact_refresh(resource_id, token):
-    """Lib√®re un bail devenu inutile sans enregistrer un faux succ√®s."""
-    with _wedof_connect() as db:
-        db.execute("""
-            UPDATE wedof_contact_refresh_state
-            SET lease_token='', lease_expires_at=0, last_error=''
-            WHERE resource_type='registrationFolder' AND resource_id=?
-              AND lease_token=?
-        """, (resource_id, token))
-
-
-def _wedof_clean(value):
-    """Retire la cl√© de tout message provenant du r√©seau ou d'une exception."""
-    text = str(value or "")
-    secret = os.getenv("WEDOF_API_KEY", "")
-    if secret:
-        text = text.replace(secret, "[REDACTED]")
-    text = re.sub(r"(?i)(x-api-key\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]", text)
-    return text[:500]
-
-
-def _wedof_request_operation(path):
-    normalized = re.sub(
-        r"(/registrationFolders/)[^/]+", r"\1:id", str(path or ""),
-    )
-    if normalized.rstrip("/").endswith("/registrationFolders"):
-        return "list_registration_folders"
-    if "/registrationFolders/:id" in normalized:
-        return "get_registration_folder"
-    if normalized.rstrip("/").endswith("/organisms/me"):
-        return "get_current_organism"
-    return "get_wedof_resource"
-
-
-def _wedof_request(path, *, params=None, operation=None, retry_budget=None):
-    key = os.getenv("WEDOF_API_KEY", "").strip()
-    if not key:
-        raise WedofAPIError("WEDOF_API_KEY non configur√©e")
-    base_url = os.getenv("WEDOF_BASE_URL", "https://www.wedof.fr").rstrip("/")
-    timeout = float(os.getenv("WEDOF_TIMEOUT", "15"))
-    retries = (
-        max(0, min(int(os.getenv("WEDOF_GET_RETRIES", "2")), 5))
-        if retry_budget is None
-        else max(0, min(int(retry_budget), 5))
-    )
-    headers = {
-        "X-Api-Key": key,
-        "Accept": "application/json",
-        "User-Agent": "IntegraleAcademy-CRM/2026.08",
-        "X-Integrale-Application": "crm",
-    }
-    for attempt in range(retries + 1):
-        try:
-            try:
-                reserve_wedof_request(
-                    operation=operation or _wedof_request_operation(path),
-                    method="GET",
-                    path=re.sub(
-                        r"(/registrationFolders/)[^/]+", r"\1:id", str(path),
-                    ),
-                )
-            except WedofQuotaExceeded as exc:
-                raise WedofAPIError(str(exc), 429) from exc
-            except WedofGovernorError as exc:
-                raise WedofAPIError(str(exc), 503) from exc
-            response = requests.get(
-                f"{base_url}/{path.lstrip('/')}", headers=headers,
-                params=params, timeout=timeout,
-            )
-            if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < retries:
-                time.sleep(min(0.25 * (2 ** attempt), 1.0))
-                continue
-            if not 200 <= response.status_code < 300:
-                raise WedofAPIError(
-                    f"WEDOF a r√©pondu avec le statut {response.status_code}.",
-                    response.status_code,
-                )
-            try:
-                return response.json(), response.headers
-            except (ValueError, json.JSONDecodeError):
-                raise WedofAPIError("WEDOF a retourn√© une r√©ponse JSON invalide.")
-        except WedofAPIError:
-            raise
-        except requests.RequestException as exc:
-            if attempt < retries:
-                time.sleep(min(0.25 * (2 ** attempt), 1.0))
-                continue
-            raise WedofAPIError(f"Connexion √† WEDOF impossible : {_wedof_clean(exc)}")
-
-
-def _wedof_items(payload):
-    if isinstance(payload, list):
-        return payload
-    if isinstance(payload, dict):
-        for key in ("items", "resources", "data", "registrationFolders"):
-            if isinstance(payload.get(key), list):
-                return payload[key]
-    raise WedofAPIError("Format de liste WEDOF inattendu.")
-
-
-def _wedof_attendee_values(folder):
-    attendee = folder.get("attendee") if isinstance(folder.get("attendee"), dict) else {}
-    emails = {
-        _crm_normalize_email(attendee.get(key))
-        for key in ("email", "mail", "emailAddress")
-        if _crm_normalize_email(attendee.get(key))
-    }
-    phones = {
-        _crm_normalize_phone(attendee.get(key))
-        for key in ("phone", "telephone", "mobile", "phoneNumber")
-        if _crm_normalize_phone(attendee.get(key))
-    }
-    attendee_id = attendee.get("externalId") or attendee.get("id")
-    return emails, phones, str(attendee_id or "")
-
-
-def _wedof_normalize_name(value):
-    """Return an accent-insensitive identity value for WEDOF matching."""
-    decomposed = unicodedata.normalize("NFKD", str(value or "").strip())
-    without_accents = "".join(
-        character for character in decomposed
-        if not unicodedata.combining(character)
-    )
-    return re.sub(r"[^\w]+", " ", without_accents, flags=re.UNICODE).strip().casefold()
-
-
-def _wedof_attendee_name(folder):
-    attendee = folder.get("attendee") if isinstance(folder.get("attendee"), dict) else {}
-    first_name = next((attendee.get(key) for key in (
-        "firstName", "firstname", "first_name", "givenName"
-    ) if attendee.get(key)), "")
-    last_name = next((attendee.get(key) for key in (
-        "lastName", "lastname", "last_name", "familyName"
-    ) if attendee.get(key)), "")
-    return _wedof_normalize_name(first_name), _wedof_normalize_name(last_name)
-
-
-_CRM_WEDOF_FORMATIONS = {"APS", "A3P", "DESP", "SSIAP 1", "Chauffeur VTC"}
-_CRM_WEDOF_CENTRES = {
-    "cote_azur": "C√¥te d‚ÄôAzur",
-    "auvergne": "Auvergne",
-    "paris": "Paris",
-}
-_FRENCH_MONTH_NAMES = (
-    "janvier", "f√©vrier", "mars", "avril", "mai", "juin",
-    "juillet", "ao√ªt", "septembre", "octobre", "novembre", "d√©cembre",
-)
-
-
-def _wedof_value(payload, *paths):
-    """Return the first non-empty value from dotted WEDOF payload paths."""
-    for path in paths:
-        value = payload
-        for key in path.split("."):
-            if not isinstance(value, dict):
-                value = None
-                break
-            value = value.get(key)
-        if value not in (None, ""):
-            return value
-    return ""
-
-
-def _wedof_location_text(value):
-    """Flatten the usual WEDOF address variants into searchable text."""
-    if isinstance(value, (list, tuple)):
-        parts = [_wedof_location_text(item) for item in value]
-        return ", ".join(part for part in parts if part)
-    if not isinstance(value, dict):
-        return str(value or "").strip()
-
-    preferred_keys = (
-        "name", "label", "city", "locality", "addressLocality", "town",
-        "postalCode", "zipCode", "postcode", "streetAddress", "address",
-        "fullAddress",
-    )
-    parts = []
-    for key in preferred_keys:
-        part = _wedof_location_text(value.get(key))
-        if part and part not in parts:
-            parts.append(part)
-    return ", ".join(parts)
-
-
-def _wedof_crm_training(title):
-    """Translate a commercial CPF title to the finite CRM formation values."""
-    original = str(title or "").strip()
-    normalized = _wedof_normalize_name(original)
-    if (re.search(r"\bdesp\b", normalized)
-            or "dirigeant d entreprise de securite" in normalized
-            or "cqp dirigeant" in normalized):
-        is_vae = "vae" in normalized or "validation des acquis" in normalized
-        return "DESP", "VAE" if is_vae else "INITIAL"
-    if (re.search(r"\ba3p\b", normalized)
-            or "agent de protection physique des personnes" in normalized):
-        return "A3P", ""
-    if (re.search(r"\bssiap\s*1\b", normalized)
-            or "service de securite incendie et d assistance a personnes 1" in normalized):
-        return "SSIAP 1", ""
-    if re.search(r"\bvtc\b", normalized) or "chauffeur vtc" in normalized:
-        return "Chauffeur VTC", ""
-    if (re.search(r"\baps\b", normalized)
-            or "agent de prevention et de securite" in normalized):
-        return "APS", ""
-    return original, ""
-
-
-def _wedof_date(value):
-    if isinstance(value, datetime.datetime):
-        return value.date()
-    if isinstance(value, datetime.date):
-        return value
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.date.fromisoformat(text[:10])
-    except ValueError:
-        pass
-    for date_format in ("%d/%m/%Y", "%d-%m-%Y"):
-        try:
-            return datetime.datetime.strptime(text[:10], date_format).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _wedof_date_range_label(start, end):
-    if not start and not end:
-        return ""
-    if not start:
-        return f"Jusqu‚Äôau {end.day} {_FRENCH_MONTH_NAMES[end.month - 1]} {end.year}"
-    if not end:
-        return f"√Ä partir du {start.day} {_FRENCH_MONTH_NAMES[start.month - 1]} {start.year}"
-    start_month = _FRENCH_MONTH_NAMES[start.month - 1]
-    end_month = _FRENCH_MONTH_NAMES[end.month - 1]
-    if start.year == end.year and start.month == end.month:
-        return f"Du {start.day} au {end.day} {end_month} {end.year}"
-    if start.year == end.year:
-        return f"Du {start.day} {start_month} au {end.day} {end_month} {end.year}"
-    return (
-        f"Du {start.day} {start_month} {start.year} "
-        f"au {end.day} {end_month} {end.year}"
-    )
-
-
-def _wedof_crm_centre_code(location):
-    normalized = _wedof_normalize_name(_wedof_location_text(location))
-    if any(marker in normalized for marker in (
-        "cote d azur", "puget sur argens", "frejus", "83480", " var",
-    )):
-        return "cote_azur"
-    if any(marker in normalized for marker in (
-        "auvergne", "aurillac", "arpajon sur cere", "cantal",
-    )):
-        return "auvergne"
-    if "paris" in normalized or "ile de france" in normalized:
-        return "paris"
-    return ""
-
-
-def _wedof_session_code(formation, desp_type):
-    if formation == "DESP":
-        return "DESP_VAE" if desp_type == "VAE" else "DESP_INIT"
-    return {
-        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP",
-        "Chauffeur VTC": "VTC",
-    }.get(formation, "")
-
-
-def _wedof_crm_session(data, formation, desp_type, raw_location, start, end):
-    """Resolve WEDOF dates/address to the exact selectable CRM session."""
-    centre_code = _wedof_crm_centre_code(raw_location)
-    session_code = _wedof_session_code(formation, desp_type)
-    candidates = []
-    if session_code and (start or end):
-        for candidate_centre, formations in get_formation_sessions(data).items():
-            for row in formations.get(session_code, []):
-                label = str(row.get("label") or "").strip()
-                row_start, row_end = _session_date_range(label)
-                if not label:
-                    continue
-                if start and row_start != start:
-                    continue
-                if end and row_end != end:
-                    continue
-                candidates.append((candidate_centre, label))
-
-    # The address wins when the same dates exist at several campuses.
-    if centre_code:
-        same_centre = [candidate for candidate in candidates if candidate[0] == centre_code]
-        candidates = same_centre or []
-    unique_candidates = list(dict.fromkeys(candidates))
-    if len(unique_candidates) == 1:
-        centre_code, session_label = unique_candidates[0]
-    else:
-        session_label = _wedof_date_range_label(start, end)
-
-    location = _CRM_WEDOF_CENTRES.get(
-        centre_code, _wedof_location_text(raw_location)
-    )
-    return location, session_label
-
-
-def _wedof_contact_payload(folder, data=None):
-    """Extrait les informations utiles √† une piste sans alt√©rer le JSON WEDOF."""
-    attendee = _wedof_value(folder, "attendee", "learner", "trainee")
-    attendee = attendee if isinstance(attendee, dict) else {}
-    first_name = next((attendee.get(key) for key in (
-        "firstName", "firstname", "first_name", "givenName"
-    ) if attendee.get(key)), "")
-    last_name = next((attendee.get(key) for key in (
-        "lastName", "lastname", "last_name", "familyName"
-    ) if attendee.get(key)), "")
-    email = next((attendee.get(key) for key in (
-        "email", "mail", "emailAddress"
-    ) if attendee.get(key)), "")
-    phone = next((attendee.get(key) for key in (
-        "phoneNumber", "phone", "telephone", "mobile"
-    ) if attendee.get(key)), "")
-    raw_formation = _wedof_value(
-        folder, "trainingActionInfo.title", "training.title",
-        "trainingAction.title", "trainingTitle", "title",
-    )
-    formation, desp_type = _wedof_crm_training(raw_formation)
-    raw_location = _wedof_value(
-        folder, "trainingActionInfo.address", "trainingActionInfo.location",
-        "training.address", "training.location", "location.name", "location",
-        "session.location", "session.address",
-    )
-    start = _wedof_date(_wedof_value(
-        folder, "trainingActionInfo.sessionStartDate", "session.startDate",
-        "session.start", "startDate",
-    ))
-    end = _wedof_date(_wedof_value(
-        folder, "trainingActionInfo.sessionEndDate", "session.endDate",
-        "session.end", "endDate",
-    ))
-    location, dates = _wedof_crm_session(
-        data, formation, desp_type, raw_location, start, end,
-    )
-    stable_id = str(folder.get("externalId") or "").strip()
-    return {
-        "prenom": str(first_name or "").strip(),
-        "nom": str(last_name or "").strip(),
-        "mail": str(email or "").strip(),
-        "telephone": str(phone or "").strip(),
-        "formation": str(formation or "").strip(),
-        "desp_type": desp_type,
-        "lieu": str(location or "").strip(),
-        "dates_formation": dates,
-        "cpf": "OUI",
-        "commentaire": f"Demande CPF re√ßue via WEDOF ¬∑ dossier {stable_id}",
-    }
-
-
-def _wedof_has_usable_identity(payload):
-    """Emp√™che la cr√©ation d'une piste vide si WEDOF omet l'identit√©."""
-    return bool(
-        _crm_normalize_email(payload.get("mail"))
-        or _crm_normalize_phone(payload.get("telephone"))
-        or (
-            _crm_normalize_name(payload.get("prenom"))
-            and _crm_normalize_name(payload.get("nom"))
-        )
-    )
-
-
-WEDOF_CPF_LEAD_START_DATE = datetime.date(2026, 8, 12)
-
-
-def _wedof_folder_creation_date(folder):
-    """Retourne la date de cr√©ation WEDOF, sans utiliser une date de mise √† jour."""
-    raw_value = next((folder.get(key) for key in (
-        "createdAt", "createdOn", "dateCreated", "creationDate",
-    ) if folder.get(key)), None)
-    if not raw_value:
-        return None
-    try:
-        return datetime.date.fromisoformat(str(raw_value).strip()[:10])
-    except (TypeError, ValueError):
-        return None
-
-
-def _wedof_is_open_cpf_request(folder):
-    """Autorise uniquement les nouveaux dossiers CPF re√ßus depuis le 12/08/2026."""
-    folder_type = re.sub(
-        r"[^a-z0-9]", "", unicodedata.normalize(
-            "NFD", str(folder.get("type") or "")
-        ).encode("ascii", "ignore").decode().lower(),
-    )
-    created_on = _wedof_folder_creation_date(folder)
-    if folder_type != "cpf" or created_on is None:
-        return False
-    if created_on < WEDOF_CPF_LEAD_START_DATE:
-        return False
-
-    state = re.sub(
-        r"[^a-z0-9]", "",
-        unicodedata.normalize("NFD", str(
-            folder.get("state") or folder.get("status")
-            or folder.get("registrationState") or ""
-        )).encode("ascii", "ignore").decode().lower(),
-    )
-    terminal_states = {
-        "intraining", "terminated", "servicedonedeclared",
-        "servicedonevalidated", "notbillable", "tobill", "billed", "paid",
-        "cancelled", "canceled", "refused", "rejected", "abandoned",
-    }
-    if state in terminal_states:
-        return False
-    session_end = _wedof_value(
-        folder, "trainingActionInfo.sessionEndDate", "session.endDate",
-        "session.end", "endDate",
-    )
-    if session_end:
-        try:
-            end_date = datetime.date.fromisoformat(str(session_end).strip()[:10])
-            if end_date < datetime.datetime.now(pytz.timezone("Europe/Paris")).date():
-                return False
-        except ValueError:
-            pass
-    return True
-
-
-def _wedof_is_cpf_folder(folder):
-    """Indique si le dossier WEDOF provient de Mon Compte Formation."""
-    folder_type = unicodedata.normalize(
-        "NFD", str(folder.get("type") or "")
-    ).encode("ascii", "ignore").decode().casefold()
-    return re.sub(r"[^a-z0-9]", "", folder_type) == "cpf"
-
-
-def _wedof_activity(contact, title, detail):
-    """Ajoute une activit√© utilisable aussi hors d'un contexte de requ√™te Flask."""
-    contact.setdefault("activities", []).insert(0, {
-        "id": str(uuid.uuid4()), "date": _crm_now(), "kind": "inbound_request",
-        "title": title, "detail": detail, "preview": "",
-        "author": "Automatisation WEDOF",
-    })
-
-
-def _wedof_new_crm_contact(data, payload, stable_id):
-    """Construit une piste CRM compl√®te √† partir d'une demande Mon Compte Formation."""
-    now = _crm_now()
-    contact = {
-        "id": str(uuid.uuid4()),
-        "prenom": _crm_format_first_name(payload.get("prenom")),
-        "nom": _crm_format_last_name(payload.get("nom")),
-        "telephone": str(payload.get("telephone") or "").strip(),
-        "mail": str(payload.get("mail") or "").strip(),
-        "formation": str(payload.get("formation") or "").strip(),
-        "lieu": str(payload.get("lieu") or "").strip(),
-        "statut": next((status for status in _crm_statuses(data)
-                         if status not in CRM_RESERVED_STATUSES), "Nouveaux"),
-        "dates_formation": str(payload.get("dates_formation") or "").strip(),
-        "cpf": "OUI", "cpf_montant": "", "carte_pro": "",
-        "antecedents": "", "garde_vue": "", "titre_sejour": "",
-        "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_username": "",
-        "cnaps_birth_year": "", "cnaps_password": "", "integration_dracar": "",
-        "desp_type": str(payload.get("desp_type") or "").strip(),
-        "identite_creation": "", "identite_ok": "", "financement_ft": "",
-        "statut_demande_financement_ft": "", "montant_accorde_ft": "",
-        "financement_perso_possible": "", "refus_ft_perso": "",
-        "reste_a_charge_perso": "", "inscrit_ft": "", "relance_date": "",
-        "statut_secondaire": "", "origine": "Mon Compte Formation",
-        "commentaires": f"Demande CPF re√ßue automatiquement via WEDOF ¬∑ dossier {stable_id}.",
-        "created_at": now, "updated_at": now, "activities": [],
-        "source": "wedof_cpf", "source_wedof_folder_id": stable_id,
-    }
-    _wedof_activity(
-        contact,
-        "Piste cr√©√©e depuis Mon Compte Formation",
-        f"Dossier CPF {stable_id} synchronis√© automatiquement via WEDOF.",
-    )
-    return contact
-
-
-def _wedof_apply_contact_details(contact, payload):
-    """Fill or repair CRM-select values from an already linked CPF folder."""
-    changed_fields = []
-    source_is_wedof = contact.get("source") == "wedof_cpf"
-
-    incoming_formation = str(payload.get("formation") or "").strip()
-    current_formation = str(contact.get("formation") or "").strip()
-    if (incoming_formation in _CRM_WEDOF_FORMATIONS
-            and (_crm_is_empty(current_formation)
-                 or (source_is_wedof
-                     and current_formation not in _CRM_WEDOF_FORMATIONS))):
-        contact["formation"] = incoming_formation
-        current_formation = incoming_formation
-        changed_fields.append("formation")
-
-    incoming_desp_type = str(payload.get("desp_type") or "").strip()
-    current_desp_type = str(contact.get("desp_type") or "").strip()
-    if (current_formation == "DESP" and incoming_desp_type in {"INITIAL", "VAE"}
-            and (_crm_is_empty(current_desp_type)
-                 or (source_is_wedof
-                     and current_desp_type not in {"INITIAL", "VAE"}))):
-        contact["desp_type"] = incoming_desp_type
-        changed_fields.append("parcours DESP")
-
-    incoming_location = str(payload.get("lieu") or "").strip()
-    current_location = str(contact.get("lieu") or "").strip()
-    canonical_locations = set(_CRM_WEDOF_CENTRES.values())
-    if (incoming_location
-            and (_crm_is_empty(current_location)
-                 or (source_is_wedof
-                     and incoming_location in canonical_locations
-                     and current_location not in canonical_locations))):
-        contact["lieu"] = incoming_location
-        changed_fields.append("lieu")
-
-    incoming_dates = str(payload.get("dates_formation") or "").strip()
-    current_dates = str(contact.get("dates_formation") or "").strip()
-    legacy_machine_dates = bool(
-        re.search(r"\d{4}-\d{2}-\d{2}", current_dates)
-        or " ‚Üí " in current_dates
-    )
-    if (incoming_dates
-            and (_crm_is_empty(current_dates)
-                 or (source_is_wedof and legacy_machine_dates))):
-        contact["dates_formation"] = incoming_dates
-        changed_fields.append("dates souhait√©es")
-
-    if changed_fields:
-        contact["updated_at"] = _crm_now()
-    return changed_fields
-
-
-def _wedof_contact_name_matches(folder, contact):
-    """Compare l'identit√© sans jamais modifier l'orthographe stock√©e dans le CRM."""
-    first_name, last_name = _wedof_attendee_name(folder)
-    return bool(
-        first_name
-        and last_name
-        and _wedof_normalize_name(contact.get("prenom")) == first_name
-        and _wedof_normalize_name(contact.get("nom")) == last_name
-    )
-
-
-def _wedof_match_contact(folder, contacts):
-    emails, phones, _ = _wedof_attendee_values(folder)
-    email_matches = [
-        contact for contact in contacts
-        if _crm_normalize_email(contact.get("mail")) in emails
-    ]
-    if emails and len(email_matches) == 1:
-        return email_matches[0], "email"
-    phone_matches = [
-        contact for contact in contacts
-        if _crm_normalize_phone(contact.get("telephone")) in phones
-    ]
-    if phones and len(phone_matches) == 1:
-        return phone_matches[0], "phone"
-
-    first_name, last_name = _wedof_attendee_name(folder)
-    if not first_name or not last_name:
-        return None, None
-    name_matches = [
-        contact for contact in contacts
-        if _wedof_normalize_name(contact.get("prenom")) == first_name
-        and _wedof_normalize_name(contact.get("nom")) == last_name
-        and (not emails or not _crm_normalize_email(contact.get("mail"))
-             or _crm_normalize_email(contact.get("mail")) in emails)
-        and (not phones or not _crm_normalize_phone(contact.get("telephone"))
-             or _crm_normalize_phone(contact.get("telephone")) in phones)
-    ]
-    if len(name_matches) == 1:
-        return name_matches[0], "name"
-    return None, None
-
-
-def _wedof_store_page(
-        items, data, page, total_count=None, *, update_sync_state=True):
-    """Rapproche et persiste une page sans concurrencer une autre mutation CRM."""
-    with _CRM_RECONCILIATION_LOCK:
-        return _wedof_store_page_locked(
-            items, data if data is not None else load_data(), page, total_count,
-            update_sync_state=update_sync_state,
-        )
-
-
-def _wedof_store_page_locked(
-        items, data, page, total_count=None, *, update_sync_state=True):
-    contacts = data.setdefault("crm_contacts", [])
-    now = _wedof_now()
-    crm_changed = False
-    created_contacts = 0
-    linked_folders = 0
-    pending_reviews = 0
-    with _wedof_connect() as db:
-        for folder in items:
-            if not isinstance(folder, dict) or not folder.get("externalId"):
-                continue
-            stable_id = str(folder["externalId"])
-            previous_funding_status = ""
-            previous_resource = db.execute("""
-                SELECT payload_json FROM wedof_resources
-                WHERE resource_type='registrationFolder' AND stable_id=?
-            """, (stable_id,)).fetchone()
-            if previous_resource:
-                try:
-                    previous_funding_status = _wedof_france_travail_status(
-                        json.loads(previous_resource["payload_json"])
-                    )
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    previous_funding_status = ""
-            crm_payload = _wedof_contact_payload(folder, data)
-            payload_json = json.dumps(folder, ensure_ascii=False, separators=(",", ":"))
-            remote_date = next((str(folder.get(key)) for key in (
-                "updatedAt", "updatedOn", "modifiedAt", "dateUpdated",
-                "createdAt", "createdOn",
-            ) if folder.get(key)), None)
-            db.execute("""
-                INSERT INTO wedof_resources
-                    (resource_type, stable_id, payload_json, remote_date, synced_at)
-                VALUES ('registrationFolder', ?, ?, ?, ?)
-                ON CONFLICT(resource_type, stable_id) DO UPDATE SET
-                    payload_json=excluded.payload_json,
-                    remote_date=excluded.remote_date,
-                    synced_at=excluded.synced_at
-            """, (stable_id, payload_json, remote_date, now))
-            existing = db.execute("""
-                SELECT contact_id FROM wedof_contact_links
-                WHERE resource_type='registrationFolder' AND resource_id=?
-            """, (stable_id,)).fetchone()
-            contact = None
-            method = None
-            if existing:
-                contact = next((c for c in contacts if c.get("id") == existing["contact_id"]), None)
-                method = "stable" if contact else None
-            if not contact:
-                contact, method = _wedof_match_contact(folder, contacts)
-                if contact:
-                    contact, _, _ = find_or_create_crm_contact(
-                        data, crm_payload, "wedof_cpf", external_id=stable_id,
-                        selected_contact_id=contact.get("id"),
-                        ordered_coordinates=True, record_activity=False,
-                    )
-                    crm_changed = True
-                    if contact:
-                        _wedof_activity(
-                            contact, "Nouvelle demande CPF re√ßue",
-                            f"Dossier {stable_id} associ√© automatiquement via WEDOF.",
-                        )
-                elif (_wedof_has_usable_identity(crm_payload)
-                      and _wedof_is_open_cpf_request(folder)):
-                    proposed = _wedof_new_crm_contact(data, crm_payload, stable_id)
-                    contact, inbound, created = find_or_create_crm_contact(
-                        data, crm_payload, "wedof_cpf", external_id=stable_id,
-                        proposed_contact=proposed, ordered_coordinates=True,
-                        record_activity=False,
-                    )
-                    crm_changed = True
-                    if created:
-                        method = "created"
-                        created_contacts += 1
-                    elif contact:
-                        _, method = _wedof_match_contact(folder, [contact])
-                        method = method or "matched"
-                        _wedof_activity(
-                            contact, "Nouvelle demande CPF re√ßue",
-                            f"Dossier {stable_id} associ√© automatiquement via WEDOF.",
-                        )
-                    elif inbound.get("status") == "pending_review":
-                        pending_reviews += 1
-            if contact:
-                repaired_fields = _wedof_apply_contact_details(contact, crm_payload)
-                if repaired_fields:
-                    _wedof_activity(
-                        contact, "Informations CPF synchronis√©es",
-                        "Champs compl√©t√©s depuis WEDOF : "
-                        + ", ".join(repaired_fields) + ".",
-                    )
-                    crm_changed = True
-                # La pr√©sence du dossier WEDOF prouve que le compte CPF est actif,
-                # y compris si une ancienne r√©ponse CRM indiquait encore ¬´ NON ¬ª.
-                if str(contact.get("cpf") or "").strip().upper() != "OUI":
-                    contact["cpf"] = "OUI"
-                    contact["updated_at"] = _crm_now()
-                    crm_changed = True
-                # R√©pare aussi les pistes cr√©√©es ou rapproch√©es avant que leur
-                # provenance WEDOF soit enregistr√©e dans le CRM.
-                if _wedof_is_cpf_folder(folder):
-                    if _crm_record_origin(
-                        contact,
-                        "Mon Compte Formation",
-                        source="wedof_cpf",
-                        external_id=stable_id,
-                        date=_crm_now(),
-                    ):
-                        contact["updated_at"] = _crm_now()
-                        crm_changed = True
-                _, _, attendee_id = _wedof_attendee_values(folder)
-                db.execute("""
-                    INSERT INTO wedof_contact_links
-                        (contact_id, resource_type, resource_id, attendee_id,
-                         match_method, linked_at, updated_at)
-                    VALUES (?, 'registrationFolder', ?, ?, ?, ?, ?)
-                    ON CONFLICT(resource_type, resource_id) DO UPDATE SET
-                        contact_id=excluded.contact_id,
-                        attendee_id=excluded.attendee_id,
-                        match_method=excluded.match_method,
-                        updated_at=excluded.updated_at
-                """, (contact["id"], stable_id, attendee_id, method, now, now))
-                previous_status_evidence = previous_funding_status
-                if (not previous_status_evidence
-                        and contact.get("statut_demande_financement_ft_source")
-                        != CRM_MANUAL_STATUS_SOURCE
-                        and str(contact.get("source_wedof_folder_id") or "")
-                        == stable_id):
-                    # R√©pare aussi les dossiers dont le retour √† ``validated``
-                    # a d√©j√† remplac√© le payload d'instruction dans le cache.
-                    previous_status_evidence = str(
-                        contact.get("statut_demande_financement_ft") or ""
-                    ).strip()
-                current_funding_status = _wedof_france_travail_status(
-                    folder, previous_status=previous_status_evidence,
-                )
-                # ¬´ En cours ¬ª reste une √©tape provisoire : une d√©cision de
-                # refus remont√©e par WEDOF doit pouvoir la cl√¥turer, m√™me si
-                # cette √©tape avait √©t√© s√©lectionn√©e manuellement. Les autres
-                # choix manuels restent prot√©g√©s.
-                manual_funding_is_provisional = (
-                    contact.get("statut_demande_financement_ft_source")
-                    == CRM_MANUAL_STATUS_SOURCE
-                    and contact.get("statut_demande_financement_ft")
-                    == "en_cours_instruction"
-                )
-                if (current_funding_status == "refusee"
-                        and (contact.get(
-                            "statut_demande_financement_ft_source"
-                        ) != CRM_MANUAL_STATUS_SOURCE
-                        or manual_funding_is_provisional)):
-                    stored_funding_was_refused = (
-                        contact.get("statut_demande_financement_ft")
-                        == "refusee"
-                    )
-                    if not stored_funding_was_refused:
-                        contact["statut_demande_financement_ft"] = "refusee"
-                        crm_changed = True
-                    if manual_funding_is_provisional:
-                        contact.pop(
-                            "statut_demande_financement_ft_source", None,
-                        )
-                        crm_changed = True
-                    manual_secondary_is_provisional = (
-                        contact.get("statut_secondaire_source")
-                        == CRM_MANUAL_STATUS_SOURCE
-                        and contact.get("statut_secondaire")
-                        == "Financement FT en cours"
-                    )
-                    if ((contact.get("statut_secondaire_source")
-                            != CRM_MANUAL_STATUS_SOURCE
-                            or manual_secondary_is_provisional)
-                            and contact.get("statut_secondaire")
-                            != "Financement FT refus√©"):
-                        contact["statut_secondaire"] = "Financement FT refus√©"
-                        if manual_secondary_is_provisional:
-                            contact.pop("statut_secondaire_source", None)
-                        crm_changed = True
-                    if previous_funding_status != "refusee":
-                        _crm_add_funding_refusal_notifications(
-                            data, contact, stable_id,
-                        )
-                        _crm_send_ft_refusal_messages(data, contact)
-                        crm_changed = True
-                    if (not stored_funding_was_refused
-                            or previous_funding_status != "refusee"):
-                        _, relance_changed = _crm_schedule_ft_refusal_relance(
-                            contact,
-                            source="wedof_ft_refusal",
-                            stable_id=stable_id,
-                        )
-                        crm_changed = relance_changed or crm_changed
-                linked_folders += 1
-        if update_sync_state:
-            state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
-            if total_count is not None:
-                state["total_count"] = total_count
-            db.execute("""
-                INSERT INTO wedof_sync_state(sync_key, value_json, updated_at)
-                VALUES ('registrationFolders', ?, ?)
-                ON CONFLICT(sync_key) DO UPDATE SET
-                    value_json=excluded.value_json, updated_at=excluded.updated_at
-            """, (json.dumps(state), now))
-        if crm_changed:
-            save_data(data)
-    return {
-        "created_contacts": created_contacts,
-        "linked_folders": linked_folders,
-        "pending_reviews": pending_reviews,
-    }
-
-
-def _wedof_set_state(**state):
-    now = _wedof_now()
-    with _wedof_connect() as db:
-        db.execute("""
-            INSERT INTO wedof_sync_state(sync_key, value_json, updated_at)
-            VALUES ('registrationFolders', ?, ?)
-            ON CONFLICT(sync_key) DO UPDATE SET
-                value_json=excluded.value_json, updated_at=excluded.updated_at
-        """, (json.dumps(state), now))
-
-
-def _wedof_state():
-    with _wedof_connect() as db:
-        row = db.execute("SELECT value_json, updated_at FROM wedof_sync_state WHERE sync_key='registrationFolders'").fetchone()
-    if not row:
-        return {}
-    try:
-        return {**json.loads(row["value_json"]), "updated_at": row["updated_at"]}
-    except (TypeError, ValueError):
-        return {"last_error": "√âtat de synchronisation illisible."}
-
-
-def _wedof_sync(*, page_budget=None):
-    """Ex√©cute une seule r√©conciliation globale, tous processus/apps confondus."""
-    if not _WEDOF_SYNC_LOCK.acquire(blocking=False):
-        return {
-            "ok": True, "in_progress": True, "processed": 0,
-            "created_contacts": 0, "linked_folders": 0,
-            "pending_reviews": 0,
-        }
-    lease = {}
-    try:
-        try:
-            lease = acquire_wedof_lock(
-                "wedof-global-reconciliation", ttl_seconds=3600,
-            )
-        except WedofGovernorError as exc:
-            raise WedofAPIError(str(exc), 503) from exc
-        if not lease.get("acquired", False):
-            return {
-                "ok": True, "in_progress": True, "processed": 0,
-                "created_contacts": 0, "linked_folders": 0,
-                "pending_reviews": 0,
-            }
-        return _wedof_sync_locked(page_budget=page_budget)
-    finally:
-        release_wedof_lock(
-            "wedof-global-reconciliation", str(lease.get("token") or ""),
-        )
-        _WEDOF_SYNC_LOCK.release()
-
-
-def _wedof_sync_locked(*, page_budget=None):
-    state = _wedof_state()
-    page = int(state.get("next_page") or 1) if state.get("in_progress") else 1
-    max_pages = max(1, min(int(os.getenv("WEDOF_MAX_PAGES", "1000")), 10000))
-    if page_budget is None:
-        pages_this_run = max_pages
-    else:
-        try:
-            pages_this_run = max(1, min(int(page_budget), max_pages))
-        except (TypeError, ValueError):
-            pages_this_run = 1
-    processed = 0
-    created_contacts = 0
-    linked_folders = 0
-    pending_reviews = 0
-    try:
-        for _ in range(pages_this_run):
-            payload, headers = _wedof_request(
-                "/api/registrationFolders", params={"limit": 100, "page": page}
-            )
-            items = _wedof_items(payload)
-            total = headers.get("x-total-count") or headers.get("X-Total-Count")
-            try:
-                total = int(total) if total is not None else None
-            except (TypeError, ValueError):
-                total = None
-            # Recharge le fichier apr√®s l'appel r√©seau : une saisie r√©alis√©e
-            # pendant la pagination ne doit jamais √™tre √©cras√©e par un ancien snapshot.
-            page_result = _wedof_store_page(items, None, page, total)
-            processed += len(items)
-            created_contacts += page_result["created_contacts"]
-            linked_folders += page_result["linked_folders"]
-            pending_reviews += page_result["pending_reviews"]
-            current = headers.get("x-current-page") or headers.get("X-Current-Page") or page
-            per_page = headers.get("x-item-per-page") or headers.get("X-Item-Per-Page") or 100
-            try:
-                complete = total is not None and int(current) * int(per_page) >= total
-            except (TypeError, ValueError):
-                complete = False
-            if complete or len(items) < 100:
-                finished = _wedof_now()
-                _wedof_set_state(next_page=1, in_progress=False, last_error="", last_sync_at=finished)
-                return {
-                    "ok": True, "processed": processed,
-                    "created_contacts": created_contacts,
-                    "linked_folders": linked_folders,
-                    "pending_reviews": pending_reviews,
-                    "last_sync_at": finished,
-                }
-            page += 1
-        # La r√©conciliation automatique avance dans la pagination avec un petit
-        # budget fixe. Le curseur est conserv√© afin de couvrir progressivement
-        # l'historique sans refaire un scan complet quatre fois par jour.
-        _wedof_set_state(
-            next_page=page, in_progress=True, last_error="",
-            last_partial_sync_at=_wedof_now(),
-        )
-        return {
-            "ok": True,
-            "partial": True,
-            "in_progress": True,
-            "next_page": page,
-            "processed": processed,
-            "created_contacts": created_contacts,
-            "linked_folders": linked_folders,
-            "pending_reviews": pending_reviews,
-        }
-    except Exception as exc:
-        message = _wedof_clean(exc)
-        _wedof_set_state(next_page=page, in_progress=True, last_error=message)
-        raise WedofAPIError(message)
-
-
-def _wedof_positive_interval(name, default, minimum):
-    try:
-        return max(minimum, int(os.getenv(name, str(default))))
-    except (TypeError, ValueError):
-        return default
-
-
-def _wedof_ft_watchlist(data=None):
-    """Retourne les dossiers les plus r√©cents encore en instruction FT.
-
-    Seuls les dossiers d√©j√† li√©s √† une fiche CRM sont concern√©s. Le tri par
-    ancienne date de synchronisation fait tourner √©quitablement la liste si le
-    plafond par passage est atteint.
-    """
-    data = data or load_data()
-    contacts = {
-        str(contact.get("id") or ""): contact
-        for contact in data.get("crm_contacts", [])
-        if isinstance(contact, dict) and contact.get("id")
-    }
-    if not contacts or not os.path.exists(_wedof_db_path()):
-        return []
-    latest_by_contact = {}
-    with _wedof_connect() as db:
-        rows = db.execute("""
-            SELECT r.stable_id, r.payload_json, r.remote_date, r.synced_at,
-                   l.contact_id
-            FROM wedof_resources r JOIN wedof_contact_links l
-              ON r.resource_type=l.resource_type
-             AND r.stable_id=l.resource_id
-            WHERE r.resource_type='registrationFolder'
-        """)
-        for row in rows:
-            contact_id = str(row["contact_id"] or "")
-            if contact_id not in contacts:
-                continue
-            try:
-                payload = json.loads(row["payload_json"])
-            except (TypeError, ValueError, json.JSONDecodeError):
-                continue
-            recency = _wedof_folder_recency_key(
-                payload,
-                fallback=row["remote_date"] or row["synced_at"],
-                stable_id=row["stable_id"],
-            )
-            previous = latest_by_contact.get(contact_id)
-            if previous is None or recency > previous[0]:
-                latest_by_contact[contact_id] = (
-                    recency, str(row["stable_id"]), payload,
-                    str(row["synced_at"] or ""),
-                )
-
-    watchlist = []
-    for (
-        contact_id, (_recency, stable_id, payload, synced_at)
-    ) in latest_by_contact.items():
-        status = _wedof_france_travail_status(payload)
-        if status == "en_cours_instruction":
-            watchlist.append({
-                "contact_id": contact_id,
-                "folder_id": stable_id,
-                "synced_at": synced_at,
-            })
-    return sorted(
-        watchlist,
-        key=lambda item: (item.get("synced_at") or "", item["folder_id"]),
-    )
-
-
-def _wedof_reconcile_ft_watchlist(*, max_folders=None):
-    """Relit uniquement les dossiers connus encore en instruction France Travail."""
-    try:
-        configured_limit = int(os.getenv(
-            "WEDOF_FT_RECONCILIATION_MAX_FOLDERS", "50",
-        ))
-    except (TypeError, ValueError):
-        configured_limit = 50
-    if max_folders is not None:
-        try:
-            configured_limit = int(max_folders)
-        except (TypeError, ValueError):
-            configured_limit = 1
-    configured_limit = max(1, min(configured_limit, 100))
-    watchlist = _wedof_ft_watchlist()
-    checked = 0
-    refused = 0
-    errors = 0
-    for item in watchlist[:configured_limit]:
-        folder_id = item["folder_id"]
-        try:
-            payload, _headers = _wedof_request(
-                f"/api/registrationFolders/{quote(folder_id, safe='')}"
-            )
-            folder = (
-                payload.get("data")
-                if isinstance(payload, dict)
-                and isinstance(payload.get("data"), dict)
-                else payload
-            )
-            if not isinstance(folder, dict):
-                raise WedofAPIError(
-                    "WEDOF a retourn√© un dossier dans un format inattendu."
-                )
-            returned_id = str(folder.get("externalId") or folder_id).strip()
-            if returned_id != folder_id:
-                raise WedofAPIError("WEDOF a retourn√© un autre num√©ro de dossier.")
-            if not folder.get("externalId"):
-                folder = {**folder, "externalId": folder_id}
-            if (_wedof_france_travail_status(
-                    folder, previous_status="en_cours_instruction",
-                    ) == "refusee"):
-                refused += 1
-            _wedof_store_page(
-                [folder], None, 0, update_sync_state=False,
-            )
-            checked += 1
-        except WedofAPIError as exc:
-            errors += 1
-            app.logger.warning(
-                "wedof FT reconciliation failed folder=%s error=%s",
-                folder_id, _wedof_clean(exc),
-            )
-            if getattr(exc, "status_code", None) in {429, 503}:
-                break
-    return {
-        "ok": errors == 0,
-        "candidates": len(watchlist),
-        "checked": checked,
-        "refused": refused,
-        "errors": errors,
-        "remaining": max(0, len(watchlist) - checked),
-    }
-
-
-def _wedof_scheduled_reconciliation():
-    """Ex√©cute le contr√¥le FT prioritaire puis quelques pages globales."""
-    try:
-        page_budget = int(os.getenv(
-            "WEDOF_RECONCILIATION_PAGE_BUDGET", "5",
-        ))
-    except (TypeError, ValueError):
-        page_budget = 5
-    page_budget = max(1, min(page_budget, 20))
-    ft_result = _wedof_reconcile_ft_watchlist()
-    global_result = _wedof_sync(page_budget=page_budget)
-    return {
-        "ok": bool(ft_result.get("ok") and global_result.get("ok")),
-        "france_travail": ft_result,
-        "global": global_result,
-    }
-
-
-def _wedof_background_sync_loop():
-    initial_delay = _wedof_positive_interval(
-        "WEDOF_SYNC_INITIAL_DELAY_SECONDS", 300, 60,
-    )
-    interval = _wedof_positive_interval(
-        "WEDOF_RECONCILIATION_INTERVAL_SECONDS", 21600, 21600,
-    )
-    if _WEDOF_POLLER_STOP.wait(initial_delay):
-        return
-    while not _WEDOF_POLLER_STOP.is_set():
-        try:
-            # Plusieurs workers web peuvent d√©marrer ce thread. Ce bail n'est
-            # volontairement pas lib√©r√© : son expiration mat√©rialise le d√©lai
-            # de six heures et emp√™che un second worker de refaire le passage.
-            schedule = acquire_wedof_lock(
-                "wedof-crm-reconciliation-schedule",
-                ttl_seconds=interval,
-            )
-            if not schedule.get("acquired", False):
-                result = {"ok": True, "status": "already_scheduled"}
-            else:
-                result = _wedof_scheduled_reconciliation()
-            created = result.get("global", {}).get("created_contacts", 0)
-            if created:
-                app.logger.info(
-                    "wedof auto-sync created_contacts=%s processed=%s",
-                    created, result.get("global", {}).get("processed", 0),
-                )
-        except Exception as exc:
-            app.logger.warning("wedof auto-sync failed: %s", _wedof_clean(exc))
-        if _WEDOF_POLLER_STOP.wait(interval):
-            return
-
-
-def _start_wedof_background_sync():
-    """R√©conciliation globale optionnelle, d√©sactiv√©e par d√©faut et au plus 4 fois/jour."""
-    global _WEDOF_POLLER_STARTED
-    # Nouveau drapeau volontaire : une ancienne configuration
-    # WEDOF_AUTO_SYNC_ENABLED=true ne doit jamais ressusciter le poller 5 min.
-    enabled = str(os.getenv(
-        "WEDOF_CRM_RECONCILIATION_ENABLED", "true",
-    )).strip().casefold()
-    if (_WEDOF_POLLER_STARTED or not os.getenv("WEDOF_API_KEY", "").strip()
-            or enabled in {"0", "false", "non", "no", "off"}):
-        return False
-    _WEDOF_POLLER_STARTED = True
-    threading.Thread(
-        target=_wedof_background_sync_loop,
-        name="wedof-crm-reconciliation", daemon=True,
-    ).start()
-    return True
-
-
-def _wedof_contact_resources(contact_id, data=None):
-    data = data or load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return []
-
-    contact_name = (
-        _wedof_normalize_name(contact.get("prenom")),
-        _wedof_normalize_name(contact.get("nom")),
-    )
-    same_name_count = sum(
-        1 for candidate in data.get("crm_contacts", [])
-        if all(contact_name) and (
-            _wedof_normalize_name(candidate.get("prenom")),
-            _wedof_normalize_name(candidate.get("nom")),
-        ) == contact_name
-    )
-
-    # Cas courant : le dossier est d√©j√† rattach√© √† cette piste. Le filtre SQL
-    # √©vite alors de charger et d√©coder tous les dossiers WEDOF de l'organisme.
-    with _wedof_connect() as db:
-        directly_linked_rows = db.execute("""
-            SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
-                   r.synced_at, l.contact_id AS linked_contact_id,
-                   l.attendee_id, l.match_method
-            FROM wedof_resources r LEFT JOIN wedof_contact_links l
-              ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-            WHERE l.contact_id=?
-            ORDER BY r.synced_at DESC
-        """, (str(contact_id),)).fetchall()
-
-        # Le balayage par identit√© ne reste n√©cessaire que pour une nouvelle
-        # piste non encore li√©e ou pour de vrais doublons nom/pr√©nom.
-        if directly_linked_rows and same_name_count <= 1:
-            rows = directly_linked_rows
-        else:
-            rows = db.execute("""
-                SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
-                       r.synced_at, l.contact_id AS linked_contact_id,
-                       l.attendee_id, l.match_method
-                FROM wedof_resources r LEFT JOIN wedof_contact_links l
-                  ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-                ORDER BY r.synced_at DESC
-            """).fetchall()
-
-    resources = []
-    for row in rows:
-        payload = json.loads(row["payload_json"])
-        directly_linked = str(row["linked_contact_id"] or "") == str(contact_id)
-        # Une m√™me personne peut avoir plusieurs pistes CRM. Le lien WEDOF reste
-        # unique en base, mais chaque doublon d'identit√© doit pouvoir consulter
-        # ses dossiers sans perdre les accents de son nom dans le CRM.
-        if not directly_linked and not _wedof_contact_name_matches(payload, contact):
-            continue
-        attendee_id = row["attendee_id"]
-        match_method = row["match_method"]
-        if not directly_linked:
-            _, _, attendee_id = _wedof_attendee_values(payload)
-            match_method = "name"
-        resources.append({
-            "type": row["resource_type"], "stable_id": row["stable_id"],
-            "payload": payload, "remote_date": row["remote_date"],
-            "synced_at": row["synced_at"], "attendee_id": attendee_id,
-            "match_method": match_method,
-        })
-    # Toutes les vues CPF/FT doivent partager la m√™me source de v√©rit√© : le
-    # dossier cr√©√© le plus r√©cemment. Les autres restent consultables comme
-    # historique, mais ne doivent jamais participer aux statuts calcul√©s.
-    resources.sort(
-        key=lambda resource: _wedof_folder_recency_key(
-            resource["payload"],
-            fallback=resource.get("remote_date") or resource.get("synced_at"),
-            stable_id=resource.get("stable_id"),
-        ),
-        reverse=True,
-    )
-    for index, resource in enumerate(resources):
-        resource["is_latest"] = index == 0
-    return resources
-
-
-def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
-    """Relit uniquement le dossier WEDOF le plus r√©cent d√©j√† connu du contact.
-
-    En ouverture automatique, un cache de moins de trente minutes est renvoy√©
-    sans requ√™te distante. Le bouton manuel conserve la possibilit√© de forcer
-    une lecture, tout en respectant le bail qui d√©duplique les appels concurrents.
-    """
-    resources = _wedof_contact_resources(contact_id, data)
-    latest = next(
-        (resource for resource in resources if resource.get("is_latest")),
-        resources[0] if resources else None,
-    )
-    if not latest:
-        return {
-            "ok": True,
-            "skipped": True,
-            "reason": "no_known_folder",
-            "processed": 0,
-        }
-    external_id = str(latest.get("stable_id") or "").strip()
-    if not external_id:
-        return {
-            "ok": True,
-            "skipped": True,
-            "reason": "no_known_folder",
-            "processed": 0,
-        }
-    age_seconds = _wedof_resource_age_seconds(latest)
-    if (automatic and age_seconds is not None
-            and age_seconds < WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS):
-        return {
-            "ok": True,
-            "skipped": True,
-            "reason": "fresh_cache",
-            "processed": 0,
-            "folder_id": external_id,
-            "last_sync_at": latest.get("synced_at") or "",
-        }
-
-    lease = _wedof_begin_contact_refresh(external_id, automatic=automatic)
-    if not lease.get("acquired"):
-        return {
-            "ok": True,
-            "skipped": True,
-            "processed": 0,
-            "folder_id": external_id,
-            "last_sync_at": latest.get("synced_at") or "",
-            **lease,
-        }
-    token = str(lease.get("token") or "")
-    try:
-        # Un autre worker a pu terminer entre le premier contr√¥le de fra√Æcheur
-        # et la prise du bail. Relire le cache √©vite alors un second GET.
-        if automatic:
-            current_resources = _wedof_contact_resources(contact_id)
-            current_latest = next(
-                (resource for resource in current_resources
-                 if resource.get("is_latest")),
-                current_resources[0] if current_resources else None,
-            )
-            current_id = str((current_latest or {}).get("stable_id") or "").strip()
-            if current_id and current_id != external_id:
-                _wedof_cancel_contact_refresh(external_id, token)
-                return _wedof_refresh_contact_resource(
-                    contact_id, automatic=True,
-                )
-            current_age = _wedof_resource_age_seconds(current_latest)
-            if (current_age is not None
-                    and current_age < WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS):
-                _wedof_cancel_contact_refresh(external_id, token)
-                return {
-                    "ok": True,
-                    "skipped": True,
-                    "reason": "fresh_cache",
-                    "processed": 0,
-                    "folder_id": external_id,
-                    "last_sync_at": (current_latest or {}).get("synced_at") or "",
-                }
-
-        payload, _headers = _wedof_request(
-            f"/api/registrationFolders/{quote(external_id, safe='')}",
-            operation=(
-                "refresh_latest_folder_on_open"
-                if automatic else "refresh_latest_folder_manual"
-            ),
-            # Une ouverture de fiche ne doit jamais multiplier les tentatives
-            # HTTP. En cas d'√©chec, le cache reste visible et le cooldown prend
-            # le relais ; le bouton manuel demeure disponible pour r√©essayer.
-            retry_budget=0 if automatic else None,
-        )
-        folder = payload.get("data") if isinstance(payload, dict) else None
-        if not isinstance(folder, dict) or not folder.get("externalId"):
-            folder = payload
-        if not isinstance(folder, dict):
-            raise WedofAPIError(
-                "WEDOF a retourn√© un dossier dans un format inattendu."
-            )
-        returned_id = str(folder.get("externalId") or "").strip()
-        if returned_id and returned_id != external_id:
-            raise WedofAPIError("WEDOF a retourn√© un autre num√©ro de dossier.")
-        if not returned_id:
-            folder = {**folder, "externalId": external_id}
-        result = _wedof_store_page(
-            [folder], None, 0, update_sync_state=False,
-        )
-        refreshed = _wedof_contact_resources(contact_id)
-        refreshed_latest = next(
-            (resource for resource in refreshed if resource.get("is_latest")),
-            refreshed[0] if refreshed else {},
-        )
-        _wedof_finish_contact_refresh(external_id, token)
-        return {
-            "ok": True,
-            "skipped": False,
-            "processed": 1,
-            "folder_id": external_id,
-            **result,
-            "last_sync_at": refreshed_latest.get("synced_at") or _wedof_now(),
-        }
-    except Exception as exc:
-        _wedof_finish_contact_refresh(external_id, token, error=exc)
-        raise
-
-
-def _wedof_normalize_code(value):
-    return re.sub(r"[^a-z0-9]", "", unicodedata.normalize(
-        "NFD", str(value or "")
-    ).encode("ascii", "ignore").decode().lower())
-
-
-def _wedof_solicitation_statuses(payload):
-    """Lit les d√©cisions de financement imbriqu√©es dans le dossier WEDOF."""
-    training_info = payload.get("trainingActionInfo")
-    if not isinstance(training_info, dict):
-        return set()
-    solicitations = training_info.get("solicitations")
-    statuses = set()
-
-    def visit(value):
-        if isinstance(value, dict):
-            for key in ("status", "state", "result"):
-                candidate = value.get(key)
-                if candidate not in (None, "", False) and not isinstance(
-                        candidate, (dict, list, tuple)):
-                    statuses.add(_wedof_normalize_code(candidate))
-            for nested in value.values():
-                if isinstance(nested, (dict, list, tuple)):
-                    visit(nested)
-        elif isinstance(value, (list, tuple)):
-            for nested in value:
-                visit(nested)
-
-    visit(solicitations)
-    return statuses
-
-
-def _wedof_france_travail_status(payload, previous_status=""):
-    """D√©duit le statut FT d'un dossier WEDOF sans d√©pendre du statut commercial."""
-    normalize = _wedof_normalize_code
-    state = normalize(payload.get("state") or payload.get("status")
-                      or payload.get("registrationState"))
-    history = payload.get("history") or payload.get("stateHistory") or payload.get("events") or []
-
-    def history_values(value):
-        if isinstance(value, dict):
-            for key, nested in value.items():
-                if nested in (None, "", False) or nested in ([], {}):
-                    continue
-                yield key
-                yield from history_values(nested)
-        elif isinstance(value, (list, tuple)):
-            for nested in value:
-                yield from history_values(nested)
-        elif value not in (None, "", False):
-            yield value
-
-    history_markers = {
-        normalize(value) for value in history_values(history) if value
-    }
-
-    # Un refus explicite est une preuve suffisante en lui-m√™me, y compris
-    # lorsque WEDOF ne fournit pas l'historique de l'instruction FT.
-    solicitation_has_refusal = any(
-        re.search(r"refus|reject", status)
-        for status in _wedof_solicitation_statuses(payload)
-    )
-    if re.search(r"refus|reject", state) or solicitation_has_refusal:
-        return "refusee"
-    history_has_financer_refusal = any(
-        ("financer" in marker or "financeur" in marker)
-        and ("refus" in marker or "reject" in marker)
-        for marker in history_markers
-    )
-    had_instruction = (
-        str(previous_status or "").strip() == "en_cours_instruction"
-        or state == "waitingacceptation"
-        or any(
-            "waitingacceptation" in marker
-            for marker in history_markers
-        )
-    )
-    # Le statut commercial du dossier peut ensuite redevenir ``accepted``
-    # lorsque le candidat le valide de nouveau. La preuve de refus du financeur
-    # reste n√©anmoins valable pour la seconde timeline de ce m√™me dossier.
-    if history_has_financer_refusal:
-        return "refusee"
-    if not had_instruction:
-        return ""
-    if re.search(r"cancel|annul|abandon", state):
-        return "annulee"
-    if state in {"accepted", "intraining", "terminated", "servicedonedeclared",
-                 "servicedonevalidated", "tobill", "billed", "paid"}:
-        return "acceptee"
-    # Apr√®s un refus de financement France Travail, WEDOF ne conserve pas un
-    # √©tat terminal d√©di√© : le dossier CPF revient √† ``validated`` afin que le
-    # candidat puisse de nouveau l'accepter ou choisir un autre financement.
-    # La pr√©sence ant√©rieure de ``waitingAcceptation`` permet de distinguer ce
-    # retour d'un dossier simplement valid√© qui n'a jamais √©t√© transmis √† FT.
-    if state == "validated":
-        return "refusee"
-    return "en_cours_instruction"
-
-
-def _wedof_folder_recency_key(payload, *, fallback="", stable_id=""):
-    """Classe un dossier par sa cr√©ation, jamais par sa derni√®re modification."""
-    raw_created = next((payload.get(key) for key in (
-        "createdAt", "createdOn", "dateCreated", "creationDate",
-    ) if payload.get(key)), None)
-
-    def timestamp(value):
-        try:
-            parsed = datetime.datetime.fromisoformat(
-                str(value or "").strip().replace("Z", "+00:00")
-            )
-        except (TypeError, ValueError):
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
-        return parsed.timestamp()
-
-    created_at = timestamp(raw_created)
-    fallback_at = timestamp(fallback)
-    raw_id = str(stable_id or "")
-    numeric_id = int(raw_id) if raw_id.isdigit() else -1
-    return (
-        1 if created_at is not None else 0,
-        created_at if created_at is not None else (
-            fallback_at if fallback_at is not None else float("-inf")
-        ),
-        numeric_id,
-        raw_id,
-    )
-
-
-def _wedof_effective_funding_status(
-        statuses, *, fallback_status="", fallback_folder_id=""):
-    """Retient exclusivement l'√©tat du dossier WEDOF cr√©√© le plus r√©cemment."""
-    clean = [
-        (recency, str(status or "").strip(), str(stable_id or ""))
-        for recency, status, stable_id in statuses
-    ]
-    if not clean:
-        return ""
-    _, status, stable_id = max(clean, key=lambda item: item[0])
-    if (not status
-            and str(fallback_status or "").strip() == "refusee"
-            and (stable_id == str(fallback_folder_id or "")
-                 or len(clean) == 1)):
-        # Le payload ``validated`` peut perdre son historique apr√®s un refus.
-        # Conserver alors la derni√®re preuve persist√©e de ce m√™me dossier.
-        return str(fallback_status or "").strip()
-    return status
-
-
-def _wedof_funding_statuses_by_contact(data, *, include_cpf=False):
-    """Calcule les statuts FT et CPF en un seul parcours du cache WEDOF.
-
-    L'ancienne impl√©mentation relisait et d√©codait la table compl√®te pour chaque
-    contact. Cette fonction construit d'abord un index des contacts par identit√©,
-    puis ne d√©code chaque dossier WEDOF qu'une seule fois.
-    """
-    global _WEDOF_FUNDING_CACHE_AT, _WEDOF_FUNDING_CACHE_KEY
-    global _WEDOF_FUNDING_CACHE_VALUE, _WEDOF_CPF_STATE_CACHE_VALUE
-    if not os.path.exists(_wedof_db_path()):
-        return ({}, {}) if include_cpf else {}
-
-    contacts = data.get("crm_contacts", [])
-    identity_signature = tuple(
-        (
-            str(contact.get("id") or ""),
-            _wedof_normalize_name(contact.get("prenom")),
-            _wedof_normalize_name(contact.get("nom")),
-        )
-        for contact in contacts
-    )
-    cache_key = (_wedof_db_signature(), identity_signature)
-    with _WEDOF_FUNDING_CACHE_LOCK:
-        if (_WEDOF_FUNDING_CACHE_VALUE is not None
-                and _WEDOF_FUNDING_CACHE_KEY == cache_key
-                and time.monotonic() - _WEDOF_FUNDING_CACHE_AT < 300):
-            funding = dict(_WEDOF_FUNDING_CACHE_VALUE)
-            return (funding, dict(_WEDOF_CPF_STATE_CACHE_VALUE)) if include_cpf else funding
-
-    known_contact_ids = {
-        str(contact.get("id")) for contact in contacts if contact.get("id")
-    }
-    contacts_by_name = {}
-    for contact in contacts:
-        key = (
-            _wedof_normalize_name(contact.get("prenom")),
-            _wedof_normalize_name(contact.get("nom")),
-        )
-        if all(key):
-            contacts_by_name.setdefault(key, []).append(str(contact.get("id")))
-
-    statuses_by_contact = {}
-    latest_cpf_by_contact = {}
-    with _wedof_connect() as db:
-        rows = db.execute("""
-            SELECT r.stable_id, r.payload_json, r.remote_date, r.synced_at,
-                   l.contact_id AS linked_contact_id
-            FROM wedof_resources r LEFT JOIN wedof_contact_links l
-              ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-            ORDER BY r.synced_at DESC, r.stable_id DESC
-        """)
-
-        # It√©rer sur le curseur plut√¥t que fetchall() garde un seul gros JSON
-        # WEDOF en m√©moire √† la fois, m√™me avec plusieurs milliers de dossiers.
-        for row in rows:
-            try:
-                payload = json.loads(row["payload_json"])
-            except (TypeError, ValueError, json.JSONDecodeError):
-                app.logger.warning(
-                    "Dossier WEDOF ignor√© : JSON local illisible (%s)",
-                    row["stable_id"],
-                )
-                continue
-            funding_status = _wedof_france_travail_status(payload)
-            cpf_state = _wedof_normalize_code(
-                payload.get("state") or payload.get("status")
-                or payload.get("registrationState")
-            )
-            recency = _wedof_folder_recency_key(
-                payload,
-                fallback=row["remote_date"] or row["synced_at"],
-                stable_id=row["stable_id"],
-            )
-            target_ids = set()
-            linked_contact_id = str(row["linked_contact_id"] or "")
-            if linked_contact_id in known_contact_ids:
-                target_ids.add(linked_contact_id)
-            target_ids.update(contacts_by_name.get(_wedof_attendee_name(payload), []))
-            for target_id in target_ids:
-                statuses_by_contact.setdefault(target_id, []).append(
-                    (recency, funding_status, row["stable_id"])
-                )
-                latest_cpf = latest_cpf_by_contact.get(target_id)
-                if latest_cpf is None or recency > latest_cpf[0]:
-                    latest_cpf_by_contact[target_id] = (recency, cpf_state)
-
-    contacts_by_id = {
-        str(contact.get("id") or ""): contact for contact in contacts
-    }
-    result = {}
-    for contact_id, statuses in statuses_by_contact.items():
-        contact = contacts_by_id.get(contact_id, {})
-        result[contact_id] = _wedof_effective_funding_status(
-            statuses,
-            fallback_status=contact.get("statut_demande_financement_ft"),
-            fallback_folder_id=contact.get("source_wedof_folder_id"),
-        )
-    cpf_states = {
-        contact_id: state for contact_id, (_, state) in latest_cpf_by_contact.items()
-    }
-    with _WEDOF_FUNDING_CACHE_LOCK:
-        _WEDOF_FUNDING_CACHE_KEY = (_wedof_db_signature(), identity_signature)
-        _WEDOF_FUNDING_CACHE_VALUE = dict(result)
-        _WEDOF_CPF_STATE_CACHE_VALUE = dict(cpf_states)
-        _WEDOF_FUNDING_CACHE_AT = time.monotonic()
-    return (result, cpf_states) if include_cpf else result
-
-
-def _wedof_cpf_states_by_contact(data):
-    """Expose le statut CPF local sans rendre les lectures CRM d√©pendantes du cache."""
-    try:
-        _, states = _wedof_funding_statuses_by_contact(data, include_cpf=True)
-        return states
-    except Exception as exc:
-        app.logger.warning("Lecture des statuts CPF ignor√©e (%s)", type(exc).__name__)
-        return {}
-
-
-def _wedof_status_payload(test_connection=True):
-    configured = bool(os.getenv("WEDOF_API_KEY", "").strip())
-    connected = False
-    error = ""
-    if configured and test_connection:
-        try:
-            _wedof_request("/api/organisms/me")
-            connected = True
-        except Exception as exc:
-            error = _wedof_clean(exc)
-    state = _wedof_state()
-    with _wedof_connect() as db:
-        resources = db.execute("SELECT COUNT(*) FROM wedof_resources").fetchone()[0]
-        linked = db.execute("SELECT COUNT(*) FROM wedof_contact_links").fetchone()[0]
-    return {
-        "configured": configured, "connected": connected,
-        "last_sync_at": state.get("last_sync_at") or "",
-        "resource_count": resources, "linked_folder_count": linked,
-        "error": error or _wedof_clean(state.get("last_error", "")),
-    }
-
-
-@app.route("/api/crm/wedof/status")
-@login_required
-def crm_wedof_status():
-    return jsonify(_wedof_status_payload())
-
-
-@app.route("/api/crm/wedof/sync", methods=["POST"])
-@login_required
-def crm_wedof_sync():
-    if (current_user() or {}).get("role") != "admin":
-        return jsonify({"error": "Seul un administrateur peut synchroniser WEDOF."}), 403
-    try:
-        return jsonify(_wedof_sync())
-    except WedofAPIError as exc:
-        return jsonify({"error": _wedof_clean(exc)}), 503
-
-
-@app.route("/api/crm/contacts/<contact_id>/wedof")
-@login_required
-def crm_contact_wedof(contact_id):
-    data = load_data()
-    if not _crm_contact(data, contact_id):
-        return jsonify({"error": "Contact introuvable"}), 404
-    return jsonify({
-        "resources": _wedof_contact_resources(contact_id, data),
-        "status": _wedof_status_payload(test_connection=False),
-    })
-
-
-@app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
-@login_required
-def crm_contact_wedof_refresh(contact_id):
-    data = load_data()
-    if not _crm_contact(data, contact_id):
-        return jsonify({"error": "Contact introuvable"}), 404
-    try:
-        sync = _wedof_refresh_contact_resource(contact_id, data)
-        refreshed_data = load_data()
-        return jsonify({
-            "sync": sync,
-            "resources": _wedof_contact_resources(contact_id, refreshed_data),
-            "contact": _crm_contact(refreshed_data, contact_id),
-        })
-    except WedofAPIError as exc:
-        return jsonify({"error": _wedof_clean(exc)}), 503
-
-
-@app.route(
-    "/api/crm/contacts/<contact_id>/wedof/refresh-on-open",
-    methods=["POST"],
-)
-@login_required
-def crm_contact_wedof_refresh_on_open(contact_id):
-    """Actualise au plus un dossier connu, au maximum une fois par demi-heure."""
-    data = load_data()
-    if not _crm_contact(data, contact_id):
-        return jsonify({"error": "Contact introuvable"}), 404
-    try:
-        sync = _wedof_refresh_contact_resource(
-            contact_id, data, automatic=True,
-        )
-        refreshed_data = load_data()
-        return jsonify({
-            "sync": sync,
-            "resources": _wedof_contact_resources(contact_id, refreshed_data),
-            "contact": _crm_contact(refreshed_data, contact_id),
-        })
-    except WedofAPIError as exc:
-        status_code = 429 if getattr(exc, "status_code", None) == 429 else 503
-        return jsonify({"error": _wedof_clean(exc)}), status_code
-
-
-def _wedof_webhook_authenticated(raw_body):
-    secret_text = (os.getenv("WEDOF_WEBHOOK_SECRET") or "").strip()
-    if not secret_text:
-        return False
-    signature = (request.headers.get("X-Wedof-Signature") or "").strip()
-    if signature:
-        supplied = signature.split("=", 1)[-1].strip().strip('"').strip("'")
-        # WEDOF signe officiellement le corps brut en HMAC-SHA512 hexad√©cimal.
-        # Les variantes SHA256 restent accept√©es pendant la transition pour ne
-        # pas casser un √©ventuel √©metteur interne historique.
-        candidates = []
-        for algorithm in (hashlib.sha512, hashlib.sha256):
-            digest_bytes = hmac.new(
-                secret_text.encode("utf-8"), raw_body, algorithm,
-            ).digest()
-            candidates.extend((
-                digest_bytes.hex(),
-                digest_bytes.hex().upper(),
-                base64.b64encode(digest_bytes).decode("ascii"),
-                base64.urlsafe_b64encode(digest_bytes).decode("ascii").rstrip("="),
-            ))
-        return any(hmac.compare_digest(supplied, candidate) for candidate in candidates)
-    supplied_secret = (
-        request.headers.get("X-Wedof-Secret")
-        or request.headers.get("X-Webhook-Secret")
-        or ""
-    ).strip()
-    authorization = (request.headers.get("Authorization") or "").strip()
-    if authorization.casefold().startswith("bearer "):
-        supplied_secret = authorization[7:].strip()
-    return bool(supplied_secret) and hmac.compare_digest(
-        supplied_secret, secret_text,
-    )
-
-
-def _wedof_webhook_folder(payload):
-    """Trouve un dossier complet inclus dans l'√©v√©nement, sans appel distant."""
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("externalId") and any(
-            key in payload for key in ("state", "attendee", "trainingActionInfo")):
-        return payload
-    for key in ("registrationFolder", "folder", "resource", "data", "payload"):
-        candidate = _wedof_webhook_folder(payload.get(key))
-        if candidate:
-            return candidate
-    return None
-
-
-def _wedof_webhook_folder_id(payload):
-    folder = _wedof_webhook_folder(payload)
-    if folder:
-        return str(folder.get("externalId") or "").strip()
-    if not isinstance(payload, dict):
-        return ""
-    for key in (
-        "externalId", "folderId", "registrationFolderId",
-        "registration_folder_id", "resourceId", "dossierId",
-    ):
-        value = str(payload.get(key) or "").strip()
-        if value:
-            return value
-    for key in ("registrationFolder", "folder", "resource", "data", "payload"):
-        value = _wedof_webhook_folder_id(payload.get(key))
-        if value:
-            return value
-    return ""
-
-
-@app.post("/api/webhooks/wedof")
-def crm_wedof_webhook():
-    raw_body = request.get_data(cache=True) or b""
-    if not (os.getenv("WEDOF_WEBHOOK_SECRET") or "").strip():
-        return jsonify({"ok": False, "error": "webhook_not_configured"}), 503
-    if not _wedof_webhook_authenticated(raw_body):
-        return jsonify({"ok": False, "error": "forbidden"}), 403
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify({"ok": False, "error": "invalid_payload"}), 400
-    delivery_id = (
-        request.headers.get("X-Wedof-Delivery")
-        or hashlib.sha256(raw_body).hexdigest()
-    ).strip()[:200]
-    with _wedof_connect() as db:
-        duplicate = db.execute(
-            "SELECT 1 FROM wedof_webhook_deliveries WHERE delivery_id=?",
-            (delivery_id,),
-        ).fetchone()
-    if duplicate:
-        return jsonify({"ok": True, "duplicate": True}), 200
-
-    folder = _wedof_webhook_folder(payload)
-    folder_id = _wedof_webhook_folder_id(payload)
-    source = "payload"
-    try:
-        if folder is None and folder_id:
-            remote_payload, _headers = _wedof_request(
-                f"/api/registrationFolders/{quote(folder_id, safe='')}"
-            )
-            folder = (
-                remote_payload.get("data")
-                if isinstance(remote_payload, dict)
-                and isinstance(remote_payload.get("data"), dict)
-                else remote_payload
-            )
-            source = "targeted_get"
-        if isinstance(folder, dict):
-            if folder_id and not folder.get("externalId"):
-                folder = {**folder, "externalId": folder_id}
-            _wedof_store_page(
-                [folder], None, 0, update_sync_state=False,
-            )
-        with _wedof_connect() as db:
-            db.execute(
-                "INSERT OR IGNORE INTO wedof_webhook_deliveries "
-                "(delivery_id, processed_at) VALUES (?, ?)",
-                (delivery_id, _wedof_now()),
-            )
-        return jsonify({
-            "ok": True,
-            "processed": bool(isinstance(folder, dict)),
-            "source": source if isinstance(folder, dict) else "event_only",
-        }), 200
-    except WedofAPIError as exc:
-        return jsonify({"ok": False, "error": _wedof_clean(exc)}), 503
-
-
-@app.route("/crm", defaults={"section": "accueil"})
-@app.route("/crm/<section>")
-@login_required
-def crm(section):
-    if section not in CRM_PAGE_LABELS:
-        abort(404)
-    user = current_user()
-    # A browser session can outlive the account configuration that created it.
-    # Avoid passing None to the template, where user attributes become Jinja
-    # Undefined objects that the CRM_CONFIG JSON serializer cannot encode.
-    if not user:
-        session.pop("user_email", None)
-        return redirect(url_for("login", next=request.path))
-    return render_template(
-        "crm.html",
-        section=section,
-        page_title=CRM_PAGE_LABELS[section],
-        statuses=_crm_statuses(load_data()),
-        user=user,
-        crm_team=[
-            {
-                "name": member["name"],
-                "first_name": member["first_name"],
-                "email": member["email"],
-            }
-            for member in USERS.values()
-        ],
-        asset_version=CRM_ASSET_VERSION,
-    )
-
-
-@app.get("/api/crm/exports/<export_key>")
-@login_required
-def crm_export_excel(export_key):
-    """T√©l√©charge les inscrits d'une formation dans un classeur Excel."""
-    if export_key not in CRM_EXPORT_DEFINITIONS:
-        abort(404)
-    data = load_data()
-    output = build_crm_export_workbook(data.get("crm_contacts", []), export_key)
-    response = send_file(
-        output,
-        as_attachment=True,
-        download_name=crm_export_filename(export_key),
-        mimetype=(
-            "application/vnd.openxmlformats-officedocument."
-            "spreadsheetml.sheet"
-        ),
-        max_age=0,
-    )
-    response.headers["Cache-Control"] = "private, no-store, max-age=0"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    return response
-
-
-@app.route("/CRM", defaults={"section": "accueil"})
-@app.route("/CRM/<section>")
-@login_required
-def crm_uppercase(section):
-    """Pr√©serve les liens historiques qui utilisent le chemin CRM en majuscules."""
-    target = url_for("crm", section=section)
-    return redirect(f"{target}?{request.query_string.decode()}" if request.query_string else target)
-
-
-def _crm_calendly_status_payload(data):
-    state = data.get("crm_calendly") or {}
-    return {
-        "configured": bool(_calendly_token()),
-        "signing_key_configured": bool(_calendly_signing_key()),
-        "connected": bool(state.get("webhook_uri")),
-        "scope": state.get("scope") or "",
-        "account_name": state.get("account_name") or "",
-        "account_email": state.get("account_email") or "",
-        "last_sync_at": state.get("last_sync_at") or "",
-        "last_full_sync_at": state.get("last_full_sync_at") or "",
-        "sync_complete": bool(state.get("sync_complete")),
-        "sync_in_progress": bool(state.get("sync_cursor")) and not state.get("sync_complete"),
-    }
-
-
-def _calendly_create_or_reuse_webhook(context, scope, callback_url):
-    params = {
-        "organization": context["organization"],
-        "scope": scope,
-        "count": 100,
-    }
-    if scope == "user":
-        params["user"] = context["user"]
-    subscriptions = _calendly_paginated_collection(
-        "/webhook_subscriptions",
-        params=params,
-        max_pages=10,
-    )
-    expected_events = set(CALENDLY_WEBHOOK_EVENTS)
-    for subscription in subscriptions:
-        if subscription.get("callback_url") != callback_url:
-            continue
-        if subscription.get("state") == "active" and expected_events.issubset(
-            set(subscription.get("events") or [])
-        ):
-            return subscription
-        raise RuntimeError(
-            "Un ancien webhook Calendly utilise d√©j√† cette adresse mais n'est pas actif ou incomplet. "
-            "Supprimez-le dans Calendly avant de relancer la configuration."
-        )
-
-    body = {
-        "url": callback_url,
-        "events": list(CALENDLY_WEBHOOK_EVENTS),
-        "organization": context["organization"],
-        "scope": scope,
-        "signing_key": _calendly_signing_key(),
-    }
-    if scope == "user":
-        body["user"] = context["user"]
-    return (_calendly_request(
-        "POST",
-        "/webhook_subscriptions",
-        json_body=body,
-    ).get("resource") or {})
-
-
-@app.route("/api/crm/calendly/status")
-@login_required
-def crm_calendly_status():
-    return jsonify(_crm_calendly_status_payload(load_data()))
-
-
-CRM_CALENDAR_CONTACT_FIELDS = (
-    "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
-    "statut", "dates_formation", "origine", "relance_date",
-    "prochaine_action_manuelle", "desp_type", "cpf", "cpf_montant", "cpf_palier",
-    "identite_creation", "identite_ok", "financement_ft",
-    "statut_demande_financement_ft", "montant_accorde_ft",
-    "financement_perso_possible", "refus_ft_perso", "inscrit_ft",
-    "reste_a_charge_perso", "carte_pro", "titre_sejour",
-    "titre_sejour_cnaps", "garde_vue", "antecedents", "compte_cnaps",
-    "integration_dracar",
-)
-
-def _crm_calendar_contact_payload(data, contact):
-    """Expose uniquement les champs requis par les indicateurs du calendrier."""
-    if not contact:
-        return {
-            "id": "", "prenom": "", "nom": "", "formation": "",
-            "telephone": "", "mail": "",
-        }
-    payload = {
-        key: contact.get(key)
-        for key in CRM_CALENDAR_CONTACT_FIELDS
-    }
-    snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(
-        str(contact.get("id") or "")
-    )
-    effective_contact = dict(contact)
-    effective_contact.setdefault(
-        "financement_perso_possible",
-        str(contact.get("refus_ft_perso") or ""),
-    )
-    score = calculate_candidate_integration_score(effective_contact, snapshot)
-    payload["integration_score"] = {
-        key: score.get(key)
-        for key in (
-            "score", "level", "label", "operational_status",
-            "personal_remainder_applicable",
-        )
-    }
-    return payload
-
-
-def _crm_calendly_appointments_payload(data):
-    """Construit l'agenda CRM sans relire le fichier de donn√©es."""
-    contacts = {item.get("id"): item for item in data.get("crm_contacts", [])}
-    appointments = []
-    for item in data.get("crm_calendly_appointments", []):
-        contact = contacts.get(item.get("contact_id")) or {}
-        appointments.append({
-            **item,
-            "contact": _crm_calendar_contact_payload(data, contact),
-        })
-    appointments.sort(key=lambda item: item.get("start_time") or "")
-    return {
-        "appointments": appointments,
-        "integration": _crm_calendly_status_payload(data),
-    }
-
-
-@app.route("/api/crm/calendly/appointments")
-@login_required
-@_crm_serialized
-def crm_calendly_appointments():
-    """Retourne l'agenda partag√©, enrichi avec la fiche CRM associ√©e."""
-    return jsonify(_crm_calendly_appointments_payload(load_data()))
-
-
-@app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
-@login_required
-def crm_calendly_update_appointment(appointment_id):
-    """Enregistre le r√©sultat de la prise de contact associ√©e √† un rendez-vous."""
-    payload = request.get_json(silent=True) or {}
-    response_status = str(payload.get("response_status") or "").strip()
-    if response_status not in {"", "answered", "no_answer"}:
-        return jsonify({"error": "R√©sultat du rendez-vous invalide."}), 400
-
-    data = load_data()
-    appointment = next(
-        (item for item in data.get("crm_calendly_appointments", [])
-         if item.get("id") == appointment_id),
-        None,
-    )
-    if not appointment:
-        return jsonify({"error": "Rendez-vous introuvable"}), 404
-
-    previous_status = appointment.get("response_status") or ""
-    now = _crm_now()
-    appointment["response_status"] = response_status
-    appointment["response_status_updated_at"] = now
-    appointment["updated_at"] = now
-    delivery = None
-    contact = _crm_contact(data, appointment.get("contact_id"))
-    if response_status in {"no_answer", "answered"} and previous_status != response_status:
-        if contact:
-            if response_status == "no_answer":
-                contact["statut"] = "A relancer"
-                paris_today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
-                next_relance_date = (paris_today + datetime.timedelta(days=7)).isoformat()
-                _crm_schedule_relance(
-                    contact,
-                    next_relance_date,
-                    source="calendly_no_answer",
-                    motif="Suite absence au rendez-vous",
-                )
-                _crm_activity(contact, "statut", "Statut : A relancer", "Sans r√©ponse au rendez-vous ¬∑ relance automatique √† J+7")
-            contact["updated_at"] = now
-            if response_status == "no_answer":
-                delivery = _crm_send_appointment_followup(data, contact, "Pas de r√©ponse appel")
-    save_data(data)
-    result = dict(appointment)
-    if contact:
-        # Return the contact changed by this action so the CRM can update its
-        # in-memory list immediately, without requiring a full page refresh.
-        result["contact"] = contact
-    if delivery is not None:
-        result["delivery"] = delivery
-    return jsonify(result)
-
-
-@app.route("/api/crm/calendly/setup", methods=["POST"])
-@login_required
-def crm_calendly_setup():
-    user = current_user() or {}
-    if user.get("role") != "admin":
-        return jsonify({"error": "Seul un administrateur peut configurer Calendly."}), 403
-    if not _calendly_token():
-        return jsonify({"error": "Ajoutez CALENDLY_ACCESS_TOKEN dans les variables Render."}), 503
-    if not _calendly_signing_key():
-        return jsonify({"error": "Ajoutez CALENDLY_WEBHOOK_SIGNING_KEY dans les variables Render."}), 503
-    try:
-        context = _calendly_user_context()
-        callback_url = _calendly_callback_url()
-        scope = "organization"
-        try:
-            subscription = _calendly_create_or_reuse_webhook(context, scope, callback_url)
-        except CalendlyAPIError as exc:
-            if exc.status_code != 403 or exc.insufficient_scope:
-                raise
-            scope = "user"
-            subscription = _calendly_create_or_reuse_webhook(context, scope, callback_url)
-
-        data = load_data()
-        data["crm_calendly"] = {
-            **(data.get("crm_calendly") or {}),
-            **context,
-            "scope": scope,
-            "webhook_uri": subscription.get("uri") or "",
-            "webhook_url": callback_url,
-            "webhook_state": subscription.get("state") or "active",
-            "account_name": context.get("account_name") or "",
-            "account_email": context.get("account_email") or "",
-            "sync_cursor": None,
-            "sync_complete": False,
-            "configured_at": _crm_now(),
-        }
-        save_data(data)
-        response = _crm_calendly_status_payload(data)
-        if scope == "user":
-            response["warning"] = (
-                "Le jeton n'a pas les droits administrateur de l'organisation. "
-                "La synchronisation couvre tous les rendez-vous du compte Calendly li√© au jeton."
-            )
-        return jsonify(response)
-    except (CalendlyAPIError, RuntimeError) as exc:
-        return _calendly_route_error(exc)
-
-
-def _calendly_event_types_for_context(data):
-    context = _calendly_context_from_data(data)
-    params = {"active": "true", "count": 100, "sort": "name:asc"}
-    if context.get("scope") == "user":
-        params["user"] = context["user"]
-    else:
-        params["organization"] = context["organization"]
-    try:
-        event_types = _calendly_paginated_collection("/event_types", params=params)
-    except CalendlyAPIError as exc:
-        if context.get("scope") != "organization" or exc.status_code != 403 or exc.insufficient_scope:
-            raise
-        params.pop("organization", None)
-        params["user"] = context["user"]
-        event_types = _calendly_paginated_collection("/event_types", params=params)
-    unique = {}
-    for event_type in event_types:
-        uri = event_type.get("uri")
-        if uri:
-            unique[uri] = event_type
-    return sorted(
-        unique.values(),
-        key=lambda item: str(item.get("name") or "").casefold(),
-    )
-
-
-CALENDLY_EVENT_TYPE_TOKENS_BY_FORMATION = {
-    "aps": ("agent de securite", " aps"),
-    "a3p": (
-        "a3p",
-        " apr",
-        "garde du corps",
-        "protection physique",
-        "protection rapprochee",
-    ),
-    "desp": ("desp", "dirigeant"),
-    "ssiap 1": ("ssiap",),
-    "chauffeur vtc": ("vtc", "chauffeur"),
-}
-
-
-def _calendly_event_type_matches_formation(event_type, formation):
-    normalized_formation = (
-        unicodedata.normalize("NFKD", str(formation or ""))
-        .encode("ascii", "ignore")
-        .decode()
-        .lower()
-        .strip()
-    )
-    if not normalized_formation:
-        return True
-    expected = CALENDLY_EVENT_TYPE_TOKENS_BY_FORMATION.get(
-        normalized_formation,
-        (f" {normalized_formation}",),
-    )
-    normalized_name = (
-        " "
-        + unicodedata.normalize("NFKD", str(event_type.get("name") or ""))
-        .encode("ascii", "ignore")
-        .decode()
-        .lower()
-    )
-    return any(token in normalized_name for token in expected)
-
-
-@app.route("/api/crm/calendly/event-types")
-@login_required
-def crm_calendly_event_types():
-    if not _calendly_token():
-        return jsonify({"error": "CALENDLY_ACCESS_TOKEN n'est pas configur√© dans Render."}), 503
-    try:
-        event_types = _calendly_event_types_for_context(load_data())
-        formation = str(request.args.get("formation") or "").strip()
-        if formation:
-            event_types = [
-                item for item in event_types
-                if _calendly_event_type_matches_formation(item, formation)
-            ]
-        return jsonify([
-            {
-                "uri": item.get("uri"),
-                "name": item.get("name") or "Rendez-vous Calendly",
-                "duration": item.get("duration"),
-                "active": item.get("active"),
-                "kind": item.get("kind"),
-                "pooling_type": item.get("pooling_type"),
-                "booking_method": item.get("booking_method"),
-                "is_paid": bool(item.get("is_paid")),
-                "scheduling_url": item.get("scheduling_url") or "",
-                "locations": item.get("locations") or [],
-                "custom_questions": item.get("custom_questions") or [],
-                "profile": item.get("profile") or {},
-            }
-            for item in event_types
-        ])
-    except (CalendlyAPIError, RuntimeError) as exc:
-        return _calendly_route_error(exc)
-
-
-@app.route("/api/crm/calendly/availability")
-@login_required
-def crm_calendly_availability():
-    event_type = str(request.args.get("event_type") or "").strip()
-    start_time = str(request.args.get("start_time") or "").strip()
-    end_time = str(request.args.get("end_time") or "").strip()
-    if not _calendly_resource_uuid(event_type, "event_types"):
-        return jsonify({"error": "Type de rendez-vous Calendly invalide."}), 400
-    if not start_time or not end_time:
-        return jsonify({"error": "La p√©riode de disponibilit√© est incompl√®te."}), 400
-    try:
-        available_start = datetime.datetime.fromisoformat(
-            start_time.replace("Z", "+00:00")
-        )
-        available_end = datetime.datetime.fromisoformat(
-            end_time.replace("Z", "+00:00")
-        )
-        if available_start.tzinfo is None or available_end.tzinfo is None:
-            raise ValueError
-    except ValueError:
-        return jsonify({
-            "error": "La p√©riode de disponibilit√© doit contenir des dates ISO 8601 avec fuseau horaire."
-        }), 400
-    if available_end <= available_start:
-        return jsonify({
-            "error": "La fin de la p√©riode de disponibilit√© doit √™tre post√©rieure √† son d√©but."
-        }), 400
-    if available_end - available_start > datetime.timedelta(days=7):
-        return jsonify({
-            "error": "La p√©riode de disponibilit√© Calendly ne peut pas d√©passer 7 jours."
-        }), 400
-    # Calendly exige une borne de d√©but strictement future. La date envoy√©e
-    # par le navigateur peut d√©j√† √™tre pass√©e de quelques millisecondes au
-    # moment o√π la requ√™te atteint Calendly, donc gardons une petite marge.
-    minimum_start = (
-        datetime.datetime.now(datetime.timezone.utc)
-        + datetime.timedelta(minutes=1)
-    )
-    if available_end <= minimum_start:
-        return jsonify({
-            "error": "La p√©riode de disponibilit√© Calendly doit √™tre situ√©e dans le futur."
-        }), 400
-    if available_start < minimum_start:
-        available_start = minimum_start
-        start_time = available_start.isoformat(timespec="seconds").replace("+00:00", "Z")
-    try:
-        response = _calendly_request(
-            "GET",
-            "/event_type_available_times",
-            params={
-                "event_type": event_type,
-                "start_time": start_time,
-                "end_time": end_time,
-            },
-        )
-        return jsonify(response.get("collection") or [])
-    except (CalendlyAPIError, RuntimeError) as exc:
-        return _calendly_route_error(exc)
-
-
-@app.route("/api/crm/contacts/<contact_id>/calendly/appointments", methods=["GET", "POST"])
-@login_required
-def crm_contact_calendly_appointments(contact_id):
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-
-    if request.method == "GET":
-        lookup = {"method": "local", "processed_events": 0}
-        lookup_warning = ""
-        lookup_succeeded = False
-        fetched_payloads = []
-        refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {
-            "1", "true", "yes", "oui",
-        }
-        state = data.get("crm_calendly") or {}
-        can_lookup_by_email = bool(
-            _calendly_token()
-            and state.get("user")
-            and state.get("organization")
-            and _crm_normalize_email(contact.get("mail"))
-        )
-        # La fiche affiche instantan√©ment le cache local aliment√© par les
-        # webhooks/synchronisations. Une recherche Calendly distante (qui peut
-        # prendre plusieurs secondes) n'est faite qu'apr√®s clic sur Actualiser.
-        if refresh_requested and can_lookup_by_email:
-            try:
-                fetched_payloads, lookup = _crm_calendly_fetch_contact_appointments(
-                    data,
-                    contact,
-                )
-                lookup_succeeded = True
-            except (CalendlyAPIError, RuntimeError) as exc:
-                lookup_warning = str(exc)
-
-        latest_data = load_data()
-        latest_contact = _crm_contact(latest_data, contact_id)
-        if not latest_contact:
-            return jsonify({"error": "Contact introuvable"}), 404
-        changed = False
-        for fetched_payload in fetched_payloads:
-            _crm_upsert_calendly_appointment(
-                latest_data,
-                fetched_payload,
-                source="targeted_lookup",
-                contact_id=contact_id,
-                record_activity=False,
-            )
-            changed = True
-        if _crm_calendly_relink_appointments(latest_data, latest_contact):
-            changed = True
-        if _crm_sync_contact_calendly_status(latest_data, latest_contact):
-            changed = True
-        if lookup_succeeded:
-            latest_data.setdefault("crm_calendly", {})["last_sync_at"] = _crm_now()
-            changed = True
-        if changed:
-            save_data(latest_data)
-        appointments = [
-            item for item in latest_data.get("crm_calendly_appointments", [])
-            if item.get("contact_id") == contact_id
-        ]
-        appointments.sort(key=lambda item: item.get("start_time") or "", reverse=True)
-        integration = _crm_calendly_status_payload(latest_data)
-        if lookup_warning:
-            integration["lookup_warning"] = lookup_warning
-        lookup["matched_appointments"] = len(appointments)
-        return jsonify({
-            "appointments": appointments,
-            "integration": integration,
-            "lookup": lookup,
-        })
-
-    payload = request.get_json(silent=True) or {}
-    event_type_uri = str(payload.get("event_type") or "").strip()
-    event_type_uuid = _calendly_resource_uuid(event_type_uri, "event_types")
-    start_time = str(payload.get("start_time") or "").strip()
-    timezone = str(payload.get("timezone") or "Europe/Paris").strip()
-    if not event_type_uuid or not start_time:
-        return jsonify({"error": "Choisissez un type de rendez-vous et un horaire."}), 400
-    if not _crm_normalize_email(contact.get("mail")):
-        return jsonify({"error": "Ajoutez l'adresse e-mail de la personne avant de planifier le rendez-vous."}), 400
-    try:
-        parsed_start = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-        if parsed_start.tzinfo is None:
-            raise ValueError
-        pytz.timezone(timezone)
-    except (ValueError, pytz.UnknownTimeZoneError):
-        return jsonify({"error": "Le cr√©neau ou le fuseau horaire du rendez-vous est invalide."}), 400
-
-    try:
-        event_type = (
-            _calendly_request("GET", f"/event_types/{event_type_uuid}").get("resource") or {}
-        )
-        if not event_type.get("active"):
-            return jsonify({"error": "Ce type de rendez-vous Calendly n'est plus actif."}), 400
-        contact_formation = str(contact.get("formation") or "").strip()
-        if not _calendly_event_type_matches_formation(event_type, contact_formation):
-            event_type_name = event_type.get("name") or "Rendez-vous Calendly"
-            return jsonify({
-                "error": (
-                    f"Le type Calendly ¬´ {event_type_name} ¬ª ne correspond pas √† la formation "
-                    f"{contact_formation}. Rechargez la fiche avant de choisir un nouveau cr√©neau."
-                ),
-            }), 409
-        if event_type.get("is_paid"):
-            return jsonify({
-                "error": "Calendly impose une page de paiement pour ce type de rendez-vous. Utilisez son lien Calendly.",
-                "scheduling_url": event_type.get("scheduling_url") or "",
-            }), 400
-        if event_type.get("booking_method") == "poll":
-            return jsonify({
-                "error": "Ce type Calendly est un sondage de dates et ne peut pas √™tre r√©serv√© directement par l'API.",
-                "scheduling_url": event_type.get("scheduling_url") or "",
-            }), 400
-
-        booking_location = _calendly_booking_location(
-            event_type,
-            payload.get("location"),
-            contact,
-        )
-        answers, text_reminder_number = _calendly_question_answers(
-            event_type,
-            payload.get("answers"),
-        )
-        first_name = str(contact.get("prenom") or "").strip()
-        last_name = str(contact.get("nom") or "").strip()
-        invitee = {
-            "name": " ".join(
-                part for part in [first_name, last_name] if part
-            ).strip() or contact.get("mail"),
-            "email": contact.get("mail"),
-            "timezone": timezone,
-        }
-        if first_name and last_name:
-            invitee["first_name"] = first_name
-            invitee["last_name"] = last_name
-        if text_reminder_number:
-            invitee["text_reminder_number"] = text_reminder_number
-        booking_body = {
-            "event_type": event_type.get("uri") or event_type_uri,
-            "start_time": start_time,
-            "invitee": invitee,
-        }
-        if booking_location:
-            booking_body["location"] = booking_location
-        if answers:
-            booking_body["questions_and_answers"] = answers
-
-        invitee_resource = (
-            _calendly_request("POST", "/invitees", json_body=booking_body).get("resource") or {}
-        )
-        event_uri = invitee_resource.get("event") or ""
-        event_uuid = _calendly_resource_uuid(event_uri, "scheduled_events")
-        scheduled_event = {}
-        if event_uuid:
-            try:
-                scheduled_event = (
-                    _calendly_request("GET", f"/scheduled_events/{event_uuid}").get("resource") or {}
-                )
-            except (CalendlyAPIError, RuntimeError):
-                scheduled_event = {}
-        if not scheduled_event:
-            try:
-                parsed_start = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-                end_time = parsed_start + datetime.timedelta(minutes=int(event_type.get("duration") or 0))
-                calculated_end = end_time.isoformat().replace("+00:00", "Z")
-            except (TypeError, ValueError):
-                calculated_end = ""
-            scheduled_event = {
-                "uri": event_uri,
-                "name": event_type.get("name") or "Rendez-vous Calendly",
-                "status": "active",
-                "start_time": start_time,
-                "end_time": calculated_end,
-                "event_type": event_type_uri,
-                "location": booking_location,
-                "event_memberships": [],
-            }
-        appointment_payload = {**invitee_resource, "scheduled_event": scheduled_event}
-        latest_data = load_data()
-        latest_contact = _crm_contact(latest_data, contact_id)
-        if not latest_contact:
-            return jsonify({"error": "Le rendez-vous a √©t√© cr√©√© mais la piste n'existe plus."}), 409
-        appointment, latest_contact = _crm_upsert_calendly_appointment(
-            latest_data,
-            appointment_payload,
-            source="crm",
-            contact_id=contact_id,
-            record_activity=True,
-        )
-        save_data(latest_data)
-        return jsonify({"appointment": appointment, "contact": latest_contact}), 201
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except (CalendlyAPIError, RuntimeError) as exc:
-        return _calendly_route_error(exc, action="la cr√©ation du rendez-vous")
-
-
-@app.route("/api/crm/calendly/sync", methods=["POST"])
-@login_required
-def crm_calendly_sync():
-    user = current_user() or {}
-    if user.get("role") != "admin":
-        return jsonify({"error": "Seul un administrateur peut lancer la synchronisation Calendly."}), 403
-    body = request.get_json(silent=True) or {}
-    data = load_data()
-    state = data.get("crm_calendly") or {}
-    if not state.get("webhook_uri"):
-        return jsonify({"error": "Activez d'abord la synchronisation Calendly."}), 409
-    cursor = None if body.get("restart") else state.get("sync_cursor")
-    if state.get("sync_complete") and not body.get("restart"):
-        return jsonify({"complete": True, "processed_events": 0, "appointments": 0})
-
-    batch_size = max(1, min(int(os.getenv("CALENDLY_SYNC_BATCH_SIZE", "20")), 100))
-    params = {"count": batch_size, "sort": "start_time:desc"}
-    if state.get("scope") == "user":
-        params["user"] = state.get("user")
-    else:
-        params["organization"] = state.get("organization")
-    if cursor:
-        params["page_token"] = cursor
-
-    try:
-        event_page = _calendly_request("GET", "/scheduled_events", params=params, timeout=35)
-        imported_payloads = []
-        for scheduled_event in event_page.get("collection") or []:
-            event_uuid = _calendly_resource_uuid(scheduled_event.get("uri"), "scheduled_events")
-            if not event_uuid:
-                continue
-            invitees = _calendly_paginated_collection(
-                f"/scheduled_events/{event_uuid}/invitees",
-                params={"count": 100},
-                max_pages=100,
-            )
-            for invitee in invitees:
-                imported_payloads.append({**invitee, "scheduled_event": scheduled_event})
-
-        with _CRM_RECONCILIATION_LOCK:
-            latest_data = load_data()
-            before_count = len(latest_data.get("crm_calendly_appointments", []))
-            matched = 0
-            for imported_payload in imported_payloads:
-                _, contact = _crm_upsert_calendly_appointment(
-                    latest_data,
-                    imported_payload,
-                    source="sync",
-                    record_activity=False,
-                )
-                if contact:
-                    matched += 1
-            repaired = _crm_repair_cached_calendly_contacts(latest_data)
-            next_cursor = (event_page.get("pagination") or {}).get("next_page_token")
-            integration_state = latest_data.setdefault("crm_calendly", {})
-            integration_state["sync_cursor"] = next_cursor
-            integration_state["sync_complete"] = not bool(next_cursor)
-            integration_state["last_sync_at"] = _crm_now()
-            if not next_cursor:
-                integration_state["last_full_sync_at"] = integration_state["last_sync_at"]
-            save_data(latest_data)
-            after_count = len(latest_data.get("crm_calendly_appointments", []))
-        return jsonify({
-            "complete": not bool(next_cursor),
-            "processed_events": len(event_page.get("collection") or []),
-            "appointments": len(imported_payloads),
-            "new_appointments": after_count - before_count,
-            "matched": matched,
-            "repaired_appointments": repaired,
-        })
-    except (CalendlyAPIError, RuntimeError) as exc:
-        return _calendly_route_error(exc)
-
-
-@app.route("/api/crm/calendly/webhook", methods=["POST"])
-@_crm_serialized
-def crm_calendly_webhook():
-    raw_body = request.get_data(cache=True)
-    signature = request.headers.get("Calendly-Webhook-Signature", "")
-    if not _calendly_signature_is_valid(raw_body, signature):
-        return jsonify({"error": "Signature Calendly invalide."}), 401
-    webhook = request.get_json(silent=True) or {}
-    event_name = str(webhook.get("event") or "")
-    if event_name not in CALENDLY_WEBHOOK_EVENTS:
-        return jsonify({"ok": True, "ignored": True})
-    payload = webhook.get("payload") or {}
-    if not isinstance(payload, dict) or not payload.get("uri"):
-        return jsonify({"error": "Payload Calendly invalide."}), 400
-    data = load_data()
-    appointment, contact = _crm_upsert_calendly_appointment(
-        data,
-        payload,
-        webhook_event=event_name,
-        source="webhook",
-        record_activity=True,
-    )
-    data.setdefault("crm_calendly", {})["last_sync_at"] = _crm_now()
-    save_data(data)
-    return jsonify({
-        "ok": True,
-        "appointment_id": appointment.get("id"),
-        "contact_id": contact.get("id") if contact else None,
-    })
-
-
-CRM_DEFAULT_SALE_PRICES = {
-    "APS": 1650,
-    "A3P": 4200,
-    "SSIAP 1": 1230,
-    "CHAUFFEUR VTC": 1500,
-    "DESP_INITIAL": 4300,
-    "DESP_VAE": 3800,
-}
-
-
-def _crm_default_sale_price(contact):
-    formation = str(contact.get("formation") or "").strip().upper()
-    if formation in {"VAE", "VAE DESP", "DESP VAE"}:
-        formation = "DESP_VAE"
-    elif formation == "DESP":
-        formation = f"DESP_{str(contact.get('desp_type') or 'INITIAL').strip().upper()}"
-    elif formation == "VTC":
-        formation = "CHAUFFEUR VTC"
-    elif formation.startswith("SSIAP"):
-        formation = "SSIAP 1"
-    return CRM_DEFAULT_SALE_PRICES.get(formation, "")
-
-
-def _crm_workspace_backfill(contact):
-    """Ajoute les champs du poste de travail sans alt√©rer les donn√©es existantes."""
-    changed = False
-    default_sale_price = _crm_default_sale_price(contact)
-    defaults = {
-        "commercial": "",
-        "tags": "",
-        "prix_vente": default_sale_price,
-        "cout_estime": "",
-        "disqualification_reason": "",
-        "disqualification_detail": "",
-        "reactivation_date": "",
-        "archived_at": "",
-        "converted_at": "",
-        "status_changed_at": contact.get("updated_at") or contact.get("created_at") or "",
-    }
-    for key, value in defaults.items():
-        if key not in contact:
-            contact[key] = value
-            changed = True
-    current_sale_price = str(contact.get("prix_vente") or "").strip()
-    legacy_default_price = (
-        (default_sale_price == CRM_DEFAULT_SALE_PRICES["SSIAP 1"]
-         and current_sale_price in {
-             "980", "980.0", "980.00", "1200", "1200.0", "1200.00",
-         })
-        or (default_sale_price == CRM_DEFAULT_SALE_PRICES["CHAUFFEUR VTC"]
-            and current_sale_price in {"1600", "1600.0", "1600.00"})
-    )
-    if default_sale_price and (not current_sale_price or legacy_default_price):
-        contact["prix_vente"] = default_sale_price
-        changed = True
-    if contact.get("statut") == "Converti" and not contact.get("converted_at"):
-        contact["converted_at"] = contact.get("updated_at") or contact.get("created_at") or _crm_now()
-        changed = True
-    if _crm_record_origin(
-        contact,
-        contact.get("origine") or contact.get("source"),
-        source=contact.get("source", ""),
-        context=contact.get("meta_source"),
-        date=contact.get("created_at"),
-    ):
-        changed = True
-    return changed
-
-
-def _crm_prepare_contacts(data):
-    """Applique les migrations l√©g√®res et les statuts WEDOF en un seul passage."""
-    changed = _crm_backfill_meta_submissions(data)
-    statuses = _crm_statuses(data)
-    try:
-        wedof_funding_statuses = _wedof_funding_statuses_by_contact(data)
-    except Exception as exc:
-        # Le CRM doit rester disponible m√™me si son cache WEDOF est momentan√©ment
-        # verrouill√© ou illisible. Les derni√®res valeurs persist√©es sont conserv√©es.
-        app.logger.warning(
-            "Synchronisation des statuts WEDOF ignor√©e (%s)", type(exc).__name__,
-        )
-        wedof_funding_statuses = {}
-
-    automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
-    # Each contact needs only its own appointments. Scanning the full agenda
-    # per contact made every cache rebuild grow as contacts * appointments.
-    appointments_by_contact = {}
-    for appointment in data.get("crm_calendly_appointments", []):
-        appointments_by_contact.setdefault(
-            appointment.get("contact_id"), [],
-        ).append(appointment)
-
-    for existing in data.get("crm_contacts", []):
-        if _crm_clear_inconsistent_titre_sejour_cnaps(existing):
-            changed = True
-        if _crm_migrate_registration_appointment_status(existing):
-            changed = True
-        if _crm_backfill_information_request_attribution(existing):
-            changed = True
-        if _crm_workspace_backfill(existing):
-            changed = True
-        if _crm_enforce_meta_defaults(existing):
-            changed = True
-        if existing.get("statut_secondaire") == "Session FT":
-            existing["statut_secondaire"] = "March√© FT"
-            changed = True
-
-        contact_id = str(existing.get("id") or "")
-        live_funding_status = wedof_funding_statuses.get(contact_id)
-        if (contact_id in wedof_funding_statuses
-                and existing.get("statut_demande_financement_ft_source")
-                != CRM_MANUAL_STATUS_SOURCE
-                and existing.get("statut_demande_financement_ft") != live_funding_status):
-            existing["statut_demande_financement_ft"] = live_funding_status
-            changed = True
-
-        funding_status = str(
-            existing.get("statut_demande_financement_ft") or ""
-        ).strip()
-        automatic_secondary = CRM_FT_SECONDARY_BY_STATUS.get(funding_status)
-        secondary_is_manual = (
-            existing.get("statut_secondaire_source") == CRM_MANUAL_STATUS_SOURCE
-        )
-        if not secondary_is_manual:
-            if (automatic_secondary
-                    and existing.get("statut_secondaire") != automatic_secondary):
-                existing["statut_secondaire"] = automatic_secondary
-                changed = True
-            elif (not automatic_secondary
-                  and existing.get("statut_secondaire") in automatic_secondary_labels):
-                existing["statut_secondaire"] = ""
-                changed = True
-        if "statut_secondaire" not in existing:
-            existing["statut_secondaire"] = ""
-            changed = True
-
-        if existing.get("statut") not in statuses:
-            existing["statut"] = statuses[0]
-            changed = True
-        if _crm_backfill_information_request_answers(existing):
-            changed = True
-        if _crm_ensure_relances(existing):
-            changed = True
-        if _crm_sync_contact_calendly_status(
-                data, existing,
-                appointments=appointments_by_contact.get(existing.get("id"), ())):
-            changed = True
-        prenom = _crm_format_first_name(existing.get("prenom"))
-        nom = _crm_format_last_name(existing.get("nom"))
-        if (prenom, nom) != (existing.get("prenom", ""), existing.get("nom", "")):
-            existing["prenom"], existing["nom"] = prenom, nom
-            changed = True
-
-    return changed, wedof_funding_statuses
-
-
-def _crm_clear_inconsistent_titre_sejour_cnaps(contact):
-    """Remove a residence-permit assessment from non-holders only."""
-    if _yes(contact.get("titre_sejour")):
-        return False
-    if not str(contact.get("titre_sejour_cnaps") or "").strip():
-        return False
-    contact["titre_sejour_cnaps"] = ""
-    return True
-
-
-_CRM_READ_MODEL_LOCK = threading.RLock()
-_CRM_READ_MODEL_KEY = None
-_CRM_READ_MODEL_VALUE = None
-
-
-def _crm_read_model_key():
-    wedof_signature = (
-        _wedof_db_signature() if os.path.exists(_wedof_db_path()) else None
-    )
-    return _data_file_signature(), wedof_signature
-
-
-def _crm_prepared_read_model():
-    """Reuse one prepared CRM model across bootstrap, detail and polling reads."""
-    global _CRM_READ_MODEL_KEY, _CRM_READ_MODEL_VALUE
-    with _CRM_READ_MODEL_LOCK:
-        # Another reader may have rebuilt the cache while this request waited.
-        # Compare the current revision only after acquiring the shared lock.
-        key = _crm_read_model_key()
-        if _CRM_READ_MODEL_VALUE is not None and _CRM_READ_MODEL_KEY == key:
-            return _CRM_READ_MODEL_VALUE
-
-        for attempt in range(2):
-            data = load_data()
-            _crm_prepare_contacts(data)
-            _crm_backfill_callback_requests(data)
-            final_key = _crm_read_model_key()
-            if final_key == key:
-                _CRM_READ_MODEL_KEY = key
-                _CRM_READ_MODEL_VALUE = data
-                return data
-            # A concurrent write landed. Retry once, keeping the revision from
-            # BEFORE the load so an older snapshot cannot claim a newer key.
-            key = final_key
-        # Under continuous writes, serve this bounded attempt but let the next
-        # reader rebuild. Never cache old content under the latest revision.
-        _CRM_READ_MODEL_KEY = None
-        _CRM_READ_MODEL_VALUE = None
-        return data
-
-
-def _crm_persist_prepared_contact_if_idle(prepared_contact):
-    """Persist a one-time legacy migration without ever waiting behind WEDOF."""
-    acquired = _CRM_RECONCILIATION_LOCK.acquire(blocking=False)
-    if not acquired:
-        return False
-    try:
-        model_key = _CRM_READ_MODEL_KEY
-        if not model_key or model_key[0] != _data_file_signature():
-            return False
-        data = load_data()
-        stored = _crm_contact(data, prepared_contact.get("id"))
-        if stored is None or stored == prepared_contact:
-            return False
-        index = data["crm_contacts"].index(stored)
-        data["crm_contacts"][index] = copy.deepcopy(prepared_contact)
-        save_data(data)
-        return True
-    finally:
-        _CRM_RECONCILIATION_LOCK.release()
-
-
-CRM_CONTACT_SUMMARY_FIELDS = (
-    "id", "prenom", "nom", "telephone", "mail", "formation", "lieu",
-    "statut", "statut_secondaire", "statut_demande_financement_ft",
-    "statut_demande_financement_ft_source", "dates_formation", "cpf",
-    "cpf_montant", "cpf_palier", "financement_ft", "montant_accorde_ft",
-    "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
-    "identite_creation", "identite_ok", "inscrit_ft", "desp_type",
-    "carte_pro", "titre_sejour", "titre_sejour_cnaps", "garde_vue",
-    "antecedents", "compte_cnaps", "cnaps_nub", "integration_dracar",
-    "origine", "source", "source_detail", "source_history", "commercial", "tags",
-    "prix_vente", "cout_estime", "relance_date", "prochaine_action_manuelle",
-    "archived_at",
-    "converted_at", "status_changed_at", "disqualification_reason",
-    "disqualification_detail", "reactivation_date", "created_at",
-    "received_at", "updated_at", "commentaires", "wedof_status",
-    "qualification_flag",
-)
-CRM_CONTACT_ACTIVITY_KINDS = {"appel", "email", "sms", "demande_rappel"}
-CRM_ACTIVITY_SECTIONS = {"notifications", "fil-actu"}
-CRM_COUNTED_RELANCE_STATUSES = {"scheduled", "answered", "no_answer"}
-CRM_CANCELLED_APPOINTMENT_STATUSES = {"canceled", "cancelled"}
-
-
-def _crm_appointment_counts_by_contact(data):
-    """Indexe les rendez-vous pass√©s ou √† venir sans compter les annulations."""
-    counts = {}
-    for appointment in data.get("crm_calendly_appointments", []):
-        if not isinstance(appointment, dict):
-            continue
-        contact_id = str(appointment.get("contact_id") or "").strip()
-        status = str(appointment.get("status") or "active").strip().lower()
-        if (not contact_id or not appointment.get("start_time")
-                or status in CRM_CANCELLED_APPOINTMENT_STATUSES):
-            continue
-        counts[contact_id] = counts.get(contact_id, 0) + 1
-    return counts
-
-
-def _crm_contact_activity_counts(contact, appointment_count=0):
-    """Retourne les compteurs l√©gers affich√©s dans la liste des contacts."""
-    channel_counts = {"email": 0, "sms": 0}
-    for activity in contact.get("activities", []):
-        if not isinstance(activity, dict):
-            continue
-        kind = str(activity.get("kind") or "").strip().lower()
-        if kind in channel_counts:
-            channel_counts[kind] += 1
-
-    relance_count = sum(
-        1 for relance in contact.get("relances", [])
-        if isinstance(relance, dict)
-        and str(relance.get("status") or "scheduled").strip().lower()
-        in CRM_COUNTED_RELANCE_STATUSES
-        and bool(relance.get("scheduled_date"))
-    )
-    return {
-        "appointments": max(0, int(appointment_count or 0)),
-        "relances": relance_count,
-        "emails": channel_counts["email"],
-        "sms": channel_counts["sms"],
-    }
-
-
-def _crm_compact_contact_activities(contact):
-    """Conserve uniquement les marqueurs n√©cessaires aux listes et statistiques."""
-    activities = [
-        item for item in contact.get("activities", [])
-        if isinstance(item, dict) and item.get("date")
-    ]
-    if not activities:
-        return []
-    newest = max(activities, key=lambda item: str(item.get("date") or ""))
-    contacted = [
-        item for item in activities
-        if item.get("kind") in CRM_CONTACT_ACTIVITY_KINDS
-    ]
-    selected = [newest]
-    if contacted:
-        latest_contact = max(
-            contacted, key=lambda item: str(item.get("date") or "")
-        )
-        if latest_contact is not newest:
-            selected.append(latest_contact)
-    return [
-        {
-            "id": item.get("id"),
-            "kind": item.get("kind"),
-            "date": item.get("date"),
-        }
-        for item in selected
-    ]
-
-
-def _crm_contact_summary_response(contact, data, *, funding_status=None,
-                                  activities=None, publications=None,
-                                  appointment_count=0, cpf_status=""):
-    """Construit une fiche l√©g√®re ; le d√©tail complet reste charg√© √† la demande."""
-    summary = {
-        key: contact.get(key)
-        for key in CRM_CONTACT_SUMMARY_FIELDS
-        if key in contact
-    }
-    summary["qualification_flag"] = str(contact.get("qualification_flag") or "")
-    summary["cpf_status"] = cpf_status
-    if (funding_status
-            and contact.get("statut_demande_financement_ft_source")
-            != CRM_MANUAL_STATUS_SOURCE):
-        summary["statut_demande_financement_ft"] = funding_status
-    snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(
-        str(contact.get("id"))
-    )
-    effective_contact = dict(contact)
-    effective_contact.setdefault(
-        "financement_perso_possible",
-        str(contact.get("refus_ft_perso") or ""),
-    )
-    if summary.get("statut_demande_financement_ft"):
-        effective_contact["statut_demande_financement_ft"] = summary[
-            "statut_demande_financement_ft"
-        ]
-    score = calculate_candidate_integration_score(effective_contact, snapshot)
-    summary["integration_score"] = {
-        key: score.get(key)
-        for key in (
-            "score", "level", "label", "operational_status",
-            "financial_score", "score_complete", "score_estimated",
-            "data_confidence_percent", "unsecured_amount_eur",
-            "remaining_to_finance_max_eur", "regulatory_applicable",
-            "regulatory_status", "regulatory_label",
-        )
-    }
-    # Ces deux objets sont petits et servent au tableau de bord d'acquisition.
-    summary["meta_source"] = contact.get("meta_source") or {}
-    summary["vae_eligibility"] = contact.get("vae_eligibility")
-    # Le tableau de bord Google Ads re√ßoit uniquement les cl√©s d'attribution
-    # utiles. Le formulaire complet, potentiellement volumineux, reste r√©serv√©
-    # √† la fiche d√©taill√©e.
-    form = contact.get("formulaire")
-    form = form if isinstance(form, dict) else {}
-    google_ads_tracking = {
-        key: bool(contact.get(key) or form.get(key))
-        for key in CRM_GOOGLE_ADS_IDENTIFIER_KEYS
-    }
-    google_ads_tracking.update({
-        key: str(contact.get(key) or form.get(key) or "").strip()
-        for key in CRM_GOOGLE_ADS_TRACKING_KEYS
-        if key not in CRM_GOOGLE_ADS_IDENTIFIER_KEYS
-        and (contact.get(key) or form.get(key))
-    })
-    summary["google_ads_tracking"] = google_ads_tracking
-    # Les relances restent disponibles sur la vue d√©di√©e, mais les e-mails,
-    # aper√ßus HTML, r√©ponses META et autres champs lourds ne partent plus ici.
-    summary["relances"] = contact.get("relances", [])
-    summary["activities"] = (
-        activities
-        if activities is not None
-        else _crm_compact_contact_activities(contact)
-    )
-    summary["activity_counts"] = _crm_contact_activity_counts(
-        contact, appointment_count,
-    )
-    summary["publications"] = publications if publications is not None else []
-    summary["_summary"] = True
-    return summary
-
-
-def _crm_contact_summaries_payload(data, section="", *, prepared=False):
-    """Pr√©pare un instantan√© compact adapt√© √† la rubrique demand√©e.
-
-    Les anciennes r√©ponses renvoyaient chaque fiche compl√®te, notamment les
-    aper√ßus d'e-mails HTML et les r√©ponses brutes aux formulaires. En production
-    cela repr√©sentait plus de 5 Mo √† chaque ouverture du CRM.
-    """
-    if prepared:
-        changed, wedof_funding_statuses = False, {}
-    else:
-        changed, wedof_funding_statuses = _crm_prepare_contacts(data)
-    wedof_cpf_states = _wedof_cpf_states_by_contact(data)
-    appointment_counts = _crm_appointment_counts_by_contact(data)
-    include_activity = str(section or "").strip().lower() in CRM_ACTIVITY_SECTIONS
-    activity_by_contact = {}
-    publication_by_contact = {}
-    if include_activity:
-        activity_rows = sorted(
-            (
-                (str(item.get("date") or ""), str(contact.get("id") or ""), item)
-                for contact in data.get("crm_contacts", [])
-                for item in contact.get("activities", [])
-                if isinstance(item, dict)
-            ),
-            key=lambda row: row[0],
-            reverse=True,
-        )[:150]
-        for _, contact_id, item in activity_rows:
-            activity_by_contact.setdefault(contact_id, []).append({
-                key: item.get(key)
-                for key in ("id", "date", "kind", "title", "detail", "author")
-                if key in item
-            })
-        publication_by_contact = {
-            str(contact.get("id") or ""): contact.get("publications", [])
-            for contact in data.get("crm_contacts", [])
-            if contact.get("publications")
-        }
-
-    contacts = []
-    for contact in data["crm_contacts"]:
-        contact_id = str(contact.get("id") or "")
-        contacts.append(_crm_contact_summary_response(
-            contact,
-            data,
-            funding_status=wedof_funding_statuses.get(contact_id),
-            cpf_status=wedof_cpf_states.get(contact_id, ""),
-            activities=(activity_by_contact.get(contact_id, [])
-                        if include_activity else None),
-            publications=(publication_by_contact.get(contact_id, [])
-                          if include_activity else None),
-            appointment_count=appointment_counts.get(contact_id, 0),
-        ))
-    return contacts, changed
-
-
-def _crm_contacts_payload(data):
-    """Conserve la r√©ponse historique compl√®te pour les int√©grations explicites."""
-    changed, wedof_funding_statuses = _crm_prepare_contacts(data)
-    contacts = [
-        _crm_contact_response(
-            contact,
-            data,
-            funding_status=wedof_funding_statuses.get(
-                str(contact.get("id") or "")
-            ),
-        )
-        for contact in data["crm_contacts"]
-    ]
-    return contacts, changed
-
-
-@app.route("/api/crm/contacts", methods=["GET", "POST"])
-@login_required
-def crm_contacts():
-    if request.method == "GET":
-        section = request.args.get("section", "")
-        if section or request.args.get("compact") == "1":
-            data = _crm_prepared_read_model()
-            contacts, _ = _crm_contact_summaries_payload(
-                data, section, prepared=True,
-            )
-        else:
-            data = load_data()
-            contacts, changed = _crm_contacts_payload(data)
-            if changed:
-                with _CRM_RECONCILIATION_LOCK:
-                    save_data(data)
-        return jsonify(contacts)
-
-    with _CRM_RECONCILIATION_LOCK:
-        return _crm_create_contact_locked()
-
-
-def _crm_create_contact_locked():
-    data = load_data()
-    payload = request.get_json(silent=True) or {}
-    now = _crm_now()
-    contact = {
-        "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
-        "nom": _crm_format_last_name(payload.get("nom")),
-        "telephone": str(payload.get("telephone") or "").strip(),
-        "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
-        "formation": str(payload.get("formation", "APS")), "lieu": str(payload.get("lieu") or "Paris"),
-        "statut": next((status for status in _crm_statuses(data) if status not in CRM_RESERVED_STATUSES), "Nouveaux"), "dates_formation": "", "cpf": "", "carte_pro": "",
-        "antecedents": "", "garde_vue": "", "titre_sejour": "", "titre_sejour_cnaps": "", "compte_cnaps": "", "cnaps_nub": "", "cnaps_card_validity": None,
-        "cnaps_username": "", "cnaps_birth_year": "", "cnaps_password": "",
-        "integration_dracar": "",
-        "desp_type": "", "identite_creation": "", "cpf_montant": "",
-        "cpf_palier": "",
-        "identite_ok": "", "financement_ft": "", "statut_demande_financement_ft": "",
-        "montant_accorde_ft": "", "financement_perso_possible": "",
-        "refus_ft_perso": "", "reste_a_charge_perso": "",
-        "origine": str(payload.get("origine") or "Ajout manuel"), "commercial": str(payload.get("commercial") or ""),
-        "inscrit_ft": "", "commentaires": "", "relance_date": "",
-        "prochaine_action_manuelle": "", "relances": [], "statut_secondaire": "",
-        "created_at": now, "updated_at": now, "activities": [],
-    }
-    contact["prix_vente"] = _crm_default_sale_price(contact)
-    _crm_activity(contact, "creation", "Piste cr√©√©e", "Ajout√©e dans Int√©grale Connect CRM")
-    contact, inbound, created = find_or_create_crm_contact(
-        data, payload, "saisie_manuelle", proposed_contact=contact,
-        selected_contact_id=payload.get("selected_contact_id"),
-        force_create=bool(payload.get("force_create")),
-    )
-    save_data(data)
-    if contact is None:
-        return jsonify({"status": "pending_review", "request_id": inbound["id"]}), 202
-    return jsonify(_crm_contact_response(contact, data)), 201 if created else 200
-
-
-@app.get("/api/crm/contacts/updates")
-@login_required
-def crm_contact_updates():
-    """Retourne uniquement les donn√©es utiles au rafra√Æchissement collaboratif."""
-    section = request.args.get("section", "")
-    if section == "demandes-rappel":
-        # Calendly peut recevoir une r√©servation apr√®s l'appel du secr√©tariat.
-        # R√©concilier la demande avant chaque rafra√Æchissement de cette page
-        # √©vite de conserver un libell√© ou une date de rendez-vous obsol√®te.
-        with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
-            stored_data = load_data()
-            if _crm_backfill_callback_requests(stored_data):
-                save_data(stored_data)
-    data = _crm_prepared_read_model()
-    wedof_cpf_states = _wedof_cpf_states_by_contact(data)
-    appointment_counts = _crm_appointment_counts_by_contact(data)
-    appointments = _crm_calendly_appointments_payload(data)["appointments"]
-
-    summaries = [
-        {
-            "id": contact.get("id"),
-            "statut": contact.get("statut"),
-            "statut_secondaire": contact.get("statut_secondaire", ""),
-            "cpf_status": wedof_cpf_states.get(str(contact.get("id") or ""), ""),
-            "relance_date": contact.get("relance_date", ""),
-            "statut_demande_financement_ft": contact.get(
-                "statut_demande_financement_ft", ""
-            ),
-            "updated_at": contact.get("updated_at"),
-            "activity_counts": _crm_contact_activity_counts(
-                contact,
-                appointment_counts.get(str(contact.get("id") or ""), 0),
-            ),
-        }
-        for contact in data.get("crm_contacts", [])
-    ]
-    selected = _crm_contact(data, request.args.get("contact_id"))
-    selected_payload = None
-    if selected:
-        selected_payload = {
-            "id": selected.get("id"),
-            "activities": selected.get("activities", []),
-            "publications": selected.get("publications", []),
-        }
-    payload = {
-        "contacts": summaries,
-        "selected": selected_payload,
-        "appointments": appointments,
-        "callback_pending_count": _crm_callback_pending_count(data),
-    }
-    if section == "demandes-rappel":
-        payload["callback_requests"] = _crm_callback_requests_payload(data)
-    return jsonify(payload)
-
-
-@app.delete("/api/crm/database")
-@login_required
-def crm_delete_database():
-    """Efface les donn√©es des prospects sans toucher aux autres outils du site."""
-    if (current_user() or {}).get("role") != "admin":
-        return jsonify({"error": "Cette action est r√©serv√©e √† l‚Äôadministrateur"}), 403
-
-    data = load_data()
-    deleted_count = len(data.get("crm_contacts", []))
-    # Les r√©glages CRM (√©tapes, mod√®les et connexion Calendly) sont conserv√©s,
-    # mais toutes les donn√©es rattach√©es aux prospects doivent dispara√Ætre.
-    data["crm_contacts"] = []
-    data["crm_calendly_appointments"] = []
-    data["crm_notifications"] = []
-    data["crm_ai_candidate_analyses"] = {}
-    data["crm_cnaps_scoring_snapshots"] = {}
-    save_data(data)
-    return jsonify({"ok": True, "deleted_count": deleted_count})
-
-
-@app.get("/api/crm/inbound-requests/pending")
-@login_required
-def crm_pending_inbound_requests():
-    data = load_data()
-    return jsonify([row for row in data.get("crm_inbound_requests", [])
-                    if row.get("status") == "pending_review"])
-
-
-@app.post("/api/crm/inbound-requests/<request_id>/resolve")
-@login_required
-def crm_resolve_inbound_request(request_id):
-    """R√©sout explicitement une correspondance sans jamais modifier la fiche cible."""
-    data = load_data(); payload = request.get_json(silent=True) or {}
-    inbound = next((row for row in data.get("crm_inbound_requests", [])
-                    if row.get("id") == request_id), None)
-    if not inbound or inbound.get("status") != "pending_review":
-        return jsonify({"error": "Demande √† v√©rifier introuvable"}), 404
-    action = payload.get("action")
-    if action == "cancel":
-        return jsonify(inbound)
-    if action == "attach":
-        contact = _crm_contact(data, payload.get("contact_id"))
-        if not contact: return jsonify({"error": "Fiche introuvable"}), 404
-    elif action == "create":
-        raw = inbound.get("raw_payload") or {}
-        contact, _, _ = find_or_create_crm_contact(
-            data, raw, inbound.get("source") or "r√©solution_manuelle", force_create=True,
-            external_id=f"resolution:{request_id}")
-    else:
-        return jsonify({"error": "Action invalide"}), 400
-    inbound["contact_id"] = contact.get("id"); inbound["status"] = "resolved"
-    inbound["resolved_at"] = _crm_now()
-    inbound["resolved_by"] = (current_user() or {}).get("email") or (current_user() or {}).get("name")
-    _crm_activity(contact, "inbound_request", "Correspondance r√©solue manuellement",
-                  f"Source : {inbound.get('source')}. Action : {action}.")
-    save_data(data)
-    return jsonify(inbound)
-
-
-@app.get("/api/crm/brevo/sms-credits")
-@login_required
-def crm_brevo_sms_credits():
-    """Expose the live Brevo SMS balance to authenticated CRM users."""
-    try:
-        credits = _brevo_sms_credits()
-    except (requests.RequestException, RuntimeError, ValueError) as exc:
-        return jsonify({"error": str(exc) or "Le solde SMS Brevo est indisponible."}), 503
-    _notify_brevo_sms_low_balance(credits)
-    return jsonify({"credits": credits})
-
-
-CRM_DEVELOPMENT_SUPPORT_PLATFORMS = {
-    "CRM": "CRM",
-    "Gestion stagiaires": "Gestion stagiaires",
-    "Site internet officiel": "Site internet officiel",
-}
-CRM_NOTION_DATA_SOURCE_ID = "7f12fe92-dbc4-40c8-af4e-77578b5dbfc0"
-CRM_DEVELOPMENT_SUPPORT_NOTION_STATUS = "√Ä ANALYSER"
-CRM_NOTION_ATTACHMENT_PROPERTY = "fichier"
-CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-CRM_DEVELOPMENT_SUPPORT_ATTACHMENT_EXTENSIONS = frozenset({
-    ".csv", ".doc", ".docx", ".gif", ".heic", ".jpeg", ".jpg", ".pdf",
-    ".png", ".txt", ".webp", ".xls", ".xlsx",
-})
-
-
-def _crm_notion_rich_text(value):
-    text = str(value or "")
-    return [
-        {"type": "text", "text": {"content": text[index:index + 2_000]}}
-        for index in range(0, len(text), 2_000)
-    ] or [{"type": "text", "text": {"content": ""}}]
-
-
-def _crm_development_support_attachment():
-    uploaded = request.files.get("attachment")
-    if not uploaded or not uploaded.filename:
-        return None
-    filename = secure_filename(uploaded.filename)
-    extension = os.path.splitext(filename)[1].lower()
-    if not filename or extension not in CRM_DEVELOPMENT_SUPPORT_ATTACHMENT_EXTENSIONS:
-        raise ValueError(
-            "Format de pi√®ce jointe non accept√©. Utilisez une image, un PDF, "
-            "un document Word/Excel, un CSV ou un fichier texte."
-        )
-    if len(filename.encode("utf-8")) > 240:
-        raise ValueError("Le nom de la pi√®ce jointe est trop long.")
-    content = uploaded.stream.read(CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES + 1)
-    if not content:
-        raise ValueError("La pi√®ce jointe est vide.")
-    if len(content) > CRM_DEVELOPMENT_SUPPORT_MAX_ATTACHMENT_BYTES:
-        raise OverflowError("La pi√®ce jointe ne doit pas d√©passer 20 Mo.")
-    # The browser-provided MIME type is user-controlled; derive it from the
-    # validated extension before forwarding the file to Notion.
-    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    return {
-        "filename": filename,
-        "content": content,
-        "content_type": content_type,
-    }
-
-
-def _crm_upload_notion_attachment(token, notion_version, attachment):
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Notion-Version": notion_version,
-    }
-    created_response = requests.post(
-        "https://api.notion.com/v1/file_uploads",
-        headers={**headers, "Content-Type": "application/json"},
-        json={
-            "mode": "single_part",
-            "filename": attachment["filename"],
-            "content_type": attachment["content_type"],
-        },
-        timeout=(10, 30),
-    )
-    if created_response.status_code not in {200, 201}:
-        raise RuntimeError(f"Notion File Upload HTTP {created_response.status_code}")
-    upload_id = str((created_response.json() or {}).get("id") or "").strip()
-    if not upload_id:
-        raise ValueError("R√©ponse Notion sans identifiant de fichier")
-    sent_response = requests.post(
-        f"https://api.notion.com/v1/file_uploads/{quote(upload_id, safe='')}/send",
-        headers=headers,
-        files={
-            "file": (
-                attachment["filename"],
-                attachment["content"],
-                attachment["content_type"],
-            ),
-        },
-        timeout=(10, 60),
-    )
-    if sent_response.status_code not in {200, 201}:
-        raise RuntimeError(f"Notion File Send HTTP {sent_response.status_code}")
-    sent_payload = sent_response.json() or {}
-    if sent_payload.get("status") != "uploaded":
-        raise ValueError("Notion n‚Äôa pas confirm√© le t√©l√©versement du fichier")
-    return upload_id
-
-
-def _crm_development_support_subject(rewritten_actions, original_actions):
-    """Extract a useful Notion title from the AI's formatted response."""
-    rewritten = re.sub(
-        r"(?i)<br\s*/?>", "\n", str(rewritten_actions or "")
-    ).replace("\r", "\n")
-    lines = []
-    for raw_line in rewritten.splitlines():
-        line = re.sub(r"[*_`]", "", raw_line)
-        line = re.sub(r"^\s*(?:#{1,6}\s*|[-‚Äì‚Äî>]\s*)", "", line).strip()
-        if line:
-            lines.append(line)
-
-    for index, line in enumerate(lines):
-        objective = re.match(r"(?i)^objectif\s*:?\s*(.*)$", line)
-        if not objective:
-            continue
-        subject = objective.group(1).strip(" \t:‚Äì‚Äî-")
-        if not subject:
-            for following_line in lines[index + 1:]:
-                if re.match(
-                        r"(?i)^(?:modifications demand√©es|crit√®res observables)\s*:?",
-                        following_line):
-                    break
-                subject = following_line
-                break
-        if subject:
-            return re.sub(r"\s+", " ", subject).strip().rstrip(".;")
-
-    fallback = str(original_actions or "").strip()
-    candidate = lines[0] if lines else fallback
-    return re.sub(r"\s+", " ", candidate).strip().rstrip(".;")
-
-
-def _crm_development_support_page(
-        platform, page_url, original_actions, rewritten_actions, *, ai_rewritten=True,
-        attachment_upload_id="", attachment_filename="", attachment_content_type=""):
-    user = current_user() or {}
-    subject = _crm_development_support_subject(rewritten_actions, original_actions)
-    title = f"{platform} ‚Äî {subject or original_actions}"[:100]
-    paragraph = lambda value: {"object": "block", "type": "paragraph",
-        "paragraph": {"rich_text": _crm_notion_rich_text(value)}}
-    heading = lambda value: {"object": "block", "type": "heading_2",
-        "heading_2": {"rich_text": _crm_notion_rich_text(value)}}
-    page = {
-        "parent": {
-            "type": "data_source_id",
-            "data_source_id": os.getenv(
-                "NOTION_CRM_DATA_SOURCE_ID", CRM_NOTION_DATA_SOURCE_ID),
-        },
-        "properties": {
-            "Pens√©e": {"type": "title", "title": _crm_notion_rich_text(title)},
-            "Domaine": {"type": "select", "select": {"name": "D√©veloppement web"}},
-            "Plateforme": {"type": "select", "select": {"name": platform}},
-            "Statut": {
-                "type": "select",
-                "select": {"name": CRM_DEVELOPMENT_SUPPORT_NOTION_STATUS},
-            },
-            "Type": {"type": "select", "select": {"name": "√Ä faire"}},
-        },
-        "children": [
-            heading("Demande reformul√©e par l‚ÄôIA" if ai_rewritten else "Demande √† reformuler"),
-            paragraph(rewritten_actions),
-            heading("Page concern√©e"),
-            paragraph(page_url),
-            heading("Demande originale"),
-            paragraph(original_actions),
-            heading("Demandeur"),
-            paragraph(user.get("name") or user.get("email") or "Administrateur CRM"),
-        ],
-    }
-    if attachment_upload_id:
-        file_upload = {
-            "type": "file_upload",
-            "file_upload": {"id": attachment_upload_id},
-        }
-        if str(attachment_content_type).startswith("image/"):
-            page["children"].extend([
-                heading("Image jointe"),
-                {
-                    "object": "block",
-                    "type": "image",
-                    "image": {**file_upload, "caption": []},
-                },
-            ])
-        else:
-            page["properties"][CRM_NOTION_ATTACHMENT_PROPERTY] = {
-                "type": "files",
-                "files": [{**file_upload, "name": attachment_filename}],
-            }
-            page["children"].extend([
-                heading("Pi√®ce jointe"),
-                {
-                    "object": "block",
-                    "type": "file",
-                    "file": {
-                        **file_upload,
-                        "name": attachment_filename,
-                        "caption": [],
-                    },
-                },
-            ])
-    return page
-
-
-@app.post("/api/crm/development-support")
-@login_required
-def crm_development_support():
-    payload = (request.get_json(silent=True) or {}) if request.is_json else request.form
-    platform = str(payload.get("platform") or "").strip()
-    page_url = str(payload.get("page_url") or "").strip()
-    actions = str(payload.get("actions") or "").strip()
-    if platform not in CRM_DEVELOPMENT_SUPPORT_PLATFORMS:
-        return jsonify({"error": "Choisissez une plateforme valide."}), 400
-    parsed_url = urlparse(page_url)
-    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc or len(page_url) > 2_000:
-        return jsonify({"error": "Renseignez une URL http(s) valide."}), 400
-    if len(actions) < 20 or len(actions) > 6_000:
-        return jsonify({"error": "D√©taillez les actions √† mener entre 20 et 6 000 caract√®res."}), 400
-    try:
-        attachment = _crm_development_support_attachment()
-    except OverflowError as exc:
-        return jsonify({"error": str(exc)}), 413
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    ai_rewritten = True
-    try:
-        rewritten = _crm_ai(
-            "Tu reformules une demande interne de d√©veloppement sans inventer, "
-            "supprimer ni ex√©cuter aucune instruction. R√©ponds uniquement en fran√ßais "
-            "avec trois sections courtes : Objectif, Modifications demand√©es, "
-            "Crit√®res observables. Conserve tous les d√©tails fonctionnels utiles.",
-            f"Plateforme : {platform}\nURL : {page_url}\nDemande brute :\n{actions}",
-            max_tokens=700,
-        )
-    except Exception as exc:
-        # La collecte de la demande reste prioritaire : une panne IA ne doit pas
-        # faire perdre la saisie. Work pourra reformuler le texte lors du traitement.
-        print(f"Support d√©veloppement ‚Äî reformulation diff√©r√©e : {exc}", flush=True)
-        rewritten = actions
-        ai_rewritten = False
-
-    token = os.getenv("NOTION_API_TOKEN")
-    if not token:
-        return jsonify({"error": "La connexion Notion du CRM n‚Äôest pas configur√©e."}), 503
-    notion_version = os.getenv("NOTION_API_VERSION", "2025-09-03")
-    attachment_upload_id = ""
-    if attachment:
-        try:
-            attachment_upload_id = _crm_upload_notion_attachment(
-                token, notion_version, attachment)
-        except (requests.RequestException, RuntimeError, ValueError) as exc:
-            print(f"Support d√©veloppement ‚Äî t√©l√©versement Notion impossible : {exc}", flush=True)
-            return jsonify({
-                "error": (
-                    "La pi√®ce jointe n‚Äôa pas pu √™tre envoy√©e √† Notion. "
-                    "La demande n‚Äôa pas √©t√© cr√©√©e."
-                ),
-            }), 503
-    notion_payload = _crm_development_support_page(
-        platform, page_url, actions, rewritten, ai_rewritten=ai_rewritten,
-        attachment_upload_id=attachment_upload_id,
-        attachment_filename=attachment["filename"] if attachment else "",
-        attachment_content_type=attachment["content_type"] if attachment else "",
-    )
-    try:
-        response = requests.post(
-            "https://api.notion.com/v1/pages",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Notion-Version": notion_version,
-                "Content-Type": "application/json",
-            },
-            json=notion_payload,
-            timeout=(10, 30),
-        )
-        if response.status_code not in {200, 201}:
-            raise RuntimeError(f"Notion HTTP {response.status_code}")
-        created = response.json()
-        notion_url = str(created.get("url") or "").strip()
-        if not notion_url:
-            raise ValueError("R√©ponse Notion sans URL")
-    except (requests.RequestException, RuntimeError, ValueError) as exc:
-        print(f"Support d√©veloppement ‚Äî cr√©ation Notion impossible : {exc}", flush=True)
-        return jsonify({"error": "La demande n‚Äôa pas pu √™tre cr√©√©e dans Notion."}), 503
-    return jsonify({
-        "url": notion_url,
-        "title": notion_payload["properties"]["Pens√©e"]["title"][0]["text"]["content"],
-        "ai_rewritten": ai_rewritten,
-        "attachment_uploaded": bool(attachment_upload_id),
-    }), 201
-
-
-@app.post("/api/crm/statuses")
-@login_required
-def crm_add_status():
-    data = load_data(); label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
-    statuses = _crm_statuses(data)
-    if not label or label in statuses:
-        return jsonify({"error": "Cette √©tape est vide ou existe d√©j√†"}), 400
-    data["crm_statuses"] = [*statuses[:-3], label, *statuses[-3:]]
-    save_data(data); return jsonify(data["crm_statuses"]), 201
-
-
-@app.route("/api/crm/statuses/<path:old_label>", methods=["PATCH", "DELETE"])
-@login_required
-def crm_change_status(old_label):
-    data = load_data(); statuses = _crm_statuses(data)
-    if old_label not in statuses:
-        return jsonify({"error": "√âtape introuvable"}), 404
-    if old_label in CRM_RESERVED_STATUSES:
-        return jsonify({"error": "Cette √©tape syst√®me ne peut pas √™tre modifi√©e"}), 400
-    if request.method == "PATCH":
-        replacement = str((request.get_json(silent=True) or {}).get("label") or "").strip()
-        if not replacement or (replacement in statuses and replacement != old_label):
-            return jsonify({"error": "Intitul√© invalide"}), 400
-    else:
-        replacement = next((value for value in statuses if value != old_label and value not in CRM_RESERVED_STATUSES), "Nouveaux")
-    next_statuses = [replacement if value == old_label else value for value in statuses] if request.method == "PATCH" else [value for value in statuses if value != old_label]
-    data["crm_statuses"] = next_statuses
-    for contact in data.get("crm_contacts", []):
-        if contact.get("statut") == old_label:
-            contact["statut"] = replacement
-    save_data(data)
-    return jsonify({"statuses": next_statuses, "replacement": replacement})
-
-
-def _crm_settings_payload(data):
-    """Normalise les r√©glages CRM sans relire le fichier JSON."""
-    settings = data.setdefault("crm_settings", {})
-    defaults = DEFAULT_DATA["crm_settings"]
-    for key, value in defaults.items():
-        settings.setdefault(
-            key,
-            value.copy() if isinstance(value, (dict, list)) else value,
-        )
-    return settings
-
-
-def _crm_preset_values(value, label):
-    if not isinstance(value, list):
-        raise ValueError(f"Les {label} doivent √™tre transmis sous forme de liste.")
-    if len(value) > 50:
-        raise ValueError(f"Vous ne pouvez pas enregistrer plus de 50 {label}.")
-    normalized = []
-    seen = set()
-    for item in value:
-        if not isinstance(item, str):
-            raise ValueError(
-                f"Chaque √©l√©ment de la liste ¬´ {label} ¬ª doit √™tre un texte."
-            )
-        text = " ".join(item.split())
-        if not text:
-            continue
-        if len(text) > 160:
-            raise ValueError(
-                f"Chaque √©l√©ment de la liste ¬´ {label} ¬ª est limit√© √† 160 caract√®res."
-            )
-        key = text.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized.append(text)
-    return normalized
-
-
-@app.route("/api/crm/settings", methods=["GET", "PATCH"])
-@login_required
-@_crm_serialized
-def crm_settings():
-    data = load_data()
-    settings = _crm_settings_payload(data)
-    if request.method == "GET":
-        return jsonify(settings)
-    payload = request.get_json(silent=True) or {}
-    allowed = {
-        "calendar_default_view", "calendar_workday_start", "calendar_workday_end",
-        "notification_mentions", "notification_system", "direction_costs",
-        "call_note_presets", "relance_motif_presets",
-        "manual_next_action_presets",
-    }
-    if "direction_costs" in payload and (current_user() or {}).get("role") != "admin":
-        return jsonify({"error": "La configuration des co√ªts est r√©serv√©e √† l‚Äôadministrateur."}), 403
-    for key in allowed.intersection(payload):
-        if key in {
-            "call_note_presets", "relance_motif_presets",
-            "manual_next_action_presets",
-        }:
-            label = {
-                "call_note_presets": "r√©ponses pr√©-enregistr√©es",
-                "relance_motif_presets": "motifs de relance",
-                "manual_next_action_presets": "prochaines actions pr√©-enregistr√©es",
-            }[key]
-            try:
-                settings[key] = _crm_preset_values(payload.get(key), label)
-            except ValueError as exc:
-                return jsonify({"error": str(exc)}), 400
-        elif key == "direction_costs":
-            costs = payload.get(key)
-            if not isinstance(costs, dict):
-                return jsonify({"error": "La configuration des co√ªts est invalide."}), 400
-            normalized = {}
-            for label, value in costs.items():
-                raw = str(value or "").strip().replace(" ", "").replace(",", ".")
-                if not raw:
-                    continue
-                try:
-                    amount = float(raw)
-                except ValueError:
-                    return jsonify({"error": f"Le co√ªt de {label} est invalide."}), 400
-                if amount < 0:
-                    return jsonify({"error": "Les co√ªts doivent √™tre positifs."}), 400
-                normalized[str(label)] = amount
-            settings[key] = normalized
-        elif key.startswith("notification_"):
-            settings[key] = bool(payload.get(key))
-        else:
-            settings[key] = str(payload.get(key) or "")
-    save_data(data)
-    return jsonify(settings)
-
-
-@app.route("/api/crm/contacts/bulk", methods=["PATCH", "DELETE"])
-@login_required
-@_crm_serialized
-def crm_contacts_bulk():
-    data = load_data(); payload = request.get_json(silent=True) or {}
-    ids = {str(value) for value in payload.get("ids", []) if value}
-    if not ids or len(ids) > 500:
-        return jsonify({"error": "S√©lection invalide."}), 400
-    if request.method == "DELETE":
-        deleted_ids = {
-            str(contact.get("id"))
-            for contact in data.get("crm_contacts", [])
-            if str(contact.get("id")) in ids
-        }
-        data["crm_contacts"] = [
-            contact for contact in data.get("crm_contacts", [])
-            if str(contact.get("id")) not in deleted_ids
-        ]
-        data["crm_calendly_appointments"] = [
-            appointment
-            for appointment in data.get("crm_calendly_appointments", [])
-            if str(appointment.get("contact_id")) not in deleted_ids
-        ]
-        save_data(data)
-        return jsonify({
-            "deleted_ids": sorted(deleted_ids),
-            "count": len(deleted_ids),
-        })
-    action = str(payload.get("action") or "").strip()
-    statuses = _crm_statuses(data)
-    updated = []
-    for contact in data.get("crm_contacts", []):
-        if str(contact.get("id")) not in ids:
-            continue
-        old_status = contact.get("statut")
-        if action == "status":
-            status = str(payload.get("value") or "").strip()
-            if status not in statuses:
-                return jsonify({"error": "√âtape inconnue."}), 400
-            contact["statut"] = status
-        elif action == "commercial":
-            contact["commercial"] = str(payload.get("value") or "").strip()
-        elif action == "archive":
-            contact["archived_at"] = _crm_now()
-        elif action == "restore":
-            contact["archived_at"] = ""
-        elif action == "relance":
-            try:
-                requested_date = _crm_relance_date(
-                    payload.get("value"), weekdays_only=True,
-                )
-                planned, _ = _crm_schedule_relance(
-                    contact,
-                    requested_date,
-                    source="bulk",
-                    motif=payload.get("motif"),
-                )
-            except ValueError as exc:
-                return jsonify({"error": str(exc)}), 400
-            contact["statut"] = "A relancer"
-            if planned:
-                _crm_activity(contact, "relance", "Relance planifi√©e en groupe",
-                              " ¬∑ ".join(filter(None, [
-                                  f"Prochaine relance le {planned['scheduled_date']}",
-                                  f"Motif : {planned.get('motif')}" if planned.get("motif") else "",
-                              ])))
-        elif action == "disqualify":
-            reason = str(payload.get("reason") or "").strip()
-            if not reason:
-                return jsonify({"error": "Le motif de disqualification est obligatoire."}), 400
-            _crm_schedule_relance(contact, "")
-            contact.update({
-                "statut": "Disqualifi√©",
-                "disqualification_reason": reason,
-                "disqualification_detail": str(payload.get("detail") or "").strip(),
-                "reactivation_date": str(payload.get("reactivation_date") or "").strip(),
-            })
-        else:
-            return jsonify({"error": "Action group√©e inconnue."}), 400
-        if contact.get("statut") != old_status:
-            contact["status_changed_at"] = _crm_now()
-            if contact.get("statut") == "Converti" and not contact.get("converted_at"):
-                contact["converted_at"] = contact["status_changed_at"]
-            if contact.get("statut") != "Disqualifi√©":
-                contact["disqualification_reason"] = ""
-                contact["disqualification_detail"] = ""
-            if contact.get("statut") == "Disqualifi√©":
-                activity_details = [
-                    f"Ancien statut : {old_status or 'Non renseign√©'}",
-                    f"Motif : {contact.get('disqualification_reason')}",
-                ]
-                if contact.get("disqualification_detail"):
-                    activity_details.append(
-                        f"Pr√©cisions : {contact['disqualification_detail']}"
-                    )
-                if contact.get("reactivation_date"):
-                    activity_details.append(
-                        f"R√©activation pr√©vue : {contact['reactivation_date']}"
-                    )
-                _crm_activity(
-                    contact, "statut", "Piste disqualifi√©e",
-                    " ¬∑ ".join(activity_details),
-                )
-            else:
-                _crm_activity(
-                    contact, "statut", f"Statut : {contact['statut']}",
-                    f"Ancien statut : {old_status} ¬∑ action group√©e",
-                )
-        contact["updated_at"] = _crm_now()
-        updated.append(_crm_contact_response(contact, data))
-    save_data(data)
-    return jsonify({"updated": updated, "count": len(updated)})
-
-
-@app.post("/api/crm/contacts/merge")
-@login_required
-@_crm_serialized
-def crm_contacts_merge():
-    data = load_data(); payload = request.get_json(silent=True) or {}
-    target = _crm_contact(data, payload.get("target_id"))
-    source = _crm_contact(data, payload.get("source_id"))
-    if not target or not source or target is source:
-        return jsonify({"error": "Les deux fiches √† fusionner sont invalides."}), 400
-    protected = {"id", "created_at"}
-    for key, value in source.items():
-        if key in protected or key in {"activities", "publications", "relances", "source_history", "meta_answers"}:
-            continue
-        if not target.get(key) and value not in (None, "", [], {}):
-            target[key] = value
-    for key in ("activities", "publications", "relances", "meta_answers"):
-        merged = [*(target.get(key) or []), *(source.get(key) or [])]
-        seen = set(); unique = []
-        for item in merged:
-            marker = str(item.get("id") or json.dumps(item, sort_keys=True, ensure_ascii=False)) if isinstance(item, dict) else str(item)
-            if marker in seen:
-                continue
-            seen.add(marker); unique.append(item)
-        target[key] = unique
-    _crm_record_origin(
-        target, target.get("origine") or target.get("source"),
-        source=target.get("source", ""), date=target.get("created_at"),
-    )
-    _crm_record_origin(
-        target, source.get("origine") or source.get("source"),
-        source=source.get("source", ""), date=source.get("created_at"),
-    )
-    for origin_entry in source.get("source_history", []):
-        if isinstance(origin_entry, dict):
-            _crm_record_origin(
-                target,
-                origin_entry.get("origin") or origin_entry.get("origine"),
-                source=origin_entry.get("source", ""),
-                external_id=origin_entry.get("external_id", ""),
-                context=origin_entry,
-                date=origin_entry.get("date"),
-            )
-    for appointment in data.get("crm_calendly_appointments", []):
-        if str(appointment.get("contact_id")) == str(source.get("id")):
-            appointment["contact_id"] = target.get("id")
-    data["crm_contacts"].remove(source)
-    _crm_activity(target, "fusion", "Fiches fusionn√©es",
-                  f"La fiche de {source.get('prenom', '')} {source.get('nom', '')} a √©t√© regroup√©e ici.")
-    target["updated_at"] = _crm_now()
-    save_data(data)
-    return jsonify({"contact": _crm_contact_response(target, data), "removed_id": source.get("id")})
-
-
-@app.route("/api/crm/contacts/<contact_id>", methods=["GET", "PATCH", "DELETE"])
-@login_required
-def crm_contact(contact_id):
-    if request.method == "GET":
-        data = _crm_prepared_read_model()
-        source_contact = _crm_contact(data, contact_id)
-        if not source_contact:
-            return jsonify({"error": "Contact introuvable"}), 404
-        _crm_persist_prepared_contact_if_idle(source_contact)
-        contact = copy.deepcopy(source_contact)
-        snapshot = copy.deepcopy(
-            data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
-        )
-        return jsonify(_crm_contact_detail_response(
-            contact, regulatory_snapshot=snapshot,
-        ))
-
-    # Mutations remain serialized; read-only contact sheets no longer queue
-    # behind a long WEDOF reconciliation or another user's autosave.
-    with _CRM_RECONCILIATION_LOCK:
-        data = load_data()
-        contact = _crm_contact(data, contact_id)
-        if not contact:
-            return jsonify({"error": "Contact introuvable"}), 404
-        if request.method == "DELETE":
-            data["crm_contacts"].remove(contact)
-            data["crm_calendly_appointments"] = [
-                item for item in data.get("crm_calendly_appointments", [])
-                if item.get("contact_id") != contact_id
-            ]
-            save_data(data)
-            return "", 204
-        return _crm_patch_contact_locked(data, contact, contact_id)
-
-
-@app.route(
-    "/api/crm/contacts/<contact_id>/cnaps-card-validity",
-    methods=["POST"],
-)
-@login_required
-def crm_contact_cnaps_card_validity(contact_id):
-    """V√©rifie un NUB dans l'annuaire public CNAPS √† la demande."""
-    payload = request.get_json(silent=True) or {}
-    cnaps_nub = re.sub(r"\s+", "", str(payload.get("nub") or ""))
-    if not re.fullmatch(r"\d{7}", cnaps_nub):
-        return jsonify({
-            "error": "Le NUB doit comporter exactement 7 chiffres."
-        }), 400
-
-    # Le NUB saisi est conserv√© avant l'appel distant, m√™me si l'annuaire est
-    # momentan√©ment indisponible. Le verrou n'est jamais gard√© pendant le
-    # r√©seau afin de ne pas bloquer les autres sauvegardes CRM.
-    with _CRM_RECONCILIATION_LOCK:
-        data = load_data()
-        contact = _crm_contact(data, contact_id)
-        if not contact:
-            return jsonify({"error": "Contact introuvable"}), 404
-        last_name = " ".join(str(contact.get("nom") or "").strip().split())
-        if not last_name:
-            return jsonify({
-                "error": "Renseignez le nom de la personne avant la v√©rification CNAPS."
-            }), 422
-        if str(contact.get("cnaps_nub") or "") != cnaps_nub:
-            contact["cnaps_nub"] = cnaps_nub
-            contact.pop("cnaps_card_validity", None)
-            contact["updated_at"] = _crm_now()
-            save_data(data)
-
-    from crm_cnaps_tracking import fetch_cnaps_card_validity
-
-    result = fetch_cnaps_card_validity(last_name, cnaps_nub)
-    if result.get("check_status") != "success":
-        app.logger.warning(
-            "V√©rification de carte CNAPS indisponible (%s)",
-            result.get("http_status") or "network",
-        )
-        return jsonify({
-            "error": (
-                "La v√©rification CNAPS est momentan√©ment indisponible. "
-                "R√©essayez dans quelques instants."
-            ),
-            "reason": "cnaps_unavailable",
-        }), 502
-    persisted_result = copy.deepcopy(result)
-    persisted_result.update({
-        "check_status": "success",
-        "checked_at": str(result.get("checked_at") or _crm_now()),
-        "nub": cnaps_nub,
-    })
-    with _CRM_RECONCILIATION_LOCK:
-        data = load_data()
-        contact = _crm_contact(data, contact_id)
-        if not contact:
-            return jsonify({"error": "Contact introuvable"}), 404
-        current_last_name = " ".join(
-            str(contact.get("nom") or "").strip().split()
-        )
-        if (str(contact.get("cnaps_nub") or "") != cnaps_nub
-                or current_last_name != last_name):
-            return jsonify({
-                "error": (
-                    "Le nom ou le NUB a √©t√© modifi√© pendant la v√©rification. "
-                    "Relancez la v√©rification."
-                )
-            }), 409
-        contact["cnaps_card_validity"] = persisted_result
-        contact["updated_at"] = _crm_now()
-        save_data(data)
-    return jsonify(persisted_result)
-
-
-def _crm_patch_contact_locked(data, contact, contact_id):
-    """Apply one contact PATCH while the caller holds the CRM write lock."""
-    payload = request.get_json(silent=True) or {}
-    effective_titre_sejour = payload.get(
-        "titre_sejour", contact.get("titre_sejour")
-    )
-    if not _yes(effective_titre_sejour):
-        if str(payload.get("titre_sejour_cnaps") or "").strip():
-            return jsonify({
-                "error": (
-                    "La situation du titre de s√©jour ne peut √™tre renseign√©e "
-                    "que si la personne est titulaire d‚Äôun titre de s√©jour."
-                )
-            }), 400
-        # A partial PATCH changing the holder answer must also purge a legacy
-        # assessment omitted by the disabled browser control.
-        payload["titre_sejour_cnaps"] = ""
-    # La provenance d'une piste WEDOF reste Mon Compte Formation lorsque
-    # l'√©quipe corrige manuellement la formation ou un autre champ.
-    if contact.get("source") == "wedof_cpf":
-        payload["origine"] = "Mon Compte Formation"
-    # L'ancien s√©lecteur ne proposait pas META et envoyait une valeur vide lors
-    # de chaque sauvegarde automatique. La provenance et le lieu de campagne
-    # restent prot√©g√©s, mais la formation peut √™tre corrig√©e par l'√©quipe.
-    if _crm_is_meta_contact(contact):
-        payload.update({
-            "origine": "META",
-            "lieu": _META_DEFAULT_LOCATION,
-        })
-    _crm_ensure_relances(contact)
-    relance_date_supplied = "relance_date" in payload
-    requested_relance_date = payload.get("relance_date")
-    if relance_date_supplied:
-        try:
-            requested_relance_date = _crm_relance_date(
-                requested_relance_date, weekdays_only=True,
-            )
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-    requested_relance_motif = (
-        payload.get("relance_motif") if "relance_motif" in payload else None
-    )
-    allowed = {"prenom", "nom", "telephone", "mail", "dates_formation", "cpf", "carte_pro",
-               "antecedents", "garde_vue", "titre_sejour", "titre_sejour_cnaps", "compte_cnaps", "cnaps_nub", "cnaps_username", "cnaps_birth_year", "cnaps_password",
-               "integration_dracar", "formation", "lieu", "desp_type", "identite_creation", "identite_ok",
-               "financement_ft", "statut_demande_financement_ft", "montant_accorde_ft",
-               "financement_perso_possible", "refus_ft_perso", "reste_a_charge_perso",
-               "origine", "inscrit_ft", "commentaires", "cpf_montant", "cpf_palier",
-               "statut", "statut_secondaire", "commercial", "tags", "prix_vente", "cout_estime",
-               "prochaine_action_manuelle",
-               "disqualification_reason", "disqualification_detail", "reactivation_date", "archived_at",
-               "qualification_flag"}
-    if "qualification_flag" in payload:
-        qualification_flag = str(payload.get("qualification_flag") or "").strip().lower()
-        if qualification_flag not in {"", "green", "red"}:
-            return jsonify({"error": "La qualification doit √™tre vide, green ou red."}), 400
-        payload["qualification_flag"] = qualification_flag
-    old_status = contact.get("statut")
-    old_secondary_status = contact.get("statut_secondaire", "")
-    old_funding_status = str(
-        contact.get("statut_demande_financement_ft") or ""
-    ).strip()
-    old_origin = contact.get("origine", "")
-    old_qualification_flag = str(contact.get("qualification_flag") or "")
-    old_comments = str(contact.get("commentaires") or "")
-    old_cnaps_identity = (
-        _crm_format_last_name(contact.get("nom")),
-        str(contact.get("cnaps_nub") or ""),
-    )
-    snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact_id))
-    old_score = calculate_candidate_integration_score(contact, snapshot)
-    if "cpf_montant" in payload:
-        try:
-            payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-    if "montant_accorde_ft" in payload:
-        try:
-            payload["montant_accorde_ft"] = normalize_cpf_amount(
-                payload.get("montant_accorde_ft")
-            )
-        except ValueError:
-            return jsonify({
-                "error": "Le montant accord√© par France Travail doit √™tre positif et comporter au maximum deux d√©cimales."
-            }), 400
-    if "cpf_palier" in payload:
-        payload["cpf_palier"] = str(payload.get("cpf_palier") or "").strip()[:120]
-    if "cnaps_nub" in payload:
-        cnaps_nub = re.sub(r"\s+", "", str(payload.get("cnaps_nub") or ""))
-        if cnaps_nub and (not cnaps_nub.isdigit() or len(cnaps_nub) > 7):
-            return jsonify({
-                "error": "Le NUB doit comporter au maximum 7 chiffres."
-            }), 400
-        payload["cnaps_nub"] = cnaps_nub
-    if "cnaps_birth_year" in payload:
-        birth_year = str(payload.get("cnaps_birth_year") or "").strip()
-        current_year = datetime.date.today().year
-        if birth_year and (
-                not re.fullmatch(r"\d{1,4}", birth_year)
-                or (len(birth_year) == 4
-                    and not 1900 <= int(birth_year) <= current_year)):
-            return jsonify({
-                "error": (
-                    "L‚Äôann√©e de naissance doit comporter 4 chiffres et ne "
-                    "peut pas √™tre dans le futur."
-                )
-            }), 400
-        payload["cnaps_birth_year"] = birth_year
-    for money_field in ("prix_vente", "cout_estime"):
-        if money_field in payload:
-            raw_money = str(payload.get(money_field) or "").strip().replace(" ", "").replace(",", ".")
-            if raw_money:
-                try:
-                    if float(raw_money) < 0:
-                        raise ValueError
-                except ValueError:
-                    return jsonify({"error": "Les montants commerciaux doivent √™tre positifs."}), 400
-            payload[money_field] = raw_money
-    if "prochaine_action_manuelle" in payload:
-        manual_next_action = str(
-            payload.get("prochaine_action_manuelle") or ""
-        ).strip()
-        if len(manual_next_action) > 300:
-            return jsonify({
-                "error": "La prochaine action manuelle est limit√©e √† 300 caract√®res."
-            }), 400
-        payload["prochaine_action_manuelle"] = manual_next_action
-    old_training = (
-        str(contact.get("formation") or ""),
-        str(contact.get("desp_type") or ""),
-    )
-    old_default_sale_price = str(_crm_default_sale_price(contact) or "")
-    old_sale_price = str(contact.get("prix_vente") or "").strip()
-    for key, value in payload.items():
-        if key in allowed:
-            contact[key] = str(value or "")
-    new_training = (
-        str(contact.get("formation") or ""),
-        str(contact.get("desp_type") or ""),
-    )
-    if new_training != old_training:
-        new_default_sale_price = _crm_default_sale_price(contact)
-        submitted_sale_price = str(
-            payload.get("prix_vente", old_sale_price) or ""
-        ).strip()
-        if (new_default_sale_price
-                and (not submitted_sale_price
-                     or submitted_sale_price == old_default_sale_price)):
-            contact["prix_vente"] = str(new_default_sale_price)
-    new_comments = str(contact.get("commentaires") or "")
-    if "commentaires" in payload and new_comments != old_comments:
-        _crm_activity(
-            contact,
-            "suivi",
-            "Suivi mis √† jour",
-            new_comments or "Commentaire retir√© du suivi.",
-        )
-    if relance_date_supplied:
-        try:
-            planned_relance, relance_changed = _crm_schedule_relance(
-                contact,
-                requested_relance_date,
-                source="manual",
-                motif=requested_relance_motif,
-            )
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        if relance_changed:
-            if planned_relance:
-                _crm_activity(
-                    contact,
-                    "relance",
-                    "Relance planifi√©e",
-                    " ¬∑ ".join(filter(None, [
-                        f"Prochaine relance le {planned_relance['scheduled_date']}",
-                        f"Motif : {planned_relance.get('motif')}" if planned_relance.get("motif") else "",
-                    ])),
-                )
-            else:
-                _crm_activity(contact, "relance", "Relance annul√©e")
-    if contact.get("statut_secondaire") == "Session FT":
-        contact["statut_secondaire"] = "March√© FT"
-    if "statut_secondaire" in payload:
-        # Une √©tape choisie dans la timeline est volontaire : elle ne doit plus
-        # √™tre √©cras√©e au prochain GET par une valeur WEDOF encore en cache.
-        contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
-        manual_funding_status = CRM_FT_STATUS_BY_SECONDARY.get(
-            contact.get("statut_secondaire")
-        )
-        if manual_funding_status:
-            contact["statut_demande_financement_ft"] = manual_funding_status
-            contact["statut_demande_financement_ft_source"] = (
-                CRM_MANUAL_STATUS_SOURCE
-            )
-    if "statut_demande_financement_ft" in payload:
-        contact["statut_demande_financement_ft_source"] = (
-            CRM_MANUAL_STATUS_SOURCE
-        )
-        automatic_secondary = CRM_FT_SECONDARY_BY_STATUS.get(
-            contact.get("statut_demande_financement_ft")
-        )
-        if automatic_secondary:
-            contact["statut_secondaire"] = automatic_secondary
-            contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
-        elif old_secondary_status in {"Financement FT en cours", "Financement FT refus√©"}:
-            contact["statut_secondaire"] = ""
-            contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
-    new_funding_status = str(
-        contact.get("statut_demande_financement_ft") or ""
-    ).strip()
-    if new_funding_status == "refusee" and old_funding_status != "refusee":
-        _crm_send_ft_refusal_messages(data, contact)
-        _crm_schedule_ft_refusal_relance(
-            contact,
-            source="manual_ft_refusal",
-        )
-    secondary_statuses = {"", *CRM_SECONDARY_STATUSES}
-    if contact.get("statut_secondaire", "") not in secondary_statuses:
-        contact["statut_secondaire"] = ""
-    # Une confirmation porte sur un montant exact : toute modification de ses
-    # d√©terminants l'invalide afin qu'elle ne soit jamais r√©utilis√©e pour un autre montant.
-    determinants = {
-        "formation", "desp_type", "cpf", "cpf_montant", "cpf_palier",
-        "financement_ft", "statut_demande_financement_ft",
-        "montant_accorde_ft", "financement_perso_possible",
-    }
-    provisional_score = calculate_candidate_integration_score(contact, snapshot)
-    old_amount = old_score.get("personal_remainder_amount_eur")
-    new_amount = provisional_score.get("personal_remainder_amount_eur")
-    if (determinants.intersection(payload)
-            and (old_amount != new_amount or provisional_score.get("personal_remainder_applicable") is not True)):
-        contact["reste_a_charge_perso"] = ""
-    _crm_calendly_relink_appointments(data, contact)
-    _crm_sync_contact_calendly_status(data, contact)
-    contact["prenom"] = _crm_format_first_name(contact.get("prenom"))
-    contact["nom"] = _crm_format_last_name(contact.get("nom"))
-    if ({"nom", "cnaps_nub"}.intersection(payload)
-            and (contact.get("nom"), str(contact.get("cnaps_nub") or ""))
-            != old_cnaps_identity):
-        contact.pop("cnaps_card_validity", None)
-    statuses = _crm_statuses(data)
-    if contact.get("statut") not in statuses:
-        contact["statut"] = old_status if old_status in statuses else statuses[0]
-    if contact.get("statut") != old_status:
-        contact["status_changed_at"] = _crm_now()
-        if contact.get("statut") == "Converti" and not contact.get("converted_at"):
-            contact["converted_at"] = contact["status_changed_at"]
-        if contact.get("statut") != "Disqualifi√©":
-            contact["disqualification_reason"] = ""
-            contact["disqualification_detail"] = ""
-        _crm_activity(contact, "statut", f"Statut : {contact['statut']}", f"Ancien statut : {old_status}")
-    if contact.get("origine") != old_origin:
-        changed_at = _crm_now()
-        if old_origin:
-            _crm_record_origin(
-                contact, old_origin, source="manual", date=changed_at,
-            )
-        _crm_record_origin(
-            contact,
-            contact.get("origine") or "Non renseign√©e",
-            source="manual",
-            date=changed_at,
-            make_primary=True,
-        )
-        _crm_activity(contact, "origine", f"Origine : {contact.get('origine') or 'Non renseign√©e'}",
-                      f"Ancienne origine : {old_origin or 'Non renseign√©e'}")
-    if contact.get("statut_secondaire", "") != old_secondary_status:
-        secondary_label = contact.get("statut_secondaire") or "retir√©"
-        _crm_activity(contact, "statut", f"Deuxi√®me statut : {secondary_label}",
-                      f"Ancien deuxi√®me statut : {old_secondary_status or 'aucun'}")
-    new_qualification_flag = str(contact.get("qualification_flag") or "")
-    if new_qualification_flag != old_qualification_flag:
-        labels = {"": "Aucun flag", "green": "Green Flag", "red": "Red Flag"}
-        _crm_activity(
-            contact,
-            "qualification",
-            f"Qualification : {labels[new_qualification_flag]}",
-            f"Ancienne qualification : {labels.get(old_qualification_flag, 'Aucun flag')}",
-        )
-    new_score = calculate_candidate_integration_score(contact, snapshot)
-    if old_score.get("level") and new_score.get("level") != old_score.get("level"):
-        _crm_activity(contact, "score", f"Score d‚Äôint√©gration pass√© de {old_score['score']} √† {new_score['score']} : {new_score['label']}")
-    if old_score.get("operational_status") != new_score.get("operational_status"):
-        if new_score.get("operational_status") == "blocked":
-            _crm_activity(contact, "score", "Le dossier pr√©sente maintenant un blocage de financement")
-        elif old_score.get("operational_status") == "blocked" and new_score.get("operational_status") == "ready":
-            _crm_activity(contact, "score", "Le blocage de financement a √©t√© lev√©")
-    contact["updated_at"] = _crm_now()
-    save_data(data)
-    return jsonify(_crm_contact_detail_response(contact, data))
-
-
-@app.patch("/api/crm/contacts/<contact_id>/activities/<activity_id>")
-@login_required
-@_crm_serialized
-def crm_edit_call_activity(contact_id, activity_id):
-    """Edit one logged call without replaying appointment or relance automations."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    activity = next(
-        (
-            item for item in contact.get("activities", [])
-            if isinstance(item, dict) and str(item.get("id")) == activity_id
-        ),
-        None,
-    )
-    if not activity:
-        return jsonify({"error": "Activit√© introuvable pour ce contact"}), 404
-    if activity.get("kind") != "appel":
-        return jsonify({"error": "Seuls les appels consign√©s peuvent √™tre modifi√©s"}), 409
-
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify({"error": "Le corps JSON doit √™tre un objet"}), 400
-    try:
-        changed, _ = _crm_edit_call_activity(activity, payload.get("commentaire"))
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    if changed:
-        contact["updated_at"] = _crm_now()
-        save_data(data)
-    return jsonify({
-        "contact": _crm_contact_response(contact, data),
-        "activity": activity,
-        "changed": changed,
-    })
-
-
-@app.get("/api/crm/contacts/<contact_id>/activities/<activity_id>/preview")
-@login_required
-def crm_contact_activity_preview(contact_id, activity_id):
-    """Load a potentially large e-mail/SMS body only when the user opens it."""
-    data = _load_data_snapshot()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    activity = next(
-        (
-            item for item in contact.get("activities", [])
-            if isinstance(item, dict) and str(item.get("id")) == activity_id
-        ),
-        None,
-    )
-    if not activity or not activity.get("preview"):
-        return jsonify({"error": "Aper√ßu introuvable"}), 404
-    return jsonify({"preview": activity["preview"], "kind": activity.get("kind", "")})
-
-
-@app.post("/api/crm/candidate-score/preview")
-@login_required
-def crm_candidate_score_preview():
-    payload = request.get_json(silent=True) or {}
-    if "cpf_montant" in payload:
-        try:
-            payload["cpf_montant"] = normalize_cpf_amount(payload.get("cpf_montant"))
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-    return jsonify(calculate_candidate_integration_score(payload))
-
-
-
-@app.route("/api/crm/contacts/<contact_id>/appel", methods=["POST"])
-@login_required
-@_crm_serialized
-def crm_log_call(contact_id):
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    payload = request.get_json(silent=True) or {}
-    note = str(payload.get("commentaire", "")).strip()
-    if not note: return jsonify({"error": "Un commentaire est requis"}), 400
-    _crm_ensure_relances(contact)
-    relance = None
-    relance_id = str(payload.get("relance_id") or "").strip()
-    if relance_id:
-        relance = next(
-            (item for item in contact.get("relances", []) if item.get("id") == relance_id),
-            None,
-        )
-        if not relance:
-            return jsonify({"error": "Relance introuvable pour ce contact"}), 404
-        if relance.get("status") != "scheduled":
-            return jsonify({
-                "contact": _crm_contact_response(contact, data),
-                "relance": relance,
-                "duplicate": True,
-            })
-    appointment = None
-    appointment_id = str(payload.get("appointment_id") or "").strip()
-    if appointment_id:
-        appointment = next(
-            (item for item in data.get("crm_calendly_appointments", [])
-             if item.get("id") == appointment_id and item.get("contact_id") == contact_id),
-            None,
-        )
-        if not appointment:
-            return jsonify({"error": "Rendez-vous introuvable pour ce contact"}), 404
-    now = _crm_now()
-    contact["updated_at"] = now
-    delivery = None
-    if relance:
-        _crm_complete_relance(contact, relance, "answered", note=note)
-        _crm_activity(
-            contact,
-            "relance",
-            "Relance trait√©e ‚Äî a r√©pondu",
-            f"Appel consign√© : {note}",
-        )
-    if appointment:
-        if appointment.get("response_status") != "answered":
-            appointment["response_status"] = "answered"
-            appointment["response_status_updated_at"] = now
-            appointment["updated_at"] = now
-        if not appointment.get("answered_followup_sent_at"):
-            appointment["answered_followup_sent_at"] = now
-            appointment["updated_at"] = now
-            delivery = _crm_send_appointment_followup(data, contact, "Suite appel r√©pondu")
-    _crm_activity(contact, "appel", "Appel consign√©", note)
-    save_data(data)
-    if not appointment and not relance:
-        return jsonify(_crm_contact_response(contact, data))
-    result = {"contact": _crm_contact_response(contact, data)}
-    if appointment:
-        result["appointment"] = appointment
-    if relance:
-        result["relance"] = relance
-    if delivery is not None:
-        result["delivery"] = delivery
-    return jsonify(result)
-
-
-@app.delete("/api/crm/contacts/<contact_id>/relances/<relance_id>")
-@login_required
-@_crm_serialized
-def crm_delete_relance(contact_id, relance_id):
-    """Permanently delete exactly one planned relance for this contact."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-
-    _crm_ensure_relances(contact)
-    relance = next(
-        (item for item in contact.get("relances", []) if item.get("id") == relance_id),
-        None,
-    )
-    if not relance:
-        return jsonify({"error": "Relance introuvable pour ce contact"}), 404
-    if relance.get("status") != "scheduled":
-        return jsonify({"error": "Seule une relance planifi√©e peut √™tre supprim√©e"}), 409
-
-    _crm_delete_relance(contact, relance)
-    contact["updated_at"] = _crm_now()
-    save_data(data)
-    return jsonify({
-        "contact": _crm_contact_response(contact, data),
-        "deleted_relance_id": relance_id,
-    })
-
-
-@app.post("/api/crm/contacts/<contact_id>/relances/<relance_id>/sans-reponse")
-@login_required
-@_crm_serialized
-def crm_relance_no_answer(contact_id, relance_id):
-    """Close one relance, schedule the next one and send both named templates once."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    _crm_ensure_relances(contact)
-    relance = next(
-        (item for item in contact.get("relances", []) if item.get("id") == relance_id),
-        None,
-    )
-    if not relance:
-        return jsonify({"error": "Relance introuvable pour ce contact"}), 404
-
-    if relance.get("status") != "scheduled":
-        next_relance = next(
-            (item for item in contact.get("relances", [])
-             if item.get("parent_relance_id") == relance_id and item.get("status") == "scheduled"),
-            None,
-        )
-        return jsonify({
-            "contact": _crm_contact_response(contact, data),
-            "relance": relance,
-            "next_relance": next_relance,
-            "delivery": relance.get("delivery") or {"sms": False, "email": False},
-            "duplicate": True,
-        })
-
-    payload = request.get_json(silent=True) or {}
-    try:
-        next_date = _crm_relance_date(
-            payload.get("next_date"), weekdays_only=True,
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    if not next_date:
-        return jsonify({"error": "Choisissez la date de la prochaine relance."}), 400
-
-    _crm_complete_relance(contact, relance, "no_answer")
-    next_relance, _ = _crm_schedule_relance(
-        contact,
-        next_date,
-        source="no_answer",
-        parent_relance_id=relance_id,
-        motif=relance.get("motif") or "Suite relance sans r√©ponse",
-    )
-    old_status = contact.get("statut")
-    contact["statut"] = "A relancer"
-    if old_status != "A relancer":
-        _crm_activity(contact, "statut", "Statut : A relancer", f"Ancien statut : {old_status}")
-    _crm_activity(
-        contact,
-        "relance",
-        "Relance sans r√©ponse",
-        f"Nouvelle relance programm√©e le {next_date}",
-    )
-
-    delivery = _crm_send_appointment_followup(data, contact, "Pas de r√©ponse relance")
-    relance.update({
-        "message_template": "Pas de r√©ponse relance",
-        "delivery": delivery,
-        "messages_processed_at": _crm_now(),
-    })
-    contact["updated_at"] = _crm_now()
-    save_data(data)
-    return jsonify({
-        "contact": _crm_contact_response(contact, data),
-        "relance": relance,
-        "next_relance": next_relance,
-        "delivery": delivery,
-        "duplicate": False,
-    })
-
-
-@app.route("/api/crm/contacts/<contact_id>/publications", methods=["POST"])
-@login_required
-def crm_publish_contact_update(contact_id):
-    """Publie une note horodat√©e et sign√©e dans le fil d'actualit√© de la piste."""
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
-    if not text:
-        return jsonify({"error": "Le texte de la publication est requis"}), 400
-    publication = {
-        "id": str(uuid.uuid4()), "date": _crm_now(), "texte": text,
-        "author": (current_user() or {}).get("name", "√âquipe Int√©grale"),
-        "author_email": (current_user() or {}).get("email", ""),
-        "likes": [], "comments": [],
-    }
-    contact.setdefault("publications", []).insert(0, publication)
-    _crm_add_mention_notifications(data, text, contact, publication)
-    contact["updated_at"] = _crm_now()
-    save_data(data)
-    return jsonify({"publication": publication, "contact": contact}), 201
-
-
-def _crm_publication(contact, publication_id):
-    return next((item for item in contact.get("publications", []) if item.get("id") == publication_id), None)
-
-
-def _crm_owns_content(item):
-    user = current_user() or {}
-    return item.get("author_email") == user.get("email") or (not item.get("author_email") and item.get("author") == user.get("name"))
-
-
-def _crm_add_mention_notifications(data, text, contact, publication, *, kind="mention"):
-    """Cr√©e une notification priv√©e pour chaque @pr√©nom connu."""
-    author = current_user() or {}
-    normalize = lambda value: "".join(char for char in unicodedata.normalize("NFD", value.casefold()) if not unicodedata.combining(char))
-    aliases = {normalize(user["first_name"]): user for user in USERS.values()}
-    mentioned = {normalize(value) for value in re.findall(r"@([\w√Ä-√ø'-]+)", text or "", re.UNICODE)}
-    for alias in mentioned:
-        recipient = aliases.get(alias)
-        if not recipient or recipient["email"] == author.get("email"):
-            continue
-        data.setdefault("crm_notifications", []).insert(0, {
-            "id": str(uuid.uuid4()), "recipient_email": recipient["email"],
-            "author": author.get("name", "√âquipe Int√©grale"), "date": _crm_now(),
-            "kind": kind, "text": str(text), "read": False,
-            "contact_id": contact["id"],
-            "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
-            "publication_id": publication["id"],
-        })
-
-
-def _crm_add_funding_refusal_notifications(data, contact, stable_id):
-    """Alerte chaque compte CRM une fois lors d'un nouveau refus WEDOF."""
-    contact_name = " ".join(
-        part for part in [contact.get("prenom"), contact.get("nom")]
-        if str(part or "").strip()
-    ).strip() or "Piste sans nom"
-    notifications = data.setdefault("crm_notifications", [])
-    for user in USERS.values():
-        recipient_email = str(user.get("email") or "").strip()
-        if not recipient_email:
-            continue
-        notifications.insert(0, {
-            "id": str(uuid.uuid4()),
-            "recipient_email": recipient_email,
-            "author": "France Travail",
-            "date": _crm_now(),
-            "kind": "funding_refused",
-            "text": f"Le financement France Travail de {contact_name} a √©t√© refus√©.",
-            "read": False,
-            "contact_id": contact["id"],
-            "contact_name": contact_name,
-            "source_wedof_folder_id": stable_id,
-        })
-
-
-def _crm_notifications_payload(data, email):
-    return [
-        item for item in data.get("crm_notifications", [])
-        if item.get("recipient_email") == email
-    ]
-
-
-@app.route("/api/crm/notifications", methods=["GET", "PATCH"])
-@login_required
-@_crm_serialized
-def crm_notifications():
-    data = load_data(); email = (current_user() or {}).get("email", "")
-    items = _crm_notifications_payload(data, email)
-    if request.method == "PATCH":
-        notification_id = str((request.get_json(silent=True) or {}).get("id") or "")
-        for item in items:
-            if not notification_id or item.get("id") == notification_id:
-                item["read"] = True
-        save_data(data)
-    return jsonify(items)
-
-
-@app.route(
-    "/api/crm/contacts/<contact_id>/publications/<publication_id>",
-    methods=["PATCH", "DELETE"],
-)
-@login_required
-def crm_delete_publication(contact_id, publication_id):
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    publication = _crm_publication(contact, publication_id) if contact else None
-    if not publication: return jsonify({"error": "Publication introuvable"}), 404
-    if not _crm_owns_content(publication):
-        action = "modifier" if request.method == "PATCH" else "supprimer"
-        return jsonify({"error": f"Vous ne pouvez {action} que vos publications"}), 403
-    if request.method == "PATCH":
-        text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
-        if not text:
-            return jsonify({"error": "Le texte de la publication est requis"}), 400
-        publication["texte"] = text
-        contact["updated_at"] = _crm_now()
-        save_data(data)
-        return jsonify({"publication": publication, "contact": contact})
-    contact["publications"].remove(publication); contact["updated_at"] = _crm_now(); save_data(data)
-    return "", 204
-
-
-@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/like", methods=["POST"])
-@login_required
-def crm_like_publication(contact_id, publication_id):
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    publication = _crm_publication(contact, publication_id) if contact else None
-    if not publication: return jsonify({"error": "Publication introuvable"}), 404
-    email = (current_user() or {}).get("email", "")
-    likes = publication.setdefault("likes", [])
-    likes.remove(email) if email in likes else likes.append(email)
-    save_data(data)
-    return jsonify({"publication": publication, "contact": contact})
-
-
-@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/comments", methods=["POST"])
-@login_required
-def crm_comment_publication(contact_id, publication_id):
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    publication = _crm_publication(contact, publication_id) if contact else None
-    if not publication: return jsonify({"error": "Publication introuvable"}), 404
-    text = str((request.get_json(silent=True) or {}).get("texte", "")).strip()
-    if not text: return jsonify({"error": "Le commentaire est requis"}), 400
-    user = current_user() or {}
-    comment = {"id": str(uuid.uuid4()), "date": _crm_now(), "texte": text, "author": user.get("name", "√âquipe Int√©grale"), "author_email": user.get("email", "")}
-    publication.setdefault("comments", []).append(comment)
-    _crm_add_mention_notifications(data, text, contact, publication, kind="reply")
-    if publication.get("author_email") and publication.get("author_email") != user.get("email"):
-        data.setdefault("crm_notifications", []).insert(0, {"id": str(uuid.uuid4()), "recipient_email": publication["author_email"], "author": user.get("name", "√âquipe Int√©grale"), "date": _crm_now(), "kind": "reply", "text": text, "read": False, "contact_id": contact["id"], "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(), "publication_id": publication["id"]})
-    contact["updated_at"] = _crm_now(); save_data(data)
-    return jsonify({"comment": comment, "contact": contact}), 201
-
-
-@app.route("/api/crm/contacts/<contact_id>/publications/<publication_id>/comments/<comment_id>", methods=["DELETE"])
-@login_required
-def crm_delete_publication_comment(contact_id, publication_id, comment_id):
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    publication = _crm_publication(contact, publication_id) if contact else None
-    comment = next((item for item in publication.get("comments", []) if item.get("id") == comment_id), None) if publication else None
-    if not comment: return jsonify({"error": "Commentaire introuvable"}), 404
-    if not _crm_owns_content(comment): return jsonify({"error": "Vous ne pouvez supprimer que vos commentaires"}), 403
-    publication["comments"].remove(comment); contact["updated_at"] = _crm_now(); save_data(data)
-    return "", 204
-
-
-@app.route("/api/crm/contacts/<contact_id>/convertir", methods=["POST"])
-@login_required
-def crm_convert_contact(contact_id):
-    """Convertit une piste dans le CRM sans d√©pendre d'un service externe."""
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    old_status = contact.get("statut", "Nouveaux")
-    if old_status == "Converti":
-        return jsonify({"contact": contact})
-    changed_at = _crm_now()
-    contact["statut"] = "Converti"
-    contact["status_changed_at"] = changed_at
-    if not contact.get("converted_at"):
-        contact["converted_at"] = changed_at
-    contact["disqualification_reason"] = ""
-    contact["disqualification_detail"] = ""
-    _crm_activity(contact, "statut", "Statut : Converti",
-                  f"Ancien statut : {old_status}")
-    contact["updated_at"] = changed_at
-    save_data(data)
-    return jsonify({"contact": contact})
-
-
-_CRM_REGLEMENTAIRE_CACHE = {}
-_CRM_REGLEMENTAIRE_CACHE_LOCK = threading.RLock()
-_CRM_REGLEMENTAIRE_REQUEST_LOCKS = {}
-_CRM_REGLEMENTAIRE_REQUEST_LOCKS_GUARD = threading.Lock()
-
-
-def _crm_reglementaire_cache_key(contact):
-    """Invalidate the short-lived cache when identity/training changes."""
-    return (
-        os.path.abspath(DATA_FILE),
-        str(contact.get("id") or ""),
-        str(contact.get("updated_at") or ""),
-        str(contact.get("formation") or ""),
-        str(contact.get("desp_type") or ""),
-        str(contact.get("prenom") or ""),
-        str(contact.get("nom") or ""),
-        str(contact.get("mail") or ""),
-        str(contact.get("telephone") or ""),
-    )
-
-
-def _crm_reglementaire_cache_ttl():
-    try:
-        return max(15.0, float(os.getenv("CRM_REGLEMENTAIRE_CACHE_TTL", "300")))
-    except (TypeError, ValueError):
-        return 300.0
-
-
-def _crm_reglementaire_cached(contact):
-    key = _crm_reglementaire_cache_key(contact)
-    with _CRM_REGLEMENTAIRE_CACHE_LOCK:
-        cached = _CRM_REGLEMENTAIRE_CACHE.get(key)
-        if not cached:
-            return None
-        if time.monotonic() - cached["stored_at"] > _crm_reglementaire_cache_ttl():
-            _CRM_REGLEMENTAIRE_CACHE.pop(key, None)
-            return None
-        payload = copy.deepcopy(cached["payload"])
-        payload["cached"] = True
-        return payload, cached["status_code"]
-
-
-def _crm_store_reglementaire_cache(contact, payload, status_code):
-    key = _crm_reglementaire_cache_key(contact)
-    with _CRM_REGLEMENTAIRE_CACHE_LOCK:
-        _CRM_REGLEMENTAIRE_CACHE[key] = {
-            "payload": copy.deepcopy(payload),
-            "status_code": status_code,
-            "stored_at": time.monotonic(),
-        }
-
-
-@app.route("/api/crm/contacts/<contact_id>/reglementaire")
-@login_required
-def crm_contact_reglementaire(contact_id):
-    """Expose le suivi r√©glementaire partag√© sans transmettre le secret."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {
-        "1", "true", "yes", "oui",
-    }
-    if not refresh_requested:
-        cached = _crm_reglementaire_cached(contact)
-        if cached:
-            return jsonify(cached[0]), cached[1]
-
-    with _CRM_REGLEMENTAIRE_REQUEST_LOCKS_GUARD:
-        lock = _CRM_REGLEMENTAIRE_REQUEST_LOCKS.setdefault(contact_id, threading.Lock())
-    with lock:
-        # Plusieurs onglets peuvent ouvrir la m√™me fiche au m√™me instant. Le
-        # premier fait l'appel distant, les suivants r√©utilisent son r√©sultat.
-        data = load_data()
-        contact = _crm_contact(data, contact_id)
-        if not contact:
-            return jsonify({"error": "Contact introuvable"}), 404
-        if not refresh_requested:
-            cached = _crm_reglementaire_cached(contact)
-            if cached:
-                return jsonify(cached[0]), cached[1]
-
-        from crm_cnaps_tracking import proxy_reglementaire, scoring_snapshot_from_remote
-        remote = proxy_reglementaire(app, contact, http_get=requests.get)
-        response = remote[0] if isinstance(remote, tuple) else remote
-        status_code = remote[1] if isinstance(remote, tuple) else response.status_code
-        payload = response.get_json(silent=True) or {}
-        snapshots = data.setdefault("crm_cnaps_scoring_snapshots", {})
-        previous = snapshots.get(str(contact_id))
-        if status_code == 200 or (status_code == 404 and payload.get("reason") == "cnaps_not_found"):
-            snapshot = scoring_snapshot_from_remote(payload, http_status=status_code)
-            old_score = calculate_candidate_integration_score(contact, previous)
-            snapshots[str(contact_id)] = snapshot
-            new_score = calculate_candidate_integration_score(contact, snapshot)
-            if not previous or previous.get("normalized_status") != snapshot.get("normalized_status"):
-                labels = {"accepted": "Accept√©", "transmitted": "Transmis", "in_review": "En instruction", "registered": "Enregistr√©", "refused": "Refus√©", "no_result": "Aucun r√©sultat", "unknown": "Inconnu"}
-                if snapshot["normalized_status"] == "accepted":
-                    title = "Autorisation CNAPS accept√©e"
-                else:
-                    title = f"Suivi CNAPS pass√© de {labels.get((previous or {}).get('normalized_status'), 'Inconnu')} √† {labels[snapshot['normalized_status']]}"
-                _crm_activity(contact, "score", title)
-            if old_score.get("level") != new_score.get("level"):
-                _crm_activity(contact, "score", f"Score d‚Äôint√©gration pass√© de {old_score.get('score')} √† {new_score.get('score')} : {new_score.get('label')}")
-            save_data(data)
-            payload["integration_score"] = new_score
-            payload["scoring_snapshot"] = snapshot
-            payload["cached"] = False
-            _crm_store_reglementaire_cache(contact, payload, status_code)
-            return jsonify(payload), status_code
-        # Une panne distante ne d√©truit jamais le dernier fait r√©ussi.
-        if previous:
-            payload["integration_score"] = calculate_candidate_integration_score(contact, previous)
-            payload["scoring_snapshot"] = {**previous, "refresh_failed": True}
-        return jsonify(payload), status_code
-
-
-@app.route("/api/crm/reformuler", methods=["POST"])
-@login_required
-def crm_rephrase():
-    payload = request.get_json(silent=True) or {}
-    text = str(payload.get("texte", "")).strip()
-    if not text: return jsonify({"error": "Texte vide"}), 400
-    if not os.getenv("OPENAI_API_KEY"):
-        return jsonify({"error": "OPENAI_API_KEY non configur√©e"}), 503
-    try:
-        if payload.get("mode") == "correction_dictee":
-            system_prompt = (
-                "Corrige uniquement l‚Äôorthographe, les accords, la conjugaison, "
-                "la ponctuation, les r√©p√©titions involontaires et les erreurs "
-                "√©videntes de transcription vocale de cette note CRM. Pr√©serve "
-                "strictement le sens, les faits, les noms, les dates, les "
-                "montants et les acronymes m√©tier. N‚Äôajoute aucune information."
-            )
-        else:
-            system_prompt = (
-                "Reformule la note CRM en fran√ßais professionnel, clair et "
-                "factuel. Ne rajoute aucune information."
-            )
-        reformulation = _crm_ai(system_prompt, text)
-        return jsonify({"texte": reformulation})
-    except Exception as exc:
-        print("Erreur reformulation CRM:", exc)
-        return jsonify({"error": "La reformulation est momentan√©ment indisponible"}), 502
-
-
-def _crm_france_travail_request_context(contact, payload):
-    """Build the strictly factual context used by the FT writing assistant."""
-    def text(key, limit):
-        value = re.sub(r"\s+", " ", str(payload.get(key) or "")).strip()
-        return value[:limit]
-
-    formation_code = _crm_formation_code(contact)
-    formation = SECRETARIAT_FORMATIONS.get(formation_code, {})
-    centre_code = _normalize_centre_code(contact.get("lieu"))
-    security_codes = {"A3P", "APS", "SSIAP", "DESP_INIT", "DESP_VAE"}
-    centres = {
-        "cote_azur": (
-            "Int√©grale S√©curit√© Formations √† Puget-sur-Argens (Var)"
-            if formation_code in security_codes
-            else "Int√©grale Academy √† Puget-sur-Argens (Var)"
-        ),
-        "auvergne": "Int√©grale Academy Terres d‚ÄôAuvergne",
-        "paris": "Int√©grale Academy Paris",
-    }
-    candidate_name = " ".join(filter(None, (
-        _crm_format_first_name(contact.get("prenom")),
-        _crm_format_last_name(contact.get("nom")),
-    )))
-    return {
-        "candidat": {"nom_complet": candidate_name},
-        "formation": {
-            "nom": _crm_formation_label(contact) or "Formation souhait√©e",
-            "centre": centres.get(centre_code, "Int√©grale Academy"),
-            "session_souhaitee": str(contact.get("dates_formation") or "").strip(),
-            "duree": formation.get("duration", ""),
-            "format": formation.get("format", ""),
-            "objectif": formation.get("purpose", ""),
-            "specialisation_du_centre": (
-                "Centre sp√©cialis√© dans les m√©tiers de la protection rapproch√©e."
-                if formation_code == "A3P"
-                else "Centre sp√©cialis√© dans les m√©tiers de la s√©curit√© priv√©e."
-                if formation_code in security_codes else ""
-            ),
-        },
-        "financement": {
-            "cpf_consulte": _yes(contact.get("cpf")),
-            "montant_cpf_disponible_euros": str(contact.get("cpf_montant") or "").strip(),
-        },
-        "profil": {
-            "ancien_militaire": _yes(payload.get("ancien_militaire")),
-            "carte_professionnelle_cnaps": _yes(payload.get("carte_professionnelle")),
-            "experience_en_securite_privee": _yes(payload.get("experience_securite")),
-            "en_reconversion_professionnelle": _yes(payload.get("reconversion")),
-            "permis_b_et_mobilite": _yes(payload.get("permis_b_mobilite")),
-            "perspectives_embauche_identifiees": _yes(payload.get("perspectives_embauche")),
-            "parcours_et_experience": text("parcours", 1500),
-            "projet_professionnel": text("projet_professionnel", 1500),
-            "raisons_du_choix_formation_centre": text("choix_formation_centre", 1200),
-            "perspectives_emploi": text("perspectives_emploi", 1200),
-            "motivation_et_elements_complementaires": text("motivation", 1800),
-        },
-    }
-
-
-CRM_FRANCE_TRAVAIL_REQUEST_MAX_CHARACTERS = 2000
-
-
-@app.route("/api/crm/contacts/<contact_id>/generer-demande-ft", methods=["POST"])
-@login_required
-def crm_generate_france_travail_request(contact_id):
-    contact = _crm_contact(load_data(), contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    if not str(contact.get("formation") or "").strip():
-        return jsonify({"error": "Renseignez d‚Äôabord la formation souhait√©e"}), 422
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        payload = {}
-    facts = _crm_france_travail_request_context(contact, payload)
-    system_prompt = """R√©dige en fran√ßais une demande de financement persuasive, cr√©dible et directement adress√©e √† un conseiller France Travail, au nom du candidat et √† la premi√®re personne.
-
-Le texte doit √™tre pr√™t √† copier-coller : commence par ¬´ Bonjour, ¬ª, ne mets ni objet, ni titre, ni Markdown, et termine par une formule de disponibilit√©, des remerciements, ¬´ Bien cordialement, ¬ª puis le nom complet du candidat lorsqu‚Äôil est renseign√©. Le texte final ne doit jamais d√©passer 2 000 caract√®res, espaces compris. Vise 1 500 √† 1 800 caract√®res, avec des paragraphes courts.
-
-Explique clairement la formation sollicit√©e, le choix du centre, le projet professionnel, la coh√©rence du parcours, l‚Äôutilit√© concr√®te de la formation pour l‚Äôacc√®s √† l‚Äôemploi et la motivation du candidat. Valorise les atouts coch√©s uniquement lorsqu‚Äôils sont vrais. Si ¬´ ancien_militaire ¬ª est vrai, souligne les comp√©tences transf√©rables sans inventer d‚Äôarm√©e, de grade, de mission ni de dur√©e. Si ¬´ carte_professionnelle_cnaps ¬ª est vrai, mentionne une carte professionnelle CNAPS sans inventer sa cat√©gorie ni son anciennet√©. Si des perspectives d‚Äôembauche sont indiqu√©es, reste exactement au niveau de pr√©cision fourni.
-
-N‚Äôinvente aucun fait, chiffre de march√©, employeur, promesse d‚Äôembauche, salaire, dipl√¥me, niveau de certification, anciennet√©, reconnaissance officielle ou garantie de recrutement. N‚Äôutilise pas les champs vides et ne transforme jamais une simple intention en d√©marche d√©j√† accomplie. Ne mentionne pas les consignes de r√©daction ni les donn√©es structur√©es."""
-    try:
-        generated = _crm_ai(
-            system_prompt,
-            json.dumps({"informations_factuelles_autorisees": facts}, ensure_ascii=False),
-            1100,
-        )
-        generated = str(generated or "").strip()
-        if len(generated) > CRM_FRANCE_TRAVAIL_REQUEST_MAX_CHARACTERS:
-            return jsonify({
-                "error": "Le texte g√©n√©r√© d√©passe la limite de 2 000 caract√®res. R√©g√©n√©rez une version plus courte."
-            }), 422
-        return jsonify({
-            "texte": generated,
-            "max_characters": CRM_FRANCE_TRAVAIL_REQUEST_MAX_CHARACTERS,
-        })
-    except Exception as exc:
-        app.logger.warning(
-            "france_travail_request_generation contact=%s error=%s",
-            contact_id, type(exc).__name__,
-        )
-        return jsonify({"error": "La g√©n√©ration de la demande France Travail est momentan√©ment indisponible"}), 502
-
-
-@app.route("/api/crm/contacts/<contact_id>/synthese", methods=["POST"])
-@login_required
-def crm_contact_summary(contact_id):
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    dossier = {key: contact.get(key, "") for key in (
-        "prenom", "nom", "formation", "lieu", "dates_formation", "statut", "cpf",
-        "financement_ft", "carte_pro", "antecedents", "commentaires")}
-    dossier["dernieres_activites"] = (contact.get("activities") or [])[:10]
-    appointments = [item for item in data.get("crm_calendly_appointments", [])
-                    if item.get("contact_id") == contact_id]
-    dossier["rendez_vous_calendly"] = sorted(appointments,
-        key=lambda item: item.get("start_time") or "", reverse=True)[:10]
-    try:
-        texte = _crm_ai("R√©dige une synth√®se CRM d√©taill√©e et structur√©e en fran√ßais (6 √† 10 phrases). "
-            "Indique explicitement le prochain rendez-vous pr√©vu (date, heure et objet) ou qu'aucun rendez-vous n'est pr√©vu. "
-            "Qualifie le s√©rieux et la maturit√© du prospect uniquement √† partir de signaux factuels (√©changes, statut, financement, rendez-vous, compl√©tude), "
-            "pr√©sente les points forts, les blocages ou informations manquantes et termine par les prochaines actions concr√®tes. "
-            "N'invente aucune information et signale clairement ce qui n'est pas renseign√©.",
-            json.dumps(dossier, ensure_ascii=False), 600)
-        return jsonify({"texte": texte})
-    except Exception as exc:
-        print("Erreur synth√®se CRM:", exc)
-        return jsonify({"error": "La synth√®se est momentan√©ment indisponible"}), 502
-
-
-@app.route("/api/crm/contacts/<contact_id>/ai-analysis", methods=["GET", "POST"])
-@login_required
-def crm_candidate_ai_analysis(contact_id):
-    data = load_data()
-    if not _crm_contact(data, contact_id):
-        return jsonify({"error": "Contact introuvable"}), 404
-    if request.method == "GET":
-        return jsonify(get_candidate_ai_analysis_state(contact_id, data))
-    force = bool((request.get_json(silent=True) or {}).get("force", False))
-    with _CRM_AI_ANALYSIS_LOCKS_GUARD:
-        lock = _CRM_AI_ANALYSIS_LOCKS.setdefault(contact_id, threading.Lock())
-    with lock:
-        data = load_data()
-        # Une g√©n√©ration IA est d√©j√† une op√©ration longue : elle ne doit pas
-        # ajouter un second appel r√©seau synchrone vers Gestion Stagiaires.
-        context = build_candidate_ai_context(contact_id, data, fetch_live_vae=False)
-        meaningful = (any(context.get(key) for key in ("formation", "funding", "integration_score_read_only",
-            "regulatory_declarations_read_only", "meta_form_answers_untrusted",
-            "recent_notes_untrusted", "recent_activities_untrusted", "wedof", "vae_tracking_read_only"))
-            or bool(context.get("appointments", {}).get("total_count")))
-        if not meaningful:
-            return jsonify({"status": "insufficient_data", "message": "Les informations de la piste sont insuffisantes pour g√©n√©rer une analyse utile."}), 422
-        source_hash = compute_candidate_ai_source_hash(context)
-        stored = data.setdefault("crm_ai_candidate_analyses", {}).get(contact_id)
-        if (stored and stored.get("source_hash") == source_hash
-                and stored.get("analysis_version") == AI_CANDIDATE_ANALYSIS_VERSION
-                and stored.get("prompt_version") == AI_CANDIDATE_PROMPT_VERSION and not force):
-            response = get_candidate_ai_analysis_state(contact_id, data)
-            response["cached"] = True
-            return jsonify(response)
-        try:
-            result = generate_candidate_ai_analysis(context)
-        except Exception as exc:
-            # Ne journaliser ni contexte ni prompt. Une analyse locale d√©terministe
-            # remplace la sortie fournisseur afin de ne jamais r√©afficher un contenu p√©rim√©.
-            status_code = getattr(exc, "status_code", None)
-            reason = getattr(exc, "code", None) if isinstance(exc, CandidateAIResponseError) else None
-            request_id = getattr(exc, "request_id", None)
-            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-            app.logger.warning(
-                "candidate_ai_analysis contact=%s error=%s reason=%s provider_status=%s request_id=%s model=%s format=json_schema",
-                contact_id, type(exc).__name__, reason or "provider_error", status_code or "none",
-                request_id or "none", model)
-            result = build_candidate_ai_fallback(context)
-        latest = load_data()
-        contact = _crm_contact(latest, contact_id)
-        if not contact:
-            return jsonify({"error": "Contact introuvable"}), 404
-        user = current_user() or {}
-        latest.setdefault("crm_ai_candidate_analyses", {})[contact_id] = {
-            "analysis_version": AI_CANDIDATE_ANALYSIS_VERSION, "prompt_version": AI_CANDIDATE_PROMPT_VERSION,
-            "source_hash": source_hash, "generated_at": _crm_now(),
-            "generated_by_user_id": user.get("email", ""), "generated_by_name": user.get("name", "√âquipe Int√©grale"),
-            "provider": "local_fallback" if result.get("fallback") else "openai",
-            "model": "deterministic" if result.get("fallback") else os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            "result": result}
-        _crm_activity(contact, "ai_analysis", "Analyse IA du candidat actualis√©e",
-            f"Priorit√© propos√©e : {result['priority_label']}")
-        save_data(latest)
-        response = get_candidate_ai_analysis_state(contact_id, latest)
-        response["cached"] = False
-        return jsonify(response)
-
-
-@app.route("/api/crm/contacts/<contact_id>/generer-message", methods=["POST"])
-@login_required
-def crm_generate_message(contact_id):
-    contact = _crm_contact(load_data(), contact_id)
-    if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    payload = request.get_json(silent=True) or {}; kind = payload.get("type")
-    if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
-    context = str(payload.get("instructions") or "Proposer un suivi adapt√© au dossier.").strip()
-    facts = {k: contact.get(k, "") for k in ("prenom", "formation", "lieu", "statut", "commentaires")}
-    constraint = "R√©dige uniquement le corps d'un e-mail professionnel" if kind == "email" else "R√©dige un SMS professionnel de 320 caract√®res maximum"
-    try:
-        texte = _crm_ai(f"{constraint}, chaleureux et directement utilisable. N'invente aucune information.", f"Dossier: {json.dumps(facts, ensure_ascii=False)}\nObjectif: {context}")
-        return jsonify({"texte": texte})
-    except Exception as exc:
-        print("Erreur g√©n√©ration message CRM:", exc)
-        return jsonify({"error": "La g√©n√©ration est momentan√©ment indisponible"}), 502
-
-
-def _crm_templates_payload(data):
-    """Construit la biblioth√®que de mod√®les depuis un instantan√© existant."""
-    wrapper_path = os.path.join(app.root_path, "templates", "crm_email_wrapper.html")
-    with open(wrapper_path, encoding="utf-8") as wrapper_file:
-        email_starter = wrapper_file.read().replace(
-            "{{ contenu|safe }}",
-            "<!-- EMAIL_CONTENT_START --><p>√âcrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
-        )
-    automatic_email = [
-        {
-            "id": "automatic-desp-vae",
-            "nom": "VAE DESP",
-            "formation": "DESP_VAE",
-            "sujet": "üìù VAE ‚Äì Dirigeant d‚ÄôEntreprise de S√©curit√© Priv√©e (RNCP40385)",
-            "contenu": build_vae_desp_email_html("{{ prenom }}", "{{ lien_devis }}"),
-        },
-        {
-            "id": "automatic-a3p",
-            "nom": "A3P ‚Äì Bodyguard",
-            "formation": "A3P",
-            "sujet": "üëÆ‚Äç‚ôÇÔ∏è Formation Agent de Protection Physique des Personnes (A3P)",
-            "contenu": build_a3p_email_html(
-                "{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data,
-            ),
-        },
-        {
-            "id": "automatic-aps",
-            "nom": "APS ‚Äì Agent de s√©curit√© priv√©e",
-            "formation": "APS",
-            "sujet": "üëÆ‚Äç‚ôÇÔ∏è Formation Agent de S√©curit√© Priv√©e (APS)",
-            "contenu": build_aps_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
-        },
-        {
-            "id": "automatic-ssiap1",
-            "nom": "SSIAP 1 ‚Äì S√©curit√© incendie",
-            "formation": "SSIAP",
-            "sujet": "üî• Formation Agent de s√©curit√© incendie SSIAP 1",
-            "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui"),
-        },
-        {
-            "id": "automatic-vtc",
-            "nom": "Chauffeur VTC",
-            "formation": "VTC",
-            "sujet": "üöó Formation Chauffeur VTC",
-            "contenu": build_vtc_email_html("{{ prenom }}", "cote_azur", "{{ lien_devis }}"),
-        },
-        {
-            "id": "automatic-desp-initial",
-            "nom": "DESP initial ‚Äì C√¥te d‚ÄôAzur",
-            "formation": "DESP_INIT",
-            "sujet": "Votre demande de renseignements ‚Äì Formation DESP initial",
-            "contenu": build_desp_init_email_html(
-                "{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data,
-            ),
-        },
-        {
-            "id": "automatic-desp-initial-paris",
-            "nom": "DESP initial ‚Äì Paris",
-            "formation": "DESP_INIT",
-            "sujet": "Votre demande de renseignements ‚Äì Formation DESP initial",
-            "contenu": build_desp_init_email_html(
-                "{{ prenom }}", "", "paris", "{{ lien_devis }}", data,
-            ),
-        },
-    ]
-    meta_a3p_subject, _, meta_a3p_html = _a3p_information_email_content(
-        "{{ prenom }}", "", "cote_azur", "", data,
-        prominent_phone_booking=True,
-    )
-    automatic_meta = [
-        {
-            "id": "automatic-meta-a3p-email",
-            "type": "email",
-            "nom": "META A3P ‚Äì E-mail d‚Äôinformation",
-            "formation": "A3P",
-            "sujet": meta_a3p_subject,
-            "contenu": meta_a3p_html,
-        },
-        {
-            "id": "automatic-meta-a3p-sms",
-            "type": "sms",
-            "nom": "META A3P ‚Äì SMS de suivi",
-            "formation": "A3P",
-            "sujet": "",
-            "contenu": build_training_information_sms_text("A3P"),
-        },
-    ]
-    return {
-        "email": data["crm_email_templates"],
-        "sms": data["crm_sms_templates"],
-        "automatic_email": automatic_email,
-        "automatic_meta": automatic_meta,
-        "email_starter": email_starter,
-        "email_free_starter": render_template(
-            "crm_email_wrapper.html", prenom="{{ prenom }}",
-            formation="{{ formation }}",
-            contenu="<!-- EMAIL_CONTENT_START --><!-- EMAIL_CONTENT_END -->",
-        ),
-    }
-
-
-def _crm_request_payload():
-    if request.mimetype == "multipart/form-data":
-        return request.form.to_dict(flat=True)
-    return request.get_json(silent=True) or {}
-
-
-def _crm_payload_boolean(value, default=False):
-    if value is None:
-        return default
-    return str(value).strip().casefold() in {"1", "true", "oui", "yes", "on"}
-
-
-def _crm_attachment_error_response(exc):
-    return jsonify({"error": str(exc)}), 413 if isinstance(exc, OverflowError) else 400
-
-
-@app.route("/api/crm/templates", methods=["GET", "POST"])
-@login_required
-@_crm_serialized
-def crm_templates():
-    data = load_data()
-    if request.method == "GET":
-        return jsonify(_crm_templates_payload(data))
-    payload = _crm_request_payload(); kind = payload.get("type")
-    if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
-    uploaded = request.files.get("attachment")
-    if kind == "sms" and uploaded and uploaded.filename:
-        return jsonify({"error": "Les pi√®ces jointes sont r√©serv√©es aux e-mails."}), 400
-    item = {"id": str(uuid.uuid4()), "nom": str(payload.get("nom", "Sans titre")).strip(),
-            "sujet": str(payload.get("sujet", "")).strip(), "contenu": str(payload.get("contenu", "")),
-            "categorie": str(payload.get("categorie", "G√©n√©ral")).strip() or "G√©n√©ral",
-            "usage_count": 0, "versions": [], "created_at": _crm_now()}
-    stored_attachment = None
-    if uploaded and uploaded.filename:
-        try:
-            stored_attachment = _crm_store_email_attachment(uploaded)
-        except (ValueError, OverflowError) as exc:
-            return _crm_attachment_error_response(exc)
-        item["piece_jointe"] = stored_attachment
-    data[f"crm_{kind}_templates"].append(item)
-    try:
-        save_data(data)
-    except Exception:
-        _crm_delete_email_attachment(stored_attachment)
-        raise
-    return jsonify(item), 201
-
-
-CRM_CALLBACK_PENDING = "pending"
-CRM_CALLBACK_PROCESSED = "processed"
-CRM_CALLBACK_STATUSES = {CRM_CALLBACK_PENDING, CRM_CALLBACK_PROCESSED}
-
-
-def _crm_callback_status_timestamp():
-    return datetime.datetime.now(
-        pytz.timezone("Europe/Paris"),
-    ).isoformat(timespec="microseconds")
-
-
-def _crm_callback_request_status(entry):
-    """Return the dedicated status; legacy generic ¬´ Trait√© ¬ª stays pending."""
-    raw_status = str(entry.get("callback_status") or "").strip().casefold()
-    if raw_status in {"processed", "traite", "trait√©"}:
-        return CRM_CALLBACK_PROCESSED
-    return CRM_CALLBACK_PENDING
-
-
-def _crm_callback_request_detail(entry):
-    notes = str(entry.get("notes") or "").strip()
-    appointment = str(entry.get("rdv") or "").strip()
-    return "\n".join([
-        f"Demande : {notes or 'Aucune pr√©cision renseign√©e.'}",
-        f"Rendez-vous : {appointment or 'Non renseign√©'}",
-    ])
-
-
-def _crm_legacy_callback_request_detail(entry):
-    """Rebuild the detail written before callback activities had their own kind."""
-    return "\n".join(filter(None, [
-        str(entry.get("notes") or "").strip()
-        or "Demande de rappel transmise par le secr√©tariat.",
-        f"Rendez-vous : {entry['rdv']}" if entry.get("rdv") else "",
-    ]))
-
-
-def _crm_callback_request_contact(data, entry):
-    stored_contact_id = str(entry.get("crm_contact_id") or "").strip()
-    contact = _crm_contact(data, stored_contact_id) if stored_contact_id else None
-    return contact or _secretariat_existing_crm_contact(data, entry)
-
-
-def _crm_hydrate_callback_request_appointment(data, entry, contact):
-    """Keep the callback row aligned with its next confirmed phone booking."""
-    match = _crm_next_phone_appointment(data, entry, contact)
-    if not match:
-        return False
-    start, appointment = match
-    expected = {
-        "rdv": _crm_calendly_datetime_label(appointment.get("start_time")),
-        "rdv_status": "scheduled",
-        "rdv_date": start.strftime("%d/%m/%Y"),
-        "rdv_time": start.strftime("%H:%M"),
-        "rdv_mode": "Appel t√©l√©phonique",
-        "rdv_name": appointment.get("name") or "Rendez-vous t√©l√©phonique",
-        "rdv_host_name": appointment.get("host_name") or "",
-        "rdv_source": "calendly",
-    }
-    changed = False
-    for key, value in expected.items():
-        if entry.get(key) != value:
-            entry[key] = value
-            changed = True
-    return changed
-
-
-def _crm_ensure_callback_request_activity(contact, entry):
-    """Create or repair the journal entry linked to one callback request."""
-    request_id = str(entry.get("id") or "").strip()
-    activities = contact.setdefault("activities", [])
-    activity = next((
-        item for item in activities
-        if isinstance(item, dict)
-        and str(item.get("callback_request_id") or "") == request_id
-        and item.get("title") == "Demande de rappel re√ßue"
-        and str(item.get("callback_event") or "received") == "received"
-    ), None)
-    if activity is None:
-        legacy_details = {
-            _crm_callback_request_detail(entry),
-            _crm_legacy_callback_request_detail(entry),
-        }
-        activity = next((
-            item for item in activities
-            if isinstance(item, dict)
-            and item.get("title") == "Demande de rappel re√ßue"
-            and not item.get("callback_request_id")
-            and str(item.get("detail") or "") in legacy_details
-        ), None)
-
-    status = _crm_callback_request_status(entry)
-    expected = {
-        "kind": "demande_rappel",
-        "title": "Demande de rappel re√ßue",
-        "detail": _crm_callback_request_detail(entry),
-        "callback_request_id": request_id,
-        "callback_status": status,
-        "callback_event": "received",
-    }
-    if activity is None:
-        _crm_activity(
-            contact,
-            expected["kind"],
-            expected["title"],
-            expected["detail"],
-            author_name="Secr√©tariat",
-        )
-        activity = activities[0]
-        if entry.get("created_at"):
-            activity["date"] = str(entry["created_at"])
-        activity.update({
-            "callback_request_id": request_id,
-            "callback_status": status,
-            "callback_event": "received",
-        })
-        return True
-
-    changed = False
-    for key, value in expected.items():
-        if activity.get(key) != value:
-            activity[key] = value
-            changed = True
-    return changed
-
-
-def _crm_prepare_callback_request(data, entry):
-    """Normalize one request, preserve its lead link and repair its journal."""
-    changed = False
-    if not str(entry.get("id") or "").strip():
-        entry["id"] = str(uuid.uuid4())
-        changed = True
-    status = _crm_callback_request_status(entry)
-    if entry.get("callback_status") != status:
-        entry["callback_status"] = status
-        changed = True
-    if not entry.get("callback_status_updated_at"):
-        initial_status_date = (
-            entry.get("callback_processed_at") or entry.get("created_at") or ""
-        )
-        if initial_status_date:
-            entry["callback_status_updated_at"] = str(initial_status_date)
-            changed = True
-    expected_generic_status = (
-        "Trait√©" if status == CRM_CALLBACK_PROCESSED else "√Ä traiter"
-    )
-    if entry.get("statut") != expected_generic_status:
-        entry["statut"] = expected_generic_status
-        changed = True
-
-    contact = _crm_callback_request_contact(data, entry)
-    contact_id = str(contact.get("id") or "") if contact else ""
-    if str(entry.get("crm_contact_id") or "") != contact_id:
-        entry["crm_contact_id"] = contact_id
-        changed = True
-    if _crm_hydrate_callback_request_appointment(data, entry, contact):
-        changed = True
-    if contact and _crm_ensure_callback_request_activity(contact, entry):
-        changed = True
-    return changed, contact
-
-
-def _crm_backfill_callback_requests(data):
-    """Repair callback statuses and journals without creating any CRM contact."""
-    changed = False
-    for entry in data.get("secretariat_demandes", []):
-        if not isinstance(entry, dict) or entry.get("type") != "autre":
-            continue
-        entry_changed, _ = _crm_prepare_callback_request(data, entry)
-        changed = entry_changed or changed
-    return changed
-
-
-def _crm_callback_requests_payload(data):
-    """Expose only secretariat ¬´ other requests ¬ª to the callback workspace."""
-    contacts_by_id = {
-        str(contact.get("id") or ""): contact
-        for contact in data.get("crm_contacts", [])
-        if contact.get("id")
-    }
-    rows = []
-    for entry in data.get("secretariat_demandes", []):
-        if not isinstance(entry, dict) or entry.get("type") != "autre":
-            continue
-        stored_contact_id = str(entry.get("crm_contact_id") or "").strip()
-        contact = contacts_by_id.get(stored_contact_id)
-        if contact is None:
-            contact = _secretariat_existing_crm_contact(data, entry)
-        contact_id = str(contact.get("id") or "") if contact else ""
-        display_name = str(entry.get("nom") or "").strip()
-        if not display_name:
-            display_name = " ".join(filter(None, [
-                str(entry.get("prenom") or "").strip(),
-                str(entry.get("nom_famille") or "").strip(),
-            ]))
-        rows.append({
-            "id": str(entry.get("id") or ""),
-            "created_at": str(entry.get("created_at") or ""),
-            "date": str(entry.get("date") or ""),
-            "display_name": display_name or "Appelant non renseign√©",
-            "telephone": str(entry.get("telephone") or ""),
-            "email": str(entry.get("email") or ""),
-            "notes": str(entry.get("notes") or ""),
-            "rdv": str(entry.get("rdv") or ""),
-            "rdv_status": str(entry.get("rdv_status") or ""),
-            "rdv_date": str(entry.get("rdv_date") or ""),
-            "rdv_time": str(entry.get("rdv_time") or ""),
-            "rdv_mode": str(entry.get("rdv_mode") or ""),
-            "rdv_name": str(entry.get("rdv_name") or ""),
-            "rdv_host_name": str(entry.get("rdv_host_name") or ""),
-            "comment": str(entry.get("callback_comment") or ""),
-            "comment_updated_at": str(
-                entry.get("callback_comment_updated_at") or ""
-            ),
-            "comment_updated_by": str(
-                entry.get("callback_comment_updated_by") or ""
-            ),
-            "crm_contact_id": contact_id,
-            "crm_contact_name": (
-                f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip()
-                if contact else ""
-            ),
-            "crm_contact_status": str(contact.get("statut") or "") if contact else "",
-            "status": _crm_callback_request_status(entry),
-            "processed_at": str(entry.get("callback_processed_at") or ""),
-            "processed_by": str(entry.get("callback_processed_by") or ""),
-        })
-    return sorted(
-        rows,
-        key=lambda row: (row.get("created_at") or "", row.get("date") or ""),
-        reverse=True,
-    )
-
-
-def _crm_callback_pending_count(data):
-    """Count only unprocessed secretariat ¬´ other requests ¬ª."""
-    return sum(
-        1
-        for entry in data.get("secretariat_demandes", [])
-        if isinstance(entry, dict)
-        and entry.get("type") == "autre"
-        and _crm_callback_request_status(entry) != CRM_CALLBACK_PROCESSED
-    )
-
-
-@app.get("/api/crm/bootstrap")
-@login_required
-def crm_bootstrap():
-    """Charge tout l'espace CRM avec une seule lecture du fichier JSON.
-
-    L'ancien d√©marrage lan√ßait six requ√™tes en parall√®le. Chaque requ√™te
-    reparsait le m√™me fichier complet, ce qui multipliait le pic m√©moire.
-    """
-    section = request.args.get("section", "")
-    user_email = (current_user() or {}).get("email", "")
-    if section == "demandes-rappel":
-        # One non-destructive pass repairs existing requests and makes their
-        # journal entry visible before the callback workspace is returned.
-        with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
-            stored_data = load_data()
-            if _crm_backfill_callback_requests(stored_data):
-                save_data(stored_data)
-    read_model_key = _crm_read_model_key()
-    bootstrap_etag = hashlib.sha256(repr((
-        CRM_ASSET_VERSION,
-        section,
-        user_email,
-        read_model_key,
-    )).encode("utf-8")).hexdigest()
-    if request.if_none_match.contains(bootstrap_etag):
-        response = app.response_class(status=304)
-        response.set_etag(bootstrap_etag)
-        response.headers["Cache-Control"] = "private, no-cache"
-        return response
-    data = _crm_prepared_read_model()
-    contacts, _ = _crm_contact_summaries_payload(
-        data, section=section, prepared=True,
-    )
-    settings = _crm_settings_payload(data)
-    appointments = _crm_calendly_appointments_payload(data)
-    response = jsonify({
-        "contacts": contacts,
-        "templates": _crm_templates_payload(data),
-        "formation_sessions": get_upcoming_formation_sessions(data),
-        "notifications": _crm_notifications_payload(
-            data, user_email,
-        ),
-        "appointments": appointments["appointments"],
-        "calendly_integration": appointments["integration"],
-        "settings": settings,
-        "callback_pending_count": _crm_callback_pending_count(data),
-        "callback_requests": (
-            _crm_callback_requests_payload(data)
-            if section == "demandes-rappel" else []
-        ),
-    })
-    final_model_key = _crm_read_model_key()
-    if final_model_key != read_model_key:
-        bootstrap_etag = hashlib.sha256(repr((
-            CRM_ASSET_VERSION,
-            section,
-            user_email,
-            final_model_key,
-        )).encode("utf-8")).hexdigest()
-    response.set_etag(bootstrap_etag)
-    response.headers["Cache-Control"] = "private, no-cache"
-    return response
-
-
-@app.get("/api/crm/callback-requests")
-@login_required
-def crm_callback_requests():
-    """Recharge uniquement l'espace des demandes de rappel."""
-    with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
-        stored_data = load_data()
-        if _crm_backfill_callback_requests(stored_data):
-            save_data(stored_data)
-    data = _crm_prepared_read_model()
-    return jsonify({
-        "callback_requests": _crm_callback_requests_payload(data),
-        "callback_pending_count": _crm_callback_pending_count(data),
-    })
-
-
-@app.post("/api/crm/callback-requests/<request_id>/convert")
-@login_required
-@_serialize_secretariat_delivery
-@_crm_serialized
-def crm_convert_callback_request(request_id):
-    """Create and link one CRM lead while preserving the callback request."""
-    data = load_data()
-    entry = next((
-        item for item in data.get("secretariat_demandes", [])
-        if isinstance(item, dict)
-        and item.get("type") == "autre"
-        and str(item.get("id") or "") == str(request_id)
-    ), None)
-    if entry is None:
-        return jsonify({"error": "Demande de rappel introuvable."}), 404
-
-    _, contact = _crm_prepare_callback_request(data, entry)
-    created = False
-    if contact is None:
-        raw_name = str(entry.get("nom") or "").strip()
-        name_parts = raw_name.split(None, 1)
-        first_name = str(entry.get("prenom") or "").strip()
-        last_name = str(entry.get("nom_famille") or "").strip()
-        if not first_name and len(name_parts) > 1:
-            first_name = name_parts[0]
-        if not last_name:
-            if first_name:
-                last_name = raw_name
-            else:
-                last_name = (
-                    name_parts[1] if len(name_parts) > 1
-                    else (name_parts[0] if name_parts else "Sans nom")
-                )
-        crm_payload = {
-            "prenom": first_name,
-            "nom": last_name,
-            "mail": str(entry.get("email") or "").strip(),
-            "telephone": str(entry.get("telephone") or "").strip(),
-            "formation": str(entry.get("formation") or "").strip(),
-            "source_formulaire": "assistant-secretariat",
-            "origine": "Secr√©tariat",
-        }
-        contact_count_before = len(data.get("crm_contacts", []))
-        contact = _crm_create_contact_from_secretariat(
-            data, entry, crm_payload, create_on_ambiguity=True,
-        )
-        created = len(data.get("crm_contacts", [])) > contact_count_before
-        if contact is None:
-            return jsonify({
-                "error": "La demande ne peut pas √™tre convertie en fiche CRM.",
-            }), 409
-
-    entry["crm_contact_id"] = str(contact.get("id") or "")
-    _crm_prepare_callback_request(data, entry)
-    _crm_ensure_secretariat_publication(contact, entry)
-    contact["updated_at"] = _crm_now()
-    save_data(data)
-    row = next(
-        item for item in _crm_callback_requests_payload(data)
-        if item["id"] == str(request_id)
-    )
-    return jsonify({
-        "request": row,
-        "contact": _crm_contact_detail_response(copy.deepcopy(contact), data),
-        "created": created,
-        "callback_pending_count": _crm_callback_pending_count(data),
-    }), 201 if created else 200
-
-
-@app.patch("/api/crm/callback-requests/<request_id>")
-@login_required
-@_serialize_secretariat_delivery
-@_crm_serialized
-def crm_callback_request(request_id):
-    data = load_data()
-    entry = next((
-        item for item in data.get("secretariat_demandes", [])
-        if isinstance(item, dict)
-        and item.get("type") == "autre"
-        and str(item.get("id") or "") == str(request_id)
-    ), None)
-    if entry is None:
-        return jsonify({"error": "Demande de rappel introuvable."}), 404
-
-    payload = request.get_json(silent=True) or {}
-    status_requested = "status" in payload
-    comment_requested = "comment" in payload
-    if not status_requested and not comment_requested:
-        return jsonify({
-            "error": "Aucune modification de la demande n'a √©t√© transmise.",
-        }), 400
-
-    previous_status = _crm_callback_request_status(entry)
-    requested_status = previous_status
-    if status_requested:
-        requested_status = str(payload.get("status") or "").strip().lower()
-    if status_requested and requested_status not in CRM_CALLBACK_STATUSES:
-        return jsonify({"error": "Le statut de la demande est invalide."}), 400
-    comment = str(payload.get("comment") or "").strip()
-    if comment_requested and len(comment) > 2000:
-        return jsonify({
-            "error": "Le commentaire interne ne peut pas d√©passer 2 000 caract√®res.",
-        }), 400
-
-    now = _crm_now()
-    user = current_user() or {}
-    actor = user.get("name") or user.get("email") or "√âquipe Int√©grale"
-    if status_requested:
-        entry["callback_status"] = requested_status
-        entry["callback_status_updated_at"] = _crm_callback_status_timestamp()
-        if requested_status == CRM_CALLBACK_PROCESSED:
-            if previous_status != requested_status or not entry.get("callback_processed_at"):
-                entry["callback_processed_at"] = now
-                entry["callback_processed_by"] = actor
-        else:
-            entry["callback_processed_at"] = ""
-            entry["callback_processed_by"] = ""
-    if comment_requested:
-        entry["callback_comment"] = comment
-        entry["callback_comment_updated_at"] = _crm_callback_status_timestamp()
-        entry["callback_comment_updated_by"] = actor if comment else ""
-
-    _, contact = _crm_prepare_callback_request(data, entry)
-    if status_requested and previous_status != requested_status and contact:
-        title = (
-            "Demande de rappel trait√©e"
-            if requested_status == CRM_CALLBACK_PROCESSED
-            else "Demande de rappel rouverte"
-        )
-        _crm_activity(
-            contact,
-            "demande_rappel",
-            title,
-            _crm_callback_request_detail(entry),
-            author_name=actor,
-        )
-        contact["activities"][0].update({
-            "callback_request_id": str(entry.get("id") or ""),
-            "callback_status": requested_status,
-            "callback_event": requested_status,
-        })
-        contact["updated_at"] = now
-
-    contact_response = (
-        _crm_contact_detail_response(copy.deepcopy(contact), data)
-        if contact else None
-    )
-    save_data(data)
-    row = next(
-        item for item in _crm_callback_requests_payload(data)
-        if item["id"] == str(request_id)
-    )
-    response = {
-        "request": row,
-        "callback_pending_count": _crm_callback_pending_count(data),
-    }
-    if contact_response:
-        response["contact"] = contact_response
-    return jsonify(response)
-
-
-@app.get("/api/crm/templates/<template_id>/attachment")
-@login_required
-def crm_template_attachment(template_id):
-    template = next((
-        item for item in load_data().get("crm_email_templates", [])
-        if item.get("id") == template_id
-    ), None)
-    if not template:
-        return jsonify({"error": "Mod√®le introuvable"}), 404
-    metadata = template.get("piece_jointe")
-    path = _crm_email_attachment_path(metadata)
-    if not path:
-        return jsonify({"error": "Pi√®ce jointe introuvable"}), 404
-    return send_file(
-        path,
-        as_attachment=True,
-        download_name=metadata.get("nom") or os.path.basename(path),
-        mimetype=metadata.get("type") or "application/octet-stream",
-        conditional=True,
-    )
-
-
-@app.route("/api/crm/templates/<template_id>", methods=["PATCH", "DELETE"])
-@login_required
-@_crm_serialized
-def crm_template(template_id):
-    data = load_data()
-    for kind in ("email", "sms"):
-        items = data[f"crm_{kind}_templates"]
-        item = next((candidate for candidate in items if candidate.get("id") == template_id), None)
-        if not item:
-            continue
-        if request.method == "DELETE":
-            old_attachment = item.get("piece_jointe")
-            items.remove(item)
-            save_data(data)
-            _crm_delete_email_attachment(old_attachment)
-            return "", 204
-        payload = _crm_request_payload()
-        name = str(payload.get("nom", item.get("nom", ""))).strip()
-        content = str(payload.get("contenu", item.get("contenu", "")))
-        if not name:
-            return jsonify({"error": "Le nom du mod√®le est obligatoire"}), 400
-        if not content.strip():
-            return jsonify({"error": "Le contenu du mod√®le est obligatoire"}), 400
-        uploaded = request.files.get("attachment")
-        if kind == "sms" and uploaded and uploaded.filename:
-            return jsonify({"error": "Les pi√®ces jointes sont r√©serv√©es aux e-mails."}), 400
-        new_attachment = None
-        if kind == "email" and uploaded and uploaded.filename:
-            try:
-                new_attachment = _crm_store_email_attachment(uploaded)
-            except (ValueError, OverflowError) as exc:
-                return _crm_attachment_error_response(exc)
-        old_attachment = item.get("piece_jointe")
-        item.setdefault("versions", []).insert(0, {
-            "nom": item.get("nom", ""), "sujet": item.get("sujet", ""),
-            "contenu": item.get("contenu", ""), "date": item.get("updated_at") or item.get("created_at") or _crm_now(),
-        })
-        item["versions"] = item["versions"][:20]
-        item.update({"nom": name, "sujet": str(payload.get("sujet", item.get("sujet", ""))).strip() if kind == "email" else "", "contenu": content,
-                     "categorie": str(payload.get("categorie", item.get("categorie", "G√©n√©ral"))).strip() or "G√©n√©ral", "updated_at": _crm_now()})
-        if new_attachment:
-            item["piece_jointe"] = new_attachment
-        elif kind == "email" and _crm_payload_boolean(payload.get("remove_attachment")):
-            item.pop("piece_jointe", None)
-        try:
-            save_data(data)
-        except Exception:
-            _crm_delete_email_attachment(new_attachment)
-            raise
-        if old_attachment and old_attachment != item.get("piece_jointe"):
-            _crm_delete_email_attachment(old_attachment)
-        return jsonify(item)
-    return jsonify({"error": "Mod√®le introuvable"}), 404
-
-
-CRM_UPCOMING_DATES_VARIABLE = "{{prochaines_dates}}"
-CRM_CALENDLY_URL = "https://calendly.com/integraleacademy/formation"
-
-
-def _crm_formation_code(contact):
-    """Translate the CRM's human labels to the session administration codes."""
-    formation = str(contact.get("formation") or "").strip().lower()
-    if formation == "desp":
-        return "DESP_VAE" if str(contact.get("desp_type") or "").strip().upper() == "VAE" else "DESP_INIT"
-    return {
-        "aps": "APS", "a3p": "A3P", "ssiap": "SSIAP", "ssiap 1": "SSIAP",
-        "chauffeur vtc": "VTC", "vtc": "VTC",
-    }.get(formation, str(contact.get("formation") or "").strip().upper())
-
-
-def _crm_upcoming_dates(contact, html=False, data_store=None):
-    centre = _normalize_centre_code(contact.get("lieu"))
-    formation = _crm_formation_code(contact)
-    rows = get_upcoming_formation_sessions(data_store).get(centre, {}).get(formation, [])
-    labels = [
-        str(row.get("label") or "").strip().replace(" - examen le ", " ‚Äî examen le ")
-        for row in rows if isinstance(row, dict) and str(row.get("label") or "").strip()
-    ]
-    if not labels:
-        return "Dates √† venir prochainement (contactez-nous pour les conna√Ætre)."
-    if not html:
-        return "\n".join(f"‚Ä¢ {label}" for label in labels)
-    return '<ul style="margin:8px 0 8px 20px;padding:0;">' + "".join(
-        f'<li style="margin:0 0 6px 0;"><strong>{html_module.escape(label)}</strong></li>'
-        for label in labels
-    ) + "</ul>"
-
-
-def _crm_calendly_url(contact):
-    """Return the booking page matching the training selected on the contact."""
-    formation = SECRETARIAT_FORMATIONS.get(_crm_formation_code(contact), {})
-    return formation.get("calendly") or CRM_CALENDLY_URL
-
-
-def _crm_formation_label(contact):
-    """Return the complete, customer-facing name used in message templates."""
-    formation_code = _crm_formation_code(contact)
-    labels = {
-        "A3P": "Agent de protection physique des personnes (A3P)",
-        "APS": "Agent de pr√©vention et de s√©curit√© (APS)",
-        "SSIAP": "Agent de s√©curit√© incendie (SSIAP 1)",
-        "VTC": "Chauffeur de transport avec chauffeur (VTC)",
-        "DESP_INIT": "Dirigeant d‚Äôentreprise de s√©curit√© priv√©e (DESP ‚Äì initial)",
-        "DESP_VAE": "Dirigeant d‚Äôentreprise de s√©curit√© priv√©e (DESP ‚Äì VAE)",
-    }
-    return labels.get(formation_code) or str(contact.get("formation") or "")
-
-
-def _crm_today_appointment_variables(contact, data_store=None, now=None):
-    """Return the date/time of the latest appointment marked unanswered."""
-    paris = pytz.timezone("Europe/Paris")
-    now = now or datetime.datetime.now(paris)
-    if now.tzinfo is None:
-        now = paris.localize(now)
-    else:
-        now = now.astimezone(paris)
-    contact_id = str(contact.get("id") or "")
-    matches = []
-    for appointment in (data_store or {}).get("crm_calendly_appointments", []):
-        if str(appointment.get("contact_id") or "") != contact_id:
-            continue
-        if str(appointment.get("status") or "active").casefold() in {"canceled", "cancelled"}:
-            continue
-        if appointment.get("response_status") != "no_answer":
-            continue
-        try:
-            start = datetime.datetime.fromisoformat(
-                str(appointment.get("start_time") or "").replace("Z", "+00:00")
-            )
-            if start.tzinfo is None:
-                start = pytz.UTC.localize(start)
-            start = start.astimezone(paris)
-        except (TypeError, ValueError):
-            continue
-        try:
-            status_updated_at = datetime.datetime.fromisoformat(
-                str(appointment.get("response_status_updated_at") or "").replace("Z", "+00:00")
-            )
-            if status_updated_at.tzinfo is None:
-                status_updated_at = pytz.UTC.localize(status_updated_at)
-        except (TypeError, ValueError):
-            status_updated_at = start
-        matches.append((status_updated_at, start))
-    if not matches:
-        return {"date_rdv_du_jour": "", "heure_rdv_du_jour": "", "date_heure_rdv_du_jour": ""}
-
-    # ``response_status_updated_at`` identifies the appointment on which the
-    # user most recently clicked ‚ÄúSans r√©ponse‚Äù, regardless of its age.
-    start = max(matches, key=lambda item: item[0])[1]
-    months = ("janvier", "f√©vrier", "mars", "avril", "mai", "juin", "juillet", "ao√ªt", "septembre", "octobre", "novembre", "d√©cembre")
-    date_label = f"{start.day} {months[start.month - 1]} {start.year}"
-    time_label = f"{start.hour}h" + (f"{start.minute:02d}" if start.minute else "")
-    return {
-        "date_rdv_du_jour": date_label,
-        "heure_rdv_du_jour": time_label,
-        "date_heure_rdv_du_jour": f"{date_label} √† {time_label}",
-    }
-
-
-def _crm_resolve_message_variables(content, contact, html=False, data_store=None):
-    """Resolve CRM template variables at preview/send time, never when saving."""
-    resolved = str(content or "").replace(
-        CRM_UPCOMING_DATES_VARIABLE,
-        _crm_upcoming_dates(contact, html=html, data_store=data_store),
-    )
-    variables = {
-        "prenom": contact.get("prenom"), "nom": contact.get("nom"),
-        "email": contact.get("mail"), "mail": contact.get("mail"),
-        "telephone": contact.get("telephone"), "formation": _crm_formation_label(contact),
-        "lieu": contact.get("lieu"), "statut": contact.get("statut"),
-        "dates_formation": contact.get("dates_formation"),
-        "lien_rdv_calendly": _crm_calendly_url(contact),
-        **_crm_today_appointment_variables(contact, data_store=data_store),
-    }
-    for name, value in variables.items():
-        value = str(value or "")
-        if html:
-            value = html_module.escape(value)
-        for variable in (f"{{{{ {name} }}}}", f"{{{{{name}}}}}"):
-            resolved = resolved.replace(variable, value)
-    return resolved
-
-
-def _crm_email_html(body, contact):
-    """Keep complete custom e-mails intact and brand body-only messages."""
-    body = str(body or "")
-    if re.search(r"<(?:!doctype|html)\b", body, re.IGNORECASE):
-        return body
-    if not re.search(r"</?[a-z][^>]*>", body, re.IGNORECASE):
-        normalized = html_module.unescape(body).replace("\r\n", "\n").replace("\r", "\n")
-        paragraphs = [
-            paragraph.strip()
-            for paragraph in re.split(r"\n[ \t]*\n+", normalized)
-            if paragraph.strip()
-        ]
-        body = "".join(
-            '<p style="margin:0 0 16px">'
-            + html_module.escape(paragraph).replace("\n", "<br>")
-            + "</p>"
-            for paragraph in paragraphs
-        )
-    return render_template(
-        "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
-    )
-
-@app.route("/api/crm/contacts/<contact_id>/cnaps-form", methods=["POST"])
-@login_required
-@_crm_serialized
-def crm_send_cnaps_form(contact_id):
-    """Send the configured Docs AUT e-mail and remember only successful deliveries."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    formation = str(contact.get("formation") or "").strip().upper()
-    if formation not in {"APS", "A3P"} or str(contact.get("carte_pro") or "").strip().upper() != "NON":
-        return jsonify({"error": "Le formulaire CNAPS est r√©serv√© aux pistes APS/A3P sans carte professionnelle."}), 409
-    recipient = str(contact.get("mail") or "").strip()
-    if not recipient:
-        return jsonify({"error": "Renseignez l‚Äôadresse e-mail du contact avant l‚Äôenvoi."}), 409
-    template = _crm_named_template(data, "email", "Docs AUT")
-    if not template:
-        return jsonify({"error": "Le mod√®le e-mail ¬´ Docs AUT ¬ª est introuvable dans /crm/modeles."}), 409
-
-    body = _crm_resolve_message_variables(
-        template.get("contenu"), contact, html=True, data_store=data
-    )
-    subject = _crm_resolve_message_variables(
-        template.get("sujet") or "Docs AUT", contact, data_store=data
-    )
-    branded = _crm_email_html(body, contact)
-    plain = html_module.unescape(
-        re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
-    ).strip()
-    if not _crm_send_email_html(
-        recipient, subject, plain, branded, template=template,
-    ):
-        return jsonify({"error": "L‚Äôenvoi du formulaire a √©chou√©. V√©rifiez la configuration et l‚Äôadresse e-mail."}), 502
-
-    sent_at = _crm_now()
-    _crm_activity(contact, "email", "E-mail ¬´ Docs AUT ¬ª envoy√©", subject, branded)
-    template["usage_count"] = int(template.get("usage_count") or 0) + 1
-    template["last_used_at"] = sent_at
-    contact["cnaps_form_sent_at"] = sent_at
-    contact["updated_at"] = sent_at
-    save_data(data)
-    return jsonify(contact)
-
-
-def _crm_france_travail_funding_template(contact):
-    """Return the exact model configured for an eligible FT funding file."""
-    formation = str(contact.get("formation") or "").strip().upper()
-    journey = str(contact.get("desp_type") or "").strip().upper()
-    if formation == "A3P":
-        return "Financement FT A3P"
-    if formation == "DESP" and journey == "INITIAL":
-        return "Financement FT DESP"
-    return ""
-
-
-@app.route(
-    "/api/crm/contacts/<contact_id>/france-travail-funding-file",
-    methods=["POST"],
-)
-@login_required
-@_crm_serialized
-def crm_send_france_travail_funding_file(contact_id):
-    """Send the configured A3P or DESP initial France Travail file."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    if str(contact.get("financement_ft") or "").strip().upper() != "OUI":
-        return jsonify({
-            "error": "Indiquez d‚Äôabord que la personne souhaite un financement France Travail."
-        }), 409
-    template_name = _crm_france_travail_funding_template(contact)
-    if not template_name:
-        return jsonify({
-            "error": "Cet envoi est r√©serv√© aux formations A3P et DESP initial."
-        }), 409
-    recipient = str(contact.get("mail") or "").strip()
-    if not recipient:
-        return jsonify({
-            "error": "Renseignez l‚Äôadresse e-mail du contact avant l‚Äôenvoi."
-        }), 409
-    template = _crm_named_template(data, "email", template_name)
-    if not template:
-        return jsonify({
-            "error": (
-                f"Le mod√®le e-mail ¬´ {template_name} ¬ª est introuvable dans "
-                "/crm/modeles."
-            )
-        }), 409
-    body = _crm_resolve_message_variables(
-        template.get("contenu"), contact, html=True, data_store=data,
-    )
-    if not body.strip():
-        return jsonify({
-            "error": f"Le mod√®le e-mail ¬´ {template_name} ¬ª est vide."
-        }), 409
-    subject = _crm_resolve_message_variables(
-        template.get("sujet") or template_name, contact, data_store=data,
-    )
-    branded = _crm_email_html(body, contact)
-    plain = html_module.unescape(
-        re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
-    ).strip()
-    if not _crm_send_email_html(
-        recipient, subject, plain, branded, template=template,
-    ):
-        return jsonify({
-            "error": (
-                f"L‚Äôenvoi du mod√®le ¬´ {template_name} ¬ª a √©chou√©. "
-                "V√©rifiez la configuration et l‚Äôadresse e-mail."
-            )
-        }), 502
-
-    sent_at = _crm_now()
-    _crm_activity(
-        contact, "email", f"E-mail ¬´ {template_name} ¬ª envoy√©", subject, branded,
-    )
-    template["usage_count"] = int(template.get("usage_count") or 0) + 1
-    template["last_used_at"] = sent_at
-    contact["updated_at"] = sent_at
-    save_data(data)
-    return jsonify({"contact": contact, "template_name": template_name})
-
-
-@app.route("/api/crm/contacts/<contact_id>/message", methods=["POST"])
-@login_required
-def crm_send_message(contact_id):
-    data = load_data(); contact = _crm_contact(data, contact_id)
-    if not contact: return jsonify({"error": "Contact introuvable"}), 404
-    payload = _crm_request_payload(); kind = str(payload.get("type") or "").strip().lower()
-    template_id = str(payload.get("template_id") or "").strip()
-    selected_template = next((
-        item for item in data.get(f"crm_{kind}_templates", [])
-        if item.get("id") == template_id
-    ), None) if kind in {"email", "sms"} and template_id else None
-    body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Int√©grale Academy")).strip()
-    if kind == "email":
-        try:
-            manual_attachments = _crm_read_email_attachments(
-                request.files.getlist("attachment")
-            )
-        except (ValueError, OverflowError) as exc:
-            return _crm_attachment_error_response(exc)
-        body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
-        subject = _crm_resolve_message_variables(subject, contact, data_store=data)
-        branded = _crm_email_html(body, contact)
-        if manual_attachments:
-            with tempfile.TemporaryDirectory(prefix="crm-email-attachment-") as attachment_dir:
-                attachment_paths = []
-                for index, attachment in enumerate(manual_attachments):
-                    file_dir = os.path.join(attachment_dir, str(index))
-                    os.makedirs(file_dir, exist_ok=False)
-                    attachment_path = os.path.join(file_dir, attachment["filename"])
-                    with open(attachment_path, "xb") as attachment_file:
-                        attachment_file.write(attachment["content"])
-                    attachment_paths.append(attachment_path)
-                ok = _crm_send_email_html(
-                    contact.get("mail"), subject, body, branded,
-                    template=selected_template,
-                    attachments_paths=attachment_paths,
-                )
-        else:
-            include_template_attachment = _crm_payload_boolean(
-                payload.get("include_template_attachment"), default=True,
-            )
-            ok = _crm_send_email_html(
-                contact.get("mail"), subject, body, branded,
-                template=selected_template,
-                attachments_paths=None if include_template_attachment else [],
-            )
-        preview = branded
-    elif kind == "sms":
-        uploaded = request.files.getlist("attachment")
-        if any(item and item.filename for item in uploaded):
-            return jsonify({"error": "Les pi√®ces jointes sont r√©serv√©es aux e-mails."}), 400
-        body = _crm_resolve_message_variables(body, contact, data_store=data)
-        ok = send_sms(contact.get("telephone"), body); preview = body
-    else: return jsonify({"error": "Type invalide"}), 400
-    if not ok: return jsonify({"error": "L‚Äôenvoi a √©chou√©. V√©rifiez la configuration et les coordonn√©es."}), 502
-    meta_a3p_template = template_id == f"automatic-meta-a3p-{kind}"
-    activity_title = (
-        f"{'E-mail' if kind == 'email' else 'SMS'} META A3P envoy√© manuellement"
-        if meta_a3p_template else
-        ("E-mail envoy√©" if kind == "email" else "SMS envoy√©")
-    )
-    _crm_activity(contact, kind, activity_title, subject if kind == "email" else body, preview)
-    if selected_template:
-        selected_template["usage_count"] = int(selected_template.get("usage_count") or 0) + 1
-        selected_template["last_used_at"] = _crm_now()
-    contact["updated_at"] = _crm_now(); save_data(data)
-    return jsonify(contact)
-
-
-@app.route("/api/crm/contacts/<contact_id>/quick-reminder", methods=["POST"])
-@login_required
-@_crm_serialized
-def crm_send_quick_reminder(contact_id):
-    """Send the configured five-minute reminder from a contact sheet."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    if not str(contact.get("telephone") or "").strip():
-        return jsonify({
-            "error": "Renseignez le num√©ro de t√©l√©phone avant d‚Äôenvoyer le rappel."
-        }), 409
-    template = _crm_named_template(data, "sms", CRM_QUICK_REMINDER_TEMPLATE)
-    if not template:
-        return jsonify({
-            "error": (
-                "Le mod√®le SMS ¬´ Rappel dans 5min ¬ª est introuvable dans "
-                "/crm/modeles."
-            )
-        }), 409
-    body = _crm_resolve_message_variables(
-        template.get("contenu"), contact, data_store=data
-    ).strip()
-    if not body:
-        return jsonify({
-            "error": "Le mod√®le SMS ¬´ Rappel dans 5min ¬ª est vide."
-        }), 409
-    if not send_sms(contact.get("telephone"), body):
-        return jsonify({
-            "error": "L‚Äôenvoi du SMS ¬´ Rappel dans 5min ¬ª a √©chou√©."
-        }), 502
-
-    now = _crm_now()
-    _crm_activity(
-        contact, "sms", f"SMS ¬´ {CRM_QUICK_REMINDER_TEMPLATE} ¬ª envoy√©",
-        body, body,
-    )
-    template["usage_count"] = int(template.get("usage_count") or 0) + 1
-    template["last_used_at"] = now
-    contact["updated_at"] = now
-    save_data(data)
-    return jsonify(contact)
-
-
-@app.route("/api/crm/contacts/<contact_id>/message-preview", methods=["POST"])
-@login_required
-def crm_message_preview(contact_id):
-    """Resolve a message exactly as it will be sent, without side effects."""
-    data = load_data()
-    contact = _crm_contact(data, contact_id)
-    if not contact:
-        return jsonify({"error": "Contact introuvable"}), 404
-    payload = request.get_json(silent=True) or {}
-    kind = str(payload.get("type") or "email").strip().lower()
-    raw_body = str(payload.get("contenu") or "")
-    if kind == "email":
-        subject = _crm_resolve_message_variables(
-            payload.get("sujet", ""), contact, data_store=data
-        )
-        body = _crm_resolve_message_variables(
-            raw_body, contact, html=True, data_store=data
-        )
-        return jsonify({
-            "type": kind,
-            "sujet": subject,
-            "contenu": body,
-            "html": _crm_email_html(body, contact),
-        })
-    if kind == "sms":
-        body = _crm_resolve_message_variables(
-            raw_body, contact, data_store=data
-        )
-        return jsonify({"type": kind, "sujet": "", "contenu": body})
-    return jsonify({"error": "Type invalide"}), 400
-
-
-@app.route("/api/crm/test-email", methods=["POST"])
-@login_required
-def crm_send_test_email():
-    """Send a template preview without creating an activity on a contact."""
-    payload = request.get_json(silent=True) or {}
-    recipient = str(payload.get("destinataire", "")).strip()
-    subject = str(payload.get("sujet", "Int√©grale Academy")).strip()
-    body = str(payload.get("contenu", ""))
-    template_id = str(payload.get("template_id") or "").strip()
-    template = next((
-        item for item in load_data().get("crm_email_templates", [])
-        if item.get("id") == template_id
-    ), None) if template_id else None
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
-        return jsonify({"error": "Renseignez une adresse e-mail valide."}), 400
-    if not body.strip():
-        return jsonify({"error": "Le contenu de l‚Äôe-mail est vide."}), 400
-    plain = re.sub(r"<[^>]+>", " ", body)
-    plain = html_module.unescape(re.sub(r"\s+", " ", plain)).strip()
-    if not _crm_send_email_html(
-        recipient, subject or "Int√©grale Academy", plain, body,
-        template=template,
-    ):
-        return jsonify({"error": "L‚Äôenvoi du mail de test a √©chou√©."}), 502
-    return jsonify({"message": "E-mail de test envoy√©"})
-
-
-@app.route("/api/crm/test-sms", methods=["POST"])
-@login_required
-def crm_send_test_sms():
-    """Send an SMS template preview without creating a contact activity."""
-    payload = request.get_json(silent=True) or {}
-    recipient = str(payload.get("destinataire", "")).strip()
-    body = str(payload.get("contenu", "")).strip()
-    if not _normaliser_telephone_sms(recipient):
-        return jsonify({"error": "Renseignez un num√©ro de t√©l√©phone valide."}), 400
-    if not body:
-        return jsonify({"error": "Le contenu du SMS est vide."}), 400
-    if not send_sms(recipient, body):
-        return jsonify({"error": "L‚Äôenvoi du SMS de test a √©chou√©."}), 502
-    return jsonify({"message": "SMS de test envoy√©"})
-
-
-# La plateforme peut charger directement ``app:app`` sans passer par le
-# point d'entr√©e ``crm_app``. Enregistrer l'extension ici garantit alors que
-# l'API affich√©e dans le CRM est bien disponible quel que soit le d√©marrage.
-from crm_salesforce_import import register_salesforce_import
-
-register_salesforce_import(
-    app,
-    current_user_fn=current_user,
-    load_data_fn=load_data,
-    login_required_fn=login_required,
-    save_data_fn=save_data,
-)
-
-
-@app.before_request
-def start_crm_request_timing():
-    if request.path.startswith("/api/crm/"):
-        request.environ["integrale.crm_started_at"] = time.perf_counter()
-
-
-@app.after_request
-def report_slow_crm_requests(response):
-    started_at = request.environ.get("integrale.crm_started_at")
-    if started_at is None:
-        return response
-    duration_ms = (time.perf_counter() - started_at) * 1000
-    response.headers["Server-Timing"] = f"app;dur={duration_ms:.1f}"
-    if duration_ms >= 1000:
-        app.logger.warning(
-            "slow_crm_request method=%s path=%s status=%s duration_ms=%.1f bytes=%s",
-            request.method,
-            request.path,
-            response.status_code,
-            duration_ms,
-            response.calculate_content_length() or 0,
-        )
-    return response
-
-
-@app.after_request
-def compress_crm_json(response):
-    """Keep the compact CRM payload fast on mobile/4G connections."""
-    if (not request.path.startswith("/api/crm/")
-            or response.status_code < 200 or response.status_code >= 300
-            or response.mimetype != "application/json"
-            or response.headers.get("Content-Encoding")
-            or "gzip" not in request.headers.get("Accept-Encoding", "").lower()):
-        return response
-    body = response.get_data()
-    if len(body) < 1024:
-        return response
-    compressed = gzip.compress(body, compresslevel=3)
-    if len(compressed) >= len(body):
-        return response
-    response.set_data(compressed)
-    response.headers["Content-Encoding"] = "gzip"
-    response.headers["Content-Length"] = str(len(compressed))
-    response.headers["Vary"] = "Accept-Encoding"
-    return response
-
-
-@app.after_request
-def cache_versioned_static_assets(response):
-    """Versioned assets are immutable and must not generate a 304 per page."""
-    if request.path.startswith("/static/") and request.args.get("v"):
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    return response
-
-
-
-_start_wedof_background_sync()
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    „Ω|·º≠z &ä€^u}çÖπçï±±Ö—•Ωπ}ëÖ—î°¡ÖÂ±ΩÖê∞ÅπΩ‹ı9Ωπî§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅçÖπçï±±Ö—•Ω∏ÅëÖ‰Å•∏ÅAÖ…•Ã∞Å¡…ïôï……•πúÅÖ±ïπë±‰ùÃÅ—•µïÕ—Öµ¿∏ààà(ÄÄÄÅçÖπçï±±Ö—•Ω∏ÄÙÅ¡ÖÂ±ΩÖêπùï–†âçÖπçï±±Ö—•Ω∏à§ÅΩ»ÅÌÙ(ÄÄÄÅ…Ö›}—•µïÕ—Öµ¿ÄÙÄ†(ÄÄÄÄÄÄÄÅçÖπçï±±Ö—•Ω∏πùï–†âç…ïÖ—ïë}Ö–à§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°çÖπçï±±Ö—•Ω∏∞Åë•ç–§(ÄÄÄÄÄÄÄÅï±ÕîÄàà(ÄÄÄÄ§ÅΩ»Å¡ÖÂ±ΩÖêπùï–†â’¡ëÖ—ïë}Ö–à§(ÄÄÄÅ¡Ö…•ÃÄÙÅ¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅçÖπçï±±ïë}Ö–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°…Ö›}—•µïÕ—Öµ¿ÅΩ»Äàà§π…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅçÖπçï±±ïë}Ö–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±ïë}Ö–ÄÙÅ¡Â—ËπUQπ±ΩçÖ±•Èî°çÖπçï±±ïë}Ö–§(ÄÄÄÄÄÄÄÅçÖπçï±±ïë}Ö–ÄÙÅçÖπçï±±ïë}Ö–πÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅçÖπçï±±ïë}Ö–ÄÙÅπΩ‹ÅΩ»ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Ö…•Ã§(ÄÄÄÄÄÄÄÅ•òÅçÖπçï±±ïë}Ö–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±ïë}Ö–ÄÙÅ¡Ö…•Ãπ±ΩçÖ±•Èî°çÖπçï±±ïë}Ö–§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±ïë}Ö–ÄÙÅçÖπçï±±ïë}Ö–πÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÅ…ï—’…∏ÅçÖπçï±±ïë}Ö–πëÖ—î†§π•ÕΩôΩ…µÖ–†§(()ëïòÅ}ç…µ}çÖ±ïπë±Â}âΩΩ≠•πù}Õ’¡ï…ÕïëïÕ}Öç—•Ÿï}…ï±Öπçî°çΩπ—Öç–∞ÅÖ¡¡Ω•π—µïπ–§Ë(ÄÄÄÄààâIï—’…∏Å›°ï—°ï»ÅÖ∏Åï·•Õ—•πúÅâΩΩ≠•πúÅ•ÃÅπï›ï»Å—°Ö∏Å—°îÅΩ¡ï∏ÅôΩ±±Ω‹µ’¿∏((ÄÄÄÅ’±∞ÅÕÂπç°…Ωπ•ÈÖ—•ΩπÃÅ…ï¡±Ö‰ÅÖ¡¡Ω•π—µïπ—ÃÅ—°Ö–ÅµÖ‰ÅÖ±…ïÖë‰ÅâîÅ•∏Å—°îÅ±ΩçÖ∞(ÄÄÄÅçÖç°î∏ÄÅΩµ¡Ö…•πúÅç…ïÖ—•Ω∏Å—•µïÕ—Öµ¡ÃÅ…ï¡Ö•…ÃÅ¡…îµï·•Õ—•πúÅ•πçΩπÕ•Õ—ïπ–(ÄÄÄÅëÖ—ÑÅ›•—°Ω’–ÅçÖπçï±±•πúÅÑÅôΩ±±Ω‹µ’¿Åëï±•âï…Ö—ï±‰Åç…ïÖ—ïêÅÖô—ï»ÅâΩΩ≠•πú∏(ÄÄÄÅ5•ÕÕ•πúÅΩ»ÅµÖ±ôΩ…µïêÅ—•µïÕ—Öµ¡ÃÅÖ…îÅ±ïô–Å’π—Ω’ç°ïêÅ…Ö—°ï»Å—°Ö∏Å…•Õ≠•πú(ÄÄÄÅëïÕ—…’ç—•ŸîÅ°•Õ—Ω…‰Åç°ÖπùïÃ∏(ÄÄÄÄààà(ÄÄÄÅâΩΩ≠ïë}Ö–ÄÙÄ†(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ–πùï–†âç…ïÖ—ïë}Ö–à§(ÄÄÄÄÄÄÄÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âçÖ±ïπë±Â}ç…ïÖ—ïë}Ö–à§(ÄÄÄÄÄÄÄÅΩ»Äàà(ÄÄÄÄ§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅâΩΩ≠ïë}Ö–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°âΩΩ≠ïë}Ö–§π…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅâΩΩ≠ïë}Ö–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅâΩΩ≠ïë}Ö–ÄÙÅ¡Â—ËπUQπ±ΩçÖ±•Èî°âΩΩ≠ïë}Ö–§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅâΩΩ≠ïë}Ö–ÄÙÅâΩΩ≠ïë}Ö–πÖÕ—•µïÈΩπî°¡Â—ËπUQ§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî((ÄÄÄÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§(ÄÄÄÅôΩ»Å…ï±ÖπçîÅ•∏ÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅ…ï±Öπçîπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâÕç°ïë’±ïêàË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïë}Ö–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°…ï±Öπçîπùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Äàà§π…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅç…ïÖ—ïë}Ö–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïë}Ö–ÄÙÅ¡Â—ËπUQπ±ΩçÖ±•Èî°ç…ïÖ—ïë}Ö–§(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïë}Ö–ÄÙÅç…ïÖ—ïë}Ö–πÖÕ—•µïÈΩπî°¡Â—ËπUQ§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄåÅ≈’Ö∞ÅÕïçΩπêµ…ïÕΩ±’—•Ω∏Å—•µïÕ—Öµ¡ÃÅÖ…îÅÖµâ•ù’Ω’ÃÏÅ¡…ïÕï…Ÿ•πúÅ—°î(ÄÄÄÄÄÄÄÄåÅôΩ±±Ω‹µ’¿Å•ÃÅÕÖôï»Å—°Ö∏ÅçÖπçï±±•πúÅÑÅ¡Ω—ïπ—•Ö±±‰Å±Ö—ï»ÅµÖπ’Ö∞ÅÖç—•Ω∏∏(ÄÄÄÄÄÄÄÅ•òÅç…ïÖ—ïë}Ö–ÄÅâΩΩ≠ïë}Ö–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅQ…’î(ÄÄÄÅ…ï—’…∏ÅÖ±Õî(()ëïòÅ}ç…µ}’¡Õï…—}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ–†(ÄÄÄÅëÖ—Ñ∞(ÄÄÄÅ¡ÖÂ±ΩÖê∞(ÄÄÄÄ®∞(ÄÄÄÅ›ïâ°ΩΩ≠}ïŸïπ–Ùàà∞(ÄÄÄÅÕΩ’…çîÙâ›ïâ°ΩΩ¨à∞(ÄÄÄÅçΩπ—Öç—}•êı9Ωπî∞(ÄÄÄÅ…ïçΩ…ë}Öç—•Ÿ•—‰ıQ…’î∞(§Ë(ÄÄÄÅÕç°ïë’±ïë}ïŸïπ–ÄÙÅ¡ÖÂ±ΩÖêπùï–†âÕç°ïë’±ïë}ïŸïπ–à§ÅΩ»ÅÌÙ(ÄÄÄÅ•πŸ•—ïï}’…§ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â’…§à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅïŸïπ—}’…§ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âïŸïπ–à§ÅΩ»ÅÕç°ïë’±ïë}ïŸïπ–πùï–†â’…§à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅïµÖ•∞ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âïµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÖ¡¡Ω•π—µïπ—ÃÄÙÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÅï·•Õ—•πúÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅÖ¡¡Ω•π—µïπ—Ã(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•πŸ•—ïï}’…§ÅÖπêÅ•—ï¥πùï–†â•πŸ•—ïï}’…§à§ÄÙÙÅ•πŸ•—ïï}’…§(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–Åï·•Õ—•πúÅÖπêÅïŸïπ—}’…§ÅÖπêÅïµÖ•∞Ë(ÄÄÄÄÄÄÄÅï·•Õ—•πúÄÙÅπï·–†(ÄÄÄÄÄÄÄÄÄÄÄÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅÖ¡¡Ω•π—µïπ—Ã(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âïŸïπ—}’…§à§ÄÙÙÅïŸïπ—}’…§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°•—ï¥πùï–†â•πŸ•—ïï}ïµÖ•∞à§§ÄÙÙÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°ïµÖ•∞§(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄÄÄÄÄ§((ÄÄÄÅ¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÄÙÅï·•Õ—•πúπùï–†âÕ—Ö—’Ãà§Å•òÅï·•Õ—•πúÅï±ÕîÅ9Ωπî(ÄÄÄÅ¡…ïŸ•Ω’Õ}Õ—Ö…–ÄÙÅï·•Õ—•πúπùï–†âÕ—Ö…—}—•µîà§Å•òÅï·•Õ—•πúÅï±ÕîÅ9Ωπî(ÄÄÄÅ•πŸ•—ïï}¡°ΩπîÄÙÅ}ç…µ}çÖ±ïπë±Â}¡ÖÂ±ΩÖë}¡°Ωπî°¡ÖÂ±ΩÖê§(ÄÄÄÅÕ—Ö—’ÃÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÕ—Ö—’Ãà§ÅΩ»ÅÕç°ïë’±ïë}ïŸïπ–πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÖç—•Ÿîà§(ÄÄÄÅ•òÅ›ïâ°ΩΩ≠}ïŸïπ–ÄÙÙÄâ•πŸ•—ïîπçÖπçï±ïêàÅΩ»ÅÕç°ïë’±ïë}ïŸïπ–πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâçÖπçï±ïêàË(ÄÄÄÄÄÄÄÅÕ—Ö—’ÃÄÙÄâçÖπçï±ïêà(ÄÄÄÅµïµâï…Õ°•¡ÃÄÙÅÕç°ïë’±ïë}ïŸïπ–πùï–†âïŸïπ—}µïµâï…Õ°•¡Ãà§ÅΩ»Åmt(ÄÄÄÅ°ΩÕ–ÄÙÅµïµâï…Õ°•¡Õl¡tÅ•òÅµïµâï…Õ°•¡ÃÅï±ÕîÅÌÙ(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÖ¡¡Ω•π—µïπ–ÄÙÅï·•Õ—•πúÅΩ»ÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÅÙ(ÄÄÄÅÖ¡¡Ω•π—µïπ–π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄâ•πŸ•—ïï}’…§àËÅ•πŸ•—ïï}’…§∞(ÄÄÄÄÄÄÄÄâïŸïπ—}’…§àËÅïŸïπ—}’…§∞(ÄÄÄÄÄÄÄÄâïŸïπ—}—Â¡ï}’…§àËÅÕç°ïë’±ïë}ïŸïπ–πùï–†âïŸïπ—}—Â¡îà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âïŸïπ—}—Â¡ï}’…§à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâπÖµîàËÅÕç°ïë’±ïë}ïŸïπ–πùï–†âπÖµîà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âπÖµîà§ÅΩ»ÄâIïπëïËµŸΩ’ÃÅÖ±ïπë±‰à∞(ÄÄÄÄÄÄÄÄâÕ—Ö…—}—•µîàËÅÕç°ïë’±ïë}ïŸïπ–πùï–†âÕ—Ö…—}—•µîà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâïπë}—•µîàËÅÕç°ïë’±ïë}ïŸïπ–πùï–†âïπë}—•µîà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âïπë}—•µîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÅÕ—Ö—’Ã∞(ÄÄÄÄÄÄÄÄâ•πŸ•—ïï}πÖµîàËÅ¡ÖÂ±ΩÖêπùï–†âπÖµîà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}πÖµîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ•πŸ•—ïï}ïµÖ•∞àËÅïµÖ•∞ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}ïµÖ•∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ•πŸ•—ïï}¡°ΩπîàËÅ•πŸ•—ïï}¡°ΩπîÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}¡°Ωπîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ•πŸ•—ïï}—•µïÈΩπîàËÅ¡ÖÂ±ΩÖêπùï–†â—•µïÈΩπîà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}—•µïÈΩπîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ°ΩÕ—}πÖµîàËÅ°ΩÕ–πùï–†â’Õï…}πÖµîà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â°ΩÕ—}πÖµîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ°ΩÕ—}ïµÖ•∞àËÅ°ΩÕ–πùï–†â’Õï…}ïµÖ•∞à§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â°ΩÕ—}ïµÖ•∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ±ΩçÖ—•Ω∏àËÅÕç°ïë’±ïë}ïŸïπ–πùï–†â±ΩçÖ—•Ω∏à§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â±ΩçÖ—•Ω∏à§∞(ÄÄÄÄÄÄÄÄâçÖπçï±}’…∞àËÅ¡ÖÂ±ΩÖêπùï–†âçÖπçï±}’…∞à§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âçÖπçï±}’…∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ…ïÕç°ïë’±ï}’…∞àËÅ¡ÖÂ±ΩÖêπùï–†â…ïÕç°ïë’±ï}’…∞à§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†â…ïÕç°ïë’±ï}’…∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ…ïÕç°ïë’±ïêàËÅâΩΩ∞°¡ÖÂ±ΩÖêπùï–†â…ïÕç°ïë’±ïêà§§∞(ÄÄÄÄÄÄÄÄâΩ±ë}•πŸ•—ïîàËÅ¡ÖÂ±ΩÖêπùï–†âΩ±ë}•πŸ•—ïîà§∞(ÄÄÄÄÄÄÄÄâπï›}•πŸ•—ïîàËÅ¡ÖÂ±ΩÖêπùï–†âπï›}•πŸ•—ïîà§∞(ÄÄÄÄÄÄÄÄâçÖπçï±±Ö—•Ω∏àËÅ¡ÖÂ±ΩÖêπùï–†âçÖπçï±±Ö—•Ω∏à§∞(ÄÄÄÄÄÄÄÄâçÖ±ïπë±Â}ç…ïÖ—ïë}Ö–àËÅ¡ÖÂ±ΩÖêπùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âçÖ±ïπë±Â}ç…ïÖ—ïë}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâçÖ±ïπë±Â}’¡ëÖ—ïë}Ö–àËÅ¡ÖÂ±ΩÖêπùï–†â’¡ëÖ—ïë}Ö–à§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âçÖ±ïπë±Â}’¡ëÖ—ïë}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâÕΩ’…çîàËÅÕΩ’…çî∞(ÄÄÄÄÄÄÄÄâ’¡ëÖ—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÅÙ§((ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§Å•òÅçΩπ—Öç—}•êÅï±ÕîÅ9Ωπî(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ÅÖπêÅÖ¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅÖ¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çÖ±ïπë±Â}çΩπ—Öç—}âÂ}ïµÖ•∞°ëÖ—Ñ∞ÅÖ¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}ïµÖ•∞à§§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çÖ±ïπë±Â}çΩπ—Öç—}âÂ}¡°Ωπî°ëÖ—Ñ∞ÅÖ¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}¡°Ωπîà§§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çÖ±ïπë±Â}ë’¡±•çÖ—ï}âΩΩ≠•πù}çΩπ—Öç–°ëÖ—Ñ∞ÅÖ¡¡Ω•π—µïπ–§(ÄÄÄÅçΩπ—Öç—}ç…ïÖ—ïêÄÙÅÖ±Õî(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ÅÖπêÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—}•Õ}—ΩëÖÂ}Ω…}ô’—’…î°Ö¡¡Ω•π—µïπ–§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çÖ±ïπë±Â}πï›}çΩπ—Öç–°ëÖ—Ñ∞Å¡ÖÂ±ΩÖê∞ÅÖ¡¡Ω•π—µïπ–§(ÄÄÄÄÄÄÄÅçΩπ—Öç—}ç…ïÖ—ïêÄÙÅçΩπ—Öç–Å•ÃÅπΩ–Å9Ωπî(ÄÄÄÅÖ¡¡Ω•π—µïπ—lâçΩπ—Öç—}•êâtÄÙÅçΩπ—Öç–πùï–†â•êà§Å•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî((ÄÄÄÅ•πôï……ïë}ôΩ…µÖ—•Ω∏∞Å•πôï……ïë}ëïÕ¡}—Â¡îÄÙÅ}ç…µ}çÖ±ïπë±Â}ôΩ…µÖ—•Ω∏°¡ÖÂ±ΩÖê§(ÄÄÄÅ•òÅçΩπ—Öç–ÅÖπêÅ•πôï……ïë}ôΩ…µÖ—•Ω∏ÅÖπêÅπΩ–ÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâôΩ…µÖ—•Ω∏âtÄÙÅ•πôï……ïë}ôΩ…µÖ—•Ω∏(ÄÄÄÄÄÄÄÅ•òÅ•πôï……ïë}ëïÕ¡}—Â¡îË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâëïÕ¡}—Â¡îâtÄÙÅ•πôï……ïë}ëïÕ¡}—Â¡î((ÄÄÄÅ•òÅπΩ–Åï·•Õ—•πúË(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—ÃπÖ¡¡ïπê°Ö¡¡Ω•π—µïπ–§(ÄÄÄÅ•òÅçΩπ—Öç—}ç…ïÖ—ïêË(ÄÄÄÄÄÄÄÅ}ç…µ}çÖ±ïπë±Â}…ï±•π≠}Ö¡¡Ω•π—µïπ—Ã°ëÖ—Ñ∞ÅçΩπ—Öç–§((ÄÄÄÅç°ÖπùïêÄÙÄ†(ÄÄÄÄÄÄÄÅπΩ–Åï·•Õ—•πú(ÄÄÄÄÄÄÄÅΩ»Å¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÄÑÙÅÖ¡¡Ω•π—µïπ–πùï–†âÕ—Ö—’Ãà§(ÄÄÄÄÄÄÄÅΩ»Å¡…ïŸ•Ω’Õ}Õ—Ö…–ÄÑÙÅÖ¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§(ÄÄÄÄ§(ÄÄÄÅÖ¡¡Ω•π—µïπ—}âïçÖµï}Öç—•ŸîÄÙÅâΩΩ∞†(ÄÄÄÄÄÄÄÅçΩπ—Öç–(ÄÄÄÄÄÄÄÅÖπêÄ°çΩπ—Öç–πùï–†âÕ—Ö—’–à§ÅΩ»Äâ9Ω’ŸïÖ’‡à§(ÄÄÄÄÄÄÄÅπΩ–Å•∏ÅÏâΩπŸï…—§à∞Äâ•Õ≈’Ö±•ôß§âÙ(ÄÄÄÄÄÄÄÅÖπêÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÖç—•Ÿîà§π±Ω›ï»†§(ÄÄÄÄÄÄÄÅπΩ–Å•∏ÅÏâçÖπçï±ïêà∞ÄâçÖπçï±±ïêâÙ(ÄÄÄÄÄÄÄÅÖπêÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅπΩ–Åï·•Õ—•πú(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅÕ—»°¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÅΩ»Äàà§π±Ω›ï»†§Å•∏ÅÏâçÖπçï±ïêà∞ÄâçÖπçï±±ïêâÙ(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å¡…ïŸ•Ω’Õ}Õ—Ö…–ÄÑÙÅÖ¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å}ç…µ}çÖ±ïπë±Â}âΩΩ≠•πù}Õ’¡ï…ÕïëïÕ}Öç—•Ÿï}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ–∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—}•Õ}—ΩëÖÂ}Ω…}ô’—’…î°Ö¡¡Ω•π—µïπ–§(ÄÄÄÄ§(ÄÄÄÅ…ï±Öπçï}ç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ—}âïçÖµï}Öç—•ŸîË(ÄÄÄÄÄÄÄÅ|∞Å…ï±Öπçï}ç°ÖπùïêÄÙÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâçÖ±ïπë±Â}Ö¡¡Ω•π—µïπ–à∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖç—Ω…}πÖµîÙâÖ±ïπë±‰à∞(ÄÄÄÄÄÄÄÄ§((ÄÄÄÅçÖπçï±±Ö—•Ωπ}…ï±Öπçï}ç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅçÖπçï±±Ö—•Ωπ}°ÖÕ}Öç—•Ÿï}…ï¡±Öçïµïπ–ÄÙÅÖ±Õî(ÄÄÄÅçÖπçï±±Ö—•Ωπ}Ö’—ΩµÖ—•Ωπ}¡ïπë•πúÄÙÅâΩΩ∞†(ÄÄÄÄÄÄÄÅçΩπ—Öç–(ÄÄÄÄÄÄÄÅÖπêÅ›ïâ°ΩΩ≠}ïŸïπ–ÄÙÙÄâ•πŸ•—ïîπçÖπçï±ïêà(ÄÄÄÄÄÄÄÅÖπêÅπΩ–ÅÖ¡¡Ω•π—µïπ–πùï–†âçÖπçï±±Ö—•Ωπ}ôΩ±±Ω›’¡}¡…ΩçïÕÕïë}Ö–à§(ÄÄÄÄ§(ÄÄÄÅ•òÅçÖπçï±±Ö—•Ωπ}Ö’—ΩµÖ—•Ωπ}¡ïπë•πúË(ÄÄÄÄÄÄÄÅçÖπçï±±Ö—•Ωπ}°ÖÕ}Öç—•Ÿï}…ï¡±Öçïµïπ–ÄÙÅÖπ‰†(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥Å•ÃÅπΩ–ÅÖ¡¡Ω•π—µïπ–(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ•—ï¥πùï–†âçΩπ—Öç—}•êà§ÄÙÙÅçΩπ—Öç–πùï–†â•êà§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—}•Õ}—ΩëÖÂ}Ω…}ô’—’…î°•—ï¥§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅÖ¡¡Ω•π—µïπ—Ã(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅπΩ–ÅçÖπçï±±Ö—•Ωπ}°ÖÕ}Öç—•Ÿï}…ï¡±Öçïµïπ–(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°çΩπ—Öç–πùï–†âÕ—Ö—’–à§ÅΩ»Äâ9Ω’ŸïÖ’‡à§(ÄÄÄÄÄÄÄÄÄÄÄÅπΩ–Å•∏ÅÏâΩπŸï…—§à∞Äâ•Õ≈’Ö±•ôß§âÙ(ÄÄÄÄÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±Ö—•Ωπ}ëÖ—îÄÙÅ}ç…µ}çÖ±ïπë±Â}çÖπçï±±Ö—•Ωπ}ëÖ—î°¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÅ|∞ÅçÖπçï±±Ö—•Ωπ}…ï±Öπçï}ç°ÖπùïêÄÙÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±Ö—•Ωπ}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâçÖ±ïπë±Â}çÖπçï±±Ö—•Ω∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖç—Ω…}πÖµîÙâÖ±ïπë±‰à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµΩ—•òÙâM’•—îÅÖππ’±Ö—•Ω∏Åë‘Å…ïπëïËµŸΩ’Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâçÖπçï±±Ö—•Ωπ}ôΩ±±Ω›’¡}ëÖ—îâtÄÙÅçÖπçï±±Ö—•Ωπ}ëÖ—î(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâçÖπçï±±Ö—•Ωπ}ôΩ±±Ω›’¡}¡…ΩçïÕÕïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅΩ±ë}Õ—Ö—’ÃÄÙÄ°çΩπ—Öç–πùï–†âÕ—Ö—’–à§ÅΩ»Äâ9Ω’ŸïÖ’‡à§Å•òÅçΩπ—Öç–Åï±ÕîÄàà(ÄÄÄÅÕ—Ö—’Õ}ç°ÖπùïêÄÙÅâΩΩ∞†(ÄÄÄÄÄÄÄÅçΩπ—Öç–(ÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}ÕÂπç}çΩπ—Öç—}çÖ±ïπë±Â}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïôï…}Ö¡¡Ω•π—µïπ–Ù†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}âïçÖµï}Öç—•Ÿî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅçÖπçï±±Ö—•Ωπ}°ÖÕ}Öç—•Ÿï}…ï¡±Öçïµïπ–(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄ§(ÄÄÄÅ¡•¡ï±•πï}ç°ÖπùïêÄÙÄ†(ÄÄÄÄÄÄÄÅ…ï±Öπçï}ç°Öπùïê(ÄÄÄÄÄÄÄÅΩ»ÅçÖπçï±±Ö—•Ωπ}…ï±Öπçï}ç°Öπùïê(ÄÄÄÄÄÄÄÅΩ»ÅÕ—Ö—’Õ}ç°Öπùïê(ÄÄÄÄ§(ÄÄÄÅ•òÄ†(ÄÄÄÄÄÄÄÅçΩπ—Öç–(ÄÄÄÄÄÄÄÅÖπêÅ¡•¡ï±•πï}ç°Öπùïê(ÄÄÄÄÄÄÄÅÖπêÅ…ïçΩ…ë}Öç—•Ÿ•—‰(ÄÄÄÄÄÄÄÅÖπêÅΩ±ë}Õ—Ö—’ÃÄÑÙÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’–à∞(ÄÄÄÄÄÄÄÄÄÄÄÅòâM—Ö—’–ÄËÅÌçΩπ—Öç—lùÕ—Ö—’–ùuÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÅòâπç•ï∏ÅÕ—Ö—’–ÄËÅÌΩ±ë}Õ—Ö—’ÕÙà∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ•òÅçΩπ—Öç–ÅÖπêÅ…ïçΩ…ë}Öç—•Ÿ•—‰ÅÖπêÅç°ÖπùïêË(ÄÄÄÄÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ–πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâçÖπçï±ïêàË(ÄÄÄÄÄÄÄÄÄÄÄÅ—•—±îÄÙÄâIïπëïËµŸΩ’ÃÅÖ±ïπë±‰ÅÖππ’≥§à(ÄÄÄÄÄÄÄÅï±•òÅÖ¡¡Ω•π—µïπ–πùï–†â…ïÕç°ïë’±ïêà§ÅΩ»ÅÖ¡¡Ω•π—µïπ–πùï–†âΩ±ë}•πŸ•—ïîà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ—•—±îÄÙÄâIïπëïËµŸΩ’ÃÅÖ±ïπë±‰Å…ï¡…Ωù…Öµ∑§à(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ—•—±îÄÙÄâIïπëïËµŸΩ’ÃÅÖ±ïπë±‰Å¡±Öπ•ôß§à(ÄÄÄÄÄÄÄÅëï—Ö•∞ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅòâÌÖ¡¡Ω•π—µïπ–πùï–†ùπÖµîú§ÅΩ»ÄùIïπëïËµŸΩ’ÃùÙÉäPÄà(ÄÄÄÄÄÄÄÄÄÄÄÅòâÌ}ç…µ}çÖ±ïπë±Â}ëÖ—ï—•µï}±Öâï∞°Ö¡¡Ω•π—µïπ–πùï–†ùÕ—Ö…—}—•µîú§•Ùà(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâçÖ±ïπë±‰à∞Å—•—±î∞Åëï—Ö•∞§(ÄÄÄÅ•òÅçΩπ—Öç–ÅÖπêÄ°¡•¡ï±•πï}ç°ÖπùïêÅΩ»Ä°…ïçΩ…ë}Öç—•Ÿ•—‰ÅÖπêÅç°Öπùïê§§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅ…ï—’…∏ÅÖ¡¡Ω•π—µïπ–∞ÅçΩπ—Öç–(()ëïòÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—}•Õ}—ΩëÖÂ}Ω…}ô’—’…î°Ö¡¡Ω•π—µïπ–∞ÅπΩ‹ı9Ωπî§Ë(ÄÄÄÄààâIï—’…∏Å›°ï—°ï»ÅÑÅπΩ∏µçÖπçï±±ïêÅÖ¡¡Ω•π—µïπ–Å•ÃÅΩ∏ΩÖô—ï»Å—ΩëÖ‰Å•∏ÅAÖ…•Ã∏ààà(ÄÄÄÅ•òÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÖç—•Ÿîà§π±Ω›ï»†§Å•∏ÅÏâçÖπçï±ïêà∞ÄâçÖπçï±±ïêâÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ•òÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†â…ïÕ¡ΩπÕï}Õ—Ö—’Ãà§ÅΩ»Äàà§π±Ω›ï»†§ÄÙÙÄâπΩ}ÖπÕ›ï»àË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅÕ—Ö…—}—•µîÄÙÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅÕ—Ö…—}—•µîË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}Ö–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…—}—•µîπ…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî((ÄÄÄÅ¡Ö…•ÃÄÙÅ¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§(ÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ—}Ö–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}Ö–ÄÙÅ¡Ö…•Ãπ±ΩçÖ±•Èî°Ö¡¡Ω•π—µïπ—}Ö–§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}Ö–ÄÙÅÖ¡¡Ω•π—µïπ—}Ö–πÖÕ—•µïÈΩπî°¡Ö…•Ã§((ÄÄÄÅ…ïôï…ïπçîÄÙÅπΩ‹ÅΩ»ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Ö…•Ã§(ÄÄÄÅ•òÅ…ïôï…ïπçîπ—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…ïôï…ïπçîÄÙÅ¡Ö…•Ãπ±ΩçÖ±•Èî°…ïôï…ïπçî§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ…ïôï…ïπçîÄÙÅ…ïôï…ïπçîπÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÅ…ï—’…∏ÅÖ¡¡Ω•π—µïπ—}Ö–πëÖ—î†§Ä¯ÙÅ…ïôï…ïπçîπëÖ—î†§(()ëïòÅ}ç…µ}ÕÂπç}çΩπ—Öç—}çÖ±ïπë±Â}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞ÅçΩπ—Öç–∞ÅπΩ‹ı9Ωπî∞Ä®∞Å¡…ïôï…}Ö¡¡Ω•π—µïπ–ıÖ±Õî∞ÅÖ¡¡Ω•π—µïπ—Ãı9Ωπî§Ë(ÄÄÄÄààâ±•ù∏Å—°îÅ¡•¡ï±•πîÅ›•—†Åç’……ïπ–Ωô’—’…îÅÖ¡¡Ω•π—µïπ—ÃÅÖπêÅΩ¡ï∏ÅôΩ±±Ω‹µ’¡Ã∏((ÄÄÄÅQ°îÅÖ¡¡Ω•π—µïπ–Å…’±îÅ•ÃÅëï±•âï…Ö—ï±‰ÅâÖÕïêÅΩ∏Å—°îÅçÖ±ïπëÖ»ÅëÖ‰Å•∏ÅAÖ…•ÃË(ÄÄÄÅÖ∏ÅÖ¡¡Ω•π—µïπ–ÅïÖ…±•ï»Å—ΩëÖ‰Å…ïµÖ•πÃÅŸ•Õ•â±î∞Åâ’–ÅΩπîÅô…Ω¥ÅÑÅ¡…ïŸ•Ω’ÃÅëÖ‰(ÄÄÄÅëΩïÃÅπΩ–∏Å•πÖ∞ÅÕ—Ö—’ÕïÃÅÖ±›ÖÂÃÅ›•∏∏ÅQ°îÅ•πùïÕ–Å¡Ö—†ÅçÖπçï±ÃÅ—°îÅôΩ±±Ω‹µ’¡Ã(ÄÄÄÅ—°Ö–Åï·•Õ—ïêÅ›°ï∏ÅÑÅâΩΩ≠•πúÅâïçΩµïÃÅÖç—•ŸîÏÅ—°•ÃÅ…ïçΩπç•±ï»ÅπïŸï»Å…ï¡ïÖ—Ã(ÄÄÄÅ—°Ö–ÅÕ•ëîÅïôôïç–ÅΩ∏Å±Ö—ï»Å…ïÖëÃÅΩ»ÅÕÂπç°…Ωπ•ÈÖ—•ΩπÃ∏Å1Ö—ï»ÅôΩ±±Ω‹µ’¡ÃÅ≠ïï¿(ÄÄÄÅ—°ï•»Å°•Õ—Ω…•çÖ∞Å¡…•Ω…•—‰Å’π±ïÕÃÅ—°îÅÖ¡¡Ω•π—µïπ–Å°ÖÃÅ©’Õ–ÅâïçΩµîÅÖç—•Ÿî∏(ÄÄÄÅ∏ÅÖ¡¡Ω•π—µïπ–ÅµÖ…≠ïêÅÅÅπΩ}ÖπÕ›ï…ÅÄÅπºÅ±Ωπùï»Å›•πÃÅΩŸï»Å•—ÃÅ(¨»ÅôΩ±±Ω‹µ’¿∏ÅÅÕ—Ö±î(ÄÄÄÅÅÅIXÅ¡…Ωù…Öµ∑•ÅÄÅ›•—°Ω’–ÅÖ∏Åï±•ù•â±îÅÖ¡¡Ω•π—µïπ–ÅΩ»ÅôΩ±±Ω‹µ’¿Å•ÃÅ…ï¡Ö•…ïê(ÄÄÄÅ—ºÅÅÅ∏ÅçΩ’…ÕÅÄ∏(ÄÄÄÄààà(ÄÄÄÅçÖπë•ëÖ—ïÃÄÙÄ°ëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ—ÃÅ•ÃÅ9ΩπîÅï±ÕîÅÖ¡¡Ω•π—µïπ—Ã§(ÄÄÄÅ°ÖÕ}Öç—•Ÿï}Ö¡¡Ω•π—µïπ–ÄÙÅÖπ‰†(ÄÄÄÄÄÄÄÅ•—ï¥πùï–†âçΩπ—Öç—}•êà§ÄÙÙÅçΩπ—Öç–πùï–†â•êà§(ÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—}•Õ}—ΩëÖÂ}Ω…}ô’—’…î°•—ï¥∞ÅπΩ‹§(ÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅçÖπë•ëÖ—ïÃ(ÄÄÄÄ§(ÄÄÄÅç’……ïπ—}Õ—Ö—’ÃÄÙÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÅΩ»Äâ9Ω’ŸïÖ’‡à(ÄÄÄÅ•òÅç’……ïπ—}Õ—Ö—’ÃÅ•∏ÅÏâ•Õ≈’Ö±•ôß§à∞ÄâΩπŸï…—§âÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ•òÅ°ÖÕ}Öç—•Ÿï}Ö¡¡Ω•π—µïπ–Ë(ÄÄÄÄÄÄÄÅ•òÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}Õ—Ö—’ÃÄÙÙÄâIXÅ¡…Ωù…Öµ∑§à(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Ä°ç’……ïπ—}Õ—Ö—’ÃÄÙÙÄâÅ…ï±Öπçï»àÅÖπêÅπΩ–Å¡…ïôï…}Ö¡¡Ω•π—µïπ–§(ÄÄÄÄÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÄÄÄÄÅπï·—}Õ—Ö—’ÃÄÙÄâIXÅ¡…Ωù…Öµ∑§à(ÄÄÄÅï±•òÅçΩπ—Öç–πùï–†â…ï±Öπçï}ëÖ—îà§Ë(ÄÄÄÄÄÄÄÅ•òÅç’……ïπ—}Õ—Ö—’ÃÄÙÙÄâÅ…ï±Öπçï»àË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÄÄÄÄÅπï·—}Õ—Ö—’ÃÄÙÄâÅ…ï±Öπçï»à(ÄÄÄÅï±•òÅç’……ïπ—}Õ—Ö—’ÃÄÙÙÄâIXÅ¡…Ωù…Öµ∑§àË(ÄÄÄÄÄÄÄÅπï·—}Õ—Ö—’ÃÄÙÄâ∏ÅçΩ’…Ãà(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÅπï·—}Õ—Ö—’Ã(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ…ï—’…∏ÅQ…’î(()ëïòÅ}ç…µ}çÖ±ïπë±Â}ôï—ç°}çΩπ—Öç—}Ö¡¡Ω•π—µïπ—Ã°ëÖ—Ñ∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâï—ç†Å—°îÅïŸïπ—ÃÅÖ±ïπë±‰ÅÖÕÕΩç•Ö—ïÃÅ›•—†Å—°•ÃÅçΩπ—Öç–∏((ÄÄÄÅQ°îÅîµµÖ•∞Åïπ—ï…ïêÅ•∏ÅÖ±ïπë±‰Å•ÃÅπΩ–ÅπïçïÕÕÖ…•±‰Å—°îÅΩπîÅçΩ±±ïç—ïêÅâ‰Å—°î(ÄÄÄÅÕïç…ï—Ö…‰Ä°ÑÅÕ°Ö…ïêΩçΩµ¡Öπ‰ÅÖëë…ïÕÃÅ•ÃÅÕΩµï—•µïÃÅ’Õïê§∏ÄÅQ…‰ÅÖ±ïπë±‰ùÃ(ÄÄÄÅïôô•ç•ïπ–ÅîµµÖ•∞Åô•±—ï»Åô•…Õ–∞Å—°ï∏ÅôÖ±∞ÅâÖç¨Å—ºÅ—°îÅ¡°ΩπîÅπ’µâï»ÅçΩπ—Ö•πïê(ÄÄÄÅ•∏Å—°îÅ•πŸ•—ïîÅÖπÕ›ï…ÃÅ›°ï∏Å•–Åë•êÅπΩ–Åô•πêÅÖπÂ—°•πú∏(ÄÄÄÄààà(ÄÄÄÅïµÖ•∞ÄÙÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§(ÄÄÄÅ¡°ΩπîÄÙÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÅ•òÅπΩ–ÅïµÖ•∞ÅÖπêÅπΩ–Å¡°ΩπîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Åmt∞ÅÏâµï—°ΩêàËÄâ¡°Ωπï}çÖç°îà∞Äâ¡…ΩçïÕÕïë}ïŸïπ—ÃàËÄ¡Ù((ÄÄÄÅçΩπ—ï·–ÄÙÅ}çÖ±ïπë±Â}çΩπ—ï·—}ô…Ωµ}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ¡Ö…ÖµÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâçΩ’π–àËÄƒ¿¿∞(ÄÄÄÄÄÄÄÄâÕΩ…–àËÄâÕ—Ö…—}—•µîÈëïÕåà∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅïµÖ•∞Ë(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâ•πŸ•—ïï}ïµÖ•∞âtÄÙÅïµÖ•∞(ÄÄÄÅ•òÅçΩπ—ï·–πùï–†âÕçΩ¡îà§ÄÙÙÄâ’Õï»àË(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâ’Õï»âtÄÙÅçΩπ—ï·—lâ’Õï»ât(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâΩ…ùÖπ•ÈÖ—•Ω∏âtÄÙÅçΩπ—ï·—lâΩ…ùÖπ•ÈÖ—•Ω∏ât((ÄÄÄÅÕç°ïë’±ïë}ïŸïπ—ÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†(ÄÄÄÄÄÄÄÄàΩÕç°ïë’±ïë}ïŸïπ—Ãà∞(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÃı¡Ö…ÖµÃ∞(ÄÄÄÄÄÄÄÅµÖ·}¡ÖùïÃÙƒ¿¿∞(ÄÄÄÄ§(ÄÄÄÅ¡ÖÂ±ΩÖëÃÄÙÅmt(ÄÄÄÅôΩ»ÅÕç°ïë’±ïë}ïŸïπ–Å•∏ÅÕç°ïë’±ïë}ïŸïπ—ÃË(ÄÄÄÄÄÄÄÅïŸïπ—}’’•êÄÙÅ}çÖ±ïπë±Â}…ïÕΩ’…çï}’’•ê†(ÄÄÄÄÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ïŸïπ–πùï–†â’…§à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕç°ïë’±ïë}ïŸïπ—Ãà∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅïŸïπ—}’’•êË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•πŸ•—ïï}¡Ö…ÖµÃÄÙÅÏâçΩ’π–àËÄƒ¿¡Ù(ÄÄÄÄÄÄÄÅ•òÅïµÖ•∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•πŸ•—ïï}¡Ö…ÖµÕlâïµÖ•∞âtÄÙÅïµÖ•∞(ÄÄÄÄÄÄÄÅ•πŸ•—ïïÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†(ÄÄÄÄÄÄÄÄÄÄÄÅòàΩÕç°ïë’±ïë}ïŸïπ—ÃΩÌïŸïπ—}’’•ëÙΩ•πŸ•—ïïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÖµÃı•πŸ•—ïï}¡Ö…ÖµÃ∞(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ·}¡ÖùïÃÙƒ¿¿∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅôΩ»Å•πŸ•—ïîÅ•∏Å•πŸ•—ïïÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ°ïµÖ•∞ÅÖπêÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°•πŸ•—ïîπùï–†âïµÖ•∞à§§ÄÙÙÅïµÖ•∞§ÅΩ»Ä†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡°ΩπîÅÖπêÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°}ç…µ}çÖ±ïπë±Â}¡ÖÂ±ΩÖë}¡°Ωπî°•πŸ•—ïî§§ÄÙÙÅ¡°Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëÃπÖ¡¡ïπê°Ï®©•πŸ•—ïî∞ÄâÕç°ïë’±ïë}ïŸïπ–àËÅÕç°ïë’±ïë}ïŸïπ—Ù§((ÄÄÄÄåÅ∏ÅîµµÖ•∞µô•±—ï…ïêÅ≈’ï…‰ÅçÖππΩ–Å…ï—’…∏ÅÑÅâΩΩ≠•πúÅµÖëîÅ›•—†ÅÑÅë•ôôï…ïπ–(ÄÄÄÄåÅÖëë…ïÕÃ∏ÄÅMçÖ∏Å—°îÅÖç—•ŸîÅïŸïπ—ÃÅΩπ±‰Å›°ï∏ÅπïïëïêÅÖπêÅ•ëïπ—•ô‰Å—°î(ÄÄÄÄåÅ•πŸ•—ïîÅâ‰Å—°îÅ—ï±ï¡°ΩπîÅÖπÕ›ï»ÅçΩ±±ïç—ïêÅâ‰ÅÖ±ïπë±‰∏(ÄÄÄÅµÖ—ç°ïë}âÂ}¡°ΩπîÄÙÅÖ±Õî(ÄÄÄÅ•òÅπΩ–Å¡ÖÂ±ΩÖëÃÅÖπêÅ¡°ΩπîÅÖπêÅïµÖ•∞Ë(ÄÄÄÄÄÄÄÅ¡°Ωπï}¡Ö…ÖµÃÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩ’π–àËÄƒ¿¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ…–àËÄâÕ—Ö…—}—•µîÈÖÕåà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÄâÖç—•Ÿîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµ•π}Õ—Ö…—}—•µîàËÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°ëÖ—ï—•µîπ—•µïÈΩπîπ’—å§π•ÕΩôΩ…µÖ–†§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ•òÅçΩπ—ï·–πùï–†âÕçΩ¡îà§ÄÙÙÄâ’Õï»àË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡°Ωπï}¡Ö…ÖµÕlâ’Õï»âtÄÙÅçΩπ—ï·—lâ’Õï»ât(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡°Ωπï}¡Ö…ÖµÕlâΩ…ùÖπ•ÈÖ—•Ω∏âtÄÙÅçΩπ—ï·—lâΩ…ùÖπ•ÈÖ—•Ω∏ât(ÄÄÄÄÄÄÄÅ¡°Ωπï}ïŸïπ—ÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†(ÄÄÄÄÄÄÄÄÄÄÄÄàΩÕç°ïë’±ïë}ïŸïπ—Ãà∞Å¡Ö…ÖµÃı¡°Ωπï}¡Ö…ÖµÃ∞ÅµÖ·}¡ÖùïÃÙƒ¿¿(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅôΩ»ÅÕç°ïë’±ïë}ïŸïπ–Å•∏Å¡°Ωπï}ïŸïπ—ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅïŸïπ—}’’•êÄÙÅ}çÖ±ïπë±Â}…ïÕΩ’…çï}’’•ê°Õç°ïë’±ïë}ïŸïπ–πùï–†â’…§à§∞ÄâÕç°ïë’±ïë}ïŸïπ—Ãà§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅïŸïπ—}’’•êË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ•πŸ•—ïïÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòàΩÕç°ïë’±ïë}ïŸïπ—ÃΩÌïŸïπ—}’’•ëÙΩ•πŸ•—ïïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÖµÃıÏâçΩ’π–àËÄƒ¿¡Ù∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ·}¡ÖùïÃÙƒ¿¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•πŸ•—ïîÅ•∏Å•πŸ•—ïïÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°}ç…µ}çÖ±ïπë±Â}¡ÖÂ±ΩÖë}¡°Ωπî°•πŸ•—ïî§§ÄÙÙÅ¡°ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëÃπÖ¡¡ïπê°Ï®©•πŸ•—ïî∞ÄâÕç°ïë’±ïë}ïŸïπ–àËÅÕç°ïë’±ïë}ïŸïπ—Ù§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïë}âÂ}¡°ΩπîÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏Å¡ÖÂ±ΩÖëÃ∞ÅÏ(ÄÄÄÄÄÄÄÄâµï—°ΩêàËÄâ¡°ΩπîàÅ•òÅµÖ—ç°ïë}âÂ}¡°ΩπîÅΩ»ÅπΩ–ÅïµÖ•∞Åï±ÕîÄâïµÖ•∞à∞(ÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïë}ïŸïπ—ÃàËÅ±ï∏°Õç°ïë’±ïë}ïŸïπ—Ã§∞(ÄÄÄÅÙ(()ëïòÅ}çÖ±ïπë±Â}¡°Ωπï}π’µâï»°ŸÖ±’î§Ë(ÄÄÄÅ…Ö‹ÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å…Ö‹Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅë•ù•—ÃÄÙÅ…îπÕ’à°»âqà∞Äàà∞Å…Ö‹§(ÄÄÄÅ•òÅë•ù•—ÃπÕ—Ö…—Õ›•—††à¿¿à§Ë(ÄÄÄÄÄÄÄÅë•ù•—ÃÄÙÅë•ù•—Õl»Èt(ÄÄÄÅ•òÅ±ï∏°ë•ù•—Ã§ÄÙÙÄƒ¿ÅÖπêÅë•ù•—ÃπÕ—Ö…—Õ›•—††à¿à§Ë(ÄÄÄÄÄÄÄÅë•ù•—ÃÄÙÅòàÃÕÌë•ù•—ÕlƒÈuÙà(ÄÄÄÅ•òÅë•ù•—ÃπÕ—Ö…—Õ›•—††àÃÃà§ÅΩ»Å…Ö‹πÕ—Ö…—Õ›•—††à¨à§Ë(ÄÄÄÄÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅòà≠Ìë•ù•—ÕÙà(ÄÄÄÄÄÄÄÅ•òÅ…îπô’±±µÖ—ç†°»âp≠lƒ¥ÂuqëÏ‹∞ƒ—Ùà∞ÅπΩ…µÖ±•Èïê§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅπΩ…µÖ±•Èïê(ÄÄÄÅ…ï—’…∏Äàà(()ëïòÅ}çÖ±ïπë±Â}âΩΩ≠•πù}±ΩçÖ—•Ω∏°ïŸïπ—}—Â¡î∞Å…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏∞ÅçΩπ—Öç–§Ë(ÄÄÄÅ±ΩçÖ—•ΩπÃÄÙÅïŸïπ—}—Â¡îπùï–†â±ΩçÖ—•ΩπÃà§ÅΩ»Åmt(ÄÄÄÅ•òÅπΩ–Å±ΩçÖ—•ΩπÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏ÄÙÅ…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏Å•òÅ•Õ•πÕ—Öπçî°…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÅ…ï≈’ïÕ—ïë}≠•πêÄÙÅÕ—»°…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏πùï–†â≠•πêà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÕï±ïç—ïêÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ°±ΩçÖ—•Ω∏ÅôΩ»Å±ΩçÖ—•Ω∏Å•∏Å±ΩçÖ—•ΩπÃÅ•òÅ±ΩçÖ—•Ω∏πùï–†â≠•πêà§ÄÙÙÅ…ï≈’ïÕ—ïë}≠•πê§∞(ÄÄÄÄÄÄÄÅ±ΩçÖ—•ΩπÕl¡t∞(ÄÄÄÄ§(ÄÄÄÅ≠•πêÄÙÅÕï±ïç—ïêπùï–†â≠•πêà§(ÄÄÄÅ•òÅπΩ–Å≠•πêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ•òÅ≠•πêÄÙÙÄâΩ’—âΩ’πë}çÖ±∞àË(ÄÄÄÄÄÄÄÅ¡°ΩπîÄÙÅ}çÖ±ïπë±Â}¡°Ωπï}π’µâï»†(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏πùï–†â±ΩçÖ—•Ω∏à§ÅΩ»ÅçΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å¡°ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â1îÅπ’∑•…ºÅëîÅ”•≥•¡°ΩπîÅïÕ–Å…ï≈’•ÃÅ¡Ω’»ÅçîÅ—Â¡îÅëîÅ…ïπëïËµŸΩ’Ã∏à§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâ≠•πêàËÅ≠•πê∞Äâ±ΩçÖ—•Ω∏àËÅ¡°ΩπïÙ(ÄÄÄÅ•òÅ≠•πêÄÙÙÄâÖÕ≠}•πŸ•—ïîàË(ÄÄÄÄÄÄÄÅ±ΩçÖ—•Ωπ}ŸÖ±’îÄÙÅÕ—»°…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏πùï–†â±ΩçÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å±ΩçÖ—•Ωπ}ŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âIïπÕï•ùπïËÅ±îÅ±•ï‘ÅΩ‘Å±îÅµΩÂï∏ÅëîÅçΩπ—Öç–Åë‘Å…ïπëïËµŸΩ’Ã∏à§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâ≠•πêàËÅ≠•πê∞Äâ±ΩçÖ—•Ω∏àËÅ±ΩçÖ—•Ωπ}ŸÖ±’ïÙ(ÄÄÄÅ•òÅ≠•πêÅ•∏ÅÏâ¡°ÂÕ•çÖ∞à∞Äâç’Õ—Ω¥âÙË(ÄÄÄÄÄÄÄÅ±ΩçÖ—•Ωπ}ŸÖ±’îÄÙÅÕ—»°Õï±ïç—ïêπùï–†â±ΩçÖ—•Ω∏à§ÅΩ»Å…ï≈’ïÕ—ïë}±ΩçÖ—•Ω∏πùï–†â±ΩçÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å±ΩçÖ—•Ωπ}ŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âîÅ—Â¡îÅëîÅ…ïπëïËµŸΩ’ÃÅπîÅçΩπ—•ïπ–ÅÖ’ç’∏Å±•ï‘Å’—•±•ÕÖâ±î∏à§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâ≠•πêàËÅ≠•πê∞Äâ±ΩçÖ—•Ω∏àËÅ±ΩçÖ—•Ωπ}ŸÖ±’ïÙ(ÄÄÄÅ…ï—’…∏ÅÏâ≠•πêàËÅ≠•πëÙ(()ëïòÅ}çÖ±ïπë±Â}≈’ïÕ—•Ωπ}ÖπÕ›ï…Ã°ïŸïπ—}—Â¡î∞ÅÕ’âµ•——ïë}ÖπÕ›ï…Ã§Ë(ÄÄÄÅÕ’âµ•——ïë}ÖπÕ›ï…ÃÄÙÅÕ’âµ•——ïë}ÖπÕ›ï…ÃÅ•òÅ•Õ•πÕ—Öπçî°Õ’âµ•——ïë}ÖπÕ›ï…Ã∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÅÖπÕ›ï…ÃÄÙÅmt(ÄÄÄÅ—ï·—}…ïµ•πëï…}π’µâï»ÄÙÄàà(ÄÄÄÅôΩ»Å≈’ïÕ—•Ω∏Å•∏ÅïŸïπ—}—Â¡îπùï–†âç’Õ—Ωµ}≈’ïÕ—•ΩπÃà§ÅΩ»ÅmtË(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å≈’ïÕ—•Ω∏πùï–†âïπÖâ±ïêà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ¡ΩÕ•—•Ω∏ÄÙÅ≈’ïÕ—•Ω∏πùï–†â¡ΩÕ•—•Ω∏à§(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅÕ’âµ•——ïë}ÖπÕ›ï…Ãπùï–°Õ—»°¡ΩÕ•—•Ω∏§∞ÅÕ’âµ•——ïë}ÖπÕ›ï…Ãπùï–°¡ΩÕ•—•Ω∏∞Äàà§§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’îÄÙÄâq∏àπ©Ω•∏°Õ—»°•—ï¥§πÕ—…•¿†§ÅôΩ»Å•—ï¥Å•∏ÅŸÖ±’îÅ•òÅÕ—»°•—ï¥§πÕ—…•¿†§§(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅ≈’ïÕ—•Ω∏πùï–†â…ï≈’•…ïêà§ÅÖπêÅπΩ–ÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»°òâK•¡ΩπëïËÉÄÅ±ÑÅ≈’ïÕ—•Ω∏ÅΩâ±•ùÖ—Ω•…îÄËÅÌ≈’ïÕ—•Ω∏πùï–†ùπÖµîú•Ù∏à§(ÄÄÄÄÄÄÄÅ•òÅŸÖ±’îÅÖπêÅ≈’ïÕ—•Ω∏πùï–†â—Â¡îà§ÄÙÙÄâ¡°Ωπï}π’µâï»àË(ÄÄÄÄÄÄÄÄÄÄÄÅπΩ…µÖ±•Èïë}¡°ΩπîÄÙÅ}çÖ±ïπë±Â}¡°Ωπï}π’µâï»°ŸÖ±’î§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅπΩ…µÖ±•Èïë}¡°ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ1îÅπ’∑•…ºÅÕÖ•Õ§Å¡Ω’»Å±ÑÅ≈’ïÕ—•Ω∏É
+¨ÅÌ≈’ïÕ—•Ω∏πùï–†ùπÖµîú•ÙÉ
+ÏÅïÕ–Å•πŸÖ±•ëî∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅπΩ…µÖ±•Èïë}¡°Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å—ï·—}…ïµ•πëï…}π’µâï»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—ï·—}…ïµ•πëï…}π’µâï»ÄÙÅπΩ…µÖ±•Èïë}¡°Ωπî(ÄÄÄÄÄÄÄÅ•òÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅÖπÕ›ï…ÃπÖ¡¡ïπê°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ≈’ïÕ—•Ω∏àËÅ≈’ïÕ—•Ω∏πùï–†âπÖµîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÖπÕ›ï»àËÅŸÖ±’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡ΩÕ•—•Ω∏àËÅ¡ΩÕ•—•Ω∏∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅ…ï—’…∏ÅÖπÕ›ï…Ã∞Å—ï·—}…ïµ•πëï…}π’µâï»(()ëïòÅ}çÖ±ïπë±Â}Õ•ùπÖ—’…ï}•Õ}ŸÖ±•ê°…Ö›}âΩë‰∞ÅÕ•ùπÖ—’…ï}°ïÖëï»§Ë(ÄÄÄÅÕ•ùπ•πù}≠ï‰ÄÙÅ}çÖ±ïπë±Â}Õ•ùπ•πù}≠ï‰†§(ÄÄÄÅ•òÅπΩ–ÅÕ•ùπ•πù}≠ï‰ÅΩ»ÅπΩ–ÅÕ•ùπÖ—’…ï}°ïÖëï»Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ¡Ö…—ÃÄÙÅÌÙ(ÄÄÄÅôΩ»Å•—ï¥Å•∏ÅÕ•ùπÖ—’…ï}°ïÖëï»πÕ¡±•–†à∞à§Ë(ÄÄÄÄÄÄÄÅ≠ï‰∞ÅÕï¡Ö…Ö—Ω»∞ÅŸÖ±’îÄÙÅ•—ï¥πÕ—…•¿†§π¡Ö…—•—•Ω∏†àÙà§(ÄÄÄÄÄÄÄÅ•òÅÕï¡Ö…Ö—Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…—Õm≠ïÂtÄÙÅŸÖ±’î(ÄÄÄÅ—•µïÕ—Öµ¿ÄÙÅ¡Ö…—Ãπùï–†â–à§(ÄÄÄÅÕ•ùπÖ—’…îÄÙÅ¡Ö…—Ãπùï–†âÿƒà§(ÄÄÄÅ•òÅπΩ–Å—•µïÕ—Öµ¿ÅΩ»ÅπΩ–ÅÕ•ùπÖ—’…îË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ•òÅÖâÃ°—•µîπ—•µî†§Ä¥Å•π–°—•µïÕ—Öµ¿§§Ä¯ÄÃ¿¿Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅÕ•ùπïë}¡ÖÂ±ΩÖêÄÙÅ—•µïÕ—Öµ¿πïπçΩëî†â’—ò¥‡à§Ä¨Åàà∏àÄ¨Å…Ö›}âΩë‰(ÄÄÄÅï·¡ïç—ïêÄÙÅ°µÖåππï‹†(ÄÄÄÄÄÄÄÅÕ•ùπ•πù}≠ï‰πïπçΩëî†â’—ò¥‡à§∞(ÄÄÄÄÄÄÄÅÕ•ùπïë}¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÅ°ÖÕ°±•àπÕ°Ñ»‘ÿ∞(ÄÄÄÄ§π°ï·ë•ùïÕ–†§(ÄÄÄÅ…ï—’…∏Å°µÖåπçΩµ¡Ö…ï}ë•ùïÕ–°ï·¡ïç—ïê∞ÅÕ•ùπÖ—’…î§(()ëïòÅ}ç…µ}πΩ‹†§Ë(ÄÄÄÅ…ï—’…∏ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§§π•ÕΩôΩ…µÖ–°—•µïÕ¡ïåÙâÕïçΩπëÃà§(()ëïòÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°ŸÖ±’î§Ë(ÄÄÄÄààâ9Ω…µÖ±•ÕîÅ’∏Å¡À•πΩ¥Å—Ω’–Åï∏ÅçΩπÕï…ŸÖπ–Å±ïÃÅœ•¡Ö…Ö—ï’…ÃÅçΩµ¡Ωœ•Ã∏ààà(ÄÄÄÅ—ï·–ÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÅ…ï—’…∏Å…îπÕ’à°»à°yÒmqÃúµt§°mÑµÎÄ∑€‡∑˝t§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ÖµâëÑÅµÖ—ç†ËÅµÖ—ç†πù…Ω’¿†ƒ§Ä¨ÅµÖ—ç†πù…Ω’¿†»§π’¡¡ï»†§∞Å—ï·–§(()ëïòÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°ŸÖ±’î§Ë(ÄÄÄÄààâôô•ç°îÅÕÂÕ”•µÖ—•≈’ïµïπ–Å±ïÃÅπΩµÃÅëîÅôÖµ•±±îÅï∏ÅçÖ¡•—Ö±ïÃ∏ààà(ÄÄÄÅ…ï—’…∏ÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(()ëïòÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§Ë(ÄÄÄÅ…ï—’…∏Åπï·–†°åÅôΩ»ÅåÅ•∏ÅëÖ—Ölâç…µ}çΩπ—Öç—ÃâtÅ•òÅåπùï–†â•êà§ÄÙÙÅçΩπ—Öç—}•ê§∞Å9Ωπî§(()ëïòÅ}ç…µ}âÖç≠ô•±±}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}ÖπÕ›ï…Ã°çΩπ—Öç–§Ë(ÄÄÄÄààâIïÕ—Ω…îÅ…ïù’±Ö—Ω…‰ÅÖπÕ›ï…ÃÅΩµ•——ïêÅô…Ω¥ÅΩ±ëï»Å•πôΩ…µÖ—•Ω∏µôΩ…¥Å±ïÖëÃ∏ààà(ÄÄÄÅôΩ…¥ÄÙÅçΩπ—Öç–πùï–†âôΩ…µ’±Ö•…îà§(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕΩ’…çîà§ÄÑÙÄâëïµÖπëï}•πôΩÕ}ôΩ…µÖ—•ΩπÃàÅΩ»ÅπΩ–Å•Õ•πÕ—Öπçî°ôΩ…¥∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†âùÖ…ëï}Ÿ’îà∞Äâ—•—…ï}Õï©Ω’»à§Ë(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅÕ—»°ôΩ…¥πùï–°≠ï‰§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅŸÖ±’îÅÖπêÅπΩ–ÅÕ—»°çΩπ—Öç–πùï–°≠ï‰§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—m≠ïÂtÄÙÅŸÖ±’î(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()I5}==1}M}=I%%8ÄÙÄâΩΩù±îÅëÃà)I5}==1}M}%9Q%%I}-eLÄÙÄ†âùç±•êà∞Äâ›â…Ö•êà∞Äâùâ…Ö•êà§)I5}==1}M}QI-%9}-eLÄÙÄ†(ÄÄÄÄ©I5}==1}M}%9Q%%I}-eL∞(ÄÄÄÄâùÖë}ÕΩ’…çîà∞(ÄÄÄÄâùÖë}çÖµ¡Ö•ùπ•êà∞(ÄÄÄÄâ’—µ}ÕΩ’…çîà∞(ÄÄÄÄâ’—µ}µïë•’¥à∞(ÄÄÄÄâ’—µ}çÖµ¡Ö•ù∏à∞(§(()ëïòÅ}ç…µ}ùΩΩù±ï}ÖëÕ}—…Öç≠•πù}ô•ï±ëÃ°ô•ï±ëÃ§Ë(ÄÄÄÄààâ9Ω…µÖ±•ÈîÅ—°îÅΩΩù±îÅëÃÅ¡Ö…Öµï—ï…ÃÅÖççï¡—ïêÅô…Ω¥Å¡’â±•åÅôΩ…µÃ∏ààà(ÄÄÄÅÕΩ’…çîÄÙÅô•ï±ëÃÅΩ»ÅÌÙ(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÅ≠ï‰ËÅÕ—»°ÕΩ’…çîπùï–°≠ï‰§ÅΩ»Äàà§πÕ—…•¿†•lË‘ƒ…t(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏ÅI5}==1}M}QI-%9}-eL(ÄÄÄÅÙ(()ëïòÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}ùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»°ô•ï±ëÃ§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅô•…Õ–ÅΩΩù±îÅç±•ç¨Å•ëïπ—•ô•ï»ÅÖπêÅ•—ÃÅ—Â¡î∏ààà(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ}ç…µ}ùΩΩù±ï}ÖëÕ}—…Öç≠•πù}ô•ï±ëÃ°ô•ï±ëÃ§(ÄÄÄÅôΩ»Å≠ï‰Å•∏ÅI5}==1}M}%9Q%%I}-eLË(ÄÄÄÄÄÄÄÅ•òÅπΩ…µÖ±•Èïëm≠ïÂtË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å≠ï‰π’¡¡ï»†§∞ÅπΩ…µÖ±•Èïëm≠ïÂt(ÄÄÄÅ…ï—’…∏Äàà∞Äàà(()ëïòÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}ùç±•ê°ô•ï±ëÃ§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅΩΩù±îÅç±•ç¨Å•ëïπ—•ô•ï»ÅçÖ¡—’…ïêÅâ‰Å—°îÅ¡’â±•åÅôΩ…¥∏ààà(ÄÄÄÅ…ï—’…∏Å}ç…µ}ùΩΩù±ï}ÖëÕ}—…Öç≠•πù}ô•ï±ëÃ°ô•ï±ëÃ•lâùç±•êât(()ëïòÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}•Õ}ùΩΩù±ï}ÖëÃ°ô•ï±ëÃ§Ë(ÄÄÄÄààâï—ïç–Å¡Ö•êÅΩΩù±îÅ—…Öôô•åÅïŸï∏Å›°ï∏Å•=LÅ’ÕïÃÅ]	I%Ω	I%∏ààà(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ}ç…µ}ùΩΩù±ï}ÖëÕ}—…Öç≠•πù}ô•ï±ëÃ°ô•ï±ëÃ§(ÄÄÄÅ•òÅÖπ‰°πΩ…µÖ±•Èïëm≠ïÂtÅôΩ»Å≠ï‰Å•∏ÅI5}==1}M}%9Q%%I}-eL§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅQ…’î(ÄÄÄÅ•òÅπΩ…µÖ±•ÈïëlâùÖë}ÕΩ’…çîâtÄÙÙÄàƒàÅΩ»ÅπΩ…µÖ±•ÈïëlâùÖë}çÖµ¡Ö•ùπ•êâtË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅQ…’î(ÄÄÄÅÕΩ’…çîÄÙÅπΩ…µÖ±•Èïëlâ’—µ}ÕΩ’…çîâtπçÖÕïôΩ±ê†§π…ï¡±Öçî†àÄà∞Äâ|à§(ÄÄÄÅµïë•’¥ÄÙÅπΩ…µÖ±•Èïëlâ’—µ}µïë•’¥âtπçÖÕïôΩ±ê†§π…ï¡±Öçî†àÄà∞Äâ|à§(ÄÄÄÅ…ï—’…∏ÅÕΩ’…çîÅ•∏ÅÏâùΩΩù±îà∞ÄâùΩΩù±ï}ÖëÃà∞ÄâùΩΩù±ïÖëÃà∞ÄâÖë›Ω…ëÃâÙÅÖπêÅµïë•’¥Å•∏ÅÏ(ÄÄÄÄÄÄÄÄâç¡åà∞Äâ¡¡åà∞Äâ¡Ö•êà∞Äâ¡Ö•ë}ÕïÖ…ç†à∞Äâ¡Ö•ëÕïÖ…ç†à∞(ÄÄÄÅÙ(()I5}=I%%9}M=UI}1	1LÄÙÅÏ(ÄÄÄÄâÖÕÕ•Õ—Öπ–µÕïç…ï—Ö…•Ö–àËÄâMïçÀ•—Ö…•Ö–à∞(ÄÄÄÄâÖÕÕ•Õ—Öπ—}Õïç…ï—Ö…•Ö–àËÄâMïçÀ•—Ö…•Ö–à∞(ÄÄÄÄâÕ•µ’±Ö—ï’…}ŸÖï}ëïÕ¿àËÄâM•µ’±Ö—ï’»ÅYà∞(ÄÄÄÄâÕ•µ’±Ö—ï’»µï±•ù•â•±•—îµŸÖîµëïÕ¿àËÄâM•µ’±Ö—ï’»ÅYà∞(ÄÄÄÄâ›ïëΩô}ç¡òàËÄâ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏à∞(ÄÄÄÄâëïµÖπëï}ôΩ…µ’±Ö•…ï}ÖâÖπëΩππîàËÄâΩ…µ’±Ö•…îÅÖâÖπëΩπª§à∞)Ù(()ëïòÅ}ç…µ}Ω…•ù•π}≠ï‰°ŸÖ±’î§Ë(ÄÄÄÄààâIï—’…∏ÅÖ∏ÅÖççïπ–µ•πÕïπÕ•—•ŸîÅ≠ï‰Å’ÕïêÅ—ºÅëïë’¡±•çÖ—îÅI4ÅΩ…•ù•πÃ∏ààà(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9-à∞ÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§§(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÄààπ©Ω•∏†(ÄÄÄÄÄÄÄÅç°Ö…Öç—ï»ÅôΩ»Åç°Ö…Öç—ï»Å•∏ÅπΩ…µÖ±•Èïê(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å’π•çΩëïëÖ—ÑπçΩµâ•π•πú°ç°Ö…Öç—ï»§(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å…îπÕ’à°»âmyÑµË¿¥Ât¨à∞ÄàÄà∞ÅπΩ…µÖ±•ÈïêπçÖÕïôΩ±ê†§§πÕ—…•¿†§(()ëïòÅ}ç…µ}çÖπΩπ•çÖ±}Ω…•ù•∏°ŸÖ±’î§Ë(ÄÄÄÄààâ5Ö¿Å¡ï…Õ•Õ—ïêÅ±Öâï±ÃÅÖπêÅ—ïç°π•çÖ∞ÅÕΩ’…çïÃÅ—ºÅ—°îÅI4ùÃÅŸ•Õ•â±îÅΩ…•ù•πÃ∏ààà(ÄÄÄÅ…Ö‹ÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ≠ï‰ÄÙÅ}ç…µ}Ω…•ù•π}≠ï‰°…Ö‹§(ÄÄÄÅ•òÅπΩ–Å≠ï‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅ•òÅ…Ö‹Å•∏ÅI5}=I%%9}M=UI}1	1LË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅI5}=I%%9}M=UI}1	1Mm…Ö›t(ÄÄÄÅ•òÅ≠ï‰Å•∏ÅÏâµï—Ñà∞ÄâôÖçïâΩΩ¨à∞Äâ•πÕ—Öù…Ö¥âÙÅΩ»Å≠ï‰πÕ—Ö…—Õ›•—††âµï—ÑÄà§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ5Qà(ÄÄÄÅ•òÄâùΩΩù±îàÅ•∏Å≠ï‰ÅΩ»Å≠ï‰Å•∏ÅÏâÖë›Ω…ëÃà∞ÄâùΩΩù±ïÖëÃâÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâΩΩù±îÅëÃà(ÄÄÄÅ•òÄâ›ïëΩòàÅ•∏Å≠ï‰ÅΩ»ÄâçΩµ¡—îÅôΩ…µÖ—•Ω∏àÅ•∏Å≠ï‰ÅΩ»Å≠ï‰ÄÙÙÄâç¡òàË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏à(ÄÄÄÅ•òÄâÕ•µ’±Ö—ï’»àÅ•∏Å≠ï‰ÅÖπêÄâŸÖîàÅ•∏Å≠ï‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâM•µ’±Ö—ï’»ÅYà(ÄÄÄÅ•òÄâÕïç…ï—Ö…•Ö–àÅ•∏Å≠ï‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâMïçÀ•—Ö…•Ö–à(ÄÄÄÅ•òÄââΩ’ç°îàÅ•∏Å≠ï‰ÅÖπêÄâΩ…ï•±±îàÅ•∏Å≠ï‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ	Ω’ç°îÉÄÅΩ…ï•±±ïÃà(ÄÄÄÅ•òÅ≠ï‰Å•∏ÅÏâÕ•—îà∞ÄâÕ•—îÅ›ïàà∞ÄâÕ•—îÅ•π—ï…πï–à∞ÄâëïµÖπëîÅ•πôΩÃÅôΩ…µÖ—•ΩπÃâÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâM•—îÅ•π—ï…πï–à(ÄÄÄÅ•òÄâôΩ…µ’±Ö•…îàÅ•∏Å≠ï‰ÅÖπêÄâÖâÖπëΩ∏àÅ•∏Å≠ï‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâΩ…µ’±Ö•…îÅÖâÖπëΩπª§à(ÄÄÄÅ•òÅ≠ï‰ÄÙÙÄâÖ©Ω’–ÅµÖπ’ï∞àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ©Ω’–ÅµÖπ’ï∞à(ÄÄÄÅ•òÅ≠ï‰ÄÙÙÄâçÖ±ïπë±‰àË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâÖ±ïπë±‰à(ÄÄÄÅ•òÅ≠ï‰ÄÙÙÄâ¡Ωï§àË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâA=$à(ÄÄÄÅ…ï—’…∏Å…Ö‹(()ëïòÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏°çΩπ—Öç–∞ÅΩ…•ù•∏∞Ä®∞ÅÕΩ’…çîÙàà∞Åï·—ï…πÖ±}•êÙàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—ï·–ı9Ωπî∞ÅëÖ—îı9Ωπî∞ÅµÖ≠ï}¡…•µÖ…‰ıÖ±Õî§Ë(ÄÄÄÄààâAï…Õ•Õ–ÅΩπîÅë•Õ—•πç–ÅΩ…•ù•∏Å›°•±îÅ≠ïï¡•πúÅ—°îÅô•…Õ–Åëï—ïç—ïêÅÖÃÅ¡…•µÖ…‰∏ààà(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°çΩπ—Öç–∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅçÖπΩπ•çÖ∞ÄÙÅ}ç…µ}çÖπΩπ•çÖ±}Ω…•ù•∏°Ω…•ù•∏§(ÄÄÄÅ•òÅπΩ–ÅçÖπΩπ•çÖ∞Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅâïôΩ…ï}Ω…•ù•∏ÄÙÅçΩπ—Öç–πùï–†âΩ…•ù•πîà§(ÄÄÄÅâïôΩ…ï}°•Õ—Ω…‰ÄÙÅçΩ¡‰πëïï¡çΩ¡‰°çΩπ—Öç–πùï–†âÕΩ’…çï}°•Õ—Ω…‰à§§(ÄÄÄÅ°•Õ—Ω…‰ÄÙÅçΩπ—Öç–πùï–†âÕΩ’…çï}°•Õ—Ω…‰à§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°°•Õ—Ω…‰∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÅ°•Õ—Ω…‰ÄÙÅmt(ÄÄÄÅ°•Õ—Ω…‰ÄÙÅm•—ï¥ÅôΩ»Å•—ï¥Å•∏Å°•Õ—Ω…‰Å•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–•t((ÄÄÄÅç’……ïπ—}¡…•µÖ…‰ÄÙÅ}ç…µ}çÖπΩπ•çÖ±}Ω…•ù•∏°çΩπ—Öç–πùï–†âΩ…•ù•πîà§§(ÄÄÄÅ•òÅµÖ≠ï}¡…•µÖ…‰ÅΩ»ÅπΩ–Åç’……ïπ—}¡…•µÖ…‰Ë(ÄÄÄÄÄÄÄÅç’……ïπ—}¡…•µÖ…‰ÄÙÅçÖπΩπ•çÖ∞(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâΩ…•ù•πîâtÄÙÅçÖπΩπ•çÖ∞((ÄÄÄÅëïòÅΩ…•ù•π}ôΩ»°•—ï¥§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}çÖπΩπ•çÖ±}Ω…•ù•∏°•—ï¥πùï–†âΩ…•ù•∏à§ÅΩ»Å•—ï¥πùï–†âΩ…•ù•πîà§§((ÄÄÄÅëïòÅâ’•±ë}ïπ—…‰°±Öâï∞∞Ä®∞Åïπ—…Â}ÕΩ’…çîÙàà∞Åïπ—…Â}ï·—ï…πÖ±}•êÙàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}çΩπ—ï·–ı9Ωπî∞Åïπ—…Â}ëÖ—îı9Ωπî§Ë(ÄÄÄÄÄÄÄÅëï—Ö•±ÃÄÙÅïπ—…Â}çΩπ—ï·–Å•òÅ•Õ•πÕ—Öπçî°ïπ—…Â}çΩπ—ï·–∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ…•ù•∏àËÅ±Öâï∞∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çîàËÅÕ—»°ïπ—…Â}ÕΩ’…çîÅΩ»Åëï—Ö•±Ãπùï–†âÕΩ’…çîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâï·—ï…πÖ±}•êàËÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}ï·—ï…πÖ±}•êÅΩ»Åëï—Ö•±Ãπùï–†âï·—ï…πÖ±}•êà§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖµ¡Ö•ù∏àËÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëï—Ö•±Ãπùï–†âçÖµ¡Ö•ù∏à§ÅΩ»Åëï—Ö•±Ãπùï–†âçÖµ¡Ö•ùπ}πÖµîà§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖêàËÅÕ—»°ëï—Ö•±Ãπùï–†âÖêà§ÅΩ»Åëï—Ö•±Ãπùï–†âÖë}πÖµîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…¥àËÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëï—Ö•±Ãπùï–†âôΩ…¥à§ÅΩ»Åëï—Ö•±Ãπùï–†âôΩ…µ}πÖµîà§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—îàËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}ëÖ—îÅΩ»Åëï—Ö•±Ãπùï–†âëÖ—îà§ÅΩ»Åëï—Ö•±Ãπùï–†â…ïçï•Ÿïë}Ö–à§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅçΩπ—Öç–πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Å}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅÙ((ÄÄÄÄåÅ!•Õ—Ω…•çÖ∞Å•µ¡Ω…—ÃÅÖπêÅ…ï¡ïÖ—ïêÅ›ïâ°ΩΩ≠ÃÅµÖ‰ÅçΩπ—Ö•∏ÅÕïŸï…Ö∞Åïπ—…•ïÃ(ÄÄÄÄåÅôΩ»Å—°îÅÕÖµîÅŸ•Õ•â±îÅΩ…•ù•∏∏ÅΩ±±Ö¡ÕîÅ—°ï¥Å›°•±îÅ…ï—Ö•π•πúÅ—°îÅïÖ…±•ïÕ–(ÄÄÄÄåÅ¡ΩÕ•—•Ω∏ÅÖπêÅïπ…•ç°•πúÅ•–Å›•—†ÅÖπ‰ÅçΩπ—ï·–ÅôΩ’πêÅ±Ö—ï»∏(ÄÄÄÅëïë’¡±•çÖ—ïêÄÙÅmt(ÄÄÄÅâÂ}Ω…•ù•∏ÄÙÅÌÙ(ÄÄÄÅôΩ»Å•—ï¥Å•∏Å°•Õ—Ω…‰Ë(ÄÄÄÄÄÄÄÅ•—ïµ}Ω…•ù•∏ÄÙÅΩ…•ù•π}ôΩ»°•—ï¥§(ÄÄÄÄÄÄÄÅµÖ…≠ï»ÄÙÅ}ç…µ}Ω…•ù•π}≠ï‰°•—ïµ}Ω…•ù•∏§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅµÖ…≠ï»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅµÖ…≠ï»ÅπΩ–Å•∏ÅâÂ}Ω…•ù•∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâΩ…•ù•∏âtÄÙÅ•—ïµ}Ω…•ù•∏(ÄÄÄÄÄÄÄÄÄÄÄÅâÂ}Ω…•ù•πmµÖ…≠ï…tÄÙÅ•—ï¥(ÄÄÄÄÄÄÄÄÄÄÄÅëïë’¡±•çÖ—ïêπÖ¡¡ïπê°•—ï¥§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅï·•Õ—•πúÄÙÅâÂ}Ω…•ù•πmµÖ…≠ï…t(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†âÕΩ’…çîà∞Äâï·—ï…πÖ±}•êà∞ÄâçÖµ¡Ö•ù∏à∞ÄâÖêà∞ÄâôΩ…¥à∞ÄâëÖ—îà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Åï·•Õ—•πúπùï–°≠ï‰§ÅÖπêÅ•—ï¥πùï–°≠ï‰§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùm≠ïÂtÄÙÅ•—ïµm≠ïÂt(ÄÄÄÅ°•Õ—Ω…‰ÄÙÅëïë’¡±•çÖ—ïê((ÄÄÄÅ¡…•µÖ…Â}•πëï‡ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ°•πëï‡ÅôΩ»Å•πëï‡∞Å•—ï¥Å•∏Åïπ’µï…Ö—î°°•Õ—Ω…‰§(ÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}Ω…•ù•π}≠ï‰°Ω…•ù•π}ôΩ»°•—ï¥§§ÄÙÙÅ}ç…µ}Ω…•ù•π}≠ï‰°ç’……ïπ—}¡…•µÖ…‰§§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅ¡…•µÖ…Â}•πëï‡Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ°•Õ—Ω…‰π•πÕï…–†¿∞Åâ’•±ë}ïπ—…‰†(ÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}¡…•µÖ…‰∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}ÕΩ’…çîıçΩπ—Öç–πùï–†âÕΩ’…çîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}çΩπ—ï·–ıçΩπ—Öç–πùï–†âµï—Ö}ÕΩ’…çîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}ëÖ—îıçΩπ—Öç–πùï–†âç…ïÖ—ïë}Ö–à§∞(ÄÄÄÄÄÄÄÄ§§(ÄÄÄÅï±•òÅ¡…•µÖ…Â}•πëï‡Ë(ÄÄÄÄÄÄÄÅ°•Õ—Ω…‰π•πÕï…–†¿∞Å°•Õ—Ω…‰π¡Ω¿°¡…•µÖ…Â}•πëï‡§§(ÄÄÄÅ°•Õ—Ω…Âl¡ulâΩ…•ù•∏âtÄÙÅç’……ïπ—}¡…•µÖ…‰((ÄÄÄÅçÖπΩπ•çÖ±}•πëï‡ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ°•πëï‡ÅôΩ»Å•πëï‡∞Å•—ï¥Å•∏Åïπ’µï…Ö—î°°•Õ—Ω…‰§(ÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}Ω…•ù•π}≠ï‰°Ω…•ù•π}ôΩ»°•—ï¥§§ÄÙÙÅ}ç…µ}Ω…•ù•π}≠ï‰°çÖπΩπ•çÖ∞§§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅçÖπΩπ•çÖ±}•πëï‡Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ°•Õ—Ω…‰πÖ¡¡ïπê°â’•±ë}ïπ—…‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçÖπΩπ•çÖ∞∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}ÕΩ’…çîıÕΩ’…çî∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}ï·—ï…πÖ±}•êıï·—ï…πÖ±}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}çΩπ—ï·–ıçΩπ—ï·–∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Â}ëÖ—îıëÖ—î∞(ÄÄÄÄÄÄÄÄ§§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅïπ—…‰ÄÙÅ°•Õ—Ω…ÂmçÖπΩπ•çÖ±}•πëï·t(ÄÄÄÄÄÄÄÅïπ—…ÂlâΩ…•ù•∏âtÄÙÅçÖπΩπ•çÖ∞(ÄÄÄÄÄÄÄÅëï—Ö•±ÃÄÙÅçΩπ—ï·–Å•òÅ•Õ•πÕ—Öπçî°çΩπ—ï·–∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÄÄÄÄÅ’¡ëÖ—ïÃÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çîàËÅÕΩ’…çîÅΩ»Åëï—Ö•±Ãπùï–†âÕΩ’…çîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâï·—ï…πÖ±}•êàËÅï·—ï…πÖ±}•êÅΩ»Åëï—Ö•±Ãπùï–†âï·—ï…πÖ±}•êà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖµ¡Ö•ù∏àËÅëï—Ö•±Ãπùï–†âçÖµ¡Ö•ù∏à§ÅΩ»Åëï—Ö•±Ãπùï–†âçÖµ¡Ö•ùπ}πÖµîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖêàËÅëï—Ö•±Ãπùï–†âÖêà§ÅΩ»Åëï—Ö•±Ãπùï–†âÖë}πÖµîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…¥àËÅëï—Ö•±Ãπùï–†âôΩ…¥à§ÅΩ»Åëï—Ö•±Ãπùï–†âôΩ…µ}πÖµîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—îàËÅëÖ—îÅΩ»Åëï—Ö•±Ãπùï–†âëÖ—îà§ÅΩ»Åëï—Ö•±Ãπùï–†â…ïçï•Ÿïë}Ö–à§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏Å’¡ëÖ—ïÃπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅŸÖ±’îÅÖπêÅπΩ–Åïπ—…‰πùï–°≠ï‰§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âm≠ïÂtÄÙÅÕ—»°ŸÖ±’î§πÕ—…•¿†§Å•òÅ≠ï‰ÄÑÙÄâëÖ—îàÅï±ÕîÅŸÖ±’î((ÄÄÄÅ•òÅµÖ≠ï}¡…•µÖ…‰Ë(ÄÄÄÄÄÄÄÅ¡…ΩµΩ—ïë}•πëï‡ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄÄÄÄÅ•πëï‡ÅôΩ»Å•πëï‡∞Å•—ï¥Å•∏Åïπ’µï…Ö—î°°•Õ—Ω…‰§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}Ω…•ù•π}≠ï‰°Ω…•ù•π}ôΩ»°•—ï¥§§ÄÙÙÅ}ç…µ}Ω…•ù•π}≠ï‰°çÖπΩπ•çÖ∞§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅ¡…ΩµΩ—ïë}•πëï‡Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ°•Õ—Ω…‰π•πÕï…–†¿∞Å°•Õ—Ω…‰π¡Ω¿°¡…ΩµΩ—ïë}•πëï‡§§(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâΩ…•ù•πîâtÄÙÅçÖπΩπ•çÖ∞(ÄÄÄÅçΩπ—Öç—lâÕΩ’…çï}°•Õ—Ω…‰âtÄÙÅ°•Õ—Ω…‰(ÄÄÄÅ…ï—’…∏Ä†(ÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âΩ…•ù•πîà§ÄÑÙÅâïôΩ…ï}Ω…•ù•∏(ÄÄÄÄÄÄÄÅΩ»ÅçΩπ—Öç–πùï–†âÕΩ’…çï}°•Õ—Ω…‰à§ÄÑÙÅâïôΩ…ï}°•Õ—Ω…‰(ÄÄÄÄ§(()ëïòÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ω…•ù•∏°ô•ï±ëÃ§Ë(ÄÄÄÄààâIïÕΩ±ŸîÅ—°îÅI4ÅΩ…•ù•∏Å›•—°Ω’–Åµ•Õç±ÖÕÕ•ôÂ•πúÅÕïç…ï—Ö…•Ö–ÅÕ’âµ•ÕÕ•ΩπÃ∏ààà(ÄÄÄÅ•òÅÕ—»†°ô•ï±ëÃÅΩ»ÅÌÙ§πùï–†âÕΩ’…çï}Õïç…ï—Ö…•Ö–à§ÅΩ»Äàà§ÄÙÙÄàƒàË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâMïçÀ•—Ö…•Ö–à(ÄÄÄÅ…ï—’…∏ÅI5}==1}M}=I%%8Å•òÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}•Õ}ùΩΩù±ï}ÖëÃ°ô•ï±ëÃ§Åï±ÕîÄâM•—îÅ•π—ï…πï–à(()ëïòÅ}ç…µ}Ö¡¡±Â}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ö——…•â’—•Ω∏°çΩπ—Öç–∞Åô•ï±ëÃ§Ë(ÄÄÄÄààâAï…Õ•Õ–ÅΩΩù±îÅëÃÅµï—ÖëÖ—ÑÅ›•—°Ω’–Å…ï¡±Öç•πúÅÖ∏ÅïÖ…±•ï»Å¡…•µÖ…‰ÅΩ…•ù•∏∏ààà(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ô•ï±ëÃ∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ•òÄ†(ÄÄÄÄÄÄÄÅÕ—»°ô•ï±ëÃπùï–†âÕΩ’…çï}Õïç…ï—Ö…•Ö–à§ÅΩ»Äàà§ÄÙÙÄàƒà(ÄÄÄÄÄÄÄÅΩ»ÅπΩ–Å}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}•Õ}ùΩΩù±ï}ÖëÃ°ô•ï±ëÃ§(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî((ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ}ç…µ}ùΩΩù±ï}ÖëÕ}—…Öç≠•πù}ô•ï±ëÃ°ô•ï±ëÃ§(ÄÄÄÅ•ëïπ—•ô•ï…}—Â¡î∞Å•ëïπ—•ô•ï»ÄÙÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}ùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»°ô•ï±ëÃ§(ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅôΩ»Å≠ï‰Å•∏ÅI5}==1}M}%9Q%%I}-eLË(ÄÄÄÄÄÄÄÅ•òÅπΩ…µÖ±•Èïëm≠ïÂtÅÖπêÅçΩπ—Öç–πùï–°≠ï‰§ÄÑÙÅπΩ…µÖ±•Èïëm≠ïÂtË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—m≠ïÂtÄÙÅπΩ…µÖ±•Èïëm≠ïÂt(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅ•ëïπ—•ô•ï»ÅÖπêÅçΩπ—Öç–πùï–†âùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»à§ÄÑÙÅ•ëïπ—•ô•ï»Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»âtÄÙÅ•ëïπ—•ô•ï»(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅ•ëïπ—•ô•ï…}—Â¡îÅÖπêÅçΩπ—Öç–πùï–†âùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï…}—Â¡îà§ÄÑÙÅ•ëïπ—•ô•ï…}—Â¡îË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï…}—Â¡îâtÄÙÅ•ëïπ—•ô•ï…}—Â¡î(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÄåÅ=±êÅ•πôΩ…µÖ—•Ω∏µ…ï≈’ïÕ–Å…ïçΩ…ëÃÅÕΩµï—•µïÃÅÕ—Ω…ïêÄâM•—îÅ•π—ï…πï–àÅïŸï∏(ÄÄÄÄåÅ—°Ω’ù†Å—°ï•»ÅΩ…•ù•πÖ∞Å¡ÖÂ±ΩÖêÅÖ±…ïÖë‰ÅçΩπ—Ö•πïêÅÑÅΩΩù±îÅëÃÅ•ëïπ—•ô•ï»∏(ÄÄÄÄåÅIï¡Ö•»ÅΩπ±‰Å—°Ö–ÅÕ•πù±îµΩ…•ù•∏Å±ïùÖç‰ÅçÖÕîÏÅΩ∏ÅÑÅ…ïçΩπç•±ïêÅçΩπ—Öç–ÅΩΩù±î(ÄÄÄÄåÅëÃÅ•ÃÅÖ¡¡ïπëïêÅÖÃÅÑÅÕïçΩπëÖ…‰ÅΩ…•ù•∏ÅÖπêÅπïŸï»Å¡…ΩµΩ—ïê∏(ÄÄÄÅï·•Õ—•πù}Ω…•ù•πÃÄÙÅÏ(ÄÄÄÄÄÄÄÅ}ç…µ}Ω…•ù•π}≠ï‰°}ç…µ}çÖπΩπ•çÖ±}Ω…•ù•∏°•—ï¥πùï–†âΩ…•ù•∏à§§§(ÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†âÕΩ’…çï}°•Õ—Ω…‰à∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§ÅÖπêÅ•—ï¥πùï–†âΩ…•ù•∏à§(ÄÄÄÅÙ(ÄÄÄÅ±ïùÖçÂ}¡…•µÖ…Â}…ï¡Ö•»ÄÙÄ†(ÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕΩ’…çîà§ÄÙÙÄâëïµÖπëï}•πôΩÕ}ôΩ…µÖ—•ΩπÃà(ÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}çÖπΩπ•çÖ±}Ω…•ù•∏°çΩπ—Öç–πùï–†âΩ…•ù•πîà§§ÄÙÙÄâM•—îÅ•π—ï…πï–à(ÄÄÄÄÄÄÄÅÖπêÅï·•Õ—•πù}Ω…•ù•πÃπ•ÕÕ’âÕï–°Ì}ç…µ}Ω…•ù•π}≠ï‰†âM•—îÅ•π—ï…πï–à•Ù§(ÄÄÄÄ§(ÄÄÄÅçΩπ—ï·–ÄÙÅÏ(ÄÄÄÄÄÄÄÄâçÖµ¡Ö•ù∏àËÅπΩ…µÖ±•Èïêπùï–†â’—µ}çÖµ¡Ö•ù∏à∞Äàà§∞(ÄÄÄÄÄÄÄÄâÖêàËÅπΩ…µÖ±•Èïêπùï–†â’—µ}çΩπ—ïπ–à∞Äàà§∞(ÄÄÄÄÄÄÄÄâôΩ…¥àËÅÕ—»°ô•ï±ëÃπùï–†âôΩ…µ}πÖµîà§ÅΩ»Åô•ï±ëÃπùï–†âôΩ…¥à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅI5}==1}M}=I%%8∞(ÄÄÄÄÄÄÄÅÕΩ’…çîÙâëïµÖπëï}•πôΩÕ}ôΩ…µÖ—•ΩπÃà∞(ÄÄÄÄÄÄÄÅï·—ï…πÖ±}•êıçΩπ—Öç–πùï–†âÕΩ’…çï}ëïµÖπëï}•êà∞Äàà§∞(ÄÄÄÄÄÄÄÅçΩπ—ï·–ıçΩπ—ï·–∞(ÄÄÄÄÄÄÄÅµÖ≠ï}¡…•µÖ…‰ı±ïùÖçÂ}¡…•µÖ…Â}…ï¡Ö•»∞(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅç°ÖπùïêË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()ëïòÅ}ç…µ}âÖç≠ô•±±}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ö——…•â’—•Ω∏°çΩπ—Öç–§Ë(ÄÄÄÄààâIï¡Ö•»ÅçΩπ—Öç—ÃÅç…ïÖ—ïêÅâïôΩ…îÅ1%Å›ÖÃÅ¡…ΩµΩ—ïêÅ—ºÅÑÅô•…Õ–µç±ÖÕÃÅô•ï±ê∏ààà(ÄÄÄÅôΩ…¥ÄÙÅçΩπ—Öç–πùï–†âôΩ…µ’±Ö•…îà§(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕΩ’…çîà§ÄÑÙÄâëïµÖπëï}•πôΩÕ}ôΩ…µÖ—•ΩπÃàÅΩ»ÅπΩ–Å•Õ•πÕ—Öπçî°ôΩ…¥∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ…ï—’…∏Å}ç…µ}Ö¡¡±Â}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ö——…•â’—•Ω∏°çΩπ—Öç–∞ÅôΩ…¥§(()ëïòÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñı9Ωπî∞Å…ïù’±Ö—Ω…Â}ÕπÖ¡Õ°Ω–ı9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅô’πë•πù}Õ—Ö—’Ãı9Ωπî§Ë(ÄÄÄÅ}ç…µ}âÖç≠ô•±±}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}ÖπÕ›ï…Ã°çΩπ—Öç–§(ÄÄÄÅ}ç…µ}âÖç≠ô•±±}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ö——…•â’—•Ω∏°çΩπ—Öç–§(ÄÄÄÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§(ÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅë•ç–°çΩπ—Öç–§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—ëïôÖ’±–†â…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…Õºà∞Äàà§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—ëïôÖ’±–†âç¡ô}¡Ö±•ï»à∞Äàà§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—ëïôÖ’±–†âµΩπ—Öπ—}ÖççΩ…ëï}ô–à∞Äàà§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—ëïôÖ’±–†âçπÖ¡Õ}π’àà∞Äàà§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—ëïôÖ’±–†âçπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰à∞Å9Ωπî§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—ëïôÖ’±–†âçπÖ¡Õ}â•…—°}ÂïÖ»à∞Äàà§(ÄÄÄÅ•òÅπΩ–Å…ïÕ¡ΩπÕîπùï–†âô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îà§Ë(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕïlâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îâtÄÙÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†â…ïô’Õ}ô—}¡ï…Õºà§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—ëïôÖ’±–†â≈’Ö±•ô•çÖ—•Ωπ}ô±Öúà∞Äàà§(ÄÄÄÄåÅ1îÅÕ—Ö—’–Å]=ÅïÕ–ÅçÖ±ç’≥§Å’πîÅÕï’±îÅôΩ•ÃÅ¡Ω’»Å—Ω’—îÅ±ÑÅ±•Õ—îÅëïÃÅçΩπ—Öç—Ã(ÄÄÄÄåÅ¡’•ÃÅ•π©ïç”§Å•ç§∏Å9îÅ©ÖµÖ•ÃÅ…ï±•…îÅ—Ω’—îÅ±ÑÅâÖÕîÅ]=Åëï¡’•ÃÅçï——îÅôΩπç—•Ω∏ÄË(ÄÄÄÄåÅï±±îÅïÕ–ÅÖ¡¡ï≥•îÅ’πîÅôΩ•ÃÅ¡Ö»Å¡•Õ—îÅï–Å—…ÖπÕôΩ…µï…Ö•–Å±ÑÅ…ï≈◊©—îÅï∏Å8É\Å4∏(ÄÄÄÅ•òÄ°ô’πë•πù}Õ—Ö—’Ã(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÑÙÅI5}59U1}MQQUM}M=UI§Ë(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕïlâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–âtÄÙÅô’πë•πù}Õ—Ö—’Ã(ÄÄÄÅÕπÖ¡Õ°Ω–ÄÙÅ…ïù’±Ö—Ω…Â}ÕπÖ¡Õ°Ω–(ÄÄÄÅ•òÅÕπÖ¡Õ°Ω–Å•ÃÅ9ΩπîÅÖπêÅëÖ—ÑÅ•ÃÅπΩ–Å9ΩπîË(ÄÄÄÄÄÄÄÅÕπÖ¡Õ°Ω–ÄÙÅëÖ—Ñπùï–†âç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—Ãà∞ÅÌÙ§πùï–°Õ—»°çΩπ—Öç–πùï–†â•êà§§§(ÄÄÄÅ…ïÕ¡ΩπÕïlâ•π—ïù…Ö—•Ωπ}ÕçΩ…îâtÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°…ïÕ¡ΩπÕî∞ÅÕπÖ¡Õ°Ω–§(ÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(()ëïòÅ}ç…µ}çΩπ—Öç—}ëï—Ö•±}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñı9Ωπî∞Å…ïù’±Ö—Ω…Â}ÕπÖ¡Õ°Ω–ı9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅô’πë•πù}Õ—Ö—’Ãı9Ωπî§Ë(ÄÄÄÄààâ	’•±êÅ—°îÅ•π—ï…Öç—•ŸîÅÕ°ïï–Å›•—°Ω’–Åïµâïëë•πúÅ°•Õ—Ω…•çÖ∞Å!Q50ÅâΩë•ïÃ∏ààà(ÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÅ…ïù’±Ö—Ω…Â}ÕπÖ¡Õ°Ω–ı…ïù’±Ö—Ω…Â}ÕπÖ¡Õ°Ω–∞(ÄÄÄÄÄÄÄÅô’πë•πù}Õ—Ö—’Ãıô’πë•πù}Õ—Ö—’Ã∞(ÄÄÄÄ§(ÄÄÄÄåÅQ°îÅΩ…•ù•πÖ∞Å¡’â±•åÅôΩ…¥ÅµÖ‰ÅçΩπ—Ö•∏ÅÑÅ±Ö…ùîÅ—ïç°π•çÖ∞Ω…Ö‹Å¡ÖÂ±ΩÖê∏Å%—Ã(ÄÄÄÄåÅ’Õïô’∞ÅÖπÕ›ï…ÃÅÖ…îÅÖ±…ïÖë‰Å¡…ΩµΩ—ïêÅ—ºÅô•…Õ–µç±ÖÕÃÅI4Åô•ï±ëÃ∏(ÄÄÄÅ…ïÕ¡ΩπÕîπ¡Ω¿†âôΩ…µ’±Ö•…îà∞Å9Ωπî§(ÄÄÄÅçΩµ¡Öç—}Öç—•Ÿ•—•ïÃÄÙÅmt(ÄÄÄÅôΩ»Å…Ö›}Öç—•Ÿ•—‰Å•∏Å…ïÕ¡ΩπÕîπùï–†âÖç—•Ÿ•—•ïÃà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°…Ö›}Öç—•Ÿ•—‰∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—‰ÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅ≠ï‰ËÅŸÖ±’îÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏Å…Ö›}Öç—•Ÿ•—‰π•—ïµÃ†§Å•òÅ≠ï‰ÄÑÙÄâ¡…ïŸ•ï‹à(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ•òÅ…Ö›}Öç—•Ÿ•—‰πùï–†â¡…ïŸ•ï‹à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—Âlâ°ÖÕ}¡…ïŸ•ï‹âtÄÙÅQ…’î(ÄÄÄÄÄÄÄÅçΩµ¡Öç—}Öç—•Ÿ•—•ïÃπÖ¡¡ïπê°Öç—•Ÿ•—‰§(ÄÄÄÅ…ïÕ¡ΩπÕïlâÖç—•Ÿ•—•ïÃâtÄÙÅçΩµ¡Öç—}Öç—•Ÿ•—•ïÃ(ÄÄÄÅ…ïÕ¡ΩπÕïlâÖç—•Ÿ•—Â}çΩ’π–âtÄÙÅ±ï∏°çΩµ¡Öç—}Öç—•Ÿ•—•ïÃ§(ÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(()ëïòÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞Å≠•πê∞Å—•—±î∞Åëï—Ö•∞Ùàà∞Å¡…ïŸ•ï‹Ùàà∞ÅÖ’—°Ω…}πÖµîı9Ωπî§Ë(ÄÄÄÅ•òÅπΩ–ÅÖ’—°Ω…}πÖµîË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÖ’—°Ω…}πÖµîÄÙÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–ÅI’π—•µï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ1ïÃÅÕÂπç°…Ωπ•ÕÖ—•ΩπÃÅ]=ÅÃùï„•ç’—ïπ–ÅÖ’ÕÕ§Å°Ω…ÃÅ…ï≈◊©—îÅ±ÖÕ¨∏(ÄÄÄÄÄÄÄÄÄÄÄÅÖ’—°Ω…}πÖµîÄÙÄã%≈’•¡îÅ%π”•ù…Ö±îà(ÄÄÄÅçΩπ—Öç–πÕï—ëïôÖ’±–†âÖç—•Ÿ•—•ïÃà∞Åmt§π•πÕï…–†¿∞ÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞ÄâëÖ—îàËÅ}ç…µ}πΩ‹†§∞Äâ≠•πêàËÅ≠•πê∞(ÄÄÄÄÄÄÄÄâ—•—±îàËÅ—•—±î∞Äâëï—Ö•∞àËÅëï—Ö•∞∞Äâ¡…ïŸ•ï‹àËÅ¡…ïŸ•ï‹∞(ÄÄÄÄÄÄÄÄâÖ’—°Ω»àËÅÖ’—°Ω…}πÖµî∞(ÄÄÄÅÙ§(()ëïòÅ}ç…µ}çΩπ—Öç—}ôΩ…}≈’Ω—ï}ïµÖ•∞°ëÖ—Ñ∞Å≈’Ω—î§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅΩπ±‰ÅI4ÅçΩπ—Öç–Å—°Ö–ÅçÖ∏ÅÕÖôï±‰ÅâîÅ±•π≠ïêÅ—ºÅ—°•ÃÅ≈’Ω—î∏ààà(ÄÄÄÅçΩπ—Öç—ÃÄÙÅl(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°çΩπ—Öç–∞Åë•ç–§(ÄÄÄÅt(ÄÄÄÅ≈’Ω—ï}•êÄÙÅÕ—»°≈’Ω—îπùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ±•π≠ïêÄÙÅl(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—Ã(ÄÄÄÄÄÄÄÅ•òÅ≈’Ω—ï}•êÅÖπêÅÕ—»°çΩπ—Öç–πùï–†âÕΩ’…çï}ëïŸ•Õ}•êà§ÅΩ»Äàà§πÕ—…•¿†§ÄÙÙÅ≈’Ω—ï}•ê(ÄÄÄÅt(ÄÄÄÅ•òÅ±ï∏°±•π≠ïê§ÄÙÙÄƒË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å±•π≠ïël¡t(ÄÄÄÅ•òÅ±•π≠ïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî((ÄÄÄÅïµÖ•∞ÄÙÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°≈’Ω—îπùï–†âµÖ•∞à§§(ÄÄÄÅ¡°ΩπîÄÙÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°≈’Ω—îπùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÅµÖ—ç°ïÃÄÙÅl(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—Ã(ÄÄÄÄÄÄÄÅ•òÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅïµÖ•∞ÅÖπêÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§ÄÙÙÅïµÖ•∞(ÄÄÄÄÄÄÄÄ§ÅΩ»Ä†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡°ΩπîÅÖπêÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§§ÄÙÙÅ¡°Ωπî(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅt(ÄÄÄÅ•òÅ±ï∏°µÖ—ç°ïÃ§ÄÑÙÄƒÅΩ»ÅπΩ–Å}ç…µ}πÖµïÕ}çΩµ¡Ö—•â±î°µÖ—ç°ïÕl¡t∞Å≈’Ω—î§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ…ï—’…∏ÅµÖ—ç°ïÕl¡t(()ëïòÅ}ç…µ}…ïçΩ…ë}≈’Ω—ï}ïµÖ•±}Õïπ–°ëÖ—Ñ∞Å≈’Ω—î∞ÅÕ’â©ïç–∞Å°—µ±}âΩë‰§Ë(ÄÄÄÄààâ¡¡ïπêÅÑÅÕ’ççïÕÕô’∞Å≈’Ω—îÅëï±•Ÿï…‰Å—ºÅ—°îÅµÖ—ç°•πúÅI4ÅÖç—•Ÿ•—‰Å©Ω’…πÖ∞∏ààà(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç—}ôΩ…}≈’Ω—ï}ïµÖ•∞°ëÖ—Ñ∞Å≈’Ω—î§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅëï—Ö•∞ÄÙÄâq∏àπ©Ω•∏°ô•±—ï»°9Ωπî∞Ä†(ÄÄÄÄÄÄÄÅòâ=â©ï–ÄËÅÌÕ—»°Õ’â©ïç–ÅΩ»Äúú§πÕ—…•¿†•Ùà∞(ÄÄÄÄÄÄÄÅòâïÕ—•πÖ—Ö•…îÄËÅÌÕ—»°≈’Ω—îπùï–†ùµÖ•∞ú§ÅΩ»Äúú§πÕ—…•¿†•Ùà∞(ÄÄÄÄ§§§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÄâïµÖ•∞à∞ÄâµµÖ•∞É
+¨ÅïŸ•ÃÅì•—Ö•±≥§É
+ÏÅïπŸΩÁ§à∞(ÄÄÄÄÄÄÄÅëï—Ö•∞∞Å°—µ±}âΩë‰∞(ÄÄÄÄ§(ÄÄÄÅÖç—•Ÿ•—‰ÄÙÅçΩπ—Öç—lâÖç—•Ÿ•—•ïÃâul¡t(ÄÄÄÅÖç—•Ÿ•—ÂlâÕΩ’…çï}ëïŸ•Õ}•êâtÄÙÅÕ—»°≈’Ω—îπùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅÖç—•Ÿ•—ÂlâëÖ—îât(ÄÄÄÅ…ï—’…∏ÅQ…’î(()ëïòÅ}ç…µ}ïë•—}çÖ±±}Öç—•Ÿ•—‰°Öç—•Ÿ•—‰∞Åëï—Ö•∞§Ë(ÄÄÄÄààâU¡ëÖ—îÅÑÅçÖ±∞ÅπΩ—îÅ›°•±îÅ…ï—Ö•π•πúÅïŸï…‰Å¡…ïŸ•Ω’ÃÅ—ï·–ÅÖÃÅÖ∏ÅÖ’ë•–Å—…Ö•∞∏ààà(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅÕ—»°ëï—Ö•∞ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅπΩ…µÖ±•ÈïêË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â1îÅçΩµ¡—îµ…ïπë‘ÅëîÅ≥äeÖ¡¡ï∞ÅïÕ–Å…ï≈’•Ãà§(ÄÄÄÅ•òÅÖç—•Ÿ•—‰πùï–†â≠•πêà§ÄÑÙÄâÖ¡¡ï∞àË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî∞Äâ•πŸÖ±•ë}≠•πêà(ÄÄÄÅ¡…ïŸ•Ω’ÃÄÙÅÕ—»°Öç—•Ÿ•—‰πùï–†âëï—Ö•∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅ¡…ïŸ•Ω’ÃÄÙÙÅπΩ…µÖ±•ÈïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî∞Äâ’πç°Öπùïêà(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅïë•—Ω»ÄÙÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà§(ÄÄÄÅïë•—ÃÄÙÅÖç—•Ÿ•—‰πùï–†âïë•—Ãà§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ïë•—Ã∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÅïë•—ÃÄÙÅmt(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—Âlâïë•—ÃâtÄÙÅïë•—Ã(ÄÄÄÅïë•—Ãπ•πÕï…–†¿∞ÅÏ(ÄÄÄÄÄÄÄÄâëï—Ö•∞àËÅ¡…ïŸ•Ω’Ã∞(ÄÄÄÄÄÄÄÄâïë•—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄâïë•—ïë}â‰àËÅïë•—Ω»∞(ÄÄÄÅÙ§(ÄÄÄÅÖç—•Ÿ•—‰π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄâëï—Ö•∞àËÅπΩ…µÖ±•Èïê∞(ÄÄÄÄÄÄÄÄâïë•—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄâïë•—ïë}â‰àËÅïë•—Ω»∞(ÄÄÄÅÙ§(ÄÄÄÅ…ï—’…∏ÅQ…’î∞Äâ’¡ëÖ—ïêà(()I5}I19}MQQUMLÄÙÅÏâÕç°ïë’±ïêà∞ÄâÖπÕ›ï…ïêà∞ÄâπΩ}ÖπÕ›ï»à∞Äâ…ï¡…Ωù…Öµµïêà∞ÄâçÖπçï±±ïêâÙ)I5}I19}5=Q%}5a}19Q ÄÙÄƒÿ¿(()ëïòÅ}ç…µ}…ï±Öπçï}ëÖ—î°ŸÖ±’î∞Ä®∞Å›ïï≠ëÖÂÕ}Ωπ±‰ıÖ±Õî§Ë(ÄÄÄÄààâIï—’…∏ÅÑÅπΩ…µÖ±•ÈïêÅ%M<ÅëÖ—îÅΩ»Å…Ö•ÕîÅÑÅ’Õï»µôÖç•πúÅŸÖ±•ëÖ—•Ω∏Åï……Ω»∏ààà(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅπΩ…µÖ±•ÈïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ¡Ö…ÕïêÄÙÅëÖ—ï—•µîπëÖ—îπô…Ωµ•ÕΩôΩ…µÖ–°πΩ…µÖ±•Èïê§(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â1ÑÅëÖ—îÅëîÅ…ï±ÖπçîÅïÕ–Å•πŸÖ±•ëî∏à§Åô…Ω¥Åï·å(ÄÄÄÅ•òÅ›ïï≠ëÖÂÕ}Ωπ±‰ÅÖπêÅ¡Ö…Õïêπ›ïï≠ëÖ‰†§Ä¯ÙÄ‘Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄâ1ïÃÅ…ï±ÖπçïÃÅπîÅ¡ï’Ÿïπ–Å¡ÖÃÉ©—…îÅ¡…Ωù…Öµ∑•ïÃÅ±îÅÕÖµïë§ÅΩ‘Å±îÅë•µÖπç°î∏à(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ï—’…∏ÅπΩ…µÖ±•Èïê(()ëïòÅ}ç…µ}…ï±Öπçï}µΩ—•ò°ŸÖ±’î§Ë(ÄÄÄÄààâIï—’…∏ÅÑÅçΩµ¡Öç–Å’Õï»µôÖç•πúÅ…ï±ÖπçîÅ…ïÖÕΩ∏ÅΩ»Å…ï©ïç–ÅΩŸï…Õ•ÈïêÅ•π¡’–∏ààà(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÄàÄàπ©Ω•∏°Õ—»°ŸÖ±’îÅΩ»Äàà§πÕ¡±•–†§§(ÄÄÄÅ•òÅ±ï∏°πΩ…µÖ±•Èïê§Ä¯ÅI5}I19}5=Q%}5a}19Q Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄâ1îÅµΩ—•òÅëîÅ…ï±ÖπçîÅπîÅ¡ï’–Å¡ÖÃÅì•¡ÖÕÕï»Äà(ÄÄÄÄÄÄÄÄÄÄÄÅòâÌI5}I19}5=Q%}5a}19Q!ÙÅçÖ…Öç”°…ïÃ∏à(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ï—’…∏ÅπΩ…µÖ±•Èïê(()ëïòÅ}ç…µ}…ïô…ïÕ°}…ï±Öπçï}ëÖ—î°çΩπ—Öç–§Ë(ÄÄÄÄààâ-ïï¿Å—°îÅ°•Õ—Ω…•çÖ∞ÅÕçÖ±Ö»Åô•ï±êÅÖ±•ùπïêÅ›•—†Å—°îÅπï·–ÅΩ¡ï∏ÅôΩ±±Ω‹µ’¿∏ààà(ÄÄÄÅÕç°ïë’±ïë}ëÖ—ïÃÄÙÅl(ÄÄÄÄÄÄÄÅÕ—»°•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§ÅÖπêÅ•—ï¥πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâÕç°ïë’±ïêà(ÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§ÅΩ»Äàà§(ÄÄÄÅt(ÄÄÄÅπï·—}ëÖ—îÄÙÅµ•∏°Õç°ïë’±ïë}ëÖ—ïÃ§Å•òÅÕç°ïë’±ïë}ëÖ—ïÃÅï±ÕîÄàà(ÄÄÄÅç°ÖπùïêÄÙÅÕ—»°çΩπ—Öç–πùï–†â…ï±Öπçï}ëÖ—îà§ÅΩ»Äàà§ÄÑÙÅπï·—}ëÖ—î(ÄÄÄÅçΩπ—Öç—lâ…ï±Öπçï}ëÖ—îâtÄÙÅπï·—}ëÖ—î(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()ëïòÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§Ë(ÄÄÄÄààâ5•ù…Ö—îÅ—°îÅ±ïùÖç‰ÅÅÅ…ï±Öπçï}ëÖ—ïÅÄÅô•ï±êÅ—ºÅÖ∏ÅÖ’ë•—Öâ±îÅ…ï±ÖπçîÅ±•Õ–∏ààà(ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅ…Ö›}…ï±ÖπçïÃÄÙÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°…Ö›}…ï±ÖπçïÃ∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÅ…Ö›}…ï±ÖπçïÃÄÙÅmt(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅmt(ÄÄÄÅçÖπçï±±ïë}ëÖ—ïÃÄÙÅÕï–†§(ÄÄÄÅÕïïπ}•ëÃÄÙÅÕï–†§(ÄÄÄÅôΩ»Å…Ö‹Å•∏Å…Ö›}…ï±ÖπçïÃË(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°…Ö‹∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•—ï¥ÄÙÅë•ç–°…Ö‹§(ÄÄÄÄÄÄÄÅ…ï±Öπçï}•êÄÙÅÕ—»°•—ï¥πùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ï±Öπçï}•êÅΩ»Å…ï±Öπçï}•êÅ•∏ÅÕïïπ}•ëÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï±Öπçï}•êÄÙÅÕ—»°’’•êπ’’•ê–†§§(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâ•êâtÄÙÅ…ï±Öπçï}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅÕïïπ}•ëÃπÖëê°…ï±Öπçï}•ê§(ÄÄÄÄÄÄÄÅÕ—Ö—’ÃÄÙÅÕ—»°•—ï¥πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÕç°ïë’±ïêà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅÕ—Ö—’ÃÅπΩ–Å•∏ÅI5}I19}MQQUMLË(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’ÃÄÙÄâÕç°ïë’±ïêà(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâÕ—Ö—’ÃâtÄÙÅÕ—Ö—’Ã(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅÕ—Ö—’ÃÄÙÙÄâçÖπçï±±ïêàË(ÄÄÄÄÄÄÄÄÄÄÄÄåÅUπîÅÖππ’±Ö—•Ω∏ÅïÕ–Å’πîÅÕ’¡¡…ïÕÕ•Ω∏Å∑•—•ï»ÄËÅ±ïÃÅÖπç•ïππïÃÅ—…ÖçïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄåÅçÀß•ïÃÅ¡Ö»Å±îÅô±’‡Å°•Õ—Ω…•≈’îÅπîÅëΩ•Ÿïπ–Å¡±’ÃÉ©—…îÅï·¡Ωœ•ïÃÅπ§(ÄÄÄÄÄÄÄÄÄÄÄÄåÅçΩµ¡”•ïÃÅçΩµµîÅëïÃÅ…ï±ÖπçïÃ∏(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±ïë}ëÖ—îÄÙÅ}ç…µ}…ï±Öπçï}ëÖ—î°•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±ïë}ëÖ—îÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçÖπçï±±ïë}ëÖ—îË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖπçï±±ïë}ëÖ—ïÃπÖëê°çÖπçï±±ïë}ëÖ—î§(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ëÖ—îÄÙÅ}ç…µ}…ï±Öπçï}ëÖ—î°•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§§(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ëÖ—îÄÙÄàà(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§ÄÑÙÅÕç°ïë’±ïë}ëÖ—îË(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâÕç°ïë’±ïë}ëÖ—îâtÄÙÅÕç°ïë’±ïë}ëÖ—î(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÄâµΩ—•òàÅ•∏Å•—ï¥Ë(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ1ïÃÅëΩπª•ïÃÅ°•Õ—Ω…•≈’ïÃÅ…ïÕ—ïπ–Å±•Õ•â±ïÃÅ∑©µîÅÕ§Åï±±ïÃÅΩπ–É•”§(ÄÄÄÄÄÄÄÄÄÄÄÄåÉ•ç…•—ïÃÅÖŸÖπ–Å∞ùÖ©Ω’–ÅëîÅ±ÑÅŸÖ±•ëÖ—•Ω∏Åè—”§ÅA$∏(ÄÄÄÄÄÄÄÄÄÄÄÅµΩ—•òÄÙÄàÄàπ©Ω•∏°Õ—»°•—ï¥πùï–†âµΩ—•òà§ÅΩ»Äàà§πÕ¡±•–†§•l(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÈI5}I19}5=Q%}5a}19Q (ÄÄÄÄÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âµΩ—•òà§ÄÑÙÅµΩ—•òË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâµΩ—•òâtÄÙÅµΩ—•ò(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÄâç…ïÖ—ïë}Ö–àÅπΩ–Å•∏Å•—ï¥Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâç…ïÖ—ïë}Ö–âtÄÙÅçΩπ—Öç–πùï–†â’¡ëÖ—ïë}Ö–à§ÅΩ»ÅçΩπ—Öç–πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Å}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÄâç…ïÖ—ïë}â‰àÅπΩ–Å•∏Å•—ï¥Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâç…ïÖ—ïë}â‰âtÄÙÄã%≈’•¡îÅ%π”•ù…Ö±îà(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅπΩ…µÖ±•ÈïêπÖ¡¡ïπê°•—ï¥§((ÄÄÄÅ•òÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà§ÄÑÙÅπΩ…µÖ±•ÈïêË(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅçΩπ—Öç—lâ…ï±ÖπçïÃâtÄÙÅπΩ…µÖ±•Èïê((ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ±ïùÖçÂ}ëÖ—îÄÙÅ}ç…µ}…ï±Öπçï}ëÖ—î°çΩπ—Öç–πùï–†â…ï±Öπçï}ëÖ—îà§§(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÅ±ïùÖçÂ}ëÖ—îÄÙÄàà(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ…ï±Öπçï}ëÖ—îâtÄÙÄàà(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅ±ïùÖçÂ}ëÖ—îÅÖπêÅ±ïùÖçÂ}ëÖ—îÅπΩ–Å•∏ÅçÖπçï±±ïë}ëÖ—ïÃÅÖπêÅπΩ–ÅÖπ‰†(ÄÄÄÄÄÄÄÅ•—ï¥πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâÕç°ïë’±ïêàÅÖπêÅ•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§ÄÙÙÅ±ïùÖçÂ}ëÖ—î(ÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅπΩ…µÖ±•Èïê(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅπΩ…µÖ±•Èïêπ•πÕï…–†¿∞ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕç°ïë’±ïë}ëÖ—îàËÅ±ïùÖçÂ}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÄâÕç°ïë’±ïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅçΩπ—Öç–πùï–†â’¡ëÖ—ïë}Ö–à§ÅΩ»ÅçΩπ—Öç–πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Å}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}â‰àËÄâ!•Õ—Ω…•≈’îÅI4à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çîàËÄâ±ïùÖç‰à∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅÖç—•ŸîÄÙÅl(ÄÄÄÄÄÄÄÄ°•πëï‡∞Å•—ï¥§ÅôΩ»Å•πëï‡∞Å•—ï¥Å•∏Åïπ’µï…Ö—î°πΩ…µÖ±•Èïê§(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâÕç°ïë’±ïêà(ÄÄÄÅt(ÄÄÄÅ•òÅ±ï∏°Öç—•Ÿî§Ä¯ÄƒË(ÄÄÄÄÄÄÄÅëÖ—ïêÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÄ°•πëï‡∞Å•—ï¥§ÅôΩ»Å•πëï‡∞Å•—ï¥Å•∏ÅÖç—•Ÿî(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§(ÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÅ|∞ÅπïÖ…ïÕ–ÄÙÅµ•∏†(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—ïêÅΩ»ÅÖç—•Ÿî∞(ÄÄÄÄÄÄÄÄÄÄÄÅ≠ï‰ı±ÖµâëÑÅïπ—…‰ËÄ°ïπ—…Âl≈tπùï–†âÕç°ïë’±ïë}ëÖ—îà§ÅΩ»Äàà∞Åïπ—…Âl¡t§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅçΩµ¡±ï—ïë}Ö–ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅôΩ»Å|∞Å•—ï¥Å•∏ÅÖç—•ŸîË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥Å•ÃÅπïÖ…ïÕ–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÄâ…ï¡…Ωù…Öµµïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçΩµ¡±ï—ïë}Ö–àËÅçΩµ¡±ï—ïë}Ö–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçΩµ¡±ï—ïë}â‰àËÄâ’—ΩµÖ—•ÕÖ—•Ω∏ÅI4à∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅ•òÅ}ç…µ}…ïô…ïÕ°}…ï±Öπçï}ëÖ—î°çΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()ëïòÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÅÕç°ïë’±ïë}ëÖ—î∞Ä®∞ÅÕΩ’…çîÙâµÖπ’Ö∞à∞Å¡Ö…ïπ—}…ï±Öπçï}•êı9Ωπî∞(ÄÄÄÄÄÄÄÅÖç—Ω…}πÖµîı9Ωπî∞ÅµΩ—•òı9Ωπî§Ë(ÄÄÄÄààâMç°ïë’±îÅΩ»Å…ïµΩŸîÅΩ¡ï∏ÅÖç—•ΩπÃÅ›°•±îÅ¡…ïÕï…Ÿ•πúÅçΩµ¡±ï—ïêÅÖ——ïµ¡—Ã∏ààà(ÄÄÄÅÕç°ïë’±ïë}ëÖ—îÄÙÅ}ç…µ}…ï±Öπçï}ëÖ—î°Õç°ïë’±ïë}ëÖ—î§(ÄÄÄÅ•òÅπΩ–ÅÕç°ïë’±ïë}ëÖ—îË(ÄÄÄÄÄÄÄÄåÅ0ùÖππ’±Ö—•Ω∏Åï·¡±•ç•—îÅëΩ•–ÅÕ’¡¡…•µï»Å—Ω’—ïÃÅ±ïÃÅ…ï±ÖπçïÃÅ≈’§É•—Ö•ïπ–(ÄÄÄÄÄÄÄÄåÅïπçΩ…îÅΩ’Ÿï…—ïÃÅÖŸÖπ–Å≈’îÅ±îÅπΩ…µÖ±•Õï’»Å∏ù°•Õ—Ω…•ÕîÅ±ïÃÅëΩ’â±ΩπÃ∏(ÄÄÄÄÄÄÄÅ…Ö›}…ï±ÖπçïÃÄÙÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅπΩ–Å•Õ•πÕ—Öπçî°…Ö›}…ï±ÖπçïÃ∞Å±•Õ–§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°…Ö›}…ï±ÖπçïÃ∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö›}…ï±ÖπçïÃÄÙÅmt(ÄÄÄÄÄÄÄÅ…ïµÖ•π•πúÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏Å…Ö›}…ï±ÖπçïÃ(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Ä†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÕç°ïë’±ïêà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙÙÄâÕç°ïë’±ïêà(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÅ•òÅ…ïµÖ•π•πúÄÑÙÅ…Ö›}…ï±ÖπçïÃË(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ…ï±ÖπçïÃâtÄÙÅ…ïµÖ•π•πú(ÄÄÄÄÄÄÄÅ•òÅÕ—»°çΩπ—Öç–πùï–†â…ï±Öπçï}ëÖ—îà§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâ…ï±Öπçï}ëÖ—îâtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî∞Åç°Öπùïê((ÄÄÄÅπΩ…µÖ±•Èïë}µΩ—•òÄÙÅ9ΩπîÅ•òÅµΩ—•òÅ•ÃÅ9ΩπîÅï±ÕîÅ}ç…µ}…ï±Öπçï}µΩ—•ò°µΩ—•ò§(ÄÄÄÅç°ÖπùïêÄÙÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÖç—Ω…}πÖµîÄÙÅÖç—Ω…}πÖµîÅΩ»Ä°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†(ÄÄÄÄÄÄÄÄâπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà(ÄÄÄÄ§(ÄÄÄÅÖç—•ŸîÄÙÅl(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç—lâ…ï±ÖπçïÃât(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâÕç°ïë’±ïêà(ÄÄÄÅt((ÄÄÄÅÕÖµîÄÙÅπï·–†°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅÖç—•ŸîÅ•òÅ•—ï¥πùï–†âÕç°ïë’±ïë}ëÖ—îà§ÄÙÙÅÕç°ïë’±ïë}ëÖ—î§∞Å9Ωπî§(ÄÄÄÅôΩ»Å•—ï¥Å•∏ÅÖç—•ŸîË(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥Å•ÃÅÕÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•—ï¥π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÄâ…ï¡…Ωù…Öµµïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµ¡±ï—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµ¡±ï—ïë}â‰àËÅÖç—Ω…}πÖµî∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅ•òÅÕÖµîÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅÕÖµîÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕç°ïë’±ïë}ëÖ—îàËÅÕç°ïë’±ïë}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÄâÕç°ïë’±ïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}â‰àËÅÖç—Ω…}πÖµî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çîàËÅÕΩ’…çî∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ•òÅπΩ…µÖ±•Èïë}µΩ—•òË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖµïlâµΩ—•òâtÄÙÅπΩ…µÖ±•Èïë}µΩ—•ò(ÄÄÄÄÄÄÄÅ•òÅ¡Ö…ïπ—}…ï±Öπçï}•êË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖµïlâ¡Ö…ïπ—}…ï±Öπçï}•êâtÄÙÅ¡Ö…ïπ—}…ï±Öπçï}•ê(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ…ï±ÖπçïÃâtπ•πÕï…–†¿∞ÅÕÖµî§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅï±•òÅπΩ…µÖ±•Èïë}µΩ—•òÅ•ÃÅπΩ–Å9ΩπîÅÖπêÅÕÖµîπùï–†âµΩ—•òà∞Äàà§ÄÑÙÅπΩ…µÖ±•Èïë}µΩ—•òË(ÄÄÄÄÄÄÄÅ•òÅπΩ…µÖ±•Èïë}µΩ—•òË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖµïlâµΩ—•òâtÄÙÅπΩ…µÖ±•Èïë}µΩ—•ò(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖµîπ¡Ω¿†âµΩ—•òà∞Å9Ωπî§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅ•òÅ}ç…µ}…ïô…ïÕ°}…ï±Öπçï}ëÖ—î°çΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏ÅÕÖµî∞Åç°Öπùïê(()ëïòÅ}ç…µ}Õç°ïë’±ï}ô—}…ïô’ÕÖ±}…ï±Öπçî†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞Ä®∞ÅÕΩ’…çî∞ÅÕ—Öâ±ï}•êÙàà∞ÅπΩ‹ı9Ωπî§Ë(ÄÄÄÄààâA±Öπ•ô•îÅ±ÑÅ…ï±ÖπçîÅΩ’ŸÀ•îÅÕ’•ŸÖπ–Å’∏ÅπΩ’ŸïÖ‘Å…ïô’ÃÅ…ÖπçîÅQ…ÖŸÖ•∞∏ààà(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§Å•∏ÅÏâΩπŸï…—§à∞Äâ•Õ≈’Ö±•ôß§âÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî∞ÅÖ±Õî((ÄÄÄÅ¡Ö…•ÃÄÙÅ¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§(ÄÄÄÅç’……ïπ–ÄÙÅπΩ‹ÅΩ»ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Ö…•Ã§(ÄÄÄÅ•òÅç’……ïπ–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅç’……ïπ–ÄÙÅ¡Ö…•Ãπ±ΩçÖ±•Èî°ç’……ïπ–§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅç’……ïπ–ÄÙÅç’……ïπ–πÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÅÕç°ïë’±ïë}ëÖ‰ÄÙÅç’……ïπ–πëÖ—î†§(ÄÄÄÅ•òÅÕç°ïë’±ïë}ëÖ‰π›ïï≠ëÖ‰†§Ä¯ÙÄ‘Ë(ÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ëÖ‰Ä¨ÙÅëÖ—ï—•µîπ—•µïëï±—Ñ°ëÖÂÃÙ‹Ä¥ÅÕç°ïë’±ïë}ëÖ‰π›ïï≠ëÖ‰†§§(ÄÄÄÅÕç°ïë’±ïë}ëÖ—îÄÙÅÕç°ïë’±ïë}ëÖ‰π•ÕΩôΩ…µÖ–†§(ÄÄÄÅÖç—Ω…}πÖµîÄÙÄâ…ÖπçîÅQ…ÖŸÖ•∞àÅ•òÅÕΩ’…çîÄÙÙÄâ›ïëΩô}ô—}…ïô’ÕÖ∞àÅï±ÕîÅ9Ωπî(ÄÄÄÅ¡±Öππïê∞Åç°ÖπùïêÄÙÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ëÖ—î∞(ÄÄÄÄÄÄÄÅÕΩ’…çîıÕΩ’…çî∞(ÄÄÄÄÄÄÄÅÖç—Ω…}πÖµîıÖç—Ω…}πÖµî∞(ÄÄÄÄÄÄÄÅµΩ—•òÙâM’•—îÅ…ïô’ÃÅPà∞(ÄÄÄÄ§((ÄÄÄÅµï—ÖëÖ—ÑÄÙÅÏ(ÄÄÄÄÄÄÄÄâô’πë•πù}…ïô’ÕÖ±}ÕΩ’…çîàËÅÕΩ’…çî∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅÕ—Öâ±ï}•êË(ÄÄÄÄÄÄÄÅµï—ÖëÖ—ÖlâÕΩ’…çï}›ïëΩô}ôΩ±ëï…}•êâtÄÙÅÕ—»°Õ—Öâ±ï}•ê§(ÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏Åµï—ÖëÖ—Ñπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅ•òÅ¡±Öππïêπùï–°≠ï‰§ÄÑÙÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡±Öππïëm≠ïÂtÄÙÅŸÖ±’î(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÑÙÄâÅ…ï±Öπçï»àË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÄâÅ…ï±Öπçï»à(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅ•òÅç°ÖπùïêË(ÄÄÄÄÄÄÄÅë•Õ¡±ÖÂ}ëÖ—îÄÙÅÕç°ïë’±ïë}ëÖ‰πÕ—…ô—•µî†àïêºï¥ºïdà§(ÄÄÄÄÄÄÄÅëï—Ö•∞ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄâ•πÖπçïµïπ–Å…ÖπçîÅQ…ÖŸÖ•∞Å…ïô’œ§∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÅòâIï±ÖπçîÅ¡À•Ÿ’îÅ±îÅÌë•Õ¡±ÖÂ}ëÖ—ïÙ∏à(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅÕ—Öâ±ï}•êË(ÄÄÄÄÄÄÄÄÄÄÄÅëï—Ö•∞Ä¨ÙÅòàÅΩÕÕ•ï»Å]=ÄËÅÌÕ—Öâ±ï}•ëÙ∏à(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ï±Öπçîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâIï±ÖπçîÅ…ÖπçîÅQ…ÖŸÖ•∞Å¡±Öπ•ôß•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÅëï—Ö•∞∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖ’—°Ω…}πÖµîıÖç—Ω…}πÖµî∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å¡±Öππïê∞Åç°Öπùïê(()ëïòÅ}ç…µ}çΩµ¡±ï—ï}…ï±Öπçî°çΩπ—Öç–∞Å…ï±Öπçî∞ÅÕ—Ö—’Ã∞Ä®∞ÅπΩ—îÙàà§Ë(ÄÄÄÄààâ±ΩÕîÅÑÅÕç°ïë’±ïêÅôΩ±±Ω‹µ’¿Åï·Öç—±‰ÅΩπçîÅÖπêÅ…ïô…ïÕ†Å—°îÅπï·–ÅÖç—•Ω∏∏ààà(ÄÄÄÅ•òÅÕ—Ö—’ÃÅπΩ–Å•∏ÅÏâÖπÕ›ï…ïêà∞ÄâπΩ}ÖπÕ›ï»âÙË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âK•Õ’±—Ö–ÅëîÅ…ï±ÖπçîÅ•πŸÖ±•ëî∏à§(ÄÄÄÅ•òÅ…ï±Öπçîπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâÕç°ïë’±ïêàË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ…ï±Öπçîπ’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÅÕ—Ö—’Ã∞(ÄÄÄÄÄÄÄÄâçΩµ¡±ï—ïë}Ö–àËÅ}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÄâçΩµ¡±ï—ïë}â‰àËÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà§∞(ÄÄÄÅÙ§(ÄÄÄÅ•òÅπΩ—îË(ÄÄÄÄÄÄÄÅ…ï±ÖπçïlâπΩ—îâtÄÙÅπΩ—î(ÄÄÄÅ}ç…µ}…ïô…ïÕ°}…ï±Öπçï}ëÖ—î°çΩπ—Öç–§(ÄÄÄÅ…ï—’…∏ÅQ…’î(()ëïòÅ}ç…µ}ëï±ï—ï}…ï±Öπçî°çΩπ—Öç–∞Å…ï±Öπçî§Ë(ÄÄÄÄààâAï…µÖπïπ—±‰Å…ïµΩŸîÅΩπîÅ¡±ÖππïêÅôΩ±±Ω‹µ’¿Åô…Ω¥Å—°•ÃÅçΩπ—Öç–∏ààà(ÄÄÄÅ•òÅ…ï±Öπçîπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâÕç°ïë’±ïêàË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ…ï±ÖπçïÃÄÙÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°…ï±ÖπçïÃ∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅôΩ»Å•πëï‡∞Å•—ï¥Å•∏Åïπ’µï…Ö—î°…ï±ÖπçïÃ§Ë(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥Å•ÃÅ…ï±ÖπçîË(ÄÄÄÄÄÄÄÄÄÄÄÅëï∞Å…ï±ÖπçïÕm•πëï·t(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}…ïô…ïÕ°}…ï±Öπçï}ëÖ—î°çΩπ—Öç–§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅQ…’î(ÄÄÄÅ…ï—’…∏ÅÖ±Õî(()ëïòÅ}ç…µ}ç…ïÖ—ï}çΩπ—Öç—}ô…Ωµ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ–°ëÖ—Ñ∞Åô•ï±ëÃ∞ÅëïµÖπëï}•ê∞ÅëïŸ•Õ}•ê∞ÅëïŸ•Õ}’…∞§Ë(ÄÄÄÄààâÀ•îÅ±ÑÅô•ç°îÅI4ÅçΩµ¡≥°—îÅï–ÅÕΩ∏Å©Ω’…πÖ∞Å±Ω…ÃÅêù’πîÅëïµÖπëîÅêù•πôΩ…µÖ—•ΩπÃ∏ààà(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ•Õ}Õïç…ï—Ö…•Ö–ÄÙÅÕ—»°ô•ï±ëÃπùï–†âÕΩ’…çï}Õïç…ï—Ö…•Ö–à§ÅΩ»Äàà§ÄÙÙÄàƒà(ÄÄÄÅùΩΩù±ï}ÖëÕ}—…Öç≠•πúÄÙÄ†(ÄÄÄÄÄÄÄÅÌ≠ï‰ËÄààÅôΩ»Å≠ï‰Å•∏ÅI5}==1}M}QI-%9}-eMÙ(ÄÄÄÄÄÄÄÅ•òÅ•Õ}Õïç…ï—Ö…•Ö–(ÄÄÄÄÄÄÄÅï±ÕîÅ}ç…µ}ùΩΩù±ï}ÖëÕ}—…Öç≠•πù}ô•ï±ëÃ°ô•ï±ëÃ§(ÄÄÄÄ§(ÄÄÄÅùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï…}—Â¡î∞ÅùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»ÄÙÄ†(ÄÄÄÄÄÄÄÄ†àà∞Äàà§(ÄÄÄÄÄÄÄÅ•òÅ•Õ}Õïç…ï—Ö…•Ö–(ÄÄÄÄÄÄÄÅï±ÕîÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}ùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»°ô•ï±ëÃ§(ÄÄÄÄ§(ÄÄÄÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÅÕ—»°ô•ï±ëÃπùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÏ(ÄÄÄÄÄÄÄÄâMA}%9%PàËÄâM@à∞ÄâMA}YàËÄâM@à∞ÄâMM%@àËÄâMM%@Äƒà∞(ÄÄÄÄÄÄÄÄâYQàËÄâ°Ö’ôôï’»ÅYQà∞(ÄÄÄÅÙπùï–°ôΩ…µÖ—•Ωπ}≠ï‰∞ÅôΩ…µÖ—•Ωπ}≠ï‰§(ÄÄÄÅ±•ï‘ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ¡Ö…•ÃàËÄâAÖ…•Ãà∞ÄâçΩ—ï}ÖÈ’»àËÄâ——îÅìäeÈ’»à∞ÄâÖ’Ÿï…ùπîàËÄâ’Ÿï…ùπîà∞(ÄÄÄÅÙπùï–°Õ—»°ô•ï±ëÃπùï–†âçïπ—…îà§ÅΩ»Äàà§πÕ—…•¿†§∞ÅÕ—»°ô•ï±ëÃπùï–†âçïπ—…îà§ÅΩ»Äàà§πÕ—…•¿†§§(ÄÄÄÅçΩπ—Öç–ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°ô•ï±ëÃπùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°ô•ï±ëÃπùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅÕ—»°ô•ï±ëÃπùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâµÖ•∞àËÅÕ—»°ô•ï±ëÃπùï–†âµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅôΩ…µÖ—•Ω∏∞(ÄÄÄÄÄÄÄÄâ±•ï‘àËÅ±•ï‘∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’–àËÄâ9Ω’ŸïÖ’‡à∞(ÄÄÄÄÄÄÄÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏àËÅÕ—»°ô•ï±ëÃπùï–†âëÖ—ïÃà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâç¡òàËÅÕ—»°ô•ï±ëÃπùï–†âç¡ô}çΩπÕ’±—îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâç¡ô}µΩπ—Öπ–àËÅπΩ…µÖ±•Èï}ç¡ô}ÖµΩ’π–°ô•ï±ëÃπùï–†âç¡ô}µΩπ—Öπ–à§§∞(ÄÄÄÄÄÄÄÄâçÖ…—ï}¡…ºàËÅÕ—»°ô•ï±ëÃπùï–†âçπÖ¡Õ}Ω¨à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ—•—…ï}Õï©Ω’»àËÅÕ—»°ô•ï±ëÃπùï–†â—•—…ï}Õï©Ω’»à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâùÖ…ëï}Ÿ’îàËÅÕ—»°ô•ï±ëÃπùï–†âùÖ…ëï}Ÿ’îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâÖπ—ïçïëïπ—ÃàËÅÕ—»°ô•ï±ëÃπùï–†âùÖ…ëï}Ÿ’îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâëïÕ¡}—Â¡îàËÄâYàÅ•òÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÙÄâMA}YàÅï±ÕîÄ†â%9%Q%0àÅ•òÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÙÄâMA}%9%PàÅï±ÕîÄàà§∞(ÄÄÄÄÄÄÄÄâ•ëïπ—•—ï}ç…ïÖ—•Ω∏àËÅÕ—»°ô•ï±ëÃπùï–†â•ëïπ—•—ï}π’µï…•≈’îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄåÅ1îÅôΩ…µ’±Ö•…îÅ¡’â±•åÅçΩπô•…µîÅ’π•≈’ïµïπ–Å±ÑÅì•µÖ…ç°îÅëîÅçÀ•Ö—•Ω∏ÄÏÅÕΩ∏(ÄÄÄÄÄÄÄÄåÅôΩπç—•Ωππïµïπ–Åï–Å∞ù•πÕç…•¡—•Ω∏ÅPÅÕΩπ–ÅëïÃÅôÖ•—ÃÅë•Õ—•πç—ÃÉÄÅ€•…•ô•ï»∏(ÄÄÄÄÄÄÄÄâ•ëïπ—•—ï}Ω¨àËÄàà∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}ô–àËÅÕ—»°ô•ï±ëÃπùï–†âô…Öπçï}—…ÖŸÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–àËÄàà∞ÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–àËÄàà∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îàËÅÕ—»°ô•ï±ëÃπùï–†âô—}…ïô’Õ}Ω¨à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ…ïô’Õ}ô—}¡ï…ÕºàËÅÕ—»°ô•ï±ëÃπùï–†âô—}…ïô’Õ}Ω¨à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…ÕºàËÄàà∞(ÄÄÄÄÄÄÄÄâΩ…•ù•πîàËÅ}ç…µ}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ω…•ù•∏°ô•ï±ëÃ§∞(ÄÄÄÄÄÄÄÄâùç±•êàËÅùΩΩù±ï}ÖëÕ}—…Öç≠•πùlâùç±•êât∞(ÄÄÄÄÄÄÄÄâ›â…Ö•êàËÅùΩΩù±ï}ÖëÕ}—…Öç≠•πùlâ›â…Ö•êât∞(ÄÄÄÄÄÄÄÄâùâ…Ö•êàËÅùΩΩù±ï}ÖëÕ}—…Öç≠•πùlâùâ…Ö•êât∞(ÄÄÄÄÄÄÄÄâùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»àËÅùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï»∞(ÄÄÄÄÄÄÄÄâùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï…}—Â¡îàËÅùΩΩù±ï}ÖëÕ}•ëïπ—•ô•ï…}—Â¡î∞(ÄÄÄÄÄÄÄÄâ•πÕç…•—}ô–àËÄàà∞(ÄÄÄÄÄÄÄÄâçΩµµïπ—Ö•…ïÃàËÄàà∞(ÄÄÄÄÄÄÄÄâ…ï±Öπçï}ëÖ—îàËÄàà∞(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄâ’¡ëÖ—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄâÖç—•Ÿ•—•ïÃàËÅmt∞(ÄÄÄÄÄÄÄÄâÕΩ’…çîàËÄâëïµÖπëï}•πôΩÕ}ôΩ…µÖ—•ΩπÃà∞(ÄÄÄÄÄÄÄÄâÕΩ’…çï}ëïµÖπëï}•êàËÅëïµÖπëï}•ê∞(ÄÄÄÄÄÄÄÄâÕΩ’…çï}ëïŸ•Õ}•êàËÅëïŸ•Õ}•ê∞(ÄÄÄÄÄÄÄÄâôΩ…µ’±Ö•…îàËÅë•ç–°ô•ï±ëÃ§∞(ÄÄÄÅÙ(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Äâç…ïÖ—•Ω∏à∞ÄâΩ…µ’±Ö•…îÅëîÅëïµÖπëîÅìäe•πôΩ…µÖ—•ΩπÃÅçΩµ¡≥•”§à∞Äâ•ç°îÅçÀß•îÅÖ’—ΩµÖ—•≈’ïµïπ–ÅÖŸïåÅ±îÅÕ—Ö—’–Å9Ω’ŸïÖ‘à§(ÄÄÄÅ≈’Ω—ï}¡…ïŸ•ï‹ÄÙÄ†(ÄÄÄÄÄÄÄÅòúÒë•ÿÅÕ—Â±îÙâ¡Öëë•πúË»—¡‡à¯Ò†»˘ïŸ•ÃÅì•—Ö•±≥§Ω†»¯Ò¿˘ÌôΩ…µÖ—•Ω∏ÅΩ»ÄâΩ…µÖ—•Ω∏âÙΩ¿¯ú(ÄÄÄÄÄÄÄÅòúÒ¿¯ÒÑÅ°…ïòÙâÌëïŸ•Õ}’…±ÙàÅ—Ö…ùï–Ùâ}â±Öπ¨à˘=’Ÿ…•»Å±îÅëïŸ•ÃΩÑ¯Ω¿¯Ωë•ÿ¯ú(ÄÄÄÄ§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâëïŸ•Ãà∞ÄâïŸ•ÃÅì•—Ö•±≥§ÅçÀß§à∞ÅòâïŸ•ÃÅª
+¿ÅÌëïŸ•Õ}•ëÙà∞Å≈’Ω—ï}¡…ïŸ•ï‹§(ÄÄÄÅµÖ—ç°ïê∞Å|∞Å|ÄÙÅô•πë}Ω…}ç…ïÖ—ï}ç…µ}çΩπ—Öç–†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞Åô•ï±ëÃ∞ÄâëïµÖπëï}•πôΩÕ}ôΩ…µÖ—•ΩπÃà∞Å¡…Ω¡ΩÕïë}çΩπ—Öç–ıçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅï·—ï…πÖ±}•êıëïµÖπëï}•ê∞Åç…ïÖ—ï}Ωπ}Öµâ•ù’•—‰ıQ…’î∞(ÄÄÄÄ§(ÄÄÄÅ•òÅµÖ—ç°ïêË(ÄÄÄÄÄÄÄÅçΩµ¡±ï—ïë}Ö±…ïÖëÂ}…ïçΩ…ëïêÄÙÅµÖ—ç°ïêπùï–†âÕΩ’…çï}ëïµÖπëï}•êà§ÄÙÙÅëïµÖπëï}•ê(ÄÄÄÄÄÄÄÅÕÖôï}ô•ï±ëÃÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏à∞Äâ±•ï‘à∞ÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏à∞Äâç¡òà∞Äâç¡ô}µΩπ—Öπ–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ…—ï}¡…ºà∞Äâ—•—…ï}Õï©Ω’»à∞ÄâùÖ…ëï}Ÿ’îà∞ÄâÖπ—ïçïëïπ—Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëïÕ¡}—Â¡îà∞Äâ•ëïπ—•—ï}ç…ïÖ—•Ω∏à∞Äâô•πÖπçïµïπ—}ô–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïô’Õ}ô—}¡ï…Õºà∞Äâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…Õºà∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏ÅÕÖôï}ô•ï±ëÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}•Õ}ïµ¡—‰°µÖ—ç°ïêπùï–°≠ï‰§§ÅÖπêÅπΩ–Å}ç…µ}•Õ}ïµ¡—‰°çΩπ—Öç–πùï–°≠ï‰§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïëm≠ïÂtÄÙÅçΩπ—Öç—m≠ïÂt(ÄÄÄÄÄÄÄÅ¡…ïÕï…Ÿï}ÖâÖπëΩπïë}Ω…•ù•∏ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïêπùï–†âÕΩ’…çîà§ÄÙÙÅ	9=9}59}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅÖπ‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥πùï–†âÕΩ’…çîà§ÄÙÙÅ	9=9}59}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅµÖ—ç°ïêπùï–†âÕΩ’…çï}°•Õ—Ω…‰à∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅΩ…•ù•πÖ±}Ω…•ù•∏ÄÙÅµÖ—ç°ïêπùï–†âΩ…•ù•πîà§(ÄÄÄÄÄÄÄÅ}ç…µ}Ö¡¡±Â}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ö——…•â’—•Ω∏°µÖ—ç°ïê∞Åô•ï±ëÃ§(ÄÄÄÄÄÄÄÅ•òÅ¡…ïÕï…Ÿï}ÖâÖπëΩπïë}Ω…•ù•∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïëlâΩ…•ù•πîâtÄÙÅΩ…•ù•πÖ±}Ω…•ù•∏ÅΩ»Å	9=9}=I5}1	0(ÄÄÄÄÄÄÄÅ•òÅ¡…ïÕï…Ÿï}ÖâÖπëΩπïë}Ω…•ù•∏ÅÖπêÅπΩ–ÅçΩµ¡±ï—ïë}Ö±…ïÖëÂ}…ïçΩ…ëïêË(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïêπÕï—ëïôÖ’±–†âÖç—•Ÿ•—•ïÃà∞Åmt§πï·—ïπê†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩ¡‰πëïï¡çΩ¡‰°çΩπ—Öç–πùï–†âÖç—•Ÿ•—•ïÃà§ÅΩ»Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïëlâÕΩ’…çï}ëïµÖπëï}•êâtÄÙÅëïµÖπëï}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïëlâÕΩ’…çï}ëïŸ•Õ}•êâtÄÙÅëïŸ•Õ}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïëlâôΩ…µ’±Ö•…îâtÄÙÅë•ç–°ô•ï±ëÃ§(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïëlâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅ…ï—’…∏ÅµÖ—ç°ïê(()ëïòÅ}Õïç…ï—Ö…•Ö—}ÕïÕÕ•Ωπ}ëï—Ö•±Ã°ïπ—…‰§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅI4Åçïπ—…îÅçΩëîÅÖπêÅëÖ—îÅ±Öâï∞ÅÕï±ïç—ïêÅâ‰Å—°îÅÕïç…ï—Ö…‰∏ààà(ÄÄÄÅ¡…ïôï……ïë}ÕïÕÕ•Ω∏ÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÕïÕÕ•Ωπ}±Öâï∞ÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ÕïÕÕ•Ωπ}±Öâï∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ…Ö›}çïπ—…îÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}çïπ—…îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅçïπ—…ï}çΩëîÄÙÅ}πΩ…µÖ±•Èï}çïπ—…ï}çΩëî°…Ö›}çïπ—…î§Å•òÅ…Ö›}çïπ—…îÅï±ÕîÄàà((ÄÄÄÄåÅQ°îÅô’±∞∞ÅŸ•Õ•â±îÅç°Ω•çîÅ•ÃÅ—°îÅµΩÕ–Å…ï±•Öâ±îÅŸÖ±’îËÅ’π±•≠îÅëÖ—ÑÅÖ——…•â’—ïÃ∞(ÄÄÄÄåÅ•–Å•ÃÅÖ±ÕºÅ¡…ïÕïπ–Å•∏Å±ïùÖç‰ÅÕ’âµ•ÕÕ•ΩπÃ∏Å%–Å›•πÃÅ•òÅ—°îÅ—›ºÅŸÖ±’ïÃÅë•ÕÖù…ïî∏(ÄÄÄÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçîÄÙÅ’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9-à∞Å¡…ïôï……ïë}ÕïÕÕ•Ω∏§(ÄÄÄÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçîÄÙÄààπ©Ω•∏†(ÄÄÄÄÄÄÄÅç°Ö…Öç—ï»ÅôΩ»Åç°Ö…Öç—ï»Å•∏ÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçî(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å’π•çΩëïëÖ—ÑπçΩµâ•π•πú°ç°Ö…Öç—ï»§(ÄÄÄÄ§πçÖÕïôΩ±ê†§(ÄÄÄÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçîÄÙÅ…îπÕ’à°»âmyÑµË¿¥Ât¨à∞ÄàÄà∞ÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçî§πÕ—…•¿†§(ÄÄÄÅ•òÄâçΩ—îÅêÅÖÈ’»àÅ•∏ÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçîË(ÄÄÄÄÄÄÄÅçïπ—…ï}çΩëîÄÙÄâçΩ—ï}ÖÈ’»à(ÄÄÄÅï±•òÄâÖ’Ÿï…ùπîàÅ•∏ÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçîË(ÄÄÄÄÄÄÄÅçïπ—…ï}çΩëîÄÙÄâÖ’Ÿï…ùπîà(ÄÄÄÅï±•òÄâ¡Ö…•ÃàÅ•∏ÅπΩ…µÖ±•Èïë}¡…ïôï…ïπçîË(ÄÄÄÄÄÄÄÅçïπ—…ï}çΩëîÄÙÄâ¡Ö…•Ãà((ÄÄÄÅ•òÅπΩ–ÅÕïÕÕ•Ωπ}±Öâï∞ÅÖπêÄàÉäPÄàÅ•∏Å¡…ïôï……ïë}ÕïÕÕ•Ω∏Ë(ÄÄÄÄÄÄÄÅÕïÕÕ•Ωπ}±Öâï∞ÄÙÅ¡…ïôï……ïë}ÕïÕÕ•Ω∏πÕ¡±•–†àÉäPÄà∞Äƒ•l≈tπÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅÕïÕÕ•Ωπ}±Öâï∞Ë(ÄÄÄÄÄÄÄÅÕïÕÕ•Ωπ}±Öâï∞ÄÙÅ¡…ïôï……ïë}ÕïÕÕ•Ω∏(ÄÄÄÅ…ï—’…∏Åçïπ—…ï}çΩëî∞ÅÕïÕÕ•Ωπ}±Öâï∞(()ëïòÅ}ç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…}ŸÖ±’ïÃ°ïπ—…‰§Ë(ÄÄÄÄààâ5Ö¿ÅÖç—’Ö∞ÅÕ’âµ•——ïêÅÖπÕ›ï…Ã∞ÅÕ°Ö…ïêÅâ‰Å±•ŸîÅÕ’âµ•ÕÕ•ΩπÃÅÖπêÅ…ïçΩŸï…‰∏ààà(ÄÄÄÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÏ(ÄÄÄÄÄÄÄÄâMA}%9%PàËÄâM@à∞ÄâMA}YàËÄâM@à∞ÄâMM%@àËÄâMM%@Äƒà∞(ÄÄÄÄÄÄÄÄâYQàËÄâ°Ö’ôôï’»ÅYQà∞(ÄÄÄÅÙπùï–°ôΩ…µÖ—•Ωπ}≠ï‰∞ÅôΩ…µÖ—•Ωπ}≠ï‰§(ÄÄÄÅçïπ—…ï}çΩëî∞ÅÕïÕÕ•Ωπ}±Öâï∞ÄÙÅ}Õïç…ï—Ö…•Ö—}ÕïÕÕ•Ωπ}ëï—Ö•±Ã°ïπ—…‰§((ÄÄÄÅ±•ï‘ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ¡Ö…•ÃàËÄâAÖ…•Ãà∞(ÄÄÄÄÄÄÄÄâçΩ—ï}ÖÈ’»àËÄâ——îÅìäeÈ’»à∞(ÄÄÄÄÄÄÄÄâÖ’Ÿï…ùπîàËÄâ’Ÿï…ùπîà∞(ÄÄÄÅÙπùï–°çïπ—…ï}çΩëî∞Äàà§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅôΩ…µÖ—•Ω∏∞(ÄÄÄÄÄÄÄÄâ±•ï‘àËÅ±•ï‘∞(ÄÄÄÄÄÄÄÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏àËÅÕïÕÕ•Ωπ}±Öâï∞∞(ÄÄÄÄÄÄÄÄâç¡òàËÅÕ—»°ïπ—…‰πùï–†âç¡ô}çΩπÕ’±—îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâç¡ô}µΩπ—Öπ–àËÅπΩ…µÖ±•Èï}ç¡ô}ÖµΩ’π–°ïπ—…‰πùï–†âç¡ô}µΩπ—Öπ–à§§∞(ÄÄÄÄÄÄÄÄâçÖ…—ï}¡…ºàËÅÕ—»°ïπ—…‰πùï–†âçπÖ¡Õ}Ω¨à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ—•—…ï}Õï©Ω’»àËÅÕ—»°ïπ—…‰πùï–†â—•—…ï}Õï©Ω’»à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâùÖ…ëï}Ÿ’îàËÅÕ—»°ïπ—…‰πùï–†âùÖ…ëï}Ÿ’îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâÖπ—ïçïëïπ—ÃàËÅÕ—»°ïπ—…‰πùï–†âùÖ…ëï}Ÿ’îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâëïÕ¡}—Â¡îàËÄâYàÅ•òÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÙÄâMA}YàÅï±ÕîÄ†â%9%Q%0àÅ•òÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÙÄâMA}%9%PàÅï±ÕîÄàà§∞(ÄÄÄÄÄÄÄÄâ•ëïπ—•—ï}ç…ïÖ—•Ω∏àËÅÕ—»°ïπ—…‰πùï–†â•ëïπ—•—ï}π’µï…•≈’îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}ô–àËÅÕ—»°ïπ—…‰πùï–†âô…Öπçï}—…ÖŸÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îàËÅÕ—»°ïπ—…‰πùï–†âô—}…ïô’Õ}Ω¨à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ…ïô’Õ}ô—}¡ï…ÕºàËÅÕ—»°ïπ—…‰πùï–†âô—}…ïô’Õ}Ω¨à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…ÕºàËÅÕ—»°ïπ—…‰πùï–†âô•πÖπçïµïπ—}¡ï…Õºà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÅÙ(()ëïòÅ}ç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…Õ}µÖ—ç°}çΩπ—Öç–°çΩπ—Öç–∞Åïπ—…‰§Ë(ÄÄÄÄààâÅë’…Öâ±îÅ…ï≈’ïÕ–Å%ÅÖ±ΩπîÅçÖππΩ–ÅÖ’—°Ω…•ÈîÅô•±±•πúÅ≈’Ö±•ô•çÖ—•Ω∏Åô•ï±ëÃ∏ààà(ÄÄÄÅïµÖ•∞ÄÙÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°ïπ—…‰πùï–†âïµÖ•∞à§ÅΩ»Åïπ—…‰πùï–†âµÖ•∞à§§(ÄÄÄÅ¡°ΩπîÄÙÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°ïπ—…‰πùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÅÕ—Ω…ïë}ïµÖ•∞ÄÙÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§(ÄÄÄÅÕ—Ω…ïë}¡°ΩπîÄÙÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÅÖù…ïïÃÄÙÄ°ïµÖ•∞ÅÖπêÅïµÖ•∞ÄÙÙÅÕ—Ω…ïë}ïµÖ•∞§ÅΩ»Ä°¡°ΩπîÅÖπêÅ¡°ΩπîÄÙÙÅÕ—Ω…ïë}¡°Ωπî§(ÄÄÄÅë•ÕÖù…ïïÃÄÙÄ°ïµÖ•∞ÅÖπêÅÕ—Ω…ïë}ïµÖ•∞ÅÖπêÅïµÖ•∞ÄÑÙÅÕ—Ω…ïë}ïµÖ•∞§ÅΩ»Ä°¡°ΩπîÅÖπêÅÕ—Ω…ïë}¡°ΩπîÅÖπêÅ¡°ΩπîÄÑÙÅÕ—Ω…ïë}¡°Ωπî§(ÄÄÄÅ•òÅπΩ–ÅÖù…ïïÃÅΩ»Åë•ÕÖù…ïïÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅô•…Õ–ÄÙÅ}ç…µ}πΩ…µÖ±•Èï}πÖµî°ïπ—…‰πùï–†â¡…ïπΩ¥à§§(ÄÄÄÅÕ—Ω…ïë}ô•…Õ–ÄÙÅ}ç…µ}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§(ÄÄÄÅ•òÅô•…Õ–ÅÖπêÅÕ—Ω…ïë}ô•…Õ–ÅÖπêÅô•…Õ–ÄÑÙÅÕ—Ω…ïë}ô•…Õ–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÄåÅQ°îÅÕÖŸïêÅôΩ…¥Å’ÕïÃÅÑÅô’±∞ÅπÖµîÏÅ—°îÅ•πâΩ’πêÅÕπÖ¡Õ°Ω–Å’ÕïÃÅÑÅÕ’…πÖµî∏(ÄÄÄÅπÖµîÄÙÅ}ç…µ}πΩ…µÖ±•Èï}πÖµî°ïπ—…‰πùï–†âπΩµ}ôÖµ•±±îà§ÅΩ»Åïπ—…‰πùï–†âπΩ¥à§§(ÄÄÄÅÕ—Ω…ïë}πÖµîÄÙÅ}ç…µ}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§(ÄÄÄÅ•òÅπÖµîÅÖπêÅÕ—Ω…ïë}πÖµîÅÖπêÅπÖµîÅπΩ–Å•∏ÅÌÕ—Ω…ïë}πÖµî∞ÅÕ—Ω…ïë}ô•…Õ–Ä¨ÅÕ—Ω…ïë}πÖµïÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ…ï—’…∏ÅQ…’î(()ëïòÅ}ç…µ}…ïçΩŸï…}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…Ã°ëÖ—Ñ∞Ä®∞Åë…Â}…’∏ıQ…’î§Ë(ÄÄÄÅô…Ω¥Åç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…ÃÅ•µ¡Ω…–Å…ïçΩŸï…}ÖπÕ›ï…Ã(ÄÄÄÅ…ï—’…∏Å…ïçΩŸï…}ÖπÕ›ï…Ã†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞ÅµÖ¡}ÖπÕ›ï…Ãı}ç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…}ŸÖ±’ïÃ∞(ÄÄÄÄÄÄÄÅ•Õ}ïµ¡—‰ı}ç…µ}•Õ}ïµ¡—‰∞ÅπΩ…µÖ±•Èï}ÖµΩ’π–ıπΩ…µÖ±•Èï}ç¡ô}ÖµΩ’π–∞(ÄÄÄÄÄÄÄÅµÖ—ç°ïÕ}çΩπ—Öç–ı}ç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…Õ}µÖ—ç°}çΩπ—Öç–∞(ÄÄÄÄÄÄÄÅπΩ‹ı}ç…µ}πΩ‹†§∞Åë…Â}…’∏ıë…Â}…’∏∞(ÄÄÄÄ§(()ëïòÅ}ç…µ}…ïÕ—Ω…ï}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…Õ}Ωπçî†§Ë(ÄÄÄÄààâI’∏Å—°îÅπΩ∏µëïÕ—…’ç—•Ÿî∞ÅŸï…Õ•ΩπïêÅ…ïçΩŸï…‰ÅâïôΩ…îÅÕï…Ÿ•πúÅI4Å—…Öôô•å∏ààà(ÄÄÄÅô…Ω¥Åç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…ÃÅ•µ¡Ω…–ÅIA%I}-d∞ÅYIM%=8(ÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅ•òÄ°ëÖ—Ñπùï–°IA%I}-d§ÅΩ»ÅÌÙ§πùï–†âŸï…Õ•Ω∏à§ÄÙÙÅYIM%=8Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅëÖ—ÖmIA%I}-et(ÄÄÄÄÄÄÄÅ…ï¡Ω…–ÄÙÅ}ç…µ}…ïçΩŸï…}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…Ã°ëÖ—Ñ∞Åë…Â}…’∏ıÖ±Õî§(ÄÄÄÄÄÄÄÅ…ï¡Ω…—lâçΩµ¡±ï—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅëÖ—ÖmIA%I}-etÄÙÅ…ï¡Ω…–(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄâÕïç…ï—Ö…•Ö—}ÖπÕ›ï…Õ}…ï¡Ö•»ÅŸï…Õ•Ω∏ÙïÃÅçΩπ—Öç—ÃÙïÃÅô•ï±ëÃÙïÃÅçΩπô±•ç—ÃÙïÃÅÕ≠•¡¡ïêÙïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÅYIM%=8∞Å…ï¡Ω…—lâçΩπ—Öç—Ãât∞Å…ï¡Ω…—lâô•ï±ëÃât∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±ï∏°…ï¡Ω…—lâçΩπô±•ç—Ãât§∞Å±ï∏°…ï¡Ω…—lâÕ≠•¡¡ïêât§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ï¡Ω…–(()ëïòÅ}ç…µ}ç…ïÖ—ï}çΩπ—Öç—}ô…Ωµ}Õïç…ï—Ö…•Ö–†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞Åïπ—…‰∞Åç…µ}¡ÖÂ±ΩÖê∞Ä®∞Åç…ïÖ—ï}Ωπ}Öµâ•ù’•—‰ıÖ±Õî§Ë(ÄÄÄÄààâ…ïÖ—îÅΩ»ÅçΩµ¡±ï—îÅ—°îÅÕÖôï±‰ÅµÖ—ç°ïêÅI4Å…ïçΩ…êÅô…Ω¥ÅÑÅÕïç…ï—Ö…‰ÅçÖ±∞∏ààà(ÄÄÄÅô…Ω¥Åç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…ÃÅ•µ¡Ω…–ÅÖ¡¡±Â}ÖπÕ›ï…Ã(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅŸÖ±’ïÃÄÙÅ}ç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…}ŸÖ±’ïÃ°ïπ—…‰§(ÄÄÄÅçΩπ—Öç–ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°ç…µ}¡ÖÂ±ΩÖêπùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°ç…µ}¡ÖÂ±ΩÖêπùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅÕ—»°ïπ—…‰πùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâµÖ•∞àËÅÕ—»°ïπ—…‰πùï–†âïµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄ®©ŸÖ±’ïÃ∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’–àËÄâ9Ω’ŸïÖ’‡à∞(ÄÄÄÄÄÄÄÄâ•ëïπ—•—ï}Ω¨àËÄàà∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–àËÄàà∞ÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–àËÄàà∞(ÄÄÄÄÄÄÄÄâΩ…•ù•πîàËÄâMïçÀ•—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄâ•πÕç…•—}ô–àËÄàà∞(ÄÄÄÄÄÄÄÄâçΩµµïπ—Ö•…ïÃàËÅÕ—»°ïπ—…‰πùï–†âπΩ—ïÃà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ…ï±Öπçï}ëÖ—îàËÄàà∞(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄâ’¡ëÖ—ïë}Ö–àËÅπΩ‹∞(ÄÄÄÄÄÄÄÄâÖç—•Ÿ•—•ïÃàËÅmt∞(ÄÄÄÄÄÄÄÄâÕΩ’…çîàËÄâÖÕÕ•Õ—Öπ–µÕïç…ï—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄâÕΩ’…çï}Õïç…ï—Ö…•Ö—}•êàËÅïπ—…‰πùï–†â•êà§∞(ÄÄÄÄÄÄÄÄâôΩ…µ’±Ö•…îàËÅë•ç–°ïπ—…‰§∞(ÄÄÄÅÙ(ÄÄÄÅëï—Ö•∞ÄÙÄâ¡¡ï∞Åïπ…ïù•Õ—À§Å¡Ö»Å±îÅÕïçÀ•—Ö…•Ö–à(ÄÄÄÅ•òÅïπ—…‰πùï–†â…ëÿà§Ë(ÄÄÄÄÄÄÄÅëï—Ö•∞Ä¨ÙÅòàÉ
+‹ÅIïπëïËµŸΩ’ÃÄËÅÌïπ—…Âlù…ëÿùuÙà(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Äâç…ïÖ—•Ω∏à∞ÄâA•Õ—îÅçÀß•îÅëï¡’•ÃÅ±îÅÕïçÀ•—Ö…•Ö–à∞Åëï—Ö•∞§(ÄÄÄÅ…ïçΩπç•±•Ö—•Ωπ}¡ÖÂ±ΩÖêÄÙÅÏ®©ë•ç–°ïπ—…‰§∞ÄâµÖ•∞àËÅïπ—…‰πùï–†âïµÖ•∞à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÅç…µ}¡ÖÂ±ΩÖêπùï–†âπΩ¥à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅç…µ}¡ÖÂ±ΩÖêπùï–†â¡…ïπΩ¥à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±•ï‘àËÅŸÖ±’ïÕlâ±•ï‘ât∞ÄâôΩ…µÖ—•Ω∏àËÅŸÖ±’ïÕlâôΩ…µÖ—•Ω∏âuÙ(ÄÄÄÅµÖ—ç°ïê∞Å•πâΩ’πê∞Åç…ïÖ—ïêÄÙÅô•πë}Ω…}ç…ïÖ—ï}ç…µ}çΩπ—Öç–†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞Å…ïçΩπç•±•Ö—•Ωπ}¡ÖÂ±ΩÖê∞ÄâÖÕÕ•Õ—Öπ–µÕïç…ï—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÅ¡…Ω¡ΩÕïë}çΩπ—Öç–ıçΩπ—Öç–∞Åï·—ï…πÖ±}•êıïπ—…‰πùï–†â•êà§∞(ÄÄÄÄÄÄÄÅç…ïÖ—ï}Ωπ}Öµâ•ù’•—‰ıç…ïÖ—ï}Ωπ}Öµâ•ù’•—‰∞(ÄÄÄÄ§(ÄÄÄÅ•òÅ•πâΩ’πêπùï–†âÕ—Ö—’Ãà§ÄÙÙÄâ¡ïπë•πù}…ïŸ•ï‹àË(ÄÄÄÄÄÄÄÅïπ—…Âlâç…µ}çΩπ—Öç—}•êâtÄÙÄàà(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ•òÅµÖ—ç°ïêË(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åç…ïÖ—ïêÅÖπêÅπΩ–Å}ç…µ}Õïç…ï—Ö…•Ö—}ÖπÕ›ï…Õ}µÖ—ç°}çΩπ—Öç–°µÖ—ç°ïê∞Å…ïçΩπç•±•Ö—•Ωπ}¡ÖÂ±ΩÖê§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•πâΩ’πëlâÕ—Ö—’ÃâtÄÙÄâ¡ïπë•πù}…ïŸ•ï‹à(ÄÄÄÄÄÄÄÄÄÄÄÅ•πâΩ’πêπÕï—ëïôÖ’±–†â…ïŸ•ï›}…ïÖÕΩπÃà∞Åmt§πÖ¡¡ïπê†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâK•¡ΩπÕïÃÅë‘ÅÕïçÀ•—Ö…•Ö–ÅπΩ∏Å•π”•ùÀ•ïÃÄËÅ•ëïπ—•”§ÅΩ‘ÅçΩΩ…ëΩπª•ïÃÅë•ôõ•…ïπ—ïÃÅëîÅ±ÑÅô•ç°îÅ±ß•î∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âlâç…µ}çΩπ—Öç—}•êâtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÄÄÄÄÅïπ—…Âlâç…µ}çΩπ—Öç—}•êâtÄÙÅµÖ—ç°ïëlâ•êât(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åç…ïÖ—ïêË(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïÃ∞ÅçΩπô±•ç—ÃÄÙÅÖ¡¡±Â}ÖπÕ›ï…Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïê∞ÅŸÖ±’ïÃ∞Å•Õ}ïµ¡—‰ı}ç…µ}•Õ}ïµ¡—‰∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅπΩ…µÖ±•Èï}ÖµΩ’π–ıπΩ…µÖ±•Èï}ç¡ô}ÖµΩ’π–∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅë•ôôï…ïπçïÃÄÙÅ•πâΩ’πêπÕï—ëïôÖ’±–†âë•ôôï…ïπçïÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅπï›}çΩπô±•ç—ÃÄÙÅmô•ï±êÅôΩ»Åô•ï±êÅ•∏ÅçΩπô±•ç—ÃÅ•òÅô•ï±êÅπΩ–Å•∏Åë•ôôï…ïπçïÕt(ÄÄÄÄÄÄÄÄÄÄÄÅë•ôôï…ïπçïÃπï·—ïπê°πï›}çΩπô±•ç—Ã§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅç°ÖπùïÃÅΩ»Åπï›}çΩπô±•ç—ÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëï—Ö•∞ÄÙÄâ°Öµ¡ÃÅçΩµ¡≥•”•ÃÄËÄàÄ¨Äà∞Äàπ©Ω•∏°ç°ÖπùïÃ§Ä¨Äà∏àÅ•òÅç°ÖπùïÃÅï±ÕîÄàà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπï›}çΩπô±•ç—ÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëï—Ö•∞Ä¨ÙÄàÅ%πôΩ…µÖ—•ΩπÃÅë•ôõ•…ïπ—ïÃÅçΩπÕï…€•ïÃÅ¡Ω’»Å€•…•ô•çÖ—•Ω∏ÄËÄàÄ¨Äà∞Äàπ©Ω•∏°πï›}çΩπô±•ç—Ã§Ä¨Äà∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°µÖ—ç°ïê∞Äâ•πâΩ’πë}…ï≈’ïÕ–à∞ÄâK•¡ΩπÕïÃÅë‘ÅÕïçÀ•—Ö…•Ö–Å•π”•ùÀ•ïÃà∞Åëï—Ö•∞§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïëlâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅ…ï—’…∏ÅµÖ—ç°ïê(()ëïòÅ}ç…µ}ïπÕ’…ï}Õïç…ï—Ö…•Ö—}¡’â±•çÖ—•Ω∏°çΩπ—Öç–∞Åïπ—…‰§Ë(ÄÄÄÄààâA’â±•Õ†Å—°îÅÕïç…ï—Ö…‰ùÃÅçÖ±∞Åëï—Ö•±ÃÅΩπçîÅΩ∏Å—°îÅµÖ—ç°ïêÅI4ÅçΩπ—Öç–∏ààà(ÄÄÄÅ—ï·–ÄÙÅÕ—»°ïπ—…‰πùï–†âπΩ—ïÃà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ÅΩ»ÅπΩ–Å—ï·–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî((ÄÄÄÅ…ï≈’ïÕ—}•êÄÙÅÕ—»°ïπ—…‰πùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ¡’â±•çÖ—•Ωπ}•êÄÙÅÕ—»°ïπ—…‰πùï–†âç…µ}¡’â±•çÖ—•Ωπ}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ¡’â±•çÖ—•ΩπÃÄÙÅçΩπ—Öç–πÕï—ëïôÖ’±–†â¡’â±•çÖ—•ΩπÃà∞Åmt§(ÄÄÄÅ¡’â±•çÖ—•Ω∏ÄÙÅπï·–††(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏Å¡’â±•çÖ—•ΩπÃ(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§ÅÖπêÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄ°¡’â±•çÖ—•Ωπ}•êÅÖπêÅÕ—»°•—ï¥πùï–†â•êà§ÅΩ»Äàà§ÄÙÙÅ¡’â±•çÖ—•Ωπ}•ê§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Ä†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—}•ê(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†âÕΩ’…çï}Õïç…ï—Ö…•Ö—}•êà§ÅΩ»Äàà§ÄÙÙÅ…ï≈’ïÕ—}•ê(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄ§∞Å9Ωπî§((ÄÄÄÅ•òÅ¡’â±•çÖ—•Ω∏Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ¡’â±•çÖ—•Ω∏ÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—îàËÅÕ—»°ïπ—…‰πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Å}ç…µ}πΩ‹†§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï·—îàËÅ—ï·–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ’—°Ω»àËÄâMïçÀ•—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ’—°Ω…}ïµÖ•∞àËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ±•≠ïÃàËÅmt∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµµïπ—ÃàËÅmt∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çîàËÄâÖÕÕ•Õ—Öπ–µÕïç…ï—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çï}Õïç…ï—Ö…•Ö—}•êàËÅ…ï≈’ïÕ—}•ê∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ¡’â±•çÖ—•ΩπÃπ•πÕï…–†¿∞Å¡’â±•çÖ—•Ω∏§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ¡’â±•çÖ—•Ω∏π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï·—îàËÅ—ï·–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ’—°Ω»àËÄâMïçÀ•—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ’—°Ω…}ïµÖ•∞àËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çîàËÄâÖÕÕ•Õ—Öπ–µÕïç…ï—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çï}Õïç…ï—Ö…•Ö—}•êàËÅ…ï≈’ïÕ—}•ê∞(ÄÄÄÄÄÄÄÅÙ§((ÄÄÄÅïπ—…Âlâç…µ}¡’â±•çÖ—•Ωπ}•êâtÄÙÅ¡’â±•çÖ—•Ωπlâ•êât(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ…ï—’…∏Å¡’â±•çÖ—•Ω∏(()ëïòÅ}Õïç…ï—Ö…•Ö—}•πôΩ…µÖ—•Ωπ}—ïµ¡±Ö—î°ëÖ—Ñ∞Å≠•πê∞ÅôΩ…µÖ—•Ωπ}çΩëî§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅI4ÅÅÅ%πôΩ…µÖ—•ΩπÃÄÒôΩ…µÖ—•Ω∏˘ÅÄÅ—ïµ¡±Ö—îÅôΩ»ÅÑÅçÖ±∞∏ààà(ÄÄÄÅôΩ…µÖ—•Ωπ}çΩëîÄÙÅÕ—»°ôΩ…µÖ—•Ωπ}çΩëîÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅMIQI%Q}=I5Q%=9Lπùï–°ôΩ…µÖ—•Ωπ}çΩëî∞ÅÌÙ§(ÄÄÄÄåÅ1ïÃÅçΩëïÃÅ—ïç°π•≈’ïÃÅë‘ÅÕïçÀ•—Ö…•Ö–ÅπîÅÕΩπ–Å¡ÖÃÅ—Ω’©Ω’…ÃÅçï’‡Åïµ¡±ΩÁ•Ã(ÄÄÄÄåÅëÖπÃÅ±ÑÅâ•â±•Ω—£°≈’îÅI4Ä°¡Ö»Åï·ïµ¡±îÅMA}%9%PÅï–ÅMA}YÅ‰ÅÕΩπ–(ÄÄÄÄåÅü•ª•…Ö±ïµïπ–Å…ïù…Ω’√•ÃÅÕΩ’ÃÉ
+¨Å%πôΩ…µÖ—•ΩπÃÅM@É
+Ï§∏(ÄÄÄÅÖ±•ÖÕïÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâMM%@àËÅlâMM%@Äƒât∞(ÄÄÄÄÄÄÄÄâMA}%9%PàËÅlâM@Å•π•—•Ö∞à∞ÄâM@ât∞(ÄÄÄÄÄÄÄÄâMA}YàËÅlâYÅM@à∞ÄâM@ÅYà∞ÄâM@ât∞(ÄÄÄÄÄÄÄÄâYQàËÅlâ°Ö’ôôï’»ÅYQât∞(ÄÄÄÅÙπùï–°ôΩ…µÖ—•Ωπ}çΩëî∞Åmt§(ÄÄÄÅπÖµïÃÄÙÅl(ÄÄÄÄÄÄÄÅòâ•πôΩ…µÖ—•ΩπÃÅÌôΩ…µÖ—•Ωπ}çΩëïÙà∞(ÄÄÄÄÄÄÄÅòâ•πôΩ…µÖ—•ΩπÃÅÌôΩ…µÖ—•Ω∏πùï–†ùÕ°Ω…–ú∞Äúú•Ùà∞(ÄÄÄÄÄÄÄÅòâ•πôΩ…µÖ—•ΩπÃÅÌôΩ…µÖ—•Ω∏πùï–†ù±Öâï∞ú∞Äúú•Ùà∞(ÄÄÄÄÄÄÄÄ®°òâ•πôΩ…µÖ—•ΩπÃÅÌÖ±•ÖÕÙàÅôΩ»ÅÖ±•ÖÃÅ•∏ÅÖ±•ÖÕïÃ§∞(ÄÄÄÅt((ÄÄÄÅëïòÅπΩ…µÖ±•Õî°ŸÖ±’î§Ë(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅ’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9-à∞ÅÕ—»°ŸÖ±’îÅΩ»Äàà§§(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÄààπ©Ω•∏°ç°Ö»ÅôΩ»Åç°Ö»Å•∏ÅŸÖ±’îÅ•òÅπΩ–Å’π•çΩëïëÖ—ÑπçΩµâ•π•πú°ç°Ö»§§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…îπÕ’à°»âmyÑµË¿¥Ât¨à∞ÄàÄà∞ÅŸÖ±’îπ±Ω›ï»†§§πÕ—…•¿†§((ÄÄÄÅï·¡ïç—ïêÄÙÅ±•Õ–°ë•ç–πô…Ωµ≠ïÂÃ°πΩ…µÖ±•Õî°πÖµî§ÅôΩ»ÅπÖµîÅ•∏ÅπÖµïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ…µÖ±•Õî°πÖµî§ÄÑÙÄâ•πôΩ…µÖ—•ΩπÃà§§(ÄÄÄÅ—ïµ¡±Ö—ïÃÄÙÅëÖ—Ñπùï–°òâç…µ}Ì≠•πëı}—ïµ¡±Ö—ïÃà∞Åmt§(ÄÄÄÅ…ï—’…∏Åπï·–†°—ïµ¡±Ö—îÅôΩ»ÅπÖµîÅ•∏Åï·¡ïç—ïêÅôΩ»Å—ïµ¡±Ö—îÅ•∏Å—ïµ¡±Ö—ïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ…µÖ±•Õî°—ïµ¡±Ö—îπùï–†âπΩ¥à§§ÄÙÙÅπÖµî§∞Å9Ωπî§(()ëïòÅ}ç…µ}πï·—}¡°Ωπï}Ö¡¡Ω•π—µïπ–°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–ı9Ωπî∞ÅπΩ‹ı9Ωπî§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅπï·–ÅçÖç°ïêÅ¡°ΩπîÅÖ¡¡Ω•π—µïπ–ÅµÖ—ç°•πúÅÑÅÕïç…ï—Ö…•Ö–ÅçÖ±∞∏ààà(ÄÄÄÅçΩπ—Öç–ÄÙÅçΩπ—Öç–ÅΩ»ÅÌÙ(ÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅïµÖ•±ÃÄÙÅÏ(ÄÄÄÄÄÄÄÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°ŸÖ±’î§(ÄÄÄÄÄÄÄÅôΩ»ÅŸÖ±’îÅ•∏Ä°çΩπ—Öç–πùï–†âµÖ•∞à§∞Åïπ—…‰πùï–†âïµÖ•∞à§§(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°ŸÖ±’î§(ÄÄÄÅÙ(ÄÄÄÅ¡°ΩπïÃÄÙÅÏ(ÄÄÄÄÄÄÄÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°ŸÖ±’î§(ÄÄÄÄÄÄÄÅôΩ»ÅŸÖ±’îÅ•∏Ä°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§∞Åïπ—…‰πùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°ŸÖ±’î§(ÄÄÄÅÙ(ÄÄÄÅ¡Ö…•ÃÄÙÅ¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§(ÄÄÄÅπΩ‹ÄÙÅπΩ‹ÅΩ»ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Ö…•Ã§(ÄÄÄÅ•òÅπΩ‹π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅπΩ‹ÄÙÅ¡Ö…•Ãπ±ΩçÖ±•Èî°πΩ‹§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅπΩ‹ÄÙÅπΩ‹πÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÅµÖ—ç°ïÃÄÙÅmt(ÄÄÄÅôΩ»ÅÖ¡¡Ω•π—µïπ–Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅÕÖµï}çΩπ—Öç–ÄÙÅâΩΩ∞°çΩπ—Öç—}•ê§ÅÖπêÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§ÅΩ»Äàà§ÄÙÙÅçΩπ—Öç—}•ê(ÄÄÄÄÄÄÄÅÕÖµï}ïµÖ•∞ÄÙÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°Ö¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}ïµÖ•∞à§§Å•∏ÅïµÖ•±Ã(ÄÄÄÄÄÄÄÅÕÖµï}¡°ΩπîÄÙÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°Ö¡¡Ω•π—µïπ–πùï–†â•πŸ•—ïï}¡°Ωπîà§§Å•∏Å¡°ΩπïÃ(ÄÄÄÄÄÄÄÅ•òÅπΩ–Ä°ÕÖµï}çΩπ—Öç–ÅΩ»ÅÕÖµï}ïµÖ•∞ÅΩ»ÅÕÖµï}¡°Ωπî§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÖç—•Ÿîà§πçÖÕïôΩ±ê†§Å•∏ÅÏâçÖπçï±ïêà∞ÄâçÖπçï±±ïêâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ±ΩçÖ—•Ω∏ÄÙÅÖ¡¡Ω•π—µïπ–πùï–†â±ΩçÖ—•Ω∏à§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°±ΩçÖ—•Ω∏∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ±ΩçÖ—•Ωπ}≠•πêÄÙÅÕ—»°±ΩçÖ—•Ω∏πùï–†â≠•πêà§ÅΩ»Å±ΩçÖ—•Ω∏πùï–†â—Â¡îà§ÅΩ»Äàà§πçÖÕïôΩ±ê†§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ±ΩçÖ—•Ωπ}≠•πêÄÙÅÕ—»°±ΩçÖ—•Ω∏§πçÖÕïôΩ±ê†§(ÄÄÄÄÄÄÄÄåÅUÕîÅ—°îÅçΩµµΩ∏ÅÕ—ï¥ÅÖÃÅÖ±ïπë±‰ÅïŸïπ–ÅπÖµïÃÅ’Õ’Ö±±‰ÅçΩπ—Ö•∏(ÄÄÄÄÄÄÄÄåÄâ”•≥•¡°Ωπ•≈’îàÅ…Ö—°ï»Å—°Ö∏Å—°îÅπΩ’∏Äâ”•≥•¡°Ωπîà∏ÄÅQ°îÅ¡…ïŸ•Ω’Ã(ÄÄÄÄÄÄÄÄåÅï·Öç–Å—ï…µÃÅë•êÅπΩ–ÅµÖ—ç†ÄâIXÅ”•≥•¡°Ωπ•≈’îÄ∏∏∏àÅ›°ï∏Å—°îÅïŸïπ–Å°Öê(ÄÄÄÄÄÄÄÄåÅπºÅï·¡±•ç•–Å±ΩçÖ—•Ω∏∏(ÄÄÄÄÄÄÄÅ¡°Ωπï}—ï…µÃÄÙÄ†â¡°Ωπîà∞ÄâçÖ±∞à∞ÄâÖ¡¡ï∞à∞Äâ”•≥•¡°Ωπ§à∞Äâ—ï±ï¡°Ωπ§à§(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}πÖµîÄÙÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âπÖµîà§ÅΩ»Äàà§πçÖÕïôΩ±ê†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÖπ‰°—ï…¥Å•∏Å±ΩçÖ—•Ωπ}≠•πêÅΩ»Å—ï…¥Å•∏ÅÖ¡¡Ω•π—µïπ—}πÖµîÅôΩ»Å—ï…¥Å•∏Å¡°Ωπï}—ï…µÃ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà§π…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—Ö…–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…–ÄÙÅ¡Â—ËπUQπ±ΩçÖ±•Èî°Õ—Ö…–§(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…–ÄÙÅÕ—Ö…–πÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅÕ—Ö…–ÄÙÅπΩ‹Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅµÖ—ç°ïÃπÖ¡¡ïπê†°Õ—Ö…–∞ÅÖ¡¡Ω•π—µïπ–§§((ÄÄÄÅ•òÅπΩ–ÅµÖ—ç°ïÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ…ï—’…∏Åµ•∏°µÖ—ç°ïÃ∞Å≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅ•—ïµl¡t§(()ëïòÅ}Õïç…ï—Ö…•Ö—}°Âë…Ö—ï}Ö¡¡Ω•π—µïπ—}ô…Ωµ}ç…¥°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâΩ¡‰Å—°îÅπï·–Å¡°ΩπîÅÖ¡¡Ω•π—µïπ–Åô…Ω¥Å—°îÅI4Å•π—ºÅ—°îÅôΩ±±Ω‹µ’¿ÅôÖç—Ã∏((ÄÄÄÅÖ±ïπë±‰ÅçÖ∏Å…ïçï•ŸîÅ—°îÅâΩΩ≠•πúÅâï—›ïï∏Å—°îÅô•…Õ–ÅÕïç…ï—Ö…•Ö–ÅôΩ…¥ÅÖπêÅ—°î(ÄÄÄÅô•πÖ∞ÅI4ÅÕ’âµ•ÕÕ•Ω∏∏ÄÅΩπÕï≈’ïπ—±‰Å—°îÅâ…Ω›Õï»ùÃÅ¡ÖÂ±ΩÖêÅ•ÃÅπΩ–Å—°îÅÕΩ’…çî(ÄÄÄÅΩòÅ—…’—†Å°ï…îËÅ—°îÅÖ¡¡Ω•π—µïπ–ÅçÖç°ïêÅΩ∏Å—°îÅI4ÅçΩπ—Öç–Å•ÃÅ±ΩΩ≠ïêÅ’¿ÅÖùÖ•∏(ÄÄÄÅ•µµïë•Ö—ï±‰ÅâïôΩ…îÅ—°îÅÕ’µµÖ…‰ÅîµµÖ•∞Å•ÃÅùïπï…Ö—ïê∏(ÄÄÄÄààà(ÄÄÄÅµÖ—ç†ÄÙÅ}ç…µ}πï·—}¡°Ωπï}Ö¡¡Ω•π—µïπ–°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§(ÄÄÄÅ•òÅπΩ–ÅµÖ—ç†Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅÕ—Ö…–∞ÅÖ¡¡Ω•π—µïπ–ÄÙÅµÖ—ç†(ÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅïπ—…‰π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄâ…ëÿàËÅ}ç…µ}çÖ±ïπë±Â}ëÖ—ï—•µï}±Öâï∞°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§§∞(ÄÄÄÄÄÄÄÄâ…ëŸ}Õ—Ö—’ÃàËÄâÕç°ïë’±ïêà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}ëÖ—îàËÅÕ—Ö…–πÕ—…ô—•µî†àïêºï¥ºïdà§∞(ÄÄÄÄÄÄÄÄâ…ëŸ}—•µîàËÅÕ—Ö…–πÕ—…ô—•µî†àï Ëï4à§∞(ÄÄÄÄÄÄÄÄâ…ëŸ}µΩëîàËÄâ¡¡ï∞Å”•≥•¡°Ωπ•≈’îà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}’…∞àËÄàà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}πÖµîàËÅÖ¡¡Ω•π—µïπ–πùï–†âπÖµîà§ÅΩ»ÄâIïπëïËµŸΩ’ÃÅ”•≥•¡°Ωπ•≈’îà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}°ΩÕ—}πÖµîàËÅÖ¡¡Ω•π—µïπ–πùï–†â°ΩÕ—}πÖµîà§ÅΩ»Äàà∞(ÄÄÄÅÙ§(ÄÄÄÄåÅIï¡Ö•»ÅÑÅÕ—Ö±îΩ’πÖÕÕ•ùπïêÅÖ±ïπë±‰Å±•π¨ÅÕºÅ—°îÅÖ¡¡Ω•π—µïπ–Å•ÃÅŸ•Õ•â±îÅΩ∏(ÄÄÄÄåÅ—°îÅI4Å…ïçΩ…êÅ—°Ö–Å›ÖÃÅ©’Õ–Åç…ïÖ—ïêÅô…Ω¥Å—°îÅÕïç…ï—Ö…•Ö–ÅÕ’âµ•ÕÕ•Ω∏∏(ÄÄÄÅ±•π≠ïë}çΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅÖ¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§§(ÄÄÄÅÖ±…ïÖëÂ}±•π≠ïêÄÙÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§ÅΩ»Äàà§ÄÙÙÅçΩπ—Öç—}•ê(ÄÄÄÅ•òÅçΩπ—Öç—}•êÅÖπêÄ°πΩ–Å±•π≠ïë}çΩπ—Öç–ÅΩ»ÅÖ±…ïÖëÂ}±•π≠ïê§Ë(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâçΩπ—Öç—}•êâtÄÙÅçΩπ—Öç—}•ê(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅçΩπ—Öç—lâôΩ…µ’±Ö•…îâtÄÙÅÏ®®°çΩπ—Öç–πùï–†âôΩ…µ’±Ö•…îà§ÅΩ»ÅÌÙ§∞Ä®©ïπ—…ÂÙ(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ…ï—’…∏ÅÖ¡¡Ω•π—µïπ–(()ëïòÅ}Õïç…ï—Ö…•Ö—}…ïô…ïÕ°}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ã°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâIïô…ïÕ†Å—°îÅI4Å…ïçΩ…êÅô…Ω¥ÅÖ±ïπë±‰ÅâïôΩ…îÅâ’•±ë•πúÅ—°îÅÕ’µµÖ…‰ÅïµÖ•∞∏((ÄÄÄÅQ°îÅ›ïâ°ΩΩ¨ÅçÖç°îÅ•ÃÅπΩ…µÖ±±‰Åç’……ïπ–∞Åâ’–ÅÑÅâΩΩ≠•πúÅµÖëîÅ›°•±îÅ—°î(ÄÄÄÅÕïç…ï—Ö…‰Å•ÃÅçΩµ¡±ï—•πúÅ—°îÅôΩ…¥ÅçÖ∏ÅÖ……•ŸîÅÖô—ï»Å—°îÅô•πÖ∞Åâ’——Ω∏Å•Ã(ÄÄÄÅç±•ç≠ïê∏ÄÅÅ—Ö…ùï—ïêÅ±ΩΩ≠’¿Åç±ΩÕïÃÅ—°Ö–Å…Öçî∏ÄÅÖ±ïπë±‰ÅôÖ•±’…ïÃÅ…ïµÖ•∏(ÄÄÄÅπΩ∏µâ±Ωç≠•πúËÅ—°îÅÖ±…ïÖë‰ÅçÖç°ïêÅÖ¡¡Ω•π—µïπ—ÃÅÖ…îÅÕ—•±∞Å’ÕïêÅâ‰Å—°îÅπï·–(ÄÄÄÅÕ—ï¿ÅÖπêÅ—°îÅëï±•Ÿï…‰ÅçÖ∏ÅçΩπ—•π’î∏(ÄÄÄÄààà(ÄÄÄÅÕ—Ö—îÄÙÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±‰à§ÅΩ»ÅÌÙ(ÄÄÄÅçÖπ}±ΩΩ≠’¿ÄÙÅâΩΩ∞†(ÄÄÄÄÄÄÄÅ}çÖ±ïπë±Â}—Ω≠ï∏†§(ÄÄÄÄÄÄÄÅÖπêÅÕ—Ö—îπùï–†â’Õï»à§(ÄÄÄÄÄÄÄÅÖπêÅÕ—Ö—îπùï–†âΩ…ùÖπ•ÈÖ—•Ω∏à§(ÄÄÄÄÄÄÄÅÖπêÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§ÅΩ»Åïπ—…‰πùï–†âïµÖ•∞à§§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§ÅΩ»Åïπ—…‰πùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–ÅçÖπ}±ΩΩ≠’¿Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Ä¿((ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëÃ∞Å}±ΩΩ≠’¿ÄÙÅ}ç…µ}çÖ±ïπë±Â}ôï—ç°}çΩπ—Öç—}Ö¡¡Ω•π—µïπ—Ã°ëÖ—Ñ∞ÅçΩπ—Öç–§(ÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±ïπë±Â}±ΩΩ≠’¡}›Ö…π•πúâtÄÙÅÕ—»°ï·å§(ÄÄÄÄÄÄÄÅ…ï—’…∏Ä¿((ÄÄÄÅôΩ»Å¡ÖÂ±ΩÖêÅ•∏Å¡ÖÂ±ΩÖëÃË(ÄÄÄÄÄÄÄÅ}ç…µ}’¡Õï…—}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ–†(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâÕïç…ï—Ö…•Ö—}—Ö…ùï—ïë}±ΩΩ≠’¿à∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•êıçΩπ—Öç–πùï–†â•êà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïçΩ…ë}Öç—•Ÿ•—‰ıÖ±Õî∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ}ç…µ}çÖ±ïπë±Â}…ï±•π≠}Ö¡¡Ω•π—µïπ—Ã°ëÖ—Ñ∞ÅçΩπ—Öç–§(ÄÄÄÅ}ç…µ}ÕÂπç}çΩπ—Öç—}çÖ±ïπë±Â}Õ—Ö—’Ã°ëÖ—Ñ∞ÅçΩπ—Öç–§(ÄÄÄÅ…ï—’…∏Å±ï∏°¡ÖÂ±ΩÖëÃ§(()ëïòÅ}µÖÕ≠}ëï±•Ÿï…Â}…ïç•¡•ïπ–°ŸÖ±’î∞Å≠•πê§Ë(ÄÄÄÅŸÖ±’îÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅÖπêÄâ àÅ•∏ÅŸÖ±’îË(ÄÄÄÄÄÄÄÅ±ΩçÖ∞∞ÅëΩµÖ•∏ÄÙÅŸÖ±’îπÕ¡±•–†â à∞Äƒ§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅòâÌ±ΩçÖ±lË…uÙ®®©ÌëΩµÖ•πÙà(ÄÄÄÅë•ù•—ÃÄÙÅ…îπÕ’à°»âqà∞Äàà∞ÅŸÖ±’î§(ÄÄÄÅ…ï—’…∏Åòà®®©Ìë•ù•—Õl¥–ÈuÙàÅ•òÅë•ù•—ÃÅï±ÕîÄâÖâÕïπ–à(()ëïòÅ}Õïç…ï—Ö…•Ö—}Ö’—ΩµÖ—•ç}•πôΩ…µÖ—•Ωπ}—ïµ¡±Ö—î°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâ	’•±êÅ—°îÅï·•Õ—•πúÅÖ’—ΩµÖ—•åÅôΩ…¥ÅîµµÖ•∞ÅôΩ»ÅÑÅÕïç…ï—Ö…•Ö–ÅçÖ±∞∏ààà(ÄÄÄÅôΩ…µÖ—•Ωπ}çΩëîÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ¡…ïπΩ¥ÄÙÅ}Õïç…ï—Ö…•Ö—}ë•Õ¡±ÖÂ}ô•…Õ—}πÖµî†(ÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†â¡…ïπΩ¥à§ÅΩ»Åïπ—…‰πùï–†â¡…ïπΩ¥à§(ÄÄÄÄÄÄÄÅΩ»ÅÕ—»°ïπ—…‰πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ¡±•–†àÄà•l¡t(ÄÄÄÄ§(ÄÄÄÅëÖ—ïÃÄÙÅÕ—»†(ÄÄÄÄÄÄÄÅïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ÕïÕÕ•Ωπ}±Öâï∞à§(ÄÄÄÄÄÄÄÅΩ»Åïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîà§(ÄÄÄÄÄÄÄÅΩ»Äàà(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅçïπ—…ï}çΩëî∞Å|ÄÙÅ}Õïç…ï—Ö…•Ö—}ÕïÕÕ•Ωπ}ëï—Ö•±Ã°ïπ—…‰§(ÄÄÄÅëïŸ•Õ}’…∞ÄÙÅÕ—»°ïπ—…‰πùï–†âëïŸ•Õ}’…∞à§ÅΩ»ÅçΩπ—Öç–πùï–†âëïŸ•Õ}’…∞à§ÅΩ»Äàà§πÕ—…•¿†§((ÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÄÙÙÄâMA}YàË(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÄâÖ’—ΩµÖ—•åµëïÕ¿µŸÖîà(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÄã¬~NtÅYÉäLÅ•…•ùïÖπ–Åìäeπ—…ï¡…•ÕîÅëîÅO•ç’…•”§ÅA…•€•îÄ°I9@–¿Ã‡‘§à(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅâ’•±ë}ŸÖï}ëïÕ¡}ïµÖ•±}°—µ∞°¡…ïπΩ¥∞ÅëïŸ•Õ}’…∞§(ÄÄÄÅï±•òÅôΩ…µÖ—•Ωπ}çΩëîÄÙÙÄâÕ@àË(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÄâÖ’—ΩµÖ—•åµÑÕ¿à(ÄÄÄÄÄÄÄÅÕ’â©ïç–∞Å|∞ÅâΩë‰ÄÙÅ}ÑÕ¡}•πôΩ…µÖ—•Ωπ}ïµÖ•±}çΩπ—ïπ–†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïπΩ¥∞ÅëÖ—ïÃ∞Åçïπ—…ï}çΩëî∞ÅëïŸ•Õ}’…∞∞ÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅï±•òÅôΩ…µÖ—•Ωπ}çΩëîÄÙÙÄâALàË(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÄâÖ’—ΩµÖ—•åµÖ¡Ãà(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÄã¬~Fªä7äfæ‚<ÅΩ…µÖ—•Ω∏Åùïπ–ÅëîÅO•ç’…•”§ÅA…•€•îÄ°AL§à(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅâ’•±ë}Ö¡Õ}ïµÖ•±}°—µ∞°¡…ïπΩ¥∞ÅëÖ—ïÃ∞Åçïπ—…ï}çΩëî∞ÅëïŸ•Õ}’…∞§(ÄÄÄÅï±•òÅôΩ…µÖ—•Ωπ}çΩëîÄÙÙÄâMM%@àË(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÄâÖ’—ΩµÖ—•åµÕÕ•Ö¿ƒà(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÄã¬~RîÅΩ…µÖ—•Ω∏Åùïπ–ÅëîÅœ•ç’…•”§Å•πçïπë•îÅMM%@Äƒà(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅâ’•±ë}ÕÕ•Ö¿≈}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïπΩ¥∞ÅëÖ—ïÃ∞Åçïπ—…ï}çΩëî∞ÅëïŸ•Õ}’…∞∞(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…‰πùï–†âÕÕ•Ö¡}ÕïçΩ’…•Õµï}ŸÖ±•ëîà∞Äàà§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅï±•òÅôΩ…µÖ—•Ωπ}çΩëîÄÙÙÄâYQàË(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÄâÖ’—ΩµÖ—•åµŸ—åà(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÄã¬~j\ÅΩ…µÖ—•Ω∏Å°Ö’ôôï’»ÅYQà(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅâ’•±ë}Ÿ—ç}ïµÖ•±}°—µ∞°¡…ïπΩ¥∞Åçïπ—…ï}çΩëî∞ÅëïŸ•Õ}’…∞§(ÄÄÄÅï±•òÅôΩ…µÖ—•Ωπ}çΩëîÄÙÙÄâMA}%9%PàË(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÄâÖ’—ΩµÖ—•åµëïÕ¿µ•π•—•Ö∞à(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÄâYΩ—…îÅëïµÖπëîÅëîÅ…ïπÕï•ùπïµïπ—ÃÉäLÅΩ…µÖ—•Ω∏ÅM@Å•π•—•Ö∞à(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅâ’•±ë}ëïÕ¡}•π•—}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïπΩ¥∞ÅëÖ—ïÃ∞Åçïπ—…ï}çΩëî∞ÅëïŸ•Õ}’…∞∞ÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄåÅ1ïÃÅ	QLÅ∏ùΩπ–Å¡ÖÃÅïπçΩ…îÅëîÅµΩì°±îÅÖ’—ΩµÖ—•≈’îÅì•ëß§ÅëÖπÃÅ±îÅI4∏(ÄÄÄÄÄÄÄÄåÅ=∏Å…ï¡…ïπêÅëΩπåÅ±îÅµïÕÕÖùîÅü•ª•…•≈’îÅì•´ÄÅïπŸΩÁ§Å¡Ö»Å±îÅôΩ…µ’±Ö•…î(ÄÄÄÄÄÄÄÄåÅ¡’â±•å∞ÅÖô•∏Å≈‘ù’πîÅÖâÕïπçîÅëîÅµΩì°±îÅ¡ï…ÕΩππÖ±•œ§ÅπîÅâ±Ω≈’îÅ©ÖµÖ•Ã(ÄÄÄÄÄÄÄÄåÅÕ•±ïπç•ï’Õïµïπ–Å∞ùîµµÖ•∞Åë‘ÅÕïçÀ•—Ö…•Ö–∏(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅ}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}çΩπô•ú°ôΩ…µÖ—•Ωπ}çΩëî§(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ωπ}±Öâï∞ÄÙÅôΩ…µÖ—•Ω∏πùï–†â±Öâï∞à§ÅΩ»ÅôΩ…µÖ—•Ω∏πùï–†âÕ°Ω…–à§ÅΩ»ÄâΩ…µÖ—•Ω∏Å%π”•ù…Ö±îÅçÖëïµ‰à(ÄÄÄÄÄÄÄÅÕïÕÕ•Ωπ}°—µ∞ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅòàÒ¿˘MïÕÕ•Ω∏ÅÕΩ’°Ö•”•îÄËÄÒÕ—…Ωπú˘Ì°—µ±}µΩë’±îπïÕçÖ¡î°ëÖ—ïÃ•ÙΩÕ—…Ωπú¯Ω¿¯à(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅëÖ—ïÃÅï±ÕîÄàà(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅëïŸ•Õ}°—µ∞ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄúÒ¿ÅÕ—Â±îÙâ—ï·–µÖ±•ù∏Èçïπ—ï»Ïà¯ú(ÄÄÄÄÄÄÄÄÄÄÄÅòúÒÑÅ°…ïòÙâÌ°—µ±}µΩë’±îπïÕçÖ¡î°ëïŸ•Õ}’…∞∞Å≈’Ω—îıQ…’î•ÙàÄú(ÄÄÄÄÄÄÄÄÄÄÄÄùÕ—Â±îÙâë•Õ¡±Ö‰È•π±•πîµâ±Ωç¨Ì¡Öëë•πúËƒ…¡‡Äƒ·¡‡ÌâÖç≠ù…Ω’πêËå¡êŸïôêÌçΩ±Ω»ËçôôòÏú(ÄÄÄÄÄÄÄÄÄÄÄÄùâΩ…ëï»µ…Öë•’ÃËƒ¡¡‡Ì—ï·–µëïçΩ…Ö—•Ω∏ÈπΩπîÌôΩπ–µ›ï•ù°–Ë‹¿¿Ïà¯ú(ÄÄÄÄÄÄÄÄÄÄÄÄâ)îÅ”•≥•ç°Ö…ùîÅµΩ∏ÅëïŸ•ÃÅì•—Ö•±≥§ΩÑ¯Ω¿¯à(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅëïŸ•Õ}’…∞Åï±ÕîÄàà(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÅòâÖ’—ΩµÖ—•åµÕïç…ï—Ö…•Ö–µÌôΩ…µÖ—•Ωπ}çΩëîπ±Ω›ï»†§π…ï¡±Öçî†ù|ú∞Äú¥ú•Ùà(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÄâYΩ—…îÅëïµÖπëîÅëîÅ…ïπÕï•ùπïµïπ—ÃÉäLÅ%π”•ù…Ö±îÅçÖëïµ‰à(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅ}›…Ö¡}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÄàÒ†ƒ˚är†Å5ï…ç§Å¡Ω’»ÅŸΩ—…îÅëïµÖπëîΩ†ƒ¯à∞(ÄÄÄÄÄÄÄÄÄÄÄÅòààà(ÄÄÄÄÄÄÄÄÄÄÄÄÒ¿˘	Ωπ©Ω’»ÄÒÕ—…Ωπú˘Ì°—µ±}µΩë’±îπïÕçÖ¡î°¡…ïπΩ¥•ÙΩÕ—…Ωπú¯∞Ω¿¯(ÄÄÄÄÄÄÄÄÄÄÄÄÒ¿˘)îÅôÖ•ÃÅÕ’•—îÉÄÅŸΩ—…îÅëïµÖπëîÅëîÅ…ïπÕï•ùπïµïπ—ÃÅçΩπçï…πÖπ–ÅπΩ—…îÅôΩ…µÖ—•Ω∏(ÄÄÄÄÄÄÄÄÄÄÄÄÒÕ—…Ωπú˘Ì°—µ±}µΩë’±îπïÕçÖ¡î°ôΩ…µÖ—•Ωπ}±Öâï∞•ÙΩÕ—…Ωπú¯∏Å9Ω’ÃÅŸΩ’ÃÅ…ïµï…ç•ΩπÃÅëîÅπΩ’ÃÅÖŸΩ•»ÅçΩπ—Öç”§ÄÑΩ¿¯(ÄÄÄÄÄÄÄÄÄÄÄÅÌÕïÕÕ•Ωπ}°—µ±Ù(ÄÄÄÄÄÄÄÄÄÄÄÄÒ¿˘YΩ’ÃÅ¡Ω’ŸïËÅçΩπÕ’±—ï»Å±îÅëΩÕÕ•ï»ÅëîÅ¡À•Õïπ—Ö—•Ω∏ÅëîÅπΩÃÅôΩ…µÖ—•ΩπÃÄËΩ¿¯(ÄÄÄÄÄÄÄÄÄÄÄÄÒ¿¯ÒÑÅ°…ïòÙâÌMIQI%Q}=MM%I}UI1Ùà˘ÌMIQI%Q}=MM%I}UI1ÙΩÑ¯Ω¿¯(ÄÄÄÄÄÄÄÄÄÄÄÅÌëïŸ•Õ}°—µ±Ù(ÄÄÄÄÄÄÄÄÄÄÄÄÒ¿˘9Ω—…îÉ•≈’•¡îÅ…ïÕ—îÉÄÅŸΩ—…îÅë•Õ¡ΩÕ•—•Ω∏ÅÖ‘ÄÒÕ—…Ωπú¯¿–Ä»»Ä–‹Ä¿‹Äÿ‡ΩÕ—…Ωπú¯∏Ω¿¯(ÄÄÄÄÄÄÄÄÄÄÄÄÒ¿˘)îÅŸΩ’ÃÅÕΩ’°Ö•—îÅ’πîÅâΩππîÅ©Ω’…ª•î∞Ω¿¯(ÄÄÄÄÄÄÄÄÄÄÄÄÒ¿¯ÒÕ—…Ωπú˘≥•µïπ–ÅY%119PΩÕ—…Ωπú¯Òâ»˘•…ïç—ï’»Å%π”•ù…Ö±îÅçÖëïµ‰Ω¿¯(ÄÄÄÄÄÄÄÄÄÄÄÄààà∞(ÄÄÄÄÄÄÄÄ§((ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅ—ïµ¡±Ö—ï}•ê∞(ÄÄÄÄÄÄÄÄâπΩ¥àËÅòâµµÖ•∞ÅÖ’—ΩµÖ—•≈’îÅÌôΩ…µÖ—•Ωπ}çΩëïÙà∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅôΩ…µÖ—•Ωπ}çΩëî∞(ÄÄÄÄÄÄÄÄâÕ’©ï–àËÅÕ’â©ïç–∞(ÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâΩë‰∞(ÄÄÄÅÙ(()ëïòÅ}Õïç…ï—Ö…•Ö—}•πôΩ…µÖ—•Ωπ}ïµÖ•∞°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâ	’•±êÅ—°îÅI4Å•πôΩ…µÖ—•Ω∏ÅîµµÖ•∞ÅµÖ—ç°•πúÅ—°îÅÕï±ïç—ïêÅ—…Ö•π•πú∏ààà(ÄÄÄÅ—ïµ¡±Ö—îÄÙÅ}Õïç…ï—Ö…•Ö—}•πôΩ…µÖ—•Ωπ}—ïµ¡±Ö—î†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞ÄâïµÖ•∞à∞Åïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–Å—ïµ¡±Ö—îË(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îÄÙÅ}Õïç…ï—Ö…•Ö—}Ö’—ΩµÖ—•ç}•πôΩ…µÖ—•Ωπ}—ïµ¡±Ö—î°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§((ÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îπùï–†âçΩπ—ïπ‘à∞Äàà§∞ÅçΩπ—Öç–∞Å°—µ∞ıQ…’î∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ∞(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅ≈’Ω—ï}’…∞ÄÙÅÕ—»°ïπ—…‰πùï–†âëïŸ•Õ}’…∞à§ÅΩ»ÅçΩπ—Öç–πùï–†âëïŸ•Õ}’…∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅôΩ»ÅŸÖ…•Öâ±îÅ•∏Ä†âÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà∞ÄâÌÌ±•ïπ}ëïŸ•ÕıÙà§Ë(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅâΩë‰π…ï¡±Öçî°ŸÖ…•Öâ±î∞Å°—µ±}µΩë’±îπïÕçÖ¡î°≈’Ω—ï}’…∞∞Å≈’Ω—îıQ…’î§§((ÄÄÄÅÕ’â©ïç–ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îπùï–†âÕ’©ï–à§ÅΩ»Äâ%π”•ù…Ö±îÅçÖëïµ‰à∞(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ∞(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅ¡±Ö•∏ÄÙÅ°—µ±}µΩë’±îπ’πïÕçÖ¡î†(ÄÄÄÄÄÄÄÅ…îπÕ’à°»âqÃ¨à∞ÄàÄà∞Å…îπÕ’à°»àÒmx˘t¨¯à∞ÄàÄà∞ÅâΩë‰§§(ÄÄÄÄ§πÕ—…•¿†§((ÄÄÄÅ•òÅ…îπÕïÖ…ç†°»à†¸ËÖëΩç—Â¡ïÒ°—µ∞•qàà∞ÅâΩë‰∞Å…îπ%9=IM§Ë(ÄÄÄÄÄÄÄÅâ…ÖπëïêÄÙÅâΩë‰(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅ}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}çΩπô•ú°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§§(ÄÄÄÄÄÄÄÅâ…ÖπëïêÄÙÅ…ïπëï…}—ïµ¡±Ö—î†(ÄÄÄÄÄÄÄÄÄÄÄÄâç…µ}ïµÖ•±}›…Ö¡¡ï»π°—µ∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïπΩ¥ıçΩπ—Öç–πùï–†â¡…ïπΩ¥à§ÅΩ»Åïπ—…‰πùï–†â¡…ïπΩ¥à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ıôΩ…µÖ—•Ω∏πùï–†â±Öâï∞à§ÅΩ»ÅôΩ…µÖ—•Ω∏πùï–†âÕ°Ω…–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—ïπ‘ıâΩë‰∞(ÄÄÄÄÄÄÄÄÄÄÄÅïµÖ•±}°ïÖëï…}—•—±îÙâ%πôΩ…µÖ—•ΩπÃÅÕ’»ÅŸΩ—…îÅôΩ…µÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÅïµÖ•±}°ïÖëï…}Õ’â—•—±îıôΩ…µÖ—•Ω∏πùï–†â±Öâï∞à§ÅΩ»ÅôΩ…µÖ—•Ω∏πùï–†âÕ°Ω…–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å—ïµ¡±Ö—î∞ÅÕ’â©ïç–∞Å¡±Ö•∏∞Åâ…Öπëïê(()ëïòÅ}Õïπë}Õïç…ï—Ö…•Ö—}•πôΩ…µÖ—•Ωπ}µïÕÕÖùïÃ°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâï±•Ÿï»ÅïÖç†Åç°Öππï∞Å•πëï¡ïπëïπ—±‰ÅÖπêÅ¡ï…Õ•Õ–ÅÖ∏Å•ëïµ¡Ω—ïπ–ÅÖ’ë•–Å—…Ö•∞∏ààà(ÄÄÄÅ…ïÕ’±—ÃÄÙÅÌÙ(ÄÄÄÅôΩ»Å≠•πê∞Å…ïç•¡•ïπ—}≠ï‰∞Å¡…ΩŸ•ëï»Å•∏Ä††âïµÖ•∞à∞ÄâïµÖ•∞à∞ÄâM5Q@Ω	…ïŸºà§∞Ä†âÕµÃà∞Äâ—ï±ï¡°Ωπîà∞Äâ	…ïŸºà§§Ë(ÄÄÄÄÄÄÄÅ…ïç•¡•ïπ–ÄÙÅïπ—…‰πùï–°…ïç•¡•ïπ—}≠ï‰§(ÄÄÄÄÄÄÄÅÕ—Ö—’Õ}≠ï‰ÄÙÅòâÌ≠•πëı}Õ’µµÖ…Â}Õ—Ö—’Ãà(ÄÄÄÄÄÄÄÅÕïπ—}≠ï‰ÄÙÅòâÌ≠•πëı}Õ’µµÖ…Â}Õïπ—}Ö–à(ÄÄÄÄÄÄÄÅï……Ω…}≠ï‰ÄÙÅòâÌ≠•πëı}Õ’µµÖ…Â}ï……Ω»à(ÄÄÄÄÄÄÄÅÖ——ïµ¡—ïë}≠ï‰ÄÙÅòâÌ≠•πëı}Õ’µµÖ…Â}Ö——ïµ¡—ïë}Ö–à(ÄÄÄÄÄÄÄÅ±ïùÖçÂ}Õïπ—}≠ï‰ÄÙÅòâ•πôΩ…µÖ—•Ωπ}Ì≠•πëı}Õïπ—}Ö–à(ÄÄÄÄÄÄÄÅ•òÅïπ—…‰πùï–°Õïπ—}≠ï‰§ÅΩ»Åïπ—…‰πùï–°±ïùÖçÂ}Õïπ—}≠ï‰§ÅΩ»Åïπ—…‰πùï–°òâ•πôΩ…µÖ—•Ωπ}Ì≠•πëı}—ïµ¡±Ö—ï}•êà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±—Õm≠•πëtÄÙÄâÖ±…ïÖëÂ}Õïπ–à(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ïç•¡•ïπ–ÅΩ»Ä°≠•πêÄÙÙÄâÕµÃàÅÖπêÅπΩ–Å}πΩ…µÖ±•Õï…}—ï±ï¡°Ωπï}ÕµÃ°…ïç•¡•ïπ–§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÕ—Ö—’Õ}≠ïÂtÄÙÄâôÖ•±ïêà(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âmï……Ω…}≠ïÂtÄÙÄâïÕ—•πÖ—Ö•…îÅÖâÕïπ–ÅΩ‘Å•πŸÖ±•ëîà(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÖ——ïµ¡—ïë}≠ïÂtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±—Õm≠•πëtÄÙÄâ…ïç•¡•ïπ—}µ•ÕÕ•πúà(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î((ÄÄÄÄÄÄÄÅ•πôΩ…µÖ—•Ωπ}ïµÖ•∞ÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àË(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•πôΩ…µÖ—•Ωπ}ïµÖ•∞ÄÙÅ}Õïç…ï—Ö…•Ö—}•πôΩ…µÖ—•Ωπ}ïµÖ•∞°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÕ—Ö—’Õ}≠ïÂtÄÙÄâôÖ•±ïêà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âmï……Ω…}≠ïÂtÄÙÅÕ—»°ï·å•lË‘¿¡t(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÖ——ïµ¡—ïë}≠ïÂtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±—Õm≠•πëtÄÙÄâôÖ•±ïêà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å•πôΩ…µÖ—•Ωπ}ïµÖ•∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÕ—Ö—’Õ}≠ïÂtÄÙÄâôÖ•±ïêà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âmï……Ω…}≠ïÂtÄÙÄâ’ç’∏ÅµΩì°±îÅìäe•πôΩ…µÖ—•Ω∏ÅπîÅçΩ……ïÕ¡ΩπêÉÄÅ±ÑÅôΩ…µÖ—•Ω∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÖ——ïµ¡—ïë}≠ïÂtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±—Õm≠•πëtÄÙÄâ—ïµ¡±Ö—ï}µ•ÕÕ•πúà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î((ÄÄÄÄÄÄÄÅïπ—…ÂmÕ—Ö—’Õ}≠ïÂtÄÙÄâÕïπë•πúà(ÄÄÄÄÄÄÄÅïπ—…Âmï……Ω…}≠ïÂtÄÙÄàà(ÄÄÄÄÄÄÄÅïπ—…ÂmÖ——ïµ¡—ïë}≠ïÂtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—ïµ¡±Ö—î∞ÅÕ’â©ïç–∞ÅâΩë‰∞Åâ…ÖπëïêÄÙÅ•πôΩ…µÖ—•Ωπ}ïµÖ•∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ¨ÄÙÅ}ç…µ}Õïπë}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïç•¡•ïπ–∞ÅÕ’â©ïç–∞ÅâΩë‰∞Åâ…Öπëïê∞Å—ïµ¡±Ö—îı—ïµ¡±Ö—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•ï‹∞Åëï—Ö•∞∞Å—•—±îÄÙÅâ…Öπëïê∞ÅÕ’â©ïç–∞ÄâµµÖ•∞Åìäe•πôΩ…µÖ—•Ω∏ÅïπŸΩÁ§à(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâΩë‰ÄÙÅ}â’•±ë}Õïç…ï—Ö…•Ö—}ôΩ±±Ω›’¡}ÕµÃ°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ¨ÄÙÅÕïπë}ÕµÃ°…ïç•¡•ïπ–∞ÅâΩë‰§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•ï‹∞Åëï—Ö•∞∞Å—•—±îÄÙÅâΩë‰∞ÅâΩë‰∞ÄâM5LÅïπŸΩÁ§à(ÄÄÄÄÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅΩ¨ÄÙÅÖ±Õî(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âmï……Ω…}≠ïÂtÄÙÅÕ—»°ï·å•lË‘¿¡t(ÄÄÄÄÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅ…ïÕ’±—Õm≠•πëtÄÙÄâÕïπ–àÅ•òÅΩ¨Åï±ÕîÄâôÖ•±ïêà(ÄÄÄÄÄÄÄÅ•òÅΩ¨Ë(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÕ—Ö—’Õ}≠ïÂtÄÙÄâÕïπ–à(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÕïπ—}≠ïÂtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âm±ïùÖçÂ}Õïπ—}≠ïÂtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âmòâ•πôΩ…µÖ—•Ωπ}Ì≠•πëı}çΩπ—ïπ–âtÄÙÅâΩë‰(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âlâ•πôΩ…µÖ—•Ωπ}ïµÖ•±}—ïµ¡±Ö—ï}•êâtÄÙÅ—ïµ¡±Ö—îπùï–†â•êà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ïlâ’ÕÖùï}çΩ’π–âtÄÙÅ•π–°—ïµ¡±Ö—îπùï–†â’ÕÖùï}çΩ’π–à§ÅΩ»Ä¿§Ä¨Äƒ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—ïµ¡±Ö—ïlâ±ÖÕ—}’Õïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Å≠•πê∞Å—•—±î∞Åëï—Ö•∞∞Å¡…ïŸ•ï‹§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅÖπêÅïπ—…‰πùï–†âëïŸ•Õ}•êà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ≈’Ω—îÄÙÅπï·–†°…Ω‹ÅôΩ»Å…Ω‹Å•∏ÅëÖ—Ñπùï–†âëïµÖπëïÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…Ω‹πùï–†â•êà§ÄÙÙÅïπ—…ÂlâëïŸ•Õ}•êât§∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ≈’Ω—îË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ≈’Ω—ïlâÕ—Ö—’—}ëïŸ•ÃâtÄÙÄâπŸΩÁ§à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ≈’Ω—ïlâëÖ—ï}ïπŸΩ•}¡±Ö∏âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂmÕ—Ö—’Õ}≠ïÂtÄÙÄâôÖ•±ïêà(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âmï……Ω…}≠ïÂtÄÙÅïπ—…‰πùï–°ï……Ω…}≠ï‰§ÅΩ»Äâ1îÅôΩ’…π•ÕÕï’»ÅÑÅ…ïô’œ§ÅΩ‘ÅªäeÑÅ¡ÖÃÅçΩπô•…∑§Å≥äeïπŸΩ§à(ÄÄÄÄÄÄÄÅ¡…•π–°òâÕïç…ï—Ö…•Ö—}ëï±•Ÿï…‰ÅÕ’âµ•ÕÕ•Ω∏ıÌïπ—…‰πùï–†ù•êú•ÙÅ…ïç•¡•ïπ–ıÌ}µÖÕ≠}ëï±•Ÿï…Â}…ïç•¡•ïπ–°…ïç•¡•ïπ–∞Å≠•πê•ÙÅ¡…ΩŸ•ëï»ıÌ¡…ΩŸ•ëï…ÙÅÕ—Ö—’ÃıÌïπ—…ÂmÕ—Ö—’Õ}≠ïÂuÙÅï……Ω»ıÌïπ—…‰πùï–°ï……Ω…}≠ï‰∞Äúú•Ùà§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å…ïÕ’±—Ã(()ëïòÅ}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}çΩπô•ú°ôΩ…µÖ—•Ωπ}çΩëî§Ë(ÄÄÄÅçΩëîÄÙÅÕ—»°ôΩ…µÖ—•Ωπ}çΩëîÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ…ï—’…∏ÅMIQI%Q}=I5Q%=9Lπùï–°çΩëî§ÅΩ»ÅÏ(ÄÄÄÄÄÄÄÄâÕ°Ω…–àËÄâΩ…µÖ—•Ω∏à∞Äâ±Öâï∞àËÅA19}=I5Q%=9Lπùï–°çΩëî§ÅΩ»ÄâΩ…µÖ—•Ω∏Å%π”•ù…Ö±îÅçÖëïµ‰à∞(ÄÄÄÄÄÄÄÄâëΩÕÕ•ï…}’…∞àËÅMIQI%Q}=MM%I}UI0∞Äâ¡±Öππ•πù}’…∞àËÅMIQI%Q}A199%9}UI0∞(ÄÄÄÅÙ(()ëïòÅ}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}πÖµî°ôΩ…µÖ—•Ωπ}çΩëî§Ë(ÄÄÄÅ…ï—’…∏Å}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}çΩπô•ú°ôΩ…µÖ—•Ωπ}çΩëî•lâ±Öâï∞ât(()ëïòÅ}â’•±ë}Õïç…ï—Ö…•Ö—}ôΩ±±Ω›’¡}ÕµÃ°ôΩ…µÖ—•Ωπ}çΩëî§Ë(ÄÄÄÅôΩ…µÖ—•Ωπ}πÖµîÄÙÅ}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}πÖµî°ôΩ…µÖ—•Ωπ}çΩëî§(ÄÄÄÅ…ï—’…∏Ä†(ÄÄÄÄÄÄÄÄâ)îÅôÖ•ÃÅÕ’•—îÉÄÅπΩ—…îÉ•ç°ÖπùîÅ”•≥•¡°Ωπ•≈’îÅÖ‘ÅÕ’©ï–ÅëîÅπΩ—…îÅôΩ…µÖ—•Ω∏Äà(ÄÄÄÄÄÄÄÅòâÌôΩ…µÖ—•Ωπ}πÖµïÙ∏Å5ï…ç§ÅëîÅŸΩ—…îÅ•π”•À©–ÄÖqπq∏à(ÄÄÄÄÄÄÄÄãäZ€æ‚<ÅYΩ’ÃÅ¡Ω’ŸïËÅ”•≥•ç°Ö…ùï»Åì°ÃÅµÖ•π—ïπÖπ–ÅπΩ—…îÅëΩÕÕ•ï»ÅëîÅ¡À•Õïπ—Ö—•Ω∏Äà(ÄÄÄÄÄÄÄÄà°¡…Ωù…ÖµµîÅì•—Ö•±≥§∞ÅëÖ—ïÃ∞Å—Ö…•ôÃ§Åï∏Åç±•≈’Öπ–Å•ç§ÄÈqπq∏à(ÄÄÄÄÄÄÄÅòã¬~F$ÅÌMIQI%Q}=MM%I}UI1ıqπq∏à(ÄÄÄÄÄÄÄÄãäÁæ‚<ÅM§ÅŸΩ’ÃÅÕΩ’°Ö•—ïËÅô•πÖπçï»Å±ÑÅôΩ…µÖ—•Ω∏ÅŸ•ÑÅŸΩ—…îÅΩµ¡—îÅAï…ÕΩππï∞ÅëîÄà(ÄÄÄÄÄÄÄÄâΩ…µÖ—•Ω∏Ä°A§∞Å•∞ÅŸΩ’ÃÅôÖ’ë…ÑÅçÀ•ï»ÅŸΩ—…îÅ%ëïπ—•”§Å9’∑•…•≈’îÅ1ÑÅAΩÕ—îπqπq∏à(ÄÄÄÄÄÄÄÄâ;äe£•Õ•—ïËÅ¡ÖÃÉÄÅµîÅçΩπ—Öç—ï»ÅÕ§ÅŸΩ’ÃÅÖŸïËÅ±ÑÅµΩ•πë…îÅ≈’ïÕ—•Ω∏∞Å©îÅÕï…Ö§Å…ÖŸ§Åìäe‰ÅÀ•¡Ωπë…îÉ¬~b%qπq∏à(ÄÄÄÄÄÄÄÄâ	ΩππîÅ©Ω’…ª•î±qπqπÖÕÕÖπë…îÅ59IqπIïÕ¡ΩπÕÖâ±îÅçΩµµï…ç•Ö±îÅ%π”•ù…Ö±îÅçÖëïµÂq∏¿–Ä»»Ä–‹Ä¿‹Äÿ‡à(ÄÄÄÄ§(()ëïòÅ}ÂïÃ°ŸÖ±’î§Ë(ÄÄÄÅ…ï—’…∏ÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§Å•∏ÅÏâ=U$à∞ÄâeLà∞ÄâQIUà∞ÄàƒâÙ(()ëïòÅ}Õïç…ï—Ö…•Ö—}ë•Õ¡±ÖÂ}ô•…Õ—}πÖµî°ŸÖ±’î§Ë(ÄÄÄÄààâΩ…µÖ–ÅÑÅô•…Õ–ÅπÖµîÅ›•—°Ω’–ÅïŸï»Å—…ÖπÕ±•—ï…Ö—•πúÅÖ›Ö‰Å•—ÃÅÖççïπ—Ã∏ààà(ÄÄÄÅŸÖ±’îÄÙÅ…îπÕ’à°»âqÃ¨à∞ÄàÄà∞ÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§§(ÄÄÄÅ•òÅπΩ–ÅŸÖ±’îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅôΩ…µÖ——ïêÄÙÄà¥àπ©Ω•∏°¡Ö…—lË≈tπ’¡¡ï»†§Ä¨Å¡Ö…—lƒÈtπ±Ω›ï»†§ÅôΩ»Å¡Ö…–Å•∏ÅŸÖ±’îπÕ¡±•–†à¥à§§(ÄÄÄÅ…ï—’…∏ÅÏâç±ïµïπ–àËÄâ≥•µïπ–âÙπùï–°ôΩ…µÖ——ïêπçÖÕïôΩ±ê†§∞ÅôΩ…µÖ——ïê§(()ëïòÅ}Õïç…ï—Ö…•Ö—}’¡çΩµ•πù}ÕïÕÕ•Ωπ}ù…Ω’¡Ã°ôΩ…µÖ—•Ωπ}çΩëî∞ÅÕï±ïç—ïë}ÕïÕÕ•Ω∏Ùàà§Ë(ÄÄÄÅÕï±ïç—ïêÄÙÅÕ—»°Õï±ïç—ïë}ÕïÕÕ•Ω∏ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅù…Ω’¡ÃÄÙÅmt(ÄÄÄÅÕïÕÕ•ΩπÃÄÙÅùï—}’¡çΩµ•πù}ôΩ…µÖ—•Ωπ}ÕïÕÕ•ΩπÃ°±ΩÖë}ëÖ—Ñ†§§(ÄÄÄÅôΩ»Åçïπ—…ï}çΩëî∞Åçïπ—…ï}πÖµîÅ•∏Å=I5Q%=9}9QILπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅ…Ω›ÃÄÙÅÕïÕÕ•ΩπÃπùï–°çïπ—…ï}çΩëî∞ÅÌÙ§πùï–°Õ—»°ôΩ…µÖ—•Ωπ}çΩëîÅΩ»Äàà§πÕ—…•¿†§∞Åmt§(ÄÄÄÄÄÄÄÅ±Öâï±±ïêÄÙÅmt(ÄÄÄÄÄÄÄÅôΩ»Å…Ω‹Å•∏Å…Ω›ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ±Öâï∞ÄÙÅÕ—»°…Ω‹πùï–†â±Öâï∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅï·Ö¥ÄÙÅÕ—»°…Ω‹πùï–†âëÖ—ï}ï·Öµï∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å±Öâï∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅë•Õ¡±Ö‰ÄÙÅ±Öâï∞(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅï·Ö¥ÅÖπêÄâï·Öµï∏àÅπΩ–Å•∏Å±Öâï∞πçÖÕïôΩ±ê†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅë•Õ¡±Ö‰ÄÙÅòâÌ±Öâï±ÙÄ¥Åï·Öµï∏Å±îÅÌï·ÖµÙà(ÄÄÄÄÄÄÄÄÄÄÄÅ±Öâï±±ïêπÖ¡¡ïπê°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±Öâï∞àËÅë•Õ¡±Ö‰∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕï±ïç—ïêàËÅÕï±ïç—ïêÅ•∏ÅÌ±Öâï∞∞Åë•Õ¡±Ö‰∞ÅòâÌçïπ—…ï}πÖµïÙÉäPÅÌ±Öâï±ÙâÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅ•òÅ±Öâï±±ïêË(ÄÄÄÄÄÄÄÄÄÄÄÅù…Ω’¡ÃπÖ¡¡ïπê°Ïâçïπ—…îàËÅçïπ—…ï}πÖµî∞ÄâÕïÕÕ•ΩπÃàËÅ±Öâï±±ïëÙ§(ÄÄÄÅ…ï—’…∏Åù…Ω’¡Ã(()ëïòÅ}ïπÕ’…ï}Õïç…ï—Ö…•Ö—}≈’Ω—î°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâ…ïÖ—îÅΩ»Å…ïçΩππïç–Å—°îÅÕ•πù±îÅô•πÖπç•πúÅ≈’Ω—îÅâï±Ωπù•πúÅ—ºÅÑÅçÖ±∞∏ààà(ÄÄÄÅ•òÅπΩ–Å}ÂïÃ°ïπ—…‰πùï–†âëïŸ•Ãà§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅëïµÖπëïÃÄÙÅëÖ—ÑπÕï—ëïôÖ’±–†âëïµÖπëïÃà∞Åmt§(ÄÄÄÅ≈’Ω—îÄÙÅπï·–†°…Ω‹ÅôΩ»Å…Ω‹Å•∏ÅëïµÖπëïÃÅ•òÅ…Ω‹πùï–†â•êà§ÄÙÙÅïπ—…‰πùï–†âëïŸ•Õ}•êà§§∞Å9Ωπî§(ÄÄÄÅ•òÅ≈’Ω—îÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ≈’Ω—îÄÙÅπï·–†°…Ω‹ÅôΩ»Å…Ω‹Å•∏ÅëïµÖπëïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…Ω‹πùï–†âÕΩ’…çï}Õïç…ï—Ö…•Ö—}•êà§ÄÙÙÅïπ—…‰πùï–†â•êà§§∞Å9Ωπî§(ÄÄÄÅ•òÅ≈’Ω—îÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ≈’Ω—ï}•ê∞Å—Ω≠ï∏ÄÙÅÕ—»°’’•êπ’’•ê–†§§∞Å’’•êπ’’•ê–†§π°ï‡(ÄÄÄÄÄÄÄÅëï—Ö•±ÃÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—ïÃàËÅïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ÕïÕÕ•Ωπ}±Öâï∞à§ÅΩ»Åïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçïπ—…îàËÅïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}çïπ—…îà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—ï}ï·Öµï∏àËÅïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ëÖ—ï}ï·Öµï∏à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç¡ô}µΩπ—Öπ–àËÅïπ—…‰πùï–†âç¡ô}µΩπ—Öπ–à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâô…Öπçï}—…ÖŸÖ•∞àËÅïπ—…‰πùï–†âô…Öπçï}—…ÖŸÖ•∞à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ•ëïπ—•—ï}π’µï…•≈’îàËÅïπ—…‰πùï–†â•ëïπ—•—ï}π’µï…•≈’îà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕÕ•Ö¡}ÕïçΩ’…•Õµï}ŸÖ±•ëîàËÅïπ—…‰πùï–†âÕÕ•Ö¡}ÕïçΩ’…•Õµï}ŸÖ±•ëîà∞Äàà§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ≈’Ω—îÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅ≈’Ω—ï}•ê∞Äâ—Ω≠ïπ}¡±Ö∏àËÅ—Ω≠ï∏∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çï}Õïç…ï—Ö…•Ö—}•êàËÅïπ—…‰πùï–†â•êà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÅïπ—…‰πùï–†âπΩµ}ôÖµ•±±îà§ÅΩ»ÅÕ—»°ïπ—…‰πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅ}Õïç…ï—Ö…•Ö—}ë•Õ¡±ÖÂ}ô•…Õ—}πÖµî°ïπ—…‰πùï–†â¡…ïπΩ¥à§ÅΩ»ÅÕ—»°ïπ—…‰πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ¡±•–†àÄà•l¡t§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅïπ—…‰πùï–†â—ï±ï¡°Ωπîà∞Äàà§∞ÄâµÖ•∞àËÅïπ—…‰πùï–†âïµÖ•∞à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµΩ—•òàËÄâïµÖπëîÅëîÅëïŸ•ÃÅì•—Ö•±≥§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëï—Ö•±ÃàËÅ©ÕΩ∏πë’µ¡Ã°ëï—Ö•±Ã∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—îàËÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§§πÕ—…ô—•µî†àïêºï¥ºïdÄï Ëï4à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’–àËÄâ9Ω∏Å—…Ö•”§à∞ÄâÕ—Ö—’—}ëïŸ•ÃàËÄâÅïπŸΩÂï»à∞ÄâÖ——…•â’—•Ω∏àËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµµïπ—Ö•…îàËÄàà∞ÄâçΩµµïπ—Ö•…ï}Öëµ•∏àËÄàà∞ÄâµÖ•±}çΩπô•…µîàËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµÖ•±}ï……ï’»àËÄàà∞ÄâµÖ•±}çΩπ—ïπ‘àËÄàà∞ÄâµÖ•±}°—µ∞àËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡•ïçïÕ}©Ω•π—ïÃàËÅmt∞Äâ…ï¡ΩπÕïÃàËÅmt∞Äâ•Õ}ëΩ’â±Ω∏àËÅÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…Ö¡¡ï±}ëÖ—îàËÄàà∞Äâ¡±ÖùîàËÄàà∞ÄâπΩ—Ö—•Ωπ}•π—ï…πîàËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâïç°ïÖπç•ï…}µÖπ’ï∞àËÅmt∞Äâ¡ëô}¡Ö—†àËÄàà∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅëïµÖπëïÃπÖ¡¡ïπê°≈’Ω—î§(ÄÄÄÄÄÄÄÅ≈’Ω—ï}’…∞ÄÙÅ’…±}ôΩ»†â¡±Öπ}¡’â±•åà∞Å—Ω≠ï∏ı—Ω≠ï∏∞Å}ï·—ï…πÖ∞ıQ…’î§(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâëïŸ•Ãà∞ÄâïŸ•ÃÅì•—Ö•±≥§ÅçÀß§à∞Å≈’Ω—ï}’…∞∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòúÒ¿¯ÒÑÅ°…ïòÙâÌ≈’Ω—ï}’…±ÙàÅ—Ö…ùï–Ùâ}â±Öπ¨à˘=’Ÿ…•»Å±îÅëïŸ•ÃΩÑ¯Ω¿¯ú§(ÄÄÄÅ≈’Ω—ï}’…∞ÄÙÅ’…±}ôΩ»†â¡±Öπ}¡’â±•åà∞Å—Ω≠ï∏ı≈’Ω—ïlâ—Ω≠ïπ}¡±Ö∏ât∞Å}ï·—ï…πÖ∞ıQ…’î§(ÄÄÄÅïπ—…ÂlâëïŸ•Õ}•êât∞Åïπ—…ÂlâëïŸ•Õ}’…∞âtÄÙÅ≈’Ω—ïlâ•êât∞Å≈’Ω—ï}’…∞(ÄÄÄÅçΩπ—Öç—lâÕΩ’…çï}ëïŸ•Õ}•êât∞ÅçΩπ—Öç—lâëïŸ•Õ}’…∞âtÄÙÅ≈’Ω—ïlâ•êât∞Å≈’Ω—ï}’…∞(ÄÄÄÅ…ï—’…∏Å≈’Ω—î(()ëïòÅ}Õïç…ï—Ö…•Ö—}…ëÿ°ïπ—…‰§Ë(ÄÄÄÅÕ—Ö—’ÃÄÙÅÕ—»°ïπ—…‰πùï–†â…ëŸ}Õ—Ö—’Ãà§ÅΩ»Åïπ—…‰πùï–†âÖ¡¡Ω•π—µïπ—}Õ—Ö—’Ãà§ÅΩ»Äàà§π±Ω›ï»†§πÕ—…•¿†§(ÄÄÄÅ•òÅÕ—Ö—’ÃÅ•∏ÅÏâëïç±•πïêà∞ÄâπΩ—}…ï≈’ïÕ—ïêà∞ÄâπΩπîâÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ•òÅÕ—Ö—’ÃÄÙÙÄâÕç°ïë’±ïêàË(ÄÄÄÄÄÄÄÅµΩëîÄÙÅÕ—»°ïπ—…‰πùï–†â…ëŸ}µΩëîà§ÅΩ»Äàà§π±Ω›ï»†§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅµΩëîÅÖπêÅπΩ–ÅÖπ‰°—ï…¥Å•∏ÅµΩëîÅôΩ»Å—ï…¥Å•∏Ä†âÖ¡¡ï∞à∞Äâ”•≥•¡°Ωπîà∞Äâ—ï±ï¡°Ωπîà∞Äâ¡°Ωπîà§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÄÄÄÄÅëÖ—ï}ŸÖ±’îÄÙÅÕ—»°ïπ—…‰πùï–†â…ëŸ}ëÖ—îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ—•µï}ŸÖ±’îÄÙÅÕ—»°ïπ—…‰πùï–†â…ëŸ}—•µîà§ÅΩ»Äà¿¿Ë¿¿à§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅëÖ—ï}ŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÕïêÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å¡Ö——ï…∏Å•∏Ä†àïêºï¥ºïdÄï Ëï4à∞ÄàïêÄïÄïdÄï Ëï4à∞Äàïd¥ï¥¥ïêÄï Ëï4à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÕïêÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπÕ—…¡—•µî°òâÌëÖ—ï}ŸÖ±’ïÙÅÌ—•µï}ŸÖ±’ïÙà∞Å¡Ö——ï…∏§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâ…ïÖ¨(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡Ö…ÕïêÅ•ÃÅπΩ–Å9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…•ÃÄÙÅ¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡Ö…•Ãπ±ΩçÖ±•Èî°¡Ö…Õïê§ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Ö…•Ã§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÄÄÄÄÅëÖ‰∞ÅµΩπ—†ÄÙÄàà∞Äàà(ÄÄÄÄÄÄÄÅ•òÅëÖ—ï}ŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç†ÄÙÅ…îπµÖ—ç†°»âx°qëÏƒ∞…Ù§º°qëÏƒ∞…Ù§ΩqëÏ—Ùêà∞ÅëÖ—ï}ŸÖ±’î§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅµÖ—ç†Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ‰ÄÙÅµÖ—ç†πù…Ω’¿†ƒ§πÈô•±∞†»§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµΩπ—°}π’µâï»ÄÙÅ•π–°µÖ—ç†πù…Ω’¿†»§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÄƒÄÙÅµΩπ—°}π’µâï»ÄÙÄƒ»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµΩπ—†ÄÙÄ†â)9X∏à∞Äâ%YH∏à∞Äâ5ILà∞ÄâYH∏à∞Äâ5$à∞Äâ)U%8à∞Äâ)U%0∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ?mPà∞ÄâMAP∏à∞Äâ=P∏à∞Äâ9=X∏à∞Äâ%∏à•mµΩπ—°}π’µâï»Ä¥Ä≈t(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ›Ω…ëÃÄÙÅëÖ—ï}ŸÖ±’îπÕ¡±•–†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ›Ω…ëÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ‰ÄÙÅ›Ω…ëÕl¡tπÈô•±∞†»§Å•òÅ›Ω…ëÕl¡tπ•Õë•ù•–†§Åï±ÕîÄàà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ±ï∏°›Ω…ëÃ§Ä¯ÄƒË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµΩπ—†ÄÙÅ›Ω…ëÕl≈tπ’¡¡ï»†§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâÕ—Ö—’ÃàËÅÕ—Ö—’Ã∞ÄâëÖ—îàËÅïπ—…‰πùï–†â…ëŸ}ëÖ—îà§∞Äâ—•µîàËÅïπ—…‰πùï–†â…ëŸ}—•µîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâµΩëîàËÅïπ—…‰πùï–†â…ëŸ}µΩëîà§∞Äâ’…∞àËÅïπ—…‰πùï–†â…ëŸ}’…∞à§ÅΩ»Åïπ—…‰πùï–†âçÖ±ïπë±Â}’…∞à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπÖµîàËÅïπ—…‰πùï–†â…ëŸ}πÖµîà§ÅΩ»ÄâIïπëïËµŸΩ’ÃÅ”•≥•¡°Ωπ•≈’îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ°ΩÕ—}πÖµîàËÅïπ—…‰πùï–†â…ëŸ}°ΩÕ—}πÖµîà§ÅΩ»Äàà∞ÄâëÖ‰àËÅëÖ‰∞ÄâµΩπ—†àËÅµΩπ—°Ù(ÄÄÄÅ•òÅÕ—Ö—’ÃÄÙÙÄâ¡…Ω¡ΩÕïêàË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâÕ—Ö—’ÃàËÅÕ—Ö—’ÕÙ(ÄÄÄÅ…ï—’…∏Å9Ωπî(()ëïòÅ}Õïç…ï—Ö…•Ö—}ïµÖ•±}ôÖ±±âÖç¨°ïπ—…‰§Ë(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅ}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}πÖµî°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§§(ÄÄÄÅÕïÕÕ•Ω∏ÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ¡Ö…Öù…Ö¡°ÃÄÙÅl(ÄÄÄÄÄÄÄÄ°òâYΩ’ÃÅÕΩ’°Ö•—ïËÅëïÃÅ…ïπÕï•ùπïµïπ—ÃÅçΩπçï…πÖπ–Å±ÑÅôΩ…µÖ—•Ω∏ÅÌôΩ…µÖ—•ΩπÙ∞ÅπΩ—Öµµïπ–Å¡Ω’»Å±ÑÅÕïÕÕ•Ω∏ÅÌÕïÕÕ•ΩπÙ∏Å9Ω—…îÉ•≈’•¡îÅ€•…•ô•ï…ÑÅÖŸïåÅŸΩ’ÃÅ±ïÃÅë•Õ¡Ωπ•â•±•”•ÃÅï–Å±ïÃÅ¡À•…ï≈’•ÃÅÖ¡¡±•çÖâ±ïÃ∏à(ÄÄÄÄÄÄÄÄÅ•òÅÕïÕÕ•Ω∏Åï±ÕîÅòâYΩ’ÃÅÕΩ’°Ö•—ïËÅëïÃÅ…ïπÕï•ùπïµïπ—ÃÅçΩπçï…πÖπ–Å±ÑÅôΩ…µÖ—•Ω∏ÅÌôΩ…µÖ—•ΩπÙ∏Å9Ω—…îÉ•≈’•¡îÅŸΩ’ÃÅÖ•ëï…ÑÉÄÅç°Ω•Õ•»Å±ÑÅÕïÕÕ•Ω∏ÅÖëÖ¡”•îÅï–Å€•…•ô•ï…ÑÅÖŸïåÅŸΩ’ÃÅ±ïÃÅë•Õ¡Ωπ•â•±•”•ÃÅï–Å±ïÃÅ¡À•…ï≈’•Ã∏à§∞(ÄÄÄÄÄÄÄÄâYΩ’ÃÅ—…Ω’Ÿï…ïËÅç§µëïÕÕΩ’ÃÅŸΩÃÅ…ï√°…ïÃÅô•Öâ±ïÃÅï–Å±ïÃÅÖç—•ΩπÃÅçΩπçÀ°—ïÃÅ¡Ω’»ÅÖŸÖπçï»∏Å9Ω—…îÉ•≈’•¡îÅ…ïÕ—îÅë•Õ¡Ωπ•â±îÅ¡Ω’»ÅŸΩ’ÃÅÖççΩµ¡Öùπï»ÅÕÖπÃÅ¡À•Õ’µï»ÅëîÅ≥äeÖççΩ…êÅìäe’∏ÅΩ…ùÖπ•ÕµîÅô•πÖπçï’»ÅΩ‘ÅÖëµ•π•Õ—…Ö—•ò∏à∞(ÄÄÄÅt(ÄÄÄÅô•πÖπç•πúÄÙÄàà(ÄÄÄÅç¡òÄÙÅ}¡Ö…Õï}ç¡ô}ŸÖ±’î°ïπ—…‰πùï–†âç¡ô}µΩπ—Öπ–à§§(ÄÄÄÅ¡…•çîÄÙÅA19}QI%Lπùï–°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§∞Ä¿§(ÄÄÄÅ•òÅç¡òÅÖπêÅ¡…•çîÅÖπêÅç¡òÄ¯ÙÅ¡…•çîË(ÄÄÄÄÄÄÄÅô•πÖπç•πúÄÙÄâYΩ—…îÅµΩπ—Öπ–ÅAÅì•ç±ÖÀ§ÅçΩ’Ÿ…îÅ±îÅ—Ö…•ò∞ÅÕΩ’ÃÅÀ•Õï…ŸîÅë‘ÅÕΩ±ëîÅÀ•ï∞Åë•Õ¡Ωπ•â±îÅÖ‘ÅµΩµïπ–ÅëîÅ≥äe•πÕç…•¡—•Ω∏∏à(ÄÄÄÅï±•òÅç¡òÅÖπêÅ¡…•çîË(ÄÄÄÄÄÄÄÅô•πÖπç•πúÄÙÅòâYΩ—…îÅµΩπ—Öπ–ÅAÅì•ç±ÖÀ§Åô•πÖπçîÅ’πîÅ¡Ö…—•îÅë‘Å—Ö…•òÄÏÅ±îÅ…ïÕ—îÉÄÅçΩ’Ÿ…•»ÅïÕ–ÅëîÅÌ¡…•çîÄ¥Åç¡òË±ÙÉä
+∞ÅQQ∏àπ…ï¡±Öçî†à∞à∞ÄàÄà§(ÄÄÄÅ•òÅ}ÂïÃ°ïπ—…‰πùï–†âô…Öπçï}—…ÖŸÖ•∞à§§Ë(ÄÄÄÄÄÄÄÅô—}Õ—Ö—’ÃÄÙÅÕ—»°ïπ—…‰πùï–†âô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ãà§ÅΩ»Äàà§π±Ω›ï»†§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅô—}Õ—Ö—’ÃÅ•∏ÅÏâÕ’âµ•——ïêà∞Äâ—…ÖπÕµ•——ïêà∞Äâ—…ÖπÕµ•Õîà∞Äâëï¡ΩÕïîà∞Äâì•¡Ωœ•îâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅ›•Õ°ïêÄÙÄâYΩ—…îÅëïµÖπëîÅëîÅô•πÖπçïµïπ–ÅÖ’¡À°ÃÅëîÅ…ÖπçîÅQ…ÖŸÖ•∞ÅÑÉ•”§Å—…ÖπÕµ•ÕîÄÏÅÕÑÅì•ç•Õ•Ω∏Å…ïÕ—îÅª•çïÕÕÖ•…î∏à(ÄÄÄÄÄÄÄÅï±•òÅô—}Õ—Ö—’ÃÅ•∏ÅÏâ¡ïπë•πúà∞Äâïπ}çΩ’…Ãà∞Äâï∏ÅÖ——ïπ—îâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅ›•Õ°ïêÄÙÄâYΩ—…îÅëïµÖπëîÅëîÅô•πÖπçïµïπ–Å…ÖπçîÅQ…ÖŸÖ•∞ÅïÕ–Åï∏ÅçΩ’…ÃÅìäe•πÕ—…’ç—•Ω∏Å¡Ö»Å≥äeΩ…ùÖπ•Õµî∏à(ÄÄÄÄÄÄÄÅï±•òÅô—}Õ—Ö—’ÃÅ•∏ÅÏâÖ¡¡…ΩŸïêà∞ÄâÖççï¡—ïêà∞ÄâÖççï¡—ïîà∞ÄâÖççï¡”•îâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅ›•Õ°ïêÄÙÄâYΩ—…îÅëïµÖπëîÅëîÅô•πÖπçïµïπ–Å…ÖπçîÅQ…ÖŸÖ•∞ÅïÕ–Å•πë•≈◊•îÅçΩµµîÅÖççï¡”•î∏à(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ›•Õ°ïêÄÙÄâYΩ’ÃÅÕΩ’°Ö•—ïËÉ•—’ë•ï»ÅÖŸïåÅπΩ—…îÉ•≈’•¡îÅ±ÑÅ¡ΩÕÕ•â•±•”§Åìäe’πîÅëïµÖπëîÅëîÅô•πÖπçïµïπ–ÅÖ’¡À°ÃÅëîÅ…ÖπçîÅQ…ÖŸÖ•∞∏à(ÄÄÄÄÄÄÄÅô•πÖπç•πúÄÙÅòâÌô•πÖπç•πùÙÅÌ›•Õ°ïëÙàπÕ—…•¿†§(ÄÄÄÅçπÖ¡ÃÄÙÄàà(ÄÄÄÅôΩ…µÖ—•Ωπ}çΩëîÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÅ•∏ÅÏâALà∞ÄâÕ@âÙË(ÄÄÄÄÄÄÄÅçπÖ¡Õ}Õ—Ö—’ÃÄÙÅÕ—»°ïπ—…‰πùï–†âçπÖ¡Õ}Õ—Ö—’Ãà§ÅΩ»Äàà§π±Ω›ï»†§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅçπÖ¡Õ}Õ—Ö—’ÃÅ•∏ÅÏâÕ’âµ•——ïêà∞Äâ—…ÖπÕµ•——ïêà∞Äâ—…ÖπÕµ•ÕîâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅçπÖ¡ÃÄÙÄâYΩ—…îÅëïµÖπëîÅìäeÖ’—Ω…•ÕÖ—•Ω∏Å¡À•Ö±Öâ±îÅ9ALÅÑÉ•”§Å—…ÖπÕµ•Õî∏Å9Ω—…îÉ•≈’•¡îÅ…ïÕ—îÅë•Õ¡Ωπ•â±îÅ¡ïπëÖπ–ÅÕΩ∏Å•πÕ—…’ç—•Ω∏∏à(ÄÄÄÄÄÄÄÅï±•òÅçπÖ¡Õ}Õ—Ö—’ÃÅ•∏ÅÏâÖ¡¡…ΩŸïêà∞ÄâÖççï¡—ïêà∞ÄâÖççï¡—ïîà∞ÄâÖççï¡”•îâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅçπÖ¡ÃÄÙÄâYΩ—…îÅÖ’—Ω…•ÕÖ—•Ω∏Å9ALÅïÕ–Å•πë•≈◊•îÅçΩµµîÅÖççï¡”•îÄÏÅπΩ—…îÉ•≈’•¡îÅ€•…•ô•ï…ÑÅÖŸïåÅŸΩ’ÃÅ±îÅ©’Õ—•ô•çÖ—•òÅª•çïÕÕÖ•…î∏à(ÄÄÄÄÄÄÄÅï±•òÅ}ÂïÃ°ïπ—…‰πùï–†âçπÖ¡Õ}Ω¨à§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçπÖ¡ÃÄÙÄâYΩ—…îÅçÖ…—îÅ¡…ΩôïÕÕ•Ωππï±±îÅïÕ–ÅŸÖ±•ëîÄÏÅπΩ—…îÉ•≈’•¡îÅ€•…•ô•ï…ÑÅÖŸïåÅŸΩ’ÃÅ±ïÃÅ©’Õ—•ô•çÖ—•ôÃÅª•çïÕÕÖ•…ïÃ∏à(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅçπÖ¡ÃÄÙÅòâM§ÅŸΩ’ÃÅπîÅë•Õ¡ΩÕïËÅ¡ÖÃÅïπçΩ…îÅìäe’πîÅçÖ…—îÅ¡…ΩôïÕÕ•Ωππï±±î∞Å≥äg•—Ö¡îÅÖ——ïπë’îÅÖŸÖπ–Å≥äeïπ—À•îÅï∏ÅôΩ…µÖ—•Ω∏ÅÌôΩ…µÖ—•Ωπ}çΩëïÙÅïÕ–Å≥äeÖ’—Ω…•ÕÖ—•Ω∏Å¡À•Ö±Öâ±îÅ9AL∏Å9Ω—…îÉ•≈’•¡îÅŸΩ’ÃÅÖççΩµ¡ÖùπîÅëÖπÃÅçï——îÅì•µÖ…ç°î∏à(ÄÄÄÅÕ—ï¡ÃÄÙÅlâΩπÕ’±—ï»Å±îÅëΩÕÕ•ï»ÅëîÅ¡À•Õïπ—Ö—•Ω∏Åï–Å±îÅ¡±Öππ•πú∏ât(ÄÄÄÅ•òÅÕïÕÕ•Ω∏ËÅÕ—ï¡ÃπÖ¡¡ïπê†âΩπô•…µï»ÅÖŸïåÅπΩ—…îÉ•≈’•¡îÅ±ÑÅÕïÕÕ•Ω∏ÅÕΩ’°Ö•”•î∏à§(ÄÄÄÅ•òÅ}ÂïÃ°ïπ—…‰πùï–†âç¡ô}çΩπÕ’±—îà§§ËÅÕ—ï¡ÃπÖ¡¡ïπê†â[•…•ô•ï»Å≈’îÅŸΩ—…îÅ%ëïπ—•”§Å9’∑•…•≈’îÅ1ÑÅAΩÕ—îÅïÕ–ÅôΩπç—•Ωππï±±îÅÖŸÖπ–Å—Ω’—îÅ•πÕç…•¡—•Ω∏ÅA∏à§(ÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÅ•∏ÅÏâALà∞ÄâÕ@âÙÅÖπêÅπΩ–Å}ÂïÃ°ïπ—…‰πùï–†âçπÖ¡Õ}Ω¨à§§ËÅÕ—ï¡ÃπÖ¡¡ïπê†âAÀ•¡Ö…ï»ÅÖŸïåÅπΩ—…îÉ•≈’•¡îÅ±ÑÅì•µÖ…ç°îÅìäeÖ’—Ω…•ÕÖ—•Ω∏Å¡À•Ö±Öâ±îÅ9AL∏à§(ÄÄÄÅ…ï—’…∏ÅÏâÕ’µµÖ…Â}¡Ö…Öù…Ö¡°ÃàËÅ¡Ö…Öù…Ö¡°Ã∞Äâô•πÖπç•πù}µïÕÕÖùîàËÅô•πÖπç•πú∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçπÖ¡Õ}µïÕÕÖùîàËÅçπÖ¡Ã∞Äâπï·—}Õ—ï¡ÃàËÅÕ—ï¡ÕlË—uÙ(()ëïòÅ}ŸÖ±•ëÖ—ï}Õïç…ï—Ö…•Ö—}Ö•}çΩπ—ïπ–°…Ö‹∞ÅôÖ±±âÖç¨∞Åïπ—…‰ı9Ωπî∞Å¡…ΩÕ¡ïç—}ô•…Õ—}πÖµîÙàà§Ë(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅ©ÕΩ∏π±ΩÖëÃ°…Ö‹§Å•òÅ•Õ•πÕ—Öπçî°…Ö‹∞ÅÕ—»§Åï±ÕîÅ…Ö‹(ÄÄÄÄÄÄÄÅ¡Ö…Öù…Ö¡°ÃÄÙÅŸÖ±’îπùï–†âÕ’µµÖ…Â}¡Ö…Öù…Ö¡°Ãà§(ÄÄÄÄÄÄÄÅÕ—ï¡ÃÄÙÅŸÖ±’îπùï–†âπï·—}Õ—ï¡Ãà§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°¡Ö…Öù…Ö¡°Ã∞Å±•Õ–§ÅΩ»ÅπΩ–Ä»ÄÙÅ±ï∏°¡Ö…Öù…Ö¡°Ã§ÄÙÄ–ÅΩ»ÅπΩ–Å•Õ•πÕ—Öπçî°Õ—ï¡Ã∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âÕ—…’ç—’…îÅ•πŸÖ±•ëîà§(ÄÄÄÄÄÄÄÅôΩ…â•ëëï∏ÄÙÄ†àà∞ÄââΩπ©Ω’»à∞ÄâçÖÕÕÖπë…îÅµïπÖ…êà∞Äâ±îÅçÖπë•ëÖ–à∞Äâ±ÑÅçÖπë•ëÖ—îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±îÅ¡…ΩÕ¡ïç–à∞Äâ±ÑÅ¡ï…ÕΩππîÅÕΩ’°Ö•—îà∞Äâ•∞ÅÕΩ’°Ö•—îà∞Äâï±±îÅÕΩ’°Ö•—îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ•∞ÅëïŸ…Ñà∞Äâï±±îÅëïŸ…Ñà§(ÄÄÄÄÄÄÄÅë’¡±•çÖ—ï}•π—…Ωë’ç—•ΩπÃÄÙÄ†âµï…ç§Å¡Ω’»Å±îÅ—ïµ¡Ãà∞Äâµï…ç§Å¡Ω’»Å±îÅ—ïµ¡ÃÅçΩπÕÖçÀ§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±Ω…ÃÅëîÅπΩ—…îÉ•ç°Öπùîà∞ÄâπΩ—…îÉ•ç°ÖπùîÅÖ‘ÅÕ’©ï–Åëîà§(ÄÄÄÄÄÄÄÅç±ïÖπ}¡Ö…Öù…Ö¡°ÃÄÙÅmÕ—»°¿§πÕ—…•¿†§ÅôΩ»Å¿Å•∏Å¡Ö…Öù…Ö¡°ÃÅ•òÅÕ—»°¿§πÕ—…•¿†•t(ÄÄÄÄÄÄÄÅ•òÅπΩ–Ä»ÄÙÅ±ï∏°ç±ïÖπ}¡Ö…Öù…Ö¡°Ã§ÄÙÄ–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âπΩµâ…îÅëîÅ¡Ö…Öù…Ö¡°ïÃÅ•πŸÖ±•ëîà§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åç±ïÖπ}¡Ö…Öù…Ö¡°Õl¡tπçÖÕïôΩ±ê†§πÕ—Ö…—Õ›•—††âŸΩ’ÃÅÕΩ’°Ö•—ïËÅëïÃÅ…ïπÕï•ùπïµïπ—ÃÅçΩπçï…πÖπ–Å±ÑÅôΩ…µÖ—•Ω∏à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âôΩ…µ’±Ö—•Ω∏ÅëîÅ±ÑÅëïµÖπëîÅ•πŸÖ±•ëîà§(ÄÄÄÄÄÄÄÅÖ±±}çΩπ—ïπ–ÄÙÅç±ïÖπ}¡Ö…Öù…Ö¡°ÃÄ¨ÅmÕ—»°ŸÖ±’îπùï–†âô•πÖπç•πù}µïÕÕÖùîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°ŸÖ±’îπùï–†âçπÖ¡Õ}µïÕÕÖùîà§ÅΩ»Äàà§πÕ—…•¿†•t(ÄÄÄÄÄÄÄÅÖ±±}çΩπ—ïπ–Ä¨ÙÅmÕ—»°Õ—ï¿§πÕ—…•¿†§ÅôΩ»ÅÕ—ï¿Å•∏ÅÕ—ï¡Õt(ÄÄÄÄÄÄÄÅ•òÅÖπ‰°Öπ‰°—Ω≠ï∏Å•∏Å—ï·–π±Ω›ï»†§ÅôΩ»Å—Ω≠ï∏Å•∏ÅôΩ…â•ëëï∏§ÅôΩ»Å—ï·–Å•∏ÅÖ±±}çΩπ—ïπ–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âçΩπ—ïπ‘Å•π—ï…ë•–à§(ÄÄÄÄÄÄÄÅ•òÅÖπ‰°Öπ‰°—Ω≠ï∏Å•∏Å—ï·–πçÖÕïôΩ±ê†§ÅôΩ»Å—Ω≠ï∏Å•∏Åë’¡±•çÖ—ï}•π—…Ωë’ç—•ΩπÃ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å—ï·–Å•∏Åç±ïÖπ}¡Ö…Öù…Ö¡°Ã§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â•π—…Ωë’ç—•Ω∏ÅÀ•√•”•îà§(ÄÄÄÄÄÄÄÅô•…Õ—}πÖµîÄÙÅÕ—»°¡…ΩÕ¡ïç—}ô•…Õ—}πÖµîÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅô•…Õ—}πÖµîÅÖπêÅÖπ‰°…îπÕïÖ…ç†°…òà†¸Öq‹•Ì…îπïÕçÖ¡î°ô•…Õ—}πÖµî•Ù†¸Öq‹§à∞Å—ï·–∞Å…îπ$§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å—ï·–Å•∏ÅÖ±±}çΩπ—ïπ–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â¡À•πΩ¥Åë‘ÅëïÕ—•πÖ—Ö•…îÅ•π—ï…ë•–à§(ÄÄÄÄÄÄÄÅ…ïÕ’±–ÄÙÅÏâÕ’µµÖ…Â}¡Ö…Öù…Ö¡°ÃàËÅç±ïÖπ}¡Ö…Öù…Ö¡°Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâô•πÖπç•πù}µïÕÕÖùîàËÅÕ—»°ŸÖ±’îπùï–†âô•πÖπç•πù}µïÕÕÖùîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçπÖ¡Õ}µïÕÕÖùîàËÅÕ—»°ŸÖ±’îπùï–†âçπÖ¡Õ}µïÕÕÖùîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπï·—}Õ—ï¡ÃàËÅmÕ—»°Õ—ï¿§πÕ—…•¿†§ÅôΩ»ÅÕ—ï¿Å•∏ÅÕ—ï¡ÃÅ•òÅÕ—»°Õ—ï¿§πÕ—…•¿†•ulË—uÙ(ÄÄÄÄÄÄÄÅô—}Õ—Ö—’ÃÄÙÅÕ—»†°ïπ—…‰ÅΩ»ÅÌÙ§πùï–†âô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ãà§ÅΩ»Äàà§π±Ω›ï»†§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åô—}Õ—Ö—’ÃÅÖπêÅ…îπÕïÖ…ç†°»à°ëïµÖπëîπÏ¿∞Ã¡Ù°—…ÖπÕµ•ÕïÒì•¡Ωœ•ïÒï∏ÅçΩ’…ÕÒï∏ÅÖ——ïπ—ïÒŸÖ±•ì•ïÒÖççï¡”•î§§à∞Å…ïÕ’±—lâô•πÖπç•πù}µïÕÕÖùîât∞Å…îπ$§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âÕ—Ö—’–Å…ÖπçîÅQ…ÖŸÖ•∞ÅπΩ∏Å¡…Ω’€§à§(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ωπ}çΩëîÄÙÅÕ—»†°ïπ—…‰ÅΩ»ÅÌÙ§πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÄÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÅπΩ–Å•∏ÅÏâALà∞ÄâÕ@âÙË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±—lâçπÖ¡Õ}µïÕÕÖùîâtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±—lâπï·—}Õ—ï¡ÃâtÄÙÅmÕ—ï¿ÅôΩ»ÅÕ—ï¿Å•∏Å…ïÕ’±—lâπï·—}Õ—ï¡Ãât(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å…îπÕïÖ…ç†°»â9AMÒçÖ…—îÅ¡…ΩôïÕÕ•Ωππï±±îà∞ÅÕ—ï¿∞Å…îπ$•t(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïÕ’±–(ÄÄÄÅï·çï¡–Ä°YÖ±’ï……Ω»∞ÅQÂ¡ï……Ω»∞Å©ÕΩ∏π)M=9ïçΩëï……Ω»∞Å——…•â’—ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅôÖ±±âÖç¨(()ëïòÅ}Õïç…ï—Ö…•Ö—}¡…Ω©ïç—}…Ω›Ã°ïπ—…‰∞ÅçΩπô•ú§Ë(ÄÄÄÅ…Ω›ÃÄÙÅl†âΩ…µÖ—•Ω∏à∞ÅçΩπô•ùlâ±Öâï∞ât§∞Ä†âMïÕÕ•Ω∏Åï–Åçïπ—…îà∞Åïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîà§•t(ÄÄÄÅ•òÅïπ—…‰πùï–†âç¡ô}µΩπ—Öπ–à§ËÅ…Ω›ÃπÖ¡¡ïπê††â	’ëùï–ÅAÅì•ç±ÖÀ§à∞ÅòâÌïπ—…Âlùç¡ô}µΩπ—Öπ–ùuÙÉä
+∞à§§(ÄÄÄÅô’πë•πúÄÙÅmt(ÄÄÄÅ•òÅ}ÂïÃ°ïπ—…‰πùï–†âô…Öπçï}—…ÖŸÖ•∞à§§ËÅô’πë•πúπÖ¡¡ïπê†ã•—’ëîÅìäe’πîÅ¡ΩÕÕ•â•±•”§ÅëîÅô•πÖπçïµïπ–Å…ÖπçîÅQ…ÖŸÖ•∞ÅÕΩ’°Ö•”•îà§(ÄÄÄÅ•òÅ}ÂïÃ°ïπ—…‰πùï–†âô•πÖπçïµïπ—}¡ï…Õºà§§ËÅô’πë•πúπÖ¡¡ïπê†âô•πÖπçïµïπ–Å¡ï…ÕΩππï∞Å¡ΩÕÕ•â±îà§(ÄÄÄÅ•òÅô’πë•πúËÅ…Ω›ÃπÖ¡¡ïπê††â•πÖπçïµïπ–ÅïπŸ•ÕÖü§à∞ÄàÄÏÄàπ©Ω•∏°ô’πë•πú§§§(ÄÄÄÅ•òÅ}ÂïÃ°ïπ—…‰πùï–†âëïŸ•Ãà§§ËÅ…Ω›ÃπÖ¡¡ïπê††âïŸ•Ãà∞ÄâU∏ÅëïŸ•ÃÅÑÉ•”§ÅëïµÖπì§à§§(ÄÄÄÅ…ï—’…∏Ål°±Öâï∞∞ÅŸÖ±’î§ÅôΩ»Å±Öâï∞∞ÅŸÖ±’îÅ•∏Å…Ω›ÃÅ•òÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†•t(()ëïòÅ}â’•±ë}Õïç…ï—Ö…•Ö—}ôΩ±±Ω›’¡}ïµÖ•∞°ïπ—…‰∞ÅçΩπ—Öç–∞Å±ΩùΩ}Õ…åÙâç•êÈ•π—ïù…Ö±îµÖçÖëïµ‰µ±Ωùºà§Ë(ÄÄÄÅçΩπô•úÄÙÅ}Õïç…ï—Ö…•Ö—}ôΩ…µÖ—•Ωπ}çΩπô•ú°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§§(ÄÄÄÅôÖ±±âÖç¨ÄÙÅ}Õïç…ï—Ö…•Ö—}ïµÖ•±}ôÖ±±âÖç¨°ïπ—…‰§(ÄÄÄÅôÖç—ÃÄÙÅÌ≠ï‰ËÅïπ—…‰πùï–°≠ï‰∞Äàà§ÅôΩ»Å≠ï‰Å•∏Ä†âôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîà∞ÄâôΩ…µÖ—•Ωπ}ÕïÕÕ•Ωπ}±Öâï∞à∞ÄâôΩ…µÖ—•Ωπ}çïπ—…îà∞ÄâôΩ…µÖ—•Ωπ}ëÖ—ï}ï·Öµï∏à∞ÄâëïŸ•Ãà∞Äâ…ëŸ}Õ—Ö—’Ãà∞Äâ…ëŸ}ëÖ—îà∞Äâ…ëŸ}—•µîà∞Äâ…ëŸ}µΩëîà∞Äâç¡ô}çΩπÕ’±—îà∞Äâç¡ô}µΩπ—Öπ–à∞Äâô…Öπçï}—…ÖŸÖ•∞à∞Äâô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ãà∞Äâô—}…ïô’Õ}Ω¨à∞Äâô•πÖπçïµïπ—}¡ï…Õºà∞Äâ•ëïπ—•—ï}π’µï…•≈’îà∞ÄâçπÖ¡Õ}Ω¨à∞ÄâçπÖ¡Õ}Õ—Ö—’Ãà∞ÄâπΩ—ïÃà•Ù(ÄÄÄÅôÖç—Ãπ’¡ëÖ—î°ÏâçΩëîàËÅïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§∞Äâ•π—•—’±îàËÅçΩπô•úπùï–†â±Öâï∞à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÖë…ïÕÕï}çïπ—…îàËÅçΩπô•úπùï–†â±ΩçÖ—•Ω∏à∞Äàà§∞Äâ—Ö…•òàËÅçΩπô•úπùï–†â¡…•çîà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâë’…ïîàËÅçΩπô•úπùï–†âë’…Ö—•Ω∏à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩâ©ïç—•ô}çï…—•ô•çÖ—•Ω∏àËÅçΩπô•úπùï–†âçï…—•ô•çÖ—•Ω∏à§ÅΩ»ÅçΩπô•úπùï–†â¡’…¡ΩÕîà∞Äàà•Ù§(ÄÄÄÅôΩ…µÖ—•Ωπ}çΩëîÄÙÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÅπΩ–Å•∏ÅÏâALà∞ÄâÕ@âÙË(ÄÄÄÄÄÄÄÅôÖç—ÃÄÙÅÌ≠ï‰ËÅŸÖ±’îÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏ÅôÖç—Ãπ•—ïµÃ†§Å•òÅ≠ï‰ÅπΩ–Å•∏ÅÏâçπÖ¡Õ}Ω¨à∞ÄâçπÖ¡Õ}Õ—Ö—’ÃâıÙ(ÄÄÄÅÕÂÕ—ï¥ÄÙÄààâQ‘Å¡…Ωë’•ÃÅ’π•≈’ïµïπ–Å’∏ÅΩâ©ï–Å)M=8ÅŸÖ±•ëîÅÖŸïåÅÕ’µµÖ…Â}¡Ö…Öù…Ö¡°ÃÄ†»ÉÄÄÃÅ¡Ö…Öù…Ö¡°ïÃ∞ÄƒÃ¿ÉÄÄ»»¿ÅµΩ—ÃÅÖ‘Å—Ω—Ö∞§∞Åô•πÖπç•πù}µïÕÕÖùî∞ÅçπÖ¡Õ}µïÕÕÖùîÅï–Åπï·—}Õ—ï¡ÃÄ†»ÉÄÄ–É•≥•µïπ—Ã§∏Å…ÖªùÖ•ÃÅπÖ—’…ï∞∞Å¡…ΩôïÕÕ•Ωππï∞∞Åç°Ö±ï’…ï’‡Åï–Åç±Ö•»∏Å’ç’∏Å!Q50∞Å5Ö…≠ëΩ›∏∞Å¡’çîÅëÖπÃÅ±ïÃÅ¡Ö…Öù…Ö¡°ïÃ∞ÅÕÖ±’—Ö—•Ω∏ÅΩ‘ÅÕ•ùπÖ—’…î∏ÅYΩ’ÃÅÀ•ë•ùïËÅ’∏ÅµïÕÕÖùîÅÖë…ïÕœ§Åë•…ïç—ïµïπ–ÅÖ‘ÅëïÕ—•πÖ—Ö•…î∏Åµ¡±ΩÂïËÅï·ç±’Õ•Ÿïµïπ–ÅŸΩ’Ã∞ÅŸΩ—…îÅï–ÅŸΩÃ∏Å9îÅµïπ—•ΩππïËÅ©ÖµÖ•ÃÅÕΩ∏Å¡À•πΩ¥Åï–ÅπîÅ¡Ö…±ïËÅ©ÖµÖ•ÃÅëîÅ±’§ÉÄÅ±ÑÅ—…Ω•Õß°µîÅ¡ï…ÕΩππî∏Å8ù•πŸïπ—îÅÖ’ç’πîÅ•πôΩ…µÖ—•Ω∏Åï–Å’—•±•ÕîÅ±ïÃÅπΩ—ïÃÅ’π•≈’ïµïπ–ÅçΩµµîÅÕΩ’…çîÅôÖç—’ï±±î∞ÅÕÖπÃÅ…ï¡…Ωë’•…îÅëîÅπΩ—îÅ•π—ï…πî∏Å3äe•π—…Ωë’ç—•Ω∏ÅëîÅ…ïµï…ç•ïµïπ–ÅïÕ–Åì•´ÄÅÖôô•ç£•îÅÖŸÖπ–ÅŸΩ—…îÅ—ï·—î∏Å9îÅ±ÑÅÀ•√•—ïËÅ©ÖµÖ•Ã∏Å1îÅ¡…ïµ•ï»Å¡Ö…Öù…Ö¡°îÅëΩ•–ÅçΩµµïπçï»Åë•…ïç—ïµïπ–Å¡Ö»ÉäqYΩ’ÃÅÕΩ’°Ö•—ïËÅëïÃÅ…ïπÕï•ùπïµïπ—ÃÅçΩπçï…πÖπ–Å±ÑÅôΩ…µÖ—•Ωªäõät∏Å9îÅ¡À•Õïπ—îÅ©ÖµÖ•ÃÅ±ÑÅëïµÖπëîÅëîÅ…ïπÕï•ùπïµïπ—ÃÅçΩµµîÅ’∏ÅÕΩ’°Ö•–ÅëîÅœäe•πÕç…•…î∞Åìäe•π”•ù…ï»ÅΩ‘ÅëîÅÕ’•Ÿ…îÅ±ÑÅôΩ…µÖ—•Ω∏∏Å;äe’—•±•ÕïËÅ¡ÖÃÅ±ïÃÅï·¡…ïÕÕ•ΩπÃÉäq5ï…ç§Å¡Ω’»Å±îÅ—ïµ¡œät∞Éäq±Ω…ÃÅëîÅπΩ—…îÉ•ç°ÖπùóätÅΩ‘ÉäqπΩ—…îÉ•ç°ÖπùîÅÖ‘ÅÕ’©ï–Åëóät∏ÅU∏ÅÕΩ’°Ö•–Å…ÖπçîÅQ…ÖŸÖ•∞Å∏ùïÕ–Å©ÖµÖ•ÃÅ’πîÅëïµÖπëîÅì•¡Ωœ•î∞Åï∏ÅçΩ’…ÃÅΩ‘ÅŸÖ±•ì•î∏ÅMÖπÃÅÕ—Ö—’–Åï·¡±•ç•—î∞Å•πë•≈’ïËÄËÉ
+¨ÅYΩ’ÃÅÕΩ’°Ö•—ïËÉ•—’ë•ï»ÅÖŸïåÅπΩ—…îÉ•≈’•¡îÅ±ÑÅ¡ΩÕÕ•â•±•”§Åìäe’πîÅëïµÖπëîÅëîÅô•πÖπçïµïπ–ÅÖ’¡À°ÃÅëîÅ…ÖπçîÅQ…ÖŸÖ•∞∏É
+ÏÅ1îÅ9ALÅïÕ–ÅÖ¡¡±•çÖâ±îÅ’π•≈’ïµïπ–ÅÖ’‡ÅôΩ…µÖ—•ΩπÃÅALÅï–ÅÕ@ÄËÅ¡Ω’»Å—Ω’—îÅÖ’—…îÅôΩ…µÖ—•Ω∏∞Å…ïπŸΩ•îÅ’πîÅç°áππîÅŸ•ëîÅëÖπÃÅçπÖ¡Õ}µïÕÕÖùîÅï–Å∏ùÖ©Ω’—îÅÖ’ç’πîÉ•—Ö¡îÅ9ALÅΩ‘ÅçÖ…—îÅ¡…ΩôïÕÕ•Ωππï±±î∏Å•Õ—•πù’îÅÖâÕïπçîÅëîÅçÖ…—î∞ÅÖ’—Ω…•ÕÖ—•Ω∏Å¡À•Ö±Öâ±î∞ÅëïµÖπëîÅ—…ÖπÕµ•Õî∞Åï·¡•…Ö—•Ω∏Åï–Å…ïô’ÃÅ9AL∏Å9îÅÀ•√°—îÅ¡ÖÃÅµΩ–Å¡Ω’»ÅµΩ–Å±îÅ—Öâ±ïÖ‘ÅôÖç—’ï∞∏ààà(ÄÄÄÅ’Õï»ÄÙÅ©ÕΩ∏πë’µ¡Ã°ÏâçΩëï}ôΩ…µÖ—•Ω∏àËÅôΩ…µÖ—•Ωπ}çΩëî∞Äâ•π—•—’±ï}ôΩ…µÖ—•Ω∏àËÅçΩπô•ùlâ±Öâï∞ât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâôÖ•—Õ}Ö’—Ω…•ÕïÃàËÅôÖç—ÕÙ∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî§(ÄÄÄÅô•…Õ—}πÖµîÄÙÅ}Õïç…ï—Ö…•Ö—}ë•Õ¡±ÖÂ}ô•…Õ—}πÖµî°ïπ—…‰πùï–†â¡…ïπΩ¥à§ÅΩ»ÅçΩπ—Öç–πùï–†â¡…ïπΩ¥à§ÅΩ»ÅÕ—»°ïπ—…‰πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ¡±•–†àÄà•l¡t§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅ}ŸÖ±•ëÖ—ï}Õïç…ï—Ö…•Ö—}Ö•}çΩπ—ïπ–†(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Ö§°ÕÂÕ—ï¥∞Å’Õï»∞ÅµÖ·}—Ω≠ïπÃÙ‰¿¿§∞ÅôÖ±±âÖç¨∞Åïπ—…‰∞Åô•…Õ—}πÖµî(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ¡…•π–†âΩµ¡—îÅ…ïπë‘Å%Å•πë•Õ¡Ωπ•â±î∞ÅôÖ±±âÖç¨Åì•—ï…µ•π•Õ—îÄËà∞Åï·å§(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅôÖ±±âÖç¨(ÄÄÄÅÕ’â©ïç–ÄÙÅòâYΩ—…îÅ¡…Ω©ï–ÅÌçΩπô•úπùï–†ùÕ°Ω…–ú§ÅΩ»ÅçΩπô•ùlù±Öâï∞ùuÙÉäLÅ±îÅÀ•Õ’∑§ÅëîÅπΩ—…îÉ•ç°Öπùîà(ÄÄÄÅçΩπ—ï·–ÄÙÅë•ç–°¡…ïπΩ¥ıô•…Õ—}πÖµî∞ÅôΩ…µÖ—•Ω∏ıçΩπô•ú∞Åïπ—…‰ıïπ—…‰∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—ïπ–ıçΩπ—ïπ–∞Å¡…Ω©ïç—}…Ω›Ãı}Õïç…ï—Ö…•Ö—}¡…Ω©ïç—}…Ω›Ã°ïπ—…‰∞ÅçΩπô•ú§∞ÅÖ¡¡Ω•π—µïπ–ı}Õïç…ï—Ö…•Ö—}…ëÿ°ïπ—…‰§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ’¡çΩµ•πù}ÕïÕÕ•ΩπÃı}Õïç…ï—Ö…•Ö—}’¡çΩµ•πù}ÕïÕÕ•Ωπ}ù…Ω’¡Ã°ôΩ…µÖ—•Ωπ}çΩëî∞Åïπ—…‰πùï–†âôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîà∞Äàà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ≈’Ω—ï}’…∞ıïπ—…‰πùï–†âëïŸ•Õ}’…∞à∞Äàà§∞Å±ΩùΩ}Õ…åı±ΩùΩ}Õ…å∞ÅÖ•}’…∞ıMIQI%Q}%}UI0§(ÄÄÄÅ°—µ±}âΩë‰ÄÙÅ…ïπëï…}—ïµ¡±Ö—î†(ÄÄÄÄÄÄÄÄâïµÖ•±ÃΩïµÖ•±}…ïÕ’µï}ïç°Öπùï}•π—ïù…Ö±îπ°—µ∞à∞(ÄÄÄÄÄÄÄÄ®©çΩπ—ï·–(ÄÄÄÄ§(ÄÄÄÅ¡±Ö•∏ÄÙÅ…ïπëï…}—ïµ¡±Ö—î†âïµÖ•±ÃΩïµÖ•±}…ïÕ’µï}ïç°Öπùï}•π—ïù…Ö±îπ—·–à∞Ä®©çΩπ—ï·–§(ÄÄÄÅ…ï—’…∏ÅÕ’â©ïç–∞Å¡±Ö•∏∞Å°—µ±}âΩë‰(()ëïòÅ}Õïç…ï—Ö…•Ö—}¡…ïŸ•ï›}ëÖ—Ñ°Õç°ïë’±ïêıÖ±Õî§Ë(ÄÄÄÅ…ï—’…∏Ä°Ï(ÄÄÄÄÄÄÄÄâ•êàËÄâ¡…ïŸ•ï‹µÕïç…ï—Ö…•Ö–à∞ÄâôΩ…µÖ—•Ω∏àËÄâALà∞ÄâπΩ¥àËÄâ≥•µïπ–Å5Ö…—•∏à∞(ÄÄÄÄÄÄÄÄâïµÖ•∞àËÄâ¡…ïŸ•ï›ï·Öµ¡±îπ•πŸÖ±•êà∞Äâ—ï±ï¡°ΩπîàËÄà¿ÿ¿¿¿¿¿¿¿¿à∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ωπ}ëÖ—ï}ÕΩ’°Ö•—ïîàËÄâ——îÅìäeÈ’»ÉäPÅë‘Ä‹ÅÕï¡—ïµâ…îÅÖ‘Ä‰ÅΩç—Ωâ…îÄ»¿»ÿà∞(ÄÄÄÄÄÄÄÄâç¡ô}çΩπÕ’±—îàËÄâ=U$à∞Äâç¡ô}µΩπ—Öπ–àËÄà»¿¿¿à∞Äâô…Öπçï}—…ÖŸÖ•∞àËÄâ=U$à∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕºàËÄâ=U$à∞Äâ•ëïπ—•—ï}π’µï…•≈’îàËÄâ=U$à∞ÄâçπÖ¡Õ}Ω¨àËÄâ9=8à∞(ÄÄÄÄÄÄÄÄâëïŸ•ÃàËÄâ=U$à∞Äâ…ëŸ}Õ—Ö—’ÃàËÄâÕç°ïë’±ïêàÅ•òÅÕç°ïë’±ïêÅï±ÕîÄâπΩπîà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}ëÖ—îàËÄàƒ‘ÅÕï¡—ïµâ…îÄ»¿»ÿàÅ•òÅÕç°ïë’±ïêÅï±ÕîÄàà∞Äâ…ëŸ}—•µîàËÄàƒ¿ËÃ¿àÅ•òÅÕç°ïë’±ïêÅï±ÕîÄàà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}µΩëîàËÄâŸ•Õ•ΩçΩπõ•…ïπçîàÅ•òÅÕç°ïë’±ïêÅï±ÕîÄàà∞(ÄÄÄÅÙ∞ÅÏâ¡…ïπΩ¥àËÄâ≥•µïπ–âÙ§(()Ö¡¿π…Ω’—î†àΩÖëµ•∏ΩÕïç…ï—Ö…•Ö–ΩïµÖ•∞µ¡…ïŸ•ï‹à§)±Ωù•π}…ï≈’•…ïê)ëïòÅÕïç…ï—Ö…•Ö—}ïµÖ•±}¡…ïŸ•ï‹†§Ë(ÄÄÄÅïπ—…‰∞ÅçΩπ—Öç–ÄÙÅ}Õïç…ï—Ö…•Ö—}¡…ïŸ•ï›}ëÖ—Ñ°…ï≈’ïÕ–πÖ…ùÃπùï–†âÕçïπÖ…•ºà§ÄÙÙÄâÕç°ïë’±ïêà§(ÄÄÄÅ|∞Å|∞Å°—µ±}âΩë‰ÄÙÅ}â’•±ë}Õïç…ï—Ö…•Ö—}ôΩ±±Ω›’¡}ïµÖ•∞†(ÄÄÄÄÄÄÄÅïπ—…‰∞ÅçΩπ—Öç–∞Å±ΩùΩ}Õ…åı’…±}ôΩ»†âÕ—Ö—•åà∞Åô•±ïπÖµîÙâ±Ωùºπ¡πúà∞Å}ï·—ï…πÖ∞ıQ…’î§(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å°—µ±}âΩë‰(()Ö¡¿π…Ω’—î†àΩÖ¡§ΩÖëµ•∏ΩÕïç…ï—Ö…•Ö–ΩïµÖ•∞µ¡…ïŸ•ï‹ΩÕïπêà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅÕïπë}Õïç…ï—Ö…•Ö—}ïµÖ•±}¡…ïŸ•ï‹†§Ë(ÄÄÄÅ…ïç•¡•ïπ–ÄÙÅÕ—»†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†âïµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å…îπô’±±µÖ—ç†°»âmyqÕt≠myqÕt≠pπmyqÕt¨à∞Å…ïç•¡•ïπ–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅÖ±Õî∞Äâï……Ω»àËÄâë…ïÕÕîÅëîÅ—ïÕ–Å•πŸÖ±•ëîâÙ§∞Ä–¿¿(ÄÄÄÅïπ—…‰∞ÅçΩπ—Öç–ÄÙÅ}Õïç…ï—Ö…•Ö—}¡…ïŸ•ï›}ëÖ—Ñ°Ö±Õî§(ÄÄÄÅÕ’â©ïç–∞Å¡±Ö•∏∞Å°—µ±}âΩë‰ÄÙÅ}â’•±ë}Õïç…ï—Ö…•Ö—}ôΩ±±Ω›’¡}ïµÖ•∞°ïπ—…‰∞ÅçΩπ—Öç–§(ÄÄÄÅ•òÅπΩ–ÅÕïπë}ïµÖ•±}°—µ∞°…ïç•¡•ïπ–∞ÅòâmQMQtÅÌÕ’â©ïç—Ùà∞Å¡±Ö•∏∞Å°—µ±}âΩë‰§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅÖ±Õî∞Äâï……Ω»àËÄã%ç°ïåÅëîÅ≥äeïπŸΩ§ÅëîÅ—ïÕ–âÙ§∞Ä‘¿»(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅQ…’ïÙ§()ëïòÅ}ç…µ}πΩ}ÖπÕ›ï…}µïÕÕÖùî°çΩπ—Öç–§Ë(ÄÄÄÄààâ	’•±êÅ—°îÅÕ°Ö…ïêÅîµµÖ•∞ΩM5LÅôΩ±±Ω‹µ’¿ÅÕïπ–ÅÖô—ï»ÅÖ∏Å’πÖπÕ›ï…ïêÅçÖ±∞∏ààà(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»ÄâŸΩ—…îÅôΩ…µÖ—•Ω∏à§πÕ—…•¿†§(ÄÄÄÅëïÕ¡}—Â¡îÄÙÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÅÏ(ÄÄÄÄÄÄÄÄâALàËÄâALà∞ÄâÕ@àËÄâÕ@à∞ÄâMM%@ÄƒàËÄâMM%@à∞ÄâMM%@àËÄâMM%@à∞(ÄÄÄÄÄÄÄÄâ°Ö’ôôï’»ÅYQàËÄâYQà∞ÄâYQàËÄâYQà∞(ÄÄÄÅÙπùï–°ôΩ…µÖ—•Ω∏§(ÄÄÄÅ•òÅôΩ…µÖ—•Ω∏ÄÙÙÄâM@àË(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ωπ}≠ï‰ÄÙÄâMA}YàÅ•òÅëïÕ¡}—Â¡îÄÙÙÄâYàÅï±ÕîÄâMA}%9%Pà(ÄÄÄÅçΩπô•úÄÙÅMIQI%Q}=I5Q%=9Lπùï–°ôΩ…µÖ—•Ωπ}≠ï‰∞ÅÌÙ§(ÄÄÄÅô’±±}πÖµîÄÙÅA19}=I5Q%=9Lπùï–°ôΩ…µÖ—•Ωπ}≠ï‰§ÅΩ»ÅçΩπô•úπùï–†â±Öâï∞à§ÅΩ»ÅçΩπô•úπùï–†âÕ°Ω…–à§ÅΩ»ÅôΩ…µÖ—•Ω∏(ÄÄÄÅçÖ±ïπë±Â}’…∞ÄÙÅçΩπô•úπùï–†âçÖ±ïπë±‰à§ÅΩ»Äâ°——¡ÃËºΩçÖ±ïπë±‰πçΩ¥Ω•π—ïù…Ö±ïÖçÖëïµ‰ΩôΩ…µÖ—•Ω∏à(ÄÄÄÅ…ï—’…∏Ä†(ÄÄÄÄÄÄÄÄâ	Ωπ©Ω’»±qπq∏à(ÄÄÄÄÄÄÄÅòâ+äeÖ§Å—ïπ”§ÅëîÅŸΩ’ÃÅ©Ω•πë…îÅçΩπçï…πÖπ–ÅπΩ—…îÅôΩ…µÖ—•Ω∏ÅÌô’±±}πÖµïÙ∞ÅµÖ•ÃÅ©îÅªäeÖ§ÅµÖ±°ï’…ï’Õïµïπ–Å¡ÖÃÅÀ•’ÕÕ§ÉÄÅŸΩ’ÃÅ©Ω•πë…îπqπq∏à(ÄÄÄÄÄÄÄÄâYΩ’ÃÅ¡Ω’ŸïËÅπΩ’ÃÅ…Ö¡¡ï±ï»ÅÖ‘Ä¿–Ä»»Ä–‹Ä¿‹Äÿ‡ÅÖô•∏Å≈’îÅπΩ’ÃÅ¡’•ÕÕ•ΩπÃÅŸΩ’ÃÅ¡À•Õïπ—ï»ÅπΩ—…îÅôΩ…µÖ—•Ω∏Åï∏Åì•—Ö•±ÃÅï–ÅÀ•¡Ωπë…îÉÄÅ—Ω’—ïÃÅŸΩÃÅ≈’ïÕ—•ΩπÃ∏Äà(ÄÄÄÄÄÄÄÄâYΩ’ÃÅ¡Ω’ŸïËÉ•ùÖ±ïµïπ–ÅµîÅçΩπ—Öç—ï»ÅÕ’»ÅµΩ∏Å¡Ω…—Öâ±îÅÖ‘Ä¿‹Ä–ÃÄ‘‡Ä»»Äÿ–πqπq∏à(ÄÄÄÄÄÄÄÄâYΩ’ÃÅ¡Ω’ŸïËÉ•ùÖ±ïµïπ–ÅÀ•Õï…Ÿï»Åë•…ïç—ïµïπ–Å’∏ÅçÀ•πïÖ‘Å”•≥•¡°Ωπ•≈’îÅÖŸïåÅπΩ—…îÉ•≈’•¡îÅï∏Åç±•≈’Öπ–ÅÕ’»Å±îÅ±•ï∏ÅÕ’•ŸÖπ–ÄËÄà(ÄÄÄÄÄÄÄÅòâÌçÖ±ïπë±Â}’…±ıqπq∏à(ÄÄÄÄÄÄÄÄâ9Ω’ÃÅ…ïÕ—ΩπÃÉÄÅŸΩ—…îÅë•Õ¡ΩÕ•—•Ω∏Åï–ÅŸΩ’ÃÅ…ïµï…ç•ΩπÃÅ¡Ö»ÅÖŸÖπçîÅ¡Ω’»ÅŸΩ—…îÅ…ï—Ω’»πqπq∏à(ÄÄÄÄÄÄÄÄâ	•ï∏ÅçΩ…ë•Ö±ïµïπ–±qπqπÖÕÕÖπë…îÅ59IqπIïÕ¡ΩπÕÖâ±îÅçΩµµï…ç•Ö±îÅ%π”•ù…Ö±îÅçÖëïµ‰à(ÄÄÄÄ§(()ëïòÅ}ç…µ}πÖµïë}—ïµ¡±Ö—î°ëÖ—Ñ∞Å≠•πê∞ÅπÖµî§Ë(ÄÄÄÄààâIï—’…∏ÅÑÅµïÕÕÖùîÅ—ïµ¡±Ö—îÅâ‰Å•—ÃÅ’Õï»µôÖç•πúÅπÖµîÄ°çÖÕîÅ•πÕïπÕ•—•Ÿî§∏ààà(ÄÄÄÅï·¡ïç—ïêÄÙÅÕ—»°πÖµî§πÕ—…•¿†§πçÖÕïôΩ±ê†§(ÄÄÄÅ…ï—’…∏Åπï·–†°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–°òâç…µ}Ì≠•πëı}—ïµ¡±Ö—ïÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—»°•—ï¥πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§πçÖÕïôΩ±ê†§ÄÙÙÅï·¡ïç—ïê§∞Å9Ωπî§(()I5}EU%-}I5%9I}Q5A1QÄÙÄâIÖ¡¡ï∞ÅëÖπÃÄ’µ•∏à(()ëïòÅ}ç…µ}Õïπë}Ö¡¡Ω•π—µïπ—}ôΩ±±Ω›’¿°ëÖ—Ñ∞ÅçΩπ—Öç–∞Å—ïµ¡±Ö—ï}πÖµî§Ë(ÄÄÄÄààâMïπêÅ—°îÅîµµÖ•∞ÅÖπêÅM5LÅâïÖ…•πúÅ—°îÅçΩπô•ù’…ïêÅÖ¡¡Ω•π—µïπ–Å—ïµ¡±Ö—îÅπÖµî∏ààà(ÄÄÄÅëï±•Ÿï…‰ÄÙÅÏâÕµÃàËÅÖ±Õî∞ÄâïµÖ•∞àËÅÖ±ÕïÙ(ÄÄÄÅÕµÕ}—ïµ¡±Ö—îÄÙÅ}ç…µ}πÖµïë}—ïµ¡±Ö—î°ëÖ—Ñ∞ÄâÕµÃà∞Å—ïµ¡±Ö—ï}πÖµî§(ÄÄÄÅïµÖ•±}—ïµ¡±Ö—îÄÙÅ}ç…µ}πÖµïë}—ïµ¡±Ö—î°ëÖ—Ñ∞ÄâïµÖ•∞à∞Å—ïµ¡±Ö—ï}πÖµî§(ÄÄÄÄåÅ!•Õ—Ω…•çÖ∞ÅëÖ—ÖâÖÕïÃÅµÖ‰ÅπΩ–ÅÂï–ÅçΩπ—Ö•∏Å—°îÅπï›±‰ÅπÖµïêÅ—ïµ¡±Ö—ïÃ∏Å-ïï¿(ÄÄÄÄåÅ—°îÅï·•Õ—•πúÅµ•ÕÕïêµçÖ±∞ÅôΩ±±Ω‹µ’¿ÅΩ¡ï…Ö—•ΩπÖ∞Å’π—•∞ÅÖ∏ÅÖëµ•π•Õ—…Ö—Ω»(ÄÄÄÄåÅÕÖŸïÃÅ•—ÃÅç’Õ—Ω¥ÅŸï…Õ•ΩπÃÅ•∏Å—°îÅ±•â…Ö…‰∏(ÄÄÄÅ•òÅ—ïµ¡±Ö—ï}πÖµîÄÙÙÄâAÖÃÅëîÅÀ•¡ΩπÕîÅÖ¡¡ï∞àË(ÄÄÄÄÄÄÄÅôÖ±±âÖç¨ÄÙÅ}ç…µ}πΩ}ÖπÕ›ï…}µïÕÕÖùî°çΩπ—Öç–§(ÄÄÄÄÄÄÄÅÕµÕ}—ïµ¡±Ö—îÄÙÅÕµÕ}—ïµ¡±Ö—îÅΩ»ÅÏâçΩπ—ïπ‘àËÅôÖ±±âÖç≠Ù(ÄÄÄÄÄÄÄÅïµÖ•±}—ïµ¡±Ö—îÄÙÅïµÖ•±}—ïµ¡±Ö—îÅΩ»ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÅòâ%π”•ù…Ö±îÅçÖëïµ‰ÉäPÅYΩ—…îÅôΩ…µÖ—•Ω∏ÅÌçΩπ—Öç–πùï–†ùôΩ…µÖ—•Ω∏ú§ÅΩ»ÄúùÙàπÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅôÖ±±âÖç¨∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅ•òÅÕµÕ}—ïµ¡±Ö—îÅÖπêÅçΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§Ë(ÄÄÄÄÄÄÄÅÕµÕ}âΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÄÄÄÄÅÕµÕ}—ïµ¡±Ö—îπùï–†âçΩπ—ïπ‘à§∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅëï±•Ÿï…ÂlâÕµÃâtÄÙÅÕïπë}ÕµÃ°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§∞ÅÕµÕ}âΩë‰§(ÄÄÄÄÄÄÄÅ•òÅëï±•Ÿï…ÂlâÕµÃâtË(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕµÃà∞ÅòâM5LÉ
+¨ÅÌ—ïµ¡±Ö—ï}πÖµïÙÉ
+ÏÅïπŸΩÁ§à∞ÅÕµÕ}âΩë‰∞ÅÕµÕ}âΩë‰§(ÄÄÄÅ•òÅïµÖ•±}—ïµ¡±Ö—îÅÖπêÅçΩπ—Öç–πùï–†âµÖ•∞à§Ë(ÄÄÄÄÄÄÄÅïµÖ•±}âΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÄÄÄÄÅïµÖ•±}—ïµ¡±Ö—îπùï–†âçΩπ—ïπ‘à§∞ÅçΩπ—Öç–∞Å°—µ∞ıQ…’î∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅïµÖ•±}°—µ∞ÄÙÅ}ç…µ}ïµÖ•±}°—µ∞°ïµÖ•±}âΩë‰∞ÅçΩπ—Öç–§(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÄÄÄÄÅïµÖ•±}—ïµ¡±Ö—îπùï–†âÕ’©ï–à§ÅΩ»Å—ïµ¡±Ö—ï}πÖµî∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ¡±Ö•∏ÄÙÅ°—µ±}µΩë’±îπ’πïÕçÖ¡î°…îπÕ’à°»âqÃ¨à∞ÄàÄà∞Å…îπÕ’à°»àÒmx˘t¨¯à∞ÄàÄà∞ÅïµÖ•±}âΩë‰§§§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅëï±•Ÿï…ÂlâïµÖ•∞âtÄÙÅ}ç…µ}Õïπë}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âµÖ•∞à§∞ÅÕ’â©ïç–∞Å¡±Ö•∏∞ÅïµÖ•±}°—µ∞∞(ÄÄÄÄÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îıïµÖ•±}—ïµ¡±Ö—î∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅëï±•Ÿï…ÂlâïµÖ•∞âtË(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâïµÖ•∞à∞ÅòâµµÖ•∞É
+¨ÅÌ—ïµ¡±Ö—ï}πÖµïÙÉ
+ÏÅïπŸΩÁ§à∞ÅÕ’â©ïç–∞ÅïµÖ•±}°—µ∞§(ÄÄÄÅ…ï—’…∏Åëï±•Ÿï…‰(()ëïòÅ}ç…µ}Õïπë}ô—}…ïô’ÕÖ±}µïÕÕÖùïÃ°ëÖ—Ñ∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâπŸΩ•îÅ±ïÃÅµΩì°±ïÃÅîµµÖ•∞Åï–ÅM5LÅ±Ω…ÃÅêù’∏ÅπΩ’ŸïÖ‘Å…ïô’ÃÅ…ÖπçîÅQ…ÖŸÖ•∞∏ààà(ÄÄÄÅ•òÅ°ÖÕ}Ö¡¡}çΩπ—ï·–†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}Õïπë}Ö¡¡Ω•π—µïπ—}ôΩ±±Ω›’¿°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÄâPÅ…ïô’œ§à§(ÄÄÄÅ›•—†ÅÖ¡¿πÖ¡¡}çΩπ—ï·–†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}Õïπë}Ö¡¡Ω•π—µïπ—}ôΩ±±Ω›’¿°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÄâPÅ…ïô’œ§à§(()ëïòÅ}ç…µ}Ö§°ÕÂÕ—ïµ}¡…Ωµ¡–∞Å’Õï…}¡…Ωµ¡–∞ÅµÖ·}—Ω≠ïπÃÙ‘¿¿§Ë(ÄÄÄÄààâM•πù±î∞Å—ïÕ—Öâ±îÅïπ—…‰Å¡Ω•π–ÅôΩ»Å—°îÅI4Å›…•—•πúÅÖÕÕ•Õ—Öπ—Ã∏ààà(ÄÄÄÅ•òÅπΩ–ÅΩÃπùï—ïπÿ†â=A9%}A%}-dà§Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅI’π—•µï……Ω»†â=A9%}A%}-dÅπΩ∏ÅçΩπô•ù’À•îà§(ÄÄÄÅç±•ïπ–ÄÙÅ=¡ïπ$°Ö¡•}≠ï‰ıΩÃπùï—ïπÿ†â=A9%}A%}-dà§∞Å—•µïΩ’–Ù»¿§(ÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅç±•ïπ–πç°Ö–πçΩµ¡±ï—•ΩπÃπç…ïÖ—î†(ÄÄÄÄÄÄÄÅµΩëï∞ıΩÃπùï—ïπÿ†â=A9%}5=0à∞Äâù¡–¥—ºµµ•π§à§∞(ÄÄÄÄÄÄÄÅµïÕÕÖùïÃımÏâ…Ω±îàËÄâÕÂÕ—ï¥à∞ÄâçΩπ—ïπ–àËÅÕÂÕ—ïµ}¡…Ωµ¡—Ù∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÏâ…Ω±îàËÄâ’Õï»à∞ÄâçΩπ—ïπ–àËÅ’Õï…}¡…Ωµ¡—ıt∞(ÄÄÄÄÄÄÄÅ—ïµ¡ï…Ö—’…îÙ¿∏»∞ÅµÖ·}—Ω≠ïπÃıµÖ·}—Ω≠ïπÃ∞(ÄÄÄÄ§(ÄÄÄÅ…ïÕ’±–ÄÙÄ°…ïÕ¡ΩπÕîπç°Ω•çïÕl¡tπµïÕÕÖùîπçΩπ—ïπ–ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å…ïÕ’±–Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âK•¡ΩπÕîÅŸ•ëîÅë‘ÅÕï…Ÿ•çîÅ%à§(ÄÄÄÅ…ï—’…∏Å…ïÕ’±–(()ëïòÅ}çÖπë•ëÖ—ï}Ö•}çΩπ—ïπ–°…ïÕ¡ΩπÕî∞ÅÖ±±Ω›}µÖ…≠ëΩ›∏ıÖ±Õî§Ë(ÄÄÄÅç°Ω•çïÃÄÙÅùï—Ö——»°…ïÕ¡ΩπÕî∞Äâç°Ω•çïÃà∞Å9Ωπî§(ÄÄÄÅ•òÅπΩ–Åç°Ω•çïÃË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»†âïµ¡—Â}…ïÕ¡ΩπÕîà§(ÄÄÄÅç°Ω•çîÄÙÅç°Ω•çïÕl¡t(ÄÄÄÅ•òÅùï—Ö——»°ç°Ω•çî∞Äâô•π•Õ°}…ïÖÕΩ∏à∞Å9Ωπî§ÄÙÙÄâ±ïπù—†àË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»†â—…’πçÖ—ïë}…ïÕ¡ΩπÕîà∞Äâ3äeÖπÖ±ÂÕîÅü•ª•À•îÉ•—Ö•–Å•πçΩµ¡≥°—î∏ÅYï’•±±ïËÅÀ•ïÕÕÖÂï»∏à§(ÄÄÄÅµïÕÕÖùîÄÙÅùï—Ö——»°ç°Ω•çî∞ÄâµïÕÕÖùîà∞Å9Ωπî§(ÄÄÄÅ•òÅµïÕÕÖùîÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»†âïµ¡—Â}…ïÕ¡ΩπÕîà§(ÄÄÄÅ•òÅùï—Ö——»°µïÕÕÖùî∞Äâ…ïô’ÕÖ∞à∞Å9Ωπî§Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»†âµΩëï±}…ïô’ÕÖ∞à§(ÄÄÄÅçΩπ—ïπ–ÄÙÄ°ùï—Ö——»°µïÕÕÖùî∞ÄâçΩπ—ïπ–à∞Å9Ωπî§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—ïπ–Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»†âïµ¡—Â}…ïÕ¡ΩπÕîà§(ÄÄÄÅ•òÅÖ±±Ω›}µÖ…≠ëΩ›∏Ë(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅ…îπÕ’à°»âyqÃ©ÅÅÄ†¸È©ÕΩ∏§˝qÃ®à∞Äàà∞ÅçΩπ—ïπ–∞ÅçΩ’π–Ùƒ∞Åô±ÖùÃı…îπ$§(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅ…îπÕ’à°»âqÃ©ÅÅÅqÃ®êà∞Äàà∞ÅçΩπ—ïπ–∞ÅçΩ’π–Ùƒ§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅÕ—Ö…–∞ÅïπêÄÙÅçΩπ—ïπ–πô•πê†âÏà§∞ÅçΩπ—ïπ–π…ô•πê†âÙà§(ÄÄÄÄÄÄÄÅ•òÅÕ—Ö…–ÄÄ¿ÅΩ»ÅïπêÄÅÕ—Ö…–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»†â•πŸÖ±•ë}©ÕΩ∏à§(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅçΩπ—ïπ—mÕ—Ö…–ÈïπêÄ¨Ä≈t(ÄÄÄÅ…ï—’…∏ÅçΩπ—ïπ–(()ëïòÅ}©ÕΩπ}Õç°ïµÖ}’πÕ’¡¡Ω…—ïê°ï·å§Ë(ÄÄÄÄààâ8ùÖ’—Ω…•ÕîÅ±îÅ…ï¡±§Å≈’îÅ¡Ω’»Å±îÄ–¿¿Åï·¡±•ç•—îÅë‘ÅôΩ’…π•ÕÕï’»∏ààà(ÄÄÄÅ•òÅùï—Ö——»°ï·å∞ÄâÕ—Ö—’Õ}çΩëîà∞Å9Ωπî§ÄÑÙÄ–¿¿Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ¡…ΩŸ•ëï…}—ï·–ÄÙÄàÄàπ©Ω•∏°Õ—»°ŸÖ±’î§ÅôΩ»ÅŸÖ±’îÅ•∏Ä†(ÄÄÄÄÄÄÄÅùï—Ö——»°ï·å∞ÄâµïÕÕÖùîà∞Äàà§∞Åùï—Ö——»°ï·å∞ÄââΩë‰à∞Äàà§∞Åï·å§§(ÄÄÄÅ±Ω›ï…ïêÄÙÅ¡…ΩŸ•ëï…}—ï·–π±Ω›ï»†§(ÄÄÄÅ…ï—’…∏Äâ©ÕΩπ}Õç°ïµÑàÅ•∏Å±Ω›ï…ïêÅÖπêÅÖπ‰°µÖ…≠ï»Å•∏Å±Ω›ï…ïêÅôΩ»ÅµÖ…≠ï»Å•∏Ä†(ÄÄÄÄÄÄÄÄâπΩ–ÅÕ’¡¡Ω…—ïêà∞ÄâëΩïÃÅπΩ–ÅÕ’¡¡Ω…–à∞Äâ’πÕ’¡¡Ω…—ïêà∞Äâ∏ùïÕ–Å¡ÖÃÅ¡…•ÃÅï∏Åç°Ö…ùîà§§(()ëïòÅ}ç…µ}Ö•}Õ—…’ç—’…ïê°ÕÂÕ—ïµ}¡…Ωµ¡–∞Å’Õï…}¡…Ωµ¡–§Ë(ÄÄÄÅ•òÅπΩ–ÅΩÃπùï—ïπÿ†â=A9%}A%}-dà§Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅI’π—•µï……Ω»†â=A9%}A%}-dÅπΩ∏ÅçΩπô•ù’À•îà§(ÄÄÄÅç±•ïπ–ÄÙÅ=¡ïπ$°Ö¡•}≠ï‰ıΩÃπùï—ïπÿ†â=A9%}A%}-dà§∞Å—•µïΩ’–Ù»¿§(ÄÄÄÅµΩëï∞ÄÙÅΩÃπùï—ïπÿ†â=A9%}5=0à∞Äâù¡–¥—ºµµ•π§à§(ÄÄÄÅçΩµµΩ∏ÄÙÅÏâµΩëï∞àËÅµΩëï∞∞ÄâµïÕÕÖùïÃàËÅmÏâ…Ω±îàËÄâÕÂÕ—ï¥à∞ÄâçΩπ—ïπ–àËÅÕÂÕ—ïµ}¡…Ωµ¡—Ù∞(ÄÄÄÄÄÄÄÅÏâ…Ω±îàËÄâ’Õï»à∞ÄâçΩπ—ïπ–àËÅ’Õï…}¡…Ωµ¡—ıt∞Äâ—ïµ¡ï…Ö—’…îàËÄ¿∏»∞ÄâµÖ·}—Ω≠ïπÃàËÄƒÿ¿¡Ù(ÄÄÄÅÕ—…’ç—’…ïë}ôΩ…µÖ–ÄÙÅÏâ—Â¡îàËÄâ©ÕΩπ}Õç°ïµÑà∞Äâ©ÕΩπ}Õç°ïµÑàËÅÏ(ÄÄÄÄÄÄÄÄâπÖµîàËÄâçÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Ãà∞ÄâÕ—…•ç–àËÅQ…’î∞ÄâÕç°ïµÑàËÅ9%Q}%}IMA=9M}M!5ıÙ(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅç±•ïπ–πç°Ö–πçΩµ¡±ï—•ΩπÃπç…ïÖ—î†®©çΩµµΩ∏∞Å…ïÕ¡ΩπÕï}ôΩ…µÖ–ıÕ—…’ç—’…ïë}ôΩ…µÖ–§(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅ}çÖπë•ëÖ—ï}Ö•}çΩπ—ïπ–°…ïÕ¡ΩπÕî§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å}©ÕΩπ}Õç°ïµÖ}’πÕ’¡¡Ω…—ïê°ï·å§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•Õî(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅç±•ïπ–πç°Ö–πçΩµ¡±ï—•ΩπÃπç…ïÖ—î†®©çΩµµΩ∏∞Å…ïÕ¡ΩπÕï}ôΩ…µÖ–ıÏâ—Â¡îàËÄâ©ÕΩπ}Ωâ©ïç–âÙ§(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅ}çÖπë•ëÖ—ï}Ö•}çΩπ—ïπ–°…ïÕ¡ΩπÕî∞ÅÖ±±Ω›}µÖ…≠ëΩ›∏ıQ…’î§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅëïçΩëïêÄÙÅ©ÕΩ∏π±ΩÖëÃ°çΩπ—ïπ–§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞Å©ÕΩ∏π)M=9ïçΩëï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»†â•πŸÖ±•ë}©ÕΩ∏à§Åô…Ω¥Åï·å(ÄÄÄÅ…ï—’…∏ÅŸÖ±•ëÖ—ï}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Ã°ëïçΩëïê§(()}I5}%}91eM%M}1=-LÄÙÅÌÙ)}I5}%}91eM%M}1=-M}UIÄÙÅ—°…ïÖë•πúπ1Ωç¨†§(()ëïòÅâ’•±ë}çÖπë•ëÖ—ï}Ö•}çΩπ—ï·–°çΩπ—Öç—}•ê∞ÅëÖ—Ñı9Ωπî∞ÅπΩ‹ı9Ωπî∞Ä®∞Åôï—ç°}±•Ÿï}ŸÖîıQ…’î§Ë(ÄÄÄÅëÖ—ÑÄÙÅëÖ—ÑÅΩ»Å±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅ-ïÂ……Ω»°çΩπ—Öç—}•ê§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ›ïëΩòÄÙÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê∞ÅëÖ—Ñ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏Ë(ÄÄÄÄÄÄÄÅ›ïëΩòÄÙÅmt(ÄÄÄÅŸÖï}—…Öç≠•πúÄÙÅ9Ωπî(ÄÄÄÅ•òÄ°ôï—ç°}±•Ÿï}ŸÖî(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§ÄÙÙÄâM@à(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§ÄÙÙÄâYà§Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅô…Ω¥Åç…µ}çπÖ¡Õ}—…Öç≠•πúÅ•µ¡Ω…–Å¡…Ω·Â}…ïù±ïµïπ—Ö•…î(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïµΩ—îÄÙÅ¡…Ω·Â}…ïù±ïµïπ—Ö•…î°Ö¡¿∞ÅçΩπ—Öç–∞Å°——¡}ùï–ı…ï≈’ïÕ—Ãπùï–∞Å°——¡}¡ΩÕ–ı…ï≈’ïÕ—Ãπ¡ΩÕ–§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ…ïµΩ—ïl¡tÅ•òÅ•Õ•πÕ—Öπçî°…ïµΩ—î∞Å—’¡±î§Åï±ÕîÅ…ïµΩ—î(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’ÃÄÙÅ…ïµΩ—ïl≈tÅ•òÅ•Õ•πÕ—Öπçî°…ïµΩ—î∞Å—’¡±î§Åï±ÕîÅ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëî(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ïÕ¡ΩπÕîπùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§Å•òÅÕ—Ö—’ÃÄÙÙÄ»¿¿Åï±ÕîÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖï}—…Öç≠•πúÄÙÅ¡ÖÂ±ΩÖêπùï–†âŸÖîà§Å•òÅ•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Åï±ÕîÅ9Ωπî(ÄÄÄÄÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ0ù•πë•Õ¡Ωπ•â•±•”§Åë‘ÅM$ÅÕ—Öù•Ö•…ïÃÅπîÅëΩ•–Å¡ÖÃÅâ±Ω≈’ï»Å—Ω’—îÅ∞ùÖπÖ±ÂÕî∏(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†âM’•Ÿ§ÅYÅ•πë•Õ¡Ωπ•â±îÅ¡Ω’»Å∞ùÖπÖ±ÂÕîÅ%Ä†ïÃ§à∞Å—Â¡î°ï·å§π}}πÖµï}|§(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖï}—…Öç≠•πúÄÙÅ9Ωπî(ÄÄÄÅ…ï—’…∏Å}â’•±ë}çÖπë•ëÖ—ï}Ö•}çΩπ—ï·–†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÅëÖ—Ñ∞ÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÅëÖ—Ñπùï–†âç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—Ãà∞ÅÌÙ§πùï–°Õ—»°çΩπ—Öç—}•ê§§§∞(ÄÄÄÄÄÄÄÅ›ïëΩò∞ÅπΩ‹∞ÅŸÖï}—…Öç≠•πú§(()ëïòÅùïπï…Ö—ï}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Ã°çΩπ—ï·–§Ë(ÄÄÄÄààâ•ª°…îÅ’πîÅÕΩ…—•îÅÕ—…’ç—’À•îÅ¡’•ÃÅçΩπÕï…ŸîÅ±ÑÅŸÖ±•ëÖ—•Ω∏Å∑•—•ï»Å±ΩçÖ±î∏ààà(ÄÄÄÅ’Õï…}µïÕÕÖùîÄÙÅ©ÕΩ∏πë’µ¡Ã°ÏâçÖπë•ëÖ—ï}çΩπ—ï·–àËÅçΩπ—ï·—Ù∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî§(ÄÄÄÅµΩëï±}…ïÕ’±–ÄÙÅ}ç…µ}Ö•}Õ—…’ç—’…ïê°%}9%Q}MeMQ5}AI=5AP∞Å’Õï…}µïÕÕÖùî§(ÄÄÄÅ…ï—’…∏Åô•πÖ±•Èï}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Ã°µΩëï±}…ïÕ’±–∞ÅçΩπ—ï·–§(()ëïòÅùï—}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Õ}Õ—Ö—î°çΩπ—Öç—}•ê∞ÅëÖ—Ñı9Ωπî§Ë(ÄÄÄÅëÖ—ÑÄÙÅëÖ—ÑÅΩ»Å±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅÕ—Ω…ïêÄÙÅëÖ—Ñπùï–†âç…µ}Ö•}çÖπë•ëÖ—ï}ÖπÖ±ÂÕïÃà∞ÅÌÙ§πùï–°çΩπ—Öç—}•ê§(ÄÄÄÅïπÖâ±ïêÄÙÅâΩΩ∞°ΩÃπùï—ïπÿ†â=A9%}A%}-dà§§(ÄÄÄÅ•òÅπΩ–ÅÕ—Ω…ïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâïπÖâ±ïêàËÅïπÖâ±ïê∞ÄâÕ—Ö—’ÃàËÄâπïŸï…}ùïπï…Ö—ïêàÅ•òÅïπÖâ±ïêÅï±ÕîÄâ’πÖŸÖ•±Öâ±îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö±îàËÅÖ±Õî∞Äâ…ïÕ’±–àËÅ9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµïÕÕÖùîàËÅ9ΩπîÅ•òÅïπÖâ±ïêÅï±ÕîÄâπÖ±ÂÕîÅ%Å•πë•Õ¡Ωπ•â±îÄËÅ±ÑÅçΩπô•ù’…Ö—•Ω∏Åë‘ÅÕï…Ÿ•çîÅ%ÅïÕ–ÅµÖπ≈’Öπ—î∏âÙ(ÄÄÄÄåÅ0ùÖôô•ç°ÖùîÅêù’πîÅÖπÖ±ÂÕîÅï·•Õ—Öπ—îÅπîÅëΩ•–Å©ÖµÖ•ÃÅì•ç±ïπç°ï»Å’∏ÅÖ¡¡ï∞(ÄÄÄÄåÅŸï…ÃÅïÕ—•Ω∏ÅM—Öù•Ö•…ïÃ∏Å1ïÃÅëΩπª•ïÃÅÀ•ù±ïµïπ—Ö•…ïÃÅì•´ÄÅïπ…ïù•Õ—À•ïÃ(ÄÄÄÄåÅëÖπÃÅ±îÅI4ÅÕ’ôô•Õïπ–ÉÄÅì•—ï…µ•πï»ÅÕ§Å∞ùÖπÖ±ÂÕîÅ±ΩçÖ±îÅïÕ–Å√•…•∑•î∏(ÄÄÄÅÕ—Ö±îÄÙÄ°Õ—Ω…ïêπùï–†âÕΩ’…çï}°ÖÕ†à§ÄÑÙÅçΩµ¡’—ï}çÖπë•ëÖ—ï}Ö•}ÕΩ’…çï}°ÖÕ††(ÄÄÄÄÄÄÄÅâ’•±ë}çÖπë•ëÖ—ï}Ö•}çΩπ—ï·–°çΩπ—Öç—}•ê∞ÅëÖ—Ñ∞Åôï—ç°}±•Ÿï}ŸÖîıÖ±Õî§§(ÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅÕ—Ω…ïêπùï–†âÖπÖ±ÂÕ•Õ}Ÿï…Õ•Ω∏à§ÄÑÙÅ%}9%Q}91eM%M}YIM%=8(ÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅÕ—Ω…ïêπùï–†â¡…Ωµ¡—}Ÿï…Õ•Ω∏à§ÄÑÙÅ%}9%Q}AI=5AQ}YIM%=8§(ÄÄÄÅ…ï—’…∏ÅÏâïπÖâ±ïêàËÅïπÖâ±ïê∞ÄâÕ—Ö—’ÃàËÄâÕ—Ö±îàÅ•òÅÕ—Ö±îÅï±ÕîÄâô…ïÕ†à∞ÄâÕ—Ö±îàËÅÕ—Ö±î∞(ÄÄÄÄÄÄÄÄâùïπï…Ö—ïë}Ö–àËÅÕ—Ω…ïêπùï–†âùïπï…Ö—ïë}Ö–à§∞Äâùïπï…Ö—ïë}â‰àËÅÕ—Ω…ïêπùï–†âùïπï…Ö—ïë}âÂ}πÖµîà§∞(ÄÄÄÄÄÄÄÄâÖπÖ±ÂÕ•Õ}Ÿï…Õ•Ω∏àËÅÕ—Ω…ïêπùï–†âÖπÖ±ÂÕ•Õ}Ÿï…Õ•Ω∏à§∞Äâ¡…Ωµ¡—}Ÿï…Õ•Ω∏àËÅÕ—Ω…ïêπùï–†â¡…Ωµ¡—}Ÿï…Õ•Ω∏à§∞(ÄÄÄÄÄÄÄÄâ…ïÕ’±–àËÅÕ—Ω…ïêπùï–†â…ïÕ’±–à§∞ÄâµïÕÕÖùîàËÅÕ—Ω…ïêπùï–†â±ÖÕ—}ï……Ω»à•Ù(()ëïòÅ}ùïÕ—•Ωπ}Õ—Öù•Ö•…ïÕ}¡ÖÂ±ΩÖê°çΩπ—Öç–§Ë(ÄÄÄÄààâΩπ—…Ö–Å)M=8ÅïπŸΩÁ§ÉÄÅ∞ùÖ¡¡±•çÖ—•Ω∏ÅïÕ—•Ω∏ÅÕ—Öù•Ö•…ïÃ∏ààà(ÄÄÄÅô…Ω¥Åç…µ}çπÖ¡Õ}—…Öç≠•πúÅ•µ¡Ω…–Åç…µ}çΩπ—Öç—}•ëïπ—•—‰(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâÕΩ’…çîàËÄâ•π—ïù…Ö±îµçΩππïç–µç…¥à∞Äâç…µ}çΩπ—Öç—}•êàËÅçΩπ—Öç—lâ•êât∞(ÄÄÄÄÄÄÄÄ®©ç…µ}çΩπ—Öç—}•ëïπ—•—‰°çΩπ—Öç–§∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅçΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à∞Äàà§∞Äâ¡Ö…çΩ’…ÃàËÅçΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà∞Äàà§∞(ÄÄÄÄÄÄÄÄâçïπ—…îàËÅçΩπ—Öç–πùï–†â±•ï‘à∞Äàà§∞ÄâÕïÕÕ•Ω∏àËÅçΩπ—Öç–πùï–†âëÖ—ïÕ}ôΩ…µÖ—•Ω∏à∞Äàà§∞(ÄÄÄÄÄÄÄÄâçΩµµïπ—Ö•…ïÃàËÅçΩπ—Öç–πùï–†âçΩµµïπ—Ö•…ïÃà∞Äàà§∞(ÄÄÄÅÙ(((åÄ¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥Å]=Ä°çÖç°îÅ±ΩçÖ∞Åï∏Å±ïç—’…îÅÕï’±î§Ä¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥)ç±ÖÕÃÅ]ïëΩôA%……Ω»°I’π—•µï……Ω»§Ë(ÄÄÄÄààâ……ï’»Å]=ÅëΩπ–Å±îÅµïÕÕÖùîÅ¡ï’–É©—…îÅ…ï—Ω’…ª§ÅÕÖπÃÅë•Ÿ’±ù’ï»Å±ÑÅç≥§∏ààà((ÄÄÄÅëïòÅ}}•π•—}|°Õï±ò∞ÅµïÕÕÖùî∞ÅÕ—Ö—’Õ}çΩëîı9Ωπî§Ë(ÄÄÄÄÄÄÄÅÕ’¡ï»†§π}}•π•—}|°µïÕÕÖùî§(ÄÄÄÄÄÄÄÅÕï±òπÕ—Ö—’Õ}çΩëîÄÙÅÕ—Ö—’Õ}çΩëî(()}]=}Me9}1=,ÄÙÅ—°…ïÖë•πúπ1Ωç¨†§)}]=}A=11I}MQIQÄÙÅÖ±Õî)}]=}A=11I}MQ=@ÄÙÅ—°…ïÖë•πúπŸïπ–†§)}]=}U9%9}!}1=,ÄÙÅ—°…ïÖë•πúπI1Ωç¨†§)}]=}U9%9}!}-dÄÙÅ9Ωπî)}]=}U9%9}!}Y1UÄÙÅ9Ωπî)}]=}A}MQQ}!}Y1UÄÙÅÌÙ)}]=}U9%9}!}PÄÙÄ¿∏¿)]=}=9QQ}=A9}IIM!}5%9}}M=9LÄÙÄÃ¿Ä®Äÿ¿)]=}=9QQ}IIM!}1=-}M=9LÄÙÄ»Ä®Äÿ¿)]=}=9QQ}IIM!}IQIe}M=9LÄÙÄ‘Ä®Äÿ¿(()ëïòÅ}›ïëΩô}ëâ}¡Ö—††§Ë(ÄÄÄÄààâA±ÖçîÅ±îÅçÖç°îÉÄÅè—”§ÅëîÅëÖ—Ñπ©ÕΩ∏∞ÅÕÖ’òÅÕ’…ç°Ö…ùîÅï·¡±•ç•—î∏ààà(ÄÄÄÅ…ï—’…∏ÅΩÃπùï—ïπÿ†â]=}	}AQ à§ÅΩ»ÅΩÃπ¡Ö—†π©Ω•∏†(ÄÄÄÄÄÄÄÅΩÃπ¡Ö—†πë•…πÖµî°Q}%1§ÅΩ»Äà∏à∞Äâ›ïëΩòπÕ≈±•—îÃà(ÄÄÄÄ§(()ëïòÅ}›ïëΩô}ëâ}Õ•ùπÖ—’…î†§Ë(ÄÄÄÄààâQ…Öç¨ÅâΩ—†ÅME1•—îÅÖπêÅ•—ÃÅ]0ÅâïçÖ’ÕîÅÕÂπç°…Ωπ•ÕÖ—•Ω∏Å…’πÃÅ•∏Å]0ÅµΩëî∏ààà(ÄÄÄÅ¡Ö—†ÄÙÅΩÃπ¡Ö—†πÖâÕ¡Ö—†°}›ïëΩô}ëâ}¡Ö—††§§(ÄÄÄÅÕ•ùπÖ—’…îÄÙÅm¡Ö—°t(ÄÄÄÅôΩ»ÅçÖπë•ëÖ—îÅ•∏Ä°¡Ö—†∞ÅòâÌ¡Ö—°Ùµ›Ö∞à§Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö–ÄÙÅΩÃπÕ—Ö–°çÖπë•ëÖ—î§(ÄÄÄÄÄÄÄÄÄÄÄÅÕ•ùπÖ—’…îπÖ¡¡ïπê†°Õ—Ö–πÕ—}•πº∞ÅÕ—Ö–πÕ—}Õ•Èî∞ÅÕ—Ö–πÕ—}µ—•µï}πÃ§§(ÄÄÄÄÄÄÄÅï·çï¡–Å=M……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ•ùπÖ—’…îπÖ¡¡ïπê°9Ωπî§(ÄÄÄÅ…ï—’…∏Å—’¡±î°Õ•ùπÖ—’…î§(()ëïòÅ}›ïëΩô}çΩππïç–†§Ë(ÄÄÄÅ¡Ö—†ÄÙÅ}›ïëΩô}ëâ}¡Ö—††§(ÄÄÄÅΩÃπµÖ≠ïë•…Ã°ΩÃπ¡Ö—†πë•…πÖµî°ΩÃπ¡Ö—†πÖâÕ¡Ö—†°¡Ö—†§§∞Åï·•Õ—}Ω¨ıQ…’î§(ÄÄÄÅçΩππïç—•Ω∏ÄÙÅÕ≈±•—îÃπçΩππïç–°¡Ö—†∞Å—•µïΩ’–Ùƒ¿§(ÄÄÄÅçΩππïç—•Ω∏π…Ω›}ôÖç—Ω…‰ÄÙÅÕ≈±•—îÃπIΩ‹(ÄÄÄÅçΩππïç—•Ω∏πï·ïç’—î†âAI5Åâ’ÕÂ}—•µïΩ’–ÄÙÄƒ¿¿¿¿à§(ÄÄÄÅçΩππïç—•Ω∏πï·ïç’—î†âAI5Å©Ω’…πÖ±}µΩëîÄÙÅ]0à§(ÄÄÄÅçΩππïç—•Ω∏πï·ïç’—î†âAI5ÅôΩ…ï•ùπ}≠ïÂÃÄÙÅ=8à§(ÄÄÄÅçΩππïç—•Ω∏πï·ïç’—ïÕç…•¡–†ààà(ÄÄÄÄÄÄÄÅIQÅQ	1Å%Å9=PÅa%MQLÅ›ïëΩô}…ïÕΩ’…çïÃÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ’…çï}—Â¡îÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Öâ±ï}•êÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖë}©ÕΩ∏ÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïµΩ—ï}ëÖ—îÅQaP∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕÂπçïë}Ö–ÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅAI%5IdÅ-dÄ°…ïÕΩ’…çï}—Â¡î∞ÅÕ—Öâ±ï}•ê§(ÄÄÄÄÄÄÄÄ§Ï(ÄÄÄÄÄÄÄÅIQÅQ	1Å%Å9=PÅa%MQLÅ›ïëΩô}çΩπ—Öç—}±•π≠ÃÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•êÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ’…çï}—Â¡îÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ’…çï}•êÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖ——ïπëïï}•êÅQaP∞(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°}µï—°ΩêÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±•π≠ïë}Ö–ÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ’¡ëÖ—ïë}Ö–ÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅAI%5IdÅ-dÄ°…ïÕΩ’…çï}—Â¡î∞Å…ïÕΩ’…çï}•ê§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ=I%8Å-dÄ°…ïÕΩ’…çï}—Â¡î∞Å…ïÕΩ’…çï}•ê§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅII9LÅ›ïëΩô}…ïÕΩ’…çïÃ°…ïÕΩ’…çï}—Â¡î∞ÅÕ—Öâ±ï}•ê§Å=8Å1QÅM(ÄÄÄÄÄÄÄÄ§Ï(ÄÄÄÄÄÄÄÅIQÅ%9`Å%Å9=PÅa%MQLÅ•ë·}›ïëΩô}±•π≠Õ}çΩπ—Öç–(ÄÄÄÄÄÄÄÄÄÄÄÅ=8Å›ïëΩô}çΩπ—Öç—}±•π≠Ã°çΩπ—Öç—}•ê§Ï(ÄÄÄÄÄÄÄÅIQÅQ	1Å%Å9=PÅa%MQLÅ›ïëΩô}ÕÂπç}Õ—Ö—îÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅÕÂπç}≠ï‰ÅQaPÅAI%5IdÅ-d∞(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’ï}©ÕΩ∏ÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ’¡ëÖ—ïë}Ö–ÅQaPÅ9=PÅ9U10(ÄÄÄÄÄÄÄÄ§Ï(ÄÄÄÄÄÄÄÅIQÅQ	1Å%Å9=PÅa%MQLÅ›ïëΩô}›ïâ°ΩΩ≠}ëï±•Ÿï…•ïÃÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅëï±•Ÿï…Â}•êÅQaPÅAI%5IdÅ-d∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ΩçïÕÕïë}Ö–ÅQaPÅ9=PÅ9U10(ÄÄÄÄÄÄÄÄ§Ï(ÄÄÄÄÄÄÄÅIQÅQ	1Å%Å9=PÅa%MQLÅ›ïëΩô}çΩπ—Öç—}…ïô…ïÕ°}Õ—Ö—îÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ’…çï}—Â¡îÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ’…çï}•êÅQaPÅ9=PÅ9U10∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}Ö——ïµ¡—}Ö–ÅI0Å9=PÅ9U10ÅU1PÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}Õ’ççïÕÕ}Ö–ÅI0Å9=PÅ9U10ÅU1PÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}ï……Ω»ÅQaPÅ9=PÅ9U10ÅU1PÄúú∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±ïÖÕï}—Ω≠ï∏ÅQaPÅ9=PÅ9U10ÅU1PÄúú∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±ïÖÕï}ï·¡•…ïÕ}Ö–ÅI0Å9=PÅ9U10ÅU1PÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÅAI%5IdÅ-dÄ°…ïÕΩ’…çï}—Â¡î∞Å…ïÕΩ’…çï}•ê§(ÄÄÄÄÄÄÄÄ§Ï(ÄÄÄÄààà§(ÄÄÄÅçΩππïç—•Ω∏πçΩµµ•–†§(ÄÄÄÅ…ï—’…∏ÅçΩππïç—•Ω∏(()ëïòÅ}›ïëΩô}πΩ‹†§Ë(ÄÄÄÅ…ï—’…∏ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°ëÖ—ï—•µîπ—•µïÈΩπîπ’—å§π•ÕΩôΩ…µÖ–°—•µïÕ¡ïåÙâÕïçΩπëÃà§(()ëïòÅ}›ïëΩô}…ïÕΩ’…çï}Öùï}ÕïçΩπëÃ°…ïÕΩ’…çî§Ë(ÄÄÄÄààâIï—Ω’…πîÅ∞üâùîÅë‘ÅçÖç°îÅêù’∏ÅëΩÕÕ•ï»∞ÅΩ‘ÅÅÅ9ΩπïÅÄÅÕ§Å±ÑÅëÖ—îÅïÕ–Å•±±•Õ•â±î∏ààà(ÄÄÄÅŸÖ±’îÄÙÅÕ—»†°…ïÕΩ’…çîÅΩ»ÅÌÙ§πùï–†âÕÂπçïë}Ö–à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅŸÖ±’îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ¡Ö…ÕïêÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–°ŸÖ±’îπ…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ•òÅ¡Ö…Õïêπ—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ¡Ö…ÕïêÄÙÅ¡Ö…Õïêπ…ï¡±Öçî°—È•πôºıëÖ—ï—•µîπ—•µïÈΩπîπ’—å§(ÄÄÄÅ…ï—’…∏ÅµÖ‡†¿∏¿∞Å—•µîπ—•µî†§Ä¥Å¡Ö…Õïêπ—•µïÕ—Öµ¿†§§(()ëïòÅ}›ïëΩô}âïù•π}çΩπ—Öç—}…ïô…ïÕ†°…ïÕΩ’…çï}•ê∞Ä®∞ÅÖ’—ΩµÖ—•å§Ë(ÄÄÄÄààâA…ïπêÅ’∏ÅâÖ•∞ÅME1•—îÅ¡Ö…—Öü§Å¡Ö»Å—Ω’ÃÅ±ïÃÅ›Ω…≠ï…ÃÅI4∏((ÄÄÄÅ1îÅçΩµ¡—ï’»Åçïπ—…Ö∞Å¡…Ω”°ùîÅ±îÅ≈’Ω—ÑÅïπ—…îÅÖ¡¡±•çÖ—•ΩπÃ∏ÅîÅâÖ•∞Å¡±’ÃÅô•∏(ÄÄÄÉ•Ÿ•—îÅï∏ÅçΩµ¡≥•µïπ–Å≈’îÅëï’‡ÅΩπù±ï—ÃÅΩ‘Å›Ω…≠ï…ÃÅ…ï±•Õïπ–ÅÕ•µ’±—Öª•µïπ–Å±î(ÄÄÄÅ∑©µîÅëΩÕÕ•ï»∏Å¡À°ÃÅ’∏É•ç°ïåÅÖ’—ΩµÖ—•≈’î∞Å’∏ÅçΩ’…–Åì•±Ö§Åïµ√©ç°îÅ’πîÅ…ÖôÖ±î(ÄÄÄÅëîÅπΩ’Ÿï±±ïÃÅ—ïπ—Ö—•ŸïÃÉÄÅç°Ö≈’îÅΩ’Ÿï…—’…îÅëîÅô•ç°î∏(ÄÄÄÄààà(ÄÄÄÅπΩ‹ÄÙÅ—•µîπ—•µî†§(ÄÄÄÅ—Ω≠ï∏ÄÙÅ’’•êπ’’•ê–†§π°ï‡(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅëàπï·ïç’—î†â	%8Å%55%Qà§(ÄÄÄÄÄÄÄÅ…Ω‹ÄÙÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅM1PÅ±ÖÕ—}Ö——ïµ¡—}Ö–∞Å±ÖÕ—}ï……Ω»∞Å±ïÖÕï}ï·¡•…ïÕ}Ö–(ÄÄÄÄÄÄÄÄÄÄÄÅI=4Å›ïëΩô}çΩπ—Öç—}…ïô…ïÕ°}Õ—Ö—î(ÄÄÄÄÄÄÄÄÄÄÄÅ]!IÅ…ïÕΩ’…çï}—Â¡îÙù…ïù•Õ—…Ö—•ΩπΩ±ëï»úÅ9Å…ïÕΩ’…çï}•êÙ¸(ÄÄÄÄÄÄÄÄààà∞Ä°…ïÕΩ’…çï}•ê∞§§πôï—ç°Ωπî†§(ÄÄÄÄÄÄÄÅ•òÅ…Ω‹ÅÖπêÅô±ΩÖ–°…Ω›lâ±ïÖÕï}ï·¡•…ïÕ}Ö–âtÅΩ»Ä¿§Ä¯ÅπΩ‹Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâÖç≈’•…ïêàËÅÖ±Õî∞Äâ…ïÖÕΩ∏àËÄâ…ïô…ïÕ°}•π}¡…Ωù…ïÕÃâÙ(ÄÄÄÄÄÄÄÅ•òÄ°Ö’—ΩµÖ—•åÅÖπêÅ…Ω‹ÅÖπêÅÕ—»°…Ω›lâ±ÖÕ—}ï……Ω»âtÅΩ»Äàà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅπΩ‹Ä¥Åô±ΩÖ–°…Ω›lâ±ÖÕ—}Ö——ïµ¡—}Ö–âtÅΩ»Ä¿§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ]=}=9QQ}IIM!}IQIe}M=9L§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—…Â}Öô—ï»ÄÙÅµÖ‡†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄƒ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•π–°]=}=9QQ}IIM!}IQIe}M=9L(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¥Ä°πΩ‹Ä¥Åô±ΩÖ–°…Ω›lâ±ÖÕ—}Ö——ïµ¡—}Ö–âtÅΩ»Ä¿§§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÖç≈’•…ïêàËÅÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖÕΩ∏àËÄâ…ï—…Â}çΩΩ±ëΩ›∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ï—…Â}Öô—ï…}ÕïçΩπëÃàËÅ…ï—…Â}Öô—ï»∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅ%9MIPÅ%9Q<Å›ïëΩô}çΩπ—Öç—}…ïô…ïÕ°}Õ—Ö—î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ°…ïÕΩ’…çï}—Â¡î∞Å…ïÕΩ’…çï}•ê∞Å±ÖÕ—}Ö——ïµ¡—}Ö–∞Å±ÖÕ—}ï……Ω»∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ïÖÕï}—Ω≠ï∏∞Å±ïÖÕï}ï·¡•…ïÕ}Ö–§(ÄÄÄÄÄÄÄÄÄÄÄÅY1ULÄ†ù…ïù•Õ—…Ö—•ΩπΩ±ëï»ú∞Ä¸∞Ä¸∞Äù…ïô…ïÕ°}•π}¡…Ωù…ïÕÃú∞Ä¸∞Ä¸§(ÄÄÄÄÄÄÄÄÄÄÄÅ=8Å=91%P°…ïÕΩ’…çï}—Â¡î∞Å…ïÕΩ’…çï}•ê§Å<ÅUAQÅMP(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}Ö——ïµ¡—}Ö–ıï·ç±’ëïêπ±ÖÕ—}Ö——ïµ¡—}Ö–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}ï……Ω»ıï·ç±’ëïêπ±ÖÕ—}ï……Ω»∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ïÖÕï}—Ω≠ï∏ıï·ç±’ëïêπ±ïÖÕï}—Ω≠ï∏∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ïÖÕï}ï·¡•…ïÕ}Ö–ıï·ç±’ëïêπ±ïÖÕï}ï·¡•…ïÕ}Ö–(ÄÄÄÄÄÄÄÄààà∞Ä†(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ’…çï}•ê∞ÅπΩ‹∞Å—Ω≠ï∏∞(ÄÄÄÄÄÄÄÄÄÄÄÅπΩ‹Ä¨Å]=}=9QQ}IIM!}1=-}M=9L∞(ÄÄÄÄÄÄÄÄ§§(ÄÄÄÅ…ï—’…∏ÅÏâÖç≈’•…ïêàËÅQ…’î∞Äâ—Ω≠ï∏àËÅ—Ω≠ïπÙ(()ëïòÅ}›ïëΩô}ô•π•Õ°}çΩπ—Öç—}…ïô…ïÕ†°…ïÕΩ’…çï}•ê∞Å—Ω≠ï∏∞Ä®∞Åï……Ω»Ùàà§Ë(ÄÄÄÄààâ1•ã°…îÅ±îÅâÖ•∞Åï–Å∑•µΩ…•ÕîÅ±îÅÕ’çè°ÃÅΩ‘Å∞ü•ç°ïåÅëîÅ±ÑÅ—ïπ—Ö—•Ÿî∏ààà(ÄÄÄÅç±ïÖπ}ï……Ω»ÄÙÅ}›ïëΩô}ç±ïÖ∏°ï……Ω»§Å•òÅï……Ω»Åï±ÕîÄàà(ÄÄÄÅπΩ‹ÄÙÅ—•µîπ—•µî†§(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅUAQÅ›ïëΩô}çΩπ—Öç—}…ïô…ïÕ°}Õ—Ö—î(ÄÄÄÄÄÄÄÄÄÄÄÅMPÅ±ïÖÕï}—Ω≠ï∏Ùúú∞Å±ïÖÕï}ï·¡•…ïÕ}Ö–Ù¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}Õ’ççïÕÕ}Ö–ıMÅ]!8Ä¸ÙúúÅQ!8Ä¸Å1MÅ±ÖÕ—}Õ’ççïÕÕ}Ö–Å9∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}ï……Ω»Ù¸(ÄÄÄÄÄÄÄÄÄÄÄÅ]!IÅ…ïÕΩ’…çï}—Â¡îÙù…ïù•Õ—…Ö—•ΩπΩ±ëï»úÅ9Å…ïÕΩ’…çï}•êÙ¸(ÄÄÄÄÄÄÄÄÄÄÄÄÄÅ9Å±ïÖÕï}—Ω≠ï∏Ù¸(ÄÄÄÄÄÄÄÄààà∞Ä°ç±ïÖπ}ï……Ω»∞ÅπΩ‹∞Åç±ïÖπ}ï……Ω»∞Å…ïÕΩ’…çï}•ê∞Å—Ω≠ï∏§§(()ëïòÅ}›ïëΩô}çÖπçï±}çΩπ—Öç—}…ïô…ïÕ†°…ïÕΩ’…çï}•ê∞Å—Ω≠ï∏§Ë(ÄÄÄÄààâ1•ã°…îÅ’∏ÅâÖ•∞ÅëïŸïπ‘Å•π’—•±îÅÕÖπÃÅïπ…ïù•Õ—…ï»Å’∏ÅôÖ’‡ÅÕ’çè°Ã∏ààà(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅUAQÅ›ïëΩô}çΩπ—Öç—}…ïô…ïÕ°}Õ—Ö—î(ÄÄÄÄÄÄÄÄÄÄÄÅMPÅ±ïÖÕï}—Ω≠ï∏Ùúú∞Å±ïÖÕï}ï·¡•…ïÕ}Ö–Ù¿∞Å±ÖÕ—}ï……Ω»Ùúú(ÄÄÄÄÄÄÄÄÄÄÄÅ]!IÅ…ïÕΩ’…çï}—Â¡îÙù…ïù•Õ—…Ö—•ΩπΩ±ëï»úÅ9Å…ïÕΩ’…çï}•êÙ¸(ÄÄÄÄÄÄÄÄÄÄÄÄÄÅ9Å±ïÖÕï}—Ω≠ï∏Ù¸(ÄÄÄÄÄÄÄÄààà∞Ä°…ïÕΩ’…çï}•ê∞Å—Ω≠ï∏§§(()ëïòÅ}›ïëΩô}ç±ïÖ∏°ŸÖ±’î§Ë(ÄÄÄÄààâIï—•…îÅ±ÑÅç≥§ÅëîÅ—Ω’–ÅµïÕÕÖùîÅ¡…ΩŸïπÖπ–Åë‘ÅÀ•ÕïÖ‘ÅΩ‘Åêù’πîÅï·çï¡—•Ω∏∏ààà(ÄÄÄÅ—ï·–ÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§(ÄÄÄÅÕïç…ï–ÄÙÅΩÃπùï—ïπÿ†â]=}A%}-dà∞Äàà§(ÄÄÄÅ•òÅÕïç…ï–Ë(ÄÄÄÄÄÄÄÅ—ï·–ÄÙÅ—ï·–π…ï¡±Öçî°Õïç…ï–∞ÄâmIQtà§(ÄÄÄÅ—ï·–ÄÙÅ…îπÕ’à°»à†˝§§°‡µÖ¡§µ≠ïÂqÃ©lËıuqÃ®•myqÃ∞Ìt¨à∞Å»âp≈mIQtà∞Å—ï·–§(ÄÄÄÅ…ï—’…∏Å—ï·—lË‘¿¡t(()ëïòÅ}›ïëΩô}…ï≈’ïÕ—}Ω¡ï…Ö—•Ω∏°¡Ö—†§Ë(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ…îπÕ’à†(ÄÄÄÄÄÄÄÅ»à†Ω…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãº•mxΩt¨à∞Å»âpƒÈ•êà∞ÅÕ—»°¡Ö—†ÅΩ»Äàà§∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ…µÖ±•Èïêπ…Õ—…•¿†àºà§πïπëÕ›•—††àΩ…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãà§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ±•Õ—}…ïù•Õ—…Ö—•Ωπ}ôΩ±ëï…Ãà(ÄÄÄÅ•òÄàΩ…ïù•Õ—…Ö—•ΩπΩ±ëï…ÃºÈ•êàÅ•∏ÅπΩ…µÖ±•ÈïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâùï—}…ïù•Õ—…Ö—•Ωπ}ôΩ±ëï»à(ÄÄÄÅ•òÅπΩ…µÖ±•Èïêπ…Õ—…•¿†àºà§πïπëÕ›•—††àΩΩ…ùÖπ•ÕµÃΩµîà§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâùï—}ç’……ïπ—}Ω…ùÖπ•Õ¥à(ÄÄÄÅ…ï—’…∏Äâùï—}›ïëΩô}…ïÕΩ’…çîà(()ëïòÅ}›ïëΩô}…ï≈’ïÕ–°¡Ö—†∞Ä®∞Å¡Ö…ÖµÃı9Ωπî∞ÅΩ¡ï…Ö—•Ω∏ı9Ωπî∞Å…ï—…Â}â’ëùï–ı9Ωπî§Ë(ÄÄÄÅ≠ï‰ÄÙÅΩÃπùï—ïπÿ†â]=}A%}-dà∞Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å≠ï‰Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†â]=}A%}-dÅπΩ∏ÅçΩπô•ù’À•îà§(ÄÄÄÅâÖÕï}’…∞ÄÙÅΩÃπùï—ïπÿ†â]=}	M}UI0à∞Äâ°——¡ÃËºΩ››‹π›ïëΩòπô»à§π…Õ—…•¿†àºà§(ÄÄÄÅ—•µïΩ’–ÄÙÅô±ΩÖ–°ΩÃπùï—ïπÿ†â]=}Q%5=UPà∞Äàƒ‘à§§(ÄÄÄÅ…ï—…•ïÃÄÙÄ†(ÄÄÄÄÄÄÄÅµÖ‡†¿∞Åµ•∏°•π–°ΩÃπùï—ïπÿ†â]=}Q}IQI%Là∞Äà»à§§∞Ä‘§§(ÄÄÄÄÄÄÄÅ•òÅ…ï—…Â}â’ëùï–Å•ÃÅ9Ωπî(ÄÄÄÄÄÄÄÅï±ÕîÅµÖ‡†¿∞Åµ•∏°•π–°…ï—…Â}â’ëùï–§∞Ä‘§§(ÄÄÄÄ§(ÄÄÄÅ°ïÖëï…ÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâ`µ¡§µ-ï‰àËÅ≠ï‰∞(ÄÄÄÄÄÄÄÄâççï¡–àËÄâÖ¡¡±•çÖ—•Ω∏Ω©ÕΩ∏à∞(ÄÄÄÄÄÄÄÄâUÕï»µùïπ–àËÄâ%π—ïù…Ö±ïçÖëïµ‰µI4º»¿»ÿ∏¿‡à∞(ÄÄÄÄÄÄÄÄâ`µ%π—ïù…Ö±îµ¡¡±•çÖ—•Ω∏àËÄâç…¥à∞(ÄÄÄÅÙ(ÄÄÄÅôΩ»ÅÖ——ïµ¡–Å•∏Å…Öπùî°…ï—…•ïÃÄ¨Äƒ§Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕï…Ÿï}›ïëΩô}…ï≈’ïÕ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ¡ï…Ö—•Ω∏ıΩ¡ï…Ö—•Ω∏ÅΩ»Å}›ïëΩô}…ï≈’ïÕ—}Ω¡ï…Ö—•Ω∏°¡Ö—†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµï—°ΩêÙâPà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö—†ı…îπÕ’à†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ»à†Ω…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãº•mxΩt¨à∞Å»âpƒÈ•êà∞ÅÕ—»°¡Ö—†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Å]ïëΩôE’Ω—Ö·çïïëïêÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»°Õ—»°ï·å§∞Ä–»‰§Åô…Ω¥Åï·å(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Å]ïëΩôΩŸï…πΩ………Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»°Õ—»°ï·å§∞Ä‘¿Ã§Åô…Ω¥Åï·å(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ…ï≈’ïÕ—Ãπùï–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâÌâÖÕï}’…±ÙΩÌ¡Ö—†π±Õ—…•¿†úºú•Ùà∞Å°ïÖëï…Ãı°ïÖëï…Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÖµÃı¡Ö…ÖµÃ∞Å—•µïΩ’–ı—•µïΩ’–∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëîÅ•∏ÅÏ–¿‡∞Ä–»‰∞Ä‘¿¿∞Ä‘¿»∞Ä‘¿Ã∞Ä‘¿—ÙÅÖπêÅÖ——ïµ¡–ÄÅ…ï—…•ïÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—•µîπÕ±ïï¿°µ•∏†¿∏»‘Ä®Ä†»Ä®®ÅÖ——ïµ¡–§∞Äƒ∏¿§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Ä»¿¿ÄÙÅ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëîÄÄÃ¿¿Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ]=ÅÑÅÀ•¡Ωπë‘ÅÖŸïåÅ±îÅÕ—Ö—’–ÅÌ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëïÙ∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕîπ©ÕΩ∏†§∞Å…ïÕ¡ΩπÕîπ°ïÖëï…Ã(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°YÖ±’ï……Ω»∞Å©ÕΩ∏π)M=9ïçΩëï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†â]=ÅÑÅ…ï—Ω’…ª§Å’πîÅÀ•¡ΩπÕîÅ)M=8Å•πŸÖ±•ëî∏à§(ÄÄÄÄÄÄÄÅï·çï¡–Å]ïëΩôA%……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•Õî(ÄÄÄÄÄÄÄÅï·çï¡–Å…ï≈’ïÕ—ÃπIï≈’ïÕ—·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÖ——ïµ¡–ÄÅ…ï—…•ïÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—•µîπÕ±ïï¿°µ•∏†¿∏»‘Ä®Ä†»Ä®®ÅÖ——ïµ¡–§∞Äƒ∏¿§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»°òâΩππï·•Ω∏ÉÄÅ]=Å•µ¡ΩÕÕ•â±îÄËÅÌ}›ïëΩô}ç±ïÖ∏°ï·å•Ùà§(()ëïòÅ}›ïëΩô}•—ïµÃ°¡ÖÂ±ΩÖê§Ë(ÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å¡ÖÂ±ΩÖê(ÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†â•—ïµÃà∞Äâ…ïÕΩ’…çïÃà∞ÄâëÖ—Ñà∞Äâ…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖêπùï–°≠ï‰§∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å¡ÖÂ±ΩÖëm≠ïÂt(ÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†âΩ…µÖ–ÅëîÅ±•Õ—îÅ]=Å•πÖ——ïπë‘∏à§(()ëïòÅ}›ïëΩô}Ö——ïπëïï}ŸÖ±’ïÃ°ôΩ±ëï»§Ë(ÄÄÄÅÖ——ïπëïîÄÙÅôΩ±ëï»πùï–†âÖ——ïπëïîà§Å•òÅ•Õ•πÕ—Öπçî°ôΩ±ëï»πùï–†âÖ——ïπëïîà§∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÅïµÖ•±ÃÄÙÅÏ(ÄÄÄÄÄÄÄÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°Ö——ïπëïîπùï–°≠ï‰§§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†âïµÖ•∞à∞ÄâµÖ•∞à∞ÄâïµÖ•±ëë…ïÕÃà§(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°Ö——ïπëïîπùï–°≠ï‰§§(ÄÄÄÅÙ(ÄÄÄÅ¡°ΩπïÃÄÙÅÏ(ÄÄÄÄÄÄÄÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°Ö——ïπëïîπùï–°≠ï‰§§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†â¡°Ωπîà∞Äâ—ï±ï¡°Ωπîà∞ÄâµΩâ•±îà∞Äâ¡°Ωπï9’µâï»à§(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°Ö——ïπëïîπùï–°≠ï‰§§(ÄÄÄÅÙ(ÄÄÄÅÖ——ïπëïï}•êÄÙÅÖ——ïπëïîπùï–†âï·—ï…πÖ±%êà§ÅΩ»ÅÖ——ïπëïîπùï–†â•êà§(ÄÄÄÅ…ï—’…∏ÅïµÖ•±Ã∞Å¡°ΩπïÃ∞ÅÕ—»°Ö——ïπëïï}•êÅΩ»Äàà§(()ëïòÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°ŸÖ±’î§Ë(ÄÄÄÄààâIï—’…∏ÅÖ∏ÅÖççïπ–µ•πÕïπÕ•—•ŸîÅ•ëïπ—•—‰ÅŸÖ±’îÅôΩ»Å]=ÅµÖ—ç°•πú∏ààà(ÄÄÄÅëïçΩµ¡ΩÕïêÄÙÅ’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9-à∞ÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§§(ÄÄÄÅ›•—°Ω’—}Öççïπ—ÃÄÙÄààπ©Ω•∏†(ÄÄÄÄÄÄÄÅç°Ö…Öç—ï»ÅôΩ»Åç°Ö…Öç—ï»Å•∏ÅëïçΩµ¡ΩÕïê(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å’π•çΩëïëÖ—ÑπçΩµâ•π•πú°ç°Ö…Öç—ï»§(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å…îπÕ’à°»âmyq›t¨à∞ÄàÄà∞Å›•—°Ω’—}Öççïπ—Ã∞Åô±ÖùÃı…îπU9%=§πÕ—…•¿†§πçÖÕïôΩ±ê†§(()ëïòÅ}›ïëΩô}Ö——ïπëïï}πÖµî°ôΩ±ëï»§Ë(ÄÄÄÅÖ——ïπëïîÄÙÅôΩ±ëï»πùï–†âÖ——ïπëïîà§Å•òÅ•Õ•πÕ—Öπçî°ôΩ±ëï»πùï–†âÖ——ïπëïîà§∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÅô•…Õ—}πÖµîÄÙÅπï·–†°Ö——ïπëïîπùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâô•…Õ—9Öµîà∞Äâô•…Õ—πÖµîà∞Äâô•…Õ—}πÖµîà∞Äâù•Ÿïπ9Öµîà(ÄÄÄÄ§Å•òÅÖ——ïπëïîπùï–°≠ï‰§§∞Äàà§(ÄÄÄÅ±ÖÕ—}πÖµîÄÙÅπï·–†°Ö——ïπëïîπùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâ±ÖÕ—9Öµîà∞Äâ±ÖÕ—πÖµîà∞Äâ±ÖÕ—}πÖµîà∞ÄâôÖµ•±Â9Öµîà(ÄÄÄÄ§Å•òÅÖ——ïπëïîπùï–°≠ï‰§§∞Äàà§(ÄÄÄÅ…ï—’…∏Å}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°ô•…Õ—}πÖµî§∞Å}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°±ÖÕ—}πÖµî§(()}I5}]=}=I5Q%=9LÄÙÅÏâALà∞ÄâÕ@à∞ÄâM@à∞ÄâMM%@Äƒà∞Äâ°Ö’ôôï’»ÅYQâÙ)}I5}]=}9QILÄÙÅÏ(ÄÄÄÄâçΩ—ï}ÖÈ’»àËÄâ——îÅìäeÈ’»à∞(ÄÄÄÄâÖ’Ÿï…ùπîàËÄâ’Ÿï…ùπîà∞(ÄÄÄÄâ¡Ö…•ÃàËÄâAÖ…•Ãà∞)Ù)}I9!}5=9Q!}95LÄÙÄ†(ÄÄÄÄâ©ÖπŸ•ï»à∞Äâõ•Ÿ…•ï»à∞ÄâµÖ…Ãà∞ÄâÖŸ…•∞à∞ÄâµÖ§à∞Äâ©’•∏à∞(ÄÄÄÄâ©’•±±ï–à∞ÄâÖøÌ–à∞ÄâÕï¡—ïµâ…îà∞ÄâΩç—Ωâ…îà∞ÄâπΩŸïµâ…îà∞Äâì•çïµâ…îà∞(§(()ëïòÅ}›ïëΩô}ŸÖ±’î°¡ÖÂ±ΩÖê∞Ä©¡Ö—°Ã§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅô•…Õ–ÅπΩ∏µïµ¡—‰ÅŸÖ±’îÅô…Ω¥ÅëΩ——ïêÅ]=Å¡ÖÂ±ΩÖêÅ¡Ö—°Ã∏ààà(ÄÄÄÅôΩ»Å¡Ö—†Å•∏Å¡Ö—°ÃË(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅ¡ÖÂ±ΩÖê(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Å¡Ö—†πÕ¡±•–†à∏à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ŸÖ±’î∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâ…ïÖ¨(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅŸÖ±’îπùï–°≠ï‰§(ÄÄÄÄÄÄÄÅ•òÅŸÖ±’îÅπΩ–Å•∏Ä°9Ωπî∞Äàà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅŸÖ±’î(ÄÄÄÅ…ï—’…∏Äàà(()ëïòÅ}›ïëΩô}±ΩçÖ—•Ωπ}—ï·–°ŸÖ±’î§Ë(ÄÄÄÄààâ±Ö——ï∏Å—°îÅ’Õ’Ö∞Å]=ÅÖëë…ïÕÃÅŸÖ…•Öπ—ÃÅ•π—ºÅÕïÖ…ç°Öâ±îÅ—ï·–∏ààà(ÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞Ä°±•Õ–∞Å—’¡±î§§Ë(ÄÄÄÄÄÄÄÅ¡Ö…—ÃÄÙÅm}›ïëΩô}±ΩçÖ—•Ωπ}—ï·–°•—ï¥§ÅôΩ»Å•—ï¥Å•∏ÅŸÖ±’ït(ÄÄÄÄÄÄÄÅ…ï—’…∏Äà∞Äàπ©Ω•∏°¡Ö…–ÅôΩ»Å¡Ö…–Å•∏Å¡Ö…—ÃÅ•òÅ¡Ö…–§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ŸÖ±’î∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§((ÄÄÄÅ¡…ïôï……ïë}≠ïÂÃÄÙÄ†(ÄÄÄÄÄÄÄÄâπÖµîà∞Äâ±Öâï∞à∞Äâç•—‰à∞Äâ±ΩçÖ±•—‰à∞ÄâÖëë…ïÕÕ1ΩçÖ±•—‰à∞Äâ—Ω›∏à∞(ÄÄÄÄÄÄÄÄâ¡ΩÕ—Ö±Ωëîà∞ÄâÈ•¡Ωëîà∞Äâ¡ΩÕ—çΩëîà∞ÄâÕ—…ïï—ëë…ïÕÃà∞ÄâÖëë…ïÕÃà∞(ÄÄÄÄÄÄÄÄâô’±±ëë…ïÕÃà∞(ÄÄÄÄ§(ÄÄÄÅ¡Ö…—ÃÄÙÅmt(ÄÄÄÅôΩ»Å≠ï‰Å•∏Å¡…ïôï……ïë}≠ïÂÃË(ÄÄÄÄÄÄÄÅ¡Ö…–ÄÙÅ}›ïëΩô}±ΩçÖ—•Ωπ}—ï·–°ŸÖ±’îπùï–°≠ï‰§§(ÄÄÄÄÄÄÄÅ•òÅ¡Ö…–ÅÖπêÅ¡Ö…–ÅπΩ–Å•∏Å¡Ö…—ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…—ÃπÖ¡¡ïπê°¡Ö…–§(ÄÄÄÅ…ï—’…∏Äà∞Äàπ©Ω•∏°¡Ö…—Ã§(()ëïòÅ}›ïëΩô}ç…µ}—…Ö•π•πú°—•—±î§Ë(ÄÄÄÄààâQ…ÖπÕ±Ö—îÅÑÅçΩµµï…ç•Ö∞ÅAÅ—•—±îÅ—ºÅ—°îÅô•π•—îÅI4ÅôΩ…µÖ—•Ω∏ÅŸÖ±’ïÃ∏ààà(ÄÄÄÅΩ…•ù•πÖ∞ÄÙÅÕ—»°—•—±îÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°Ω…•ù•πÖ∞§(ÄÄÄÅ•òÄ°…îπÕïÖ…ç†°»âqâëïÕ¡qàà∞ÅπΩ…µÖ±•Èïê§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Äâë•…•ùïÖπ–ÅêÅïπ—…ï¡…•ÕîÅëîÅÕïç’…•—îàÅ•∏ÅπΩ…µÖ±•Èïê(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Äâç≈¿Åë•…•ùïÖπ–àÅ•∏ÅπΩ…µÖ±•Èïê§Ë(ÄÄÄÄÄÄÄÅ•Õ}ŸÖîÄÙÄâŸÖîàÅ•∏ÅπΩ…µÖ±•ÈïêÅΩ»ÄâŸÖ±•ëÖ—•Ω∏ÅëïÃÅÖç≈’•ÃàÅ•∏ÅπΩ…µÖ±•Èïê(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâM@à∞ÄâYàÅ•òÅ•Õ}ŸÖîÅï±ÕîÄâ%9%Q%0à(ÄÄÄÅ•òÄ°…îπÕïÖ…ç†°»âqâÑÕ¡qàà∞ÅπΩ…µÖ±•Èïê§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÄâÖùïπ–ÅëîÅ¡…Ω—ïç—•Ω∏Å¡°ÂÕ•≈’îÅëïÃÅ¡ï…ÕΩππïÃàÅ•∏ÅπΩ…µÖ±•Èïê§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâÕ@à∞Äàà(ÄÄÄÅ•òÄ°…îπÕïÖ…ç†°»âqâÕÕ•Ö¡qÃ®≈qàà∞ÅπΩ…µÖ±•Èïê§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÄâÕï…Ÿ•çîÅëîÅÕïç’…•—îÅ•πçïπë•îÅï–ÅêÅÖÕÕ•Õ—ÖπçîÅÑÅ¡ï…ÕΩππïÃÄƒàÅ•∏ÅπΩ…µÖ±•Èïê§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâMM%@Äƒà∞Äàà(ÄÄÄÅ•òÅ…îπÕïÖ…ç†°»âqâŸ—çqàà∞ÅπΩ…µÖ±•Èïê§ÅΩ»Äâç°Ö’ôôï’»ÅŸ—åàÅ•∏ÅπΩ…µÖ±•ÈïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ°Ö’ôôï’»ÅYQà∞Äàà(ÄÄÄÅ•òÄ°…îπÕïÖ…ç†°»âqâÖ¡Õqàà∞ÅπΩ…µÖ±•Èïê§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÄâÖùïπ–ÅëîÅ¡…ïŸïπ—•Ω∏Åï–ÅëîÅÕïç’…•—îàÅ•∏ÅπΩ…µÖ±•Èïê§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâALà∞Äàà(ÄÄÄÅ…ï—’…∏ÅΩ…•ù•πÖ∞∞Äàà(()ëïòÅ}›ïëΩô}ëÖ—î°ŸÖ±’î§Ë(ÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞ÅëÖ—ï—•µîπëÖ—ï—•µî§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅŸÖ±’îπëÖ—î†§(ÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞ÅëÖ—ï—•µîπëÖ—î§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅŸÖ±’î(ÄÄÄÅ—ï·–ÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å—ï·–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅëÖ—ï—•µîπëÖ—îπô…Ωµ•ÕΩôΩ…µÖ–°—ï·—lËƒ¡t§(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÅ¡ÖÕÃ(ÄÄÄÅôΩ»ÅëÖ—ï}ôΩ…µÖ–Å•∏Ä†àïêºï¥ºïdà∞Äàïê¥ï¥¥ïdà§Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅëÖ—ï—•µîπëÖ—ï—•µîπÕ—…¡—•µî°—ï·—lËƒ¡t∞ÅëÖ—ï}ôΩ…µÖ–§πëÖ—î†§(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÅ…ï—’…∏Å9Ωπî(()ëïòÅ}›ïëΩô}ëÖ—ï}…Öπùï}±Öâï∞°Õ—Ö…–∞Åïπê§Ë(ÄÄÄÅ•òÅπΩ–ÅÕ—Ö…–ÅÖπêÅπΩ–ÅïπêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅ•òÅπΩ–ÅÕ—Ö…–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Åòâ)’Õ≈◊äeÖ‘ÅÌïπêπëÖÂÙÅÌ}I9!}5=9Q!}95MmïπêπµΩπ—†Ä¥Ä≈uÙÅÌïπêπÂïÖ…Ùà(ÄÄÄÅ•òÅπΩ–ÅïπêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Åòã Å¡Ö…—•»Åë‘ÅÌÕ—Ö…–πëÖÂÙÅÌ}I9!}5=9Q!}95MmÕ—Ö…–πµΩπ—†Ä¥Ä≈uÙÅÌÕ—Ö…–πÂïÖ…Ùà(ÄÄÄÅÕ—Ö…—}µΩπ—†ÄÙÅ}I9!}5=9Q!}95MmÕ—Ö…–πµΩπ—†Ä¥Ä≈t(ÄÄÄÅïπë}µΩπ—†ÄÙÅ}I9!}5=9Q!}95MmïπêπµΩπ—†Ä¥Ä≈t(ÄÄÄÅ•òÅÕ—Ö…–πÂïÖ»ÄÙÙÅïπêπÂïÖ»ÅÖπêÅÕ—Ö…–πµΩπ—†ÄÙÙÅïπêπµΩπ—†Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Åòâ‘ÅÌÕ—Ö…–πëÖÂÙÅÖ‘ÅÌïπêπëÖÂÙÅÌïπë}µΩπ—°ÙÅÌïπêπÂïÖ…Ùà(ÄÄÄÅ•òÅÕ—Ö…–πÂïÖ»ÄÙÙÅïπêπÂïÖ»Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Åòâ‘ÅÌÕ—Ö…–πëÖÂÙÅÌÕ—Ö…—}µΩπ—°ÙÅÖ‘ÅÌïπêπëÖÂÙÅÌïπë}µΩπ—°ÙÅÌïπêπÂïÖ…Ùà(ÄÄÄÅ…ï—’…∏Ä†(ÄÄÄÄÄÄÄÅòâ‘ÅÌÕ—Ö…–πëÖÂÙÅÌÕ—Ö…—}µΩπ—°ÙÅÌÕ—Ö…–πÂïÖ…ÙÄà(ÄÄÄÄÄÄÄÅòâÖ‘ÅÌïπêπëÖÂÙÅÌïπë}µΩπ—°ÙÅÌïπêπÂïÖ…Ùà(ÄÄÄÄ§(()ëïòÅ}›ïëΩô}ç…µ}çïπ—…ï}çΩëî°±ΩçÖ—•Ω∏§Ë(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°}›ïëΩô}±ΩçÖ—•Ωπ}—ï·–°±ΩçÖ—•Ω∏§§(ÄÄÄÅ•òÅÖπ‰°µÖ…≠ï»Å•∏ÅπΩ…µÖ±•ÈïêÅôΩ»ÅµÖ…≠ï»Å•∏Ä†(ÄÄÄÄÄÄÄÄâçΩ—îÅêÅÖÈ’»à∞Äâ¡’ùï–ÅÕ’»ÅÖ…ùïπÃà∞Äâô…ï©’Ãà∞Äà‡Ã–‡¿à∞ÄàÅŸÖ»à∞(ÄÄÄÄ§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâçΩ—ï}ÖÈ’»à(ÄÄÄÅ•òÅÖπ‰°µÖ…≠ï»Å•∏ÅπΩ…µÖ±•ÈïêÅôΩ»ÅµÖ…≠ï»Å•∏Ä†(ÄÄÄÄÄÄÄÄâÖ’Ÿï…ùπîà∞ÄâÖ’…•±±Öåà∞ÄâÖ…¡Ö©Ω∏ÅÕ’»Åçï…îà∞ÄâçÖπ—Ö∞à∞(ÄÄÄÄ§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâÖ’Ÿï…ùπîà(ÄÄÄÅ•òÄâ¡Ö…•ÃàÅ•∏ÅπΩ…µÖ±•ÈïêÅΩ»Äâ•±îÅëîÅô…ÖπçîàÅ•∏ÅπΩ…µÖ±•ÈïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ¡Ö…•Ãà(ÄÄÄÅ…ï—’…∏Äàà(()ëïòÅ}›ïëΩô}ÕïÕÕ•Ωπ}çΩëî°ôΩ…µÖ—•Ω∏∞ÅëïÕ¡}—Â¡î§Ë(ÄÄÄÅ•òÅôΩ…µÖ—•Ω∏ÄÙÙÄâM@àË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâMA}YàÅ•òÅëïÕ¡}—Â¡îÄÙÙÄâYàÅï±ÕîÄâMA}%9%Pà(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâALàËÄâALà∞ÄâÕ@àËÄâÕ@à∞ÄâMM%@ÄƒàËÄâMM%@à∞(ÄÄÄÄÄÄÄÄâ°Ö’ôôï’»ÅYQàËÄâYQà∞(ÄÄÄÅÙπùï–°ôΩ…µÖ—•Ω∏∞Äàà§(()ëïòÅ}›ïëΩô}ç…µ}ÕïÕÕ•Ω∏°ëÖ—Ñ∞ÅôΩ…µÖ—•Ω∏∞ÅëïÕ¡}—Â¡î∞Å…Ö›}±ΩçÖ—•Ω∏∞ÅÕ—Ö…–∞Åïπê§Ë(ÄÄÄÄààâIïÕΩ±ŸîÅ]=ÅëÖ—ïÃΩÖëë…ïÕÃÅ—ºÅ—°îÅï·Öç–ÅÕï±ïç—Öâ±îÅI4ÅÕïÕÕ•Ω∏∏ààà(ÄÄÄÅçïπ—…ï}çΩëîÄÙÅ}›ïëΩô}ç…µ}çïπ—…ï}çΩëî°…Ö›}±ΩçÖ—•Ω∏§(ÄÄÄÅÕïÕÕ•Ωπ}çΩëîÄÙÅ}›ïëΩô}ÕïÕÕ•Ωπ}çΩëî°ôΩ…µÖ—•Ω∏∞ÅëïÕ¡}—Â¡î§(ÄÄÄÅçÖπë•ëÖ—ïÃÄÙÅmt(ÄÄÄÅ•òÅÕïÕÕ•Ωπ}çΩëîÅÖπêÄ°Õ—Ö…–ÅΩ»Åïπê§Ë(ÄÄÄÄÄÄÄÅôΩ»ÅçÖπë•ëÖ—ï}çïπ—…î∞ÅôΩ…µÖ—•ΩπÃÅ•∏Åùï—}ôΩ…µÖ—•Ωπ}ÕïÕÕ•ΩπÃ°ëÖ—Ñ§π•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å…Ω‹Å•∏ÅôΩ…µÖ—•ΩπÃπùï–°ÕïÕÕ•Ωπ}çΩëî∞Åmt§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±Öâï∞ÄÙÅÕ—»°…Ω‹πùï–†â±Öâï∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ω›}Õ—Ö…–∞Å…Ω›}ïπêÄÙÅ}ÕïÕÕ•Ωπ}ëÖ—ï}…Öπùî°±Öâï∞§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å±Öâï∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—Ö…–ÅÖπêÅ…Ω›}Õ—Ö…–ÄÑÙÅÕ—Ö…–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅïπêÅÖπêÅ…Ω›}ïπêÄÑÙÅïπêË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖπë•ëÖ—ïÃπÖ¡¡ïπê†°çÖπë•ëÖ—ï}çïπ—…î∞Å±Öâï∞§§((ÄÄÄÄåÅQ°îÅÖëë…ïÕÃÅ›•πÃÅ›°ï∏Å—°îÅÕÖµîÅëÖ—ïÃÅï·•Õ–ÅÖ–ÅÕïŸï…Ö∞ÅçÖµ¡’ÕïÃ∏(ÄÄÄÅ•òÅçïπ—…ï}çΩëîË(ÄÄÄÄÄÄÄÅÕÖµï}çïπ—…îÄÙÅmçÖπë•ëÖ—îÅôΩ»ÅçÖπë•ëÖ—îÅ•∏ÅçÖπë•ëÖ—ïÃÅ•òÅçÖπë•ëÖ—ïl¡tÄÙÙÅçïπ—…ï}çΩëït(ÄÄÄÄÄÄÄÅçÖπë•ëÖ—ïÃÄÙÅÕÖµï}çïπ—…îÅΩ»Åmt(ÄÄÄÅ’π•≈’ï}çÖπë•ëÖ—ïÃÄÙÅ±•Õ–°ë•ç–πô…Ωµ≠ïÂÃ°çÖπë•ëÖ—ïÃ§§(ÄÄÄÅ•òÅ±ï∏°’π•≈’ï}çÖπë•ëÖ—ïÃ§ÄÙÙÄƒË(ÄÄÄÄÄÄÄÅçïπ—…ï}çΩëî∞ÅÕïÕÕ•Ωπ}±Öâï∞ÄÙÅ’π•≈’ï}çÖπë•ëÖ—ïÕl¡t(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅÕïÕÕ•Ωπ}±Öâï∞ÄÙÅ}›ïëΩô}ëÖ—ï}…Öπùï}±Öâï∞°Õ—Ö…–∞Åïπê§((ÄÄÄÅ±ΩçÖ—•Ω∏ÄÙÅ}I5}]=}9QILπùï–†(ÄÄÄÄÄÄÄÅçïπ—…ï}çΩëî∞Å}›ïëΩô}±ΩçÖ—•Ωπ}—ï·–°…Ö›}±ΩçÖ—•Ω∏§(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å±ΩçÖ—•Ω∏∞ÅÕïÕÕ•Ωπ}±Öâï∞(()ëïòÅ}›ïëΩô}çΩπ—Öç—}¡ÖÂ±ΩÖê°ôΩ±ëï»∞ÅëÖ—Ñı9Ωπî§Ë(ÄÄÄÄààâ·—…Ö•–Å±ïÃÅ•πôΩ…µÖ—•ΩπÃÅ’—•±ïÃÉÄÅ’πîÅ¡•Õ—îÅÕÖπÃÅÖ±”•…ï»Å±îÅ)M=8Å]=∏ààà(ÄÄÄÅÖ——ïπëïîÄÙÅ}›ïëΩô}ŸÖ±’î°ôΩ±ëï»∞ÄâÖ——ïπëïîà∞Äâ±ïÖ…πï»à∞Äâ—…Ö•πïîà§(ÄÄÄÅÖ——ïπëïîÄÙÅÖ——ïπëïîÅ•òÅ•Õ•πÕ—Öπçî°Ö——ïπëïî∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÅô•…Õ—}πÖµîÄÙÅπï·–†°Ö——ïπëïîπùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâô•…Õ—9Öµîà∞Äâô•…Õ—πÖµîà∞Äâô•…Õ—}πÖµîà∞Äâù•Ÿïπ9Öµîà(ÄÄÄÄ§Å•òÅÖ——ïπëïîπùï–°≠ï‰§§∞Äàà§(ÄÄÄÅ±ÖÕ—}πÖµîÄÙÅπï·–†°Ö——ïπëïîπùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâ±ÖÕ—9Öµîà∞Äâ±ÖÕ—πÖµîà∞Äâ±ÖÕ—}πÖµîà∞ÄâôÖµ•±Â9Öµîà(ÄÄÄÄ§Å•òÅÖ——ïπëïîπùï–°≠ï‰§§∞Äàà§(ÄÄÄÅïµÖ•∞ÄÙÅπï·–†°Ö——ïπëïîπùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâïµÖ•∞à∞ÄâµÖ•∞à∞ÄâïµÖ•±ëë…ïÕÃà(ÄÄÄÄ§Å•òÅÖ——ïπëïîπùï–°≠ï‰§§∞Äàà§(ÄÄÄÅ¡°ΩπîÄÙÅπï·–†°Ö——ïπëïîπùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâ¡°Ωπï9’µâï»à∞Äâ¡°Ωπîà∞Äâ—ï±ï¡°Ωπîà∞ÄâµΩâ•±îà(ÄÄÄÄ§Å•òÅÖ——ïπëïîπùï–°≠ï‰§§∞Äàà§(ÄÄÄÅ…Ö›}ôΩ…µÖ—•Ω∏ÄÙÅ}›ïëΩô}ŸÖ±’î†(ÄÄÄÄÄÄÄÅôΩ±ëï»∞Äâ—…Ö•π•πùç—•Ωπ%πôºπ—•—±îà∞Äâ—…Ö•π•πúπ—•—±îà∞(ÄÄÄÄÄÄÄÄâ—…Ö•π•πùç—•Ω∏π—•—±îà∞Äâ—…Ö•π•πùQ•—±îà∞Äâ—•—±îà∞(ÄÄÄÄ§(ÄÄÄÅôΩ…µÖ—•Ω∏∞ÅëïÕ¡}—Â¡îÄÙÅ}›ïëΩô}ç…µ}—…Ö•π•πú°…Ö›}ôΩ…µÖ—•Ω∏§(ÄÄÄÅ…Ö›}±ΩçÖ—•Ω∏ÄÙÅ}›ïëΩô}ŸÖ±’î†(ÄÄÄÄÄÄÄÅôΩ±ëï»∞Äâ—…Ö•π•πùç—•Ωπ%πôºπÖëë…ïÕÃà∞Äâ—…Ö•π•πùç—•Ωπ%πôºπ±ΩçÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÄâ—…Ö•π•πúπÖëë…ïÕÃà∞Äâ—…Ö•π•πúπ±ΩçÖ—•Ω∏à∞Äâ±ΩçÖ—•Ω∏ππÖµîà∞Äâ±ΩçÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÄâÕïÕÕ•Ω∏π±ΩçÖ—•Ω∏à∞ÄâÕïÕÕ•Ω∏πÖëë…ïÕÃà∞(ÄÄÄÄ§(ÄÄÄÅÕ—Ö…–ÄÙÅ}›ïëΩô}ëÖ—î°}›ïëΩô}ŸÖ±’î†(ÄÄÄÄÄÄÄÅôΩ±ëï»∞Äâ—…Ö•π•πùç—•Ωπ%πôºπÕïÕÕ•ΩπM—Ö…—Ö—îà∞ÄâÕïÕÕ•Ω∏πÕ—Ö…—Ö—îà∞(ÄÄÄÄÄÄÄÄâÕïÕÕ•Ω∏πÕ—Ö…–à∞ÄâÕ—Ö…—Ö—îà∞(ÄÄÄÄ§§(ÄÄÄÅïπêÄÙÅ}›ïëΩô}ëÖ—î°}›ïëΩô}ŸÖ±’î†(ÄÄÄÄÄÄÄÅôΩ±ëï»∞Äâ—…Ö•π•πùç—•Ωπ%πôºπÕïÕÕ•ΩππëÖ—îà∞ÄâÕïÕÕ•Ω∏πïπëÖ—îà∞(ÄÄÄÄÄÄÄÄâÕïÕÕ•Ω∏πïπêà∞ÄâïπëÖ—îà∞(ÄÄÄÄ§§(ÄÄÄÅ±ΩçÖ—•Ω∏∞ÅëÖ—ïÃÄÙÅ}›ïëΩô}ç…µ}ÕïÕÕ•Ω∏†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞ÅôΩ…µÖ—•Ω∏∞ÅëïÕ¡}—Â¡î∞Å…Ö›}±ΩçÖ—•Ω∏∞ÅÕ—Ö…–∞Åïπê∞(ÄÄÄÄ§(ÄÄÄÅÕ—Öâ±ï}•êÄÙÅÕ—»°ôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅÕ—»°ô•…Õ—}πÖµîÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâπΩ¥àËÅÕ—»°±ÖÕ—}πÖµîÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâµÖ•∞àËÅÕ—»°ïµÖ•∞ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅÕ—»°¡°ΩπîÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅÕ—»°ôΩ…µÖ—•Ω∏ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâëïÕ¡}—Â¡îàËÅëïÕ¡}—Â¡î∞(ÄÄÄÄÄÄÄÄâ±•ï‘àËÅÕ—»°±ΩçÖ—•Ω∏ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏àËÅëÖ—ïÃ∞(ÄÄÄÄÄÄÄÄâç¡òàËÄâ=U$à∞(ÄÄÄÄÄÄÄÄâçΩµµïπ—Ö•…îàËÅòâïµÖπëîÅAÅ…óù’îÅŸ•ÑÅ]=É
+‹ÅëΩÕÕ•ï»ÅÌÕ—Öâ±ï}•ëÙà∞(ÄÄÄÅÙ(()ëïòÅ}›ïëΩô}°ÖÕ}’ÕÖâ±ï}•ëïπ—•—‰°¡ÖÂ±ΩÖê§Ë(ÄÄÄÄààâµ√©ç°îÅ±ÑÅçÀ•Ö—•Ω∏Åêù’πîÅ¡•Õ—îÅŸ•ëîÅÕ§Å]=ÅΩµï–Å∞ù•ëïπ—•”§∏ààà(ÄÄÄÅ…ï—’…∏ÅâΩΩ∞†(ÄÄÄÄÄÄÄÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°¡ÖÂ±ΩÖêπùï–†âµÖ•∞à§§(ÄÄÄÄÄÄÄÅΩ»Å}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°¡ÖÂ±ΩÖêπùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÄÄÄÄÅΩ»Ä†(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}πΩ…µÖ±•Èï}πÖµî°¡ÖÂ±ΩÖêπùï–†â¡…ïπΩ¥à§§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}πΩ…µÖ±•Èï}πÖµî°¡ÖÂ±ΩÖêπùï–†âπΩ¥à§§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄ§(()]=}A}1}MQIQ}QÄÙÅëÖ—ï—•µîπëÖ—î†»¿»ÿ∞Ä‡∞Äƒ»§(()ëïòÅ}›ïëΩô}ôΩ±ëï…}ç…ïÖ—•Ωπ}ëÖ—î°ôΩ±ëï»§Ë(ÄÄÄÄààâIï—Ω’…πîÅ±ÑÅëÖ—îÅëîÅçÀ•Ö—•Ω∏Å]=∞ÅÕÖπÃÅ’—•±•Õï»Å’πîÅëÖ—îÅëîÅµ•ÕîÉÄÅ©Ω’»∏ààà(ÄÄÄÅ…Ö›}ŸÖ±’îÄÙÅπï·–†°ôΩ±ëï»πùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë–à∞Äâç…ïÖ—ïë=∏à∞ÄâëÖ—ï…ïÖ—ïêà∞Äâç…ïÖ—•ΩπÖ—îà∞(ÄÄÄÄ§Å•òÅôΩ±ëï»πùï–°≠ï‰§§∞Å9Ωπî§(ÄÄÄÅ•òÅπΩ–Å…Ö›}ŸÖ±’îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅëÖ—ï—•µîπëÖ—îπô…Ωµ•ÕΩôΩ…µÖ–°Õ—»°…Ö›}ŸÖ±’î§πÕ—…•¿†•lËƒ¡t§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(()ëïòÅ}›ïëΩô}•Õ}Ω¡ïπ}ç¡ô}…ï≈’ïÕ–°ôΩ±ëï»§Ë(ÄÄÄÄààâ’—Ω…•ÕîÅ’π•≈’ïµïπ–Å±ïÃÅπΩ’ŸïÖ’‡ÅëΩÕÕ•ï…ÃÅAÅ…óù’ÃÅëï¡’•ÃÅ±îÄƒ»º¿‡º»¿»ÿ∏ààà(ÄÄÄÅôΩ±ëï…}—Â¡îÄÙÅ…îπÕ’à†(ÄÄÄÄÄÄÄÅ»âmyÑµË¿¥Âtà∞Äàà∞Å’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†(ÄÄÄÄÄÄÄÄÄÄÄÄâ9à∞ÅÕ—»°ôΩ±ëï»πùï–†â—Â¡îà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÄ§πïπçΩëî†âÖÕç•§à∞Äâ•ùπΩ…îà§πëïçΩëî†§π±Ω›ï»†§∞(ÄÄÄÄ§(ÄÄÄÅç…ïÖ—ïë}Ω∏ÄÙÅ}›ïëΩô}ôΩ±ëï…}ç…ïÖ—•Ωπ}ëÖ—î°ôΩ±ëï»§(ÄÄÄÅ•òÅôΩ±ëï…}—Â¡îÄÑÙÄâç¡òàÅΩ»Åç…ïÖ—ïë}Ω∏Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ•òÅç…ïÖ—ïë}Ω∏ÄÅ]=}A}1}MQIQ}QË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî((ÄÄÄÅÕ—Ö—îÄÙÅ…îπÕ’à†(ÄÄÄÄÄÄÄÅ»âmyÑµË¿¥Âtà∞Äàà∞(ÄÄÄÄÄÄÄÅ’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9à∞ÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»πùï–†âÕ—Ö—îà§ÅΩ»ÅôΩ±ëï»πùï–†âÕ—Ö—’Ãà§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅôΩ±ëï»πùï–†â…ïù•Õ—…Ö—•ΩπM—Ö—îà§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄ§§πïπçΩëî†âÖÕç•§à∞Äâ•ùπΩ…îà§πëïçΩëî†§π±Ω›ï»†§∞(ÄÄÄÄ§(ÄÄÄÅ—ï…µ•πÖ±}Õ—Ö—ïÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâ•π—…Ö•π•πúà∞Äâ—ï…µ•πÖ—ïêà∞ÄâÕï…Ÿ•çïëΩπïëïç±Ö…ïêà∞(ÄÄÄÄÄÄÄÄâÕï…Ÿ•çïëΩπïŸÖ±•ëÖ—ïêà∞ÄâπΩ—â•±±Öâ±îà∞Äâ—Ωâ•±∞à∞Äââ•±±ïêà∞Äâ¡Ö•êà∞(ÄÄÄÄÄÄÄÄâçÖπçï±±ïêà∞ÄâçÖπçï±ïêà∞Äâ…ïô’Õïêà∞Äâ…ï©ïç—ïêà∞ÄâÖâÖπëΩπïêà∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅÕ—Ö—îÅ•∏Å—ï…µ•πÖ±}Õ—Ö—ïÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅÕïÕÕ•Ωπ}ïπêÄÙÅ}›ïëΩô}ŸÖ±’î†(ÄÄÄÄÄÄÄÅôΩ±ëï»∞Äâ—…Ö•π•πùç—•Ωπ%πôºπÕïÕÕ•ΩππëÖ—îà∞ÄâÕïÕÕ•Ω∏πïπëÖ—îà∞(ÄÄÄÄÄÄÄÄâÕïÕÕ•Ω∏πïπêà∞ÄâïπëÖ—îà∞(ÄÄÄÄ§(ÄÄÄÅ•òÅÕïÕÕ•Ωπ}ïπêË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅïπë}ëÖ—îÄÙÅëÖ—ï—•µîπëÖ—îπô…Ωµ•ÕΩôΩ…µÖ–°Õ—»°ÕïÕÕ•Ωπ}ïπê§πÕ—…•¿†•lËƒ¡t§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅïπë}ëÖ—îÄÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§§πëÖ—î†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÕÃ(ÄÄÄÅ…ï—’…∏ÅQ…’î(()ëïòÅ}›ïëΩô}•Õ}ç¡ô}ôΩ±ëï»°ôΩ±ëï»§Ë(ÄÄÄÄààâ%πë•≈’îÅÕ§Å±îÅëΩÕÕ•ï»Å]=Å¡…ΩŸ•ïπ–ÅëîÅ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏∏ààà(ÄÄÄÅôΩ±ëï…}—Â¡îÄÙÅ’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†(ÄÄÄÄÄÄÄÄâ9à∞ÅÕ—»°ôΩ±ëï»πùï–†â—Â¡îà§ÅΩ»Äàà§(ÄÄÄÄ§πïπçΩëî†âÖÕç•§à∞Äâ•ùπΩ…îà§πëïçΩëî†§πçÖÕïôΩ±ê†§(ÄÄÄÅ…ï—’…∏Å…îπÕ’à°»âmyÑµË¿¥Âtà∞Äàà∞ÅôΩ±ëï…}—Â¡î§ÄÙÙÄâç¡òà(()ëïòÅ}›ïëΩô}Öç—•Ÿ•—‰°çΩπ—Öç–∞Å—•—±î∞Åëï—Ö•∞§Ë(ÄÄÄÄààâ©Ω’—îÅ’πîÅÖç—•Ÿ•”§Å’—•±•ÕÖâ±îÅÖ’ÕÕ§Å°Ω…ÃÅêù’∏ÅçΩπ—ï·—îÅëîÅ…ï≈◊©—îÅ±ÖÕ¨∏ààà(ÄÄÄÅçΩπ—Öç–πÕï—ëïôÖ’±–†âÖç—•Ÿ•—•ïÃà∞Åmt§π•πÕï…–†¿∞ÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞ÄâëÖ—îàËÅ}ç…µ}πΩ‹†§∞Äâ≠•πêàËÄâ•πâΩ’πë}…ï≈’ïÕ–à∞(ÄÄÄÄÄÄÄÄâ—•—±îàËÅ—•—±î∞Äâëï—Ö•∞àËÅëï—Ö•∞∞Äâ¡…ïŸ•ï‹àËÄàà∞(ÄÄÄÄÄÄÄÄâÖ’—°Ω»àËÄâ’—ΩµÖ—•ÕÖ—•Ω∏Å]=à∞(ÄÄÄÅÙ§(()ëïòÅ}›ïëΩô}πï›}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Å¡ÖÂ±ΩÖê∞ÅÕ—Öâ±ï}•ê§Ë(ÄÄÄÄààâΩπÕ—…’•–Å’πîÅ¡•Õ—îÅI4ÅçΩµ¡≥°—îÉÄÅ¡Ö…—•»Åêù’πîÅëïµÖπëîÅ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏∏ààà(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅçΩπ—Öç–ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°¡ÖÂ±ΩÖêπùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°¡ÖÂ±ΩÖêπùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâµÖ•∞àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ±•ï‘àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†â±•ï‘à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’–àËÅπï·–†°Õ—Ö—’ÃÅôΩ»ÅÕ—Ö—’ÃÅ•∏Å}ç…µ}Õ—Ö—’ÕïÃ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—Ö—’ÃÅπΩ–Å•∏ÅI5}IMIY}MQQUML§∞Äâ9Ω’ŸïÖ’‡à§∞(ÄÄÄÄÄÄÄÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âëÖ—ïÕ}ôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâç¡òàËÄâ=U$à∞Äâç¡ô}µΩπ—Öπ–àËÄàà∞ÄâçÖ…—ï}¡…ºàËÄàà∞(ÄÄÄÄÄÄÄÄâÖπ—ïçïëïπ—ÃàËÄàà∞ÄâùÖ…ëï}Ÿ’îàËÄàà∞Äâ—•—…ï}Õï©Ω’»àËÄàà∞(ÄÄÄÄÄÄÄÄâ—•—…ï}Õï©Ω’…}çπÖ¡ÃàËÄàà∞ÄâçΩµ¡—ï}çπÖ¡ÃàËÄàà∞ÄâçπÖ¡Õ}’Õï…πÖµîàËÄàà∞(ÄÄÄÄÄÄÄÄâçπÖ¡Õ}â•…—°}ÂïÖ»àËÄàà∞ÄâçπÖ¡Õ}¡ÖÕÕ›Ω…êàËÄàà∞Äâ•π—ïù…Ö—•Ωπ}ë…ÖçÖ»àËÄàà∞(ÄÄÄÄÄÄÄÄâëïÕ¡}—Â¡îàËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâ•ëïπ—•—ï}ç…ïÖ—•Ω∏àËÄàà∞Äâ•ëïπ—•—ï}Ω¨àËÄàà∞Äâô•πÖπçïµïπ—}ô–àËÄàà∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–àËÄàà∞ÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–àËÄàà∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îàËÄàà∞Äâ…ïô’Õ}ô—}¡ï…ÕºàËÄàà∞(ÄÄÄÄÄÄÄÄâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…ÕºàËÄàà∞Äâ•πÕç…•—}ô–àËÄàà∞Äâ…ï±Öπçï}ëÖ—îàËÄàà∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’—}ÕïçΩπëÖ•…îàËÄàà∞ÄâΩ…•ù•πîàËÄâ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÄâçΩµµïπ—Ö•…ïÃàËÅòâïµÖπëîÅAÅ…óù’îÅÖ’—ΩµÖ—•≈’ïµïπ–ÅŸ•ÑÅ]=É
+‹ÅëΩÕÕ•ï»ÅÌÕ—Öâ±ï}•ëÙ∏à∞(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅπΩ‹∞Äâ’¡ëÖ—ïë}Ö–àËÅπΩ‹∞ÄâÖç—•Ÿ•—•ïÃàËÅmt∞(ÄÄÄÄÄÄÄÄâÕΩ’…çîàËÄâ›ïëΩô}ç¡òà∞ÄâÕΩ’…çï}›ïëΩô}ôΩ±ëï…}•êàËÅÕ—Öâ±ï}•ê∞(ÄÄÄÅÙ(ÄÄÄÅ}›ïëΩô}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄâA•Õ—îÅçÀß•îÅëï¡’•ÃÅ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÅòâΩÕÕ•ï»ÅAÅÌÕ—Öâ±ï}•ëÙÅÕÂπç°…Ωπ•œ§ÅÖ’—ΩµÖ—•≈’ïµïπ–ÅŸ•ÑÅ]=∏à∞(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏ÅçΩπ—Öç–(()ëïòÅ}›ïëΩô}Ö¡¡±Â}çΩπ—Öç—}ëï—Ö•±Ã°çΩπ—Öç–∞Å¡ÖÂ±ΩÖê§Ë(ÄÄÄÄààâ•±∞ÅΩ»Å…ï¡Ö•»ÅI4µÕï±ïç–ÅŸÖ±’ïÃÅô…Ω¥ÅÖ∏ÅÖ±…ïÖë‰Å±•π≠ïêÅAÅôΩ±ëï»∏ààà(ÄÄÄÅç°Öπùïë}ô•ï±ëÃÄÙÅmt(ÄÄÄÅÕΩ’…çï}•Õ}›ïëΩòÄÙÅçΩπ—Öç–πùï–†âÕΩ’…çîà§ÄÙÙÄâ›ïëΩô}ç¡òà((ÄÄÄÅ•πçΩµ•πù}ôΩ…µÖ—•Ω∏ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅç’……ïπ—}ôΩ…µÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÄ°•πçΩµ•πù}ôΩ…µÖ—•Ω∏Å•∏Å}I5}]=}=I5Q%=9L(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°}ç…µ}•Õ}ïµ¡—‰°ç’……ïπ—}ôΩ…µÖ—•Ω∏§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Ä°ÕΩ’…çï}•Õ}›ïëΩò(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅç’……ïπ—}ôΩ…µÖ—•Ω∏ÅπΩ–Å•∏Å}I5}]=}=I5Q%=9L§§§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâôΩ…µÖ—•Ω∏âtÄÙÅ•πçΩµ•πù}ôΩ…µÖ—•Ω∏(ÄÄÄÄÄÄÄÅç’……ïπ—}ôΩ…µÖ—•Ω∏ÄÙÅ•πçΩµ•πù}ôΩ…µÖ—•Ω∏(ÄÄÄÄÄÄÄÅç°Öπùïë}ô•ï±ëÃπÖ¡¡ïπê†âôΩ…µÖ—•Ω∏à§((ÄÄÄÅ•πçΩµ•πù}ëïÕ¡}—Â¡îÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅç’……ïπ—}ëïÕ¡}—Â¡îÄÙÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÄ°ç’……ïπ—}ôΩ…µÖ—•Ω∏ÄÙÙÄâM@àÅÖπêÅ•πçΩµ•πù}ëïÕ¡}—Â¡îÅ•∏ÅÏâ%9%Q%0à∞ÄâYâÙ(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°}ç…µ}•Õ}ïµ¡—‰°ç’……ïπ—}ëïÕ¡}—Â¡î§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Ä°ÕΩ’…çï}•Õ}›ïëΩò(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅç’……ïπ—}ëïÕ¡}—Â¡îÅπΩ–Å•∏ÅÏâ%9%Q%0à∞ÄâYâÙ§§§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâëïÕ¡}—Â¡îâtÄÙÅ•πçΩµ•πù}ëïÕ¡}—Â¡î(ÄÄÄÄÄÄÄÅç°Öπùïë}ô•ï±ëÃπÖ¡¡ïπê†â¡Ö…çΩ’…ÃÅM@à§((ÄÄÄÅ•πçΩµ•πù}±ΩçÖ—•Ω∏ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â±•ï‘à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅç’……ïπ—}±ΩçÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†â±•ï‘à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅçÖπΩπ•çÖ±}±ΩçÖ—•ΩπÃÄÙÅÕï–°}I5}]=}9QILπŸÖ±’ïÃ†§§(ÄÄÄÅ•òÄ°•πçΩµ•πù}±ΩçÖ—•Ω∏(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°}ç…µ}•Õ}ïµ¡—‰°ç’……ïπ—}±ΩçÖ—•Ω∏§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Ä°ÕΩ’…çï}•Õ}›ïëΩò(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ•πçΩµ•πù}±ΩçÖ—•Ω∏Å•∏ÅçÖπΩπ•çÖ±}±ΩçÖ—•ΩπÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅç’……ïπ—}±ΩçÖ—•Ω∏ÅπΩ–Å•∏ÅçÖπΩπ•çÖ±}±ΩçÖ—•ΩπÃ§§§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ±•ï‘âtÄÙÅ•πçΩµ•πù}±ΩçÖ—•Ω∏(ÄÄÄÄÄÄÄÅç°Öπùïë}ô•ï±ëÃπÖ¡¡ïπê†â±•ï‘à§((ÄÄÄÅ•πçΩµ•πù}ëÖ—ïÃÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âëÖ—ïÕ}ôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅç’……ïπ—}ëÖ—ïÃÄÙÅÕ—»°çΩπ—Öç–πùï–†âëÖ—ïÕ}ôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ±ïùÖçÂ}µÖç°•πï}ëÖ—ïÃÄÙÅâΩΩ∞†(ÄÄÄÄÄÄÄÅ…îπÕïÖ…ç†°»âqëÏ—ÙµqëÏ…ÙµqëÏ…Ùà∞Åç’……ïπ—}ëÖ—ïÃ§(ÄÄÄÄÄÄÄÅΩ»ÄàÉäHÄàÅ•∏Åç’……ïπ—}ëÖ—ïÃ(ÄÄÄÄ§(ÄÄÄÅ•òÄ°•πçΩµ•πù}ëÖ—ïÃ(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°}ç…µ}•Õ}ïµ¡—‰°ç’……ïπ—}ëÖ—ïÃ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Ä°ÕΩ’…çï}•Õ}›ïëΩòÅÖπêÅ±ïùÖçÂ}µÖç°•πï}ëÖ—ïÃ§§§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâëÖ—ïÕ}ôΩ…µÖ—•Ω∏âtÄÙÅ•πçΩµ•πù}ëÖ—ïÃ(ÄÄÄÄÄÄÄÅç°Öπùïë}ô•ï±ëÃπÖ¡¡ïπê†âëÖ—ïÃÅÕΩ’°Ö•”•ïÃà§((ÄÄÄÅ•òÅç°Öπùïë}ô•ï±ëÃË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ…ï—’…∏Åç°Öπùïë}ô•ï±ëÃ(()ëïòÅ}›ïëΩô}çΩπ—Öç—}πÖµï}µÖ—ç°ïÃ°ôΩ±ëï»∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâΩµ¡Ö…îÅ∞ù•ëïπ—•”§ÅÕÖπÃÅ©ÖµÖ•ÃÅµΩë•ô•ï»Å∞ùΩ…—°Ωù…Ö¡°îÅÕ—ΩçØ•îÅëÖπÃÅ±îÅI4∏ààà(ÄÄÄÅô•…Õ—}πÖµî∞Å±ÖÕ—}πÖµîÄÙÅ}›ïëΩô}Ö——ïπëïï}πÖµî°ôΩ±ëï»§(ÄÄÄÅ…ï—’…∏ÅâΩΩ∞†(ÄÄÄÄÄÄÄÅô•…Õ—}πÖµî(ÄÄÄÄÄÄÄÅÖπêÅ±ÖÕ—}πÖµî(ÄÄÄÄÄÄÄÅÖπêÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§ÄÙÙÅô•…Õ—}πÖµî(ÄÄÄÄÄÄÄÅÖπêÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§ÄÙÙÅ±ÖÕ—}πÖµî(ÄÄÄÄ§(()ëïòÅ}›ïëΩô}µÖ—ç°}çΩπ—Öç–°ôΩ±ëï»∞ÅçΩπ—Öç—Ã§Ë(ÄÄÄÅïµÖ•±Ã∞Å¡°ΩπïÃ∞Å|ÄÙÅ}›ïëΩô}Ö——ïπëïï}ŸÖ±’ïÃ°ôΩ±ëï»§(ÄÄÄÅïµÖ•±}µÖ—ç°ïÃÄÙÅl(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—Ã(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§Å•∏ÅïµÖ•±Ã(ÄÄÄÅt(ÄÄÄÅ•òÅïµÖ•±ÃÅÖπêÅ±ï∏°ïµÖ•±}µÖ—ç°ïÃ§ÄÙÙÄƒË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅïµÖ•±}µÖ—ç°ïÕl¡t∞ÄâïµÖ•∞à(ÄÄÄÅ¡°Ωπï}µÖ—ç°ïÃÄÙÅl(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—Ã(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§§Å•∏Å¡°ΩπïÃ(ÄÄÄÅt(ÄÄÄÅ•òÅ¡°ΩπïÃÅÖπêÅ±ï∏°¡°Ωπï}µÖ—ç°ïÃ§ÄÙÙÄƒË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å¡°Ωπï}µÖ—ç°ïÕl¡t∞Äâ¡°Ωπîà((ÄÄÄÅô•…Õ—}πÖµî∞Å±ÖÕ—}πÖµîÄÙÅ}›ïëΩô}Ö——ïπëïï}πÖµî°ôΩ±ëï»§(ÄÄÄÅ•òÅπΩ–Åô•…Õ—}πÖµîÅΩ»ÅπΩ–Å±ÖÕ—}πÖµîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî∞Å9Ωπî(ÄÄÄÅπÖµï}µÖ—ç°ïÃÄÙÅl(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—Ã(ÄÄÄÄÄÄÄÅ•òÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§ÄÙÙÅô•…Õ—}πÖµî(ÄÄÄÄÄÄÄÅÖπêÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§ÄÙÙÅ±ÖÕ—}πÖµî(ÄÄÄÄÄÄÄÅÖπêÄ°πΩ–ÅïµÖ•±ÃÅΩ»ÅπΩ–Å}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§(ÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§Å•∏ÅïµÖ•±Ã§(ÄÄÄÄÄÄÄÅÖπêÄ°πΩ–Å¡°ΩπïÃÅΩ»ÅπΩ–Å}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§§(ÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å}ç…µ}πΩ…µÖ±•Èï}¡°Ωπî°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§§Å•∏Å¡°ΩπïÃ§(ÄÄÄÅt(ÄÄÄÅ•òÅ±ï∏°πÖµï}µÖ—ç°ïÃ§ÄÙÙÄƒË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅπÖµï}µÖ—ç°ïÕl¡t∞ÄâπÖµîà(ÄÄÄÅ…ï—’…∏Å9Ωπî∞Å9Ωπî(()ëïòÅ}›ïëΩô}Õ—Ω…ï}¡Öùî†(ÄÄÄÄÄÄÄÅ•—ïµÃ∞ÅëÖ—Ñ∞Å¡Öùî∞Å—Ω—Ö±}çΩ’π–ı9Ωπî∞Ä®∞Å’¡ëÖ—ï}ÕÂπç}Õ—Ö—îıQ…’î§Ë(ÄÄÄÄààâIÖ¡¡…Ωç°îÅï–Å¡ï…Õ•Õ—îÅ’πîÅ¡ÖùîÅÕÖπÃÅçΩπç’……ïπçï»Å’πîÅÖ’—…îÅµ’—Ö—•Ω∏ÅI4∏ààà(ÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}›ïëΩô}Õ—Ω…ï}¡Öùï}±Ωç≠ïê†(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµÃ∞ÅëÖ—ÑÅ•òÅëÖ—ÑÅ•ÃÅπΩ–Å9ΩπîÅï±ÕîÅ±ΩÖë}ëÖ—Ñ†§∞Å¡Öùî∞Å—Ω—Ö±}çΩ’π–∞(ÄÄÄÄÄÄÄÄÄÄÄÅ’¡ëÖ—ï}ÕÂπç}Õ—Ö—îı’¡ëÖ—ï}ÕÂπç}Õ—Ö—î∞(ÄÄÄÄÄÄÄÄ§(()ëïòÅ}›ïëΩô}Õ—Ω…ï}¡Öùï}±Ωç≠ïê†(ÄÄÄÄÄÄÄÅ•—ïµÃ∞ÅëÖ—Ñ∞Å¡Öùî∞Å—Ω—Ö±}çΩ’π–ı9Ωπî∞Ä®∞Å’¡ëÖ—ï}ÕÂπç}Õ—Ö—îıQ…’î§Ë(ÄÄÄÅçΩπ—Öç—ÃÄÙÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÅπΩ‹ÄÙÅ}›ïëΩô}πΩ‹†§(ÄÄÄÅç…µ}ç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅç…ïÖ—ïë}çΩπ—Öç—ÃÄÙÄ¿(ÄÄÄÅ±•π≠ïë}ôΩ±ëï…ÃÄÙÄ¿(ÄÄÄÅ¡ïπë•πù}…ïŸ•ï›ÃÄÙÄ¿(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅôΩ»ÅôΩ±ëï»Å•∏Å•—ïµÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ôΩ±ëï»∞Åë•ç–§ÅΩ»ÅπΩ–ÅôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Öâ±ï}•êÄÙÅÕ—»°ôΩ±ëï…lâï·—ï…πÖ±%êât§(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’Õ}ô’πë•πù}Õ—Ö—’ÃÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’Õ}…ïÕΩ’…çîÄÙÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅM1PÅ¡ÖÂ±ΩÖë}©ÕΩ∏ÅI=4Å›ïëΩô}…ïÕΩ’…çïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ]!IÅ…ïÕΩ’…çï}—Â¡îÙù…ïù•Õ—…Ö—•ΩπΩ±ëï»úÅ9ÅÕ—Öâ±ï}•êÙ¸(ÄÄÄÄÄÄÄÄÄÄÄÄààà∞Ä°Õ—Öâ±ï}•ê∞§§πôï—ç°Ωπî†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡…ïŸ•Ω’Õ}…ïÕΩ’…çîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’Õ}ô’πë•πù}Õ—Ö—’ÃÄÙÅ}›ïëΩô}ô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ©ÕΩ∏π±ΩÖëÃ°¡…ïŸ•Ω’Õ}…ïÕΩ’…çïlâ¡ÖÂ±ΩÖë}©ÕΩ∏ât§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»∞Å©ÕΩ∏π)M=9ïçΩëï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’Õ}ô’πë•πù}Õ—Ö—’ÃÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅç…µ}¡ÖÂ±ΩÖêÄÙÅ}›ïëΩô}çΩπ—Öç—}¡ÖÂ±ΩÖê°ôΩ±ëï»∞ÅëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖë}©ÕΩ∏ÄÙÅ©ÕΩ∏πë’µ¡Ã°ôΩ±ëï»∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî∞ÅÕï¡Ö…Ö—Ω…ÃÙ†à∞à∞ÄàËà§§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïµΩ—ï}ëÖ—îÄÙÅπï·–†°Õ—»°ôΩ±ëï»πùï–°≠ï‰§§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ’¡ëÖ—ïë–à∞Äâ’¡ëÖ—ïë=∏à∞ÄâµΩë•ô•ïë–à∞ÄâëÖ—ïU¡ëÖ—ïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë–à∞Äâç…ïÖ—ïë=∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§Å•òÅôΩ±ëï»πùï–°≠ï‰§§∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ%9MIPÅ%9Q<Å›ïëΩô}…ïÕΩ’…çïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ°…ïÕΩ’…çï}—Â¡î∞ÅÕ—Öâ±ï}•ê∞Å¡ÖÂ±ΩÖë}©ÕΩ∏∞Å…ïµΩ—ï}ëÖ—î∞ÅÕÂπçïë}Ö–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅY1ULÄ†ù…ïù•Õ—…Ö—•ΩπΩ±ëï»ú∞Ä¸∞Ä¸∞Ä¸∞Ä¸§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=8Å=91%P°…ïÕΩ’…çï}—Â¡î∞ÅÕ—Öâ±ï}•ê§Å<ÅUAQÅMP(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖë}©ÕΩ∏ıï·ç±’ëïêπ¡ÖÂ±ΩÖë}©ÕΩ∏∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïµΩ—ï}ëÖ—îıï·ç±’ëïêπ…ïµΩ—ï}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕÂπçïë}Ö–ıï·ç±’ëïêπÕÂπçïë}Ö–(ÄÄÄÄÄÄÄÄÄÄÄÄààà∞Ä°Õ—Öâ±ï}•ê∞Å¡ÖÂ±ΩÖë}©ÕΩ∏∞Å…ïµΩ—ï}ëÖ—î∞ÅπΩ‹§§(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πúÄÙÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅM1PÅçΩπ—Öç—}•êÅI=4Å›ïëΩô}çΩπ—Öç—}±•π≠Ã(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ]!IÅ…ïÕΩ’…çï}—Â¡îÙù…ïù•Õ—…Ö—•ΩπΩ±ëï»úÅ9Å…ïÕΩ’…çï}•êÙ¸(ÄÄÄÄÄÄÄÄÄÄÄÄààà∞Ä°Õ—Öâ±ï}•ê∞§§πôï—ç°Ωπî†§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅµï—°ΩêÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅï·•Õ—•πúË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅπï·–†°åÅôΩ»ÅåÅ•∏ÅçΩπ—Öç—ÃÅ•òÅåπùï–†â•êà§ÄÙÙÅï·•Õ—•πùlâçΩπ—Öç—}•êât§∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµï—°ΩêÄÙÄâÕ—Öâ±îàÅ•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞Åµï—°ΩêÄÙÅ}›ïëΩô}µÖ—ç°}çΩπ—Öç–°ôΩ±ëï»∞ÅçΩπ—Öç—Ã§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞Å|∞Å|ÄÙÅô•πë}Ω…}ç…ïÖ—ï}ç…µ}çΩπ—Öç–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞Åç…µ}¡ÖÂ±ΩÖê∞Äâ›ïëΩô}ç¡òà∞Åï·—ï…πÖ±}•êıÕ—Öâ±ï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕï±ïç—ïë}çΩπ—Öç—}•êıçΩπ—Öç–πùï–†â•êà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ…ëï…ïë}çΩΩ…ë•πÖ—ïÃıQ…’î∞Å…ïçΩ…ë}Öç—•Ÿ•—‰ıÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞Äâ9Ω’Ÿï±±îÅëïµÖπëîÅAÅ…óù’îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâΩÕÕ•ï»ÅÌÕ—Öâ±ï}•ëÙÅÖÕÕΩçß§ÅÖ’—ΩµÖ—•≈’ïµïπ–ÅŸ•ÑÅ]=∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±•òÄ°}›ïëΩô}°ÖÕ}’ÕÖâ±ï}•ëïπ—•—‰°ç…µ}¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ}›ïëΩô}•Õ}Ω¡ïπ}ç¡ô}…ï≈’ïÕ–°ôΩ±ëï»§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…Ω¡ΩÕïêÄÙÅ}›ïëΩô}πï›}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Åç…µ}¡ÖÂ±ΩÖê∞ÅÕ—Öâ±ï}•ê§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞Å•πâΩ’πê∞Åç…ïÖ—ïêÄÙÅô•πë}Ω…}ç…ïÖ—ï}ç…µ}çΩπ—Öç–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞Åç…µ}¡ÖÂ±ΩÖê∞Äâ›ïëΩô}ç¡òà∞Åï·—ï…πÖ±}•êıÕ—Öâ±ï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…Ω¡ΩÕïë}çΩπ—Öç–ı¡…Ω¡ΩÕïê∞ÅΩ…ëï…ïë}çΩΩ…ë•πÖ—ïÃıQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïçΩ…ë}Öç—•Ÿ•—‰ıÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅç…ïÖ—ïêË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµï—°ΩêÄÙÄâç…ïÖ—ïêà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïë}çΩπ—Öç—ÃÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±•òÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ|∞Åµï—°ΩêÄÙÅ}›ïëΩô}µÖ—ç°}çΩπ—Öç–°ôΩ±ëï»∞ÅmçΩπ—Öç—t§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµï—°ΩêÄÙÅµï—°ΩêÅΩ»ÄâµÖ—ç°ïêà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞Äâ9Ω’Ÿï±±îÅëïµÖπëîÅAÅ…óù’îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâΩÕÕ•ï»ÅÌÕ—Öâ±ï}•ëÙÅÖÕÕΩçß§ÅÖ’—ΩµÖ—•≈’ïµïπ–ÅŸ•ÑÅ]=∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±•òÅ•πâΩ’πêπùï–†âÕ—Ö—’Ãà§ÄÙÙÄâ¡ïπë•πù}…ïŸ•ï‹àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ïπë•πù}…ïŸ•ï›ÃÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï¡Ö•…ïë}ô•ï±ëÃÄÙÅ}›ïëΩô}Ö¡¡±Â}çΩπ—Öç—}ëï—Ö•±Ã°çΩπ—Öç–∞Åç…µ}¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ï¡Ö•…ïë}ô•ï±ëÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞Äâ%πôΩ…µÖ—•ΩπÃÅAÅÕÂπç°…Ωπ•œ•ïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ°Öµ¡ÃÅçΩµ¡≥•”•ÃÅëï¡’•ÃÅ]=ÄËÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¨Äà∞Äàπ©Ω•∏°…ï¡Ö•…ïë}ô•ï±ëÃ§Ä¨Äà∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅ1ÑÅ¡À•ÕïπçîÅë‘ÅëΩÕÕ•ï»Å]=Å¡…Ω’ŸîÅ≈’îÅ±îÅçΩµ¡—îÅAÅïÕ–ÅÖç—•ò∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅ‰ÅçΩµ¡…•ÃÅÕ§Å’πîÅÖπç•ïππîÅÀ•¡ΩπÕîÅI4Å•πë•≈’Ö•–ÅïπçΩ…îÉ
+¨Å9=8É
+Ï∏(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—»°çΩπ—Öç–πùï–†âç¡òà§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§ÄÑÙÄâ=U$àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâç¡òâtÄÙÄâ=U$à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅK•¡Ö…îÅÖ’ÕÕ§Å±ïÃÅ¡•Õ—ïÃÅçÀß•ïÃÅΩ‘Å…Ö¡¡…Ωç£•ïÃÅÖŸÖπ–Å≈’îÅ±ï’»(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅ¡…ΩŸïπÖπçîÅ]=ÅÕΩ•–Åïπ…ïù•Õ—À•îÅëÖπÃÅ±îÅI4∏(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}›ïëΩô}•Õ}ç¡ô}ôΩ±ëï»°ôΩ±ëï»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâ›ïëΩô}ç¡òà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·—ï…πÖ±}•êıÕ—Öâ±ï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—îı}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ|∞Å|∞ÅÖ——ïπëïï}•êÄÙÅ}›ïëΩô}Ö——ïπëïï}ŸÖ±’ïÃ°ôΩ±ëï»§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ%9MIPÅ%9Q<Å›ïëΩô}çΩπ—Öç—}±•π≠Ã(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ°çΩπ—Öç—}•ê∞Å…ïÕΩ’…çï}—Â¡î∞Å…ïÕΩ’…çï}•ê∞ÅÖ——ïπëïï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°}µï—°Ωê∞Å±•π≠ïë}Ö–∞Å’¡ëÖ—ïë}Ö–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅY1ULÄ†¸∞Äù…ïù•Õ—…Ö—•ΩπΩ±ëï»ú∞Ä¸∞Ä¸∞Ä¸∞Ä¸∞Ä¸§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=8Å=91%P°…ïÕΩ’…çï}—Â¡î∞Å…ïÕΩ’…çï}•ê§Å<ÅUAQÅMP(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•êıï·ç±’ëïêπçΩπ—Öç—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——ïπëïï}•êıï·ç±’ëïêπÖ——ïπëïï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°}µï—°Ωêıï·ç±’ëïêπµÖ—ç°}µï—°Ωê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ’¡ëÖ—ïë}Ö–ıï·ç±’ëïêπ’¡ëÖ—ïë}Ö–(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄààà∞Ä°çΩπ—Öç—lâ•êât∞ÅÕ—Öâ±ï}•ê∞ÅÖ——ïπëïï}•ê∞Åµï—°Ωê∞ÅπΩ‹∞ÅπΩ‹§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’Õ}Õ—Ö—’Õ}ïŸ•ëïπçîÄÙÅ¡…ïŸ•Ω’Õ}ô’πë•πù}Õ—Ö—’Ã(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ°πΩ–Å¡…ïŸ•Ω’Õ}Õ—Ö—’Õ}ïŸ•ëïπçî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÑÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—»°çΩπ—Öç–πùï–†âÕΩ’…çï}›ïëΩô}ôΩ±ëï…}•êà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙÙÅÕ—Öâ±ï}•ê§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅK•¡Ö…îÅÖ’ÕÕ§Å±ïÃÅëΩÕÕ•ï…ÃÅëΩπ–Å±îÅ…ï—Ω’»ÉÄÅÅÅŸÖ±•ëÖ—ïëÅÄ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅÑÅì•´ÄÅ…ïµ¡±Öè§Å±îÅ¡ÖÂ±ΩÖêÅêù•πÕ—…’ç—•Ω∏ÅëÖπÃÅ±îÅçÖç°î∏(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’Õ}Õ—Ö—’Õ}ïŸ•ëïπçîÄÙÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}ô’πë•πù}Õ—Ö—’ÃÄÙÅ}›ïëΩô}ô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»∞Å¡…ïŸ•Ω’Õ}Õ—Ö—’Ãı¡…ïŸ•Ω’Õ}Õ—Ö—’Õ}ïŸ•ëïπçî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÉ
+¨Å∏ÅçΩ’…ÃÉ
+ÏÅ…ïÕ—îÅ’πîÉ•—Ö¡îÅ¡…ΩŸ•ÕΩ•…îÄËÅ’πîÅì•ç•Õ•Ω∏Åëî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅ…ïô’ÃÅ…ïµΩπ”•îÅ¡Ö»Å]=ÅëΩ•–Å¡Ω’ŸΩ•»Å±ÑÅç≥——’…ï»∞Å∑©µîÅÕ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅçï——îÉ•—Ö¡îÅÖŸÖ•–É•”§Åœ•±ïç—•Ωπª•îÅµÖπ’ï±±ïµïπ–∏Å1ïÃÅÖ’—…ïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄåÅç°Ω•‡ÅµÖπ’ï±ÃÅ…ïÕ—ïπ–Å¡…Ω”•ü•Ã∏(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖπ’Ö±}ô’πë•πù}•Õ}¡…ΩŸ•Õ•ΩπÖ∞ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙÙÄâïπ}çΩ’…Õ}•πÕ—…’ç—•Ω∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ°ç’……ïπ—}ô’πë•πù}Õ—Ö—’ÃÄÙÙÄâ…ïô’Õïîà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°çΩπ—Öç–πùï–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§ÄÑÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅµÖπ’Ö±}ô’πë•πù}•Õ}¡…ΩŸ•Õ•ΩπÖ∞§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ω…ïë}ô’πë•πù}›ÖÕ}…ïô’ÕïêÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙÙÄâ…ïô’Õïîà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÕ—Ω…ïë}ô’πë•πù}›ÖÕ}…ïô’ÕïêË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–âtÄÙÄâ…ïô’Õïîà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅµÖπ’Ö±}ô’πë•πù}•Õ}¡…ΩŸ•Õ•ΩπÖ∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–π¡Ω¿†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà∞Å9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖπ’Ö±}ÕïçΩπëÖ…Â}•Õ}¡…ΩŸ•Õ•ΩπÖ∞ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…ï}ÕΩ’…çîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙÙÄâ•πÖπçïµïπ–ÅPÅï∏ÅçΩ’…Ãà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ†°çΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…ï}ÕΩ’…çîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÑÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅµÖπ’Ö±}ÕïçΩπëÖ…Â}•Õ}¡…ΩŸ•Õ•ΩπÖ∞§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÑÙÄâ•πÖπçïµïπ–ÅPÅ…ïô’œ§à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÄâ•πÖπçïµïπ–ÅPÅ…ïô’œ§à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅµÖπ’Ö±}ÕïçΩπëÖ…Â}•Õ}¡…ΩŸ•Õ•ΩπÖ∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–π¡Ω¿†âÕ—Ö—’—}ÕïçΩπëÖ•…ï}ÕΩ’…çîà∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡…ïŸ•Ω’Õ}ô’πë•πù}Õ—Ö—’ÃÄÑÙÄâ…ïô’ÕïîàË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öëë}ô’πë•πù}…ïô’ÕÖ±}πΩ—•ô•çÖ—•ΩπÃ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞ÅçΩπ—Öç–∞ÅÕ—Öâ±ï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Õïπë}ô—}…ïô’ÕÖ±}µïÕÕÖùïÃ°ëÖ—Ñ∞ÅçΩπ—Öç–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ°πΩ–ÅÕ—Ω…ïë}ô’πë•πù}›ÖÕ}…ïô’Õïê(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å¡…ïŸ•Ω’Õ}ô’πë•πù}Õ—Ö—’ÃÄÑÙÄâ…ïô’Õïîà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ|∞Å…ï±Öπçï}ç°ÖπùïêÄÙÅ}ç…µ}Õç°ïë’±ï}ô—}…ïô’ÕÖ±}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâ›ïëΩô}ô—}…ïô’ÕÖ∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Öâ±ï}•êıÕ—Öâ±ï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…µ}ç°ÖπùïêÄÙÅ…ï±Öπçï}ç°ÖπùïêÅΩ»Åç…µ}ç°Öπùïê(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±•π≠ïë}ôΩ±ëï…ÃÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÅ•òÅ’¡ëÖ—ï}ÕÂπç}Õ—Ö—îË(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—îÄÙÅÏâπï·—}¡ÖùîàËÅ¡ÖùîÄ¨Äƒ∞Äâ•π}¡…Ωù…ïÕÃàËÅQ…’î∞Äâ±ÖÕ—}ï……Ω»àËÄàâÙ(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ—Ω—Ö±}çΩ’π–Å•ÃÅπΩ–Å9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—ïlâ—Ω—Ö±}çΩ’π–âtÄÙÅ—Ω—Ö±}çΩ’π–(ÄÄÄÄÄÄÄÄÄÄÄÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ%9MIPÅ%9Q<Å›ïëΩô}ÕÂπç}Õ—Ö—î°ÕÂπç}≠ï‰∞ÅŸÖ±’ï}©ÕΩ∏∞Å’¡ëÖ—ïë}Ö–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅY1ULÄ†ù…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãú∞Ä¸∞Ä¸§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=8Å=91%P°ÕÂπç}≠ï‰§Å<ÅUAQÅMP(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’ï}©ÕΩ∏ıï·ç±’ëïêπŸÖ±’ï}©ÕΩ∏∞Å’¡ëÖ—ïë}Ö–ıï·ç±’ëïêπ’¡ëÖ—ïë}Ö–(ÄÄÄÄÄÄÄÄÄÄÄÄààà∞Ä°©ÕΩ∏πë’µ¡Ã°Õ—Ö—î§∞ÅπΩ‹§§(ÄÄÄÄÄÄÄÅ•òÅç…µ}ç°ÖπùïêË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë}çΩπ—Öç—ÃàËÅç…ïÖ—ïë}çΩπ—Öç—Ã∞(ÄÄÄÄÄÄÄÄâ±•π≠ïë}ôΩ±ëï…ÃàËÅ±•π≠ïë}ôΩ±ëï…Ã∞(ÄÄÄÄÄÄÄÄâ¡ïπë•πù}…ïŸ•ï›ÃàËÅ¡ïπë•πù}…ïŸ•ï›Ã∞(ÄÄÄÅÙ(()ëïòÅ}›ïëΩô}Õï—}Õ—Ö—î†®©Õ—Ö—î§Ë(ÄÄÄÅπΩ‹ÄÙÅ}›ïëΩô}πΩ‹†§(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅ%9MIPÅ%9Q<Å›ïëΩô}ÕÂπç}Õ—Ö—î°ÕÂπç}≠ï‰∞ÅŸÖ±’ï}©ÕΩ∏∞Å’¡ëÖ—ïë}Ö–§(ÄÄÄÄÄÄÄÄÄÄÄÅY1ULÄ†ù…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãú∞Ä¸∞Ä¸§(ÄÄÄÄÄÄÄÄÄÄÄÅ=8Å=91%P°ÕÂπç}≠ï‰§Å<ÅUAQÅMP(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’ï}©ÕΩ∏ıï·ç±’ëïêπŸÖ±’ï}©ÕΩ∏∞Å’¡ëÖ—ïë}Ö–ıï·ç±’ëïêπ’¡ëÖ—ïë}Ö–(ÄÄÄÄÄÄÄÄààà∞Ä°©ÕΩ∏πë’µ¡Ã°Õ—Ö—î§∞ÅπΩ‹§§(()ëïòÅ}›ïëΩô}Õ—Ö—î†§Ë(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅ…Ω‹ÄÙÅëàπï·ïç’—î†âM1PÅŸÖ±’ï}©ÕΩ∏∞Å’¡ëÖ—ïë}Ö–ÅI=4Å›ïëΩô}ÕÂπç}Õ—Ö—îÅ]!IÅÕÂπç}≠ï‰Ùù…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãúà§πôï—ç°Ωπî†§(ÄÄÄÅ•òÅπΩ–Å…Ω‹Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÌÙ(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ®©©ÕΩ∏π±ΩÖëÃ°…Ω›lâŸÖ±’ï}©ÕΩ∏ât§∞Äâ’¡ëÖ—ïë}Ö–àËÅ…Ω›lâ’¡ëÖ—ïë}Ö–âuÙ(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâ±ÖÕ—}ï……Ω»àËÄã%—Ö–ÅëîÅÕÂπç°…Ωπ•ÕÖ—•Ω∏Å•±±•Õ•â±î∏âÙ(()ëïòÅ}›ïëΩô}ÕÂπå†®∞Å¡Öùï}â’ëùï–ı9Ωπî§Ë(ÄÄÄÄààâ„•ç’—îÅ’πîÅÕï’±îÅÀ•çΩπç•±•Ö—•Ω∏Åù±ΩâÖ±î∞Å—Ω’ÃÅ¡…ΩçïÕÕ’ÃΩÖ¡¡ÃÅçΩπôΩπë’Ã∏ààà(ÄÄÄÅ•òÅπΩ–Å}]=}Me9}1=,πÖç≈’•…î°â±Ωç≠•πúıÖ±Õî§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞Äâ•π}¡…Ωù…ïÕÃàËÅQ…’î∞Äâ¡…ΩçïÕÕïêàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}çΩπ—Öç—ÃàËÄ¿∞Äâ±•π≠ïë}ôΩ±ëï…ÃàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ïπë•πù}…ïŸ•ï›ÃàËÄ¿∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅ±ïÖÕîÄÙÅÌÙ(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ±ïÖÕîÄÙÅÖç≈’•…ï}›ïëΩô}±Ωç¨†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ›ïëΩòµù±ΩâÖ∞µ…ïçΩπç•±•Ö—•Ω∏à∞Å——±}ÕïçΩπëÃÙÃÿ¿¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–Å]ïëΩôΩŸï…πΩ………Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»°Õ—»°ï·å§∞Ä‘¿Ã§Åô…Ω¥Åï·å(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å±ïÖÕîπùï–†âÖç≈’•…ïêà∞ÅÖ±Õî§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞Äâ•π}¡…Ωù…ïÕÃàËÅQ…’î∞Äâ¡…ΩçïÕÕïêàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}çΩπ—Öç—ÃàËÄ¿∞Äâ±•π≠ïë}ôΩ±ëï…ÃàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡ïπë•πù}…ïŸ•ï›ÃàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}›ïëΩô}ÕÂπç}±Ωç≠ïê°¡Öùï}â’ëùï–ı¡Öùï}â’ëùï–§(ÄÄÄÅô•πÖ±±‰Ë(ÄÄÄÄÄÄÄÅ…ï±ïÖÕï}›ïëΩô}±Ωç¨†(ÄÄÄÄÄÄÄÄÄÄÄÄâ›ïëΩòµù±ΩâÖ∞µ…ïçΩπç•±•Ö—•Ω∏à∞ÅÕ—»°±ïÖÕîπùï–†â—Ω≠ï∏à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ}]=}Me9}1=,π…ï±ïÖÕî†§(()ëïòÅ}›ïëΩô}ÕÂπç}±Ωç≠ïê†®∞Å¡Öùï}â’ëùï–ı9Ωπî§Ë(ÄÄÄÅÕ—Ö—îÄÙÅ}›ïëΩô}Õ—Ö—î†§(ÄÄÄÅ¡ÖùîÄÙÅ•π–°Õ—Ö—îπùï–†âπï·—}¡Öùîà§ÅΩ»Äƒ§Å•òÅÕ—Ö—îπùï–†â•π}¡…Ωù…ïÕÃà§Åï±ÕîÄƒ(ÄÄÄÅµÖ·}¡ÖùïÃÄÙÅµÖ‡†ƒ∞Åµ•∏°•π–°ΩÃπùï—ïπÿ†â]=}5a}ALà∞Äàƒ¿¿¿à§§∞Äƒ¿¿¿¿§§(ÄÄÄÅ•òÅ¡Öùï}â’ëùï–Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ¡ÖùïÕ}—°•Õ}…’∏ÄÙÅµÖ·}¡ÖùïÃ(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖùïÕ}—°•Õ}…’∏ÄÙÅµÖ‡†ƒ∞Åµ•∏°•π–°¡Öùï}â’ëùï–§∞ÅµÖ·}¡ÖùïÃ§§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖùïÕ}—°•Õ}…’∏ÄÙÄƒ(ÄÄÄÅ¡…ΩçïÕÕïêÄÙÄ¿(ÄÄÄÅç…ïÖ—ïë}çΩπ—Öç—ÃÄÙÄ¿(ÄÄÄÅ±•π≠ïë}ôΩ±ëï…ÃÄÙÄ¿(ÄÄÄÅ¡ïπë•πù}…ïŸ•ï›ÃÄÙÄ¿(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅôΩ»Å|Å•∏Å…Öπùî°¡ÖùïÕ}—°•Õ}…’∏§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖê∞Å°ïÖëï…ÃÄÙÅ}›ïëΩô}…ï≈’ïÕ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄàΩÖ¡§Ω…ïù•Õ—…Ö—•ΩπΩ±ëï…Ãà∞Å¡Ö…ÖµÃıÏâ±•µ•–àËÄƒ¿¿∞Äâ¡ÖùîàËÅ¡ÖùïÙ(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµÃÄÙÅ}›ïëΩô}•—ïµÃ°¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÅ—Ω—Ö∞ÄÙÅ°ïÖëï…Ãπùï–†â‡µ—Ω—Ö∞µçΩ’π–à§ÅΩ»Å°ïÖëï…Ãπùï–†â`µQΩ—Ö∞µΩ’π–à§(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—Ω—Ö∞ÄÙÅ•π–°—Ω—Ö∞§Å•òÅ—Ω—Ö∞Å•ÃÅπΩ–Å9ΩπîÅï±ÕîÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—Ω—Ö∞ÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÄåÅIïç°Ö…ùîÅ±îÅô•ç°•ï»ÅÖ¡À°ÃÅ∞ùÖ¡¡ï∞ÅÀ•ÕïÖ‘ÄËÅ’πîÅÕÖ•Õ•îÅÀ•Ö±•œ•î(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ¡ïπëÖπ–Å±ÑÅ¡Öù•πÖ—•Ω∏ÅπîÅëΩ•–Å©ÖµÖ•ÃÉ©—…îÉ•ç…Öœ•îÅ¡Ö»Å’∏ÅÖπç•ï∏ÅÕπÖ¡Õ°Ω–∏(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Öùï}…ïÕ’±–ÄÙÅ}›ïëΩô}Õ—Ω…ï}¡Öùî°•—ïµÃ∞Å9Ωπî∞Å¡Öùî∞Å—Ω—Ö∞§(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ΩçïÕÕïêÄ¨ÙÅ±ï∏°•—ïµÃ§(ÄÄÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïë}çΩπ—Öç—ÃÄ¨ÙÅ¡Öùï}…ïÕ’±—lâç…ïÖ—ïë}çΩπ—Öç—Ãât(ÄÄÄÄÄÄÄÄÄÄÄÅ±•π≠ïë}ôΩ±ëï…ÃÄ¨ÙÅ¡Öùï}…ïÕ’±—lâ±•π≠ïë}ôΩ±ëï…Ãât(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ïπë•πù}…ïŸ•ï›ÃÄ¨ÙÅ¡Öùï}…ïÕ’±—lâ¡ïπë•πù}…ïŸ•ï›Ãât(ÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ–ÄÙÅ°ïÖëï…Ãπùï–†â‡µç’……ïπ–µ¡Öùîà§ÅΩ»Å°ïÖëï…Ãπùï–†â`µ’……ïπ–µAÖùîà§ÅΩ»Å¡Öùî(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ï…}¡ÖùîÄÙÅ°ïÖëï…Ãπùï–†â‡µ•—ï¥µ¡ï»µ¡Öùîà§ÅΩ»Å°ïÖëï…Ãπùï–†â`µ%—ï¥µAï»µAÖùîà§ÅΩ»Äƒ¿¿(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩµ¡±ï—îÄÙÅ—Ω—Ö∞Å•ÃÅπΩ–Å9ΩπîÅÖπêÅ•π–°ç’……ïπ–§Ä®Å•π–°¡ï…}¡Öùî§Ä¯ÙÅ—Ω—Ö∞(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩµ¡±ï—îÄÙÅÖ±Õî(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩµ¡±ï—îÅΩ»Å±ï∏°•—ïµÃ§ÄÄƒ¿¿Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅô•π•Õ°ïêÄÙÅ}›ïëΩô}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}Õï—}Õ—Ö—î°πï·—}¡ÖùîÙƒ∞Å•π}¡…Ωù…ïÕÃıÖ±Õî∞Å±ÖÕ—}ï……Ω»Ùàà∞Å±ÖÕ—}ÕÂπç}Ö–ıô•π•Õ°ïê§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞Äâ¡…ΩçïÕÕïêàËÅ¡…ΩçïÕÕïê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}çΩπ—Öç—ÃàËÅç…ïÖ—ïë}çΩπ—Öç—Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±•π≠ïë}ôΩ±ëï…ÃàËÅ±•π≠ïë}ôΩ±ëï…Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡ïπë•πù}…ïŸ•ï›ÃàËÅ¡ïπë•πù}…ïŸ•ï›Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±ÖÕ—}ÕÂπç}Ö–àËÅô•π•Õ°ïê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖùîÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÄåÅ1ÑÅÀ•çΩπç•±•Ö—•Ω∏ÅÖ’—ΩµÖ—•≈’îÅÖŸÖπçîÅëÖπÃÅ±ÑÅ¡Öù•πÖ—•Ω∏ÅÖŸïåÅ’∏Å¡ï—•–(ÄÄÄÄÄÄÄÄåÅâ’ëùï–Åô•·î∏Å1îÅç’…Õï’»ÅïÕ–ÅçΩπÕï…€§ÅÖô•∏ÅëîÅçΩ’Ÿ…•»Å¡…Ωù…ïÕÕ•Ÿïµïπ–(ÄÄÄÄÄÄÄÄåÅ∞ù°•Õ—Ω…•≈’îÅÕÖπÃÅ…ïôÖ•…îÅ’∏ÅÕçÖ∏ÅçΩµ¡±ï–Å≈’Ö—…îÅôΩ•ÃÅ¡Ö»Å©Ω’»∏(ÄÄÄÄÄÄÄÅ}›ïëΩô}Õï—}Õ—Ö—î†(ÄÄÄÄÄÄÄÄÄÄÄÅπï·—}¡Öùîı¡Öùî∞Å•π}¡…Ωù…ïÕÃıQ…’î∞Å±ÖÕ—}ï……Ω»Ùàà∞(ÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}¡Ö…—•Ö±}ÕÂπç}Ö–ı}›ïëΩô}πΩ‹†§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡Ö…—•Ö∞àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ•π}¡…Ωù…ïÕÃàËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπï·—}¡ÖùîàËÅ¡Öùî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÅ¡…ΩçïÕÕïê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}çΩπ—Öç—ÃàËÅç…ïÖ—ïë}çΩπ—Öç—Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ±•π≠ïë}ôΩ±ëï…ÃàËÅ±•π≠ïë}ôΩ±ëï…Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ïπë•πù}…ïŸ•ï›ÃàËÅ¡ïπë•πù}…ïŸ•ï›Ã∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅµïÕÕÖùîÄÙÅ}›ïëΩô}ç±ïÖ∏°ï·å§(ÄÄÄÄÄÄÄÅ}›ïëΩô}Õï—}Õ—Ö—î°πï·—}¡Öùîı¡Öùî∞Å•π}¡…Ωù…ïÕÃıQ…’î∞Å±ÖÕ—}ï……Ω»ıµïÕÕÖùî§(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»°µïÕÕÖùî§(()ëïòÅ}›ïëΩô}¡ΩÕ•—•Ÿï}•π—ï…ŸÖ∞°πÖµî∞ÅëïôÖ’±–∞Åµ•π•µ’¥§Ë(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅµÖ‡°µ•π•µ’¥∞Å•π–°ΩÃπùï—ïπÿ°πÖµî∞ÅÕ—»°ëïôÖ’±–§§§§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅëïôÖ’±–(()ëïòÅ}›ïëΩô}ô—}›Ö—ç°±•Õ–°ëÖ—Ñı9Ωπî§Ë(ÄÄÄÄààâIï—Ω’…πîÅ±ïÃÅëΩÕÕ•ï…ÃÅ±ïÃÅ¡±’ÃÅÀ•çïπ—ÃÅïπçΩ…îÅï∏Å•πÕ—…’ç—•Ω∏ÅP∏((ÄÄÄÅMï’±ÃÅ±ïÃÅëΩÕÕ•ï…ÃÅì•´ÄÅ±ß•ÃÉÄÅ’πîÅô•ç°îÅI4ÅÕΩπ–ÅçΩπçï…ª•Ã∏Å1îÅ—…§Å¡Ö»(ÄÄÄÅÖπç•ïππîÅëÖ—îÅëîÅÕÂπç°…Ωπ•ÕÖ—•Ω∏ÅôÖ•–Å—Ω’…πï»É•≈’•—Öâ±ïµïπ–Å±ÑÅ±•Õ—îÅÕ§Å±î(ÄÄÄÅ¡±ÖôΩπêÅ¡Ö»Å¡ÖÕÕÖùîÅïÕ–ÅÖ——ï•π–∏(ÄÄÄÄààà(ÄÄÄÅëÖ—ÑÄÙÅëÖ—ÑÅΩ»Å±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç—ÃÄÙÅÏ(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§ËÅçΩπ—Öç–(ÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°çΩπ—Öç–∞Åë•ç–§ÅÖπêÅçΩπ—Öç–πùï–†â•êà§(ÄÄÄÅÙ(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç—ÃÅΩ»ÅπΩ–ÅΩÃπ¡Ö—†πï·•Õ—Ã°}›ïëΩô}ëâ}¡Ö—††§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Åmt(ÄÄÄÅ±Ö—ïÕ—}âÂ}çΩπ—Öç–ÄÙÅÌÙ(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅ…Ω›ÃÄÙÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅM1PÅ»πÕ—Öâ±ï}•ê∞Å»π¡ÖÂ±ΩÖë}©ÕΩ∏∞Å»π…ïµΩ—ï}ëÖ—î∞Å»πÕÂπçïë}Ö–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ∞πçΩπ—Öç—}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅI=4Å›ïëΩô}…ïÕΩ’…çïÃÅ»Å)=%8Å›ïëΩô}çΩπ—Öç—}±•π≠ÃÅ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=8Å»π…ïÕΩ’…çï}—Â¡îı∞π…ïÕΩ’…çï}—Â¡î(ÄÄÄÄÄÄÄÄÄÄÄÄÅ9Å»πÕ—Öâ±ï}•êı∞π…ïÕΩ’…çï}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅ]!IÅ»π…ïÕΩ’…çï}—Â¡îÙù…ïù•Õ—…Ö—•ΩπΩ±ëï»ú(ÄÄÄÄÄÄÄÄààà§(ÄÄÄÄÄÄÄÅôΩ»Å…Ω‹Å•∏Å…Ω›ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°…Ω›lâçΩπ—Öç—}•êâtÅΩ»Äàà§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç—}•êÅπΩ–Å•∏ÅçΩπ—Öç—ÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ©ÕΩ∏π±ΩÖëÃ°…Ω›lâ¡ÖÂ±ΩÖë}©ÕΩ∏ât§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»∞Å©ÕΩ∏π)M=9ïçΩëï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïçïπç‰ÄÙÅ}›ïëΩô}ôΩ±ëï…}…ïçïπçÂ}≠ï‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôÖ±±âÖç¨ı…Ω›lâ…ïµΩ—ï}ëÖ—îâtÅΩ»Å…Ω›lâÕÂπçïë}Ö–ât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Öâ±ï}•êı…Ω›lâÕ—Öâ±ï}•êât∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’ÃÄÙÅ±Ö—ïÕ—}âÂ}çΩπ—Öç–πùï–°çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡…ïŸ•Ω’ÃÅ•ÃÅ9ΩπîÅΩ»Å…ïçïπç‰Ä¯Å¡…ïŸ•Ω’Õl¡tË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}âÂ}çΩπ—Öç—mçΩπ—Öç—}•ëtÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïçïπç‰∞ÅÕ—»°…Ω›lâÕ—Öâ±ï}•êât§∞Å¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°…Ω›lâÕÂπçïë}Ö–âtÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§((ÄÄÄÅ›Ö—ç°±•Õ–ÄÙÅmt(ÄÄÄÅôΩ»Ä†(ÄÄÄÄÄÄÄÅçΩπ—Öç—}•ê∞Ä°}…ïçïπç‰∞ÅÕ—Öâ±ï}•ê∞Å¡ÖÂ±ΩÖê∞ÅÕÂπçïë}Ö–§(ÄÄÄÄ§Å•∏Å±Ö—ïÕ—}âÂ}çΩπ—Öç–π•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅÕ—Ö—’ÃÄÙÅ}›ïëΩô}ô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ã°¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÅ•òÅÕ—Ö—’ÃÄÙÙÄâïπ}çΩ’…Õ}•πÕ—…’ç—•Ω∏àË(ÄÄÄÄÄÄÄÄÄÄÄÅ›Ö—ç°±•Õ–πÖ¡¡ïπê°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç—}•êàËÅçΩπ—Öç—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâôΩ±ëï…}•êàËÅÕ—Öâ±ï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕÂπçïë}Ö–àËÅÕÂπçïë}Ö–∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅ…ï—’…∏ÅÕΩ…—ïê†(ÄÄÄÄÄÄÄÅ›Ö—ç°±•Õ–∞(ÄÄÄÄÄÄÄÅ≠ï‰ı±ÖµâëÑÅ•—ï¥ËÄ°•—ï¥πùï–†âÕÂπçïë}Ö–à§ÅΩ»Äàà∞Å•—ïµlâôΩ±ëï…}•êât§∞(ÄÄÄÄ§(()ëïòÅ}›ïëΩô}…ïçΩπç•±ï}ô—}›Ö—ç°±•Õ–†®∞ÅµÖ·}ôΩ±ëï…Ãı9Ωπî§Ë(ÄÄÄÄààâIï±•–Å’π•≈’ïµïπ–Å±ïÃÅëΩÕÕ•ï…ÃÅçΩππ’ÃÅïπçΩ…îÅï∏Å•πÕ—…’ç—•Ω∏Å…ÖπçîÅQ…ÖŸÖ•∞∏ààà(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅçΩπô•ù’…ïë}±•µ•–ÄÙÅ•π–°ΩÃπùï—ïπÿ†(ÄÄÄÄÄÄÄÄÄÄÄÄâ]=}Q}I=9%1%Q%=9}5a}=1ILà∞Äà‘¿à∞(ÄÄÄÄÄÄÄÄ§§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅçΩπô•ù’…ïë}±•µ•–ÄÙÄ‘¿(ÄÄÄÅ•òÅµÖ·}ôΩ±ëï…ÃÅ•ÃÅπΩ–Å9ΩπîË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπô•ù’…ïë}±•µ•–ÄÙÅ•π–°µÖ·}ôΩ±ëï…Ã§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπô•ù’…ïë}±•µ•–ÄÙÄƒ(ÄÄÄÅçΩπô•ù’…ïë}±•µ•–ÄÙÅµÖ‡†ƒ∞Åµ•∏°çΩπô•ù’…ïë}±•µ•–∞Äƒ¿¿§§(ÄÄÄÅ›Ö—ç°±•Õ–ÄÙÅ}›ïëΩô}ô—}›Ö—ç°±•Õ–†§(ÄÄÄÅç°ïç≠ïêÄÙÄ¿(ÄÄÄÅ…ïô’ÕïêÄÙÄ¿(ÄÄÄÅï……Ω…ÃÄÙÄ¿(ÄÄÄÅôΩ»Å•—ï¥Å•∏Å›Ö—ç°±•Õ—lÈçΩπô•ù’…ïë}±•µ•—tË(ÄÄÄÄÄÄÄÅôΩ±ëï…}•êÄÙÅ•—ïµlâôΩ±ëï…}•êât(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖê∞Å}°ïÖëï…ÃÄÙÅ}›ïëΩô}…ï≈’ïÕ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòàΩÖ¡§Ω…ïù•Õ—…Ö—•ΩπΩ±ëï…ÃΩÌ≈’Ω—î°ôΩ±ëï…}•ê∞ÅÕÖôîÙúú•Ùà(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†âëÖ—Ñà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖêπùï–†âëÖ—Ñà§∞Åë•ç–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîÅ¡ÖÂ±ΩÖê(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ôΩ±ëï»∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ]=ÅÑÅ…ï—Ω’…ª§Å’∏ÅëΩÕÕ•ï»ÅëÖπÃÅ’∏ÅôΩ…µÖ–Å•πÖ——ïπë‘∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…πïë}•êÄÙÅÕ—»°ôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§ÅΩ»ÅôΩ±ëï…}•ê§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ï—’…πïë}•êÄÑÙÅôΩ±ëï…}•êË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†â]=ÅÑÅ…ï—Ω’…ª§Å’∏ÅÖ’—…îÅπ’∑•…ºÅëîÅëΩÕÕ•ï»∏à§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»ÄÙÅÏ®©ôΩ±ëï»∞Äâï·—ï…πÖ±%êàËÅôΩ±ëï…}•ëÙ(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ°}›ïëΩô}ô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»∞Å¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÙâïπ}çΩ’…Õ}•πÕ—…’ç—•Ω∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§ÄÙÙÄâ…ïô’Õïîà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïô’ÕïêÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}Õ—Ω…ï}¡Öùî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅmôΩ±ëï…t∞Å9Ωπî∞Ä¿∞Å’¡ëÖ—ï}ÕÂπç}Õ—Ö—îıÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅç°ïç≠ïêÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÅï·çï¡–Å]ïëΩôA%……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅï……Ω…ÃÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ›ïëΩòÅPÅ…ïçΩπç•±•Ö—•Ω∏ÅôÖ•±ïêÅôΩ±ëï»ÙïÃÅï……Ω»ÙïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï…}•ê∞Å}›ïëΩô}ç±ïÖ∏°ï·å§∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅùï—Ö——»°ï·å∞ÄâÕ—Ö—’Õ}çΩëîà∞Å9Ωπî§Å•∏ÅÏ–»‰∞Ä‘¿ÕÙË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâ…ïÖ¨(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâΩ¨àËÅï……Ω…ÃÄÙÙÄ¿∞(ÄÄÄÄÄÄÄÄâçÖπë•ëÖ—ïÃàËÅ±ï∏°›Ö—ç°±•Õ–§∞(ÄÄÄÄÄÄÄÄâç°ïç≠ïêàËÅç°ïç≠ïê∞(ÄÄÄÄÄÄÄÄâ…ïô’ÕïêàËÅ…ïô’Õïê∞(ÄÄÄÄÄÄÄÄâï……Ω…ÃàËÅï……Ω…Ã∞(ÄÄÄÄÄÄÄÄâ…ïµÖ•π•πúàËÅµÖ‡†¿∞Å±ï∏°›Ö—ç°±•Õ–§Ä¥Åç°ïç≠ïê§∞(ÄÄÄÅÙ(()ëïòÅ}›ïëΩô}Õç°ïë’±ïë}…ïçΩπç•±•Ö—•Ω∏†§Ë(ÄÄÄÄààâ„•ç’—îÅ±îÅçΩπ—À—±îÅPÅ¡…•Ω…•—Ö•…îÅ¡’•ÃÅ≈’ï±≈’ïÃÅ¡ÖùïÃÅù±ΩâÖ±ïÃ∏ààà(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ¡Öùï}â’ëùï–ÄÙÅ•π–°ΩÃπùï—ïπÿ†(ÄÄÄÄÄÄÄÄÄÄÄÄâ]=}I=9%1%Q%=9}A}	UPà∞Äà‘à∞(ÄÄÄÄÄÄÄÄ§§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ¡Öùï}â’ëùï–ÄÙÄ‘(ÄÄÄÅ¡Öùï}â’ëùï–ÄÙÅµÖ‡†ƒ∞Åµ•∏°¡Öùï}â’ëùï–∞Ä»¿§§(ÄÄÄÅô—}…ïÕ’±–ÄÙÅ}›ïëΩô}…ïçΩπç•±ï}ô—}›Ö—ç°±•Õ–†§(ÄÄÄÅù±ΩâÖ±}…ïÕ’±–ÄÙÅ}›ïëΩô}ÕÂπå°¡Öùï}â’ëùï–ı¡Öùï}â’ëùï–§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâΩ¨àËÅâΩΩ∞°ô—}…ïÕ’±–πùï–†âΩ¨à§ÅÖπêÅù±ΩâÖ±}…ïÕ’±–πùï–†âΩ¨à§§∞(ÄÄÄÄÄÄÄÄâô…Öπçï}—…ÖŸÖ•∞àËÅô—}…ïÕ’±–∞(ÄÄÄÄÄÄÄÄâù±ΩâÖ∞àËÅù±ΩâÖ±}…ïÕ’±–∞(ÄÄÄÅÙ(()ëïòÅ}›ïëΩô}âÖç≠ù…Ω’πë}ÕÂπç}±ΩΩ¿†§Ë(ÄÄÄÅ•π•—•Ö±}ëï±Ö‰ÄÙÅ}›ïëΩô}¡ΩÕ•—•Ÿï}•π—ï…ŸÖ∞†(ÄÄÄÄÄÄÄÄâ]=}Me9}%9%Q%1}1e}M=9Là∞ÄÃ¿¿∞Äÿ¿∞(ÄÄÄÄ§(ÄÄÄÅ•π—ï…ŸÖ∞ÄÙÅ}›ïëΩô}¡ΩÕ•—•Ÿï}•π—ï…ŸÖ∞†(ÄÄÄÄÄÄÄÄâ]=}I=9%1%Q%=9}%9QIY1}M=9Là∞Ä»ƒÿ¿¿∞Ä»ƒÿ¿¿∞(ÄÄÄÄ§(ÄÄÄÅ•òÅ}]=}A=11I}MQ=@π›Ö•–°•π•—•Ö±}ëï±Ö‰§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏(ÄÄÄÅ›°•±îÅπΩ–Å}]=}A=11I}MQ=@π•Õ}Õï–†§Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄåÅA±’Õ•ï’…ÃÅ›Ω…≠ï…ÃÅ›ïàÅ¡ï’Ÿïπ–Åì•µÖ……ï»ÅçîÅ—°…ïÖê∏ÅîÅâÖ•∞Å∏ùïÕ–(ÄÄÄÄÄÄÄÄÄÄÄÄåÅŸΩ±Ωπ—Ö•…ïµïπ–Å¡ÖÃÅ±•ã•À§ÄËÅÕΩ∏Åï·¡•…Ö—•Ω∏ÅµÖ”•…•Ö±•ÕîÅ±îÅì•±Ö§(ÄÄÄÄÄÄÄÄÄÄÄÄåÅëîÅÕ•‡Å°ï’…ïÃÅï–Åïµ√©ç°îÅ’∏ÅÕïçΩπêÅ›Ω…≠ï»ÅëîÅ…ïôÖ•…îÅ±îÅ¡ÖÕÕÖùî∏(ÄÄÄÄÄÄÄÄÄÄÄÅÕç°ïë’±îÄÙÅÖç≈’•…ï}›ïëΩô}±Ωç¨†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ›ïëΩòµç…¥µ…ïçΩπç•±•Ö—•Ω∏µÕç°ïë’±îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ——±}ÕïçΩπëÃı•π—ï…ŸÖ∞∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÕç°ïë’±îπùï–†âÖç≈’•…ïêà∞ÅÖ±Õî§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±–ÄÙÅÏâΩ¨àËÅQ…’î∞ÄâÕ—Ö—’ÃàËÄâÖ±…ïÖëÂ}Õç°ïë’±ïêâÙ(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±–ÄÙÅ}›ïëΩô}Õç°ïë’±ïë}…ïçΩπç•±•Ö—•Ω∏†§(ÄÄÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïêÄÙÅ…ïÕ’±–πùï–†âù±ΩâÖ∞à∞ÅÌÙ§πùï–†âç…ïÖ—ïë}çΩπ—Öç—Ãà∞Ä¿§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅç…ïÖ—ïêË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π•πôº†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ›ïëΩòÅÖ’—ºµÕÂπåÅç…ïÖ—ïë}çΩπ—Öç—ÃÙïÃÅ¡…ΩçïÕÕïêÙïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïê∞Å…ïÕ’±–πùï–†âù±ΩâÖ∞à∞ÅÌÙ§πùï–†â¡…ΩçïÕÕïêà∞Ä¿§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†â›ïëΩòÅÖ’—ºµÕÂπåÅôÖ•±ïêËÄïÃà∞Å}›ïëΩô}ç±ïÖ∏°ï·å§§(ÄÄÄÄÄÄÄÅ•òÅ}]=}A=11I}MQ=@π›Ö•–°•π—ï…ŸÖ∞§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏(()ëïòÅ}Õ—Ö…—}›ïëΩô}âÖç≠ù…Ω’πë}ÕÂπå†§Ë(ÄÄÄÄààâK•çΩπç•±•Ö—•Ω∏Åù±ΩâÖ±îÅΩ¡—•Ωππï±±î∞Åì•ÕÖç—•€•îÅ¡Ö»Åì•ôÖ’–Åï–ÅÖ‘Å¡±’ÃÄ–ÅôΩ•ÃΩ©Ω’»∏ààà(ÄÄÄÅù±ΩâÖ∞Å}]=}A=11I}MQIQ(ÄÄÄÄåÅ9Ω’ŸïÖ‘Åë…Ö¡ïÖ‘ÅŸΩ±Ωπ—Ö•…îÄËÅ’πîÅÖπç•ïππîÅçΩπô•ù’…Ö—•Ω∏(ÄÄÄÄåÅ]=}UQ=}Me9}9	1ı—…’îÅπîÅëΩ•–Å©ÖµÖ•ÃÅ…ïÕÕ’Õç•—ï»Å±îÅ¡Ω±±ï»Ä‘Åµ•∏∏(ÄÄÄÅïπÖâ±ïêÄÙÅÕ—»°ΩÃπùï—ïπÿ†(ÄÄÄÄÄÄÄÄâ]=}I5}I=9%1%Q%=9}9	1à∞Äâ—…’îà∞(ÄÄÄÄ§§πÕ—…•¿†§πçÖÕïôΩ±ê†§(ÄÄÄÅ•òÄ°}]=}A=11I}MQIQÅΩ»ÅπΩ–ÅΩÃπùï—ïπÿ†â]=}A%}-dà∞Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅïπÖâ±ïêÅ•∏ÅÏà¿à∞ÄâôÖ±Õîà∞ÄâπΩ∏à∞Äâπºà∞ÄâΩôòâÙ§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ}]=}A=11I}MQIQÄÙÅQ…’î(ÄÄÄÅ—°…ïÖë•πúπQ°…ïÖê†(ÄÄÄÄÄÄÄÅ—Ö…ùï–ı}›ïëΩô}âÖç≠ù…Ω’πë}ÕÂπç}±ΩΩ¿∞(ÄÄÄÄÄÄÄÅπÖµîÙâ›ïëΩòµç…¥µ…ïçΩπç•±•Ö—•Ω∏à∞ÅëÖïµΩ∏ıQ…’î∞(ÄÄÄÄ§πÕ—Ö…–†§(ÄÄÄÅ…ï—’…∏ÅQ…’î(()ëïòÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê∞ÅëÖ—Ñı9Ωπî§Ë(ÄÄÄÅëÖ—ÑÄÙÅëÖ—ÑÅΩ»Å±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Åmt((ÄÄÄÅçΩπ—Öç—}πÖµîÄÙÄ†(ÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§∞(ÄÄÄÄ§(ÄÄÄÅÕÖµï}πÖµï}çΩ’π–ÄÙÅÕ’¥†(ÄÄÄÄÄÄÄÄƒÅôΩ»ÅçÖπë•ëÖ—îÅ•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅÖ±∞°çΩπ—Öç—}πÖµî§ÅÖπêÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çÖπë•ëÖ—îπùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çÖπë•ëÖ—îπùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÄ§ÄÙÙÅçΩπ—Öç—}πÖµî(ÄÄÄÄ§((ÄÄÄÄåÅÖÃÅçΩ’…Öπ–ÄËÅ±îÅëΩÕÕ•ï»ÅïÕ–Åì•´ÄÅ…Ö——Öç£§ÉÄÅçï——îÅ¡•Õ—î∏Å1îÅô•±—…îÅME0(ÄÄÄÄåÉ•Ÿ•—îÅÖ±Ω…ÃÅëîÅç°Ö…ùï»Åï–Åì•çΩëï»Å—Ω’ÃÅ±ïÃÅëΩÕÕ•ï…ÃÅ]=ÅëîÅ∞ùΩ…ùÖπ•Õµî∏(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅë•…ïç—±Â}±•π≠ïë}…Ω›ÃÄÙÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅM1PÅ»π…ïÕΩ’…çï}—Â¡î∞Å»πÕ—Öâ±ï}•ê∞Å»π¡ÖÂ±ΩÖë}©ÕΩ∏∞Å»π…ïµΩ—ï}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ»πÕÂπçïë}Ö–∞Å∞πçΩπ—Öç—}•êÅLÅ±•π≠ïë}çΩπ—Öç—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ∞πÖ——ïπëïï}•ê∞Å∞πµÖ—ç°}µï—°Ωê(ÄÄÄÄÄÄÄÄÄÄÄÅI=4Å›ïëΩô}…ïÕΩ’…çïÃÅ»Å1PÅ)=%8Å›ïëΩô}çΩπ—Öç—}±•π≠ÃÅ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=8Å»π…ïÕΩ’…çï}—Â¡îı∞π…ïÕΩ’…çï}—Â¡îÅ9Å»πÕ—Öâ±ï}•êı∞π…ïÕΩ’…çï}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅ]!IÅ∞πçΩπ—Öç—}•êÙ¸(ÄÄÄÄÄÄÄÄÄÄÄÅ=IHÅ	dÅ»πÕÂπçïë}Ö–ÅM(ÄÄÄÄÄÄÄÄààà∞Ä°Õ—»°çΩπ—Öç—}•ê§∞§§πôï—ç°Ö±∞†§((ÄÄÄÄÄÄÄÄåÅ1îÅâÖ±ÖÂÖùîÅ¡Ö»Å•ëïπ—•”§ÅπîÅ…ïÕ—îÅª•çïÕÕÖ•…îÅ≈’îÅ¡Ω’»Å’πîÅπΩ’Ÿï±±î(ÄÄÄÄÄÄÄÄåÅ¡•Õ—îÅπΩ∏ÅïπçΩ…îÅ±ß•îÅΩ‘Å¡Ω’»ÅëîÅŸ…Ö•ÃÅëΩ’â±ΩπÃÅπΩ¥Ω¡À•πΩ¥∏(ÄÄÄÄÄÄÄÅ•òÅë•…ïç—±Â}±•π≠ïë}…Ω›ÃÅÖπêÅÕÖµï}πÖµï}çΩ’π–ÄÙÄƒË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ω›ÃÄÙÅë•…ïç—±Â}±•π≠ïë}…Ω›Ã(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ω›ÃÄÙÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅM1PÅ»π…ïÕΩ’…çï}—Â¡î∞Å»πÕ—Öâ±ï}•ê∞Å»π¡ÖÂ±ΩÖë}©ÕΩ∏∞Å»π…ïµΩ—ï}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ»πÕÂπçïë}Ö–∞Å∞πçΩπ—Öç—}•êÅLÅ±•π≠ïë}çΩπ—Öç—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ∞πÖ——ïπëïï}•ê∞Å∞πµÖ—ç°}µï—°Ωê(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅI=4Å›ïëΩô}…ïÕΩ’…çïÃÅ»Å1PÅ)=%8Å›ïëΩô}çΩπ—Öç—}±•π≠ÃÅ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=8Å»π…ïÕΩ’…çï}—Â¡îı∞π…ïÕΩ’…çï}—Â¡îÅ9Å»πÕ—Öâ±ï}•êı∞π…ïÕΩ’…çï}•ê(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=IHÅ	dÅ»πÕÂπçïë}Ö–ÅM(ÄÄÄÄÄÄÄÄÄÄÄÄààà§πôï—ç°Ö±∞†§((ÄÄÄÅ…ïÕΩ’…çïÃÄÙÅmt(ÄÄÄÅôΩ»Å…Ω‹Å•∏Å…Ω›ÃË(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ©ÕΩ∏π±ΩÖëÃ°…Ω›lâ¡ÖÂ±ΩÖë}©ÕΩ∏ât§(ÄÄÄÄÄÄÄÅë•…ïç—±Â}±•π≠ïêÄÙÅÕ—»°…Ω›lâ±•π≠ïë}çΩπ—Öç—}•êâtÅΩ»Äàà§ÄÙÙÅÕ—»°çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÄåÅUπîÅ∑©µîÅ¡ï…ÕΩππîÅ¡ï’–ÅÖŸΩ•»Å¡±’Õ•ï’…ÃÅ¡•Õ—ïÃÅI4∏Å1îÅ±•ï∏Å]=Å…ïÕ—î(ÄÄÄÄÄÄÄÄåÅ’π•≈’îÅï∏ÅâÖÕî∞ÅµÖ•ÃÅç°Ö≈’îÅëΩ’â±Ω∏Åêù•ëïπ—•”§ÅëΩ•–Å¡Ω’ŸΩ•»ÅçΩπÕ’±—ï»(ÄÄÄÄÄÄÄÄåÅÕïÃÅëΩÕÕ•ï…ÃÅÕÖπÃÅ¡ï…ë…îÅ±ïÃÅÖççïπ—ÃÅëîÅÕΩ∏ÅπΩ¥ÅëÖπÃÅ±îÅI4∏(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åë•…ïç—±Â}±•π≠ïêÅÖπêÅπΩ–Å}›ïëΩô}çΩπ—Öç—}πÖµï}µÖ—ç°ïÃ°¡ÖÂ±ΩÖê∞ÅçΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅÖ——ïπëïï}•êÄÙÅ…Ω›lâÖ——ïπëïï}•êât(ÄÄÄÄÄÄÄÅµÖ—ç°}µï—°ΩêÄÙÅ…Ω›lâµÖ—ç°}µï—°Ωêât(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åë•…ïç—±Â}±•π≠ïêË(ÄÄÄÄÄÄÄÄÄÄÄÅ|∞Å|∞ÅÖ——ïπëïï}•êÄÙÅ}›ïëΩô}Ö——ïπëïï}ŸÖ±’ïÃ°¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°}µï—°ΩêÄÙÄâπÖµîà(ÄÄÄÄÄÄÄÅ…ïÕΩ’…çïÃπÖ¡¡ïπê°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÅ…Ω›lâ…ïÕΩ’…çï}—Â¡îât∞ÄâÕ—Öâ±ï}•êàËÅ…Ω›lâÕ—Öâ±ï}•êât∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ÖÂ±ΩÖêàËÅ¡ÖÂ±ΩÖê∞Äâ…ïµΩ—ï}ëÖ—îàËÅ…Ω›lâ…ïµΩ—ï}ëÖ—îât∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕÂπçïë}Ö–àËÅ…Ω›lâÕÂπçïë}Ö–ât∞ÄâÖ——ïπëïï}•êàËÅÖ——ïπëïï}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµÖ—ç°}µï—°ΩêàËÅµÖ—ç°}µï—°Ωê∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄåÅQΩ’—ïÃÅ±ïÃÅŸ’ïÃÅAΩPÅëΩ•Ÿïπ–Å¡Ö…—Öùï»Å±ÑÅ∑©µîÅÕΩ’…çîÅëîÅ€•…•”§ÄËÅ±î(ÄÄÄÄåÅëΩÕÕ•ï»ÅçÀß§Å±îÅ¡±’ÃÅÀ•çïµµïπ–∏Å1ïÃÅÖ’—…ïÃÅ…ïÕ—ïπ–ÅçΩπÕ’±—Öâ±ïÃÅçΩµµî(ÄÄÄÄåÅ°•Õ—Ω…•≈’î∞ÅµÖ•ÃÅπîÅëΩ•Ÿïπ–Å©ÖµÖ•ÃÅ¡Ö…—•ç•¡ï»ÅÖ’‡ÅÕ—Ö—’—ÃÅçÖ±ç’≥•Ã∏(ÄÄÄÅ…ïÕΩ’…çïÃπÕΩ…–†(ÄÄÄÄÄÄÄÅ≠ï‰ı±ÖµâëÑÅ…ïÕΩ’…çîËÅ}›ïëΩô}ôΩ±ëï…}…ïçïπçÂ}≠ï‰†(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ’…çïlâ¡ÖÂ±ΩÖêât∞(ÄÄÄÄÄÄÄÄÄÄÄÅôÖ±±âÖç¨ı…ïÕΩ’…çîπùï–†â…ïµΩ—ï}ëÖ—îà§ÅΩ»Å…ïÕΩ’…çîπùï–†âÕÂπçïë}Ö–à§∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Öâ±ï}•êı…ïÕΩ’…çîπùï–†âÕ—Öâ±ï}•êà§∞(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅ…ïŸï…ÕîıQ…’î∞(ÄÄÄÄ§(ÄÄÄÅôΩ»Å•πëï‡∞Å…ïÕΩ’…çîÅ•∏Åïπ’µï…Ö—î°…ïÕΩ’…çïÃ§Ë(ÄÄÄÄÄÄÄÅ…ïÕΩ’…çïlâ•Õ}±Ö—ïÕ–âtÄÙÅ•πëï‡ÄÙÙÄ¿(ÄÄÄÅ…ï—’…∏Å…ïÕΩ’…çïÃ(()ëïòÅ}›ïëΩô}…ïô…ïÕ°}çΩπ—Öç—}…ïÕΩ’…çî°çΩπ—Öç—}•ê∞ÅëÖ—Ñı9Ωπî∞Ä®∞ÅÖ’—ΩµÖ—•åıÖ±Õî§Ë(ÄÄÄÄààâIï±•–Å’π•≈’ïµïπ–Å±îÅëΩÕÕ•ï»Å]=Å±îÅ¡±’ÃÅÀ•çïπ–Åì•´ÄÅçΩππ‘Åë‘ÅçΩπ—Öç–∏((ÄÄÄÅ∏ÅΩ’Ÿï…—’…îÅÖ’—ΩµÖ—•≈’î∞Å’∏ÅçÖç°îÅëîÅµΩ•πÃÅëîÅ—…ïπ—îÅµ•π’—ïÃÅïÕ–Å…ïπŸΩÁ§(ÄÄÄÅÕÖπÃÅ…ï≈◊©—îÅë•Õ—Öπ—î∏Å1îÅâΩ’—Ω∏ÅµÖπ’ï∞ÅçΩπÕï…ŸîÅ±ÑÅ¡ΩÕÕ•â•±•”§ÅëîÅôΩ…çï»(ÄÄÄÅ’πîÅ±ïç—’…î∞Å—Ω’–Åï∏Å…ïÕ¡ïç—Öπ–Å±îÅâÖ•∞Å≈’§Åì•ë’¡±•≈’îÅ±ïÃÅÖ¡¡ï±ÃÅçΩπç’……ïπ—Ã∏(ÄÄÄÄààà(ÄÄÄÅ…ïÕΩ’…çïÃÄÙÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê∞ÅëÖ—Ñ§(ÄÄÄÅ±Ö—ïÕ–ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ°…ïÕΩ’…çîÅôΩ»Å…ïÕΩ’…çîÅ•∏Å…ïÕΩ’…çïÃÅ•òÅ…ïÕΩ’…çîπùï–†â•Õ}±Ö—ïÕ–à§§∞(ÄÄÄÄÄÄÄÅ…ïÕΩ’…çïÕl¡tÅ•òÅ…ïÕΩ’…çïÃÅï±ÕîÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–Å±Ö—ïÕ–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ≠•¡¡ïêàËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖÕΩ∏àËÄâπΩ}≠πΩ›π}ôΩ±ëï»à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÄ¿∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅï·—ï…πÖ±}•êÄÙÅÕ—»°±Ö—ïÕ–πùï–†âÕ—Öâ±ï}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Åï·—ï…πÖ±}•êË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ≠•¡¡ïêàËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖÕΩ∏àËÄâπΩ}≠πΩ›π}ôΩ±ëï»à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÄ¿∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅÖùï}ÕïçΩπëÃÄÙÅ}›ïëΩô}…ïÕΩ’…çï}Öùï}ÕïçΩπëÃ°±Ö—ïÕ–§(ÄÄÄÅ•òÄ°Ö’—ΩµÖ—•åÅÖπêÅÖùï}ÕïçΩπëÃÅ•ÃÅπΩ–Å9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÖùï}ÕïçΩπëÃÄÅ]=}=9QQ}=A9}IIM!}5%9}}M=9L§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ≠•¡¡ïêàËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖÕΩ∏àËÄâô…ïÕ°}çÖç°îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ±ëï…}•êàËÅï·—ï…πÖ±}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ±ÖÕ—}ÕÂπç}Ö–àËÅ±Ö—ïÕ–πùï–†âÕÂπçïë}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÅÙ((ÄÄÄÅ±ïÖÕîÄÙÅ}›ïëΩô}âïù•π}çΩπ—Öç—}…ïô…ïÕ†°ï·—ï…πÖ±}•ê∞ÅÖ’—ΩµÖ—•åıÖ’—ΩµÖ—•å§(ÄÄÄÅ•òÅπΩ–Å±ïÖÕîπùï–†âÖç≈’•…ïêà§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ≠•¡¡ïêàËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ±ëï…}•êàËÅï·—ï…πÖ±}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ±ÖÕ—}ÕÂπç}Ö–àËÅ±Ö—ïÕ–πùï–†âÕÂπçïë}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄ®©±ïÖÕî∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅ—Ω≠ï∏ÄÙÅÕ—»°±ïÖÕîπùï–†â—Ω≠ï∏à§ÅΩ»Äàà§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄåÅU∏ÅÖ’—…îÅ›Ω…≠ï»ÅÑÅ¡‘Å—ï…µ•πï»Åïπ—…îÅ±îÅ¡…ïµ•ï»ÅçΩπ—À—±îÅëîÅô…áπç°ï’»(ÄÄÄÄÄÄÄÄåÅï–Å±ÑÅ¡…•ÕîÅë‘ÅâÖ•∞∏ÅIï±•…îÅ±îÅçÖç°îÉ•Ÿ•—îÅÖ±Ω…ÃÅ’∏ÅÕïçΩπêÅP∏(ÄÄÄÄÄÄÄÅ•òÅÖ’—ΩµÖ—•åË(ÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}…ïÕΩ’…çïÃÄÙÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}±Ö—ïÕ–ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ°…ïÕΩ’…çîÅôΩ»Å…ïÕΩ’…çîÅ•∏Åç’……ïπ—}…ïÕΩ’…çïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ïÕΩ’…çîπùï–†â•Õ}±Ö—ïÕ–à§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}…ïÕΩ’…çïÕl¡tÅ•òÅç’……ïπ—}…ïÕΩ’…çïÃÅï±ÕîÅ9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}•êÄÙÅÕ—»†°ç’……ïπ—}±Ö—ïÕ–ÅΩ»ÅÌÙ§πùï–†âÕ—Öâ±ï}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅç’……ïπ—}•êÅÖπêÅç’……ïπ—}•êÄÑÙÅï·—ï…πÖ±}•êË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}çÖπçï±}çΩπ—Öç—}…ïô…ïÕ†°ï·—ï…πÖ±}•ê∞Å—Ω≠ï∏§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å}›ïëΩô}…ïô…ïÕ°}çΩπ—Öç—}…ïÕΩ’…çî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•ê∞ÅÖ’—ΩµÖ—•åıQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅç’……ïπ—}ÖùîÄÙÅ}›ïëΩô}…ïÕΩ’…çï}Öùï}ÕïçΩπëÃ°ç’……ïπ—}±Ö—ïÕ–§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ°ç’……ïπ—}ÖùîÅ•ÃÅπΩ–Å9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅç’……ïπ—}ÖùîÄÅ]=}=9QQ}=A9}IIM!}5%9}}M=9L§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}çÖπçï±}çΩπ—Öç—}…ïô…ïÕ†°ï·—ï…πÖ±}•ê∞Å—Ω≠ï∏§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ≠•¡¡ïêàËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖÕΩ∏àËÄâô…ïÕ°}çÖç°îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÄ¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâôΩ±ëï…}•êàËÅï·—ï…πÖ±}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±ÖÕ—}ÕÂπç}Ö–àËÄ°ç’……ïπ—}±Ö—ïÕ–ÅΩ»ÅÌÙ§πùï–†âÕÂπçïë}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÙ((ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖê∞Å}°ïÖëï…ÃÄÙÅ}›ïëΩô}…ï≈’ïÕ–†(ÄÄÄÄÄÄÄÄÄÄÄÅòàΩÖ¡§Ω…ïù•Õ—…Ö—•ΩπΩ±ëï…ÃΩÌ≈’Ω—î°ï·—ï…πÖ±}•ê∞ÅÕÖôîÙúú•Ùà∞(ÄÄÄÄÄÄÄÄÄÄÄÅΩ¡ï…Ö—•Ω∏Ù†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ïô…ïÕ°}±Ö—ïÕ—}ôΩ±ëï…}Ωπ}Ω¡ï∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÖ’—ΩµÖ—•åÅï±ÕîÄâ…ïô…ïÕ°}±Ö—ïÕ—}ôΩ±ëï…}µÖπ’Ö∞à(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄåÅUπîÅΩ’Ÿï…—’…îÅëîÅô•ç°îÅπîÅëΩ•–Å©ÖµÖ•ÃÅµ’±—•¡±•ï»Å±ïÃÅ—ïπ—Ö—•ŸïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ!QQ@∏Å∏ÅçÖÃÅêü•ç°ïå∞Å±îÅçÖç°îÅ…ïÕ—îÅŸ•Õ•â±îÅï–Å±îÅçΩΩ±ëΩ›∏Å¡…ïπê(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ±îÅ…ï±Ö•ÃÄÏÅ±îÅâΩ’—Ω∏ÅµÖπ’ï∞Åëïµï’…îÅë•Õ¡Ωπ•â±îÅ¡Ω’»ÅÀ•ïÕÕÖÂï»∏(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—…Â}â’ëùï–Ù¿Å•òÅÖ’—ΩµÖ—•åÅï±ÕîÅ9Ωπî∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅôΩ±ëï»ÄÙÅ¡ÖÂ±ΩÖêπùï–†âëÖ—Ñà§Å•òÅ•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Åï±ÕîÅ9Ωπî(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ôΩ±ëï»∞Åë•ç–§ÅΩ»ÅπΩ–ÅôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»ÄÙÅ¡ÖÂ±ΩÖê(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ôΩ±ëï»∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ]=ÅÑÅ…ï—Ω’…ª§Å’∏ÅëΩÕÕ•ï»ÅëÖπÃÅ’∏ÅôΩ…µÖ–Å•πÖ——ïπë‘∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…πïë}•êÄÙÅÕ—»°ôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅ…ï—’…πïë}•êÅÖπêÅ…ï—’…πïë}•êÄÑÙÅï·—ï…πÖ±}•êË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅ]ïëΩôA%……Ω»†â]=ÅÑÅ…ï—Ω’…ª§Å’∏ÅÖ’—…îÅπ’∑•…ºÅëîÅëΩÕÕ•ï»∏à§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ï—’…πïë}•êË(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»ÄÙÅÏ®©ôΩ±ëï»∞Äâï·—ï…πÖ±%êàËÅï·—ï…πÖ±}•ëÙ(ÄÄÄÄÄÄÄÅ…ïÕ’±–ÄÙÅ}›ïëΩô}Õ—Ω…ï}¡Öùî†(ÄÄÄÄÄÄÄÄÄÄÄÅmôΩ±ëï…t∞Å9Ωπî∞Ä¿∞Å’¡ëÖ—ï}ÕÂπç}Õ—Ö—îıÖ±Õî∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ïô…ïÕ°ïêÄÙÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ…ïô…ïÕ°ïë}±Ö—ïÕ–ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄÄÄÄÄ°…ïÕΩ’…çîÅôΩ»Å…ïÕΩ’…çîÅ•∏Å…ïô…ïÕ°ïêÅ•òÅ…ïÕΩ’…çîπùï–†â•Õ}±Ö—ïÕ–à§§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïô…ïÕ°ïël¡tÅ•òÅ…ïô…ïÕ°ïêÅï±ÕîÅÌÙ∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ}›ïëΩô}ô•π•Õ°}çΩπ—Öç—}…ïô…ïÕ†°ï·—ï…πÖ±}•ê∞Å—Ω≠ï∏§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ≠•¡¡ïêàËÅÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÄƒ∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ±ëï…}•êàËÅï·—ï…πÖ±}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄ®©…ïÕ’±–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ±ÖÕ—}ÕÂπç}Ö–àËÅ…ïô…ïÕ°ïë}±Ö—ïÕ–πùï–†âÕÂπçïë}Ö–à§ÅΩ»Å}›ïëΩô}πΩ‹†§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ}›ïëΩô}ô•π•Õ°}çΩπ—Öç—}…ïô…ïÕ†°ï·—ï…πÖ±}•ê∞Å—Ω≠ï∏∞Åï……Ω»ıï·å§(ÄÄÄÄÄÄÄÅ…Ö•Õî(()ëïòÅ}›ïëΩô}πΩ…µÖ±•Èï}çΩëî°ŸÖ±’î§Ë(ÄÄÄÅ…ï—’…∏Å…îπÕ’à°»âmyÑµË¿¥Âtà∞Äàà∞Å’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†(ÄÄÄÄÄÄÄÄâ9à∞ÅÕ—»°ŸÖ±’îÅΩ»Äàà§(ÄÄÄÄ§πïπçΩëî†âÖÕç•§à∞Äâ•ùπΩ…îà§πëïçΩëî†§π±Ω›ï»†§§(()ëïòÅ}›ïëΩô}ÕΩ±•ç•—Ö—•Ωπ}Õ—Ö—’ÕïÃ°¡ÖÂ±ΩÖê§Ë(ÄÄÄÄààâ1•–Å±ïÃÅì•ç•Õ•ΩπÃÅëîÅô•πÖπçïµïπ–Å•µâ…•≈◊•ïÃÅëÖπÃÅ±îÅëΩÕÕ•ï»Å]=∏ààà(ÄÄÄÅ—…Ö•π•πù}•πôºÄÙÅ¡ÖÂ±ΩÖêπùï–†â—…Ö•π•πùç—•Ωπ%πôºà§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°—…Ö•π•πù}•πôº∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÕï–†§(ÄÄÄÅÕΩ±•ç•—Ö—•ΩπÃÄÙÅ—…Ö•π•πù}•πôºπùï–†âÕΩ±•ç•—Ö—•ΩπÃà§(ÄÄÄÅÕ—Ö—’ÕïÃÄÙÅÕï–†§((ÄÄÄÅëïòÅŸ•Õ•–°ŸÖ±’î§Ë(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†âÕ—Ö—’Ãà∞ÄâÕ—Ö—îà∞Äâ…ïÕ’±–à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖπë•ëÖ—îÄÙÅŸÖ±’îπùï–°≠ï‰§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçÖπë•ëÖ—îÅπΩ–Å•∏Ä°9Ωπî∞Äàà∞ÅÖ±Õî§ÅÖπêÅπΩ–Å•Õ•πÕ—Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖπë•ëÖ—î∞Ä°ë•ç–∞Å±•Õ–∞Å—’¡±î§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’ÕïÃπÖëê°}›ïëΩô}πΩ…µÖ±•Èï}çΩëî°çÖπë•ëÖ—î§§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅπïÕ—ïêÅ•∏ÅŸÖ±’îπŸÖ±’ïÃ†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°πïÕ—ïê∞Ä°ë•ç–∞Å±•Õ–∞Å—’¡±î§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅŸ•Õ•–°πïÕ—ïê§(ÄÄÄÄÄÄÄÅï±•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞Ä°±•Õ–∞Å—’¡±î§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅπïÕ—ïêÅ•∏ÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅŸ•Õ•–°πïÕ—ïê§((ÄÄÄÅŸ•Õ•–°ÕΩ±•ç•—Ö—•ΩπÃ§(ÄÄÄÅ…ï—’…∏ÅÕ—Ö—’ÕïÃ(()ëïòÅ}›ïëΩô}ô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ã°¡ÖÂ±ΩÖê∞Å¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÙàà§Ë(ÄÄÄÄààâ•ë’•–Å±îÅÕ—Ö—’–ÅPÅêù’∏ÅëΩÕÕ•ï»Å]=ÅÕÖπÃÅì•¡ïπë…îÅë‘ÅÕ—Ö—’–ÅçΩµµï…ç•Ö∞∏ààà(ÄÄÄÅπΩ…µÖ±•ÈîÄÙÅ}›ïëΩô}πΩ…µÖ±•Èï}çΩëî(ÄÄÄÅÕ—Ö—îÄÙÅπΩ…µÖ±•Èî°¡ÖÂ±ΩÖêπùï–†âÕ—Ö—îà§ÅΩ»Å¡ÖÂ±ΩÖêπùï–†âÕ—Ö—’Ãà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å¡ÖÂ±ΩÖêπùï–†â…ïù•Õ—…Ö—•ΩπM—Ö—îà§§(ÄÄÄÅ°•Õ—Ω…‰ÄÙÅ¡ÖÂ±ΩÖêπùï–†â°•Õ—Ω…‰à§ÅΩ»Å¡ÖÂ±ΩÖêπùï–†âÕ—Ö—ï!•Õ—Ω…‰à§ÅΩ»Å¡ÖÂ±ΩÖêπùï–†âïŸïπ—Ãà§ÅΩ»Åmt((ÄÄÄÅëïòÅ°•Õ—Ω…Â}ŸÖ±’ïÃ°ŸÖ±’î§Ë(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å≠ï‰∞ÅπïÕ—ïêÅ•∏ÅŸÖ±’îπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπïÕ—ïêÅ•∏Ä°9Ωπî∞Äàà∞ÅÖ±Õî§ÅΩ»ÅπïÕ—ïêÅ•∏Ä°mt∞ÅÌÙ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÂ•ï±êÅ≠ï‰(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÂ•ï±êÅô…Ω¥Å°•Õ—Ω…Â}ŸÖ±’ïÃ°πïÕ—ïê§(ÄÄÄÄÄÄÄÅï±•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞Ä°±•Õ–∞Å—’¡±î§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅπïÕ—ïêÅ•∏ÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÂ•ï±êÅô…Ω¥Å°•Õ—Ω…Â}ŸÖ±’ïÃ°πïÕ—ïê§(ÄÄÄÄÄÄÄÅï±•òÅŸÖ±’îÅπΩ–Å•∏Ä°9Ωπî∞Äàà∞ÅÖ±Õî§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÂ•ï±êÅŸÖ±’î((ÄÄÄÅ°•Õ—Ω…Â}µÖ…≠ï…ÃÄÙÅÏ(ÄÄÄÄÄÄÄÅπΩ…µÖ±•Èî°ŸÖ±’î§ÅôΩ»ÅŸÖ±’îÅ•∏Å°•Õ—Ω…Â}ŸÖ±’ïÃ°°•Õ—Ω…‰§Å•òÅŸÖ±’î(ÄÄÄÅÙ((ÄÄÄÄåÅU∏Å…ïô’ÃÅï·¡±•ç•—îÅïÕ–Å’πîÅ¡…ï’ŸîÅÕ’ôô•ÕÖπ—îÅï∏Å±’§µ∑©µî∞Å‰ÅçΩµ¡…•Ã(ÄÄÄÄåÅ±Ω…Õ≈’îÅ]=ÅπîÅôΩ’…π•–Å¡ÖÃÅ∞ù°•Õ—Ω…•≈’îÅëîÅ∞ù•πÕ—…’ç—•Ω∏ÅP∏(ÄÄÄÅÕΩ±•ç•—Ö—•Ωπ}°ÖÕ}…ïô’ÕÖ∞ÄÙÅÖπ‰†(ÄÄÄÄÄÄÄÅ…îπÕïÖ…ç†°»â…ïô’ÕÒ…ï©ïç–à∞ÅÕ—Ö—’Ã§(ÄÄÄÄÄÄÄÅôΩ»ÅÕ—Ö—’ÃÅ•∏Å}›ïëΩô}ÕΩ±•ç•—Ö—•Ωπ}Õ—Ö—’ÕïÃ°¡ÖÂ±ΩÖê§(ÄÄÄÄ§(ÄÄÄÅ•òÅ…îπÕïÖ…ç†°»â…ïô’ÕÒ…ï©ïç–à∞ÅÕ—Ö—î§ÅΩ»ÅÕΩ±•ç•—Ö—•Ωπ}°ÖÕ}…ïô’ÕÖ∞Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ…ïô’Õïîà(ÄÄÄÅ°•Õ—Ω…Â}°ÖÕ}ô•πÖπçï…}…ïô’ÕÖ∞ÄÙÅÖπ‰†(ÄÄÄÄÄÄÄÄ†âô•πÖπçï»àÅ•∏ÅµÖ…≠ï»ÅΩ»Äâô•πÖπçï’»àÅ•∏ÅµÖ…≠ï»§(ÄÄÄÄÄÄÄÅÖπêÄ†â…ïô’ÃàÅ•∏ÅµÖ…≠ï»ÅΩ»Äâ…ï©ïç–àÅ•∏ÅµÖ…≠ï»§(ÄÄÄÄÄÄÄÅôΩ»ÅµÖ…≠ï»Å•∏Å°•Õ—Ω…Â}µÖ…≠ï…Ã(ÄÄÄÄ§(ÄÄÄÅ°Öë}•πÕ—…’ç—•Ω∏ÄÙÄ†(ÄÄÄÄÄÄÄÅÕ—»°¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÅΩ»Äàà§πÕ—…•¿†§ÄÙÙÄâïπ}çΩ’…Õ}•πÕ—…’ç—•Ω∏à(ÄÄÄÄÄÄÄÅΩ»ÅÕ—Ö—îÄÙÙÄâ›Ö•—•πùÖççï¡—Ö—•Ω∏à(ÄÄÄÄÄÄÄÅΩ»ÅÖπ‰†(ÄÄÄÄÄÄÄÄÄÄÄÄâ›Ö•—•πùÖççï¡—Ö—•Ω∏àÅ•∏ÅµÖ…≠ï»(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅµÖ…≠ï»Å•∏Å°•Õ—Ω…Â}µÖ…≠ï…Ã(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄ§(ÄÄÄÄåÅ1îÅÕ—Ö—’–ÅçΩµµï…ç•Ö∞Åë‘ÅëΩÕÕ•ï»Å¡ï’–ÅïπÕ’•—îÅ…ïëïŸïπ•»ÅÅÅÖççï¡—ïëÅÄ(ÄÄÄÄåÅ±Ω…Õ≈’îÅ±îÅçÖπë•ëÖ–Å±îÅŸÖ±•ëîÅëîÅπΩ’ŸïÖ‘∏Å1ÑÅ¡…ï’ŸîÅëîÅ…ïô’ÃÅë‘Åô•πÖπçï’»(ÄÄÄÄåÅ…ïÕ—îÅª•ÖπµΩ•πÃÅŸÖ±Öâ±îÅ¡Ω’»Å±ÑÅÕïçΩπëîÅ—•µï±•πîÅëîÅçîÅ∑©µîÅëΩÕÕ•ï»∏(ÄÄÄÅ•òÅ°•Õ—Ω…Â}°ÖÕ}ô•πÖπçï…}…ïô’ÕÖ∞Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ…ïô’Õïîà(ÄÄÄÅ•òÅπΩ–Å°Öë}•πÕ—…’ç—•Ω∏Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅ•òÅ…îπÕïÖ…ç†°»âçÖπçï±ÒÖππ’±ÒÖâÖπëΩ∏à∞ÅÕ—Ö—î§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâÖππ’±ïîà(ÄÄÄÅ•òÅÕ—Ö—îÅ•∏ÅÏâÖççï¡—ïêà∞Äâ•π—…Ö•π•πúà∞Äâ—ï…µ•πÖ—ïêà∞ÄâÕï…Ÿ•çïëΩπïëïç±Ö…ïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕï…Ÿ•çïëΩπïŸÖ±•ëÖ—ïêà∞Äâ—Ωâ•±∞à∞Äââ•±±ïêà∞Äâ¡Ö•êâÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâÖççï¡—ïîà(ÄÄÄÄåÅ¡À°ÃÅ’∏Å…ïô’ÃÅëîÅô•πÖπçïµïπ–Å…ÖπçîÅQ…ÖŸÖ•∞∞Å]=ÅπîÅçΩπÕï…ŸîÅ¡ÖÃÅ’∏(ÄÄÄÄåÉ•—Ö–Å—ï…µ•πÖ∞Åì•ëß§ÄËÅ±îÅëΩÕÕ•ï»ÅAÅ…ïŸ•ïπ–ÉÄÅÅÅŸÖ±•ëÖ—ïëÅÄÅÖô•∏Å≈’îÅ±î(ÄÄÄÄåÅçÖπë•ëÖ–Å¡’•ÕÕîÅëîÅπΩ’ŸïÖ‘Å∞ùÖççï¡—ï»ÅΩ‘Åç°Ω•Õ•»Å’∏ÅÖ’—…îÅô•πÖπçïµïπ–∏(ÄÄÄÄåÅ1ÑÅ¡À•ÕïπçîÅÖπ”•…•ï’…îÅëîÅÅÅ›Ö•—•πùççï¡—Ö—•ΩπÅÄÅ¡ï…µï–ÅëîÅë•Õ—•πù’ï»Åçî(ÄÄÄÄåÅ…ï—Ω’»Åêù’∏ÅëΩÕÕ•ï»ÅÕ•µ¡±ïµïπ–ÅŸÖ±•ì§Å≈’§Å∏ùÑÅ©ÖµÖ•ÃÉ•”§Å—…ÖπÕµ•ÃÉÄÅP∏(ÄÄÄÅ•òÅÕ—Ö—îÄÙÙÄâŸÖ±•ëÖ—ïêàË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ…ïô’Õïîà(ÄÄÄÅ…ï—’…∏Äâïπ}çΩ’…Õ}•πÕ—…’ç—•Ω∏à(()ëïòÅ}›ïëΩô}ôΩ±ëï…}…ïçïπçÂ}≠ï‰°¡ÖÂ±ΩÖê∞Ä®∞ÅôÖ±±âÖç¨Ùàà∞ÅÕ—Öâ±ï}•êÙàà§Ë(ÄÄÄÄààâ±ÖÕÕîÅ’∏ÅëΩÕÕ•ï»Å¡Ö»ÅÕÑÅçÀ•Ö—•Ω∏∞Å©ÖµÖ•ÃÅ¡Ö»ÅÕÑÅëï…πß°…îÅµΩë•ô•çÖ—•Ω∏∏ààà(ÄÄÄÅ…Ö›}ç…ïÖ—ïêÄÙÅπï·–†°¡ÖÂ±ΩÖêπùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë–à∞Äâç…ïÖ—ïë=∏à∞ÄâëÖ—ï…ïÖ—ïêà∞Äâç…ïÖ—•ΩπÖ—îà∞(ÄÄÄÄ§Å•òÅ¡ÖÂ±ΩÖêπùï–°≠ï‰§§∞Å9Ωπî§((ÄÄÄÅëïòÅ—•µïÕ—Öµ¿°ŸÖ±’î§Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÕïêÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§π…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÄÄÄÄÅ•òÅ¡Ö…Õïêπ—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÕïêÄÙÅ¡Ö…Õïêπ…ï¡±Öçî°—È•πôºıëÖ—ï—•µîπ—•µïÈΩπîπ’—å§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å¡Ö…Õïêπ—•µïÕ—Öµ¿†§((ÄÄÄÅç…ïÖ—ïë}Ö–ÄÙÅ—•µïÕ—Öµ¿°…Ö›}ç…ïÖ—ïê§(ÄÄÄÅôÖ±±âÖç≠}Ö–ÄÙÅ—•µïÕ—Öµ¿°ôÖ±±âÖç¨§(ÄÄÄÅ…Ö›}•êÄÙÅÕ—»°Õ—Öâ±ï}•êÅΩ»Äàà§(ÄÄÄÅπ’µï…•ç}•êÄÙÅ•π–°…Ö›}•ê§Å•òÅ…Ö›}•êπ•Õë•ù•–†§Åï±ÕîÄ¥ƒ(ÄÄÄÅ…ï—’…∏Ä†(ÄÄÄÄÄÄÄÄƒÅ•òÅç…ïÖ—ïë}Ö–Å•ÃÅπΩ–Å9ΩπîÅï±ÕîÄ¿∞(ÄÄÄÄÄÄÄÅç…ïÖ—ïë}Ö–Å•òÅç…ïÖ—ïë}Ö–Å•ÃÅπΩ–Å9ΩπîÅï±ÕîÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅôÖ±±âÖç≠}Ö–Å•òÅôÖ±±âÖç≠}Ö–Å•ÃÅπΩ–Å9ΩπîÅï±ÕîÅô±ΩÖ–†àµ•πòà§(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅπ’µï…•ç}•ê∞(ÄÄÄÄÄÄÄÅ…Ö›}•ê∞(ÄÄÄÄ§(()ëïòÅ}›ïëΩô}ïôôïç—•Ÿï}ô’πë•πù}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÅÕ—Ö—’ÕïÃ∞Ä®∞ÅôÖ±±âÖç≠}Õ—Ö—’ÃÙàà∞ÅôÖ±±âÖç≠}ôΩ±ëï…}•êÙàà§Ë(ÄÄÄÄààâIï—•ïπ–Åï·ç±’Õ•Ÿïµïπ–Å∞ü•—Ö–Åë‘ÅëΩÕÕ•ï»Å]=ÅçÀß§Å±îÅ¡±’ÃÅÀ•çïµµïπ–∏ààà(ÄÄÄÅç±ïÖ∏ÄÙÅl(ÄÄÄÄÄÄÄÄ°…ïçïπç‰∞ÅÕ—»°Õ—Ö—’ÃÅΩ»Äàà§πÕ—…•¿†§∞ÅÕ—»°Õ—Öâ±ï}•êÅΩ»Äàà§§(ÄÄÄÄÄÄÄÅôΩ»Å…ïçïπç‰∞ÅÕ—Ö—’Ã∞ÅÕ—Öâ±ï}•êÅ•∏ÅÕ—Ö—’ÕïÃ(ÄÄÄÅt(ÄÄÄÅ•òÅπΩ–Åç±ïÖ∏Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅ|∞ÅÕ—Ö—’Ã∞ÅÕ—Öâ±ï}•êÄÙÅµÖ‡°ç±ïÖ∏∞Å≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅ•—ïµl¡t§(ÄÄÄÅ•òÄ°πΩ–ÅÕ—Ö—’Ã(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—»°ôÖ±±âÖç≠}Õ—Ö—’ÃÅΩ»Äàà§πÕ—…•¿†§ÄÙÙÄâ…ïô’Õïîà(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°Õ—Öâ±ï}•êÄÙÙÅÕ—»°ôÖ±±âÖç≠}ôΩ±ëï…}•êÅΩ»Äàà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å±ï∏°ç±ïÖ∏§ÄÙÙÄƒ§§Ë(ÄÄÄÄÄÄÄÄåÅ1îÅ¡ÖÂ±ΩÖêÅÅÅŸÖ±•ëÖ—ïëÅÄÅ¡ï’–Å¡ï…ë…îÅÕΩ∏Å°•Õ—Ω…•≈’îÅÖ¡À°ÃÅ’∏Å…ïô’Ã∏(ÄÄÄÄÄÄÄÄåÅΩπÕï…Ÿï»ÅÖ±Ω…ÃÅ±ÑÅëï…πß°…îÅ¡…ï’ŸîÅ¡ï…Õ•Õ”•îÅëîÅçîÅ∑©µîÅëΩÕÕ•ï»∏(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÕ—»°ôÖ±±âÖç≠}Õ—Ö—’ÃÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ…ï—’…∏ÅÕ—Ö—’Ã(()ëïòÅ}›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÕ}âÂ}çΩπ—Öç–°ëÖ—Ñ∞Ä®∞Å•πç±’ëï}ç¡òıÖ±Õî§Ë(ÄÄÄÄààâÖ±ç’±îÅ±ïÃÅÕ—Ö—’—ÃÅPÅï–ÅAÅï∏Å’∏ÅÕï’∞Å¡Ö…çΩ’…ÃÅë‘ÅçÖç°îÅ]=∏((ÄÄÄÅ0ùÖπç•ïππîÅ•µ¡≥•µïπ—Ö—•Ω∏Å…ï±•ÕÖ•–Åï–Åì•çΩëÖ•–Å±ÑÅ—Öâ±îÅçΩµ¡≥°—îÅ¡Ω’»Åç°Ö≈’î(ÄÄÄÅçΩπ—Öç–∏Åï——îÅôΩπç—•Ω∏ÅçΩπÕ—…’•–ÅêùÖâΩ…êÅ’∏Å•πëï‡ÅëïÃÅçΩπ—Öç—ÃÅ¡Ö»Å•ëïπ—•”§∞(ÄÄÄÅ¡’•ÃÅπîÅì•çΩëîÅç°Ö≈’îÅëΩÕÕ•ï»Å]=Å≈‘ù’πîÅÕï’±îÅôΩ•Ã∏(ÄÄÄÄààà(ÄÄÄÅù±ΩâÖ∞Å}]=}U9%9}!}P∞Å}]=}U9%9}!}-d(ÄÄÄÅù±ΩâÖ∞Å}]=}U9%9}!}Y1U∞Å}]=}A}MQQ}!}Y1U(ÄÄÄÅ•òÅπΩ–ÅΩÃπ¡Ö—†πï·•Õ—Ã°}›ïëΩô}ëâ}¡Ö—††§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Ä°ÌÙ∞ÅÌÙ§Å•òÅ•πç±’ëï}ç¡òÅï±ÕîÅÌÙ((ÄÄÄÅçΩπ—Öç—ÃÄÙÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÅ•ëïπ—•—Â}Õ•ùπÖ—’…îÄÙÅ—’¡±î†(ÄÄÄÄÄÄÄÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—Ã(ÄÄÄÄ§(ÄÄÄÅçÖç°ï}≠ï‰ÄÙÄ°}›ïëΩô}ëâ}Õ•ùπÖ—’…î†§∞Å•ëïπ—•—Â}Õ•ùπÖ—’…î§(ÄÄÄÅ›•—†Å}]=}U9%9}!}1=,Ë(ÄÄÄÄÄÄÄÅ•òÄ°}]=}U9%9}!}Y1UÅ•ÃÅπΩ–Å9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ}]=}U9%9}!}-dÄÙÙÅçÖç°ï}≠ï‰(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ—•µîπµΩπΩ—Ωπ•å†§Ä¥Å}]=}U9%9}!}PÄÄÃ¿¿§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅô’πë•πúÄÙÅë•ç–°}]=}U9%9}!}Y1U§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Ä°ô’πë•πú∞Åë•ç–°}]=}A}MQQ}!}Y1U§§Å•òÅ•πç±’ëï}ç¡òÅï±ÕîÅô’πë•πú((ÄÄÄÅ≠πΩ›π}çΩπ—Öç—}•ëÃÄÙÅÏ(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§§ÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—ÃÅ•òÅçΩπ—Öç–πùï–†â•êà§(ÄÄÄÅÙ(ÄÄÄÅçΩπ—Öç—Õ}âÂ}πÖµîÄÙÅÌÙ(ÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—ÃË(ÄÄÄÄÄÄÄÅ≠ï‰ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}πΩ…µÖ±•Èï}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅÖ±∞°≠ï‰§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—Õ}âÂ}πÖµîπÕï—ëïôÖ’±–°≠ï‰∞Åmt§πÖ¡¡ïπê°Õ—»°çΩπ—Öç–πùï–†â•êà§§§((ÄÄÄÅÕ—Ö—’ÕïÕ}âÂ}çΩπ—Öç–ÄÙÅÌÙ(ÄÄÄÅ±Ö—ïÕ—}ç¡ô}âÂ}çΩπ—Öç–ÄÙÅÌÙ(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅ…Ω›ÃÄÙÅëàπï·ïç’—î†ààà(ÄÄÄÄÄÄÄÄÄÄÄÅM1PÅ»πÕ—Öâ±ï}•ê∞Å»π¡ÖÂ±ΩÖë}©ÕΩ∏∞Å»π…ïµΩ—ï}ëÖ—î∞Å»πÕÂπçïë}Ö–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ∞πçΩπ—Öç—}•êÅLÅ±•π≠ïë}çΩπ—Öç—}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅI=4Å›ïëΩô}…ïÕΩ’…çïÃÅ»Å1PÅ)=%8Å›ïëΩô}çΩπ—Öç—}±•π≠ÃÅ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÅ=8Å»π…ïÕΩ’…çï}—Â¡îı∞π…ïÕΩ’…çï}—Â¡îÅ9Å»πÕ—Öâ±ï}•êı∞π…ïÕΩ’…çï}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅ=IHÅ	dÅ»πÕÂπçïë}Ö–ÅM∞Å»πÕ—Öâ±ï}•êÅM(ÄÄÄÄÄÄÄÄààà§((ÄÄÄÄÄÄÄÄåÅ%”•…ï»ÅÕ’»Å±îÅç’…Õï’»Å¡±’”—–Å≈’îÅôï—ç°Ö±∞†§ÅùÖ…ëîÅ’∏ÅÕï’∞Åù…ΩÃÅ)M=8(ÄÄÄÄÄÄÄÄåÅ]=Åï∏Å∑•µΩ•…îÉÄÅ±ÑÅôΩ•Ã∞Å∑©µîÅÖŸïåÅ¡±’Õ•ï’…ÃÅµ•±±•ï…ÃÅëîÅëΩÕÕ•ï…Ã∏(ÄÄÄÄÄÄÄÅôΩ»Å…Ω‹Å•∏Å…Ω›ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ©ÕΩ∏π±ΩÖëÃ°…Ω›lâ¡ÖÂ±ΩÖë}©ÕΩ∏ât§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»∞Å©ÕΩ∏π)M=9ïçΩëï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩÕÕ•ï»Å]=Å•ùπΩÀ§ÄËÅ)M=8Å±ΩçÖ∞Å•±±•Õ•â±îÄ†ïÃ§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ω›lâÕ—Öâ±ï}•êât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅô’πë•πù}Õ—Ö—’ÃÄÙÅ}›ïëΩô}ô…Öπçï}—…ÖŸÖ•±}Õ—Ö—’Ã°¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÅç¡ô}Õ—Ö—îÄÙÅ}›ïëΩô}πΩ…µÖ±•Èï}çΩëî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†âÕ—Ö—îà§ÅΩ»Å¡ÖÂ±ΩÖêπùï–†âÕ—Ö—’Ãà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å¡ÖÂ±ΩÖêπùï–†â…ïù•Õ—…Ö—•ΩπM—Ö—îà§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïçïπç‰ÄÙÅ}›ïëΩô}ôΩ±ëï…}…ïçïπçÂ}≠ï‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôÖ±±âÖç¨ı…Ω›lâ…ïµΩ—ï}ëÖ—îâtÅΩ»Å…Ω›lâÕÂπçïë}Ö–ât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Öâ±ï}•êı…Ω›lâÕ—Öâ±ï}•êât∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ—Ö…ùï—}•ëÃÄÙÅÕï–†§(ÄÄÄÄÄÄÄÄÄÄÄÅ±•π≠ïë}çΩπ—Öç—}•êÄÙÅÕ—»°…Ω›lâ±•π≠ïë}çΩπ—Öç—}•êâtÅΩ»Äàà§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ±•π≠ïë}çΩπ—Öç—}•êÅ•∏Å≠πΩ›π}çΩπ—Öç—}•ëÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—Ö…ùï—}•ëÃπÖëê°±•π≠ïë}çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÄÄÄÄÅ—Ö…ùï—}•ëÃπ’¡ëÖ—î°çΩπ—Öç—Õ}âÂ}πÖµîπùï–°}›ïëΩô}Ö——ïπëïï}πÖµî°¡ÖÂ±ΩÖê§∞Åmt§§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å—Ö…ùï—}•êÅ•∏Å—Ö…ùï—}•ëÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’ÕïÕ}âÂ}çΩπ—Öç–πÕï—ëïôÖ’±–°—Ö…ùï—}•ê∞Åmt§πÖ¡¡ïπê†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ°…ïçïπç‰∞Åô’πë•πù}Õ—Ö—’Ã∞Å…Ω›lâÕ—Öâ±ï}•êât§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ç¡òÄÙÅ±Ö—ïÕ—}ç¡ô}âÂ}çΩπ—Öç–πùï–°—Ö…ùï—}•ê§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ±Ö—ïÕ—}ç¡òÅ•ÃÅ9ΩπîÅΩ»Å…ïçïπç‰Ä¯Å±Ö—ïÕ—}ç¡ôl¡tË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ç¡ô}âÂ}çΩπ—Öç—m—Ö…ùï—}•ëtÄÙÄ°…ïçïπç‰∞Åç¡ô}Õ—Ö—î§((ÄÄÄÅçΩπ—Öç—Õ}âÂ}•êÄÙÅÏ(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§ËÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅçΩπ—Öç—Ã(ÄÄÄÅÙ(ÄÄÄÅ…ïÕ’±–ÄÙÅÌÙ(ÄÄÄÅôΩ»ÅçΩπ—Öç—}•ê∞ÅÕ—Ö—’ÕïÃÅ•∏ÅÕ—Ö—’ÕïÕ}âÂ}çΩπ—Öç–π•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅçΩπ—Öç—Õ}âÂ}•êπùï–°çΩπ—Öç—}•ê∞ÅÌÙ§(ÄÄÄÄÄÄÄÅ…ïÕ’±—mçΩπ—Öç—}•ëtÄÙÅ}›ïëΩô}ïôôïç—•Ÿï}ô’πë•πù}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’ÕïÃ∞(ÄÄÄÄÄÄÄÄÄÄÄÅôÖ±±âÖç≠}Õ—Ö—’ÃıçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§∞(ÄÄÄÄÄÄÄÄÄÄÄÅôÖ±±âÖç≠}ôΩ±ëï…}•êıçΩπ—Öç–πùï–†âÕΩ’…çï}›ïëΩô}ôΩ±ëï…}•êà§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅç¡ô}Õ—Ö—ïÃÄÙÅÏ(ÄÄÄÄÄÄÄÅçΩπ—Öç—}•êËÅÕ—Ö—îÅôΩ»ÅçΩπ—Öç—}•ê∞Ä°|∞ÅÕ—Ö—î§Å•∏Å±Ö—ïÕ—}ç¡ô}âÂ}çΩπ—Öç–π•—ïµÃ†§(ÄÄÄÅÙ(ÄÄÄÅ›•—†Å}]=}U9%9}!}1=,Ë(ÄÄÄÄÄÄÄÅ}]=}U9%9}!}-dÄÙÄ°}›ïëΩô}ëâ}Õ•ùπÖ—’…î†§∞Å•ëïπ—•—Â}Õ•ùπÖ—’…î§(ÄÄÄÄÄÄÄÅ}]=}U9%9}!}Y1UÄÙÅë•ç–°…ïÕ’±–§(ÄÄÄÄÄÄÄÅ}]=}A}MQQ}!}Y1UÄÙÅë•ç–°ç¡ô}Õ—Ö—ïÃ§(ÄÄÄÄÄÄÄÅ}]=}U9%9}!}PÄÙÅ—•µîπµΩπΩ—Ωπ•å†§(ÄÄÄÅ…ï—’…∏Ä°…ïÕ’±–∞Åç¡ô}Õ—Ö—ïÃ§Å•òÅ•πç±’ëï}ç¡òÅï±ÕîÅ…ïÕ’±–(()ëïòÅ}›ïëΩô}ç¡ô}Õ—Ö—ïÕ}âÂ}çΩπ—Öç–°ëÖ—Ñ§Ë(ÄÄÄÄààâ·¡ΩÕîÅ±îÅÕ—Ö—’–ÅAÅ±ΩçÖ∞ÅÕÖπÃÅ…ïπë…îÅ±ïÃÅ±ïç—’…ïÃÅI4Åì•¡ïπëÖπ—ïÃÅë‘ÅçÖç°î∏ààà(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ|∞ÅÕ—Ö—ïÃÄÙÅ}›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÕ}âÂ}çΩπ—Öç–°ëÖ—Ñ∞Å•πç±’ëï}ç¡òıQ…’î§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÕ—Ö—ïÃ(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†â1ïç—’…îÅëïÃÅÕ—Ö—’—ÃÅAÅ•ùπΩÀ•îÄ†ïÃ§à∞Å—Â¡î°ï·å§π}}πÖµï}|§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÌÙ(()ëïòÅ}›ïëΩô}Õ—Ö—’Õ}¡ÖÂ±ΩÖê°—ïÕ—}çΩππïç—•Ω∏ıQ…’î§Ë(ÄÄÄÅçΩπô•ù’…ïêÄÙÅâΩΩ∞°ΩÃπùï—ïπÿ†â]=}A%}-dà∞Äàà§πÕ—…•¿†§§(ÄÄÄÅçΩππïç—ïêÄÙÅÖ±Õî(ÄÄÄÅï……Ω»ÄÙÄàà(ÄÄÄÅ•òÅçΩπô•ù’…ïêÅÖπêÅ—ïÕ—}çΩππïç—•Ω∏Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}…ï≈’ïÕ–†àΩÖ¡§ΩΩ…ùÖπ•ÕµÃΩµîà§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩππïç—ïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅï……Ω»ÄÙÅ}›ïëΩô}ç±ïÖ∏°ï·å§(ÄÄÄÅÕ—Ö—îÄÙÅ}›ïëΩô}Õ—Ö—î†§(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅ…ïÕΩ’…çïÃÄÙÅëàπï·ïç’—î†âM1PÅ=U9P†®§ÅI=4Å›ïëΩô}…ïÕΩ’…çïÃà§πôï—ç°Ωπî†•l¡t(ÄÄÄÄÄÄÄÅ±•π≠ïêÄÙÅëàπï·ïç’—î†âM1PÅ=U9P†®§ÅI=4Å›ïëΩô}çΩπ—Öç—}±•π≠Ãà§πôï—ç°Ωπî†•l¡t(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâçΩπô•ù’…ïêàËÅçΩπô•ù’…ïê∞ÄâçΩππïç—ïêàËÅçΩππïç—ïê∞(ÄÄÄÄÄÄÄÄâ±ÖÕ—}ÕÂπç}Ö–àËÅÕ—Ö—îπùï–†â±ÖÕ—}ÕÂπç}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ…ïÕΩ’…çï}çΩ’π–àËÅ…ïÕΩ’…çïÃ∞Äâ±•π≠ïë}ôΩ±ëï…}çΩ’π–àËÅ±•π≠ïê∞(ÄÄÄÄÄÄÄÄâï……Ω»àËÅï……Ω»ÅΩ»Å}›ïëΩô}ç±ïÖ∏°Õ—Ö—îπùï–†â±ÖÕ—}ï……Ω»à∞Äàà§§∞(ÄÄÄÅÙ(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥Ω›ïëΩòΩÕ—Ö—’Ãà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}›ïëΩô}Õ—Ö—’Ã†§Ë(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}›ïëΩô}Õ—Ö—’Õ}¡ÖÂ±ΩÖê†§§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥Ω›ïëΩòΩÕÂπåà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}›ïëΩô}ÕÂπå†§Ë(ÄÄÄÅ•òÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†â…Ω±îà§ÄÑÙÄâÖëµ•∏àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâMï’∞Å’∏ÅÖëµ•π•Õ—…Ö—ï’»Å¡ï’–ÅÕÂπç°…Ωπ•Õï»Å]=∏âÙ§∞Ä–¿Ã(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}›ïëΩô}ÕÂπå†§§(ÄÄÄÅï·çï¡–Å]ïëΩôA%……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅ}›ïëΩô}ç±ïÖ∏°ï·å•Ù§∞Ä‘¿Ã(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω›ïëΩòà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}›ïëΩò°çΩπ—Öç—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅ•òÅπΩ–Å}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâ…ïÕΩ’…çïÃàËÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê∞ÅëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÅ}›ïëΩô}Õ—Ö—’Õ}¡ÖÂ±ΩÖê°—ïÕ—}çΩππïç—•Ω∏ıÖ±Õî§∞(ÄÄÄÅÙ§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω›ïëΩòΩ…ïô…ïÕ†à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}›ïëΩô}…ïô…ïÕ†°çΩπ—Öç—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅ•òÅπΩ–Å}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅÕÂπåÄÙÅ}›ïëΩô}…ïô…ïÕ°}çΩπ—Öç—}…ïÕΩ’…çî°çΩπ—Öç—}•ê∞ÅëÖ—Ñ§(ÄÄÄÄÄÄÄÅ…ïô…ïÕ°ïë}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâÕÂπåàËÅÕÂπå∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÕΩ’…çïÃàËÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê∞Å…ïô…ïÕ°ïë}ëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç–°…ïô…ïÕ°ïë}ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅï·çï¡–Å]ïëΩôA%……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅ}›ïëΩô}ç±ïÖ∏°ï·å•Ù§∞Ä‘¿Ã(()Ö¡¿π…Ω’—î†(ÄÄÄÄàΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω›ïëΩòΩ…ïô…ïÕ†µΩ∏µΩ¡ï∏à∞(ÄÄÄÅµï—°ΩëÃılâA=MPât∞(§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}›ïëΩô}…ïô…ïÕ°}Ωπ}Ω¡ï∏°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâç—’Ö±•ÕîÅÖ‘Å¡±’ÃÅ’∏ÅëΩÕÕ•ï»ÅçΩππ‘∞ÅÖ‘ÅµÖ·•µ’¥Å’πîÅôΩ•ÃÅ¡Ö»Åëïµ§µ°ï’…î∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅ•òÅπΩ–Å}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅÕÂπåÄÙÅ}›ïëΩô}…ïô…ïÕ°}çΩπ—Öç—}…ïÕΩ’…çî†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•ê∞ÅëÖ—Ñ∞ÅÖ’—ΩµÖ—•åıQ…’î∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ïô…ïÕ°ïë}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâÕÂπåàËÅÕÂπå∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÕΩ’…çïÃàËÅ}›ïëΩô}çΩπ—Öç—}…ïÕΩ’…çïÃ°çΩπ—Öç—}•ê∞Å…ïô…ïÕ°ïë}ëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç–°…ïô…ïÕ°ïë}ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅï·çï¡–Å]ïëΩôA%……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅÕ—Ö—’Õ}çΩëîÄÙÄ–»‰Å•òÅùï—Ö——»°ï·å∞ÄâÕ—Ö—’Õ}çΩëîà∞Å9Ωπî§ÄÙÙÄ–»‰Åï±ÕîÄ‘¿Ã(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅ}›ïëΩô}ç±ïÖ∏°ï·å•Ù§∞ÅÕ—Ö—’Õ}çΩëî(()ëïòÅ}›ïëΩô}›ïâ°ΩΩ≠}Ö’—°ïπ—•çÖ—ïê°…Ö›}âΩë‰§Ë(ÄÄÄÅÕïç…ï—}—ï·–ÄÙÄ°ΩÃπùï—ïπÿ†â]=}]	!==-}MIPà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅÕïç…ï—}—ï·–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅÕ•ùπÖ—’…îÄÙÄ°…ï≈’ïÕ–π°ïÖëï…Ãπùï–†â`µ]ïëΩòµM•ùπÖ—’…îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅÕ•ùπÖ—’…îË(ÄÄÄÄÄÄÄÅÕ’¡¡±•ïêÄÙÅÕ•ùπÖ—’…îπÕ¡±•–†àÙà∞Äƒ•l¥≈tπÕ—…•¿†§πÕ—…•¿†úàú§πÕ—…•¿†àúà§(ÄÄÄÄÄÄÄÄåÅ]=ÅÕ•ùπîÅΩôô•ç•ï±±ïµïπ–Å±îÅçΩ…¡ÃÅâ…’–Åï∏Å!5µM!‘ƒ»Å°ï·Öì•ç•µÖ∞∏(ÄÄÄÄÄÄÄÄåÅ1ïÃÅŸÖ…•Öπ—ïÃÅM!»‘ÿÅ…ïÕ—ïπ–ÅÖççï¡”•ïÃÅ¡ïπëÖπ–Å±ÑÅ—…ÖπÕ•—•Ω∏Å¡Ω’»Åπî(ÄÄÄÄÄÄÄÄåÅ¡ÖÃÅçÖÕÕï»Å’∏É•Ÿïπ—’ï∞É•µï——ï’»Å•π—ï…πîÅ°•Õ—Ω…•≈’î∏(ÄÄÄÄÄÄÄÅçÖπë•ëÖ—ïÃÄÙÅmt(ÄÄÄÄÄÄÄÅôΩ»ÅÖ±ùΩ…•—°¥Å•∏Ä°°ÖÕ°±•àπÕ°Ñ‘ƒ»∞Å°ÖÕ°±•àπÕ°Ñ»‘ÿ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅë•ùïÕ—}âÂ—ïÃÄÙÅ°µÖåππï‹†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕïç…ï—}—ï·–πïπçΩëî†â’—ò¥‡à§∞Å…Ö›}âΩë‰∞ÅÖ±ùΩ…•—°¥∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§πë•ùïÕ–†§(ÄÄÄÄÄÄÄÄÄÄÄÅçÖπë•ëÖ—ïÃπï·—ïπê††(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅë•ùïÕ—}âÂ—ïÃπ°ï‡†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅë•ùïÕ—}âÂ—ïÃπ°ï‡†§π’¡¡ï»†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâÖÕîÿ–πàÿ—ïπçΩëî°ë•ùïÕ—}âÂ—ïÃ§πëïçΩëî†âÖÕç•§à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâÖÕîÿ–π’…±ÕÖôï}àÿ—ïπçΩëî°ë•ùïÕ—}âÂ—ïÃ§πëïçΩëî†âÖÕç•§à§π…Õ—…•¿†àÙà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖπ‰°°µÖåπçΩµ¡Ö…ï}ë•ùïÕ–°Õ’¡¡±•ïê∞ÅçÖπë•ëÖ—î§ÅôΩ»ÅçÖπë•ëÖ—îÅ•∏ÅçÖπë•ëÖ—ïÃ§(ÄÄÄÅÕ’¡¡±•ïë}Õïç…ï–ÄÙÄ†(ÄÄÄÄÄÄÄÅ…ï≈’ïÕ–π°ïÖëï…Ãπùï–†â`µ]ïëΩòµMïç…ï–à§(ÄÄÄÄÄÄÄÅΩ»Å…ï≈’ïÕ–π°ïÖëï…Ãπùï–†â`µ]ïâ°ΩΩ¨µMïç…ï–à§(ÄÄÄÄÄÄÄÅΩ»Äàà(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅÖ’—°Ω…•ÈÖ—•Ω∏ÄÙÄ°…ï≈’ïÕ–π°ïÖëï…Ãπùï–†â’—°Ω…•ÈÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅÖ’—°Ω…•ÈÖ—•Ω∏πçÖÕïôΩ±ê†§πÕ—Ö…—Õ›•—††ââïÖ…ï»Äà§Ë(ÄÄÄÄÄÄÄÅÕ’¡¡±•ïë}Õïç…ï–ÄÙÅÖ’—°Ω…•ÈÖ—•Ωπl‹ÈtπÕ—…•¿†§(ÄÄÄÅ…ï—’…∏ÅâΩΩ∞°Õ’¡¡±•ïë}Õïç…ï–§ÅÖπêÅ°µÖåπçΩµ¡Ö…ï}ë•ùïÕ–†(ÄÄÄÄÄÄÄÅÕ’¡¡±•ïë}Õïç…ï–∞ÅÕïç…ï—}—ï·–∞(ÄÄÄÄ§(()ëïòÅ}›ïëΩô}›ïâ°ΩΩ≠}ôΩ±ëï»°¡ÖÂ±ΩÖê§Ë(ÄÄÄÄààâQ…Ω’ŸîÅ’∏ÅëΩÕÕ•ï»ÅçΩµ¡±ï–Å•πç±’ÃÅëÖπÃÅ∞ü•€•πïµïπ–∞ÅÕÖπÃÅÖ¡¡ï∞Åë•Õ—Öπ–∏ààà(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅ•òÅ¡ÖÂ±ΩÖêπùï–†âï·—ï…πÖ±%êà§ÅÖπêÅÖπ‰†(ÄÄÄÄÄÄÄÄÄÄÄÅ≠ï‰Å•∏Å¡ÖÂ±ΩÖêÅôΩ»Å≠ï‰Å•∏Ä†âÕ—Ö—îà∞ÄâÖ——ïπëïîà∞Äâ—…Ö•π•πùç—•Ωπ%πôºà§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å¡ÖÂ±ΩÖê(ÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†â…ïù•Õ—…Ö—•ΩπΩ±ëï»à∞ÄâôΩ±ëï»à∞Äâ…ïÕΩ’…çîà∞ÄâëÖ—Ñà∞Äâ¡ÖÂ±ΩÖêà§Ë(ÄÄÄÄÄÄÄÅçÖπë•ëÖ—îÄÙÅ}›ïëΩô}›ïâ°ΩΩ≠}ôΩ±ëï»°¡ÖÂ±ΩÖêπùï–°≠ï‰§§(ÄÄÄÄÄÄÄÅ•òÅçÖπë•ëÖ—îË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅçÖπë•ëÖ—î(ÄÄÄÅ…ï—’…∏Å9Ωπî(()ëïòÅ}›ïëΩô}›ïâ°ΩΩ≠}ôΩ±ëï…}•ê°¡ÖÂ±ΩÖê§Ë(ÄÄÄÅôΩ±ëï»ÄÙÅ}›ïëΩô}›ïâ°ΩΩ≠}ôΩ±ëï»°¡ÖÂ±ΩÖê§(ÄÄÄÅ•òÅôΩ±ëï»Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÕ—»°ôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äàà(ÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâï·—ï…πÖ±%êà∞ÄâôΩ±ëï…%êà∞Äâ…ïù•Õ—…Ö—•ΩπΩ±ëï…%êà∞(ÄÄÄÄÄÄÄÄâ…ïù•Õ—…Ö—•Ωπ}ôΩ±ëï…}•êà∞Äâ…ïÕΩ’…çï%êà∞ÄâëΩÕÕ•ï…%êà∞(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–°≠ï‰§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅŸÖ±’î(ÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†â…ïù•Õ—…Ö—•ΩπΩ±ëï»à∞ÄâôΩ±ëï»à∞Äâ…ïÕΩ’…çîà∞ÄâëÖ—Ñà∞Äâ¡ÖÂ±ΩÖêà§Ë(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅ}›ïëΩô}›ïâ°ΩΩ≠}ôΩ±ëï…}•ê°¡ÖÂ±ΩÖêπùï–°≠ï‰§§(ÄÄÄÄÄÄÄÅ•òÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅŸÖ±’î(ÄÄÄÅ…ï—’…∏Äàà(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ω›ïâ°ΩΩ≠ÃΩ›ïëΩòà§)ëïòÅç…µ}›ïëΩô}›ïâ°ΩΩ¨†§Ë(ÄÄÄÅ…Ö›}âΩë‰ÄÙÅ…ï≈’ïÕ–πùï—}ëÖ—Ñ°çÖç°îıQ…’î§ÅΩ»Åààà(ÄÄÄÅ•òÅπΩ–Ä°ΩÃπùï—ïπÿ†â]=}]	!==-}MIPà§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅÖ±Õî∞Äâï……Ω»àËÄâ›ïâ°ΩΩ≠}πΩ—}çΩπô•ù’…ïêâÙ§∞Ä‘¿Ã(ÄÄÄÅ•òÅπΩ–Å}›ïëΩô}›ïâ°ΩΩ≠}Ö’—°ïπ—•çÖ—ïê°…Ö›}âΩë‰§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅÖ±Õî∞Äâï……Ω»àËÄâôΩ…â•ëëï∏âÙ§∞Ä–¿Ã(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅÖ±Õî∞Äâï……Ω»àËÄâ•πŸÖ±•ë}¡ÖÂ±ΩÖêâÙ§∞Ä–¿¿(ÄÄÄÅëï±•Ÿï…Â}•êÄÙÄ†(ÄÄÄÄÄÄÄÅ…ï≈’ïÕ–π°ïÖëï…Ãπùï–†â`µ]ïëΩòµï±•Ÿï…‰à§(ÄÄÄÄÄÄÄÅΩ»Å°ÖÕ°±•àπÕ°Ñ»‘ÿ°…Ö›}âΩë‰§π°ï·ë•ùïÕ–†§(ÄÄÄÄ§πÕ—…•¿†•lË»¿¡t(ÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÅë’¡±•çÖ—îÄÙÅëàπï·ïç’—î†(ÄÄÄÄÄÄÄÄÄÄÄÄâM1PÄƒÅI=4Å›ïëΩô}›ïâ°ΩΩ≠}ëï±•Ÿï…•ïÃÅ]!IÅëï±•Ÿï…Â}•êÙ¸à∞(ÄÄÄÄÄÄÄÄÄÄÄÄ°ëï±•Ÿï…Â}•ê∞§∞(ÄÄÄÄÄÄÄÄ§πôï—ç°Ωπî†§(ÄÄÄÅ•òÅë’¡±•çÖ—îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅQ…’î∞Äâë’¡±•çÖ—îàËÅQ…’ïÙ§∞Ä»¿¿((ÄÄÄÅôΩ±ëï»ÄÙÅ}›ïëΩô}›ïâ°ΩΩ≠}ôΩ±ëï»°¡ÖÂ±ΩÖê§(ÄÄÄÅôΩ±ëï…}•êÄÙÅ}›ïëΩô}›ïâ°ΩΩ≠}ôΩ±ëï…}•ê°¡ÖÂ±ΩÖê§(ÄÄÄÅÕΩ’…çîÄÙÄâ¡ÖÂ±ΩÖêà(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ•òÅôΩ±ëï»Å•ÃÅ9ΩπîÅÖπêÅôΩ±ëï…}•êË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïµΩ—ï}¡ÖÂ±ΩÖê∞Å}°ïÖëï…ÃÄÙÅ}›ïëΩô}…ï≈’ïÕ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòàΩÖ¡§Ω…ïù•Õ—…Ö—•ΩπΩ±ëï…ÃΩÌ≈’Ω—î°ôΩ±ëï…}•ê∞ÅÕÖôîÙúú•Ùà(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïµΩ—ï}¡ÖÂ±ΩÖêπùï–†âëÖ—Ñà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°…ïµΩ—ï}¡ÖÂ±ΩÖê∞Åë•ç–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ•Õ•πÕ—Öπçî°…ïµΩ—ï}¡ÖÂ±ΩÖêπùï–†âëÖ—Ñà§∞Åë•ç–§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîÅ…ïµΩ—ï}¡ÖÂ±ΩÖê(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÄÙÄâ—Ö…ùï—ïë}ùï–à(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ôΩ±ëï»∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅôΩ±ëï…}•êÅÖπêÅπΩ–ÅôΩ±ëï»πùï–†âï·—ï…πÖ±%êà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ±ëï»ÄÙÅÏ®©ôΩ±ëï»∞Äâï·—ï…πÖ±%êàËÅôΩ±ëï…}•ëÙ(ÄÄÄÄÄÄÄÄÄÄÄÅ}›ïëΩô}Õ—Ω…ï}¡Öùî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅmôΩ±ëï…t∞Å9Ωπî∞Ä¿∞Å’¡ëÖ—ï}ÕÂπç}Õ—Ö—îıÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ›•—†Å}›ïëΩô}çΩππïç–†§ÅÖÃÅëàË(ÄÄÄÄÄÄÄÄÄÄÄÅëàπï·ïç’—î†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ%9MIPÅ=HÅ%9=IÅ%9Q<Å›ïëΩô}›ïâ°ΩΩ≠}ëï±•Ÿï…•ïÃÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄà°ëï±•Ÿï…Â}•ê∞Å¡…ΩçïÕÕïë}Ö–§ÅY1ULÄ†¸∞Ä¸§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ°ëï±•Ÿï…Â}•ê∞Å}›ïëΩô}πΩ‹†§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïêàËÅâΩΩ∞°•Õ•πÕ—Öπçî°ôΩ±ëï»∞Åë•ç–§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çîàËÅÕΩ’…çîÅ•òÅ•Õ•πÕ—Öπçî°ôΩ±ëï»∞Åë•ç–§Åï±ÕîÄâïŸïπ—}Ωπ±‰à∞(ÄÄÄÄÄÄÄÅÙ§∞Ä»¿¿(ÄÄÄÅï·çï¡–Å]ïëΩôA%……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅÖ±Õî∞Äâï……Ω»àËÅ}›ïëΩô}ç±ïÖ∏°ï·å•Ù§∞Ä‘¿Ã(()Ö¡¿π…Ω’—î†àΩç…¥à∞ÅëïôÖ’±—ÃıÏâÕïç—•Ω∏àËÄâÖçç’ï•∞âÙ§)Ö¡¿π…Ω’—î†àΩç…¥ºÒÕïç—•Ω∏¯à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…¥°Õïç—•Ω∏§Ë(ÄÄÄÅ•òÅÕïç—•Ω∏ÅπΩ–Å•∏ÅI5}A}1	1LË(ÄÄÄÄÄÄÄÅÖâΩ…–†–¿–§(ÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§(ÄÄÄÄåÅÅâ…Ω›Õï»ÅÕïÕÕ•Ω∏ÅçÖ∏ÅΩ’—±•ŸîÅ—°îÅÖççΩ’π–ÅçΩπô•ù’…Ö—•Ω∏Å—°Ö–Åç…ïÖ—ïêÅ•–∏(ÄÄÄÄåÅŸΩ•êÅ¡ÖÕÕ•πúÅ9ΩπîÅ—ºÅ—°îÅ—ïµ¡±Ö—î∞Å›°ï…îÅ’Õï»ÅÖ——…•â’—ïÃÅâïçΩµîÅ)•π©Ñ(ÄÄÄÄåÅUπëïô•πïêÅΩâ©ïç—ÃÅ—°Ö–Å—°îÅI5}=9%Å)M=8ÅÕï…•Ö±•Èï»ÅçÖππΩ–ÅïπçΩëî∏(ÄÄÄÅ•òÅπΩ–Å’Õï»Ë(ÄÄÄÄÄÄÄÅÕïÕÕ•Ω∏π¡Ω¿†â’Õï…}ïµÖ•∞à∞Å9Ωπî§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïë•…ïç–°’…±}ôΩ»†â±Ωù•∏à∞Åπï·–ı…ï≈’ïÕ–π¡Ö—†§§(ÄÄÄÅ…ï—’…∏Å…ïπëï…}—ïµ¡±Ö—î†(ÄÄÄÄÄÄÄÄâç…¥π°—µ∞à∞(ÄÄÄÄÄÄÄÅÕïç—•Ω∏ıÕïç—•Ω∏∞(ÄÄÄÄÄÄÄÅ¡Öùï}—•—±îıI5}A}1	1MmÕïç—•Ωπt∞(ÄÄÄÄÄÄÄÅÕ—Ö—’ÕïÃı}ç…µ}Õ—Ö—’ÕïÃ°±ΩÖë}ëÖ—Ñ†§§∞(ÄÄÄÄÄÄÄÅ’Õï»ı’Õï»∞(ÄÄÄÄÄÄÄÅç…µ}—ïÖ¥ıl(ÄÄÄÄÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπÖµîàËÅµïµâï…lâπÖµîât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâô•…Õ—}πÖµîàËÅµïµâï…lâô•…Õ—}πÖµîât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâïµÖ•∞àËÅµïµâï…lâïµÖ•∞ât∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Åµïµâï»Å•∏ÅUMILπŸÖ±’ïÃ†§(ÄÄÄÄÄÄÄÅt∞(ÄÄÄÄÄÄÄÅÖÕÕï—}Ÿï…Õ•Ω∏ıI5}MMQ}YIM%=8∞(ÄÄÄÄ§(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥Ωï·¡Ω…—ÃºÒï·¡Ω…—}≠ï‰¯à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ï·¡Ω…—}ï·çï∞°ï·¡Ω…—}≠ï‰§Ë(ÄÄÄÄààâS•≥•ç°Ö…ùîÅ±ïÃÅ•πÕç…•—ÃÅêù’πîÅôΩ…µÖ—•Ω∏ÅëÖπÃÅ’∏Åç±ÖÕÕï’»Å·çï∞∏ààà(ÄÄÄÅ•òÅï·¡Ω…—}≠ï‰ÅπΩ–Å•∏ÅI5}aA=IQ}%9%Q%=9LË(ÄÄÄÄÄÄÄÅÖâΩ…–†–¿–§(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅΩ’—¡’–ÄÙÅâ’•±ë}ç…µ}ï·¡Ω…—}›Ω…≠âΩΩ¨°ëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§∞Åï·¡Ω…—}≠ï‰§(ÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅÕïπë}ô•±î†(ÄÄÄÄÄÄÄÅΩ’—¡’–∞(ÄÄÄÄÄÄÄÅÖÕ}Ö——Öç°µïπ–ıQ…’î∞(ÄÄÄÄÄÄÄÅëΩ›π±ΩÖë}πÖµîıç…µ}ï·¡Ω…—}ô•±ïπÖµî°ï·¡Ω…—}≠ï‰§∞(ÄÄÄÄÄÄÄÅµ•µï—Â¡îÙ†(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ¡¡±•çÖ—•Ω∏ΩŸπêπΩ¡ïπ·µ±ôΩ…µÖ—ÃµΩôô•çïëΩç’µïπ–∏à(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ¡…ïÖëÕ°ïï—µ∞πÕ°ïï–à(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅµÖ·}ÖùîÙ¿∞(ÄÄÄÄ§(ÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâÖç°îµΩπ—…Ω∞âtÄÙÄâ¡…•ŸÖ—î∞ÅπºµÕ—Ω…î∞ÅµÖ‡µÖùîÙ¿à(ÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…Õlâ`µΩπ—ïπ–µQÂ¡îµ=¡—•ΩπÃâtÄÙÄâπΩÕπ•ôòà(ÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(()Ö¡¿π…Ω’—î†àΩI4à∞ÅëïôÖ’±—ÃıÏâÕïç—•Ω∏àËÄâÖçç’ï•∞âÙ§)Ö¡¿π…Ω’—î†àΩI4ºÒÕïç—•Ω∏¯à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}’¡¡ï…çÖÕî°Õïç—•Ω∏§Ë(ÄÄÄÄààâAÀ•Õï…ŸîÅ±ïÃÅ±•ïπÃÅ°•Õ—Ω…•≈’ïÃÅ≈’§Å’—•±•Õïπ–Å±îÅç°ïµ•∏ÅI4Åï∏ÅµÖ©’Õç’±ïÃ∏ààà(ÄÄÄÅ—Ö…ùï–ÄÙÅ’…±}ôΩ»†âç…¥à∞ÅÕïç—•Ω∏ıÕïç—•Ω∏§(ÄÄÄÅ…ï—’…∏Å…ïë•…ïç–°òâÌ—Ö…ùï—Ù˝Ì…ï≈’ïÕ–π≈’ï…Â}Õ—…•πúπëïçΩëî†•ÙàÅ•òÅ…ï≈’ïÕ–π≈’ï…Â}Õ—…•πúÅï±ÕîÅ—Ö…ùï–§(()ëïòÅ}ç…µ}çÖ±ïπë±Â}Õ—Ö—’Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§Ë(ÄÄÄÅÕ—Ö—îÄÙÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±‰à§ÅΩ»ÅÌÙ(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâçΩπô•ù’…ïêàËÅâΩΩ∞°}çÖ±ïπë±Â}—Ω≠ï∏†§§∞(ÄÄÄÄÄÄÄÄâÕ•ùπ•πù}≠ïÂ}çΩπô•ù’…ïêàËÅâΩΩ∞°}çÖ±ïπë±Â}Õ•ùπ•πù}≠ï‰†§§∞(ÄÄÄÄÄÄÄÄâçΩππïç—ïêàËÅâΩΩ∞°Õ—Ö—îπùï–†â›ïâ°ΩΩ≠}’…§à§§∞(ÄÄÄÄÄÄÄÄâÕçΩ¡îàËÅÕ—Ö—îπùï–†âÕçΩ¡îà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâÖççΩ’π—}πÖµîàËÅÕ—Ö—îπùï–†âÖççΩ’π—}πÖµîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâÖççΩ’π—}ïµÖ•∞àËÅÕ—Ö—îπùï–†âÖççΩ’π—}ïµÖ•∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ±ÖÕ—}ÕÂπç}Ö–àËÅÕ—Ö—îπùï–†â±ÖÕ—}ÕÂπç}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ±ÖÕ—}ô’±±}ÕÂπç}Ö–àËÅÕ—Ö—îπùï–†â±ÖÕ—}ô’±±}ÕÂπç}Ö–à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâÕÂπç}çΩµ¡±ï—îàËÅâΩΩ∞°Õ—Ö—îπùï–†âÕÂπç}çΩµ¡±ï—îà§§∞(ÄÄÄÄÄÄÄÄâÕÂπç}•π}¡…Ωù…ïÕÃàËÅâΩΩ∞°Õ—Ö—îπùï–†âÕÂπç}ç’…ÕΩ»à§§ÅÖπêÅπΩ–ÅÕ—Ö—îπùï–†âÕÂπç}çΩµ¡±ï—îà§∞(ÄÄÄÅÙ(()ëïòÅ}çÖ±ïπë±Â}ç…ïÖ—ï}Ω…}…ï’Õï}›ïâ°ΩΩ¨°çΩπ—ï·–∞ÅÕçΩ¡î∞ÅçÖ±±âÖç≠}’…∞§Ë(ÄÄÄÅ¡Ö…ÖµÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâΩ…ùÖπ•ÈÖ—•Ω∏àËÅçΩπ—ï·—lâΩ…ùÖπ•ÈÖ—•Ω∏ât∞(ÄÄÄÄÄÄÄÄâÕçΩ¡îàËÅÕçΩ¡î∞(ÄÄÄÄÄÄÄÄâçΩ’π–àËÄƒ¿¿∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅÕçΩ¡îÄÙÙÄâ’Õï»àË(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâ’Õï»âtÄÙÅçΩπ—ï·—lâ’Õï»ât(ÄÄÄÅÕ’âÕç…•¡—•ΩπÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†(ÄÄÄÄÄÄÄÄàΩ›ïâ°ΩΩ≠}Õ’âÕç…•¡—•ΩπÃà∞(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÃı¡Ö…ÖµÃ∞(ÄÄÄÄÄÄÄÅµÖ·}¡ÖùïÃÙƒ¿∞(ÄÄÄÄ§(ÄÄÄÅï·¡ïç—ïë}ïŸïπ—ÃÄÙÅÕï–°191e}]	!==-}Y9QL§(ÄÄÄÅôΩ»ÅÕ’âÕç…•¡—•Ω∏Å•∏ÅÕ’âÕç…•¡—•ΩπÃË(ÄÄÄÄÄÄÄÅ•òÅÕ’âÕç…•¡—•Ω∏πùï–†âçÖ±±âÖç≠}’…∞à§ÄÑÙÅçÖ±±âÖç≠}’…∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅÕ’âÕç…•¡—•Ω∏πùï–†âÕ—Ö—îà§ÄÙÙÄâÖç—•ŸîàÅÖπêÅï·¡ïç—ïë}ïŸïπ—Ãπ•ÕÕ’âÕï–†(ÄÄÄÄÄÄÄÄÄÄÄÅÕï–°Õ’âÕç…•¡—•Ω∏πùï–†âïŸïπ—Ãà§ÅΩ»Åmt§(ÄÄÄÄÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÕ’âÕç…•¡—•Ω∏(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅI’π—•µï……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄâU∏ÅÖπç•ï∏Å›ïâ°ΩΩ¨ÅÖ±ïπë±‰Å’—•±•ÕîÅì•´ÄÅçï——îÅÖë…ïÕÕîÅµÖ•ÃÅ∏ùïÕ–Å¡ÖÃÅÖç—•òÅΩ‘Å•πçΩµ¡±ï–∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâM’¡¡…•µïËµ±îÅëÖπÃÅÖ±ïπë±‰ÅÖŸÖπ–ÅëîÅ…ï±Öπçï»Å±ÑÅçΩπô•ù’…Ö—•Ω∏∏à(ÄÄÄÄÄÄÄÄ§((ÄÄÄÅâΩë‰ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ’…∞àËÅçÖ±±âÖç≠}’…∞∞(ÄÄÄÄÄÄÄÄâïŸïπ—ÃàËÅ±•Õ–°191e}]	!==-}Y9QL§∞(ÄÄÄÄÄÄÄÄâΩ…ùÖπ•ÈÖ—•Ω∏àËÅçΩπ—ï·—lâΩ…ùÖπ•ÈÖ—•Ω∏ât∞(ÄÄÄÄÄÄÄÄâÕçΩ¡îàËÅÕçΩ¡î∞(ÄÄÄÄÄÄÄÄâÕ•ùπ•πù}≠ï‰àËÅ}çÖ±ïπë±Â}Õ•ùπ•πù}≠ï‰†§∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅÕçΩ¡îÄÙÙÄâ’Õï»àË(ÄÄÄÄÄÄÄÅâΩëÂlâ’Õï»âtÄÙÅçΩπ—ï·—lâ’Õï»ât(ÄÄÄÅ…ï—’…∏Ä°}çÖ±ïπë±Â}…ï≈’ïÕ–†(ÄÄÄÄÄÄÄÄâA=MPà∞(ÄÄÄÄÄÄÄÄàΩ›ïâ°ΩΩ≠}Õ’âÕç…•¡—•ΩπÃà∞(ÄÄÄÄÄÄÄÅ©ÕΩπ}âΩë‰ıâΩë‰∞(ÄÄÄÄ§πùï–†â…ïÕΩ’…çîà§ÅΩ»ÅÌÙ§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰ΩÕ—Ö—’Ãà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖ±ïπë±Â}Õ—Ö—’Ã†§Ë(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}ç…µ}çÖ±ïπë±Â}Õ—Ö—’Õ}¡ÖÂ±ΩÖê°±ΩÖë}ëÖ—Ñ†§§§(()I5}19I}=9QQ}%1LÄÙÄ†(ÄÄÄÄâ•êà∞Äâ¡…ïπΩ¥à∞ÄâπΩ¥à∞Äâ—ï±ï¡°Ωπîà∞ÄâµÖ•∞à∞ÄâôΩ…µÖ—•Ω∏à∞Äâ±•ï‘à∞(ÄÄÄÄâÕ—Ö—’–à∞ÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏à∞ÄâΩ…•ù•πîà∞Äâ…ï±Öπçï}ëÖ—îà∞(ÄÄÄÄâ¡…Ωç°Ö•πï}Öç—•Ωπ}µÖπ’ï±±îà∞ÄâëïÕ¡}—Â¡îà∞Äâç¡òà∞Äâç¡ô}µΩπ—Öπ–à∞Äâç¡ô}¡Ö±•ï»à∞(ÄÄÄÄâ•ëïπ—•—ï}ç…ïÖ—•Ω∏à∞Äâ•ëïπ—•—ï}Ω¨à∞Äâô•πÖπçïµïπ—}ô–à∞(ÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à∞ÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–à∞(ÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îà∞Äâ…ïô’Õ}ô—}¡ï…Õºà∞Äâ•πÕç…•—}ô–à∞(ÄÄÄÄâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…Õºà∞ÄâçÖ…—ï}¡…ºà∞Äâ—•—…ï}Õï©Ω’»à∞(ÄÄÄÄâ—•—…ï}Õï©Ω’…}çπÖ¡Ãà∞ÄâùÖ…ëï}Ÿ’îà∞ÄâÖπ—ïçïëïπ—Ãà∞ÄâçΩµ¡—ï}çπÖ¡Ãà∞(ÄÄÄÄâ•π—ïù…Ö—•Ωπ}ë…ÖçÖ»à∞(§()ëïòÅ}ç…µ}çÖ±ïπëÖ…}çΩπ—Öç—}¡ÖÂ±ΩÖê°ëÖ—Ñ∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâ·¡ΩÕîÅ’π•≈’ïµïπ–Å±ïÃÅç°Öµ¡ÃÅ…ï≈’•ÃÅ¡Ö»Å±ïÃÅ•πë•çÖ—ï’…ÃÅë‘ÅçÖ±ïπë…•ï»∏ààà(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄàà∞Äâ¡…ïπΩ¥àËÄàà∞ÄâπΩ¥àËÄàà∞ÄâôΩ…µÖ—•Ω∏àËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÄàà∞ÄâµÖ•∞àËÄàà∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅÏ(ÄÄÄÄÄÄÄÅ≠ï‰ËÅçΩπ—Öç–πùï–°≠ï‰§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏ÅI5}19I}=9QQ}%1L(ÄÄÄÅÙ(ÄÄÄÅÕπÖ¡Õ°Ω–ÄÙÅëÖ—Ñπùï–†âç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—Ãà∞ÅÌÙ§πùï–†(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§(ÄÄÄÄ§(ÄÄÄÅïôôïç—•Ÿï}çΩπ—Öç–ÄÙÅë•ç–°çΩπ—Öç–§(ÄÄÄÅïôôïç—•Ÿï}çΩπ—Öç–πÕï—ëïôÖ’±–†(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îà∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â…ïô’Õ}ô—}¡ï…Õºà§ÅΩ»Äàà§∞(ÄÄÄÄ§(ÄÄÄÅÕçΩ…îÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°ïôôïç—•Ÿï}çΩπ—Öç–∞ÅÕπÖ¡Õ°Ω–§(ÄÄÄÅ¡ÖÂ±ΩÖëlâ•π—ïù…Ö—•Ωπ}ÕçΩ…îâtÄÙÅÏ(ÄÄÄÄÄÄÄÅ≠ï‰ËÅÕçΩ…îπùï–°≠ï‰§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄÄÄÄÄâÕçΩ…îà∞Äâ±ïŸï∞à∞Äâ±Öâï∞à∞ÄâΩ¡ï…Ö—•ΩπÖ±}Õ—Ö—’Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ï…ÕΩπÖ±}…ïµÖ•πëï…}Ö¡¡±•çÖâ±îà∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅÙ(ÄÄÄÅ…ï—’…∏Å¡ÖÂ±ΩÖê(()ëïòÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§Ë(ÄÄÄÄààâΩπÕ—…’•–Å∞ùÖùïπëÑÅI4ÅÕÖπÃÅ…ï±•…îÅ±îÅô•ç°•ï»ÅëîÅëΩπª•ïÃ∏ààà(ÄÄÄÅçΩπ—Öç—ÃÄÙÅÌ•—ï¥πùï–†â•êà§ËÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt•Ù(ÄÄÄÅÖ¡¡Ω•π—µïπ—ÃÄÙÅmt(ÄÄÄÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅçΩπ—Öç—Ãπùï–°•—ï¥πùï–†âçΩπ—Öç—}•êà§§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—ÃπÖ¡¡ïπê°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄ®©•—ï¥∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çÖ±ïπëÖ…}çΩπ—Öç—}¡ÖÂ±ΩÖê°ëÖ—Ñ∞ÅçΩπ—Öç–§∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅÖ¡¡Ω•π—µïπ—ÃπÕΩ…–°≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅ•—ï¥πùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâÖ¡¡Ω•π—µïπ—ÃàËÅÖ¡¡Ω•π—µïπ—Ã∞(ÄÄÄÄÄÄÄÄâ•π—ïù…Ö—•Ω∏àËÅ}ç…µ}çÖ±ïπë±Â}Õ—Ö—’Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§∞(ÄÄÄÅÙ(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰ΩÖ¡¡Ω•π—µïπ—Ãà§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ã†§Ë(ÄÄÄÄààâIï—Ω’…πîÅ∞ùÖùïπëÑÅ¡Ö…—Öü§∞Åïπ…•ç°§ÅÖŸïåÅ±ÑÅô•ç°îÅI4ÅÖÕÕΩçß•î∏ààà(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Õ}¡ÖÂ±ΩÖê°±ΩÖë}ëÖ—Ñ†§§§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰ΩÖ¡¡Ω•π—µïπ—ÃºÒÖ¡¡Ω•π—µïπ—}•ê¯à∞Åµï—°ΩëÃılâAQ ât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖ±ïπë±Â}’¡ëÖ—ï}Ö¡¡Ω•π—µïπ–°Ö¡¡Ω•π—µïπ—}•ê§Ë(ÄÄÄÄààâπ…ïù•Õ—…îÅ±îÅÀ•Õ’±—Ö–ÅëîÅ±ÑÅ¡…•ÕîÅëîÅçΩπ—Öç–ÅÖÕÕΩçß•îÉÄÅ’∏Å…ïπëïËµŸΩ’Ã∏ààà(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ…ïÕ¡ΩπÕï}Õ—Ö—’ÃÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â…ïÕ¡ΩπÕï}Õ—Ö—’Ãà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅ…ïÕ¡ΩπÕï}Õ—Ö—’ÃÅπΩ–Å•∏ÅÏàà∞ÄâÖπÕ›ï…ïêà∞ÄâπΩ}ÖπÕ›ï»âÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâK•Õ’±—Ö–Åë‘Å…ïπëïËµŸΩ’ÃÅ•πŸÖ±•ëî∏âÙ§∞Ä–¿¿((ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅÖ¡¡Ω•π—µïπ–ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅÖ¡¡Ω•π—µïπ—}•ê§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–ÅÖ¡¡Ω•π—µïπ–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIïπëïËµŸΩ’ÃÅ•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–((ÄÄÄÅ¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÄÙÅÖ¡¡Ω•π—µïπ–πùï–†â…ïÕ¡ΩπÕï}Õ—Ö—’Ãà§ÅΩ»Äàà(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÖ¡¡Ω•π—µïπ—lâ…ïÕ¡ΩπÕï}Õ—Ö—’ÃâtÄÙÅ…ïÕ¡ΩπÕï}Õ—Ö—’Ã(ÄÄÄÅÖ¡¡Ω•π—µïπ—lâ…ïÕ¡ΩπÕï}Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅÖ¡¡Ω•π—µïπ—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅëï±•Ÿï…‰ÄÙÅ9Ωπî(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅÖ¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§§(ÄÄÄÅ•òÅ…ïÕ¡ΩπÕï}Õ—Ö—’ÃÅ•∏ÅÏâπΩ}ÖπÕ›ï»à∞ÄâÖπÕ›ï…ïêâÙÅÖπêÅ¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÄÑÙÅ…ïÕ¡ΩπÕï}Õ—Ö—’ÃË(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ïÕ¡ΩπÕï}Õ—Ö—’ÃÄÙÙÄâπΩ}ÖπÕ›ï»àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÄâÅ…ï±Öπçï»à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…•Õ}—ΩëÖ‰ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§§πëÖ—î†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅπï·—}…ï±Öπçï}ëÖ—îÄÙÄ°¡Ö…•Õ}—ΩëÖ‰Ä¨ÅëÖ—ï—•µîπ—•µïëï±—Ñ°ëÖÂÃÙ‹§§π•ÕΩôΩ…µÖ–†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅπï·—}…ï±Öπçï}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâçÖ±ïπë±Â}πΩ}ÖπÕ›ï»à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµΩ—•òÙâM’•—îÅÖâÕïπçîÅÖ‘Å…ïπëïËµŸΩ’Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕ—Ö—’–à∞ÄâM—Ö—’–ÄËÅÅ…ï±Öπçï»à∞ÄâMÖπÃÅÀ•¡ΩπÕîÅÖ‘Å…ïπëïËµŸΩ’ÃÉ
+‹Å…ï±ÖπçîÅÖ’—ΩµÖ—•≈’îÉÄÅ(¨‹à§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ïÕ¡ΩπÕï}Õ—Ö—’ÃÄÙÙÄâπΩ}ÖπÕ›ï»àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëï±•Ÿï…‰ÄÙÅ}ç…µ}Õïπë}Ö¡¡Ω•π—µïπ—}ôΩ±±Ω›’¿°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÄâAÖÃÅëîÅÀ•¡ΩπÕîÅÖ¡¡ï∞à§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ïÕ’±–ÄÙÅë•ç–°Ö¡¡Ω•π—µïπ–§(ÄÄÄÅ•òÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄåÅIï—’…∏Å—°îÅçΩπ—Öç–Åç°ÖπùïêÅâ‰Å—°•ÃÅÖç—•Ω∏ÅÕºÅ—°îÅI4ÅçÖ∏Å’¡ëÖ—îÅ•—Ã(ÄÄÄÄÄÄÄÄåÅ•∏µµïµΩ…‰Å±•Õ–Å•µµïë•Ö—ï±‰∞Å›•—°Ω’–Å…ï≈’•…•πúÅÑÅô’±∞Å¡ÖùîÅ…ïô…ïÕ†∏(ÄÄÄÄÄÄÄÅ…ïÕ’±—lâçΩπ—Öç–âtÄÙÅçΩπ—Öç–(ÄÄÄÅ•òÅëï±•Ÿï…‰Å•ÃÅπΩ–Å9ΩπîË(ÄÄÄÄÄÄÄÅ…ïÕ’±—lâëï±•Ÿï…‰âtÄÙÅëï±•Ÿï…‰(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°…ïÕ’±–§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰ΩÕï—’¿à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖ±ïπë±Â}Õï—’¿†§Ë(ÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÅ•òÅ’Õï»πùï–†â…Ω±îà§ÄÑÙÄâÖëµ•∏àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâMï’∞Å’∏ÅÖëµ•π•Õ—…Ö—ï’»Å¡ï’–ÅçΩπô•ù’…ï»ÅÖ±ïπë±‰∏âÙ§∞Ä–¿Ã(ÄÄÄÅ•òÅπΩ–Å}çÖ±ïπë±Â}—Ω≠ï∏†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ©Ω’—ïËÅ191e}MM}Q=-8ÅëÖπÃÅ±ïÃÅŸÖ…•Öâ±ïÃÅIïπëï»∏âÙ§∞Ä‘¿Ã(ÄÄÄÅ•òÅπΩ–Å}çÖ±ïπë±Â}Õ•ùπ•πù}≠ï‰†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ©Ω’—ïËÅ191e}]	!==-}M%9%9}-dÅëÖπÃÅ±ïÃÅŸÖ…•Öâ±ïÃÅIïπëï»∏âÙ§∞Ä‘¿Ã(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅçΩπ—ï·–ÄÙÅ}çÖ±ïπë±Â}’Õï…}çΩπ—ï·–†§(ÄÄÄÄÄÄÄÅçÖ±±âÖç≠}’…∞ÄÙÅ}çÖ±ïπë±Â}çÖ±±âÖç≠}’…∞†§(ÄÄÄÄÄÄÄÅÕçΩ¡îÄÙÄâΩ…ùÖπ•ÈÖ—•Ω∏à(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ’âÕç…•¡—•Ω∏ÄÙÅ}çÖ±ïπë±Â}ç…ïÖ—ï}Ω…}…ï’Õï}›ïâ°ΩΩ¨°çΩπ—ï·–∞ÅÕçΩ¡î∞ÅçÖ±±âÖç≠}’…∞§(ÄÄÄÄÄÄÄÅï·çï¡–ÅÖ±ïπë±ÂA%……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅï·åπÕ—Ö—’Õ}çΩëîÄÑÙÄ–¿ÃÅΩ»Åï·åπ•πÕ’ôô•ç•ïπ—}ÕçΩ¡îË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•Õî(ÄÄÄÄÄÄÄÄÄÄÄÅÕçΩ¡îÄÙÄâ’Õï»à(ÄÄÄÄÄÄÄÄÄÄÄÅÕ’âÕç…•¡—•Ω∏ÄÙÅ}çÖ±ïπë±Â}ç…ïÖ—ï}Ω…}…ï’Õï}›ïâ°ΩΩ¨°çΩπ—ï·–∞ÅÕçΩ¡î∞ÅçÖ±±âÖç≠}’…∞§((ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅëÖ—Ölâç…µ}çÖ±ïπë±‰âtÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄ®®°ëÖ—Ñπùï–†âç…µ}çÖ±ïπë±‰à§ÅΩ»ÅÌÙ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄ®©çΩπ—ï·–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕçΩ¡îàËÅÕçΩ¡î∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ›ïâ°ΩΩ≠}’…§àËÅÕ’âÕç…•¡—•Ω∏πùï–†â’…§à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ›ïâ°ΩΩ≠}’…∞àËÅçÖ±±âÖç≠}’…∞∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ›ïâ°ΩΩ≠}Õ—Ö—îàËÅÕ’âÕç…•¡—•Ω∏πùï–†âÕ—Ö—îà§ÅΩ»ÄâÖç—•Ÿîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖççΩ’π—}πÖµîàËÅçΩπ—ï·–πùï–†âÖççΩ’π—}πÖµîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖççΩ’π—}ïµÖ•∞àËÅçΩπ—ï·–πùï–†âÖççΩ’π—}ïµÖ•∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕÂπç}ç’…ÕΩ»àËÅ9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕÂπç}çΩµ¡±ï—îàËÅÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπô•ù’…ïë}Ö–àËÅ}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ}ç…µ}çÖ±ïπë±Â}Õ—Ö—’Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ•òÅÕçΩ¡îÄÙÙÄâ’Õï»àË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕïlâ›Ö…π•πúâtÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1îÅ©ï—Ω∏Å∏ùÑÅ¡ÖÃÅ±ïÃÅë…Ω•—ÃÅÖëµ•π•Õ—…Ö—ï’»ÅëîÅ∞ùΩ…ùÖπ•ÕÖ—•Ω∏∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1ÑÅÕÂπç°…Ωπ•ÕÖ—•Ω∏ÅçΩ’Ÿ…îÅ—Ω’ÃÅ±ïÃÅ…ïπëïËµŸΩ’ÃÅë‘ÅçΩµ¡—îÅÖ±ïπë±‰Å±ß§ÅÖ‘Å©ï—Ω∏∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°…ïÕ¡ΩπÕî§(ÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}çÖ±ïπë±Â}…Ω’—ï}ï……Ω»°ï·å§(()ëïòÅ}çÖ±ïπë±Â}ïŸïπ—}—Â¡ïÕ}ôΩ…}çΩπ—ï·–°ëÖ—Ñ§Ë(ÄÄÄÅçΩπ—ï·–ÄÙÅ}çÖ±ïπë±Â}çΩπ—ï·—}ô…Ωµ}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ¡Ö…ÖµÃÄÙÅÏâÖç—•ŸîàËÄâ—…’îà∞ÄâçΩ’π–àËÄƒ¿¿∞ÄâÕΩ…–àËÄâπÖµîÈÖÕåâÙ(ÄÄÄÅ•òÅçΩπ—ï·–πùï–†âÕçΩ¡îà§ÄÙÙÄâ’Õï»àË(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâ’Õï»âtÄÙÅçΩπ—ï·—lâ’Õï»ât(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâΩ…ùÖπ•ÈÖ—•Ω∏âtÄÙÅçΩπ—ï·—lâΩ…ùÖπ•ÈÖ—•Ω∏ât(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅïŸïπ—}—Â¡ïÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†àΩïŸïπ—}—Â¡ïÃà∞Å¡Ö…ÖµÃı¡Ö…ÖµÃ§(ÄÄÄÅï·çï¡–ÅÖ±ïπë±ÂA%……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ•òÅçΩπ—ï·–πùï–†âÕçΩ¡îà§ÄÑÙÄâΩ…ùÖπ•ÈÖ—•Ω∏àÅΩ»Åï·åπÕ—Ö—’Õ}çΩëîÄÑÙÄ–¿ÃÅΩ»Åï·åπ•πÕ’ôô•ç•ïπ—}ÕçΩ¡îË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•Õî(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÃπ¡Ω¿†âΩ…ùÖπ•ÈÖ—•Ω∏à∞Å9Ωπî§(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâ’Õï»âtÄÙÅçΩπ—ï·—lâ’Õï»ât(ÄÄÄÄÄÄÄÅïŸïπ—}—Â¡ïÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†àΩïŸïπ—}—Â¡ïÃà∞Å¡Ö…ÖµÃı¡Ö…ÖµÃ§(ÄÄÄÅ’π•≈’îÄÙÅÌÙ(ÄÄÄÅôΩ»ÅïŸïπ—}—Â¡îÅ•∏ÅïŸïπ—}—Â¡ïÃË(ÄÄÄÄÄÄÄÅ’…§ÄÙÅïŸïπ—}—Â¡îπùï–†â’…§à§(ÄÄÄÄÄÄÄÅ•òÅ’…§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ’π•≈’ïm’…•tÄÙÅïŸïπ—}—Â¡î(ÄÄÄÅ…ï—’…∏ÅÕΩ…—ïê†(ÄÄÄÄÄÄÄÅ’π•≈’îπŸÖ±’ïÃ†§∞(ÄÄÄÄÄÄÄÅ≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅÕ—»°•—ï¥πùï–†âπÖµîà§ÅΩ»Äàà§πçÖÕïôΩ±ê†§∞(ÄÄÄÄ§(()191e}Y9Q}QeA}Q=-9M}	e}=I5Q%=8ÄÙÅÏ(ÄÄÄÄâÖ¡ÃàËÄ†âÖùïπ–ÅëîÅÕïç’…•—îà∞ÄàÅÖ¡Ãà§∞(ÄÄÄÄâÑÕ¿àËÄ†(ÄÄÄÄÄÄÄÄâÑÕ¿à∞(ÄÄÄÄÄÄÄÄàÅÖ¡»à∞(ÄÄÄÄÄÄÄÄâùÖ…ëîÅë‘ÅçΩ…¡Ãà∞(ÄÄÄÄÄÄÄÄâ¡…Ω—ïç—•Ω∏Å¡°ÂÕ•≈’îà∞(ÄÄÄÄÄÄÄÄâ¡…Ω—ïç—•Ω∏Å…Ö¡¡…Ωç°ïîà∞(ÄÄÄÄ§∞(ÄÄÄÄâëïÕ¿àËÄ†âëïÕ¿à∞Äâë•…•ùïÖπ–à§∞(ÄÄÄÄâÕÕ•Ö¿ÄƒàËÄ†âÕÕ•Ö¿à∞§∞(ÄÄÄÄâç°Ö’ôôï’»ÅŸ—åàËÄ†âŸ—åà∞Äâç°Ö’ôôï’»à§∞)Ù(()ëïòÅ}çÖ±ïπë±Â}ïŸïπ—}—Â¡ï}µÖ—ç°ïÕ}ôΩ…µÖ—•Ω∏°ïŸïπ—}—Â¡î∞ÅôΩ…µÖ—•Ω∏§Ë(ÄÄÄÅπΩ…µÖ±•Èïë}ôΩ…µÖ—•Ω∏ÄÙÄ†(ÄÄÄÄÄÄÄÅ’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9-à∞ÅÕ—»°ôΩ…µÖ—•Ω∏ÅΩ»Äàà§§(ÄÄÄÄÄÄÄÄπïπçΩëî†âÖÕç•§à∞Äâ•ùπΩ…îà§(ÄÄÄÄÄÄÄÄπëïçΩëî†§(ÄÄÄÄÄÄÄÄπ±Ω›ï»†§(ÄÄÄÄÄÄÄÄπÕ—…•¿†§(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–ÅπΩ…µÖ±•Èïë}ôΩ…µÖ—•Ω∏Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅQ…’î(ÄÄÄÅï·¡ïç—ïêÄÙÅ191e}Y9Q}QeA}Q=-9M}	e}=I5Q%=8πùï–†(ÄÄÄÄÄÄÄÅπΩ…µÖ±•Èïë}ôΩ…µÖ—•Ω∏∞(ÄÄÄÄÄÄÄÄ°òàÅÌπΩ…µÖ±•Èïë}ôΩ…µÖ—•ΩπÙà∞§∞(ÄÄÄÄ§(ÄÄÄÅπΩ…µÖ±•Èïë}πÖµîÄÙÄ†(ÄÄÄÄÄÄÄÄàÄà(ÄÄÄÄÄÄÄÄ¨Å’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9-à∞ÅÕ—»°ïŸïπ—}—Â¡îπùï–†âπÖµîà§ÅΩ»Äàà§§(ÄÄÄÄÄÄÄÄπïπçΩëî†âÖÕç•§à∞Äâ•ùπΩ…îà§(ÄÄÄÄÄÄÄÄπëïçΩëî†§(ÄÄÄÄÄÄÄÄπ±Ω›ï»†§(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏ÅÖπ‰°—Ω≠ï∏Å•∏ÅπΩ…µÖ±•Èïë}πÖµîÅôΩ»Å—Ω≠ï∏Å•∏Åï·¡ïç—ïê§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰ΩïŸïπ–µ—Â¡ïÃà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖ±ïπë±Â}ïŸïπ—}—Â¡ïÃ†§Ë(ÄÄÄÅ•òÅπΩ–Å}çÖ±ïπë±Â}—Ω≠ï∏†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ191e}MM}Q=-8Å∏ùïÕ–Å¡ÖÃÅçΩπô•ù’À§ÅëÖπÃÅIïπëï»∏âÙ§∞Ä‘¿Ã(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅïŸïπ—}—Â¡ïÃÄÙÅ}çÖ±ïπë±Â}ïŸïπ—}—Â¡ïÕ}ôΩ…}çΩπ—ï·–°±ΩÖë}ëÖ—Ñ†§§(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÕ—»°…ï≈’ïÕ–πÖ…ùÃπùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅôΩ…µÖ—•Ω∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÅïŸïπ—}—Â¡ïÃÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅïŸïπ—}—Â¡ïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}çÖ±ïπë±Â}ïŸïπ—}—Â¡ï}µÖ—ç°ïÕ}ôΩ…µÖ—•Ω∏°•—ï¥∞ÅôΩ…µÖ—•Ω∏§(ÄÄÄÄÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°l(ÄÄÄÄÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ’…§àËÅ•—ï¥πùï–†â’…§à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπÖµîàËÅ•—ï¥πùï–†âπÖµîà§ÅΩ»ÄâIïπëïËµŸΩ’ÃÅÖ±ïπë±‰à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâë’…Ö—•Ω∏àËÅ•—ï¥πùï–†âë’…Ö—•Ω∏à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÖç—•ŸîàËÅ•—ï¥πùï–†âÖç—•Ÿîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ≠•πêàËÅ•—ï¥πùï–†â≠•πêà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡ΩΩ±•πù}—Â¡îàËÅ•—ï¥πùï–†â¡ΩΩ±•πù}—Â¡îà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄââΩΩ≠•πù}µï—°ΩêàËÅ•—ï¥πùï–†ââΩΩ≠•πù}µï—°Ωêà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ•Õ}¡Ö•êàËÅâΩΩ∞°•—ï¥πùï–†â•Õ}¡Ö•êà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕç°ïë’±•πù}’…∞àËÅ•—ï¥πùï–†âÕç°ïë’±•πù}’…∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±ΩçÖ—•ΩπÃàËÅ•—ï¥πùï–†â±ΩçÖ—•ΩπÃà§ÅΩ»Åmt∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâç’Õ—Ωµ}≈’ïÕ—•ΩπÃàËÅ•—ï¥πùï–†âç’Õ—Ωµ}≈’ïÕ—•ΩπÃà§ÅΩ»Åmt∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡…Ωô•±îàËÅ•—ï¥πùï–†â¡…Ωô•±îà§ÅΩ»ÅÌÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅïŸïπ—}—Â¡ïÃ(ÄÄÄÄÄÄÄÅt§(ÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}çÖ±ïπë±Â}…Ω’—ï}ï……Ω»°ï·å§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰ΩÖŸÖ•±Öâ•±•—‰à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖ±ïπë±Â}ÖŸÖ•±Öâ•±•—‰†§Ë(ÄÄÄÅïŸïπ—}—Â¡îÄÙÅÕ—»°…ï≈’ïÕ–πÖ…ùÃπùï–†âïŸïπ—}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÕ—Ö…—}—•µîÄÙÅÕ—»°…ï≈’ïÕ–πÖ…ùÃπùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅïπë}—•µîÄÙÅÕ—»°…ï≈’ïÕ–πÖ…ùÃπùï–†âïπë}—•µîà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å}çÖ±ïπë±Â}…ïÕΩ’…çï}’’•ê°ïŸïπ—}—Â¡î∞ÄâïŸïπ—}—Â¡ïÃà§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâQÂ¡îÅëîÅ…ïπëïËµŸΩ’ÃÅÖ±ïπë±‰Å•πŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–ÅÕ—Ö…—}—•µîÅΩ»ÅπΩ–Åïπë}—•µîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅ√•…•ΩëîÅëîÅë•Õ¡Ωπ•â•±•”§ÅïÕ–Å•πçΩµ¡≥°—î∏âÙ§∞Ä–¿¿(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅÖŸÖ•±Öâ±ï}Õ—Ö…–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…—}—•µîπ…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÖŸÖ•±Öâ±ï}ïπêÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÅïπë}—•µîπ…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅÖŸÖ•±Öâ±ï}Õ—Ö…–π—È•πôºÅ•ÃÅ9ΩπîÅΩ»ÅÖŸÖ•±Öâ±ï}ïπêπ—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1ÑÅ√•…•ΩëîÅëîÅë•Õ¡Ωπ•â•±•”§ÅëΩ•–ÅçΩπ—ïπ•»ÅëïÃÅëÖ—ïÃÅ%M<Ä‡ÿ¿ƒÅÖŸïåÅô’ÕïÖ‘Å°Ω…Ö•…î∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÅ•òÅÖŸÖ•±Öâ±ï}ïπêÄÙÅÖŸÖ•±Öâ±ï}Õ—Ö…–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1ÑÅô•∏ÅëîÅ±ÑÅ√•…•ΩëîÅëîÅë•Õ¡Ωπ•â•±•”§ÅëΩ•–É©—…îÅ¡ΩÕ”•…•ï’…îÉÄÅÕΩ∏Åì•â’–∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÅ•òÅÖŸÖ•±Öâ±ï}ïπêÄ¥ÅÖŸÖ•±Öâ±ï}Õ—Ö…–Ä¯ÅëÖ—ï—•µîπ—•µïëï±—Ñ°ëÖÂÃÙ‹§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1ÑÅ√•…•ΩëîÅëîÅë•Õ¡Ωπ•â•±•”§ÅÖ±ïπë±‰ÅπîÅ¡ï’–Å¡ÖÃÅì•¡ÖÕÕï»Ä‹Å©Ω’…Ã∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÄåÅÖ±ïπë±‰Åï·•ùîÅ’πîÅâΩ…πîÅëîÅì•â’–ÅÕ—…•ç—ïµïπ–Åô’—’…î∏Å1ÑÅëÖ—îÅïπŸΩÁ•î(ÄÄÄÄåÅ¡Ö»Å±îÅπÖŸ•ùÖ—ï’»Å¡ï’–Åì•´ÄÉ©—…îÅ¡ÖÕœ•îÅëîÅ≈’ï±≈’ïÃÅµ•±±•ÕïçΩπëïÃÅÖ‘(ÄÄÄÄåÅµΩµïπ–Åø‰Å±ÑÅ…ï≈◊©—îÅÖ——ï•π–ÅÖ±ïπë±‰∞ÅëΩπåÅùÖ…ëΩπÃÅ’πîÅ¡ï—•—îÅµÖ…ùî∏(ÄÄÄÅµ•π•µ’µ}Õ—Ö…–ÄÙÄ†(ÄÄÄÄÄÄÄÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°ëÖ—ï—•µîπ—•µïÈΩπîπ’—å§(ÄÄÄÄÄÄÄÄ¨ÅëÖ—ï—•µîπ—•µïëï±—Ñ°µ•π’—ïÃÙƒ§(ÄÄÄÄ§(ÄÄÄÅ•òÅÖŸÖ•±Öâ±ï}ïπêÄÙÅµ•π•µ’µ}Õ—Ö…–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1ÑÅ√•…•ΩëîÅëîÅë•Õ¡Ωπ•â•±•”§ÅÖ±ïπë±‰ÅëΩ•–É©—…îÅÕ•—◊•îÅëÖπÃÅ±îÅô’—’»∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÅ•òÅÖŸÖ•±Öâ±ï}Õ—Ö…–ÄÅµ•π•µ’µ}Õ—Ö…–Ë(ÄÄÄÄÄÄÄÅÖŸÖ•±Öâ±ï}Õ—Ö…–ÄÙÅµ•π•µ’µ}Õ—Ö…–(ÄÄÄÄÄÄÄÅÕ—Ö…—}—•µîÄÙÅÖŸÖ•±Öâ±ï}Õ—Ö…–π•ÕΩôΩ…µÖ–°—•µïÕ¡ïåÙâÕïçΩπëÃà§π…ï¡±Öçî†à¨¿¿Ë¿¿à∞Äâhà§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ}çÖ±ïπë±Â}…ï≈’ïÕ–†(ÄÄÄÄÄÄÄÄÄÄÄÄâPà∞(ÄÄÄÄÄÄÄÄÄÄÄÄàΩïŸïπ—}—Â¡ï}ÖŸÖ•±Öâ±ï}—•µïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÖµÃıÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâïŸïπ—}—Â¡îàËÅïŸïπ—}—Â¡î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö…—}—•µîàËÅÕ—Ö…—}—•µî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâïπë}—•µîàËÅïπë}—•µî∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°…ïÕ¡ΩπÕîπùï–†âçΩ±±ïç—•Ω∏à§ÅΩ»Åmt§(ÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}çÖ±ïπë±Â}…Ω’—ï}ï……Ω»°ï·å§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩçÖ±ïπë±‰ΩÖ¡¡Ω•π—µïπ—Ãà∞Åµï—°ΩëÃılâPà∞ÄâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ã°çΩπ—Öç—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–((ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâPàË(ÄÄÄÄÄÄÄÅ±ΩΩ≠’¿ÄÙÅÏâµï—°ΩêàËÄâ±ΩçÖ∞à∞Äâ¡…ΩçïÕÕïë}ïŸïπ—ÃàËÄ¡Ù(ÄÄÄÄÄÄÄÅ±ΩΩ≠’¡}›Ö…π•πúÄÙÄàà(ÄÄÄÄÄÄÄÅ±ΩΩ≠’¡}Õ’ççïïëïêÄÙÅÖ±Õî(ÄÄÄÄÄÄÄÅôï—ç°ïë}¡ÖÂ±ΩÖëÃÄÙÅmt(ÄÄÄÄÄÄÄÅ…ïô…ïÕ°}…ï≈’ïÕ—ïêÄÙÅÕ—»°…ï≈’ïÕ–πÖ…ùÃπùï–†â…ïô…ïÕ†à§ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§Å•∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄàƒà∞Äâ—…’îà∞ÄâÂïÃà∞ÄâΩ’§à∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅÕ—Ö—îÄÙÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±‰à§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÅçÖπ}±ΩΩ≠’¡}âÂ}ïµÖ•∞ÄÙÅâΩΩ∞†(ÄÄÄÄÄÄÄÄÄÄÄÅ}çÖ±ïπë±Â}—Ω≠ï∏†§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—Ö—îπùï–†â’Õï»à§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—Ö—îπùï–†âΩ…ùÖπ•ÈÖ—•Ω∏à§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄåÅ1ÑÅô•ç°îÅÖôô•ç°îÅ•πÕ—Öπ—Öª•µïπ–Å±îÅçÖç°îÅ±ΩçÖ∞ÅÖ±•µïπ”§Å¡Ö»Å±ïÃ(ÄÄÄÄÄÄÄÄåÅ›ïâ°ΩΩ≠ÃΩÕÂπç°…Ωπ•ÕÖ—•ΩπÃ∏ÅUπîÅ…ïç°ï…ç°îÅÖ±ïπë±‰Åë•Õ—Öπ—îÄ°≈’§Å¡ï’–(ÄÄÄÄÄÄÄÄåÅ¡…ïπë…îÅ¡±’Õ•ï’…ÃÅÕïçΩπëïÃ§Å∏ùïÕ–ÅôÖ•—îÅ≈‘ùÖ¡À°ÃÅç±•åÅÕ’»Åç—’Ö±•Õï»∏(ÄÄÄÄÄÄÄÅ•òÅ…ïô…ïÕ°}…ï≈’ïÕ—ïêÅÖπêÅçÖπ}±ΩΩ≠’¡}âÂ}ïµÖ•∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôï—ç°ïë}¡ÖÂ±ΩÖëÃ∞Å±ΩΩ≠’¿ÄÙÅ}ç…µ}çÖ±ïπë±Â}ôï—ç°}çΩπ—Öç—}Ö¡¡Ω•π—µïπ—Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ΩΩ≠’¡}Õ’ççïïëïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ΩΩ≠’¡}›Ö…π•πúÄÙÅÕ—»°ï·å§((ÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅ±Ö—ïÕ—}çΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°±Ö—ïÕ—}ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å±Ö—ïÕ—}çΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÄÄÄÄÅôΩ»Åôï—ç°ïë}¡ÖÂ±ΩÖêÅ•∏Åôï—ç°ïë}¡ÖÂ±ΩÖëÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}’¡Õï…—}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôï—ç°ïë}¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâ—Ö…ùï—ïë}±ΩΩ≠’¿à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•êıçΩπ—Öç—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïçΩ…ë}Öç—•Ÿ•—‰ıÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}çÖ±ïπë±Â}…ï±•π≠}Ö¡¡Ω•π—µïπ—Ã°±Ö—ïÕ—}ëÖ—Ñ∞Å±Ö—ïÕ—}çΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}ÕÂπç}çΩπ—Öç—}çÖ±ïπë±Â}Õ—Ö—’Ã°±Ö—ïÕ—}ëÖ—Ñ∞Å±Ö—ïÕ—}çΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ±ΩΩ≠’¡}Õ’ççïïëïêË(ÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}çÖ±ïπë±‰à∞ÅÌÙ•lâ±ÖÕ—}ÕÂπç}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅç°ÖπùïêË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°±Ö—ïÕ—}ëÖ—Ñ§(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—ÃÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏Å±Ö—ïÕ—}ëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âçΩπ—Öç—}•êà§ÄÙÙÅçΩπ—Öç—}•ê(ÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—ÃπÕΩ…–°≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅ•—ï¥πùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà∞Å…ïŸï…ÕîıQ…’î§(ÄÄÄÄÄÄÄÅ•π—ïù…Ö—•Ω∏ÄÙÅ}ç…µ}çÖ±ïπë±Â}Õ—Ö—’Õ}¡ÖÂ±ΩÖê°±Ö—ïÕ—}ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ•òÅ±ΩΩ≠’¡}›Ö…π•πúË(ÄÄÄÄÄÄÄÄÄÄÄÅ•π—ïù…Ö—•Ωπlâ±ΩΩ≠’¡}›Ö…π•πúâtÄÙÅ±ΩΩ≠’¡}›Ö…π•πú(ÄÄÄÄÄÄÄÅ±ΩΩ≠’¡lâµÖ—ç°ïë}Ö¡¡Ω•π—µïπ—ÃâtÄÙÅ±ï∏°Ö¡¡Ω•π—µïπ—Ã§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ¡¡Ω•π—µïπ—ÃàËÅÖ¡¡Ω•π—µïπ—Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ•π—ïù…Ö—•Ω∏àËÅ•π—ïù…Ö—•Ω∏∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ±ΩΩ≠’¿àËÅ±ΩΩ≠’¿∞(ÄÄÄÄÄÄÄÅÙ§((ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅïŸïπ—}—Â¡ï}’…§ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âïŸïπ—}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅïŸïπ—}—Â¡ï}’’•êÄÙÅ}çÖ±ïπë±Â}…ïÕΩ’…çï}’’•ê°ïŸïπ—}—Â¡ï}’…§∞ÄâïŸïπ—}—Â¡ïÃà§(ÄÄÄÅÕ—Ö…—}—•µîÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ—•µïÈΩπîÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—•µïÈΩπîà§ÅΩ»Äâ’…Ω¡îΩAÖ…•Ãà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅïŸïπ—}—Â¡ï}’’•êÅΩ»ÅπΩ–ÅÕ—Ö…—}—•µîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ°Ω•Õ•ÕÕïËÅ’∏Å—Â¡îÅëîÅ…ïπëïËµŸΩ’ÃÅï–Å’∏Å°Ω…Ö•…î∏âÙ§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–Å}ç…µ}πΩ…µÖ±•Èï}ïµÖ•∞°çΩπ—Öç–πùï–†âµÖ•∞à§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ©Ω’—ïËÅ∞ùÖë…ïÕÕîÅîµµÖ•∞ÅëîÅ±ÑÅ¡ï…ÕΩππîÅÖŸÖπ–ÅëîÅ¡±Öπ•ô•ï»Å±îÅ…ïπëïËµŸΩ’Ã∏âÙ§∞Ä–¿¿(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ¡Ö…Õïë}Õ—Ö…–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–°Õ—Ö…—}—•µîπ…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§§(ÄÄÄÄÄÄÄÅ•òÅ¡Ö…Õïë}Õ—Ö…–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»(ÄÄÄÄÄÄÄÅ¡Â—Ëπ—•µïÈΩπî°—•µïÈΩπî§(ÄÄÄÅï·çï¡–Ä°YÖ±’ï……Ω»∞Å¡Â—ËπUπ≠πΩ›πQ•µïiΩπï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅçÀ•πïÖ‘ÅΩ‘Å±îÅô’ÕïÖ‘Å°Ω…Ö•…îÅë‘Å…ïπëïËµŸΩ’ÃÅïÕ–Å•πŸÖ±•ëî∏âÙ§∞Ä–¿¿((ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅïŸïπ—}—Â¡îÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ}çÖ±ïπë±Â}…ï≈’ïÕ–†âPà∞ÅòàΩïŸïπ—}—Â¡ïÃΩÌïŸïπ—}—Â¡ï}’’•ëÙà§πùï–†â…ïÕΩ’…çîà§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅïŸïπ—}—Â¡îπùï–†âÖç—•Ÿîà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâîÅ—Â¡îÅëîÅ…ïπëïËµŸΩ’ÃÅÖ±ïπë±‰Å∏ùïÕ–Å¡±’ÃÅÖç—•ò∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅçΩπ—Öç—}ôΩ…µÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å}çÖ±ïπë±Â}ïŸïπ—}—Â¡ï}µÖ—ç°ïÕ}ôΩ…µÖ—•Ω∏°ïŸïπ—}—Â¡î∞ÅçΩπ—Öç—}ôΩ…µÖ—•Ω∏§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅïŸïπ—}—Â¡ï}πÖµîÄÙÅïŸïπ—}—Â¡îπùï–†âπÖµîà§ÅΩ»ÄâIïπëïËµŸΩ’ÃÅÖ±ïπë±‰à(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ1îÅ—Â¡îÅÖ±ïπë±‰É
+¨ÅÌïŸïπ—}—Â¡ï}πÖµïÙÉ
+ÏÅπîÅçΩ……ïÕ¡ΩπêÅ¡ÖÃÉÄÅ±ÑÅôΩ…µÖ—•Ω∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâÌçΩπ—Öç—}ôΩ…µÖ—•ΩπÙ∏ÅIïç°Ö…ùïËÅ±ÑÅô•ç°îÅÖŸÖπ–ÅëîÅç°Ω•Õ•»Å’∏ÅπΩ’ŸïÖ‘ÅçÀ•πïÖ‘∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÄÄÄÄÅ•òÅïŸïπ—}—Â¡îπùï–†â•Õ}¡Ö•êà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâÖ±ïπë±‰Å•µ¡ΩÕîÅ’πîÅ¡ÖùîÅëîÅ¡Ö•ïµïπ–Å¡Ω’»ÅçîÅ—Â¡îÅëîÅ…ïπëïËµŸΩ’Ã∏ÅU—•±•ÕïËÅÕΩ∏Å±•ï∏ÅÖ±ïπë±‰∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕç°ïë’±•πù}’…∞àËÅïŸïπ—}—Â¡îπùï–†âÕç°ïë’±•πù}’…∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ•òÅïŸïπ—}—Â¡îπùï–†ââΩΩ≠•πù}µï—°Ωêà§ÄÙÙÄâ¡Ω±∞àË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâîÅ—Â¡îÅÖ±ïπë±‰ÅïÕ–Å’∏ÅÕΩπëÖùîÅëîÅëÖ—ïÃÅï–ÅπîÅ¡ï’–Å¡ÖÃÉ©—…îÅÀ•Õï…€§Åë•…ïç—ïµïπ–Å¡Ö»Å∞ùA$∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕç°ïë’±•πù}’…∞àËÅïŸïπ—}—Â¡îπùï–†âÕç°ïë’±•πù}’…∞à§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿((ÄÄÄÄÄÄÄÅâΩΩ≠•πù}±ΩçÖ—•Ω∏ÄÙÅ}çÖ±ïπë±Â}âΩΩ≠•πù}±ΩçÖ—•Ω∏†(ÄÄÄÄÄÄÄÄÄÄÄÅïŸïπ—}—Â¡î∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†â±ΩçÖ—•Ω∏à§∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÖπÕ›ï…Ã∞Å—ï·—}…ïµ•πëï…}π’µâï»ÄÙÅ}çÖ±ïπë±Â}≈’ïÕ—•Ωπ}ÖπÕ›ï…Ã†(ÄÄÄÄÄÄÄÄÄÄÄÅïŸïπ—}—Â¡î∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†âÖπÕ›ï…Ãà§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅô•…Õ—}πÖµîÄÙÅÕ—»°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ±ÖÕ—}πÖµîÄÙÅÕ—»°çΩπ—Öç–πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•πŸ•—ïîÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâπÖµîàËÄàÄàπ©Ω•∏†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…–ÅôΩ»Å¡Ö…–Å•∏Åmô•…Õ—}πÖµî∞Å±ÖÕ—}πÖµïtÅ•òÅ¡Ö…–(ÄÄÄÄÄÄÄÄÄÄÄÄ§πÕ—…•¿†§ÅΩ»ÅçΩπ—Öç–πùï–†âµÖ•∞à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâïµÖ•∞àËÅçΩπ—Öç–πùï–†âµÖ•∞à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—•µïÈΩπîàËÅ—•µïÈΩπî∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ•òÅô•…Õ—}πÖµîÅÖπêÅ±ÖÕ—}πÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅ•πŸ•—ïïlâô•…Õ—}πÖµîâtÄÙÅô•…Õ—}πÖµî(ÄÄÄÄÄÄÄÄÄÄÄÅ•πŸ•—ïïlâ±ÖÕ—}πÖµîâtÄÙÅ±ÖÕ—}πÖµî(ÄÄÄÄÄÄÄÅ•òÅ—ï·—}…ïµ•πëï…}π’µâï»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•πŸ•—ïïlâ—ï·—}…ïµ•πëï…}π’µâï»âtÄÙÅ—ï·—}…ïµ•πëï…}π’µâï»(ÄÄÄÄÄÄÄÅâΩΩ≠•πù}âΩë‰ÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâïŸïπ—}—Â¡îàËÅïŸïπ—}—Â¡îπùï–†â’…§à§ÅΩ»ÅïŸïπ—}—Â¡ï}’…§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö…—}—•µîàËÅÕ—Ö…—}—•µî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ•πŸ•—ïîàËÅ•πŸ•—ïî∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ•òÅâΩΩ≠•πù}±ΩçÖ—•Ω∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÅâΩΩ≠•πù}âΩëÂlâ±ΩçÖ—•Ω∏âtÄÙÅâΩΩ≠•πù}±ΩçÖ—•Ω∏(ÄÄÄÄÄÄÄÅ•òÅÖπÕ›ï…ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅâΩΩ≠•πù}âΩëÂlâ≈’ïÕ—•ΩπÕ}Öπë}ÖπÕ›ï…ÃâtÄÙÅÖπÕ›ï…Ã((ÄÄÄÄÄÄÄÅ•πŸ•—ïï}…ïÕΩ’…çîÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ}çÖ±ïπë±Â}…ï≈’ïÕ–†âA=MPà∞ÄàΩ•πŸ•—ïïÃà∞Å©ÕΩπ}âΩë‰ıâΩΩ≠•πù}âΩë‰§πùï–†â…ïÕΩ’…çîà§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅïŸïπ—}’…§ÄÙÅ•πŸ•—ïï}…ïÕΩ’…çîπùï–†âïŸïπ–à§ÅΩ»Äàà(ÄÄÄÄÄÄÄÅïŸïπ—}’’•êÄÙÅ}çÖ±ïπë±Â}…ïÕΩ’…çï}’’•ê°ïŸïπ—}’…§∞ÄâÕç°ïë’±ïë}ïŸïπ—Ãà§(ÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ïŸïπ–ÄÙÅÌÙ(ÄÄÄÄÄÄÄÅ•òÅïŸïπ—}’’•êË(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ïŸïπ–ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}çÖ±ïπë±Â}…ï≈’ïÕ–†âPà∞ÅòàΩÕç°ïë’±ïë}ïŸïπ—ÃΩÌïŸïπ—}’’•ëÙà§πùï–†â…ïÕΩ’…çîà§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ïŸïπ–ÄÙÅÌÙ(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÕç°ïë’±ïë}ïŸïπ–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…Õïë}Õ—Ö…–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–°Õ—Ö…—}—•µîπ…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπë}—•µîÄÙÅ¡Ö…Õïë}Õ—Ö…–Ä¨ÅëÖ—ï—•µîπ—•µïëï±—Ñ°µ•π’—ïÃı•π–°ïŸïπ—}—Â¡îπùï–†âë’…Ö—•Ω∏à§ÅΩ»Ä¿§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖ±ç’±Ö—ïë}ïπêÄÙÅïπë}—•µîπ•ÕΩôΩ…µÖ–†§π…ï¡±Öçî†à¨¿¿Ë¿¿à∞Äâhà§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçÖ±ç’±Ö—ïë}ïπêÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅÕç°ïë’±ïë}ïŸïπ–ÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ’…§àËÅïŸïπ—}’…§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπÖµîàËÅïŸïπ—}—Â¡îπùï–†âπÖµîà§ÅΩ»ÄâIïπëïËµŸΩ’ÃÅÖ±ïπë±‰à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÄâÖç—•Ÿîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö…—}—•µîàËÅÕ—Ö…—}—•µî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâïπë}—•µîàËÅçÖ±ç’±Ö—ïë}ïπê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâïŸïπ—}—Â¡îàËÅïŸïπ—}—Â¡ï}’…§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±ΩçÖ—•Ω∏àËÅâΩΩ≠•πù}±ΩçÖ—•Ω∏∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâïŸïπ—}µïµâï…Õ°•¡ÃàËÅmt∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}¡ÖÂ±ΩÖêÄÙÅÏ®©•πŸ•—ïï}…ïÕΩ’…çî∞ÄâÕç°ïë’±ïë}ïŸïπ–àËÅÕç°ïë’±ïë}ïŸïπ—Ù(ÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅ±Ö—ïÕ—}çΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°±Ö—ïÕ—}ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å±Ö—ïÕ—}çΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅ…ïπëïËµŸΩ’ÃÅÑÉ•”§ÅçÀß§ÅµÖ•ÃÅ±ÑÅ¡•Õ—îÅ∏ùï·•Õ—îÅ¡±’Ã∏âÙ§∞Ä–¿‰(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ–∞Å±Ö—ïÕ—}çΩπ—Öç–ÄÙÅ}ç…µ}’¡Õï…—}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ–†(ÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâç…¥à∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•êıçΩπ—Öç—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïçΩ…ë}Öç—•Ÿ•—‰ıQ…’î∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°±Ö—ïÕ—}ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâÖ¡¡Ω•π—µïπ–àËÅÖ¡¡Ω•π—µïπ–∞ÄâçΩπ—Öç–àËÅ±Ö—ïÕ—}çΩπ—Öç—Ù§∞Ä»¿ƒ(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}çÖ±ïπë±Â}…Ω’—ï}ï……Ω»°ï·å∞ÅÖç—•Ω∏Ùâ±ÑÅçÀ•Ö—•Ω∏Åë‘Å…ïπëïËµŸΩ’Ãà§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰ΩÕÂπåà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖ±ïπë±Â}ÕÂπå†§Ë(ÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÅ•òÅ’Õï»πùï–†â…Ω±îà§ÄÑÙÄâÖëµ•∏àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâMï’∞Å’∏ÅÖëµ•π•Õ—…Ö—ï’»Å¡ï’–Å±Öπçï»Å±ÑÅÕÂπç°…Ωπ•ÕÖ—•Ω∏ÅÖ±ïπë±‰∏âÙ§∞Ä–¿Ã(ÄÄÄÅâΩë‰ÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅÕ—Ö—îÄÙÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±‰à§ÅΩ»ÅÌÙ(ÄÄÄÅ•òÅπΩ–ÅÕ—Ö—îπùï–†â›ïâ°ΩΩ≠}’…§à§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâç—•ŸïËÅêùÖâΩ…êÅ±ÑÅÕÂπç°…Ωπ•ÕÖ—•Ω∏ÅÖ±ïπë±‰∏âÙ§∞Ä–¿‰(ÄÄÄÅç’…ÕΩ»ÄÙÅ9ΩπîÅ•òÅâΩë‰πùï–†â…ïÕ—Ö…–à§Åï±ÕîÅÕ—Ö—îπùï–†âÕÂπç}ç’…ÕΩ»à§(ÄÄÄÅ•òÅÕ—Ö—îπùï–†âÕÂπç}çΩµ¡±ï—îà§ÅÖπêÅπΩ–ÅâΩë‰πùï–†â…ïÕ—Ö…–à§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâçΩµ¡±ï—îàËÅQ…’î∞Äâ¡…ΩçïÕÕïë}ïŸïπ—ÃàËÄ¿∞ÄâÖ¡¡Ω•π—µïπ—ÃàËÄ¡Ù§((ÄÄÄÅâÖ—ç°}Õ•ÈîÄÙÅµÖ‡†ƒ∞Åµ•∏°•π–°ΩÃπùï—ïπÿ†â191e}Me9}	Q!}M%ià∞Äà»¿à§§∞Äƒ¿¿§§(ÄÄÄÅ¡Ö…ÖµÃÄÙÅÏâçΩ’π–àËÅâÖ—ç°}Õ•Èî∞ÄâÕΩ…–àËÄâÕ—Ö…—}—•µîÈëïÕåâÙ(ÄÄÄÅ•òÅÕ—Ö—îπùï–†âÕçΩ¡îà§ÄÙÙÄâ’Õï»àË(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâ’Õï»âtÄÙÅÕ—Ö—îπùï–†â’Õï»à§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâΩ…ùÖπ•ÈÖ—•Ω∏âtÄÙÅÕ—Ö—îπùï–†âΩ…ùÖπ•ÈÖ—•Ω∏à§(ÄÄÄÅ•òÅç’…ÕΩ»Ë(ÄÄÄÄÄÄÄÅ¡Ö…ÖµÕlâ¡Öùï}—Ω≠ï∏âtÄÙÅç’…ÕΩ»((ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅïŸïπ—}¡ÖùîÄÙÅ}çÖ±ïπë±Â}…ï≈’ïÕ–†âPà∞ÄàΩÕç°ïë’±ïë}ïŸïπ—Ãà∞Å¡Ö…ÖµÃı¡Ö…ÖµÃ∞Å—•µïΩ’–ÙÃ‘§(ÄÄÄÄÄÄÄÅ•µ¡Ω…—ïë}¡ÖÂ±ΩÖëÃÄÙÅmt(ÄÄÄÄÄÄÄÅôΩ»ÅÕç°ïë’±ïë}ïŸïπ–Å•∏ÅïŸïπ—}¡Öùîπùï–†âçΩ±±ïç—•Ω∏à§ÅΩ»ÅmtË(ÄÄÄÄÄÄÄÄÄÄÄÅïŸïπ—}’’•êÄÙÅ}çÖ±ïπë±Â}…ïÕΩ’…çï}’’•ê°Õç°ïë’±ïë}ïŸïπ–πùï–†â’…§à§∞ÄâÕç°ïë’±ïë}ïŸïπ—Ãà§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅïŸïπ—}’’•êË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅ•πŸ•—ïïÃÄÙÅ}çÖ±ïπë±Â}¡Öù•πÖ—ïë}çΩ±±ïç—•Ω∏†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòàΩÕç°ïë’±ïë}ïŸïπ—ÃΩÌïŸïπ—}’’•ëÙΩ•πŸ•—ïïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…ÖµÃıÏâçΩ’π–àËÄƒ¿¡Ù∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ·}¡ÖùïÃÙƒ¿¿∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•πŸ•—ïîÅ•∏Å•πŸ•—ïïÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•µ¡Ω…—ïë}¡ÖÂ±ΩÖëÃπÖ¡¡ïπê°Ï®©•πŸ•—ïî∞ÄâÕç°ïë’±ïë}ïŸïπ–àËÅÕç°ïë’±ïë}ïŸïπ—Ù§((ÄÄÄÄÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÄÄÄÄÅâïôΩ…ï}çΩ’π–ÄÙÅ±ï∏°±Ö—ïÕ—}ëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§§(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïêÄÙÄ¿(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•µ¡Ω…—ïë}¡ÖÂ±ΩÖêÅ•∏Å•µ¡Ω…—ïë}¡ÖÂ±ΩÖëÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ|∞ÅçΩπ—Öç–ÄÙÅ}ç…µ}’¡Õï…—}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—}ëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•µ¡Ω…—ïë}¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâÕÂπåà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ïçΩ…ë}Öç—•Ÿ•—‰ıÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµÖ—ç°ïêÄ¨ÙÄƒ(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï¡Ö•…ïêÄÙÅ}ç…µ}…ï¡Ö•…}çÖç°ïë}çÖ±ïπë±Â}çΩπ—Öç—Ã°±Ö—ïÕ—}ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅπï·—}ç’…ÕΩ»ÄÙÄ°ïŸïπ—}¡Öùîπùï–†â¡Öù•πÖ—•Ω∏à§ÅΩ»ÅÌÙ§πùï–†âπï·—}¡Öùï}—Ω≠ï∏à§(ÄÄÄÄÄÄÄÄÄÄÄÅ•π—ïù…Ö—•Ωπ}Õ—Ö—îÄÙÅ±Ö—ïÕ—}ëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}çÖ±ïπë±‰à∞ÅÌÙ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•π—ïù…Ö—•Ωπ}Õ—Ö—ïlâÕÂπç}ç’…ÕΩ»âtÄÙÅπï·—}ç’…ÕΩ»(ÄÄÄÄÄÄÄÄÄÄÄÅ•π—ïù…Ö—•Ωπ}Õ—Ö—ïlâÕÂπç}çΩµ¡±ï—îâtÄÙÅπΩ–ÅâΩΩ∞°πï·—}ç’…ÕΩ»§(ÄÄÄÄÄÄÄÄÄÄÄÅ•π—ïù…Ö—•Ωπ}Õ—Ö—ïlâ±ÖÕ—}ÕÂπç}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Åπï·—}ç’…ÕΩ»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•π—ïù…Ö—•Ωπ}Õ—Ö—ïlâ±ÖÕ—}ô’±±}ÕÂπç}Ö–âtÄÙÅ•π—ïù…Ö—•Ωπ}Õ—Ö—ïlâ±ÖÕ—}ÕÂπç}Ö–ât(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°±Ö—ïÕ—}ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅÖô—ï…}çΩ’π–ÄÙÅ±ï∏°±Ö—ïÕ—}ëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµ¡±ï—îàËÅπΩ–ÅâΩΩ∞°πï·—}ç’…ÕΩ»§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïë}ïŸïπ—ÃàËÅ±ï∏°ïŸïπ—}¡Öùîπùï–†âçΩ±±ïç—•Ω∏à§ÅΩ»Åmt§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ¡¡Ω•π—µïπ—ÃàËÅ±ï∏°•µ¡Ω…—ïë}¡ÖÂ±ΩÖëÃ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπï›}Ö¡¡Ω•π—µïπ—ÃàËÅÖô—ï…}çΩ’π–Ä¥ÅâïôΩ…ï}çΩ’π–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµÖ—ç°ïêàËÅµÖ—ç°ïê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ï¡Ö•…ïë}Ö¡¡Ω•π—µïπ—ÃàËÅ…ï¡Ö•…ïê∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅï·çï¡–Ä°Ö±ïπë±ÂA%……Ω»∞ÅI’π—•µï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}çÖ±ïπë±Â}…Ω’—ï}ï……Ω»°ï·å§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçÖ±ïπë±‰Ω›ïâ°ΩΩ¨à∞Åµï—°ΩëÃılâA=MPât§)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}çÖ±ïπë±Â}›ïâ°ΩΩ¨†§Ë(ÄÄÄÅ…Ö›}âΩë‰ÄÙÅ…ï≈’ïÕ–πùï—}ëÖ—Ñ°çÖç°îıQ…’î§(ÄÄÄÅÕ•ùπÖ—’…îÄÙÅ…ï≈’ïÕ–π°ïÖëï…Ãπùï–†âÖ±ïπë±‰µ]ïâ°ΩΩ¨µM•ùπÖ—’…îà∞Äàà§(ÄÄÄÅ•òÅπΩ–Å}çÖ±ïπë±Â}Õ•ùπÖ—’…ï}•Õ}ŸÖ±•ê°…Ö›}âΩë‰∞ÅÕ•ùπÖ—’…î§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâM•ùπÖ—’…îÅÖ±ïπë±‰Å•πŸÖ±•ëî∏âÙ§∞Ä–¿ƒ(ÄÄÄÅ›ïâ°ΩΩ¨ÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅïŸïπ—}πÖµîÄÙÅÕ—»°›ïâ°ΩΩ¨πùï–†âïŸïπ–à§ÅΩ»Äàà§(ÄÄÄÅ•òÅïŸïπ—}πÖµîÅπΩ–Å•∏Å191e}]	!==-}Y9QLË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅQ…’î∞Äâ•ùπΩ…ïêàËÅQ…’ïÙ§(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ›ïâ°ΩΩ¨πùï–†â¡ÖÂ±ΩÖêà§ÅΩ»ÅÌÙ(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§ÅΩ»ÅπΩ–Å¡ÖÂ±ΩÖêπùï–†â’…§à§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâAÖÂ±ΩÖêÅÖ±ïπë±‰Å•πŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅÖ¡¡Ω•π—µïπ–∞ÅçΩπ—Öç–ÄÙÅ}ç…µ}’¡Õï…—}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ–†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÅ›ïâ°ΩΩ≠}ïŸïπ–ıïŸïπ—}πÖµî∞(ÄÄÄÄÄÄÄÅÕΩ’…çîÙâ›ïâ°ΩΩ¨à∞(ÄÄÄÄÄÄÄÅ…ïçΩ…ë}Öç—•Ÿ•—‰ıQ…’î∞(ÄÄÄÄ§(ÄÄÄÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}çÖ±ïπë±‰à∞ÅÌÙ•lâ±ÖÕ—}ÕÂπç}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâΩ¨àËÅQ…’î∞(ÄÄÄÄÄÄÄÄâÖ¡¡Ω•π—µïπ—}•êàËÅÖ¡¡Ω•π—µïπ–πùï–†â•êà§∞(ÄÄÄÄÄÄÄÄâçΩπ—Öç—}•êàËÅçΩπ—Öç–πùï–†â•êà§Å•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî∞(ÄÄÄÅÙ§(()I5}U1Q}M1}AI%LÄÙÅÏ(ÄÄÄÄâALàËÄƒÿ‘¿∞(ÄÄÄÄâÕ@àËÄ–»¿¿∞(ÄÄÄÄâMM%@ÄƒàËÄƒ»Ã¿∞(ÄÄÄÄâ!UUHÅYQàËÄƒ‘¿¿∞(ÄÄÄÄâMA}%9%Q%0àËÄ–Ã¿¿∞(ÄÄÄÄâMA}YàËÄÃ‡¿¿∞)Ù(()ëïòÅ}ç…µ}ëïôÖ’±—}ÕÖ±ï}¡…•çî°çΩπ—Öç–§Ë(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÅ•òÅôΩ…µÖ—•Ω∏Å•∏ÅÏâYà∞ÄâYÅM@à∞ÄâM@ÅYâÙË(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÄâMA}Yà(ÄÄÄÅï±•òÅôΩ…µÖ—•Ω∏ÄÙÙÄâM@àË(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅòâMA}ÌÕ—»°çΩπ—Öç–πùï–†ùëïÕ¡}—Â¡îú§ÅΩ»Äù%9%Q%0ú§πÕ—…•¿†§π’¡¡ï»†•Ùà(ÄÄÄÅï±•òÅôΩ…µÖ—•Ω∏ÄÙÙÄâYQàË(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÄâ!UUHÅYQà(ÄÄÄÅï±•òÅôΩ…µÖ—•Ω∏πÕ—Ö…—Õ›•—††âMM%@à§Ë(ÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÄâMM%@Äƒà(ÄÄÄÅ…ï—’…∏ÅI5}U1Q}M1}AI%Lπùï–°ôΩ…µÖ—•Ω∏∞Äàà§(()ëïòÅ}ç…µ}›Ω…≠Õ¡Öçï}âÖç≠ô•±∞°çΩπ—Öç–§Ë(ÄÄÄÄààâ©Ω’—îÅ±ïÃÅç°Öµ¡ÃÅë‘Å¡ΩÕ—îÅëîÅ—…ÖŸÖ•∞ÅÕÖπÃÅÖ±”•…ï»Å±ïÃÅëΩπª•ïÃÅï·•Õ—Öπ—ïÃ∏ààà(ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅëïôÖ’±—}ÕÖ±ï}¡…•çîÄÙÅ}ç…µ}ëïôÖ’±—}ÕÖ±ï}¡…•çî°çΩπ—Öç–§(ÄÄÄÅëïôÖ’±—ÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâçΩµµï…ç•Ö∞àËÄàà∞(ÄÄÄÄÄÄÄÄâ—ÖùÃàËÄàà∞(ÄÄÄÄÄÄÄÄâ¡…•·}Ÿïπ—îàËÅëïôÖ’±—}ÕÖ±ï}¡…•çî∞(ÄÄÄÄÄÄÄÄâçΩ’—}ïÕ—•µîàËÄàà∞(ÄÄÄÄÄÄÄÄâë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏àËÄàà∞(ÄÄÄÄÄÄÄÄâë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞àËÄàà∞(ÄÄÄÄÄÄÄÄâ…ïÖç—•ŸÖ—•Ωπ}ëÖ—îàËÄàà∞(ÄÄÄÄÄÄÄÄâÖ…ç°•Ÿïë}Ö–àËÄàà∞(ÄÄÄÄÄÄÄÄâçΩπŸï…—ïë}Ö–àËÄàà∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’Õ}ç°Öπùïë}Ö–àËÅçΩπ—Öç–πùï–†â’¡ëÖ—ïë}Ö–à§ÅΩ»ÅçΩπ—Öç–πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Äàà∞(ÄÄÄÅÙ(ÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏ÅëïôÖ’±—Ãπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅ•òÅ≠ï‰ÅπΩ–Å•∏ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—m≠ïÂtÄÙÅŸÖ±’î(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅç’……ïπ—}ÕÖ±ï}¡…•çîÄÙÅÕ—»°çΩπ—Öç–πùï–†â¡…•·}Ÿïπ—îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ±ïùÖçÂ}ëïôÖ’±—}¡…•çîÄÙÄ†(ÄÄÄÄÄÄÄÄ°ëïôÖ’±—}ÕÖ±ï}¡…•çîÄÙÙÅI5}U1Q}M1}AI%MlâMM%@Äƒât(ÄÄÄÄÄÄÄÄÅÖπêÅç’……ïπ—}ÕÖ±ï}¡…•çîÅ•∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄà‰‡¿à∞Äà‰‡¿∏¿à∞Äà‰‡¿∏¿¿à∞Äàƒ»¿¿à∞Äàƒ»¿¿∏¿à∞Äàƒ»¿¿∏¿¿à∞(ÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅΩ»Ä°ëïôÖ’±—}ÕÖ±ï}¡…•çîÄÙÙÅI5}U1Q}M1}AI%Mlâ!UUHÅYQât(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅç’……ïπ—}ÕÖ±ï}¡…•çîÅ•∏ÅÏàƒÿ¿¿à∞Äàƒÿ¿¿∏¿à∞Äàƒÿ¿¿∏¿¿âÙ§(ÄÄÄÄ§(ÄÄÄÅ•òÅëïôÖ’±—}ÕÖ±ï}¡…•çîÅÖπêÄ°πΩ–Åç’……ïπ—}ÕÖ±ï}¡…•çîÅΩ»Å±ïùÖçÂ}ëïôÖ’±—}¡…•çî§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ¡…•·}Ÿïπ—îâtÄÙÅëïôÖ’±—}ÕÖ±ï}¡…•çî(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÙÙÄâΩπŸï…—§àÅÖπêÅπΩ–ÅçΩπ—Öç–πùï–†âçΩπŸï…—ïë}Ö–à§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâçΩπŸï…—ïë}Ö–âtÄÙÅçΩπ—Öç–πùï–†â’¡ëÖ—ïë}Ö–à§ÅΩ»ÅçΩπ—Öç–πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Å}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âΩ…•ù•πîà§ÅΩ»ÅçΩπ—Öç–πùï–†âÕΩ’…çîà§∞(ÄÄÄÄÄÄÄÅÕΩ’…çîıçΩπ—Öç–πùï–†âÕΩ’…çîà∞Äàà§∞(ÄÄÄÄÄÄÄÅçΩπ—ï·–ıçΩπ—Öç–πùï–†âµï—Ö}ÕΩ’…çîà§∞(ÄÄÄÄÄÄÄÅëÖ—îıçΩπ—Öç–πùï–†âç…ïÖ—ïë}Ö–à§∞(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()ëïòÅ}ç…µ}¡…ï¡Ö…ï}çΩπ—Öç—Ã°ëÖ—Ñ§Ë(ÄÄÄÄààâ¡¡±•≈’îÅ±ïÃÅµ•ù…Ö—•ΩπÃÅ≥•ü°…ïÃÅï–Å±ïÃÅÕ—Ö—’—ÃÅ]=Åï∏Å’∏ÅÕï’∞Å¡ÖÕÕÖùî∏ààà(ÄÄÄÅç°ÖπùïêÄÙÅ}ç…µ}âÖç≠ô•±±}µï—Ö}Õ’âµ•ÕÕ•ΩπÃ°ëÖ—Ñ§(ÄÄÄÅÕ—Ö—’ÕïÃÄÙÅ}ç…µ}Õ—Ö—’ÕïÃ°ëÖ—Ñ§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃÄÙÅ}›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÕ}âÂ}çΩπ—Öç–°ëÖ—Ñ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄåÅ1îÅI4ÅëΩ•–Å…ïÕ—ï»Åë•Õ¡Ωπ•â±îÅ∑©µîÅÕ§ÅÕΩ∏ÅçÖç°îÅ]=ÅïÕ–ÅµΩµïπ—Öª•µïπ–(ÄÄÄÄÄÄÄÄåÅŸï……Ω’•±≥§ÅΩ‘Å•±±•Õ•â±î∏Å1ïÃÅëï…πß°…ïÃÅŸÖ±ï’…ÃÅ¡ï…Õ•Õ”•ïÃÅÕΩπ–ÅçΩπÕï…€•ïÃ∏(ÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄâMÂπç°…Ωπ•ÕÖ—•Ω∏ÅëïÃÅÕ—Ö—’—ÃÅ]=Å•ùπΩÀ•îÄ†ïÃ§à∞Å—Â¡î°ï·å§π}}πÖµï}|∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃÄÙÅÌÙ((ÄÄÄÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…Â}±Öâï±ÃÄÙÅÕï–°I5}Q}M=9Ie}	e}MQQULπŸÖ±’ïÃ†§§(ÄÄÄÄåÅÖç†ÅçΩπ—Öç–ÅπïïëÃÅΩπ±‰Å•—ÃÅΩ›∏ÅÖ¡¡Ω•π—µïπ—Ã∏ÅMçÖππ•πúÅ—°îÅô’±∞ÅÖùïπëÑ(ÄÄÄÄåÅ¡ï»ÅçΩπ—Öç–ÅµÖëîÅïŸï…‰ÅçÖç°îÅ…ïâ’•±êÅù…Ω‹ÅÖÃÅçΩπ—Öç—ÃÄ®ÅÖ¡¡Ω•π—µïπ—Ã∏(ÄÄÄÅÖ¡¡Ω•π—µïπ—Õ}âÂ}çΩπ—Öç–ÄÙÅÌÙ(ÄÄÄÅôΩ»ÅÖ¡¡Ω•π—µïπ–Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—Õ}âÂ}çΩπ—Öç–πÕï—ëïôÖ’±–†(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§∞Åmt∞(ÄÄÄÄÄÄÄÄ§πÖ¡¡ïπê°Ö¡¡Ω•π—µïπ–§((ÄÄÄÅôΩ»Åï·•Õ—•πúÅ•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}ç±ïÖ…}•πçΩπÕ•Õ—ïπ—}—•—…ï}Õï©Ω’…}çπÖ¡Ã°ï·•Õ—•πú§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}µ•ù…Ö—ï}…ïù•Õ—…Ö—•Ωπ}Ö¡¡Ω•π—µïπ—}Õ—Ö—’Ã°ï·•Õ—•πú§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}âÖç≠ô•±±}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}Ö——…•â’—•Ω∏°ï·•Õ—•πú§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}›Ω…≠Õ¡Öçï}âÖç≠ô•±∞°ï·•Õ—•πú§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}ïπôΩ…çï}µï—Ö}ëïôÖ’±—Ã°ï·•Õ—•πú§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅï·•Õ—•πúπùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§ÄÙÙÄâMïÕÕ•Ω∏ÅPàË(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùlâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÄâ5Ö…ç£§ÅPà(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÄÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°ï·•Õ—•πúπùï–†â•êà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÅ±•Ÿï}ô’πë•πù}Õ—Ö—’ÃÄÙÅ›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃπùï–°çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÄ°çΩπ—Öç—}•êÅ•∏Å›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅï·•Õ—•πúπùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÑÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅï·•Õ—•πúπùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§ÄÑÙÅ±•Ÿï}ô’πë•πù}Õ—Ö—’Ã§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùlâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–âtÄÙÅ±•Ÿï}ô’πë•πù}Õ—Ö—’Ã(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÄÄÄÄÅô’πë•πù}Õ—Ö—’ÃÄÙÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πúπùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…‰ÄÙÅI5}Q}M=9Ie}	e}MQQULπùï–°ô’πë•πù}Õ—Ö—’Ã§(ÄÄÄÄÄÄÄÅÕïçΩπëÖ…Â}•Õ}µÖπ’Ö∞ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πúπùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…ï}ÕΩ’…çîà§ÄÙÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÕïçΩπëÖ…Â}•Õ}µÖπ’Ö∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÄ°Ö’—ΩµÖ—•ç}ÕïçΩπëÖ…‰(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅï·•Õ—•πúπùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§ÄÑÙÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…‰§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùlâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…‰(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÅï±•òÄ°πΩ–ÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…‰(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅï·•Õ—•πúπùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§Å•∏ÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…Â}±Öâï±Ã§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùlâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÄâÕ—Ö—’—}ÕïçΩπëÖ•…îàÅπΩ–Å•∏Åï·•Õ—•πúË(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùlâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÄÄÄÄÅ•òÅï·•Õ—•πúπùï–†âÕ—Ö—’–à§ÅπΩ–Å•∏ÅÕ—Ö—’ÕïÃË(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùlâÕ—Ö—’–âtÄÙÅÕ—Ö—’ÕïÕl¡t(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}âÖç≠ô•±±}•πôΩ…µÖ—•Ωπ}…ï≈’ïÕ—}ÖπÕ›ï…Ã°ï·•Õ—•πú§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°ï·•Õ—•πú§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}ÕÂπç}çΩπ—Öç—}çÖ±ïπë±Â}Õ—Ö—’Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞Åï·•Õ—•πú∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—ÃıÖ¡¡Ω•π—µïπ—Õ}âÂ}çΩπ—Öç–πùï–°ï·•Õ—•πúπùï–†â•êà§∞Ä†§§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ¡…ïπΩ¥ÄÙÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°ï·•Õ—•πúπùï–†â¡…ïπΩ¥à§§(ÄÄÄÄÄÄÄÅπΩ¥ÄÙÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°ï·•Õ—•πúπùï–†âπΩ¥à§§(ÄÄÄÄÄÄÄÅ•òÄ°¡…ïπΩ¥∞ÅπΩ¥§ÄÑÙÄ°ï·•Õ—•πúπùï–†â¡…ïπΩ¥à∞Äàà§∞Åï·•Õ—•πúπùï–†âπΩ¥à∞Äàà§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅï·•Õ—•πùlâ¡…ïπΩ¥ât∞Åï·•Õ—•πùlâπΩ¥âtÄÙÅ¡…ïπΩ¥∞ÅπΩ¥(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅ…ï—’…∏Åç°Öπùïê∞Å›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃ(()ëïòÅ}ç…µ}ç±ïÖ…}•πçΩπÕ•Õ—ïπ—}—•—…ï}Õï©Ω’…}çπÖ¡Ã°çΩπ—Öç–§Ë(ÄÄÄÄààâIïµΩŸîÅÑÅ…ïÕ•ëïπçîµ¡ï…µ•–ÅÖÕÕïÕÕµïπ–Åô…Ω¥ÅπΩ∏µ°Ω±ëï…ÃÅΩπ±‰∏ààà(ÄÄÄÅ•òÅ}ÂïÃ°çΩπ—Öç–πùï–†â—•—…ï}Õï©Ω’»à§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ•òÅπΩ–ÅÕ—»°çΩπ—Öç–πùï–†â—•—…ï}Õï©Ω’…}çπÖ¡Ãà§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅçΩπ—Öç—lâ—•—…ï}Õï©Ω’…}çπÖ¡ÃâtÄÙÄàà(ÄÄÄÅ…ï—’…∏ÅQ…’î(()}I5}I}5=1}1=,ÄÙÅ—°…ïÖë•πúπI1Ωç¨†§)}I5}I}5=1}-dÄÙÅ9Ωπî)}I5}I}5=1}Y1UÄÙÅ9Ωπî(()ëïòÅ}ç…µ}…ïÖë}µΩëï±}≠ï‰†§Ë(ÄÄÄÅ›ïëΩô}Õ•ùπÖ—’…îÄÙÄ†(ÄÄÄÄÄÄÄÅ}›ïëΩô}ëâ}Õ•ùπÖ—’…î†§Å•òÅΩÃπ¡Ö—†πï·•Õ—Ã°}›ïëΩô}ëâ}¡Ö—††§§Åï±ÕîÅ9Ωπî(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å}ëÖ—Ö}ô•±ï}Õ•ùπÖ—’…î†§∞Å›ïëΩô}Õ•ùπÖ—’…î(()ëïòÅ}ç…µ}¡…ï¡Ö…ïë}…ïÖë}µΩëï∞†§Ë(ÄÄÄÄààâIï’ÕîÅΩπîÅ¡…ï¡Ö…ïêÅI4ÅµΩëï∞ÅÖç…ΩÕÃÅâΩΩ—Õ—…Ö¿∞Åëï—Ö•∞ÅÖπêÅ¡Ω±±•πúÅ…ïÖëÃ∏ààà(ÄÄÄÅù±ΩâÖ∞Å}I5}I}5=1}-d∞Å}I5}I}5=1}Y1U(ÄÄÄÅ›•—†Å}I5}I}5=1}1=,Ë(ÄÄÄÄÄÄÄÄåÅπΩ—°ï»Å…ïÖëï»ÅµÖ‰Å°ÖŸîÅ…ïâ’•±–Å—°îÅçÖç°îÅ›°•±îÅ—°•ÃÅ…ï≈’ïÕ–Å›Ö•—ïê∏(ÄÄÄÄÄÄÄÄåÅΩµ¡Ö…îÅ—°îÅç’……ïπ–Å…ïŸ•Õ•Ω∏ÅΩπ±‰ÅÖô—ï»ÅÖç≈’•…•πúÅ—°îÅÕ°Ö…ïêÅ±Ωç¨∏(ÄÄÄÄÄÄÄÅ≠ï‰ÄÙÅ}ç…µ}…ïÖë}µΩëï±}≠ï‰†§(ÄÄÄÄÄÄÄÅ•òÅ}I5}I}5=1}Y1UÅ•ÃÅπΩ–Å9ΩπîÅÖπêÅ}I5}I}5=1}-dÄÙÙÅ≠ï‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å}I5}I}5=1}Y1U((ÄÄÄÄÄÄÄÅôΩ»ÅÖ——ïµ¡–Å•∏Å…Öπùî†»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}¡…ï¡Ö…ï}çΩπ—Öç—Ã°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}âÖç≠ô•±±}çÖ±±âÖç≠}…ï≈’ïÕ—Ã°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅô•πÖ±}≠ï‰ÄÙÅ}ç…µ}…ïÖë}µΩëï±}≠ï‰†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅô•πÖ±}≠ï‰ÄÙÙÅ≠ï‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}I5}I}5=1}-dÄÙÅ≠ï‰(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}I5}I}5=1}Y1UÄÙÅëÖ—Ñ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅëÖ—Ñ(ÄÄÄÄÄÄÄÄÄÄÄÄåÅÅçΩπç’……ïπ–Å›…•—îÅ±Öπëïê∏ÅIï—…‰ÅΩπçî∞Å≠ïï¡•πúÅ—°îÅ…ïŸ•Õ•Ω∏Åô…Ω¥(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ	=IÅ—°îÅ±ΩÖêÅÕºÅÖ∏ÅΩ±ëï»ÅÕπÖ¡Õ°Ω–ÅçÖππΩ–Åç±Ö•¥ÅÑÅπï›ï»Å≠ï‰∏(ÄÄÄÄÄÄÄÄÄÄÄÅ≠ï‰ÄÙÅô•πÖ±}≠ï‰(ÄÄÄÄÄÄÄÄåÅUπëï»ÅçΩπ—•π’Ω’ÃÅ›…•—ïÃ∞ÅÕï…ŸîÅ—°•ÃÅâΩ’πëïêÅÖ——ïµ¡–Åâ’–Å±ï–Å—°îÅπï·–(ÄÄÄÄÄÄÄÄåÅ…ïÖëï»Å…ïâ’•±ê∏Å9ïŸï»ÅçÖç°îÅΩ±êÅçΩπ—ïπ–Å’πëï»Å—°îÅ±Ö—ïÕ–Å…ïŸ•Õ•Ω∏∏(ÄÄÄÄÄÄÄÅ}I5}I}5=1}-dÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÅ}I5}I}5=1}Y1UÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅëÖ—Ñ(()ëïòÅ}ç…µ}¡ï…Õ•Õ—}¡…ï¡Ö…ïë}çΩπ—Öç—}•ô}•ë±î°¡…ï¡Ö…ïë}çΩπ—Öç–§Ë(ÄÄÄÄààâAï…Õ•Õ–ÅÑÅΩπîµ—•µîÅ±ïùÖç‰Åµ•ù…Ö—•Ω∏Å›•—°Ω’–ÅïŸï»Å›Ö•—•πúÅâï°•πêÅ]=∏ààà(ÄÄÄÅÖç≈’•…ïêÄÙÅ}I5}I=9%1%Q%=9}1=,πÖç≈’•…î°â±Ωç≠•πúıÖ±Õî§(ÄÄÄÅ•òÅπΩ–ÅÖç≈’•…ïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅµΩëï±}≠ï‰ÄÙÅ}I5}I}5=1}-d(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅµΩëï±}≠ï‰ÅΩ»ÅµΩëï±}≠ïÂl¡tÄÑÙÅ}ëÖ—Ö}ô•±ï}Õ•ùπÖ—’…î†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅÕ—Ω…ïêÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Å¡…ï¡Ö…ïë}çΩπ—Öç–πùï–†â•êà§§(ÄÄÄÄÄÄÄÅ•òÅÕ—Ω…ïêÅ•ÃÅ9ΩπîÅΩ»ÅÕ—Ω…ïêÄÙÙÅ¡…ï¡Ö…ïë}çΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÄÄÄÄÅ•πëï‡ÄÙÅëÖ—Ölâç…µ}çΩπ—Öç—Ãâtπ•πëï‡°Õ—Ω…ïê§(ÄÄÄÄÄÄÄÅëÖ—Ölâç…µ}çΩπ—Öç—Ãâum•πëï·tÄÙÅçΩ¡‰πëïï¡çΩ¡‰°¡…ï¡Ö…ïë}çΩπ—Öç–§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅQ…’î(ÄÄÄÅô•πÖ±±‰Ë(ÄÄÄÄÄÄÄÅ}I5}I=9%1%Q%=9}1=,π…ï±ïÖÕî†§(()I5}=9QQ}MU55Ie}%1LÄÙÄ†(ÄÄÄÄâ•êà∞Äâ¡…ïπΩ¥à∞ÄâπΩ¥à∞Äâ—ï±ï¡°Ωπîà∞ÄâµÖ•∞à∞ÄâôΩ…µÖ—•Ω∏à∞Äâ±•ï‘à∞(ÄÄÄÄâÕ—Ö—’–à∞ÄâÕ—Ö—’—}ÕïçΩπëÖ•…îà∞ÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à∞(ÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà∞ÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏à∞Äâç¡òà∞(ÄÄÄÄâç¡ô}µΩπ—Öπ–à∞Äâç¡ô}¡Ö±•ï»à∞Äâô•πÖπçïµïπ—}ô–à∞ÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–à∞(ÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îà∞Äâ…ïô’Õ}ô—}¡ï…Õºà∞Äâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…Õºà∞(ÄÄÄÄâ•ëïπ—•—ï}ç…ïÖ—•Ω∏à∞Äâ•ëïπ—•—ï}Ω¨à∞Äâ•πÕç…•—}ô–à∞ÄâëïÕ¡}—Â¡îà∞(ÄÄÄÄâçÖ…—ï}¡…ºà∞Äâ—•—…ï}Õï©Ω’»à∞Äâ—•—…ï}Õï©Ω’…}çπÖ¡Ãà∞ÄâùÖ…ëï}Ÿ’îà∞(ÄÄÄÄâÖπ—ïçïëïπ—Ãà∞ÄâçΩµ¡—ï}çπÖ¡Ãà∞ÄâçπÖ¡Õ}π’àà∞Äâ•π—ïù…Ö—•Ωπ}ë…ÖçÖ»à∞(ÄÄÄÄâΩ…•ù•πîà∞ÄâÕΩ’…çîà∞ÄâÕΩ’…çï}ëï—Ö•∞à∞ÄâÕΩ’…çï}°•Õ—Ω…‰à∞ÄâçΩµµï…ç•Ö∞à∞Äâ—ÖùÃà∞(ÄÄÄÄâ¡…•·}Ÿïπ—îà∞ÄâçΩ’—}ïÕ—•µîà∞Äâ…ï±Öπçï}ëÖ—îà∞Äâ¡…Ωç°Ö•πï}Öç—•Ωπ}µÖπ’ï±±îà∞(ÄÄÄÄâÖ…ç°•Ÿïë}Ö–à∞(ÄÄÄÄâçΩπŸï…—ïë}Ö–à∞ÄâÕ—Ö—’Õ}ç°Öπùïë}Ö–à∞Äâë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏à∞(ÄÄÄÄâë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞à∞Äâ…ïÖç—•ŸÖ—•Ωπ}ëÖ—îà∞Äâç…ïÖ—ïë}Ö–à∞(ÄÄÄÄâ…ïçï•Ÿïë}Ö–à∞Äâ’¡ëÖ—ïë}Ö–à∞ÄâçΩµµïπ—Ö•…ïÃà∞Äâ›ïëΩô}Õ—Ö—’Ãà∞(ÄÄÄÄâ≈’Ö±•ô•çÖ—•Ωπ}ô±Öúà∞(§)I5}=9QQ}Q%Y%Qe}-%9LÄÙÅÏâÖ¡¡ï∞à∞ÄâïµÖ•∞à∞ÄâÕµÃà∞ÄâëïµÖπëï}…Ö¡¡ï∞âÙ)I5}Q%Y%Qe}MQ%=9LÄÙÅÏâπΩ—•ô•çÖ—•ΩπÃà∞Äâô•∞µÖç—‘âÙ)I5}=U9Q}I19}MQQUMLÄÙÅÏâÕç°ïë’±ïêà∞ÄâÖπÕ›ï…ïêà∞ÄâπΩ}ÖπÕ›ï»âÙ)I5}911}AA=%9Q59Q}MQQUMLÄÙÅÏâçÖπçï±ïêà∞ÄâçÖπçï±±ïêâÙ(()ëïòÅ}ç…µ}Ö¡¡Ω•π—µïπ—}çΩ’π—Õ}âÂ}çΩπ—Öç–°ëÖ—Ñ§Ë(ÄÄÄÄààâ%πëï·îÅ±ïÃÅ…ïπëïËµŸΩ’ÃÅ¡ÖÕœ•ÃÅΩ‘ÉÄÅŸïπ•»ÅÕÖπÃÅçΩµ¡—ï»Å±ïÃÅÖππ’±Ö—•ΩπÃ∏ààà(ÄÄÄÅçΩ’π—ÃÄÙÅÌÙ(ÄÄÄÅôΩ»ÅÖ¡¡Ω•π—µïπ–Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°Ö¡¡Ω•π—µïπ–∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅÕ—Ö—’ÃÄÙÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÖç—•Ÿîà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÄÄÄÄÅ•òÄ°πΩ–ÅçΩπ—Öç—}•êÅΩ»ÅπΩ–ÅÖ¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅÕ—Ö—’ÃÅ•∏ÅI5}911}AA=%9Q59Q}MQQUML§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅçΩ’π—ÕmçΩπ—Öç—}•ëtÄÙÅçΩ’π—Ãπùï–°çΩπ—Öç—}•ê∞Ä¿§Ä¨Äƒ(ÄÄÄÅ…ï—’…∏ÅçΩ’π—Ã(()ëïòÅ}ç…µ}çΩπ—Öç—}Öç—•Ÿ•—Â}çΩ’π—Ã°çΩπ—Öç–∞ÅÖ¡¡Ω•π—µïπ—}çΩ’π–Ù¿§Ë(ÄÄÄÄààâIï—Ω’…πîÅ±ïÃÅçΩµ¡—ï’…ÃÅ≥•ùï…ÃÅÖôô•ç£•ÃÅëÖπÃÅ±ÑÅ±•Õ—îÅëïÃÅçΩπ—Öç—Ã∏ààà(ÄÄÄÅç°Öππï±}çΩ’π—ÃÄÙÅÏâïµÖ•∞àËÄ¿∞ÄâÕµÃàËÄ¡Ù(ÄÄÄÅôΩ»ÅÖç—•Ÿ•—‰Å•∏ÅçΩπ—Öç–πùï–†âÖç—•Ÿ•—•ïÃà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°Öç—•Ÿ•—‰∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ≠•πêÄÙÅÕ—»°Öç—•Ÿ•—‰πùï–†â≠•πêà§ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÄÄÄÄÅ•òÅ≠•πêÅ•∏Åç°Öππï±}çΩ’π—ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅç°Öππï±}çΩ’π—Õm≠•πëtÄ¨ÙÄƒ((ÄÄÄÅ…ï±Öπçï}çΩ’π–ÄÙÅÕ’¥†(ÄÄÄÄÄÄÄÄƒÅôΩ»Å…ï±ÖπçîÅ•∏ÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°…ï±Öπçî∞Åë•ç–§(ÄÄÄÄÄÄÄÅÖπêÅÕ—»°…ï±Öπçîπùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÕç°ïë’±ïêà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÄÄÄÄÅ•∏ÅI5}=U9Q}I19}MQQUML(ÄÄÄÄÄÄÄÅÖπêÅâΩΩ∞°…ï±Öπçîπùï–†âÕç°ïë’±ïë}ëÖ—îà§§(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâÖ¡¡Ω•π—µïπ—ÃàËÅµÖ‡†¿∞Å•π–°Ö¡¡Ω•π—µïπ—}çΩ’π–ÅΩ»Ä¿§§∞(ÄÄÄÄÄÄÄÄâ…ï±ÖπçïÃàËÅ…ï±Öπçï}çΩ’π–∞(ÄÄÄÄÄÄÄÄâïµÖ•±ÃàËÅç°Öππï±}çΩ’π—ÕlâïµÖ•∞ât∞(ÄÄÄÄÄÄÄÄâÕµÃàËÅç°Öππï±}çΩ’π—ÕlâÕµÃât∞(ÄÄÄÅÙ(()ëïòÅ}ç…µ}çΩµ¡Öç—}çΩπ—Öç—}Öç—•Ÿ•—•ïÃ°çΩπ—Öç–§Ë(ÄÄÄÄààâΩπÕï…ŸîÅ’π•≈’ïµïπ–Å±ïÃÅµÖ…≈’ï’…ÃÅª•çïÕÕÖ•…ïÃÅÖ’‡Å±•Õ—ïÃÅï–ÅÕ—Ö—•Õ—•≈’ïÃ∏ààà(ÄÄÄÅÖç—•Ÿ•—•ïÃÄÙÅl(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†âÖç—•Ÿ•—•ïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§ÅÖπêÅ•—ï¥πùï–†âëÖ—îà§(ÄÄÄÅt(ÄÄÄÅ•òÅπΩ–ÅÖç—•Ÿ•—•ïÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏Åmt(ÄÄÄÅπï›ïÕ–ÄÙÅµÖ‡°Öç—•Ÿ•—•ïÃ∞Å≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅÕ—»°•—ï¥πùï–†âëÖ—îà§ÅΩ»Äàà§§(ÄÄÄÅçΩπ—Öç—ïêÄÙÅl(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅÖç—•Ÿ•—•ïÃ(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â≠•πêà§Å•∏ÅI5}=9QQ}Q%Y%Qe}-%9L(ÄÄÄÅt(ÄÄÄÅÕï±ïç—ïêÄÙÅmπï›ïÕ—t(ÄÄÄÅ•òÅçΩπ—Öç—ïêË(ÄÄÄÄÄÄÄÅ±Ö—ïÕ—}çΩπ—Öç–ÄÙÅµÖ‡†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—ïê∞Å≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅÕ—»°•—ï¥πùï–†âëÖ—îà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅ±Ö—ïÕ—}çΩπ—Öç–Å•ÃÅπΩ–Åπï›ïÕ–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕï±ïç—ïêπÖ¡¡ïπê°±Ö—ïÕ—}çΩπ—Öç–§(ÄÄÄÅ…ï—’…∏Ål(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅ•—ï¥πùï–†â•êà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ≠•πêàËÅ•—ï¥πùï–†â≠•πêà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—îàËÅ•—ï¥πùï–†âëÖ—îà§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅÕï±ïç—ïê(ÄÄÄÅt(()ëïòÅ}ç…µ}çΩπ—Öç—}Õ’µµÖ…Â}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ∞Ä®∞Åô’πë•πù}Õ—Ö—’Ãı9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—•ïÃı9Ωπî∞Å¡’â±•çÖ—•ΩπÃı9Ωπî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}çΩ’π–Ù¿∞Åç¡ô}Õ—Ö—’ÃÙàà§Ë(ÄÄÄÄààâΩπÕ—…’•–Å’πîÅô•ç°îÅ≥•ü°…îÄÏÅ±îÅì•—Ö•∞ÅçΩµ¡±ï–Å…ïÕ—îÅç°Ö…ü§ÉÄÅ±ÑÅëïµÖπëî∏ààà(ÄÄÄÅÕ’µµÖ…‰ÄÙÅÏ(ÄÄÄÄÄÄÄÅ≠ï‰ËÅçΩπ—Öç–πùï–°≠ï‰§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏ÅI5}=9QQ}MU55Ie}%1L(ÄÄÄÄÄÄÄÅ•òÅ≠ï‰Å•∏ÅçΩπ—Öç–(ÄÄÄÅÙ(ÄÄÄÅÕ’µµÖ…Âlâ≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúâtÄÙÅÕ—»°çΩπ—Öç–πùï–†â≈’Ö±•ô•çÖ—•Ωπ}ô±Öúà§ÅΩ»Äàà§(ÄÄÄÅÕ’µµÖ…Âlâç¡ô}Õ—Ö—’ÃâtÄÙÅç¡ô}Õ—Ö—’Ã(ÄÄÄÅ•òÄ°ô’πë•πù}Õ—Ö—’Ã(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîà§(ÄÄÄÄÄÄÄÄÄÄÄÄÑÙÅI5}59U1}MQQUM}M=UI§Ë(ÄÄÄÄÄÄÄÅÕ’µµÖ…ÂlâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–âtÄÙÅô’πë•πù}Õ—Ö—’Ã(ÄÄÄÅÕπÖ¡Õ°Ω–ÄÙÅëÖ—Ñπùï–†âç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—Ãà∞ÅÌÙ§πùï–†(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§§(ÄÄÄÄ§(ÄÄÄÅïôôïç—•Ÿï}çΩπ—Öç–ÄÙÅë•ç–°çΩπ—Öç–§(ÄÄÄÅïôôïç—•Ÿï}çΩπ—Öç–πÕï—ëïôÖ’±–†(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îà∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â…ïô’Õ}ô—}¡ï…Õºà§ÅΩ»Äàà§∞(ÄÄÄÄ§(ÄÄÄÅ•òÅÕ’µµÖ…‰πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§Ë(ÄÄÄÄÄÄÄÅïôôïç—•Ÿï}çΩπ—Öç—lâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–âtÄÙÅÕ’µµÖ…Âl(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à(ÄÄÄÄÄÄÄÅt(ÄÄÄÅÕçΩ…îÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°ïôôïç—•Ÿï}çΩπ—Öç–∞ÅÕπÖ¡Õ°Ω–§(ÄÄÄÅÕ’µµÖ…Âlâ•π—ïù…Ö—•Ωπ}ÕçΩ…îâtÄÙÅÏ(ÄÄÄÄÄÄÄÅ≠ï‰ËÅÕçΩ…îπùï–°≠ï‰§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄÄÄÄÄâÕçΩ…îà∞Äâ±ïŸï∞à∞Äâ±Öâï∞à∞ÄâΩ¡ï…Ö—•ΩπÖ±}Õ—Ö—’Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâô•πÖπç•Ö±}ÕçΩ…îà∞ÄâÕçΩ…ï}çΩµ¡±ï—îà∞ÄâÕçΩ…ï}ïÕ—•µÖ—ïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—Ö}çΩπô•ëïπçï}¡ï…çïπ–à∞Äâ’πÕïç’…ïë}ÖµΩ’π—}ï’»à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïµÖ•π•πù}—Ω}ô•πÖπçï}µÖ·}ï’»à∞Äâ…ïù’±Ö—Ω…Â}Ö¡¡±•çÖâ±îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïù’±Ö—Ω…Â}Õ—Ö—’Ãà∞Äâ…ïù’±Ö—Ω…Â}±Öâï∞à∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅÙ(ÄÄÄÄåÅïÃÅëï’‡ÅΩâ©ï—ÃÅÕΩπ–Å¡ï—•—ÃÅï–ÅÕï…Ÿïπ–ÅÖ‘Å—Öâ±ïÖ‘ÅëîÅâΩ…êÅêùÖç≈’•Õ•—•Ω∏∏(ÄÄÄÅÕ’µµÖ…Âlâµï—Ö}ÕΩ’…çîâtÄÙÅçΩπ—Öç–πùï–†âµï—Ö}ÕΩ’…çîà§ÅΩ»ÅÌÙ(ÄÄÄÅÕ’µµÖ…ÂlâŸÖï}ï±•ù•â•±•—‰âtÄÙÅçΩπ—Öç–πùï–†âŸÖï}ï±•ù•â•±•—‰à§(ÄÄÄÄåÅ1îÅ—Öâ±ïÖ‘ÅëîÅâΩ…êÅΩΩù±îÅëÃÅ…óùΩ•–Å’π•≈’ïµïπ–Å±ïÃÅç≥•ÃÅêùÖ——…•â’—•Ω∏(ÄÄÄÄåÅ’—•±ïÃ∏Å1îÅôΩ…µ’±Ö•…îÅçΩµ¡±ï–∞Å¡Ω—ïπ—•ï±±ïµïπ–ÅŸΩ±’µ•πï’‡∞Å…ïÕ—îÅÀ•Õï…€§(ÄÄÄÄåÉÄÅ±ÑÅô•ç°îÅì•—Ö•±≥•î∏(ÄÄÄÅôΩ…¥ÄÙÅçΩπ—Öç–πùï–†âôΩ…µ’±Ö•…îà§(ÄÄÄÅôΩ…¥ÄÙÅôΩ…¥Å•òÅ•Õ•πÕ—Öπçî°ôΩ…¥∞Åë•ç–§Åï±ÕîÅÌÙ(ÄÄÄÅùΩΩù±ï}ÖëÕ}—…Öç≠•πúÄÙÅÏ(ÄÄÄÄÄÄÄÅ≠ï‰ËÅâΩΩ∞°çΩπ—Öç–πùï–°≠ï‰§ÅΩ»ÅôΩ…¥πùï–°≠ï‰§§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏ÅI5}==1}M}%9Q%%I}-eL(ÄÄÄÅÙ(ÄÄÄÅùΩΩù±ï}ÖëÕ}—…Öç≠•πúπ’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÅ≠ï‰ËÅÕ—»°çΩπ—Öç–πùï–°≠ï‰§ÅΩ»ÅôΩ…¥πùï–°≠ï‰§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏ÅI5}==1}M}QI-%9}-eL(ÄÄÄÄÄÄÄÅ•òÅ≠ï‰ÅπΩ–Å•∏ÅI5}==1}M}%9Q%%I}-eL(ÄÄÄÄÄÄÄÅÖπêÄ°çΩπ—Öç–πùï–°≠ï‰§ÅΩ»ÅôΩ…¥πùï–°≠ï‰§§(ÄÄÄÅÙ§(ÄÄÄÅÕ’µµÖ…ÂlâùΩΩù±ï}ÖëÕ}—…Öç≠•πúâtÄÙÅùΩΩù±ï}ÖëÕ}—…Öç≠•πú(ÄÄÄÄåÅ1ïÃÅ…ï±ÖπçïÃÅ…ïÕ—ïπ–Åë•Õ¡Ωπ•â±ïÃÅÕ’»Å±ÑÅŸ’îÅì•ëß•î∞ÅµÖ•ÃÅ±ïÃÅîµµÖ•±Ã∞(ÄÄÄÄåÅÖ¡ïÀù’ÃÅ!Q50∞ÅÀ•¡ΩπÕïÃÅ5QÅï–ÅÖ’—…ïÃÅç°Öµ¡ÃÅ±Ω’…ëÃÅπîÅ¡Ö…—ïπ–Å¡±’ÃÅ•ç§∏(ÄÄÄÅÕ’µµÖ…Âlâ…ï±ÖπçïÃâtÄÙÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§(ÄÄÄÅÕ’µµÖ…ÂlâÖç—•Ÿ•—•ïÃâtÄÙÄ†(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—•ïÃ(ÄÄÄÄÄÄÄÅ•òÅÖç—•Ÿ•—•ïÃÅ•ÃÅπΩ–Å9Ωπî(ÄÄÄÄÄÄÄÅï±ÕîÅ}ç…µ}çΩµ¡Öç—}çΩπ—Öç—}Öç—•Ÿ•—•ïÃ°çΩπ—Öç–§(ÄÄÄÄ§(ÄÄÄÅÕ’µµÖ…ÂlâÖç—•Ÿ•—Â}çΩ’π—ÃâtÄÙÅ}ç…µ}çΩπ—Öç—}Öç—•Ÿ•—Â}çΩ’π—Ã†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÅÖ¡¡Ω•π—µïπ—}çΩ’π–∞(ÄÄÄÄ§(ÄÄÄÅÕ’µµÖ…Âlâ¡’â±•çÖ—•ΩπÃâtÄÙÅ¡’â±•çÖ—•ΩπÃÅ•òÅ¡’â±•çÖ—•ΩπÃÅ•ÃÅπΩ–Å9ΩπîÅï±ÕîÅmt(ÄÄÄÅÕ’µµÖ…Âlâ}Õ’µµÖ…‰âtÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏ÅÕ’µµÖ…‰(()ëïòÅ}ç…µ}çΩπ—Öç—}Õ’µµÖ…•ïÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ∞ÅÕïç—•Ω∏Ùàà∞Ä®∞Å¡…ï¡Ö…ïêıÖ±Õî§Ë(ÄÄÄÄààâAÀ•¡Ö…îÅ’∏Å•πÕ—Öπ—Öª§ÅçΩµ¡Öç–ÅÖëÖ¡”§ÉÄÅ±ÑÅ…’â…•≈’îÅëïµÖπì•î∏((ÄÄÄÅ1ïÃÅÖπç•ïππïÃÅÀ•¡ΩπÕïÃÅ…ïπŸΩÂÖ•ïπ–Åç°Ö≈’îÅô•ç°îÅçΩµ¡≥°—î∞ÅπΩ—Öµµïπ–Å±ïÃ(ÄÄÄÅÖ¡ïÀù’ÃÅêùîµµÖ•±ÃÅ!Q50Åï–Å±ïÃÅÀ•¡ΩπÕïÃÅâ…’—ïÃÅÖ’‡ÅôΩ…µ’±Ö•…ïÃ∏Å∏Å¡…Ωë’ç—•Ω∏(ÄÄÄÅçï±ÑÅ…ï¡À•Õïπ—Ö•–Å¡±’ÃÅëîÄ‘Å5ºÉÄÅç°Ö≈’îÅΩ’Ÿï…—’…îÅë‘ÅI4∏(ÄÄÄÄààà(ÄÄÄÅ•òÅ¡…ï¡Ö…ïêË(ÄÄÄÄÄÄÄÅç°Öπùïê∞Å›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃÄÙÅÖ±Õî∞ÅÌÙ(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅç°Öπùïê∞Å›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃÄÙÅ}ç…µ}¡…ï¡Ö…ï}çΩπ—Öç—Ã°ëÖ—Ñ§(ÄÄÄÅ›ïëΩô}ç¡ô}Õ—Ö—ïÃÄÙÅ}›ïëΩô}ç¡ô}Õ—Ö—ïÕ}âÂ}çΩπ—Öç–°ëÖ—Ñ§(ÄÄÄÅÖ¡¡Ω•π—µïπ—}çΩ’π—ÃÄÙÅ}ç…µ}Ö¡¡Ω•π—µïπ—}çΩ’π—Õ}âÂ}çΩπ—Öç–°ëÖ—Ñ§(ÄÄÄÅ•πç±’ëï}Öç—•Ÿ•—‰ÄÙÅÕ—»°Õïç—•Ω∏ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§Å•∏ÅI5}Q%Y%Qe}MQ%=9L(ÄÄÄÅÖç—•Ÿ•—Â}âÂ}çΩπ—Öç–ÄÙÅÌÙ(ÄÄÄÅ¡’â±•çÖ—•Ωπ}âÂ}çΩπ—Öç–ÄÙÅÌÙ(ÄÄÄÅ•òÅ•πç±’ëï}Öç—•Ÿ•—‰Ë(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—Â}…Ω›ÃÄÙÅÕΩ…—ïê†(ÄÄÄÄÄÄÄÄÄÄÄÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ°Õ—»°•—ï¥πùï–†âëÖ—îà§ÅΩ»Äàà§∞ÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§∞Å•—ï¥§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†âÖç—•Ÿ•—•ïÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ≠ï‰ı±ÖµâëÑÅ…Ω‹ËÅ…Ω›l¡t∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïŸï…ÕîıQ…’î∞(ÄÄÄÄÄÄÄÄ•lËƒ‘¡t(ÄÄÄÄÄÄÄÅôΩ»Å|∞ÅçΩπ—Öç—}•ê∞Å•—ï¥Å•∏ÅÖç—•Ÿ•—Â}…Ω›ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—Â}âÂ}çΩπ—Öç–πÕï—ëïôÖ’±–°çΩπ—Öç—}•ê∞Åmt§πÖ¡¡ïπê°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ≠ï‰ËÅ•—ï¥πùï–°≠ï‰§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†â•êà∞ÄâëÖ—îà∞Äâ≠•πêà∞Äâ—•—±îà∞Äâëï—Ö•∞à∞ÄâÖ’—°Ω»à§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ≠ï‰Å•∏Å•—ï¥(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅ¡’â±•çÖ—•Ωπ}âÂ}çΩπ—Öç–ÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§ËÅçΩπ—Öç–πùï–†â¡’â±•çÖ—•ΩπÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†â¡’â±•çÖ—•ΩπÃà§(ÄÄÄÄÄÄÄÅÙ((ÄÄÄÅçΩπ—Öç—ÃÄÙÅmt(ÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ölâç…µ}çΩπ—Öç—ÃâtË(ÄÄÄÄÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÅçΩπ—Öç—ÃπÖ¡¡ïπê°}ç…µ}çΩπ—Öç—}Õ’µµÖ…Â}…ïÕ¡ΩπÕî†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÅô’πë•πù}Õ—Ö—’Ãı›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃπùï–°çΩπ—Öç—}•ê§∞(ÄÄÄÄÄÄÄÄÄÄÄÅç¡ô}Õ—Ö—’Ãı›ïëΩô}ç¡ô}Õ—Ö—ïÃπùï–°çΩπ—Öç—}•ê∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—•ïÃÙ°Öç—•Ÿ•—Â}âÂ}çΩπ—Öç–πùï–°çΩπ—Öç—}•ê∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•πç±’ëï}Öç—•Ÿ•—‰Åï±ÕîÅ9Ωπî§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡’â±•çÖ—•ΩπÃÙ°¡’â±•çÖ—•Ωπ}âÂ}çΩπ—Öç–πùï–°çΩπ—Öç—}•ê∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•πç±’ëï}Öç—•Ÿ•—‰Åï±ÕîÅ9Ωπî§∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}çΩ’π–ıÖ¡¡Ω•π—µïπ—}çΩ’π—Ãπùï–°çΩπ—Öç—}•ê∞Ä¿§∞(ÄÄÄÄÄÄÄÄ§§(ÄÄÄÅ…ï—’…∏ÅçΩπ—Öç—Ã∞Åç°Öπùïê(()ëïòÅ}ç…µ}çΩπ—Öç—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§Ë(ÄÄÄÄààâΩπÕï…ŸîÅ±ÑÅÀ•¡ΩπÕîÅ°•Õ—Ω…•≈’îÅçΩµ¡≥°—îÅ¡Ω’»Å±ïÃÅ•π”•ù…Ö—•ΩπÃÅï·¡±•ç•—ïÃ∏ààà(ÄÄÄÅç°Öπùïê∞Å›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃÄÙÅ}ç…µ}¡…ï¡Ö…ï}çΩπ—Öç—Ã°ëÖ—Ñ§(ÄÄÄÅçΩπ—Öç—ÃÄÙÅl(ÄÄÄÄÄÄÄÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÅô’πë•πù}Õ—Ö—’Ãı›ïëΩô}ô’πë•πù}Õ—Ö—’ÕïÃπùï–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ölâç…µ}çΩπ—Öç—Ãât(ÄÄÄÅt(ÄÄÄÅ…ï—’…∏ÅçΩπ—Öç—Ã∞Åç°Öπùïê(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—Ãà∞Åµï—°ΩëÃılâPà∞ÄâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—Ã†§Ë(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâPàË(ÄÄÄÄÄÄÄÅÕïç—•Ω∏ÄÙÅ…ï≈’ïÕ–πÖ…ùÃπùï–†âÕïç—•Ω∏à∞Äàà§(ÄÄÄÄÄÄÄÅ•òÅÕïç—•Ω∏ÅΩ»Å…ï≈’ïÕ–πÖ…ùÃπùï–†âçΩµ¡Öç–à§ÄÙÙÄàƒàË(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ}ç…µ}¡…ï¡Ö…ïë}…ïÖë}µΩëï∞†§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—Ã∞Å|ÄÙÅ}ç…µ}çΩπ—Öç—}Õ’µµÖ…•ïÕ}¡ÖÂ±ΩÖê†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞ÅÕïç—•Ω∏∞Å¡…ï¡Ö…ïêıQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—Ã∞Åç°ÖπùïêÄÙÅ}ç…µ}çΩπ—Öç—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅç°ÖπùïêË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°çΩπ—Öç—Ã§((ÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}ç…ïÖ—ï}çΩπ—Öç—}±Ωç≠ïê†§(()ëïòÅ}ç…µ}ç…ïÖ—ï}çΩπ—Öç—}±Ωç≠ïê†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅçΩπ—Öç–ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞Äâ¡…ïπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°¡ÖÂ±ΩÖêπùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâπΩ¥àËÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°¡ÖÂ±ΩÖêπùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâµÖ•∞àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âµÖ•∞à§ÅΩ»Å¡ÖÂ±ΩÖêπùï–†âïµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âôΩ…µÖ—•Ω∏à∞ÄâALà§§∞Äâ±•ï‘àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†â±•ï‘à§ÅΩ»ÄâAÖ…•Ãà§∞(ÄÄÄÄÄÄÄÄâÕ—Ö—’–àËÅπï·–†°Õ—Ö—’ÃÅôΩ»ÅÕ—Ö—’ÃÅ•∏Å}ç…µ}Õ—Ö—’ÕïÃ°ëÖ—Ñ§Å•òÅÕ—Ö—’ÃÅπΩ–Å•∏ÅI5}IMIY}MQQUML§∞Äâ9Ω’ŸïÖ’‡à§∞ÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏àËÄàà∞Äâç¡òàËÄàà∞ÄâçÖ…—ï}¡…ºàËÄàà∞(ÄÄÄÄÄÄÄÄâÖπ—ïçïëïπ—ÃàËÄàà∞ÄâùÖ…ëï}Ÿ’îàËÄàà∞Äâ—•—…ï}Õï©Ω’»àËÄàà∞Äâ—•—…ï}Õï©Ω’…}çπÖ¡ÃàËÄàà∞ÄâçΩµ¡—ï}çπÖ¡ÃàËÄàà∞ÄâçπÖ¡Õ}π’ààËÄàà∞ÄâçπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰àËÅ9Ωπî∞(ÄÄÄÄÄÄÄÄâçπÖ¡Õ}’Õï…πÖµîàËÄàà∞ÄâçπÖ¡Õ}â•…—°}ÂïÖ»àËÄàà∞ÄâçπÖ¡Õ}¡ÖÕÕ›Ω…êàËÄàà∞(ÄÄÄÄÄÄÄÄâ•π—ïù…Ö—•Ωπ}ë…ÖçÖ»àËÄàà∞(ÄÄÄÄÄÄÄÄâëïÕ¡}—Â¡îàËÄàà∞Äâ•ëïπ—•—ï}ç…ïÖ—•Ω∏àËÄàà∞Äâç¡ô}µΩπ—Öπ–àËÄàà∞(ÄÄÄÄÄÄÄÄâç¡ô}¡Ö±•ï»àËÄàà∞(ÄÄÄÄÄÄÄÄâ•ëïπ—•—ï}Ω¨àËÄàà∞Äâô•πÖπçïµïπ—}ô–àËÄàà∞ÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–àËÄàà∞(ÄÄÄÄÄÄÄÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–àËÄàà∞Äâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îàËÄàà∞(ÄÄÄÄÄÄÄÄâ…ïô’Õ}ô—}¡ï…ÕºàËÄàà∞Äâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…ÕºàËÄàà∞(ÄÄÄÄÄÄÄÄâΩ…•ù•πîàËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âΩ…•ù•πîà§ÅΩ»Äâ©Ω’–ÅµÖπ’ï∞à§∞ÄâçΩµµï…ç•Ö∞àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩµµï…ç•Ö∞à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄâ•πÕç…•—}ô–àËÄàà∞ÄâçΩµµïπ—Ö•…ïÃàËÄàà∞Äâ…ï±Öπçï}ëÖ—îàËÄàà∞(ÄÄÄÄÄÄÄÄâ¡…Ωç°Ö•πï}Öç—•Ωπ}µÖπ’ï±±îàËÄàà∞Äâ…ï±ÖπçïÃàËÅmt∞ÄâÕ—Ö—’—}ÕïçΩπëÖ•…îàËÄàà∞(ÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅπΩ‹∞Äâ’¡ëÖ—ïë}Ö–àËÅπΩ‹∞ÄâÖç—•Ÿ•—•ïÃàËÅmt∞(ÄÄÄÅÙ(ÄÄÄÅçΩπ—Öç—lâ¡…•·}Ÿïπ—îâtÄÙÅ}ç…µ}ëïôÖ’±—}ÕÖ±ï}¡…•çî°çΩπ—Öç–§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Äâç…ïÖ—•Ω∏à∞ÄâA•Õ—îÅçÀß•îà∞Äâ©Ω’”•îÅëÖπÃÅ%π”•ù…Ö±îÅΩππïç–ÅI4à§(ÄÄÄÅçΩπ—Öç–∞Å•πâΩ’πê∞Åç…ïÖ—ïêÄÙÅô•πë}Ω…}ç…ïÖ—ï}ç…µ}çΩπ—Öç–†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞Å¡ÖÂ±ΩÖê∞ÄâÕÖ•Õ•ï}µÖπ’ï±±îà∞Å¡…Ω¡ΩÕïë}çΩπ—Öç–ıçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅÕï±ïç—ïë}çΩπ—Öç—}•êı¡ÖÂ±ΩÖêπùï–†âÕï±ïç—ïë}çΩπ—Öç—}•êà§∞(ÄÄÄÄÄÄÄÅôΩ…çï}ç…ïÖ—îıâΩΩ∞°¡ÖÂ±ΩÖêπùï–†âôΩ…çï}ç…ïÖ—îà§§∞(ÄÄÄÄ§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ•òÅçΩπ—Öç–Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâÕ—Ö—’ÃàËÄâ¡ïπë•πù}…ïŸ•ï‹à∞Äâ…ï≈’ïÕ—}•êàËÅ•πâΩ’πëlâ•êâuÙ§∞Ä»¿»(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§§∞Ä»¿ƒÅ•òÅç…ïÖ—ïêÅï±ÕîÄ»¿¿(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃΩ’¡ëÖ—ïÃà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}’¡ëÖ—ïÃ†§Ë(ÄÄÄÄààâIï—Ω’…πîÅ’π•≈’ïµïπ–Å±ïÃÅëΩπª•ïÃÅ’—•±ïÃÅÖ‘Å…Öô…áπç°•ÕÕïµïπ–ÅçΩ±±ÖâΩ…Ö—•ò∏ààà(ÄÄÄÅÕïç—•Ω∏ÄÙÅ…ï≈’ïÕ–πÖ…ùÃπùï–†âÕïç—•Ω∏à∞Äàà§(ÄÄÄÅ•òÅÕïç—•Ω∏ÄÙÙÄâëïµÖπëïÃµ…Ö¡¡ï∞àË(ÄÄÄÄÄÄÄÄåÅÖ±ïπë±‰Å¡ï’–Å…ïçïŸΩ•»Å’πîÅÀ•Õï…ŸÖ—•Ω∏ÅÖ¡À°ÃÅ∞ùÖ¡¡ï∞Åë‘ÅÕïçÀ•—Ö…•Ö–∏(ÄÄÄÄÄÄÄÄåÅK•çΩπç•±•ï»Å±ÑÅëïµÖπëîÅÖŸÖπ–Åç°Ö≈’îÅ…Öô…áπç°•ÕÕïµïπ–ÅëîÅçï——îÅ¡Öùî(ÄÄÄÄÄÄÄÄåÉ•Ÿ•—îÅëîÅçΩπÕï…Ÿï»Å’∏Å±•âï±≥§ÅΩ‘Å’πîÅëÖ—îÅëîÅ…ïπëïËµŸΩ’ÃÅΩâÕΩ≥°—î∏(ÄÄÄÄÄÄÄÅ›•—†Å}MIQI%Q}1%YIe}1=,∞Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ω…ïë}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}âÖç≠ô•±±}çÖ±±âÖç≠}…ï≈’ïÕ—Ã°Õ—Ω…ïë}ëÖ—Ñ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°Õ—Ω…ïë}ëÖ—Ñ§(ÄÄÄÅëÖ—ÑÄÙÅ}ç…µ}¡…ï¡Ö…ïë}…ïÖë}µΩëï∞†§(ÄÄÄÅ›ïëΩô}ç¡ô}Õ—Ö—ïÃÄÙÅ}›ïëΩô}ç¡ô}Õ—Ö—ïÕ}âÂ}çΩπ—Öç–°ëÖ—Ñ§(ÄÄÄÅÖ¡¡Ω•π—µïπ—}çΩ’π—ÃÄÙÅ}ç…µ}Ö¡¡Ω•π—µïπ—}çΩ’π—Õ}âÂ}çΩπ—Öç–°ëÖ—Ñ§(ÄÄÄÅÖ¡¡Ω•π—µïπ—ÃÄÙÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ•lâÖ¡¡Ω•π—µïπ—Ãât((ÄÄÄÅÕ’µµÖ…•ïÃÄÙÅl(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅçΩπ—Öç–πùï–†â•êà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’–àËÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’—}ÕïçΩπëÖ•…îàËÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç¡ô}Õ—Ö—’ÃàËÅ›ïëΩô}ç¡ô}Õ—Ö—ïÃπùï–°Õ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ï±Öπçï}ëÖ—îàËÅçΩπ—Öç–πùï–†â…ï±Öπçï}ëÖ—îà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–àËÅçΩπ—Öç–πùï–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à∞Äàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ’¡ëÖ—ïë}Ö–àËÅçΩπ—Öç–πùï–†â’¡ëÖ—ïë}Ö–à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖç—•Ÿ•—Â}çΩ’π—ÃàËÅ}ç…µ}çΩπ—Öç—}Öç—•Ÿ•—Â}çΩ’π—Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—}çΩ’π—Ãπùï–°Õ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§∞Ä¿§∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÅt(ÄÄÄÅÕï±ïç—ïêÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Å…ï≈’ïÕ–πÖ…ùÃπùï–†âçΩπ—Öç—}•êà§§(ÄÄÄÅÕï±ïç—ïë}¡ÖÂ±ΩÖêÄÙÅ9Ωπî(ÄÄÄÅ•òÅÕï±ïç—ïêË(ÄÄÄÄÄÄÄÅÕï±ïç—ïë}¡ÖÂ±ΩÖêÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅÕï±ïç—ïêπùï–†â•êà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖç—•Ÿ•—•ïÃàËÅÕï±ïç—ïêπùï–†âÖç—•Ÿ•—•ïÃà∞Åmt§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡’â±•çÖ—•ΩπÃàËÅÕï±ïç—ïêπùï–†â¡’â±•çÖ—•ΩπÃà∞Åmt§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅÏ(ÄÄÄÄÄÄÄÄâçΩπ—Öç—ÃàËÅÕ’µµÖ…•ïÃ∞(ÄÄÄÄÄÄÄÄâÕï±ïç—ïêàËÅÕï±ïç—ïë}¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄâÖ¡¡Ω•π—µïπ—ÃàËÅÖ¡¡Ω•π—µïπ—Ã∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}¡ïπë•πù}çΩ’π–àËÅ}ç…µ}çÖ±±âÖç≠}¡ïπë•πù}çΩ’π–°ëÖ—Ñ§∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅÕïç—•Ω∏ÄÙÙÄâëïµÖπëïÃµ…Ö¡¡ï∞àË(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâçÖ±±âÖç≠}…ï≈’ïÕ—ÃâtÄÙÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°¡ÖÂ±ΩÖê§(()Ö¡¿πëï±ï—î†àΩÖ¡§Ωç…¥ΩëÖ—ÖâÖÕîà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ëï±ï—ï}ëÖ—ÖâÖÕî†§Ë(ÄÄÄÄààâôôÖçîÅ±ïÃÅëΩπª•ïÃÅëïÃÅ¡…ΩÕ¡ïç—ÃÅÕÖπÃÅ—Ω’ç°ï»ÅÖ’‡ÅÖ’—…ïÃÅΩ’—•±ÃÅë‘ÅÕ•—î∏ààà(ÄÄÄÅ•òÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†â…Ω±îà§ÄÑÙÄâÖëµ•∏àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâï——îÅÖç—•Ω∏ÅïÕ–ÅÀ•Õï…€•îÉÄÅ≥äeÖëµ•π•Õ—…Ö—ï’»âÙ§∞Ä–¿Ã((ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅëï±ï—ïë}çΩ’π–ÄÙÅ±ï∏°ëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§§(ÄÄÄÄåÅ1ïÃÅÀ•ù±ÖùïÃÅI4Ä£•—Ö¡ïÃ∞ÅµΩì°±ïÃÅï–ÅçΩππï·•Ω∏ÅÖ±ïπë±‰§ÅÕΩπ–ÅçΩπÕï…€•Ã∞(ÄÄÄÄåÅµÖ•ÃÅ—Ω’—ïÃÅ±ïÃÅëΩπª•ïÃÅ…Ö——Öç£•ïÃÅÖ’‡Å¡…ΩÕ¡ïç—ÃÅëΩ•Ÿïπ–Åë•Õ¡Ö…áπ—…î∏(ÄÄÄÅëÖ—Ölâç…µ}çΩπ—Öç—ÃâtÄÙÅmt(ÄÄÄÅëÖ—Ölâç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—ÃâtÄÙÅmt(ÄÄÄÅëÖ—Ölâç…µ}πΩ—•ô•çÖ—•ΩπÃâtÄÙÅmt(ÄÄÄÅëÖ—Ölâç…µ}Ö•}çÖπë•ëÖ—ï}ÖπÖ±ÂÕïÃâtÄÙÅÌÙ(ÄÄÄÅëÖ—Ölâç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—ÃâtÄÙÅÌÙ(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâΩ¨àËÅQ…’î∞Äâëï±ï—ïë}çΩ’π–àËÅëï±ï—ïë}çΩ’π—Ù§(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥Ω•πâΩ’πêµ…ï≈’ïÕ—ÃΩ¡ïπë•πúà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}¡ïπë•πù}•πâΩ’πë}…ï≈’ïÕ—Ã†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°m…Ω‹ÅôΩ»Å…Ω‹Å•∏ÅëÖ—Ñπùï–†âç…µ}•πâΩ’πë}…ï≈’ïÕ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…Ω‹πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâ¡ïπë•πù}…ïŸ•ï‹ât§(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ωç…¥Ω•πâΩ’πêµ…ï≈’ïÕ—ÃºÒ…ï≈’ïÕ—}•ê¯Ω…ïÕΩ±Ÿîà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}…ïÕΩ±Ÿï}•πâΩ’πë}…ï≈’ïÕ–°…ï≈’ïÕ—}•ê§Ë(ÄÄÄÄààâK•ÕΩ’–Åï·¡±•ç•—ïµïπ–Å’πîÅçΩ……ïÕ¡ΩπëÖπçîÅÕÖπÃÅ©ÖµÖ•ÃÅµΩë•ô•ï»Å±ÑÅô•ç°îÅç•â±î∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ•πâΩ’πêÄÙÅπï·–†°…Ω‹ÅôΩ»Å…Ω‹Å•∏ÅëÖ—Ñπùï–†âç…µ}•πâΩ’πë}…ï≈’ïÕ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…Ω‹πùï–†â•êà§ÄÙÙÅ…ï≈’ïÕ—}•ê§∞Å9Ωπî§(ÄÄÄÅ•òÅπΩ–Å•πâΩ’πêÅΩ»Å•πâΩ’πêπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâ¡ïπë•πù}…ïŸ•ï‹àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâïµÖπëîÉÄÅ€•…•ô•ï»Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅÖç—•Ω∏ÄÙÅ¡ÖÂ±ΩÖêπùï–†âÖç—•Ω∏à§(ÄÄÄÅ•òÅÖç—•Ω∏ÄÙÙÄâçÖπçï∞àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°•πâΩ’πê§(ÄÄÄÅ•òÅÖç—•Ω∏ÄÙÙÄâÖ——Öç†àË(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Å¡ÖÂ±ΩÖêπùï–†âçΩπ—Öç—}•êà§§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ•ç°îÅ•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅï±•òÅÖç—•Ω∏ÄÙÙÄâç…ïÖ—îàË(ÄÄÄÄÄÄÄÅ…Ö‹ÄÙÅ•πâΩ’πêπùï–†â…Ö›}¡ÖÂ±ΩÖêà§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞Å|∞Å|ÄÙÅô•πë}Ω…}ç…ïÖ—ï}ç…µ}çΩπ—Öç–†(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞Å…Ö‹∞Å•πâΩ’πêπùï–†âÕΩ’…çîà§ÅΩ»ÄâÀ•ÕΩ±’—•Ωπ}µÖπ’ï±±îà∞ÅôΩ…çï}ç…ïÖ—îıQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÅï·—ï…πÖ±}•êıòâ…ïÕΩ±’—•Ω∏ÈÌ…ï≈’ïÕ—}•ëÙà§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâç—•Ω∏Å•πŸÖ±•ëîâÙ§∞Ä–¿¿(ÄÄÄÅ•πâΩ’πëlâçΩπ—Öç—}•êâtÄÙÅçΩπ—Öç–πùï–†â•êà§ÏÅ•πâΩ’πëlâÕ—Ö—’ÃâtÄÙÄâ…ïÕΩ±Ÿïêà(ÄÄÄÅ•πâΩ’πëlâ…ïÕΩ±Ÿïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ•πâΩ’πëlâ…ïÕΩ±Ÿïë}â‰âtÄÙÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âïµÖ•∞à§ÅΩ»Ä°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âπÖµîà§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Äâ•πâΩ’πë}…ï≈’ïÕ–à∞ÄâΩ……ïÕ¡ΩπëÖπçîÅÀ•ÕΩ±’îÅµÖπ’ï±±ïµïπ–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâMΩ’…çîÄËÅÌ•πâΩ’πêπùï–†ùÕΩ’…çîú•Ù∏Åç—•Ω∏ÄËÅÌÖç—•ΩπÙ∏à§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°•πâΩ’πê§(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥Ωâ…ïŸºΩÕµÃµç…ïë•—Ãà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}â…ïŸΩ}ÕµÕ}ç…ïë•—Ã†§Ë(ÄÄÄÄààâ·¡ΩÕîÅ—°îÅ±•ŸîÅ	…ïŸºÅM5LÅâÖ±ÖπçîÅ—ºÅÖ’—°ïπ—•çÖ—ïêÅI4Å’Õï…Ã∏ààà(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅç…ïë•—ÃÄÙÅ}â…ïŸΩ}ÕµÕ}ç…ïë•—Ã†§(ÄÄÄÅï·çï¡–Ä°…ï≈’ïÕ—ÃπIï≈’ïÕ—·çï¡—•Ω∏∞ÅI’π—•µï……Ω»∞ÅYÖ±’ï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å§ÅΩ»Äâ1îÅÕΩ±ëîÅM5LÅ	…ïŸºÅïÕ–Å•πë•Õ¡Ωπ•â±î∏âÙ§∞Ä‘¿Ã(ÄÄÄÅ}πΩ—•ôÂ}â…ïŸΩ}ÕµÕ}±Ω›}âÖ±Öπçî°ç…ïë•—Ã§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâç…ïë•—ÃàËÅç…ïë•—ÕÙ§(()I5}Y1=A59Q}MUAA=IQ}A1Q=I5LÄÙÅÏ(ÄÄÄÄâI4àËÄâI4à∞(ÄÄÄÄâïÕ—•Ω∏ÅÕ—Öù•Ö•…ïÃàËÄâïÕ—•Ω∏ÅÕ—Öù•Ö•…ïÃà∞(ÄÄÄÄâM•—îÅ•π—ï…πï–ÅΩôô•ç•ï∞àËÄâM•—îÅ•π—ï…πï–ÅΩôô•ç•ï∞à∞)Ù)I5}9=Q%=9}Q}M=UI}%ÄÙÄà›òƒ…ôî‰»µëâå–¥–¡å‡µÖò—î¥‹‹‘‹·à’ëâôå¿à)I5}Y1=A59Q}MUAA=IQ}9=Q%=9}MQQULÄÙÄã Å91eMHà)I5}9=Q%=9}QQ!59Q}AI=AIQdÄÙÄâô•ç°•ï»à)I5}Y1=A59Q}MUAA=IQ}5a}QQ!59Q}	eQLÄÙÄ»¿Ä®Äƒ¿»–Ä®Äƒ¿»–)I5}Y1=A59Q}MUAA=IQ}QQ!59Q}aQ9M%=9LÄÙÅô…ΩÈïπÕï–°Ï(ÄÄÄÄàπçÕÿà∞ÄàπëΩåà∞ÄàπëΩç‡à∞Äàπù•òà∞Äàπ°ï•åà∞Äàπ©¡ïúà∞Äàπ©¡úà∞Äàπ¡ëòà∞(ÄÄÄÄàπ¡πúà∞Äàπ—·–à∞Äàπ›ïâ¿à∞Äàπ·±Ãà∞Äàπ·±Õ‡à∞)Ù§(()ëïòÅ}ç…µ}πΩ—•Ωπ}…•ç°}—ï·–°ŸÖ±’î§Ë(ÄÄÄÅ—ï·–ÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§(ÄÄÄÅ…ï—’…∏Ål(ÄÄÄÄÄÄÄÅÏâ—Â¡îàËÄâ—ï·–à∞Äâ—ï·–àËÅÏâçΩπ—ïπ–àËÅ—ï·—m•πëï‡È•πëï‡Ä¨Ä…|¿¿¡uıÙ(ÄÄÄÄÄÄÄÅôΩ»Å•πëï‡Å•∏Å…Öπùî†¿∞Å±ï∏°—ï·–§∞Ä…|¿¿¿§(ÄÄÄÅtÅΩ»ÅmÏâ—Â¡îàËÄâ—ï·–à∞Äâ—ï·–àËÅÏâçΩπ—ïπ–àËÄàâııt(()ëïòÅ}ç…µ}ëïŸï±Ω¡µïπ—}Õ’¡¡Ω…—}Ö——Öç°µïπ–†§Ë(ÄÄÄÅ’¡±ΩÖëïêÄÙÅ…ï≈’ïÕ–πô•±ïÃπùï–†âÖ——Öç°µïπ–à§(ÄÄÄÅ•òÅπΩ–Å’¡±ΩÖëïêÅΩ»ÅπΩ–Å’¡±ΩÖëïêπô•±ïπÖµîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÅô•±ïπÖµîÄÙÅÕïç’…ï}ô•±ïπÖµî°’¡±ΩÖëïêπô•±ïπÖµî§(ÄÄÄÅï·—ïπÕ•Ω∏ÄÙÅΩÃπ¡Ö—†πÕ¡±•—ï·–°ô•±ïπÖµî•l≈tπ±Ω›ï»†§(ÄÄÄÅ•òÅπΩ–Åô•±ïπÖµîÅΩ»Åï·—ïπÕ•Ω∏ÅπΩ–Å•∏ÅI5}Y1=A59Q}MUAA=IQ}QQ!59Q}aQ9M%=9LË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ…µÖ–ÅëîÅ¡ß°çîÅ©Ω•π—îÅπΩ∏ÅÖççï¡”§∏ÅU—•±•ÕïËÅ’πîÅ•µÖùî∞Å’∏ÅA∞Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâ’∏ÅëΩç’µïπ–Å]Ω…êΩ·çï∞∞Å’∏ÅMXÅΩ‘Å’∏Åô•ç°•ï»Å—ï·—î∏à(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ•òÅ±ï∏°ô•±ïπÖµîπïπçΩëî†â’—ò¥‡à§§Ä¯Ä»–¿Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â1îÅπΩ¥ÅëîÅ±ÑÅ¡ß°çîÅ©Ω•π—îÅïÕ–Å—…Ω¿Å±Ωπú∏à§(ÄÄÄÅçΩπ—ïπ–ÄÙÅ’¡±ΩÖëïêπÕ—…ïÖ¥π…ïÖê°I5}Y1=A59Q}MUAA=IQ}5a}QQ!59Q}	eQLÄ¨Äƒ§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—ïπ–Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â1ÑÅ¡ß°çîÅ©Ω•π—îÅïÕ–ÅŸ•ëî∏à§(ÄÄÄÅ•òÅ±ï∏°çΩπ—ïπ–§Ä¯ÅI5}Y1=A59Q}MUAA=IQ}5a}QQ!59Q}	eQLË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅ=Ÿï…ô±Ω›……Ω»†â1ÑÅ¡ß°çîÅ©Ω•π—îÅπîÅëΩ•–Å¡ÖÃÅì•¡ÖÕÕï»Ä»¿Å5º∏à§(ÄÄÄÄåÅQ°îÅâ…Ω›Õï»µ¡…ΩŸ•ëïêÅ5%5Å—Â¡îÅ•ÃÅ’Õï»µçΩπ—…Ω±±ïêÏÅëï…•ŸîÅ•–Åô…Ω¥Å—°î(ÄÄÄÄåÅŸÖ±•ëÖ—ïêÅï·—ïπÕ•Ω∏ÅâïôΩ…îÅôΩ…›Ö…ë•πúÅ—°îÅô•±îÅ—ºÅ9Ω—•Ω∏∏(ÄÄÄÅçΩπ—ïπ—}—Â¡îÄÙÅµ•µï—Â¡ïÃπù’ïÕÕ}—Â¡î°ô•±ïπÖµî•l¡tÅΩ»ÄâÖ¡¡±•çÖ—•Ω∏ΩΩç—ï–µÕ—…ïÖ¥à(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâô•±ïπÖµîàËÅô•±ïπÖµî∞(ÄÄÄÄÄÄÄÄâçΩπ—ïπ–àËÅçΩπ—ïπ–∞(ÄÄÄÄÄÄÄÄâçΩπ—ïπ—}—Â¡îàËÅçΩπ—ïπ—}—Â¡î∞(ÄÄÄÅÙ(()ëïòÅ}ç…µ}’¡±ΩÖë}πΩ—•Ωπ}Ö——Öç°µïπ–°—Ω≠ï∏∞ÅπΩ—•Ωπ}Ÿï…Õ•Ω∏∞ÅÖ——Öç°µïπ–§Ë(ÄÄÄÅ°ïÖëï…ÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâ’—°Ω…•ÈÖ—•Ω∏àËÅòâ	ïÖ…ï»ÅÌ—Ω≠ïπÙà∞(ÄÄÄÄÄÄÄÄâ9Ω—•Ω∏µYï…Õ•Ω∏àËÅπΩ—•Ωπ}Ÿï…Õ•Ω∏∞(ÄÄÄÅÙ(ÄÄÄÅç…ïÖ—ïë}…ïÕ¡ΩπÕîÄÙÅ…ï≈’ïÕ—Ãπ¡ΩÕ–†(ÄÄÄÄÄÄÄÄâ°——¡ÃËºΩÖ¡§ππΩ—•Ω∏πçΩ¥ΩÿƒΩô•±ï}’¡±ΩÖëÃà∞(ÄÄÄÄÄÄÄÅ°ïÖëï…ÃıÏ®©°ïÖëï…Ã∞ÄâΩπ—ïπ–µQÂ¡îàËÄâÖ¡¡±•çÖ—•Ω∏Ω©ÕΩ∏âÙ∞(ÄÄÄÄÄÄÄÅ©ÕΩ∏ıÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâµΩëîàËÄâÕ•πù±ï}¡Ö…–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâô•±ïπÖµîàËÅÖ——Öç°µïπ—lâô•±ïπÖµîât∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ—}—Â¡îàËÅÖ——Öç°µïπ—lâçΩπ—ïπ—}—Â¡îât∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅ—•µïΩ’–Ù†ƒ¿∞ÄÃ¿§∞(ÄÄÄÄ§(ÄÄÄÅ•òÅç…ïÖ—ïë}…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëîÅπΩ–Å•∏ÅÏ»¿¿∞Ä»¿≈ÙË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅI’π—•µï……Ω»°òâ9Ω—•Ω∏Å•±îÅU¡±ΩÖêÅ!QQ@ÅÌç…ïÖ—ïë}…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëïÙà§(ÄÄÄÅ’¡±ΩÖë}•êÄÙÅÕ—»†°ç…ïÖ—ïë}…ïÕ¡ΩπÕîπ©ÕΩ∏†§ÅΩ»ÅÌÙ§πùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å’¡±ΩÖë}•êË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âK•¡ΩπÕîÅ9Ω—•Ω∏ÅÕÖπÃÅ•ëïπ—•ô•Öπ–ÅëîÅô•ç°•ï»à§(ÄÄÄÅÕïπ—}…ïÕ¡ΩπÕîÄÙÅ…ï≈’ïÕ—Ãπ¡ΩÕ–†(ÄÄÄÄÄÄÄÅòâ°——¡ÃËºΩÖ¡§ππΩ—•Ω∏πçΩ¥ΩÿƒΩô•±ï}’¡±ΩÖëÃΩÌ≈’Ω—î°’¡±ΩÖë}•ê∞ÅÕÖôîÙúú•ÙΩÕïπêà∞(ÄÄÄÄÄÄÄÅ°ïÖëï…Ãı°ïÖëï…Ã∞(ÄÄÄÄÄÄÄÅô•±ïÃıÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâô•±îàËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—lâô•±ïπÖµîât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—lâçΩπ—ïπ–ât∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—lâçΩπ—ïπ—}—Â¡îât∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅ—•µïΩ’–Ù†ƒ¿∞Äÿ¿§∞(ÄÄÄÄ§(ÄÄÄÅ•òÅÕïπ—}…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëîÅπΩ–Å•∏ÅÏ»¿¿∞Ä»¿≈ÙË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅI’π—•µï……Ω»°òâ9Ω—•Ω∏Å•±îÅMïπêÅ!QQ@ÅÌÕïπ—}…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëïÙà§(ÄÄÄÅÕïπ—}¡ÖÂ±ΩÖêÄÙÅÕïπ—}…ïÕ¡ΩπÕîπ©ÕΩ∏†§ÅΩ»ÅÌÙ(ÄÄÄÅ•òÅÕïπ—}¡ÖÂ±ΩÖêπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâ’¡±ΩÖëïêàË(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†â9Ω—•Ω∏ÅªäeÑÅ¡ÖÃÅçΩπô•…∑§Å±îÅ”•≥•Ÿï…Õïµïπ–Åë‘Åô•ç°•ï»à§(ÄÄÄÅ…ï—’…∏Å’¡±ΩÖë}•ê(()ëïòÅ}ç…µ}ëïŸï±Ω¡µïπ—}Õ’¡¡Ω…—}Õ’â©ïç–°…ï›…•——ïπ}Öç—•ΩπÃ∞ÅΩ…•ù•πÖ±}Öç—•ΩπÃ§Ë(ÄÄÄÄààâ·—…Öç–ÅÑÅ’Õïô’∞Å9Ω—•Ω∏Å—•—±îÅô…Ω¥Å—°îÅ$ùÃÅôΩ…µÖ——ïêÅ…ïÕ¡ΩπÕî∏ààà(ÄÄÄÅ…ï›…•——ï∏ÄÙÅ…îπÕ’à†(ÄÄÄÄÄÄÄÅ»à†˝§§Òâ…qÃ®º¸¯à∞Äâq∏à∞ÅÕ—»°…ï›…•——ïπ}Öç—•ΩπÃÅΩ»Äàà§(ÄÄÄÄ§π…ï¡±Öçî†âq»à∞Äâq∏à§(ÄÄÄÅ±•πïÃÄÙÅmt(ÄÄÄÅôΩ»Å…Ö›}±•πîÅ•∏Å…ï›…•——ï∏πÕ¡±•—±•πïÃ†§Ë(ÄÄÄÄÄÄÄÅ±•πîÄÙÅ…îπÕ’à°»âl©}Åtà∞Äàà∞Å…Ö›}±•πî§(ÄÄÄÄÄÄÄÅ±•πîÄÙÅ…îπÕ’à°»âyqÃ®†¸ËçÏƒ∞ŸıqÃ©Òl∑äOäP˘uqÃ®§à∞Äàà∞Å±•πî§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅ±•πîË(ÄÄÄÄÄÄÄÄÄÄÄÅ±•πïÃπÖ¡¡ïπê°±•πî§((ÄÄÄÅôΩ»Å•πëï‡∞Å±•πîÅ•∏Åïπ’µï…Ö—î°±•πïÃ§Ë(ÄÄÄÄÄÄÄÅΩâ©ïç—•ŸîÄÙÅ…îπµÖ—ç†°»à†˝§•yΩâ©ïç—•ôqÃ®Ë˝qÃ®†∏®§êà∞Å±•πî§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅΩâ©ïç—•ŸîË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÅΩâ©ïç—•Ÿîπù…Ω’¿†ƒ§πÕ—…•¿†àÅq–ÎäOäP¥à§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÕ’â©ïç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅôΩ±±Ω›•πù}±•πîÅ•∏Å±•πïÕm•πëï‡Ä¨ÄƒÈtË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…îπµÖ—ç††(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ»à†˝§•x†¸ÈµΩë•ô•çÖ—•ΩπÃÅëïµÖπì•ïÕÒç…•”°…ïÃÅΩâÕï…ŸÖâ±ïÃ•qÃ®Ë¸à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ±±Ω›•πù}±•πî§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâ…ïÖ¨(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÅôΩ±±Ω›•πù}±•πî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅâ…ïÖ¨(ÄÄÄÄÄÄÄÅ•òÅÕ’â©ïç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å…îπÕ’à°»âqÃ¨à∞ÄàÄà∞ÅÕ’â©ïç–§πÕ—…•¿†§π…Õ—…•¿†à∏Ïà§((ÄÄÄÅôÖ±±âÖç¨ÄÙÅÕ—»°Ω…•ù•πÖ±}Öç—•ΩπÃÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅçÖπë•ëÖ—îÄÙÅ±•πïÕl¡tÅ•òÅ±•πïÃÅï±ÕîÅôÖ±±âÖç¨(ÄÄÄÅ…ï—’…∏Å…îπÕ’à°»âqÃ¨à∞ÄàÄà∞ÅçÖπë•ëÖ—î§πÕ—…•¿†§π…Õ—…•¿†à∏Ïà§(()ëïòÅ}ç…µ}ëïŸï±Ω¡µïπ—}Õ’¡¡Ω…—}¡Öùî†(ÄÄÄÄÄÄÄÅ¡±Ö—ôΩ…¥∞Å¡Öùï}’…∞∞ÅΩ…•ù•πÖ±}Öç—•ΩπÃ∞Å…ï›…•——ïπ}Öç—•ΩπÃ∞Ä®∞ÅÖ•}…ï›…•——ï∏ıQ…’î∞(ÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}’¡±ΩÖë}•êÙàà∞ÅÖ——Öç°µïπ—}ô•±ïπÖµîÙàà∞ÅÖ——Öç°µïπ—}çΩπ—ïπ—}—Â¡îÙàà§Ë(ÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÅÕ’â©ïç–ÄÙÅ}ç…µ}ëïŸï±Ω¡µïπ—}Õ’¡¡Ω…—}Õ’â©ïç–°…ï›…•——ïπ}Öç—•ΩπÃ∞ÅΩ…•ù•πÖ±}Öç—•ΩπÃ§(ÄÄÄÅ—•—±îÄÙÅòâÌ¡±Ö—ôΩ…µÙÉäPÅÌÕ’â©ïç–ÅΩ»ÅΩ…•ù•πÖ±}Öç—•ΩπÕÙâlËƒ¿¡t(ÄÄÄÅ¡Ö…Öù…Ö¡†ÄÙÅ±ÖµâëÑÅŸÖ±’îËÅÏâΩâ©ïç–àËÄââ±Ωç¨à∞Äâ—Â¡îàËÄâ¡Ö…Öù…Ö¡†à∞(ÄÄÄÄÄÄÄÄâ¡Ö…Öù…Ö¡†àËÅÏâ…•ç°}—ï·–àËÅ}ç…µ}πΩ—•Ωπ}…•ç°}—ï·–°ŸÖ±’î•ıÙ(ÄÄÄÅ°ïÖë•πúÄÙÅ±ÖµâëÑÅŸÖ±’îËÅÏâΩâ©ïç–àËÄââ±Ωç¨à∞Äâ—Â¡îàËÄâ°ïÖë•πù|»à∞(ÄÄÄÄÄÄÄÄâ°ïÖë•πù|»àËÅÏâ…•ç°}—ï·–àËÅ}ç…µ}πΩ—•Ωπ}…•ç°}—ï·–°ŸÖ±’î•ıÙ(ÄÄÄÅ¡ÖùîÄÙÅÏ(ÄÄÄÄÄÄÄÄâ¡Ö…ïπ–àËÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâëÖ—Ö}ÕΩ’…çï}•êà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—Ö}ÕΩ’…çï}•êàËÅΩÃπùï—ïπÿ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ9=Q%=9}I5}Q}M=UI}%à∞ÅI5}9=Q%=9}Q}M=UI}%§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄâ¡…Ω¡ï…—•ïÃàËÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâAïπœ•îàËÅÏâ—Â¡îàËÄâ—•—±îà∞Äâ—•—±îàËÅ}ç…µ}πΩ—•Ωπ}…•ç°}—ï·–°—•—±î•Ù∞(ÄÄÄÄÄÄÄÄÄÄÄÄâΩµÖ•πîàËÅÏâ—Â¡îàËÄâÕï±ïç–à∞ÄâÕï±ïç–àËÅÏâπÖµîàËÄâ•Ÿï±Ω¡¡ïµïπ–Å›ïàâıÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÄâA±Ö—ïôΩ…µîàËÅÏâ—Â¡îàËÄâÕï±ïç–à∞ÄâÕï±ïç–àËÅÏâπÖµîàËÅ¡±Ö—ôΩ…µıÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÄâM—Ö—’–àËÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâÕï±ïç–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕï±ïç–àËÅÏâπÖµîàËÅI5}Y1=A59Q}MUAA=IQ}9=Q%=9}MQQUMÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÄâQÂ¡îàËÅÏâ—Â¡îàËÄâÕï±ïç–à∞ÄâÕï±ïç–àËÅÏâπÖµîàËÄã ÅôÖ•…îâıÙ∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄâç°•±ë…ï∏àËÅl(ÄÄÄÄÄÄÄÄÄÄÄÅ°ïÖë•πú†âïµÖπëîÅ…ïôΩ…µ’≥•îÅ¡Ö»Å≥äe%àÅ•òÅÖ•}…ï›…•——ï∏Åï±ÕîÄâïµÖπëîÉÄÅ…ïôΩ…µ’±ï»à§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…Öù…Ö¡†°…ï›…•——ïπ}Öç—•ΩπÃ§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ°ïÖë•πú†âAÖùîÅçΩπçï…ª•îà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…Öù…Ö¡†°¡Öùï}’…∞§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ°ïÖë•πú†âïµÖπëîÅΩ…•ù•πÖ±îà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…Öù…Ö¡†°Ω…•ù•πÖ±}Öç—•ΩπÃ§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ°ïÖë•πú†âïµÖπëï’»à§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…Öù…Ö¡†°’Õï»πùï–†âπÖµîà§ÅΩ»Å’Õï»πùï–†âïµÖ•∞à§ÅΩ»Äâëµ•π•Õ—…Ö—ï’»ÅI4à§∞(ÄÄÄÄÄÄÄÅt∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅÖ——Öç°µïπ—}’¡±ΩÖë}•êË(ÄÄÄÄÄÄÄÅô•±ï}’¡±ΩÖêÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâô•±ï}’¡±ΩÖêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâô•±ï}’¡±ΩÖêàËÅÏâ•êàËÅÖ——Öç°µïπ—}’¡±ΩÖë}•ëÙ∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅ•òÅÕ—»°Ö——Öç°µïπ—}çΩπ—ïπ—}—Â¡î§πÕ—Ö…—Õ›•—††â•µÖùîºà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Öùïlâç°•±ë…ï∏âtπï·—ïπê°l(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ°ïÖë•πú†â%µÖùîÅ©Ω•π—îà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩâ©ïç–àËÄââ±Ωç¨à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâ•µÖùîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ•µÖùîàËÅÏ®©ô•±ï}’¡±ΩÖê∞ÄâçÖ¡—•Ω∏àËÅmuÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÅt§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Öùïlâ¡…Ω¡ï…—•ïÃâumI5}9=Q%=9}QQ!59Q}AI=AIQetÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâô•±ïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâô•±ïÃàËÅmÏ®©ô•±ï}’¡±ΩÖê∞ÄâπÖµîàËÅÖ——Öç°µïπ—}ô•±ïπÖµïıt∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Öùïlâç°•±ë…ï∏âtπï·—ïπê°l(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ°ïÖë•πú†âAß°çîÅ©Ω•π—îà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩâ©ïç–àËÄââ±Ωç¨à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâô•±îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâô•±îàËÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ®©ô•±ï}’¡±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâπÖµîàËÅÖ——Öç°µïπ—}ô•±ïπÖµî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçÖ¡—•Ω∏àËÅmt∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÅt§(ÄÄÄÅ…ï—’…∏Å¡Öùî(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ωç…¥ΩëïŸï±Ω¡µïπ–µÕ’¡¡Ω…–à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ëïŸï±Ω¡µïπ—}Õ’¡¡Ω…–†§Ë(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÄ°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§Å•òÅ…ï≈’ïÕ–π•Õ}©ÕΩ∏Åï±ÕîÅ…ï≈’ïÕ–πôΩ…¥(ÄÄÄÅ¡±Ö—ôΩ…¥ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â¡±Ö—ôΩ…¥à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ¡Öùï}’…∞ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â¡Öùï}’…∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÖç—•ΩπÃÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÖç—•ΩπÃà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅ¡±Ö—ôΩ…¥ÅπΩ–Å•∏ÅI5}Y1=A59Q}MUAA=IQ}A1Q=I5LË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ°Ω•Õ•ÕÕïËÅ’πîÅ¡±Ö—ïôΩ…µîÅŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ¡Ö…Õïë}’…∞ÄÙÅ’…±¡Ö…Õî°¡Öùï}’…∞§(ÄÄÄÅ•òÅ¡Ö…Õïë}’…∞πÕç°ïµîÅπΩ–Å•∏ÅÏâ°——¿à∞Äâ°——¡ÃâÙÅΩ»ÅπΩ–Å¡Ö…Õïë}’…∞ππï—±ΩåÅΩ»Å±ï∏°¡Öùï}’…∞§Ä¯Ä…|¿¿¿Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIïπÕï•ùπïËÅ’πîÅUI0Å°——¿°Ã§ÅŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ•òÅ±ï∏°Öç—•ΩπÃ§ÄÄ»¿ÅΩ»Å±ï∏°Öç—•ΩπÃ§Ä¯ÄŸ|¿¿¿Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ•—Ö•±±ïËÅ±ïÃÅÖç—•ΩπÃÉÄÅµïπï»Åïπ—…îÄ»¿Åï–ÄÿÄ¿¿¿ÅçÖ…Öç”°…ïÃ∏âÙ§∞Ä–¿¿(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅÖ——Öç°µïπ–ÄÙÅ}ç…µ}ëïŸï±Ω¡µïπ—}Õ’¡¡Ω…—}Ö——Öç°µïπ–†§(ÄÄÄÅï·çï¡–Å=Ÿï…ô±Ω›……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–ƒÃ(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿((ÄÄÄÅÖ•}…ï›…•——ï∏ÄÙÅQ…’î(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ï›…•——ï∏ÄÙÅ}ç…µ}Ö§†(ÄÄÄÄÄÄÄÄÄÄÄÄâQ‘Å…ïôΩ…µ’±ïÃÅ’πîÅëïµÖπëîÅ•π—ï…πîÅëîÅì•Ÿï±Ω¡¡ïµïπ–ÅÕÖπÃÅ•πŸïπ—ï»∞Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’¡¡…•µï»Åπ§Åï„•ç’—ï»ÅÖ’ç’πîÅ•πÕ—…’ç—•Ω∏∏ÅK•¡ΩπëÃÅ’π•≈’ïµïπ–Åï∏Åô…ÖªùÖ•ÃÄà(ÄÄÄÄÄÄÄÄÄÄÄÄâÖŸïåÅ—…Ω•ÃÅÕïç—•ΩπÃÅçΩ’…—ïÃÄËÅ=â©ïç—•ò∞Å5Ωë•ô•çÖ—•ΩπÃÅëïµÖπì•ïÃ∞Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâ…•”°…ïÃÅΩâÕï…ŸÖâ±ïÃ∏ÅΩπÕï…ŸîÅ—Ω’ÃÅ±ïÃÅì•—Ö•±ÃÅôΩπç—•Ωππï±ÃÅ’—•±ïÃ∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÅòâA±Ö—ïôΩ…µîÄËÅÌ¡±Ö—ôΩ…µıqπUI0ÄËÅÌ¡Öùï}’…±ıqπïµÖπëîÅâ…’—îÄÈqπÌÖç—•ΩπÕÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ·}—Ω≠ïπÃÙ‹¿¿∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄåÅ1ÑÅçΩ±±ïç—îÅëîÅ±ÑÅëïµÖπëîÅ…ïÕ—îÅ¡…•Ω…•—Ö•…îÄËÅ’πîÅ¡ÖππîÅ%ÅπîÅëΩ•–Å¡ÖÃ(ÄÄÄÄÄÄÄÄåÅôÖ•…îÅ¡ï…ë…îÅ±ÑÅÕÖ•Õ•î∏Å]Ω…¨Å¡Ω’……ÑÅ…ïôΩ…µ’±ï»Å±îÅ—ï·—îÅ±Ω…ÃÅë‘Å—…Ö•—ïµïπ–∏(ÄÄÄÄÄÄÄÅ¡…•π–°òâM’¡¡Ω…–Åì•Ÿï±Ω¡¡ïµïπ–ÉäPÅ…ïôΩ…µ’±Ö—•Ω∏Åë•ôõ•À•îÄËÅÌï·çÙà∞Åô±’Õ†ıQ…’î§(ÄÄÄÄÄÄÄÅ…ï›…•——ï∏ÄÙÅÖç—•ΩπÃ(ÄÄÄÄÄÄÄÅÖ•}…ï›…•——ï∏ÄÙÅÖ±Õî((ÄÄÄÅ—Ω≠ï∏ÄÙÅΩÃπùï—ïπÿ†â9=Q%=9}A%}Q=-8à§(ÄÄÄÅ•òÅπΩ–Å—Ω≠ï∏Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅçΩππï·•Ω∏Å9Ω—•Ω∏Åë‘ÅI4ÅªäeïÕ–Å¡ÖÃÅçΩπô•ù’À•î∏âÙ§∞Ä‘¿Ã(ÄÄÄÅπΩ—•Ωπ}Ÿï…Õ•Ω∏ÄÙÅΩÃπùï—ïπÿ†â9=Q%=9}A%}YIM%=8à∞Äà»¿»‘¥¿‰¥¿Ãà§(ÄÄÄÅÖ——Öç°µïπ—}’¡±ΩÖë}•êÄÙÄàà(ÄÄÄÅ•òÅÖ——Öç°µïπ–Ë(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}’¡±ΩÖë}•êÄÙÅ}ç…µ}’¡±ΩÖë}πΩ—•Ωπ}Ö——Öç°µïπ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—Ω≠ï∏∞ÅπΩ—•Ωπ}Ÿï…Õ•Ω∏∞ÅÖ——Öç°µïπ–§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°…ï≈’ïÕ—ÃπIï≈’ïÕ—·çï¡—•Ω∏∞ÅI’π—•µï……Ω»∞ÅYÖ±’ï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡…•π–°òâM’¡¡Ω…–Åì•Ÿï±Ω¡¡ïµïπ–ÉäPÅ”•≥•Ÿï…Õïµïπ–Å9Ω—•Ω∏Å•µ¡ΩÕÕ•â±îÄËÅÌï·çÙà∞Åô±’Õ†ıQ…’î§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1ÑÅ¡ß°çîÅ©Ω•π—îÅªäeÑÅ¡ÖÃÅ¡‘É©—…îÅïπŸΩÁ•îÉÄÅ9Ω—•Ω∏∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1ÑÅëïµÖπëîÅªäeÑÅ¡ÖÃÉ•”§ÅçÀß•î∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä‘¿Ã(ÄÄÄÅπΩ—•Ωπ}¡ÖÂ±ΩÖêÄÙÅ}ç…µ}ëïŸï±Ω¡µïπ—}Õ’¡¡Ω…—}¡Öùî†(ÄÄÄÄÄÄÄÅ¡±Ö—ôΩ…¥∞Å¡Öùï}’…∞∞ÅÖç—•ΩπÃ∞Å…ï›…•——ï∏∞ÅÖ•}…ï›…•——ï∏ıÖ•}…ï›…•——ï∏∞(ÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}’¡±ΩÖë}•êıÖ——Öç°µïπ—}’¡±ΩÖë}•ê∞(ÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}ô•±ïπÖµîıÖ——Öç°µïπ—lâô•±ïπÖµîâtÅ•òÅÖ——Öç°µïπ–Åï±ÕîÄàà∞(ÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}çΩπ—ïπ—}—Â¡îıÖ——Öç°µïπ—lâçΩπ—ïπ—}—Â¡îâtÅ•òÅÖ——Öç°µïπ–Åï±ÕîÄàà∞(ÄÄÄÄ§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ…ï≈’ïÕ—Ãπ¡ΩÕ–†(ÄÄÄÄÄÄÄÄÄÄÄÄâ°——¡ÃËºΩÖ¡§ππΩ—•Ω∏πçΩ¥ΩÿƒΩ¡ÖùïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÅ°ïÖëï…ÃıÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ’—°Ω…•ÈÖ—•Ω∏àËÅòâ	ïÖ…ï»ÅÌ—Ω≠ïπÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ9Ω—•Ω∏µYï…Õ•Ω∏àËÅπΩ—•Ωπ}Ÿï…Õ•Ω∏∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩπ—ïπ–µQÂ¡îàËÄâÖ¡¡±•çÖ—•Ω∏Ω©ÕΩ∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÅ©ÕΩ∏ıπΩ—•Ωπ}¡ÖÂ±ΩÖê∞(ÄÄÄÄÄÄÄÄÄÄÄÅ—•µïΩ’–Ù†ƒ¿∞ÄÃ¿§∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëîÅπΩ–Å•∏ÅÏ»¿¿∞Ä»¿≈ÙË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅI’π—•µï……Ω»°òâ9Ω—•Ω∏Å!QQ@ÅÌ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëïÙà§(ÄÄÄÄÄÄÄÅç…ïÖ—ïêÄÙÅ…ïÕ¡ΩπÕîπ©ÕΩ∏†§(ÄÄÄÄÄÄÄÅπΩ—•Ωπ}’…∞ÄÙÅÕ—»°ç…ïÖ—ïêπùï–†â’…∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅπΩ—•Ωπ}’…∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†âK•¡ΩπÕîÅ9Ω—•Ω∏ÅÕÖπÃÅUI0à§(ÄÄÄÅï·çï¡–Ä°…ï≈’ïÕ—ÃπIï≈’ïÕ—·çï¡—•Ω∏∞ÅI’π—•µï……Ω»∞ÅYÖ±’ï……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ¡…•π–°òâM’¡¡Ω…–Åì•Ÿï±Ω¡¡ïµïπ–ÉäPÅçÀ•Ö—•Ω∏Å9Ω—•Ω∏Å•µ¡ΩÕÕ•â±îÄËÅÌï·çÙà∞Åô±’Õ†ıQ…’î§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅëïµÖπëîÅªäeÑÅ¡ÖÃÅ¡‘É©—…îÅçÀß•îÅëÖπÃÅ9Ω—•Ω∏∏âÙ§∞Ä‘¿Ã(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâ’…∞àËÅπΩ—•Ωπ}’…∞∞(ÄÄÄÄÄÄÄÄâ—•—±îàËÅπΩ—•Ωπ}¡ÖÂ±ΩÖëlâ¡…Ω¡ï…—•ïÃâulâAïπœ•îâulâ—•—±îâul¡ulâ—ï·–âulâçΩπ—ïπ–ât∞(ÄÄÄÄÄÄÄÄâÖ•}…ï›…•——ï∏àËÅÖ•}…ï›…•——ï∏∞(ÄÄÄÄÄÄÄÄâÖ——Öç°µïπ—}’¡±ΩÖëïêàËÅâΩΩ∞°Ö——Öç°µïπ—}’¡±ΩÖë}•ê§∞(ÄÄÄÅÙ§∞Ä»¿ƒ(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ωç…¥ΩÕ—Ö—’ÕïÃà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}Öëë}Õ—Ö—’Ã†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅ±Öâï∞ÄÙÅÕ—»†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†â±Öâï∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÕ—Ö—’ÕïÃÄÙÅ}ç…µ}Õ—Ö—’ÕïÃ°ëÖ—Ñ§(ÄÄÄÅ•òÅπΩ–Å±Öâï∞ÅΩ»Å±Öâï∞Å•∏ÅÕ—Ö—’ÕïÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâï——îÉ•—Ö¡îÅïÕ–ÅŸ•ëîÅΩ‘Åï·•Õ—îÅì•´ÄâÙ§∞Ä–¿¿(ÄÄÄÅëÖ—Ölâç…µ}Õ—Ö—’ÕïÃâtÄÙÅl©Õ—Ö—’ÕïÕlË¥Õt∞Å±Öâï∞∞Ä©Õ—Ö—’ÕïÕl¥ÃÈut(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§ÏÅ…ï—’…∏Å©ÕΩπ•ô‰°ëÖ—Ölâç…µ}Õ—Ö—’ÕïÃât§∞Ä»¿ƒ(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩÕ—Ö—’ÕïÃºÒ¡Ö—†ÈΩ±ë}±Öâï∞¯à∞Åµï—°ΩëÃılâAQ à∞Äâ1Qât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ç°Öπùï}Õ—Ö—’Ã°Ω±ë}±Öâï∞§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅÕ—Ö—’ÕïÃÄÙÅ}ç…µ}Õ—Ö—’ÕïÃ°ëÖ—Ñ§(ÄÄÄÅ•òÅΩ±ë}±Öâï∞ÅπΩ–Å•∏ÅÕ—Ö—’ÕïÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄã%—Ö¡îÅ•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ•òÅΩ±ë}±Öâï∞Å•∏ÅI5}IMIY}MQQUMLË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâï——îÉ•—Ö¡îÅÕÂÕ”°µîÅπîÅ¡ï’–Å¡ÖÃÉ©—…îÅµΩë•ôß•îâÙ§∞Ä–¿¿(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâAQ àË(ÄÄÄÄÄÄÄÅ…ï¡±Öçïµïπ–ÄÙÅÕ—»†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†â±Öâï∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ï¡±Öçïµïπ–ÅΩ»Ä°…ï¡±Öçïµïπ–Å•∏ÅÕ—Ö—’ÕïÃÅÖπêÅ…ï¡±Öçïµïπ–ÄÑÙÅΩ±ë}±Öâï∞§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ%π—•—’≥§Å•πŸÖ±•ëîâÙ§∞Ä–¿¿(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅ…ï¡±Öçïµïπ–ÄÙÅπï·–†°ŸÖ±’îÅôΩ»ÅŸÖ±’îÅ•∏ÅÕ—Ö—’ÕïÃÅ•òÅŸÖ±’îÄÑÙÅΩ±ë}±Öâï∞ÅÖπêÅŸÖ±’îÅπΩ–Å•∏ÅI5}IMIY}MQQUML§∞Äâ9Ω’ŸïÖ’‡à§(ÄÄÄÅπï·—}Õ—Ö—’ÕïÃÄÙÅm…ï¡±Öçïµïπ–Å•òÅŸÖ±’îÄÙÙÅΩ±ë}±Öâï∞Åï±ÕîÅŸÖ±’îÅôΩ»ÅŸÖ±’îÅ•∏ÅÕ—Ö—’ÕïÕtÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâAQ àÅï±ÕîÅmŸÖ±’îÅôΩ»ÅŸÖ±’îÅ•∏ÅÕ—Ö—’ÕïÃÅ•òÅŸÖ±’îÄÑÙÅΩ±ë}±Öâï±t(ÄÄÄÅëÖ—Ölâç…µ}Õ—Ö—’ÕïÃâtÄÙÅπï·—}Õ—Ö—’ÕïÃ(ÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÙÙÅΩ±ë}±Öâï∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÅ…ï¡±Öçïµïπ–(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâÕ—Ö—’ÕïÃàËÅπï·—}Õ—Ö—’ÕïÃ∞Äâ…ï¡±Öçïµïπ–àËÅ…ï¡±Öçïµïπ—Ù§(()ëïòÅ}ç…µ}Õï——•πùÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ§Ë(ÄÄÄÄààâ9Ω…µÖ±•ÕîÅ±ïÃÅÀ•ù±ÖùïÃÅI4ÅÕÖπÃÅ…ï±•…îÅ±îÅô•ç°•ï»Å)M=8∏ààà(ÄÄÄÅÕï——•πùÃÄÙÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}Õï——•πùÃà∞ÅÌÙ§(ÄÄÄÅëïôÖ’±—ÃÄÙÅU1Q}Qlâç…µ}Õï——•πùÃât(ÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏ÅëïôÖ’±—Ãπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅÕï——•πùÃπÕï—ëïôÖ’±–†(ÄÄÄÄÄÄÄÄÄÄÄÅ≠ï‰∞(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’îπçΩ¡‰†§Å•òÅ•Õ•πÕ—Öπçî°ŸÖ±’î∞Ä°ë•ç–∞Å±•Õ–§§Åï±ÕîÅŸÖ±’î∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ï—’…∏ÅÕï——•πùÃ(()ëïòÅ}ç…µ}¡…ïÕï—}ŸÖ±’ïÃ°ŸÖ±’î∞Å±Öâï∞§Ë(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ŸÖ±’î∞Å±•Õ–§Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»°òâ1ïÃÅÌ±Öâï±ÙÅëΩ•Ÿïπ–É©—…îÅ—…ÖπÕµ•ÃÅÕΩ’ÃÅôΩ…µîÅëîÅ±•Õ—î∏à§(ÄÄÄÅ•òÅ±ï∏°ŸÖ±’î§Ä¯Ä‘¿Ë(ÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»°òâYΩ’ÃÅπîÅ¡Ω’ŸïËÅ¡ÖÃÅïπ…ïù•Õ—…ï»Å¡±’ÃÅëîÄ‘¿ÅÌ±Öâï±Ù∏à§(ÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅmt(ÄÄÄÅÕïï∏ÄÙÅÕï–†§(ÄÄÄÅôΩ»Å•—ï¥Å•∏ÅŸÖ±’îË(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°•—ï¥∞ÅÕ—»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ°Ö≈’îÉ•≥•µïπ–ÅëîÅ±ÑÅ±•Õ—îÉ
+¨ÅÌ±Öâï±ÙÉ
+ÏÅëΩ•–É©—…îÅ’∏Å—ï·—î∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ—ï·–ÄÙÄàÄàπ©Ω•∏°•—ï¥πÕ¡±•–†§§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å—ï·–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅ±ï∏°—ï·–§Ä¯Äƒÿ¿Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ°Ö≈’îÉ•≥•µïπ–ÅëîÅ±ÑÅ±•Õ—îÉ
+¨ÅÌ±Öâï±ÙÉ
+ÏÅïÕ–Å±•µ•”§ÉÄÄƒÿ¿ÅçÖ…Öç”°…ïÃ∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ≠ï‰ÄÙÅ—ï·–πçÖÕïôΩ±ê†§(ÄÄÄÄÄÄÄÅ•òÅ≠ï‰Å•∏ÅÕïï∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅÕïï∏πÖëê°≠ï‰§(ÄÄÄÄÄÄÄÅπΩ…µÖ±•ÈïêπÖ¡¡ïπê°—ï·–§(ÄÄÄÅ…ï—’…∏ÅπΩ…µÖ±•Èïê(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩÕï——•πùÃà∞Åµï—°ΩëÃılâPà∞ÄâAQ ât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}Õï——•πùÃ†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅÕï——•πùÃÄÙÅ}ç…µ}Õï——•πùÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâPàË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Õï——•πùÃ§(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅÖ±±Ω›ïêÄÙÅÏ(ÄÄÄÄÄÄÄÄâçÖ±ïπëÖ…}ëïôÖ’±—}Ÿ•ï‹à∞ÄâçÖ±ïπëÖ…}›Ω…≠ëÖÂ}Õ—Ö…–à∞ÄâçÖ±ïπëÖ…}›Ω…≠ëÖÂ}ïπêà∞(ÄÄÄÄÄÄÄÄâπΩ—•ô•çÖ—•Ωπ}µïπ—•ΩπÃà∞ÄâπΩ—•ô•çÖ—•Ωπ}ÕÂÕ—ï¥à∞Äâë•…ïç—•Ωπ}çΩÕ—Ãà∞(ÄÄÄÄÄÄÄÄâçÖ±±}πΩ—ï}¡…ïÕï—Ãà∞Äâ…ï±Öπçï}µΩ—•ô}¡…ïÕï—Ãà∞(ÄÄÄÄÄÄÄÄâµÖπ’Ö±}πï·—}Öç—•Ωπ}¡…ïÕï—Ãà∞(ÄÄÄÅÙ(ÄÄÄÅ•òÄâë•…ïç—•Ωπ}çΩÕ—ÃàÅ•∏Å¡ÖÂ±ΩÖêÅÖπêÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†â…Ω±îà§ÄÑÙÄâÖëµ•∏àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅçΩπô•ù’…Ö—•Ω∏ÅëïÃÅçøÌ—ÃÅïÕ–ÅÀ•Õï…€•îÉÄÅ≥äeÖëµ•π•Õ—…Ö—ï’»∏âÙ§∞Ä–¿Ã(ÄÄÄÅôΩ»Å≠ï‰Å•∏ÅÖ±±Ω›ïêπ•π—ï…Õïç—•Ω∏°¡ÖÂ±ΩÖê§Ë(ÄÄÄÄÄÄÄÅ•òÅ≠ï‰Å•∏ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±}πΩ—ï}¡…ïÕï—Ãà∞Äâ…ï±Öπçï}µΩ—•ô}¡…ïÕï—Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµÖπ’Ö±}πï·—}Öç—•Ωπ}¡…ïÕï—Ãà∞(ÄÄÄÄÄÄÄÅÙË(ÄÄÄÄÄÄÄÄÄÄÄÅ±Öâï∞ÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±}πΩ—ï}¡…ïÕï—ÃàËÄâÀ•¡ΩπÕïÃÅ¡À§µïπ…ïù•Õ—À•ïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ï±Öπçï}µΩ—•ô}¡…ïÕï—ÃàËÄâµΩ—•ôÃÅëîÅ…ï±Öπçîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâµÖπ’Ö±}πï·—}Öç—•Ωπ}¡…ïÕï—ÃàËÄâ¡…Ωç°Ö•πïÃÅÖç—•ΩπÃÅ¡À§µïπ…ïù•Õ—À•ïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÅım≠ïÂt(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕï——•πùÕm≠ïÂtÄÙÅ}ç…µ}¡…ïÕï—}ŸÖ±’ïÃ°¡ÖÂ±ΩÖêπùï–°≠ï‰§∞Å±Öâï∞§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÄÄÄÄÅï±•òÅ≠ï‰ÄÙÙÄâë•…ïç—•Ωπ}çΩÕ—ÃàË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩÕ—ÃÄÙÅ¡ÖÂ±ΩÖêπùï–°≠ï‰§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°çΩÕ—Ã∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅçΩπô•ù’…Ö—•Ω∏ÅëïÃÅçøÌ—ÃÅïÕ–Å•πŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÄÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅÌÙ(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å±Öâï∞∞ÅŸÖ±’îÅ•∏ÅçΩÕ—Ãπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö‹ÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§πÕ—…•¿†§π…ï¡±Öçî†àÄà∞Äàà§π…ï¡±Öçî†à∞à∞Äà∏à§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å…Ö‹Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖµΩ’π–ÄÙÅô±ΩÖ–°…Ö‹§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅòâ1îÅçøÌ–ÅëîÅÌ±Öâï±ÙÅïÕ–Å•πŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÖµΩ’π–ÄÄ¿Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ïÃÅçøÌ—ÃÅëΩ•Ÿïπ–É©—…îÅ¡ΩÕ•—•ôÃ∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅπΩ…µÖ±•ÈïëmÕ—»°±Öâï∞•tÄÙÅÖµΩ’π–(ÄÄÄÄÄÄÄÄÄÄÄÅÕï——•πùÕm≠ïÂtÄÙÅπΩ…µÖ±•Èïê(ÄÄÄÄÄÄÄÅï±•òÅ≠ï‰πÕ—Ö…—Õ›•—††âπΩ—•ô•çÖ—•Ωπ|à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕï——•πùÕm≠ïÂtÄÙÅâΩΩ∞°¡ÖÂ±ΩÖêπùï–°≠ï‰§§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅÕï——•πùÕm≠ïÂtÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–°≠ï‰§ÅΩ»Äàà§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Õï——•πùÃ§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃΩâ’±¨à∞Åµï—°ΩëÃılâAQ à∞Äâ1Qât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}çΩπ—Öç—Õ}â’±¨†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ•ëÃÄÙÅÌÕ—»°ŸÖ±’î§ÅôΩ»ÅŸÖ±’îÅ•∏Å¡ÖÂ±ΩÖêπùï–†â•ëÃà∞Åmt§Å•òÅŸÖ±’ïÙ(ÄÄÄÅ•òÅπΩ–Å•ëÃÅΩ»Å±ï∏°•ëÃ§Ä¯Ä‘¿¿Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâO•±ïç—•Ω∏Å•πŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâ1QàË(ÄÄÄÄÄÄÄÅëï±ï—ïë}•ëÃÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—»°çΩπ—Öç–πùï–†â•êà§§Å•∏Å•ëÃ(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅëÖ—Ölâç…µ}çΩπ—Öç—ÃâtÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–ÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—»°çΩπ—Öç–πùï–†â•êà§§ÅπΩ–Å•∏Åëï±ï—ïë}•ëÃ(ÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÅëÖ—Ölâç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—ÃâtÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ–(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»ÅÖ¡¡Ω•π—µïπ–Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§§ÅπΩ–Å•∏Åëï±ï—ïë}•ëÃ(ÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâëï±ï—ïë}•ëÃàËÅÕΩ…—ïê°ëï±ï—ïë}•ëÃ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩ’π–àËÅ±ï∏°ëï±ï—ïë}•ëÃ§∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅÖç—•Ω∏ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÖç—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÕ—Ö—’ÕïÃÄÙÅ}ç…µ}Õ—Ö—’ÕïÃ°ëÖ—Ñ§(ÄÄÄÅ’¡ëÖ—ïêÄÙÅmt(ÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅÕ—»°çΩπ—Öç–πùï–†â•êà§§ÅπΩ–Å•∏Å•ëÃË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅΩ±ë}Õ—Ö—’ÃÄÙÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§(ÄÄÄÄÄÄÄÅ•òÅÖç—•Ω∏ÄÙÙÄâÕ—Ö—’ÃàË(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’ÃÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âŸÖ±’îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—Ö—’ÃÅπΩ–Å•∏ÅÕ—Ö—’ÕïÃË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄã%—Ö¡îÅ•πçΩππ’î∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÅÕ—Ö—’Ã(ÄÄÄÄÄÄÄÅï±•òÅÖç—•Ω∏ÄÙÙÄâçΩµµï…ç•Ö∞àË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâçΩµµï…ç•Ö∞âtÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âŸÖ±’îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅï±•òÅÖç—•Ω∏ÄÙÙÄâÖ…ç°•ŸîàË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÖ…ç°•Ÿïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅï±•òÅÖç—•Ω∏ÄÙÙÄâ…ïÕ—Ω…îàË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÖ…ç°•Ÿïë}Ö–âtÄÙÄàà(ÄÄÄÄÄÄÄÅï±•òÅÖç—•Ω∏ÄÙÙÄâ…ï±ÖπçîàË(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—ïë}ëÖ—îÄÙÅ}ç…µ}…ï±Öπçï}ëÖ—î†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†âŸÖ±’îà§∞Å›ïï≠ëÖÂÕ}Ωπ±‰ıQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡±Öππïê∞Å|ÄÙÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—ïë}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙââ’±¨à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµΩ—•òı¡ÖÂ±ΩÖêπùï–†âµΩ—•òà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÄâÅ…ï±Öπçï»à(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡±ÖππïêË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Äâ…ï±Öπçîà∞ÄâIï±ÖπçîÅ¡±Öπ•ôß•îÅï∏Åù…Ω’¡îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄàÉ
+‹Äàπ©Ω•∏°ô•±—ï»°9Ωπî∞Ål(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâA…Ωç°Ö•πîÅ…ï±ÖπçîÅ±îÅÌ¡±ÖππïëlùÕç°ïë’±ïë}ëÖ—îùuÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ5Ω—•òÄËÅÌ¡±Öππïêπùï–†ùµΩ—•òú•ÙàÅ•òÅ¡±Öππïêπùï–†âµΩ—•òà§Åï±ÕîÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅt§§§(ÄÄÄÄÄÄÄÅï±•òÅÖç—•Ω∏ÄÙÙÄâë•Õ≈’Ö±•ô‰àË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÖÕΩ∏ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â…ïÖÕΩ∏à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ïÖÕΩ∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅµΩ—•òÅëîÅë•Õ≈’Ö±•ô•çÖ—•Ω∏ÅïÕ–ÅΩâ±•ùÖ—Ω•…î∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî°çΩπ—Öç–∞Äàà§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’–àËÄâ•Õ≈’Ö±•ôß§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏àËÅ…ïÖÕΩ∏∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âëï—Ö•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖç—•ŸÖ—•Ωπ}ëÖ—îàËÅÕ—»°¡ÖÂ±ΩÖêπùï–†â…ïÖç—•ŸÖ—•Ωπ}ëÖ—îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâç—•Ω∏Åù…Ω’√•îÅ•πçΩππ’î∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÑÙÅΩ±ë}Õ—Ö—’ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’Õ}ç°Öπùïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÙÙÄâΩπŸï…—§àÅÖπêÅπΩ–ÅçΩπ—Öç–πùï–†âçΩπŸï…—ïë}Ö–à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâçΩπŸï…—ïë}Ö–âtÄÙÅçΩπ—Öç—lâÕ—Ö—’Õ}ç°Öπùïë}Ö–ât(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÑÙÄâ•Õ≈’Ö±•ôß§àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏âtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞âtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÙÙÄâ•Õ≈’Ö±•ôß§àË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—Â}ëï—Ö•±ÃÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâπç•ï∏ÅÕ—Ö—’–ÄËÅÌΩ±ë}Õ—Ö—’ÃÅΩ»Äù9Ω∏Å…ïπÕï•ùª§ùÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ5Ω—•òÄËÅÌçΩπ—Öç–πùï–†ùë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏ú•Ùà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—Â}ëï—Ö•±ÃπÖ¡¡ïπê†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâAÀ•ç•Õ•ΩπÃÄËÅÌçΩπ—Öç—lùë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞ùuÙà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†â…ïÖç—•ŸÖ—•Ωπ}ëÖ—îà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—Â}ëï—Ö•±ÃπÖ¡¡ïπê†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâK•Öç—•ŸÖ—•Ω∏Å¡À•Ÿ’îÄËÅÌçΩπ—Öç—lù…ïÖç—•ŸÖ—•Ωπ}ëÖ—îùuÙà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÄâÕ—Ö—’–à∞ÄâA•Õ—îÅë•Õ≈’Ö±•ôß•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄàÉ
+‹Äàπ©Ω•∏°Öç—•Ÿ•—Â}ëï—Ö•±Ã§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÄâÕ—Ö—’–à∞ÅòâM—Ö—’–ÄËÅÌçΩπ—Öç—lùÕ—Ö—’–ùuÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâπç•ï∏ÅÕ—Ö—’–ÄËÅÌΩ±ë}Õ—Ö—’ÕÙÉ
+‹ÅÖç—•Ω∏Åù…Ω’√•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅ’¡ëÖ—ïêπÖ¡¡ïπê°}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ’¡ëÖ—ïêàËÅ’¡ëÖ—ïê∞ÄâçΩ’π–àËÅ±ï∏°’¡ëÖ—ïê•Ù§(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃΩµï…ùîà§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}çΩπ—Öç—Õ}µï…ùî†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ—Ö…ùï–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Å¡ÖÂ±ΩÖêπùï–†â—Ö…ùï—}•êà§§(ÄÄÄÅÕΩ’…çîÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Å¡ÖÂ±ΩÖêπùï–†âÕΩ’…çï}•êà§§(ÄÄÄÅ•òÅπΩ–Å—Ö…ùï–ÅΩ»ÅπΩ–ÅÕΩ’…çîÅΩ»Å—Ö…ùï–Å•ÃÅÕΩ’…çîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ïÃÅëï’‡Åô•ç°ïÃÉÄÅô’Õ•Ωππï»ÅÕΩπ–Å•πŸÖ±•ëïÃ∏âÙ§∞Ä–¿¿(ÄÄÄÅ¡…Ω—ïç—ïêÄÙÅÏâ•êà∞Äâç…ïÖ—ïë}Ö–âÙ(ÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏ÅÕΩ’…çîπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅ•òÅ≠ï‰Å•∏Å¡…Ω—ïç—ïêÅΩ»Å≠ï‰Å•∏ÅÏâÖç—•Ÿ•—•ïÃà∞Äâ¡’â±•çÖ—•ΩπÃà∞Äâ…ï±ÖπçïÃà∞ÄâÕΩ’…çï}°•Õ—Ω…‰à∞Äâµï—Ö}ÖπÕ›ï…ÃâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å—Ö…ùï–πùï–°≠ï‰§ÅÖπêÅŸÖ±’îÅπΩ–Å•∏Ä°9Ωπî∞Äàà∞Åmt∞ÅÌÙ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ—Ö…ùï—m≠ïÂtÄÙÅŸÖ±’î(ÄÄÄÅôΩ»Å≠ï‰Å•∏Ä†âÖç—•Ÿ•—•ïÃà∞Äâ¡’â±•çÖ—•ΩπÃà∞Äâ…ï±ÖπçïÃà∞Äâµï—Ö}ÖπÕ›ï…Ãà§Ë(ÄÄÄÄÄÄÄÅµï…ùïêÄÙÅl®°—Ö…ùï–πùï–°≠ï‰§ÅΩ»Åmt§∞Ä®°ÕΩ’…çîπùï–°≠ï‰§ÅΩ»Åmt•t(ÄÄÄÄÄÄÄÅÕïï∏ÄÙÅÕï–†§ÏÅ’π•≈’îÄÙÅmt(ÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏Åµï…ùïêË(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ…≠ï»ÄÙÅÕ—»°•—ï¥πùï–†â•êà§ÅΩ»Å©ÕΩ∏πë’µ¡Ã°•—ï¥∞ÅÕΩ…—}≠ïÂÃıQ…’î∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî§§Å•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§Åï±ÕîÅÕ—»°•—ï¥§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅµÖ…≠ï»Å•∏ÅÕïï∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÄÄÄÄÅÕïï∏πÖëê°µÖ…≠ï»§ÏÅ’π•≈’îπÖ¡¡ïπê°•—ï¥§(ÄÄÄÄÄÄÄÅ—Ö…ùï—m≠ïÂtÄÙÅ’π•≈’î(ÄÄÄÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÅ—Ö…ùï–∞Å—Ö…ùï–πùï–†âΩ…•ù•πîà§ÅΩ»Å—Ö…ùï–πùï–†âÕΩ’…çîà§∞(ÄÄÄÄÄÄÄÅÕΩ’…çîı—Ö…ùï–πùï–†âÕΩ’…çîà∞Äàà§∞ÅëÖ—îı—Ö…ùï–πùï–†âç…ïÖ—ïë}Ö–à§∞(ÄÄÄÄ§(ÄÄÄÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÅ—Ö…ùï–∞ÅÕΩ’…çîπùï–†âΩ…•ù•πîà§ÅΩ»ÅÕΩ’…çîπùï–†âÕΩ’…çîà§∞(ÄÄÄÄÄÄÄÅÕΩ’…çîıÕΩ’…çîπùï–†âÕΩ’…çîà∞Äàà§∞ÅëÖ—îıÕΩ’…çîπùï–†âç…ïÖ—ïë}Ö–à§∞(ÄÄÄÄ§(ÄÄÄÅôΩ»ÅΩ…•ù•π}ïπ—…‰Å•∏ÅÕΩ’…çîπùï–†âÕΩ’…çï}°•Õ—Ω…‰à∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°Ω…•ù•π}ïπ—…‰∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—Ö…ùï–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ…•ù•π}ïπ—…‰πùï–†âΩ…•ù•∏à§ÅΩ»ÅΩ…•ù•π}ïπ—…‰πùï–†âΩ…•ù•πîà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîıΩ…•ù•π}ïπ—…‰πùï–†âÕΩ’…çîà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·—ï…πÖ±}•êıΩ…•ù•π}ïπ—…‰πùï–†âï·—ï…πÖ±}•êà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—ï·–ıΩ…•ù•π}ïπ—…‰∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅëÖ—îıΩ…•ù•π}ïπ—…‰πùï–†âëÖ—îà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÅôΩ»ÅÖ¡¡Ω•π—µïπ–Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§§ÄÙÙÅÕ—»°ÕΩ’…çîπùï–†â•êà§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâçΩπ—Öç—}•êâtÄÙÅ—Ö…ùï–πùï–†â•êà§(ÄÄÄÅëÖ—Ölâç…µ}çΩπ—Öç—Ãâtπ…ïµΩŸî°ÕΩ’…çî§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°—Ö…ùï–∞Äâô’Õ•Ω∏à∞Äâ•ç°ïÃÅô’Õ•Ωπª•ïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ1ÑÅô•ç°îÅëîÅÌÕΩ’…çîπùï–†ù¡…ïπΩ¥ú∞Äúú•ÙÅÌÕΩ’…çîπùï–†ùπΩ¥ú∞Äúú•ÙÅÑÉ•”§Å…ïù…Ω’√•îÅ•ç§∏à§(ÄÄÄÅ—Ö…ùï—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°—Ö…ùï–∞ÅëÖ—Ñ§∞Äâ…ïµΩŸïë}•êàËÅÕΩ’…çîπùï–†â•êà•Ù§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯à∞Åµï—°ΩëÃılâPà∞ÄâAQ à∞Äâ1Qât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç–°çΩπ—Öç—}•ê§Ë(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâPàË(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ}ç…µ}¡…ï¡Ö…ïë}…ïÖë}µΩëï∞†§(ÄÄÄÄÄÄÄÅÕΩ’…çï}çΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÕΩ’…çï}çΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅ}ç…µ}¡ï…Õ•Õ—}¡…ï¡Ö…ïë}çΩπ—Öç—}•ô}•ë±î°ÕΩ’…çï}çΩπ—Öç–§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅçΩ¡‰πëïï¡çΩ¡‰°ÕΩ’…çï}çΩπ—Öç–§(ÄÄÄÄÄÄÄÅÕπÖ¡Õ°Ω–ÄÙÅçΩ¡‰πëïï¡çΩ¡‰†(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñπùï–†âç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—Ãà∞ÅÌÙ§πùï–°Õ—»°çΩπ—Öç—}•ê§§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}ç…µ}çΩπ—Öç—}ëï—Ö•±}…ïÕ¡ΩπÕî†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞Å…ïù’±Ö—Ω…Â}ÕπÖ¡Õ°Ω–ıÕπÖ¡Õ°Ω–∞(ÄÄÄÄÄÄÄÄ§§((ÄÄÄÄåÅ5’—Ö—•ΩπÃÅ…ïµÖ•∏ÅÕï…•Ö±•ÈïêÏÅ…ïÖêµΩπ±‰ÅçΩπ—Öç–ÅÕ°ïï—ÃÅπºÅ±Ωπùï»Å≈’ï’î(ÄÄÄÄåÅâï°•πêÅÑÅ±ΩπúÅ]=Å…ïçΩπç•±•Ö—•Ω∏ÅΩ»ÅÖπΩ—°ï»Å’Õï»ùÃÅÖ’—ΩÕÖŸî∏(ÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâ1QàË(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ölâç…µ}çΩπ—Öç—Ãâtπ…ïµΩŸî°çΩπ—Öç–§(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ölâç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—ÃâtÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âçΩπ—Öç—}•êà§ÄÑÙÅçΩπ—Öç—}•ê(ÄÄÄÄÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Äàà∞Ä»¿–(ÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}¡Ö—ç°}çΩπ—Öç—}±Ωç≠ïê°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÅçΩπ—Öç—}•ê§(()Ö¡¿π…Ω’—î†(ÄÄÄÄàΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩçπÖ¡ÃµçÖ…êµŸÖ±•ë•—‰à∞(ÄÄÄÅµï—°ΩëÃılâA=MPât∞(§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}çπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâ[•…•ô•îÅ’∏Å9UÅëÖπÃÅ∞ùÖππ’Ö•…îÅ¡’â±•åÅ9ALÉÄÅ±ÑÅëïµÖπëî∏ààà(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅçπÖ¡Õ}π’àÄÙÅ…îπÕ’à°»âqÃ¨à∞Äàà∞ÅÕ—»°¡ÖÂ±ΩÖêπùï–†âπ’àà§ÅΩ»Äàà§§(ÄÄÄÅ•òÅπΩ–Å…îπô’±±µÖ—ç†°»âqëÏ›Ùà∞ÅçπÖ¡Õ}π’à§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1îÅ9UÅëΩ•–ÅçΩµ¡Ω…—ï»Åï·Öç—ïµïπ–Ä‹Åç°•ôô…ïÃ∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿((ÄÄÄÄåÅ1îÅ9UÅÕÖ•Õ§ÅïÕ–ÅçΩπÕï…€§ÅÖŸÖπ–Å∞ùÖ¡¡ï∞Åë•Õ—Öπ–∞Å∑©µîÅÕ§Å∞ùÖππ’Ö•…îÅïÕ–(ÄÄÄÄåÅµΩµïπ—Öª•µïπ–Å•πë•Õ¡Ωπ•â±î∏Å1îÅŸï……Ω‘Å∏ùïÕ–Å©ÖµÖ•ÃÅùÖ…ì§Å¡ïπëÖπ–Å±î(ÄÄÄÄåÅÀ•ÕïÖ‘ÅÖô•∏ÅëîÅπîÅ¡ÖÃÅâ±Ω≈’ï»Å±ïÃÅÖ’—…ïÃÅÕÖ’ŸïùÖ…ëïÃÅI4∏(ÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅ±ÖÕ—}πÖµîÄÙÄàÄàπ©Ω•∏°Õ—»°çΩπ—Öç–πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§πÕ¡±•–†§§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å±ÖÕ—}πÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâIïπÕï•ùπïËÅ±îÅπΩ¥ÅëîÅ±ÑÅ¡ï…ÕΩππîÅÖŸÖπ–Å±ÑÅ€•…•ô•çÖ—•Ω∏Å9AL∏à(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–»»(ÄÄÄÄÄÄÄÅ•òÅÕ—»°çΩπ—Öç–πùï–†âçπÖ¡Õ}π’àà§ÅΩ»Äàà§ÄÑÙÅçπÖ¡Õ}π’àË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâçπÖ¡Õ}π’àâtÄÙÅçπÖ¡Õ}π’à(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–π¡Ω¿†âçπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰à∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§((ÄÄÄÅô…Ω¥Åç…µ}çπÖ¡Õ}—…Öç≠•πúÅ•µ¡Ω…–Åôï—ç°}çπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰((ÄÄÄÅ…ïÕ’±–ÄÙÅôï—ç°}çπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰°±ÖÕ—}πÖµî∞ÅçπÖ¡Õ}π’à§(ÄÄÄÅ•òÅ…ïÕ’±–πùï–†âç°ïç≠}Õ—Ö—’Ãà§ÄÑÙÄâÕ’ççïÕÃàË(ÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄâ[•…•ô•çÖ—•Ω∏ÅëîÅçÖ…—îÅ9ALÅ•πë•Õ¡Ωπ•â±îÄ†ïÃ§à∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±–πùï–†â°——¡}Õ—Ö—’Ãà§ÅΩ»Äâπï—›Ω…¨à∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1ÑÅ€•…•ô•çÖ—•Ω∏Å9ALÅïÕ–ÅµΩµïπ—Öª•µïπ–Å•πë•Õ¡Ωπ•â±î∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâK•ïÕÕÖÂïËÅëÖπÃÅ≈’ï±≈’ïÃÅ•πÕ—Öπ—Ã∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖÕΩ∏àËÄâçπÖ¡Õ}’πÖŸÖ•±Öâ±îà∞(ÄÄÄÄÄÄÄÅÙ§∞Ä‘¿»(ÄÄÄÅ¡ï…Õ•Õ—ïë}…ïÕ’±–ÄÙÅçΩ¡‰πëïï¡çΩ¡‰°…ïÕ’±–§(ÄÄÄÅ¡ï…Õ•Õ—ïë}…ïÕ’±–π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄâç°ïç≠}Õ—Ö—’ÃàËÄâÕ’ççïÕÃà∞(ÄÄÄÄÄÄÄÄâç°ïç≠ïë}Ö–àËÅÕ—»°…ïÕ’±–πùï–†âç°ïç≠ïë}Ö–à§ÅΩ»Å}ç…µ}πΩ‹†§§∞(ÄÄÄÄÄÄÄÄâπ’ààËÅçπÖ¡Õ}π’à∞(ÄÄÄÅÙ§(ÄÄÄÅ›•—†Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅç’……ïπ—}±ÖÕ—}πÖµîÄÙÄàÄàπ©Ω•∏†(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§πÕ¡±•–†§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÄ°Õ—»°çΩπ—Öç–πùï–†âçπÖ¡Õ}π’àà§ÅΩ»Äàà§ÄÑÙÅçπÖ¡Õ}π’à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Åç’……ïπ—}±ÖÕ—}πÖµîÄÑÙÅ±ÖÕ—}πÖµî§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1îÅπΩ¥ÅΩ‘Å±îÅ9UÅÑÉ•”§ÅµΩë•ôß§Å¡ïπëÖπ–Å±ÑÅ€•…•ô•çÖ—•Ω∏∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâIï±ÖπçïËÅ±ÑÅ€•…•ô•çÖ—•Ω∏∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâçπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰âtÄÙÅ¡ï…Õ•Õ—ïë}…ïÕ’±–(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°¡ï…Õ•Õ—ïë}…ïÕ’±–§(()ëïòÅ}ç…µ}¡Ö—ç°}çΩπ—Öç—}±Ωç≠ïê°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÅçΩπ—Öç—}•ê§Ë(ÄÄÄÄààâ¡¡±‰ÅΩπîÅçΩπ—Öç–ÅAQ Å›°•±îÅ—°îÅçÖ±±ï»Å°Ω±ëÃÅ—°îÅI4Å›…•—îÅ±Ωç¨∏ààà(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅïôôïç—•Ÿï}—•—…ï}Õï©Ω’»ÄÙÅ¡ÖÂ±ΩÖêπùï–†(ÄÄÄÄÄÄÄÄâ—•—…ï}Õï©Ω’»à∞ÅçΩπ—Öç–πùï–†â—•—…ï}Õï©Ω’»à§(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–Å}ÂïÃ°ïôôïç—•Ÿï}—•—…ï}Õï©Ω’»§Ë(ÄÄÄÄÄÄÄÅ•òÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—•—…ï}Õï©Ω’…}çπÖ¡Ãà§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1ÑÅÕ•—’Ö—•Ω∏Åë‘Å—•—…îÅëîÅœ•©Ω’»ÅπîÅ¡ï’–É©—…îÅ…ïπÕï•ùª•îÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ≈’îÅÕ§Å±ÑÅ¡ï…ÕΩππîÅïÕ–Å—•—’±Ö•…îÅìäe’∏Å—•—…îÅëîÅœ•©Ω’»∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÄåÅÅ¡Ö…—•Ö∞ÅAQ Åç°Öπù•πúÅ—°îÅ°Ω±ëï»ÅÖπÕ›ï»Åµ’Õ–ÅÖ±ÕºÅ¡’…ùîÅÑÅ±ïùÖç‰(ÄÄÄÄÄÄÄÄåÅÖÕÕïÕÕµïπ–ÅΩµ•——ïêÅâ‰Å—°îÅë•ÕÖâ±ïêÅâ…Ω›Õï»ÅçΩπ—…Ω∞∏(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâ—•—…ï}Õï©Ω’…}çπÖ¡ÃâtÄÙÄàà(ÄÄÄÄåÅ1ÑÅ¡…ΩŸïπÖπçîÅêù’πîÅ¡•Õ—îÅ]=Å…ïÕ—îÅ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏Å±Ω…Õ≈’î(ÄÄÄÄåÅ∞ü•≈’•¡îÅçΩ……•ùîÅµÖπ’ï±±ïµïπ–Å±ÑÅôΩ…µÖ—•Ω∏ÅΩ‘Å’∏ÅÖ’—…îÅç°Öµ¿∏(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕΩ’…çîà§ÄÙÙÄâ›ïëΩô}ç¡òàË(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâΩ…•ù•πîâtÄÙÄâ5Ω∏ÅΩµ¡—îÅΩ…µÖ—•Ω∏à(ÄÄÄÄåÅ0ùÖπç•ï∏Åœ•±ïç—ï’»ÅπîÅ¡…Ω¡ΩÕÖ•–Å¡ÖÃÅ5QÅï–ÅïπŸΩÂÖ•–Å’πîÅŸÖ±ï’»ÅŸ•ëîÅ±Ω…Ã(ÄÄÄÄåÅëîÅç°Ö≈’îÅÕÖ’ŸïùÖ…ëîÅÖ’—ΩµÖ—•≈’î∏Å1ÑÅ¡…ΩŸïπÖπçîÅï–Å±îÅ±•ï‘ÅëîÅçÖµ¡Öùπî(ÄÄÄÄåÅ…ïÕ—ïπ–Å¡…Ω”•ü•Ã∞ÅµÖ•ÃÅ±ÑÅôΩ…µÖ—•Ω∏Å¡ï’–É©—…îÅçΩ……•ü•îÅ¡Ö»Å∞ü•≈’•¡î∏(ÄÄÄÅ•òÅ}ç…µ}•Õ}µï—Ö}çΩπ—Öç–°çΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπ’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ…•ù•πîàËÄâ5Qà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ±•ï‘àËÅ}5Q}U1Q}1=Q%=8∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§(ÄÄÄÅ…ï±Öπçï}ëÖ—ï}Õ’¡¡±•ïêÄÙÄâ…ï±Öπçï}ëÖ—îàÅ•∏Å¡ÖÂ±ΩÖê(ÄÄÄÅ…ï≈’ïÕ—ïë}…ï±Öπçï}ëÖ—îÄÙÅ¡ÖÂ±ΩÖêπùï–†â…ï±Öπçï}ëÖ—îà§(ÄÄÄÅ•òÅ…ï±Öπçï}ëÖ—ï}Õ’¡¡±•ïêË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—ïë}…ï±Öπçï}ëÖ—îÄÙÅ}ç…µ}…ï±Öπçï}ëÖ—î†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—ïë}…ï±Öπçï}ëÖ—î∞Å›ïï≠ëÖÂÕ}Ωπ±‰ıQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÅ…ï≈’ïÕ—ïë}…ï±Öπçï}µΩ—•òÄÙÄ†(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†â…ï±Öπçï}µΩ—•òà§Å•òÄâ…ï±Öπçï}µΩ—•òàÅ•∏Å¡ÖÂ±ΩÖêÅï±ÕîÅ9Ωπî(ÄÄÄÄ§(ÄÄÄÅÖ±±Ω›ïêÄÙÅÏâ¡…ïπΩ¥à∞ÄâπΩ¥à∞Äâ—ï±ï¡°Ωπîà∞ÄâµÖ•∞à∞ÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏à∞Äâç¡òà∞ÄâçÖ…—ï}¡…ºà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÖπ—ïçïëïπ—Ãà∞ÄâùÖ…ëï}Ÿ’îà∞Äâ—•—…ï}Õï©Ω’»à∞Äâ—•—…ï}Õï©Ω’…}çπÖ¡Ãà∞ÄâçΩµ¡—ï}çπÖ¡Ãà∞ÄâçπÖ¡Õ}π’àà∞ÄâçπÖ¡Õ}’Õï…πÖµîà∞ÄâçπÖ¡Õ}â•…—°}ÂïÖ»à∞ÄâçπÖ¡Õ}¡ÖÕÕ›Ω…êà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ•π—ïù…Ö—•Ωπ}ë…ÖçÖ»à∞ÄâôΩ…µÖ—•Ω∏à∞Äâ±•ï‘à∞ÄâëïÕ¡}—Â¡îà∞Äâ•ëïπ—•—ï}ç…ïÖ—•Ω∏à∞Äâ•ëïπ—•—ï}Ω¨à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}ô–à∞ÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à∞ÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îà∞Äâ…ïô’Õ}ô—}¡ï…Õºà∞Äâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…Õºà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩ…•ù•πîà∞Äâ•πÕç…•—}ô–à∞ÄâçΩµµïπ—Ö•…ïÃà∞Äâç¡ô}µΩπ—Öπ–à∞Äâç¡ô}¡Ö±•ï»à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’–à∞ÄâÕ—Ö—’—}ÕïçΩπëÖ•…îà∞ÄâçΩµµï…ç•Ö∞à∞Äâ—ÖùÃà∞Äâ¡…•·}Ÿïπ—îà∞ÄâçΩ’—}ïÕ—•µîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡…Ωç°Ö•πï}Öç—•Ωπ}µÖπ’ï±±îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏à∞Äâë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞à∞Äâ…ïÖç—•ŸÖ—•Ωπ}ëÖ—îà∞ÄâÖ…ç°•Ÿïë}Ö–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúâÙ(ÄÄÄÅ•òÄâ≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúàÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅ≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â≈’Ö±•ô•çÖ—•Ωπ}ô±Öúà§ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÄÄÄÄÅ•òÅ≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúÅπΩ–Å•∏ÅÏàà∞Äâù…ïï∏à∞Äâ…ïêâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅ≈’Ö±•ô•çÖ—•Ω∏ÅëΩ•–É©—…îÅŸ•ëî∞Åù…ïï∏ÅΩ‘Å…ïê∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâ≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúâtÄÙÅ≈’Ö±•ô•çÖ—•Ωπ}ô±Öú(ÄÄÄÅΩ±ë}Õ—Ö—’ÃÄÙÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§(ÄÄÄÅΩ±ë}ÕïçΩπëÖ…Â}Õ—Ö—’ÃÄÙÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà∞Äàà§(ÄÄÄÅΩ±ë}ô’πë•πù}Õ—Ö—’ÃÄÙÅÕ—»†(ÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§ÅΩ»Äàà(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅΩ±ë}Ω…•ù•∏ÄÙÅçΩπ—Öç–πùï–†âΩ…•ù•πîà∞Äàà§(ÄÄÄÅΩ±ë}≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúÄÙÅÕ—»°çΩπ—Öç–πùï–†â≈’Ö±•ô•çÖ—•Ωπ}ô±Öúà§ÅΩ»Äàà§(ÄÄÄÅΩ±ë}çΩµµïπ—ÃÄÙÅÕ—»°çΩπ—Öç–πùï–†âçΩµµïπ—Ö•…ïÃà§ÅΩ»Äàà§(ÄÄÄÅΩ±ë}çπÖ¡Õ}•ëïπ—•—‰ÄÙÄ†(ÄÄÄÄÄÄÄÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âçπÖ¡Õ}π’àà§ÅΩ»Äàà§∞(ÄÄÄÄ§(ÄÄÄÅÕπÖ¡Õ°Ω–ÄÙÅëÖ—Ñπùï–†âç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—Ãà∞ÅÌÙ§πùï–°Õ—»°çΩπ—Öç—}•ê§§(ÄÄÄÅΩ±ë}ÕçΩ…îÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°çΩπ—Öç–∞ÅÕπÖ¡Õ°Ω–§(ÄÄÄÅ•òÄâç¡ô}µΩπ—Öπ–àÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâç¡ô}µΩπ—Öπ–âtÄÙÅπΩ…µÖ±•Èï}ç¡ô}ÖµΩ’π–°¡ÖÂ±ΩÖêπùï–†âç¡ô}µΩπ—Öπ–à§§(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÅ•òÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–àÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâµΩπ—Öπ—}ÖççΩ…ëï}ô–âtÄÙÅπΩ…µÖ±•Èï}ç¡ô}ÖµΩ’π–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†âµΩπ—Öπ—}ÖççΩ…ëï}ô–à§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1îÅµΩπ—Öπ–ÅÖççΩ…ì§Å¡Ö»Å…ÖπçîÅQ…ÖŸÖ•∞ÅëΩ•–É©—…îÅ¡ΩÕ•—•òÅï–ÅçΩµ¡Ω…—ï»ÅÖ‘ÅµÖ·•µ’¥Åëï’‡Åì•ç•µÖ±ïÃ∏à(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÅ•òÄâç¡ô}¡Ö±•ï»àÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâç¡ô}¡Ö±•ï»âtÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âç¡ô}¡Ö±•ï»à§ÅΩ»Äàà§πÕ—…•¿†•lËƒ»¡t(ÄÄÄÅ•òÄâçπÖ¡Õ}π’ààÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅçπÖ¡Õ}π’àÄÙÅ…îπÕ’à°»âqÃ¨à∞Äàà∞ÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçπÖ¡Õ}π’àà§ÅΩ»Äàà§§(ÄÄÄÄÄÄÄÅ•òÅçπÖ¡Õ}π’àÅÖπêÄ°πΩ–ÅçπÖ¡Õ}π’àπ•Õë•ù•–†§ÅΩ»Å±ï∏°çπÖ¡Õ}π’à§Ä¯Ä‹§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1îÅ9UÅëΩ•–ÅçΩµ¡Ω…—ï»ÅÖ‘ÅµÖ·•µ’¥Ä‹Åç°•ôô…ïÃ∏à(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâçπÖ¡Õ}π’àâtÄÙÅçπÖ¡Õ}π’à(ÄÄÄÅ•òÄâçπÖ¡Õ}â•…—°}ÂïÖ»àÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅâ•…—°}ÂïÖ»ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçπÖ¡Õ}â•…—°}ÂïÖ»à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅç’……ïπ—}ÂïÖ»ÄÙÅëÖ—ï—•µîπëÖ—îπ—ΩëÖ‰†§πÂïÖ»(ÄÄÄÄÄÄÄÅ•òÅâ•…—°}ÂïÖ»ÅÖπêÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅπΩ–Å…îπô’±±µÖ—ç†°»âqëÏƒ∞—Ùà∞Åâ•…—°}ÂïÖ»§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»Ä°±ï∏°â•…—°}ÂïÖ»§ÄÙÙÄ–(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅπΩ–Äƒ‰¿¿ÄÙÅ•π–°â•…—°}ÂïÖ»§ÄÙÅç’……ïπ—}ÂïÖ»§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ3äeÖπª•îÅëîÅπÖ•ÕÕÖπçîÅëΩ•–ÅçΩµ¡Ω…—ï»Ä–Åç°•ôô…ïÃÅï–ÅπîÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ¡ï’–Å¡ÖÃÉ©—…îÅëÖπÃÅ±îÅô’—’»∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâçπÖ¡Õ}â•…—°}ÂïÖ»âtÄÙÅâ•…—°}ÂïÖ»(ÄÄÄÅôΩ»ÅµΩπïÂ}ô•ï±êÅ•∏Ä†â¡…•·}Ÿïπ—îà∞ÄâçΩ’—}ïÕ—•µîà§Ë(ÄÄÄÄÄÄÄÅ•òÅµΩπïÂ}ô•ï±êÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö›}µΩπï‰ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–°µΩπïÂ}ô•ï±ê§ÅΩ»Äàà§πÕ—…•¿†§π…ï¡±Öçî†àÄà∞Äàà§π…ï¡±Öçî†à∞à∞Äà∏à§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…Ö›}µΩπï‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅô±ΩÖ–°…Ö›}µΩπï‰§ÄÄ¿Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•ÕîÅYÖ±’ï……Ω»(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ïÃÅµΩπ—Öπ—ÃÅçΩµµï…ç•Ö’‡ÅëΩ•Ÿïπ–É©—…îÅ¡ΩÕ•—•ôÃ∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëmµΩπïÂ}ô•ï±ëtÄÙÅ…Ö›}µΩπï‰(ÄÄÄÅ•òÄâ¡…Ωç°Ö•πï}Öç—•Ωπ}µÖπ’ï±±îàÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅµÖπ’Ö±}πï·—}Öç—•Ω∏ÄÙÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†â¡…Ωç°Ö•πï}Öç—•Ωπ}µÖπ’ï±±îà§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅ±ï∏°µÖπ’Ö±}πï·—}Öç—•Ω∏§Ä¯ÄÃ¿¿Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1ÑÅ¡…Ωç°Ö•πîÅÖç—•Ω∏ÅµÖπ’ï±±îÅïÕ–Å±•µ•”•îÉÄÄÃ¿¿ÅçÖ…Öç”°…ïÃ∏à(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâ¡…Ωç°Ö•πï}Öç—•Ωπ}µÖπ’ï±±îâtÄÙÅµÖπ’Ö±}πï·—}Öç—•Ω∏(ÄÄÄÅΩ±ë}—…Ö•π•πúÄÙÄ†(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§∞(ÄÄÄÄ§(ÄÄÄÅΩ±ë}ëïôÖ’±—}ÕÖ±ï}¡…•çîÄÙÅÕ—»°}ç…µ}ëïôÖ’±—}ÕÖ±ï}¡…•çî°çΩπ—Öç–§ÅΩ»Äàà§(ÄÄÄÅΩ±ë}ÕÖ±ï}¡…•çîÄÙÅÕ—»°çΩπ—Öç–πùï–†â¡…•·}Ÿïπ—îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏Å¡ÖÂ±ΩÖêπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅ•òÅ≠ï‰Å•∏ÅÖ±±Ω›ïêË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—m≠ïÂtÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§(ÄÄÄÅπï›}—…Ö•π•πúÄÙÄ†(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπï›}—…Ö•π•πúÄÑÙÅΩ±ë}—…Ö•π•πúË(ÄÄÄÄÄÄÄÅπï›}ëïôÖ’±—}ÕÖ±ï}¡…•çîÄÙÅ}ç…µ}ëïôÖ’±—}ÕÖ±ï}¡…•çî°çΩπ—Öç–§(ÄÄÄÄÄÄÄÅÕ’âµ•——ïë}ÕÖ±ï}¡…•çîÄÙÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†â¡…•·}Ÿïπ—îà∞ÅΩ±ë}ÕÖ±ï}¡…•çî§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÄ°πï›}ëïôÖ’±—}ÕÖ±ï}¡…•çî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°πΩ–ÅÕ’âµ•——ïë}ÕÖ±ï}¡…•çî(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅÕ’âµ•——ïë}ÕÖ±ï}¡…•çîÄÙÙÅΩ±ë}ëïôÖ’±—}ÕÖ±ï}¡…•çî§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâ¡…•·}Ÿïπ—îâtÄÙÅÕ—»°πï›}ëïôÖ’±—}ÕÖ±ï}¡…•çî§(ÄÄÄÅπï›}çΩµµïπ—ÃÄÙÅÕ—»°çΩπ—Öç–πùï–†âçΩµµïπ—Ö•…ïÃà§ÅΩ»Äàà§(ÄÄÄÅ•òÄâçΩµµïπ—Ö•…ïÃàÅ•∏Å¡ÖÂ±ΩÖêÅÖπêÅπï›}çΩµµïπ—ÃÄÑÙÅΩ±ë}çΩµµïπ—ÃË(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’•Ÿ§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâM’•Ÿ§Åµ•ÃÉÄÅ©Ω’»à∞(ÄÄÄÄÄÄÄÄÄÄÄÅπï›}çΩµµïπ—ÃÅΩ»ÄâΩµµïπ—Ö•…îÅ…ï—•À§Åë‘ÅÕ’•Ÿ§∏à∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ•òÅ…ï±Öπçï}ëÖ—ï}Õ’¡¡±•ïêË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡±Öππïë}…ï±Öπçî∞Å…ï±Öπçï}ç°ÖπùïêÄÙÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—ïë}…ï±Öπçï}ëÖ—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâµÖπ’Ö∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅµΩ—•òı…ï≈’ïÕ—ïë}…ï±Öπçï}µΩ—•ò∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ•òÅ…ï±Öπçï}ç°ÖπùïêË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡±Öππïë}…ï±ÖπçîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ï±Öπçîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâIï±ÖπçîÅ¡±Öπ•ôß•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄàÉ
+‹Äàπ©Ω•∏°ô•±—ï»°9Ωπî∞Ål(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâA…Ωç°Ö•πîÅ…ï±ÖπçîÅ±îÅÌ¡±Öππïë}…ï±ÖπçïlùÕç°ïë’±ïë}ëÖ—îùuÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ5Ω—•òÄËÅÌ¡±Öππïë}…ï±Öπçîπùï–†ùµΩ—•òú•ÙàÅ•òÅ¡±Öππïë}…ï±Öπçîπùï–†âµΩ—•òà§Åï±ÕîÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅt§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Äâ…ï±Öπçîà∞ÄâIï±ÖπçîÅÖππ’≥•îà§(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§ÄÙÙÄâMïÕÕ•Ω∏ÅPàË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÄâ5Ö…ç£§ÅPà(ÄÄÄÅ•òÄâÕ—Ö—’—}ÕïçΩπëÖ•…îàÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÄåÅUπîÉ•—Ö¡îÅç°Ω•Õ•îÅëÖπÃÅ±ÑÅ—•µï±•πîÅïÕ–ÅŸΩ±Ωπ—Ö•…îÄËÅï±±îÅπîÅëΩ•–Å¡±’Ã(ÄÄÄÄÄÄÄÄåÉ©—…îÉ•ç…Öœ•îÅÖ‘Å¡…Ωç°Ö•∏ÅPÅ¡Ö»Å’πîÅŸÖ±ï’»Å]=ÅïπçΩ…îÅï∏ÅçÖç°î∏(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…ï}ÕΩ’…çîâtÄÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÅµÖπ’Ö±}ô’πë•πù}Õ—Ö—’ÃÄÙÅI5}Q}MQQUM}	e}M=9Idπùï–†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅµÖπ’Ö±}ô’πë•πù}Õ—Ö—’ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–âtÄÙÅµÖπ’Ö±}ô’πë•πù}Õ—Ö—’Ã(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîâtÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÅ•òÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–àÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô—}ÕΩ’…çîâtÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…‰ÄÙÅI5}Q}M=9Ie}	e}MQQULπùï–†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÅÖ’—ΩµÖ—•ç}ÕïçΩπëÖ…‰(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…ï}ÕΩ’…çîâtÄÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÄÄÄÄÅï±•òÅΩ±ë}ÕïçΩπëÖ…Â}Õ—Ö—’ÃÅ•∏ÅÏâ•πÖπçïµïπ–ÅPÅï∏ÅçΩ’…Ãà∞Äâ•πÖπçïµïπ–ÅPÅ…ïô’œ§âÙË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…ï}ÕΩ’…çîâtÄÙÅI5}59U1}MQQUM}M=UI(ÄÄÄÅπï›}ô’πë•πù}Õ—Ö—’ÃÄÙÅÕ—»†(ÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à§ÅΩ»Äàà(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅ•òÅπï›}ô’πë•πù}Õ—Ö—’ÃÄÙÙÄâ…ïô’ÕïîàÅÖπêÅΩ±ë}ô’πë•πù}Õ—Ö—’ÃÄÑÙÄâ…ïô’ÕïîàË(ÄÄÄÄÄÄÄÅ}ç…µ}Õïπë}ô—}…ïô’ÕÖ±}µïÕÕÖùïÃ°ëÖ—Ñ∞ÅçΩπ—Öç–§(ÄÄÄÄÄÄÄÅ}ç…µ}Õç°ïë’±ï}ô—}…ïô’ÕÖ±}…ï±Öπçî†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâµÖπ’Ö±}ô—}…ïô’ÕÖ∞à∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅÕïçΩπëÖ…Â}Õ—Ö—’ÕïÃÄÙÅÏàà∞Ä©I5}M=9Ie}MQQUMMÙ(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà∞Äàà§ÅπΩ–Å•∏ÅÕïçΩπëÖ…Â}Õ—Ö—’ÕïÃË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’—}ÕïçΩπëÖ•…îâtÄÙÄàà(ÄÄÄÄåÅUπîÅçΩπô•…µÖ—•Ω∏Å¡Ω…—îÅÕ’»Å’∏ÅµΩπ—Öπ–Åï·Öç–ÄËÅ—Ω’—îÅµΩë•ô•çÖ—•Ω∏ÅëîÅÕïÃ(ÄÄÄÄåÅì•—ï…µ•πÖπ—ÃÅ∞ù•πŸÖ±•ëîÅÖô•∏Å≈‘ùï±±îÅπîÅÕΩ•–Å©ÖµÖ•ÃÅÀ•’—•±•œ•îÅ¡Ω’»Å’∏ÅÖ’—…îÅµΩπ—Öπ–∏(ÄÄÄÅëï—ï…µ•πÖπ—ÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏à∞ÄâëïÕ¡}—Â¡îà∞Äâç¡òà∞Äâç¡ô}µΩπ—Öπ–à∞Äâç¡ô}¡Ö±•ï»à∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}ô–à∞ÄâÕ—Ö—’—}ëïµÖπëï}ô•πÖπçïµïπ—}ô–à∞(ÄÄÄÄÄÄÄÄâµΩπ—Öπ—}ÖççΩ…ëï}ô–à∞Äâô•πÖπçïµïπ—}¡ï…ÕΩ}¡ΩÕÕ•â±îà∞(ÄÄÄÅÙ(ÄÄÄÅ¡…ΩŸ•Õ•ΩπÖ±}ÕçΩ…îÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°çΩπ—Öç–∞ÅÕπÖ¡Õ°Ω–§(ÄÄÄÅΩ±ë}ÖµΩ’π–ÄÙÅΩ±ë}ÕçΩ…îπùï–†â¡ï…ÕΩπÖ±}…ïµÖ•πëï…}ÖµΩ’π—}ï’»à§(ÄÄÄÅπï›}ÖµΩ’π–ÄÙÅ¡…ΩŸ•Õ•ΩπÖ±}ÕçΩ…îπùï–†â¡ï…ÕΩπÖ±}…ïµÖ•πëï…}ÖµΩ’π—}ï’»à§(ÄÄÄÅ•òÄ°ëï—ï…µ•πÖπ—Ãπ•π—ï…Õïç—•Ω∏°¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°Ω±ë}ÖµΩ’π–ÄÑÙÅπï›}ÖµΩ’π–ÅΩ»Å¡…ΩŸ•Õ•ΩπÖ±}ÕçΩ…îπùï–†â¡ï…ÕΩπÖ±}…ïµÖ•πëï…}Ö¡¡±•çÖâ±îà§Å•ÃÅπΩ–ÅQ…’î§§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ…ïÕ—ï}Ö}ç°Ö…ùï}¡ï…ÕºâtÄÙÄàà(ÄÄÄÅ}ç…µ}çÖ±ïπë±Â}…ï±•π≠}Ö¡¡Ω•π—µïπ—Ã°ëÖ—Ñ∞ÅçΩπ—Öç–§(ÄÄÄÅ}ç…µ}ÕÂπç}çΩπ—Öç—}çÖ±ïπë±Â}Õ—Ö—’Ã°ëÖ—Ñ∞ÅçΩπ—Öç–§(ÄÄÄÅçΩπ—Öç—lâ¡…ïπΩ¥âtÄÙÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§(ÄÄÄÅçΩπ—Öç—lâπΩ¥âtÄÙÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§(ÄÄÄÅ•òÄ°ÏâπΩ¥à∞ÄâçπÖ¡Õ}π’àâÙπ•π—ï…Õïç—•Ω∏°¡ÖÂ±ΩÖê§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÄ°çΩπ—Öç–πùï–†âπΩ¥à§∞ÅÕ—»°çΩπ—Öç–πùï–†âçπÖ¡Õ}π’àà§ÅΩ»Äàà§§(ÄÄÄÄÄÄÄÄÄÄÄÄÑÙÅΩ±ë}çπÖ¡Õ}•ëïπ—•—‰§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç–π¡Ω¿†âçπÖ¡Õ}çÖ…ë}ŸÖ±•ë•—‰à∞Å9Ωπî§(ÄÄÄÅÕ—Ö—’ÕïÃÄÙÅ}ç…µ}Õ—Ö—’ÕïÃ°ëÖ—Ñ§(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÅπΩ–Å•∏ÅÕ—Ö—’ÕïÃË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÅΩ±ë}Õ—Ö—’ÃÅ•òÅΩ±ë}Õ—Ö—’ÃÅ•∏ÅÕ—Ö—’ÕïÃÅï±ÕîÅÕ—Ö—’ÕïÕl¡t(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÑÙÅΩ±ë}Õ—Ö—’ÃË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÕ—Ö—’Õ}ç°Öπùïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÙÙÄâΩπŸï…—§àÅÖπêÅπΩ–ÅçΩπ—Öç–πùï–†âçΩπŸï…—ïë}Ö–à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâçΩπŸï…—ïë}Ö–âtÄÙÅçΩπ—Öç—lâÕ—Ö—’Õ}ç°Öπùïë}Ö–ât(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§ÄÑÙÄâ•Õ≈’Ö±•ôß§àË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏âtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—lâë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞âtÄÙÄàà(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕ—Ö—’–à∞ÅòâM—Ö—’–ÄËÅÌçΩπ—Öç—lùÕ—Ö—’–ùuÙà∞Åòâπç•ï∏ÅÕ—Ö—’–ÄËÅÌΩ±ë}Õ—Ö—’ÕÙà§(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âΩ…•ù•πîà§ÄÑÙÅΩ±ë}Ω…•ù•∏Ë(ÄÄÄÄÄÄÄÅç°Öπùïë}Ö–ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅ•òÅΩ±ë}Ω…•ù•∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÅΩ±ë}Ω…•ù•∏∞ÅÕΩ’…çîÙâµÖπ’Ö∞à∞ÅëÖ—îıç°Öπùïë}Ö–∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ}ç…µ}…ïçΩ…ë}Ω…•ù•∏†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âΩ…•ù•πîà§ÅΩ»Äâ9Ω∏Å…ïπÕï•ùª•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕΩ’…çîÙâµÖπ’Ö∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—îıç°Öπùïë}Ö–∞(ÄÄÄÄÄÄÄÄÄÄÄÅµÖ≠ï}¡…•µÖ…‰ıQ…’î∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâΩ…•ù•πîà∞Åòâ=…•ù•πîÄËÅÌçΩπ—Öç–πùï–†ùΩ…•ù•πîú§ÅΩ»Äù9Ω∏Å…ïπÕï•ùª•îùÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâπç•ïππîÅΩ…•ù•πîÄËÅÌΩ±ë}Ω…•ù•∏ÅΩ»Äù9Ω∏Å…ïπÕï•ùª•îùÙà§(ÄÄÄÅ•òÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà∞Äàà§ÄÑÙÅΩ±ë}ÕïçΩπëÖ…Â}Õ—Ö—’ÃË(ÄÄÄÄÄÄÄÅÕïçΩπëÖ…Â}±Öâï∞ÄÙÅçΩπ—Öç–πùï–†âÕ—Ö—’—}ÕïçΩπëÖ•…îà§ÅΩ»Äâ…ï—•À§à(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕ—Ö—’–à∞Åòâï’·ß°µîÅÕ—Ö—’–ÄËÅÌÕïçΩπëÖ…Â}±Öâï±Ùà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâπç•ï∏Åëï’·ß°µîÅÕ—Ö—’–ÄËÅÌΩ±ë}ÕïçΩπëÖ…Â}Õ—Ö—’ÃÅΩ»ÄùÖ’ç’∏ùÙà§(ÄÄÄÅπï›}≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúÄÙÅÕ—»°çΩπ—Öç–πùï–†â≈’Ö±•ô•çÖ—•Ωπ}ô±Öúà§ÅΩ»Äàà§(ÄÄÄÅ•òÅπï›}≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúÄÑÙÅΩ±ë}≈’Ö±•ô•çÖ—•Ωπ}ô±ÖúË(ÄÄÄÄÄÄÄÅ±Öâï±ÃÄÙÅÏààËÄâ’ç’∏Åô±Öúà∞Äâù…ïï∏àËÄâ…ïï∏Å±Öúà∞Äâ…ïêàËÄâIïêÅ±ÖúâÙ(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ≈’Ö±•ô•çÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÅòâE’Ö±•ô•çÖ—•Ω∏ÄËÅÌ±Öâï±Õmπï›}≈’Ö±•ô•çÖ—•Ωπ}ô±ÖùuÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÅòâπç•ïππîÅ≈’Ö±•ô•çÖ—•Ω∏ÄËÅÌ±Öâï±Ãπùï–°Ω±ë}≈’Ö±•ô•çÖ—•Ωπ}ô±Öú∞Äù’ç’∏Åô±Öúú•Ùà∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅπï›}ÕçΩ…îÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°çΩπ—Öç–∞ÅÕπÖ¡Õ°Ω–§(ÄÄÄÅ•òÅΩ±ë}ÕçΩ…îπùï–†â±ïŸï∞à§ÅÖπêÅπï›}ÕçΩ…îπùï–†â±ïŸï∞à§ÄÑÙÅΩ±ë}ÕçΩ…îπùï–†â±ïŸï∞à§Ë(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕçΩ…îà∞ÅòâMçΩ…îÅìäe•π”•ù…Ö—•Ω∏Å¡ÖÕœ§ÅëîÅÌΩ±ë}ÕçΩ…ïlùÕçΩ…îùuÙÉÄÅÌπï›}ÕçΩ…ïlùÕçΩ…îùuÙÄËÅÌπï›}ÕçΩ…ïlù±Öâï∞ùuÙà§(ÄÄÄÅ•òÅΩ±ë}ÕçΩ…îπùï–†âΩ¡ï…Ö—•ΩπÖ±}Õ—Ö—’Ãà§ÄÑÙÅπï›}ÕçΩ…îπùï–†âΩ¡ï…Ö—•ΩπÖ±}Õ—Ö—’Ãà§Ë(ÄÄÄÄÄÄÄÅ•òÅπï›}ÕçΩ…îπùï–†âΩ¡ï…Ö—•ΩπÖ±}Õ—Ö—’Ãà§ÄÙÙÄââ±Ωç≠ïêàË(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕçΩ…îà∞Äâ1îÅëΩÕÕ•ï»Å¡À•Õïπ—îÅµÖ•π—ïπÖπ–Å’∏Åâ±ΩçÖùîÅëîÅô•πÖπçïµïπ–à§(ÄÄÄÄÄÄÄÅï±•òÅΩ±ë}ÕçΩ…îπùï–†âΩ¡ï…Ö—•ΩπÖ±}Õ—Ö—’Ãà§ÄÙÙÄââ±Ωç≠ïêàÅÖπêÅπï›}ÕçΩ…îπùï–†âΩ¡ï…Ö—•ΩπÖ±}Õ—Ö—’Ãà§ÄÙÙÄâ…ïÖë‰àË(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕçΩ…îà∞Äâ1îÅâ±ΩçÖùîÅëîÅô•πÖπçïµïπ–ÅÑÉ•”§Å±ï€§à§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}ç…µ}çΩπ—Öç—}ëï—Ö•±}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§§(()Ö¡¿π¡Ö—ç††àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩÖç—•Ÿ•—•ïÃºÒÖç—•Ÿ•—Â}•ê¯à§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}ïë•—}çÖ±±}Öç—•Ÿ•—‰°çΩπ—Öç—}•ê∞ÅÖç—•Ÿ•—Â}•ê§Ë(ÄÄÄÄààâë•–ÅΩπîÅ±ΩùùïêÅçÖ±∞Å›•—°Ω’–Å…ï¡±ÖÂ•πúÅÖ¡¡Ω•π—µïπ–ÅΩ»Å…ï±ÖπçîÅÖ’—ΩµÖ—•ΩπÃ∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅÖç—•Ÿ•—‰ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†âÖç—•Ÿ•—•ïÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§ÅÖπêÅÕ—»°•—ï¥πùï–†â•êà§§ÄÙÙÅÖç—•Ÿ•—Â}•ê(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–ÅÖç—•Ÿ•—‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâç—•Ÿ•”§Å•π—…Ω’ŸÖâ±îÅ¡Ω’»ÅçîÅçΩπ—Öç–âÙ§∞Ä–¿–(ÄÄÄÅ•òÅÖç—•Ÿ•—‰πùï–†â≠•πêà§ÄÑÙÄâÖ¡¡ï∞àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâMï’±ÃÅ±ïÃÅÖ¡¡ï±ÃÅçΩπÕ•ùª•ÃÅ¡ï’Ÿïπ–É©—…îÅµΩë•ôß•ÃâÙ§∞Ä–¿‰((ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅçΩ…¡ÃÅ)M=8ÅëΩ•–É©—…îÅ’∏ÅΩâ©ï–âÙ§∞Ä–¿¿(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅç°Öπùïê∞Å|ÄÙÅ}ç…µ}ïë•—}çÖ±±}Öç—•Ÿ•—‰°Öç—•Ÿ•—‰∞Å¡ÖÂ±ΩÖêπùï–†âçΩµµïπ—Ö•…îà§§(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÅ•òÅç°ÖπùïêË(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâÖç—•Ÿ•—‰àËÅÖç—•Ÿ•—‰∞(ÄÄÄÄÄÄÄÄâç°ÖπùïêàËÅç°Öπùïê∞(ÄÄÄÅÙ§(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩÖç—•Ÿ•—•ïÃºÒÖç—•Ÿ•—Â}•ê¯Ω¡…ïŸ•ï‹à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}Öç—•Ÿ•—Â}¡…ïŸ•ï‹°çΩπ—Öç—}•ê∞ÅÖç—•Ÿ•—Â}•ê§Ë(ÄÄÄÄààâ1ΩÖêÅÑÅ¡Ω—ïπ—•Ö±±‰Å±Ö…ùîÅîµµÖ•∞ΩM5LÅâΩë‰ÅΩπ±‰Å›°ï∏Å—°îÅ’Õï»ÅΩ¡ïπÃÅ•–∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ}±ΩÖë}ëÖ—Ö}ÕπÖ¡Õ°Ω–†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅÖç—•Ÿ•—‰ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†âÖç—•Ÿ•—•ïÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§ÅÖπêÅÕ—»°•—ï¥πùï–†â•êà§§ÄÙÙÅÖç—•Ÿ•—Â}•ê(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–ÅÖç—•Ÿ•—‰ÅΩ»ÅπΩ–ÅÖç—•Ÿ•—‰πùï–†â¡…ïŸ•ï‹à§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ¡ïÀù‘Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ¡…ïŸ•ï‹àËÅÖç—•Ÿ•—Âlâ¡…ïŸ•ï‹ât∞Äâ≠•πêàËÅÖç—•Ÿ•—‰πùï–†â≠•πêà∞Äàà•Ù§(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ωç…¥ΩçÖπë•ëÖ—îµÕçΩ…îΩ¡…ïŸ•ï‹à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖπë•ëÖ—ï}ÕçΩ…ï}¡…ïŸ•ï‹†§Ë(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ•òÄâç¡ô}µΩπ—Öπ–àÅ•∏Å¡ÖÂ±ΩÖêË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâç¡ô}µΩπ—Öπ–âtÄÙÅπΩ…µÖ±•Èï}ç¡ô}ÖµΩ’π–°¡ÖÂ±ΩÖêπùï–†âç¡ô}µΩπ—Öπ–à§§(ÄÄÄÄÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°çÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°¡ÖÂ±ΩÖê§§((()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩÖ¡¡ï∞à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}±Ωù}çÖ±∞°çΩπ—Öç—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅπΩ—îÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩµµïπ—Ö•…îà∞Äàà§§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅπΩ—îËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâU∏ÅçΩµµïπ—Ö•…îÅïÕ–Å…ï≈’•ÃâÙ§∞Ä–¿¿(ÄÄÄÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§(ÄÄÄÅ…ï±ÖπçîÄÙÅ9Ωπî(ÄÄÄÅ…ï±Öπçï}•êÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â…ï±Öπçï}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅ…ï±Öπçï}•êË(ÄÄÄÄÄÄÄÅ…ï±ÖπçîÄÙÅπï·–†(ÄÄÄÄÄÄÄÄÄÄÄÄ°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§Å•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅ…ï±Öπçï}•ê§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ï±ÖπçîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIï±ÖπçîÅ•π—…Ω’ŸÖâ±îÅ¡Ω’»ÅçîÅçΩπ—Öç–âÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅ•òÅ…ï±Öπçîπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâÕç°ïë’±ïêàË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ…ï±ÖπçîàËÅ…ï±Öπçî∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâë’¡±•çÖ—îàËÅQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅÖ¡¡Ω•π—µïπ–ÄÙÅ9Ωπî(ÄÄÄÅÖ¡¡Ω•π—µïπ—}•êÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÖ¡¡Ω•π—µïπ—}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ—}•êË(ÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ–ÄÙÅπï·–†(ÄÄÄÄÄÄÄÄÄÄÄÄ°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅÖ¡¡Ω•π—µïπ—}•êÅÖπêÅ•—ï¥πùï–†âçΩπ—Öç—}•êà§ÄÙÙÅçΩπ—Öç—}•ê§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÖ¡¡Ω•π—µïπ–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIïπëïËµŸΩ’ÃÅ•π—…Ω’ŸÖâ±îÅ¡Ω’»ÅçîÅçΩπ—Öç–âÙ§∞Ä–¿–(ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅëï±•Ÿï…‰ÄÙÅ9Ωπî(ÄÄÄÅ•òÅ…ï±ÖπçîË(ÄÄÄÄÄÄÄÅ}ç…µ}çΩµ¡±ï—ï}…ï±Öπçî°çΩπ—Öç–∞Å…ï±Öπçî∞ÄâÖπÕ›ï…ïêà∞ÅπΩ—îıπΩ—î§(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ï±Öπçîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâIï±ÖπçîÅ—…Ö•”•îÉäPÅÑÅÀ•¡Ωπë‘à∞(ÄÄÄÄÄÄÄÄÄÄÄÅòâ¡¡ï∞ÅçΩπÕ•ùª§ÄËÅÌπΩ—ïÙà∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ–Ë(ÄÄÄÄÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ–πùï–†â…ïÕ¡ΩπÕï}Õ—Ö—’Ãà§ÄÑÙÄâÖπÕ›ï…ïêàË(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâ…ïÕ¡ΩπÕï}Õ—Ö—’ÃâtÄÙÄâÖπÕ›ï…ïêà(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâ…ïÕ¡ΩπÕï}Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅÖ¡¡Ω•π—µïπ–πùï–†âÖπÕ›ï…ïë}ôΩ±±Ω›’¡}Õïπ—}Ö–à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâÖπÕ›ï…ïë}ôΩ±±Ω›’¡}Õïπ—}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¡Ω•π—µïπ—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÅëï±•Ÿï…‰ÄÙÅ}ç…µ}Õïπë}Ö¡¡Ω•π—µïπ—}ôΩ±±Ω›’¿°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÄâM’•—îÅÖ¡¡ï∞ÅÀ•¡Ωπë‘à§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÖ¡¡ï∞à∞Äâ¡¡ï∞ÅçΩπÕ•ùª§à∞ÅπΩ—î§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ•òÅπΩ–ÅÖ¡¡Ω•π—µïπ–ÅÖπêÅπΩ–Å…ï±ÖπçîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§§(ÄÄÄÅ…ïÕ’±–ÄÙÅÏâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ•Ù(ÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ–Ë(ÄÄÄÄÄÄÄÅ…ïÕ’±—lâÖ¡¡Ω•π—µïπ–âtÄÙÅÖ¡¡Ω•π—µïπ–(ÄÄÄÅ•òÅ…ï±ÖπçîË(ÄÄÄÄÄÄÄÅ…ïÕ’±—lâ…ï±ÖπçîâtÄÙÅ…ï±Öπçî(ÄÄÄÅ•òÅëï±•Ÿï…‰Å•ÃÅπΩ–Å9ΩπîË(ÄÄÄÄÄÄÄÅ…ïÕ’±—lâëï±•Ÿï…‰âtÄÙÅëï±•Ÿï…‰(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°…ïÕ’±–§(()Ö¡¿πëï±ï—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω…ï±ÖπçïÃºÒ…ï±Öπçï}•ê¯à§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}ëï±ï—ï}…ï±Öπçî°çΩπ—Öç—}•ê∞Å…ï±Öπçï}•ê§Ë(ÄÄÄÄààâAï…µÖπïπ—±‰Åëï±ï—îÅï·Öç—±‰ÅΩπîÅ¡±ÖππïêÅ…ï±ÖπçîÅôΩ»Å—°•ÃÅçΩπ—Öç–∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–((ÄÄÄÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§(ÄÄÄÅ…ï±ÖπçîÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§Å•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅ…ï±Öπçï}•ê§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–Å…ï±ÖπçîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIï±ÖπçîÅ•π—…Ω’ŸÖâ±îÅ¡Ω’»ÅçîÅçΩπ—Öç–âÙ§∞Ä–¿–(ÄÄÄÅ•òÅ…ï±Öπçîπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâÕç°ïë’±ïêàË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâMï’±îÅ’πîÅ…ï±ÖπçîÅ¡±Öπ•ôß•îÅ¡ï’–É©—…îÅÕ’¡¡…•∑•îâÙ§∞Ä–¿‰((ÄÄÄÅ}ç…µ}ëï±ï—ï}…ï±Öπçî°çΩπ—Öç–∞Å…ï±Öπçî§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâëï±ï—ïë}…ï±Öπçï}•êàËÅ…ï±Öπçï}•ê∞(ÄÄÄÅÙ§(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω…ï±ÖπçïÃºÒ…ï±Öπçï}•ê¯ΩÕÖπÃµ…ï¡ΩπÕîà§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}…ï±Öπçï}πΩ}ÖπÕ›ï»°çΩπ—Öç—}•ê∞Å…ï±Öπçï}•ê§Ë(ÄÄÄÄààâ±ΩÕîÅΩπîÅ…ï±Öπçî∞ÅÕç°ïë’±îÅ—°îÅπï·–ÅΩπîÅÖπêÅÕïπêÅâΩ—†ÅπÖµïêÅ—ïµ¡±Ö—ïÃÅΩπçî∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ}ç…µ}ïπÕ’…ï}…ï±ÖπçïÃ°çΩπ—Öç–§(ÄÄÄÅ…ï±ÖπçîÄÙÅπï·–†(ÄÄÄÄÄÄÄÄ°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§Å•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅ…ï±Öπçï}•ê§∞(ÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–Å…ï±ÖπçîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIï±ÖπçîÅ•π—…Ω’ŸÖâ±îÅ¡Ω’»ÅçîÅçΩπ—Öç–âÙ§∞Ä–¿–((ÄÄÄÅ•òÅ…ï±Öπçîπùï–†âÕ—Ö—’Ãà§ÄÑÙÄâÕç°ïë’±ïêàË(ÄÄÄÄÄÄÄÅπï·—}…ï±ÖπçîÄÙÅπï·–†(ÄÄÄÄÄÄÄÄÄÄÄÄ°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†â…ï±ÖπçïÃà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â¡Ö…ïπ—}…ï±Öπçï}•êà§ÄÙÙÅ…ï±Öπçï}•êÅÖπêÅ•—ï¥πùï–†âÕ—Ö—’Ãà§ÄÙÙÄâÕç°ïë’±ïêà§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ9Ωπî∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ï±ÖπçîàËÅ…ï±Öπçî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπï·—}…ï±ÖπçîàËÅπï·—}…ï±Öπçî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëï±•Ÿï…‰àËÅ…ï±Öπçîπùï–†âëï±•Ÿï…‰à§ÅΩ»ÅÏâÕµÃàËÅÖ±Õî∞ÄâïµÖ•∞àËÅÖ±ÕïÙ∞(ÄÄÄÄÄÄÄÄÄÄÄÄâë’¡±•çÖ—îàËÅQ…’î∞(ÄÄÄÄÄÄÄÅÙ§((ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅπï·—}ëÖ—îÄÙÅ}ç…µ}…ï±Öπçï}ëÖ—î†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†âπï·—}ëÖ—îà§∞Å›ïï≠ëÖÂÕ}Ωπ±‰ıQ…’î∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅï·çï¡–ÅYÖ±’ï……Ω»ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–Åπï·—}ëÖ—îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ°Ω•Õ•ÕÕïËÅ±ÑÅëÖ—îÅëîÅ±ÑÅ¡…Ωç°Ö•πîÅ…ï±Öπçî∏âÙ§∞Ä–¿¿((ÄÄÄÅ}ç…µ}çΩµ¡±ï—ï}…ï±Öπçî°çΩπ—Öç–∞Å…ï±Öπçî∞ÄâπΩ}ÖπÕ›ï»à§(ÄÄÄÅπï·—}…ï±Öπçî∞Å|ÄÙÅ}ç…µ}Õç°ïë’±ï}…ï±Öπçî†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÅπï·—}ëÖ—î∞(ÄÄÄÄÄÄÄÅÕΩ’…çîÙâπΩ}ÖπÕ›ï»à∞(ÄÄÄÄÄÄÄÅ¡Ö…ïπ—}…ï±Öπçï}•êı…ï±Öπçï}•ê∞(ÄÄÄÄÄÄÄÅµΩ—•òı…ï±Öπçîπùï–†âµΩ—•òà§ÅΩ»ÄâM’•—îÅ…ï±ÖπçîÅÕÖπÃÅÀ•¡ΩπÕîà∞(ÄÄÄÄ§(ÄÄÄÅΩ±ë}Õ—Ö—’ÃÄÙÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§(ÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÄâÅ…ï±Öπçï»à(ÄÄÄÅ•òÅΩ±ë}Õ—Ö—’ÃÄÑÙÄâÅ…ï±Öπçï»àË(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕ—Ö—’–à∞ÄâM—Ö—’–ÄËÅÅ…ï±Öπçï»à∞Åòâπç•ï∏ÅÕ—Ö—’–ÄËÅÌΩ±ë}Õ—Ö—’ÕÙà§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄâ…ï±Öπçîà∞(ÄÄÄÄÄÄÄÄâIï±ÖπçîÅÕÖπÃÅÀ•¡ΩπÕîà∞(ÄÄÄÄÄÄÄÅòâ9Ω’Ÿï±±îÅ…ï±ÖπçîÅ¡…Ωù…Öµ∑•îÅ±îÅÌπï·—}ëÖ—ïÙà∞(ÄÄÄÄ§((ÄÄÄÅëï±•Ÿï…‰ÄÙÅ}ç…µ}Õïπë}Ö¡¡Ω•π—µïπ—}ôΩ±±Ω›’¿°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÄâAÖÃÅëîÅÀ•¡ΩπÕîÅ…ï±Öπçîà§(ÄÄÄÅ…ï±Öπçîπ’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄâµïÕÕÖùï}—ïµ¡±Ö—îàËÄâAÖÃÅëîÅÀ•¡ΩπÕîÅ…ï±Öπçîà∞(ÄÄÄÄÄÄÄÄâëï±•Ÿï…‰àËÅëï±•Ÿï…‰∞(ÄÄÄÄÄÄÄÄâµïÕÕÖùïÕ}¡…ΩçïÕÕïë}Ö–àËÅ}ç…µ}πΩ‹†§∞(ÄÄÄÅÙ§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}…ïÕ¡ΩπÕî°çΩπ—Öç–∞ÅëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâ…ï±ÖπçîàËÅ…ï±Öπçî∞(ÄÄÄÄÄÄÄÄâπï·—}…ï±ÖπçîàËÅπï·—}…ï±Öπçî∞(ÄÄÄÄÄÄÄÄâëï±•Ÿï…‰àËÅëï±•Ÿï…‰∞(ÄÄÄÄÄÄÄÄâë’¡±•çÖ—îàËÅÖ±Õî∞(ÄÄÄÅÙ§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω¡’â±•çÖ—•ΩπÃà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}¡’â±•Õ°}çΩπ—Öç—}’¡ëÖ—î°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâA’â±•îÅ’πîÅπΩ—îÅ°Ω…ΩëÖ”•îÅï–ÅÕ•ùª•îÅëÖπÃÅ±îÅô•∞ÅêùÖç—’Ö±•”§ÅëîÅ±ÑÅ¡•Õ—î∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ—ï·–ÄÙÅÕ—»†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†â—ï·—îà∞Äàà§§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å—ï·–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅ—ï·—îÅëîÅ±ÑÅ¡’â±•çÖ—•Ω∏ÅïÕ–Å…ï≈’•ÃâÙ§∞Ä–¿¿(ÄÄÄÅ¡’â±•çÖ—•Ω∏ÄÙÅÏ(ÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞ÄâëÖ—îàËÅ}ç…µ}πΩ‹†§∞Äâ—ï·—îàËÅ—ï·–∞(ÄÄÄÄÄÄÄÄâÖ’—°Ω»àËÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà§∞(ÄÄÄÄÄÄÄÄâÖ’—°Ω…}ïµÖ•∞àËÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âïµÖ•∞à∞Äàà§∞(ÄÄÄÄÄÄÄÄâ±•≠ïÃàËÅmt∞ÄâçΩµµïπ—ÃàËÅmt∞(ÄÄÄÅÙ(ÄÄÄÅçΩπ—Öç–πÕï—ëïôÖ’±–†â¡’â±•çÖ—•ΩπÃà∞Åmt§π•πÕï…–†¿∞Å¡’â±•çÖ—•Ω∏§(ÄÄÄÅ}ç…µ}Öëë}µïπ—•Ωπ}πΩ—•ô•çÖ—•ΩπÃ°ëÖ—Ñ∞Å—ï·–∞ÅçΩπ—Öç–∞Å¡’â±•çÖ—•Ω∏§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ¡’â±•çÖ—•Ω∏àËÅ¡’â±•çÖ—•Ω∏∞ÄâçΩπ—Öç–àËÅçΩπ—Öç—Ù§∞Ä»¿ƒ(()ëïòÅ}ç…µ}¡’â±•çÖ—•Ω∏°çΩπ—Öç–∞Å¡’â±•çÖ—•Ωπ}•ê§Ë(ÄÄÄÅ…ï—’…∏Åπï·–†°•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅçΩπ—Öç–πùï–†â¡’â±•çÖ—•ΩπÃà∞Åmt§Å•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅ¡’â±•çÖ—•Ωπ}•ê§∞Å9Ωπî§(()ëïòÅ}ç…µ}Ω›πÕ}çΩπ—ïπ–°•—ï¥§Ë(ÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÅ…ï—’…∏Å•—ï¥πùï–†âÖ’—°Ω…}ïµÖ•∞à§ÄÙÙÅ’Õï»πùï–†âïµÖ•∞à§ÅΩ»Ä°πΩ–Å•—ï¥πùï–†âÖ’—°Ω…}ïµÖ•∞à§ÅÖπêÅ•—ï¥πùï–†âÖ’—°Ω»à§ÄÙÙÅ’Õï»πùï–†âπÖµîà§§(()ëïòÅ}ç…µ}Öëë}µïπ—•Ωπ}πΩ—•ô•çÖ—•ΩπÃ°ëÖ—Ñ∞Å—ï·–∞ÅçΩπ—Öç–∞Å¡’â±•çÖ—•Ω∏∞Ä®∞Å≠•πêÙâµïπ—•Ω∏à§Ë(ÄÄÄÄààâÀ•îÅ’πîÅπΩ—•ô•çÖ—•Ω∏Å¡…•€•îÅ¡Ω’»Åç°Ö≈’îÅ¡À•πΩ¥ÅçΩππ‘∏ààà(ÄÄÄÅÖ’—°Ω»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÅπΩ…µÖ±•ÈîÄÙÅ±ÖµâëÑÅŸÖ±’îËÄààπ©Ω•∏°ç°Ö»ÅôΩ»Åç°Ö»Å•∏Å’π•çΩëïëÖ—ÑππΩ…µÖ±•Èî†â9à∞ÅŸÖ±’îπçÖÕïôΩ±ê†§§Å•òÅπΩ–Å’π•çΩëïëÖ—ÑπçΩµâ•π•πú°ç°Ö»§§(ÄÄÄÅÖ±•ÖÕïÃÄÙÅÌπΩ…µÖ±•Èî°’Õï…lâô•…Õ—}πÖµîât§ËÅ’Õï»ÅôΩ»Å’Õï»Å•∏ÅUMILπŸÖ±’ïÃ†•Ù(ÄÄÄÅµïπ—•ΩπïêÄÙÅÌπΩ…µÖ±•Èî°ŸÖ±’î§ÅôΩ»ÅŸÖ±’îÅ•∏Å…îπô•πëÖ±∞°»â °mqﬂ ∑¸úµt¨§à∞Å—ï·–ÅΩ»Äàà∞Å…îπU9%=•Ù(ÄÄÄÅôΩ»ÅÖ±•ÖÃÅ•∏Åµïπ—•ΩπïêË(ÄÄÄÄÄÄÄÅ…ïç•¡•ïπ–ÄÙÅÖ±•ÖÕïÃπùï–°Ö±•ÖÃ§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ïç•¡•ïπ–ÅΩ»Å…ïç•¡•ïπ—lâïµÖ•∞âtÄÙÙÅÖ’—°Ω»πùï–†âïµÖ•∞à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}πΩ—•ô•çÖ—•ΩπÃà∞Åmt§π•πÕï…–†¿∞ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞Äâ…ïç•¡•ïπ—}ïµÖ•∞àËÅ…ïç•¡•ïπ—lâïµÖ•∞ât∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ’—°Ω»àËÅÖ’—°Ω»πùï–†âπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà§∞ÄâëÖ—îàËÅ}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ≠•πêàËÅ≠•πê∞Äâ—ï·–àËÅÕ—»°—ï·–§∞Äâ…ïÖêàËÅÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç—}•êàËÅçΩπ—Öç—lâ•êât∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç—}πÖµîàËÅòâÌçΩπ—Öç–πùï–†ù¡…ïπΩ¥ú∞Äúú•ÙÅÌçΩπ—Öç–πùï–†ùπΩ¥ú∞Äúú•ÙàπÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡’â±•çÖ—•Ωπ}•êàËÅ¡’â±•çÖ—•Ωπlâ•êât∞(ÄÄÄÄÄÄÄÅÙ§(()ëïòÅ}ç…µ}Öëë}ô’πë•πù}…ïô’ÕÖ±}πΩ—•ô•çÖ—•ΩπÃ°ëÖ—Ñ∞ÅçΩπ—Öç–∞ÅÕ—Öâ±ï}•ê§Ë(ÄÄÄÄààâ±ï…—îÅç°Ö≈’îÅçΩµ¡—îÅI4Å’πîÅôΩ•ÃÅ±Ω…ÃÅêù’∏ÅπΩ’ŸïÖ‘Å…ïô’ÃÅ]=∏ààà(ÄÄÄÅçΩπ—Öç—}πÖµîÄÙÄàÄàπ©Ω•∏†(ÄÄÄÄÄÄÄÅ¡Ö…–ÅôΩ»Å¡Ö…–Å•∏ÅmçΩπ—Öç–πùï–†â¡…ïπΩ¥à§∞ÅçΩπ—Öç–πùï–†âπΩ¥à•t(ÄÄÄÄÄÄÄÅ•òÅÕ—»°¡Ö…–ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄ§πÕ—…•¿†§ÅΩ»ÄâA•Õ—îÅÕÖπÃÅπΩ¥à(ÄÄÄÅπΩ—•ô•çÖ—•ΩπÃÄÙÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}πΩ—•ô•çÖ—•ΩπÃà∞Åmt§(ÄÄÄÅôΩ»Å’Õï»Å•∏ÅUMILπŸÖ±’ïÃ†§Ë(ÄÄÄÄÄÄÄÅ…ïç•¡•ïπ—}ïµÖ•∞ÄÙÅÕ—»°’Õï»πùï–†âïµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ïç•¡•ïπ—}ïµÖ•∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅπΩ—•ô•çÖ—•ΩπÃπ•πÕï…–†¿∞ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïç•¡•ïπ—}ïµÖ•∞àËÅ…ïç•¡•ïπ—}ïµÖ•∞∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÖ’—°Ω»àËÄâ…ÖπçîÅQ…ÖŸÖ•∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—îàËÅ}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ≠•πêàËÄâô’πë•πù}…ïô’Õïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï·–àËÅòâ1îÅô•πÖπçïµïπ–Å…ÖπçîÅQ…ÖŸÖ•∞ÅëîÅÌçΩπ—Öç—}πÖµïÙÅÑÉ•”§Å…ïô’œ§∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÖêàËÅÖ±Õî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç—}•êàËÅçΩπ—Öç—lâ•êât∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—Öç—}πÖµîàËÅçΩπ—Öç—}πÖµî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çï}›ïëΩô}ôΩ±ëï…}•êàËÅÕ—Öâ±ï}•ê∞(ÄÄÄÄÄÄÄÅÙ§(()ëïòÅ}ç…µ}πΩ—•ô•çÖ—•ΩπÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ∞ÅïµÖ•∞§Ë(ÄÄÄÅ…ï—’…∏Ål(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âç…µ}πΩ—•ô•çÖ—•ΩπÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â…ïç•¡•ïπ—}ïµÖ•∞à§ÄÙÙÅïµÖ•∞(ÄÄÄÅt(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩπΩ—•ô•çÖ—•ΩπÃà∞Åµï—°ΩëÃılâPà∞ÄâAQ ât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}πΩ—•ô•çÖ—•ΩπÃ†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅïµÖ•∞ÄÙÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âïµÖ•∞à∞Äàà§(ÄÄÄÅ•—ïµÃÄÙÅ}ç…µ}πΩ—•ô•çÖ—•ΩπÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ∞ÅïµÖ•∞§(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâAQ àË(ÄÄÄÄÄÄÄÅπΩ—•ô•çÖ—•Ωπ}•êÄÙÅÕ—»†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†â•êà§ÅΩ»Äàà§(ÄÄÄÄÄÄÄÅôΩ»Å•—ï¥Å•∏Å•—ïµÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–ÅπΩ—•ô•çÖ—•Ωπ}•êÅΩ»Å•—ï¥πùï–†â•êà§ÄÙÙÅπΩ—•ô•çÖ—•Ωπ}•êË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâ…ïÖêâtÄÙÅQ…’î(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°•—ïµÃ§(()Ö¡¿π…Ω’—î†(ÄÄÄÄàΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω¡’â±•çÖ—•ΩπÃºÒ¡’â±•çÖ—•Ωπ}•ê¯à∞(ÄÄÄÅµï—°ΩëÃılâAQ à∞Äâ1Qât∞(§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ëï±ï—ï}¡’â±•çÖ—•Ω∏°çΩπ—Öç—}•ê∞Å¡’â±•çÖ—•Ωπ}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ¡’â±•çÖ—•Ω∏ÄÙÅ}ç…µ}¡’â±•çÖ—•Ω∏°çΩπ—Öç–∞Å¡’â±•çÖ—•Ωπ}•ê§Å•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî(ÄÄÄÅ•òÅπΩ–Å¡’â±•çÖ—•Ω∏ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâA’â±•çÖ—•Ω∏Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ•òÅπΩ–Å}ç…µ}Ω›πÕ}çΩπ—ïπ–°¡’â±•çÖ—•Ω∏§Ë(ÄÄÄÄÄÄÄÅÖç—•Ω∏ÄÙÄâµΩë•ô•ï»àÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâAQ àÅï±ÕîÄâÕ’¡¡…•µï»à(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅòâYΩ’ÃÅπîÅ¡Ω’ŸïËÅÌÖç—•ΩπÙÅ≈’îÅŸΩÃÅ¡’â±•çÖ—•ΩπÃâÙ§∞Ä–¿Ã(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâAQ àË(ÄÄÄÄÄÄÄÅ—ï·–ÄÙÅÕ—»†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†â—ï·—îà∞Äàà§§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å—ï·–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅ—ï·—îÅëîÅ±ÑÅ¡’â±•çÖ—•Ω∏ÅïÕ–Å…ï≈’•ÃâÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ¡’â±•çÖ—•Ωπlâ—ï·—îâtÄÙÅ—ï·–(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ¡’â±•çÖ—•Ω∏àËÅ¡’â±•çÖ—•Ω∏∞ÄâçΩπ—Öç–àËÅçΩπ—Öç—Ù§(ÄÄÄÅçΩπ—Öç—lâ¡’â±•çÖ—•ΩπÃâtπ…ïµΩŸî°¡’â±•çÖ—•Ω∏§ÏÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§ÏÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Äàà∞Ä»¿–(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω¡’â±•çÖ—•ΩπÃºÒ¡’â±•çÖ—•Ωπ}•ê¯Ω±•≠îà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}±•≠ï}¡’â±•çÖ—•Ω∏°çΩπ—Öç—}•ê∞Å¡’â±•çÖ—•Ωπ}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ¡’â±•çÖ—•Ω∏ÄÙÅ}ç…µ}¡’â±•çÖ—•Ω∏°çΩπ—Öç–∞Å¡’â±•çÖ—•Ωπ}•ê§Å•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî(ÄÄÄÅ•òÅπΩ–Å¡’â±•çÖ—•Ω∏ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâA’â±•çÖ—•Ω∏Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅïµÖ•∞ÄÙÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âïµÖ•∞à∞Äàà§(ÄÄÄÅ±•≠ïÃÄÙÅ¡’â±•çÖ—•Ω∏πÕï—ëïôÖ’±–†â±•≠ïÃà∞Åmt§(ÄÄÄÅ±•≠ïÃπ…ïµΩŸî°ïµÖ•∞§Å•òÅïµÖ•∞Å•∏Å±•≠ïÃÅï±ÕîÅ±•≠ïÃπÖ¡¡ïπê°ïµÖ•∞§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ¡’â±•çÖ—•Ω∏àËÅ¡’â±•çÖ—•Ω∏∞ÄâçΩπ—Öç–àËÅçΩπ—Öç—Ù§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω¡’â±•çÖ—•ΩπÃºÒ¡’â±•çÖ—•Ωπ}•ê¯ΩçΩµµïπ—Ãà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩµµïπ—}¡’â±•çÖ—•Ω∏°çΩπ—Öç—}•ê∞Å¡’â±•çÖ—•Ωπ}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ¡’â±•çÖ—•Ω∏ÄÙÅ}ç…µ}¡’â±•çÖ—•Ω∏°çΩπ—Öç–∞Å¡’â±•çÖ—•Ωπ}•ê§Å•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî(ÄÄÄÅ•òÅπΩ–Å¡’â±•çÖ—•Ω∏ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâA’â±•çÖ—•Ω∏Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ—ï·–ÄÙÅÕ—»†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†â—ï·—îà∞Äàà§§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å—ï·–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅçΩµµïπ—Ö•…îÅïÕ–Å…ï≈’•ÃâÙ§∞Ä–¿¿(ÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÅçΩµµïπ–ÄÙÅÏâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞ÄâëÖ—îàËÅ}ç…µ}πΩ‹†§∞Äâ—ï·—îàËÅ—ï·–∞ÄâÖ’—°Ω»àËÅ’Õï»πùï–†âπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà§∞ÄâÖ’—°Ω…}ïµÖ•∞àËÅ’Õï»πùï–†âïµÖ•∞à∞Äàà•Ù(ÄÄÄÅ¡’â±•çÖ—•Ω∏πÕï—ëïôÖ’±–†âçΩµµïπ—Ãà∞Åmt§πÖ¡¡ïπê°çΩµµïπ–§(ÄÄÄÅ}ç…µ}Öëë}µïπ—•Ωπ}πΩ—•ô•çÖ—•ΩπÃ°ëÖ—Ñ∞Å—ï·–∞ÅçΩπ—Öç–∞Å¡’â±•çÖ—•Ω∏∞Å≠•πêÙâ…ï¡±‰à§(ÄÄÄÅ•òÅ¡’â±•çÖ—•Ω∏πùï–†âÖ’—°Ω…}ïµÖ•∞à§ÅÖπêÅ¡’â±•çÖ—•Ω∏πùï–†âÖ’—°Ω…}ïµÖ•∞à§ÄÑÙÅ’Õï»πùï–†âïµÖ•∞à§Ë(ÄÄÄÄÄÄÄÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}πΩ—•ô•çÖ—•ΩπÃà∞Åmt§π•πÕï…–†¿∞ÅÏâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞Äâ…ïç•¡•ïπ—}ïµÖ•∞àËÅ¡’â±•çÖ—•ΩπlâÖ’—°Ω…}ïµÖ•∞ât∞ÄâÖ’—°Ω»àËÅ’Õï»πùï–†âπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà§∞ÄâëÖ—îàËÅ}ç…µ}πΩ‹†§∞Äâ≠•πêàËÄâ…ï¡±‰à∞Äâ—ï·–àËÅ—ï·–∞Äâ…ïÖêàËÅÖ±Õî∞ÄâçΩπ—Öç—}•êàËÅçΩπ—Öç—lâ•êât∞ÄâçΩπ—Öç—}πÖµîàËÅòâÌçΩπ—Öç–πùï–†ù¡…ïπΩ¥ú∞Äúú•ÙÅÌçΩπ—Öç–πùï–†ùπΩ¥ú∞Äúú•ÙàπÕ—…•¿†§∞Äâ¡’â±•çÖ—•Ωπ}•êàËÅ¡’â±•çÖ—•Ωπlâ•êâuÙ§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§ÏÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâçΩµµïπ–àËÅçΩµµïπ–∞ÄâçΩπ—Öç–àËÅçΩπ—Öç—Ù§∞Ä»¿ƒ(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω¡’â±•çÖ—•ΩπÃºÒ¡’â±•çÖ—•Ωπ}•ê¯ΩçΩµµïπ—ÃºÒçΩµµïπ—}•ê¯à∞Åµï—°ΩëÃılâ1Qât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ëï±ï—ï}¡’â±•çÖ—•Ωπ}çΩµµïπ–°çΩπ—Öç—}•ê∞Å¡’â±•çÖ—•Ωπ}•ê∞ÅçΩµµïπ—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ¡’â±•çÖ—•Ω∏ÄÙÅ}ç…µ}¡’â±•çÖ—•Ω∏°çΩπ—Öç–∞Å¡’â±•çÖ—•Ωπ}•ê§Å•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî(ÄÄÄÅçΩµµïπ–ÄÙÅπï·–†°•—ï¥ÅôΩ»Å•—ï¥Å•∏Å¡’â±•çÖ—•Ω∏πùï–†âçΩµµïπ—Ãà∞Åmt§Å•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅçΩµµïπ—}•ê§∞Å9Ωπî§Å•òÅ¡’â±•çÖ—•Ω∏Åï±ÕîÅ9Ωπî(ÄÄÄÅ•òÅπΩ–ÅçΩµµïπ–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩµµïπ—Ö•…îÅ•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ•òÅπΩ–Å}ç…µ}Ω›πÕ}çΩπ—ïπ–°çΩµµïπ–§ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâYΩ’ÃÅπîÅ¡Ω’ŸïËÅÕ’¡¡…•µï»Å≈’îÅŸΩÃÅçΩµµïπ—Ö•…ïÃâÙ§∞Ä–¿Ã(ÄÄÄÅ¡’â±•çÖ—•ΩπlâçΩµµïπ—Ãâtπ…ïµΩŸî°çΩµµïπ–§ÏÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§ÏÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Äàà∞Ä»¿–(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩçΩπŸï…—•»à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπŸï…—}çΩπ—Öç–°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâΩπŸï…—•–Å’πîÅ¡•Õ—îÅëÖπÃÅ±îÅI4ÅÕÖπÃÅì•¡ïπë…îÅêù’∏ÅÕï…Ÿ•çîÅï·—ï…πî∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅΩ±ë}Õ—Ö—’ÃÄÙÅçΩπ—Öç–πùï–†âÕ—Ö—’–à∞Äâ9Ω’ŸïÖ’‡à§(ÄÄÄÅ•òÅΩ±ë}Õ—Ö—’ÃÄÙÙÄâΩπŸï…—§àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâçΩπ—Öç–àËÅçΩπ—Öç—Ù§(ÄÄÄÅç°Öπùïë}Ö–ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅçΩπ—Öç—lâÕ—Ö—’–âtÄÙÄâΩπŸï…—§à(ÄÄÄÅçΩπ—Öç—lâÕ—Ö—’Õ}ç°Öπùïë}Ö–âtÄÙÅç°Öπùïë}Ö–(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–πùï–†âçΩπŸï…—ïë}Ö–à§Ë(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâçΩπŸï…—ïë}Ö–âtÄÙÅç°Öπùïë}Ö–(ÄÄÄÅçΩπ—Öç—lâë•Õ≈’Ö±•ô•çÖ—•Ωπ}…ïÖÕΩ∏âtÄÙÄàà(ÄÄÄÅçΩπ—Öç—lâë•Õ≈’Ö±•ô•çÖ—•Ωπ}ëï—Ö•∞âtÄÙÄàà(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕ—Ö—’–à∞ÄâM—Ö—’–ÄËÅΩπŸï…—§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâπç•ï∏ÅÕ—Ö—’–ÄËÅÌΩ±ë}Õ—Ö—’ÕÙà§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅç°Öπùïë}Ö–(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâçΩπ—Öç–àËÅçΩπ—Öç—Ù§(()}I5}I159Q%I}!ÄÙÅÌÙ)}I5}I159Q%I}!}1=,ÄÙÅ—°…ïÖë•πúπI1Ωç¨†§)}I5}I159Q%I}IEUMQ}1=-LÄÙÅÌÙ)}I5}I159Q%I}IEUMQ}1=-M}UIÄÙÅ—°…ïÖë•πúπ1Ωç¨†§(()ëïòÅ}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ï}≠ï‰°çΩπ—Öç–§Ë(ÄÄÄÄààâ%πŸÖ±•ëÖ—îÅ—°îÅÕ°Ω…–µ±•ŸïêÅçÖç°îÅ›°ï∏Å•ëïπ—•—‰Ω—…Ö•π•πúÅç°ÖπùïÃ∏ààà(ÄÄÄÅ…ï—’…∏Ä†(ÄÄÄÄÄÄÄÅΩÃπ¡Ö—†πÖâÕ¡Ö—†°Q}%1§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â’¡ëÖ—ïë}Ö–à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âπΩ¥à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†âµÖ•∞à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§∞(ÄÄÄÄ§(()ëïòÅ}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ï}——∞†§Ë(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅµÖ‡†ƒ‘∏¿∞Åô±ΩÖ–°ΩÃπùï—ïπÿ†âI5}I159Q%I}!}QQ0à∞ÄàÃ¿¿à§§§(ÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄÃ¿¿∏¿(()ëïòÅ}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ïê°çΩπ—Öç–§Ë(ÄÄÄÅ≠ï‰ÄÙÅ}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ï}≠ï‰°çΩπ—Öç–§(ÄÄÄÅ›•—†Å}I5}I159Q%I}!}1=,Ë(ÄÄÄÄÄÄÄÅçÖç°ïêÄÙÅ}I5}I159Q%I}!πùï–°≠ï‰§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçÖç°ïêË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÄÄÄÄÅ•òÅ—•µîπµΩπΩ—Ωπ•å†§Ä¥ÅçÖç°ïëlâÕ—Ω…ïë}Ö–âtÄ¯Å}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ï}——∞†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ}I5}I159Q%I}!π¡Ω¿°≠ï‰∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å9Ωπî(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅçΩ¡‰πëïï¡çΩ¡‰°çÖç°ïëlâ¡ÖÂ±ΩÖêât§(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâçÖç°ïêâtÄÙÅQ…’î(ÄÄÄÄÄÄÄÅ…ï—’…∏Å¡ÖÂ±ΩÖê∞ÅçÖç°ïëlâÕ—Ö—’Õ}çΩëîât(()ëïòÅ}ç…µ}Õ—Ω…ï}…ïù±ïµïπ—Ö•…ï}çÖç°î°çΩπ—Öç–∞Å¡ÖÂ±ΩÖê∞ÅÕ—Ö—’Õ}çΩëî§Ë(ÄÄÄÅ≠ï‰ÄÙÅ}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ï}≠ï‰°çΩπ—Öç–§(ÄÄÄÅ›•—†Å}I5}I159Q%I}!}1=,Ë(ÄÄÄÄÄÄÄÅ}I5}I159Q%I}!m≠ïÂtÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ÖÂ±ΩÖêàËÅçΩ¡‰πëïï¡çΩ¡‰°¡ÖÂ±ΩÖê§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’Õ}çΩëîàËÅÕ—Ö—’Õ}çΩëî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ω…ïë}Ö–àËÅ—•µîπµΩπΩ—Ωπ•å†§∞(ÄÄÄÄÄÄÄÅÙ(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω…ïù±ïµïπ—Ö•…îà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}…ïù±ïµïπ—Ö•…î°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâ·¡ΩÕîÅ±îÅÕ’•Ÿ§ÅÀ•ù±ïµïπ—Ö•…îÅ¡Ö…—Öü§ÅÕÖπÃÅ—…ÖπÕµï——…îÅ±îÅÕïç…ï–∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ…ïô…ïÕ°}…ï≈’ïÕ—ïêÄÙÅÕ—»°…ï≈’ïÕ–πÖ…ùÃπùï–†â…ïô…ïÕ†à§ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§Å•∏ÅÏ(ÄÄÄÄÄÄÄÄàƒà∞Äâ—…’îà∞ÄâÂïÃà∞ÄâΩ’§à∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅπΩ–Å…ïô…ïÕ°}…ï≈’ïÕ—ïêË(ÄÄÄÄÄÄÄÅçÖç°ïêÄÙÅ}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ïê°çΩπ—Öç–§(ÄÄÄÄÄÄÄÅ•òÅçÖç°ïêË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°çÖç°ïël¡t§∞ÅçÖç°ïël≈t((ÄÄÄÅ›•—†Å}I5}I159Q%I}IEUMQ}1=-M}UIË(ÄÄÄÄÄÄÄÅ±Ωç¨ÄÙÅ}I5}I159Q%I}IEUMQ}1=-LπÕï—ëïôÖ’±–°çΩπ—Öç—}•ê∞Å—°…ïÖë•πúπ1Ωç¨†§§(ÄÄÄÅ›•—†Å±Ωç¨Ë(ÄÄÄÄÄÄÄÄåÅA±’Õ•ï’…ÃÅΩπù±ï—ÃÅ¡ï’Ÿïπ–ÅΩ’Ÿ…•»Å±ÑÅ∑©µîÅô•ç°îÅÖ‘Å∑©µîÅ•πÕ—Öπ–∏Å1î(ÄÄÄÄÄÄÄÄåÅ¡…ïµ•ï»ÅôÖ•–Å∞ùÖ¡¡ï∞Åë•Õ—Öπ–∞Å±ïÃÅÕ’•ŸÖπ—ÃÅÀ•’—•±•Õïπ–ÅÕΩ∏ÅÀ•Õ’±—Ö–∏(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å…ïô…ïÕ°}…ï≈’ïÕ—ïêË(ÄÄÄÄÄÄÄÄÄÄÄÅçÖç°ïêÄÙÅ}ç…µ}…ïù±ïµïπ—Ö•…ï}çÖç°ïê°çΩπ—Öç–§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçÖç°ïêË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°çÖç°ïël¡t§∞ÅçÖç°ïël≈t((ÄÄÄÄÄÄÄÅô…Ω¥Åç…µ}çπÖ¡Õ}—…Öç≠•πúÅ•µ¡Ω…–Å¡…Ω·Â}…ïù±ïµïπ—Ö•…î∞ÅÕçΩ…•πù}ÕπÖ¡Õ°Ω—}ô…Ωµ}…ïµΩ—î(ÄÄÄÄÄÄÄÅ…ïµΩ—îÄÙÅ¡…Ω·Â}…ïù±ïµïπ—Ö•…î°Ö¡¿∞ÅçΩπ—Öç–∞Å°——¡}ùï–ı…ï≈’ïÕ—Ãπùï–§(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ…ïµΩ—ïl¡tÅ•òÅ•Õ•πÕ—Öπçî°…ïµΩ—î∞Å—’¡±î§Åï±ÕîÅ…ïµΩ—î(ÄÄÄÄÄÄÄÅÕ—Ö—’Õ}çΩëîÄÙÅ…ïµΩ—ïl≈tÅ•òÅ•Õ•πÕ—Öπçî°…ïµΩ—î∞Å—’¡±î§Åï±ÕîÅ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëî(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ïÕ¡ΩπÕîπùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÅÕπÖ¡Õ°Ω—ÃÄÙÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}çπÖ¡Õ}ÕçΩ…•πù}ÕπÖ¡Õ°Ω—Ãà∞ÅÌÙ§(ÄÄÄÄÄÄÄÅ¡…ïŸ•Ω’ÃÄÙÅÕπÖ¡Õ°Ω—Ãπùï–°Õ—»°çΩπ—Öç—}•ê§§(ÄÄÄÄÄÄÄÅ•òÅÕ—Ö—’Õ}çΩëîÄÙÙÄ»¿¿ÅΩ»Ä°Õ—Ö—’Õ}çΩëîÄÙÙÄ–¿–ÅÖπêÅ¡ÖÂ±ΩÖêπùï–†â…ïÖÕΩ∏à§ÄÙÙÄâçπÖ¡Õ}πΩ—}ôΩ’πêà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕπÖ¡Õ°Ω–ÄÙÅÕçΩ…•πù}ÕπÖ¡Õ°Ω—}ô…Ωµ}…ïµΩ—î°¡ÖÂ±ΩÖê∞Å°——¡}Õ—Ö—’ÃıÕ—Ö—’Õ}çΩëî§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ±ë}ÕçΩ…îÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°çΩπ—Öç–∞Å¡…ïŸ•Ω’Ã§(ÄÄÄÄÄÄÄÄÄÄÄÅÕπÖ¡Õ°Ω—ÕmÕ—»°çΩπ—Öç—}•ê•tÄÙÅÕπÖ¡Õ°Ω–(ÄÄÄÄÄÄÄÄÄÄÄÅπï›}ÕçΩ…îÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°çΩπ—Öç–∞ÅÕπÖ¡Õ°Ω–§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅπΩ–Å¡…ïŸ•Ω’ÃÅΩ»Å¡…ïŸ•Ω’Ãπùï–†âπΩ…µÖ±•Èïë}Õ—Ö—’Ãà§ÄÑÙÅÕπÖ¡Õ°Ω–πùï–†âπΩ…µÖ±•Èïë}Õ—Ö—’Ãà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±Öâï±ÃÄÙÅÏâÖççï¡—ïêàËÄâççï¡”§à∞Äâ—…ÖπÕµ•——ïêàËÄâQ…ÖπÕµ•Ãà∞Äâ•π}…ïŸ•ï‹àËÄâ∏Å•πÕ—…’ç—•Ω∏à∞Äâ…ïù•Õ—ï…ïêàËÄâπ…ïù•Õ—À§à∞Äâ…ïô’ÕïêàËÄâIïô’œ§à∞ÄâπΩ}…ïÕ’±–àËÄâ’ç’∏ÅÀ•Õ’±—Ö–à∞Äâ’π≠πΩ›∏àËÄâ%πçΩππ‘âÙ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕπÖ¡Õ°Ω—lâπΩ…µÖ±•Èïë}Õ—Ö—’ÃâtÄÙÙÄâÖççï¡—ïêàË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—•—±îÄÙÄâ’—Ω…•ÕÖ—•Ω∏Å9ALÅÖççï¡”•îà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—•—±îÄÙÅòâM’•Ÿ§Å9ALÅ¡ÖÕœ§ÅëîÅÌ±Öâï±Ãπùï–†°¡…ïŸ•Ω’ÃÅΩ»ÅÌÙ§πùï–†ùπΩ…µÖ±•Èïë}Õ—Ö—’Ãú§∞Äù%πçΩππ‘ú•ÙÉÄÅÌ±Öâï±ÕmÕπÖ¡Õ°Ω—lùπΩ…µÖ±•Èïë}Õ—Ö—’ÃùuuÙà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕçΩ…îà∞Å—•—±î§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅΩ±ë}ÕçΩ…îπùï–†â±ïŸï∞à§ÄÑÙÅπï›}ÕçΩ…îπùï–†â±ïŸï∞à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÕçΩ…îà∞ÅòâMçΩ…îÅìäe•π”•ù…Ö—•Ω∏Å¡ÖÕœ§ÅëîÅÌΩ±ë}ÕçΩ…îπùï–†ùÕçΩ…îú•ÙÉÄÅÌπï›}ÕçΩ…îπùï–†ùÕçΩ…îú•ÙÄËÅÌπï›}ÕçΩ…îπùï–†ù±Öâï∞ú•Ùà§(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâ•π—ïù…Ö—•Ωπ}ÕçΩ…îâtÄÙÅπï›}ÕçΩ…î(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâÕçΩ…•πù}ÕπÖ¡Õ°Ω–âtÄÙÅÕπÖ¡Õ°Ω–(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâçÖç°ïêâtÄÙÅÖ±Õî(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}Õ—Ω…ï}…ïù±ïµïπ—Ö•…ï}çÖç°î°çΩπ—Öç–∞Å¡ÖÂ±ΩÖê∞ÅÕ—Ö—’Õ}çΩëî§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°¡ÖÂ±ΩÖê§∞ÅÕ—Ö—’Õ}çΩëî(ÄÄÄÄÄÄÄÄåÅUπîÅ¡ÖππîÅë•Õ—Öπ—îÅπîÅì•—…’•–Å©ÖµÖ•ÃÅ±îÅëï…π•ï»ÅôÖ•–ÅÀ•’ÕÕ§∏(ÄÄÄÄÄÄÄÅ•òÅ¡…ïŸ•Ω’ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâ•π—ïù…Ö—•Ωπ}ÕçΩ…îâtÄÙÅçÖ±ç’±Ö—ï}çÖπë•ëÖ—ï}•π—ïù…Ö—•Ωπ}ÕçΩ…î°çΩπ—Öç–∞Å¡…ïŸ•Ω’Ã§(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖëlâÕçΩ…•πù}ÕπÖ¡Õ°Ω–âtÄÙÅÏ®©¡…ïŸ•Ω’Ã∞Äâ…ïô…ïÕ°}ôÖ•±ïêàËÅQ…’ïÙ(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°¡ÖÂ±ΩÖê§∞ÅÕ—Ö—’Õ}çΩëî(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥Ω…ïôΩ…µ’±ï»à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}…ï¡°…ÖÕî†§Ë(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ—ï·–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—ï·—îà∞Äàà§§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å—ï·–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâQï·—îÅŸ•ëîâÙ§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–ÅΩÃπùï—ïπÿ†â=A9%}A%}-dà§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ=A9%}A%}-dÅπΩ∏ÅçΩπô•ù’À•îâÙ§∞Ä‘¿Ã(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ•òÅ¡ÖÂ±ΩÖêπùï–†âµΩëîà§ÄÙÙÄâçΩ……ïç—•Ωπ}ë•ç—ïîàË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÂÕ—ïµ}¡…Ωµ¡–ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâΩ……•ùîÅ’π•≈’ïµïπ–Å≥äeΩ…—°Ωù…Ö¡°î∞Å±ïÃÅÖççΩ…ëÃ∞Å±ÑÅçΩπ©’ùÖ•ÕΩ∏∞Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ±ÑÅ¡Ωπç—’Ö—•Ω∏∞Å±ïÃÅÀ•√•—•—•ΩπÃÅ•πŸΩ±Ωπ—Ö•…ïÃÅï–Å±ïÃÅï……ï’…ÃÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄã•Ÿ•ëïπ—ïÃÅëîÅ—…ÖπÕç…•¡—•Ω∏ÅŸΩçÖ±îÅëîÅçï——îÅπΩ—îÅI4∏ÅAÀ•Õï…ŸîÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÕ—…•ç—ïµïπ–Å±îÅÕïπÃ∞Å±ïÃÅôÖ•—Ã∞Å±ïÃÅπΩµÃ∞Å±ïÃÅëÖ—ïÃ∞Å±ïÃÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâµΩπ—Öπ—ÃÅï–Å±ïÃÅÖç…ΩπÂµïÃÅ∑•—•ï»∏Å;äeÖ©Ω’—îÅÖ’ç’πîÅ•πôΩ…µÖ—•Ω∏∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅÕÂÕ—ïµ}¡…Ωµ¡–ÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâIïôΩ…µ’±îÅ±ÑÅπΩ—îÅI4Åï∏Åô…ÖªùÖ•ÃÅ¡…ΩôïÕÕ•Ωππï∞∞Åç±Ö•»Åï–Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâôÖç—’ï∞∏Å9îÅ…Ö©Ω’—îÅÖ’ç’πîÅ•πôΩ…µÖ—•Ω∏∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ïôΩ…µ’±Ö—•Ω∏ÄÙÅ}ç…µ}Ö§°ÕÂÕ—ïµ}¡…Ωµ¡–∞Å—ï·–§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ—ï·—îàËÅ…ïôΩ…µ’±Ö—•ΩπÙ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ¡…•π–†â……ï’»Å…ïôΩ…µ’±Ö—•Ω∏ÅI4Ëà∞Åï·å§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅ…ïôΩ…µ’±Ö—•Ω∏ÅïÕ–ÅµΩµïπ—Öª•µïπ–Å•πë•Õ¡Ωπ•â±îâÙ§∞Ä‘¿»(()ëïòÅ}ç…µ}ô…Öπçï}—…ÖŸÖ•±}…ï≈’ïÕ—}çΩπ—ï·–°çΩπ—Öç–∞Å¡ÖÂ±ΩÖê§Ë(ÄÄÄÄààâ	’•±êÅ—°îÅÕ—…•ç—±‰ÅôÖç—’Ö∞ÅçΩπ—ï·–Å’ÕïêÅâ‰Å—°îÅPÅ›…•—•πúÅÖÕÕ•Õ—Öπ–∏ààà(ÄÄÄÅëïòÅ—ï·–°≠ï‰∞Å±•µ•–§Ë(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅ…îπÕ’à°»âqÃ¨à∞ÄàÄà∞ÅÕ—»°¡ÖÂ±ΩÖêπùï–°≠ï‰§ÅΩ»Äàà§§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅŸÖ±’ïlÈ±•µ•—t((ÄÄÄÅôΩ…µÖ—•Ωπ}çΩëîÄÙÅ}ç…µ}ôΩ…µÖ—•Ωπ}çΩëî°çΩπ—Öç–§(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅMIQI%Q}=I5Q%=9Lπùï–°ôΩ…µÖ—•Ωπ}çΩëî∞ÅÌÙ§(ÄÄÄÅçïπ—…ï}çΩëîÄÙÅ}πΩ…µÖ±•Èï}çïπ—…ï}çΩëî°çΩπ—Öç–πùï–†â±•ï‘à§§(ÄÄÄÅÕïç’…•—Â}çΩëïÃÄÙÅÏâÕ@à∞ÄâALà∞ÄâMM%@à∞ÄâMA}%9%Pà∞ÄâMA}YâÙ(ÄÄÄÅçïπ—…ïÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâçΩ—ï}ÖÈ’»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄâ%π”•ù…Ö±îÅO•ç’…•”§ÅΩ…µÖ—•ΩπÃÉÄÅA’ùï–µÕ’»µ…ùïπÃÄ°YÖ»§à(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÅ•∏ÅÕïç’…•—Â}çΩëïÃ(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîÄâ%π”•ù…Ö±îÅçÖëïµ‰ÉÄÅA’ùï–µÕ’»µ…ùïπÃÄ°YÖ»§à(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄâÖ’Ÿï…ùπîàËÄâ%π”•ù…Ö±îÅçÖëïµ‰ÅQï……ïÃÅìäe’Ÿï…ùπîà∞(ÄÄÄÄÄÄÄÄâ¡Ö…•ÃàËÄâ%π”•ù…Ö±îÅçÖëïµ‰ÅAÖ…•Ãà∞(ÄÄÄÅÙ(ÄÄÄÅçÖπë•ëÖ—ï}πÖµîÄÙÄàÄàπ©Ω•∏°ô•±—ï»°9Ωπî∞Ä†(ÄÄÄÄÄÄÄÅ}ç…µ}ôΩ…µÖ—}ô•…Õ—}πÖµî°çΩπ—Öç–πùï–†â¡…ïπΩ¥à§§∞(ÄÄÄÄÄÄÄÅ}ç…µ}ôΩ…µÖ—}±ÖÕ—}πÖµî°çΩπ—Öç–πùï–†âπΩ¥à§§∞(ÄÄÄÄ§§§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâçÖπë•ëÖ–àËÅÏâπΩµ}çΩµ¡±ï–àËÅçÖπë•ëÖ—ï}πÖµïÙ∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÅ}ç…µ}ôΩ…µÖ—•Ωπ}±Öâï∞°çΩπ—Öç–§ÅΩ»ÄâΩ…µÖ—•Ω∏ÅÕΩ’°Ö•”•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçïπ—…îàËÅçïπ—…ïÃπùï–°çïπ—…ï}çΩëî∞Äâ%π”•ù…Ö±îÅçÖëïµ‰à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕïÕÕ•Ωπ}ÕΩ’°Ö•—ïîàËÅÕ—»°çΩπ—Öç–πùï–†âëÖ—ïÕ}ôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâë’…ïîàËÅôΩ…µÖ—•Ω∏πùï–†âë’…Ö—•Ω∏à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ–àËÅôΩ…µÖ—•Ω∏πùï–†âôΩ…µÖ–à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâΩâ©ïç—•òàËÅôΩ…µÖ—•Ω∏πùï–†â¡’…¡ΩÕîà∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ¡ïç•Ö±•ÕÖ—•Ωπ}ë’}çïπ—…îàËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâïπ—…îÅÕ√•ç•Ö±•œ§ÅëÖπÃÅ±ïÃÅ∑•—•ï…ÃÅëîÅ±ÑÅ¡…Ω—ïç—•Ω∏Å…Ö¡¡…Ωç£•î∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÄÙÙÄâÕ@à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîÄâïπ—…îÅÕ√•ç•Ö±•œ§ÅëÖπÃÅ±ïÃÅ∑•—•ï…ÃÅëîÅ±ÑÅœ•ç’…•”§Å¡…•€•î∏à(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅôΩ…µÖ—•Ωπ}çΩëîÅ•∏ÅÕïç’…•—Â}çΩëïÃÅï±ÕîÄàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ–àËÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâç¡ô}çΩπÕ’±—îàËÅ}ÂïÃ°çΩπ—Öç–πùï–†âç¡òà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµΩπ—Öπ—}ç¡ô}ë•Õ¡Ωπ•â±ï}ï’…ΩÃàËÅÕ—»°çΩπ—Öç–πùï–†âç¡ô}µΩπ—Öπ–à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÄâ¡…Ωô•∞àËÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâÖπç•ïπ}µ•±•—Ö•…îàËÅ}ÂïÃ°¡ÖÂ±ΩÖêπùï–†âÖπç•ïπ}µ•±•—Ö•…îà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ…—ï}¡…ΩôïÕÕ•Ωππï±±ï}çπÖ¡ÃàËÅ}ÂïÃ°¡ÖÂ±ΩÖêπùï–†âçÖ…—ï}¡…ΩôïÕÕ•Ωππï±±îà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâï·¡ï…•ïπçï}ïπ}Õïç’…•—ï}¡…•ŸïîàËÅ}ÂïÃ°¡ÖÂ±ΩÖêπùï–†âï·¡ï…•ïπçï}Õïç’…•—îà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâïπ}…ïçΩπŸï…Õ•Ωπ}¡…ΩôïÕÕ•Ωππï±±îàËÅ}ÂïÃ°¡ÖÂ±ΩÖêπùï–†â…ïçΩπŸï…Õ•Ω∏à§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ï…µ•Õ}â}ï—}µΩâ•±•—îàËÅ}ÂïÃ°¡ÖÂ±ΩÖêπùï–†â¡ï…µ•Õ}â}µΩâ•±•—îà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ï…Õ¡ïç—•ŸïÕ}ïµâÖ’ç°ï}•ëïπ—•ô•ïïÃàËÅ}ÂïÃ°¡ÖÂ±ΩÖêπùï–†â¡ï…Õ¡ïç—•ŸïÕ}ïµâÖ’ç°îà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡Ö…çΩ’…Õ}ï—}ï·¡ï…•ïπçîàËÅ—ï·–†â¡Ö…çΩ’…Ãà∞Äƒ‘¿¿§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…Ω©ï—}¡…ΩôïÕÕ•Ωππï∞àËÅ—ï·–†â¡…Ω©ï—}¡…ΩôïÕÕ•Ωππï∞à∞Äƒ‘¿¿§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…Ö•ÕΩπÕ}ë’}ç°Ω•·}ôΩ…µÖ—•Ωπ}çïπ—…îàËÅ—ï·–†âç°Ω•·}ôΩ…µÖ—•Ωπ}çïπ—…îà∞Äƒ»¿¿§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡ï…Õ¡ïç—•ŸïÕ}ïµ¡±Ω§àËÅ—ï·–†â¡ï…Õ¡ïç—•ŸïÕ}ïµ¡±Ω§à∞Äƒ»¿¿§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµΩ—•ŸÖ—•Ωπ}ï—}ï±ïµïπ—Õ}çΩµ¡±ïµïπ—Ö•…ïÃàËÅ—ï·–†âµΩ—•ŸÖ—•Ω∏à∞Äƒ‡¿¿§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÅÙ(()I5}I9}QIY%1}IEUMQ}5a}!IQILÄÙÄ»¿¿¿(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ωùïπï…ï»µëïµÖπëîµô–à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ùïπï…Ö—ï}ô…Öπçï}—…ÖŸÖ•±}…ï≈’ïÕ–°çΩπ—Öç—}•ê§Ë(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°±ΩÖë}ëÖ—Ñ†§∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ•òÅπΩ–ÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIïπÕï•ùπïËÅìäeÖâΩ…êÅ±ÑÅôΩ…µÖ—•Ω∏ÅÕΩ’°Ö•”•îâÙ§∞Ä–»»(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§(ÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°¡ÖÂ±ΩÖê∞Åë•ç–§Ë(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅÌÙ(ÄÄÄÅôÖç—ÃÄÙÅ}ç…µ}ô…Öπçï}—…ÖŸÖ•±}…ï≈’ïÕ—}çΩπ—ï·–°çΩπ—Öç–∞Å¡ÖÂ±ΩÖê§(ÄÄÄÅÕÂÕ—ïµ}¡…Ωµ¡–ÄÙÄààâK•ë•ùîÅï∏Åô…ÖªùÖ•ÃÅ’πîÅëïµÖπëîÅëîÅô•πÖπçïµïπ–Å¡ï…Õ’ÖÕ•Ÿî∞ÅçÀ•ë•â±îÅï–Åë•…ïç—ïµïπ–ÅÖë…ïÕœ•îÉÄÅ’∏ÅçΩπÕï•±±ï»Å…ÖπçîÅQ…ÖŸÖ•∞∞ÅÖ‘ÅπΩ¥Åë‘ÅçÖπë•ëÖ–Åï–ÉÄÅ±ÑÅ¡…ïµß°…îÅ¡ï…ÕΩππî∏()1îÅ—ï·—îÅëΩ•–É©—…îÅ¡À©–ÉÄÅçΩ¡•ï»µçΩ±±ï»ÄËÅçΩµµïπçîÅ¡Ö»É
+¨Å	Ωπ©Ω’»∞É
+Ï∞ÅπîÅµï—ÃÅπ§ÅΩâ©ï–∞Åπ§Å—•—…î∞Åπ§Å5Ö…≠ëΩ›∏∞Åï–Å—ï…µ•πîÅ¡Ö»Å’πîÅôΩ…µ’±îÅëîÅë•Õ¡Ωπ•â•±•”§∞ÅëïÃÅ…ïµï…ç•ïµïπ—Ã∞É
+¨Å	•ï∏ÅçΩ…ë•Ö±ïµïπ–∞É
+ÏÅ¡’•ÃÅ±îÅπΩ¥ÅçΩµ¡±ï–Åë‘ÅçÖπë•ëÖ–Å±Ω…Õ≈◊äe•∞ÅïÕ–Å…ïπÕï•ùª§∏Å1îÅ—ï·—îÅô•πÖ∞ÅπîÅëΩ•–Å©ÖµÖ•ÃÅì•¡ÖÕÕï»Ä»Ä¿¿¿ÅçÖ…Öç”°…ïÃ∞ÅïÕ¡ÖçïÃÅçΩµ¡…•Ã∏ÅY•ÕîÄƒÄ‘¿¿ÉÄÄƒÄ‡¿¿ÅçÖ…Öç”°…ïÃ∞ÅÖŸïåÅëïÃÅ¡Ö…Öù…Ö¡°ïÃÅçΩ’…—Ã∏()·¡±•≈’îÅç±Ö•…ïµïπ–Å±ÑÅôΩ…µÖ—•Ω∏ÅÕΩ±±•ç•”•î∞Å±îÅç°Ω•‡Åë‘Åçïπ—…î∞Å±îÅ¡…Ω©ï–Å¡…ΩôïÕÕ•Ωππï∞∞Å±ÑÅçΩ£•…ïπçîÅë‘Å¡Ö…çΩ’…Ã∞Å≥äe’—•±•”§ÅçΩπçÀ°—îÅëîÅ±ÑÅôΩ…µÖ—•Ω∏Å¡Ω’»Å≥äeÖçè°ÃÉÄÅ≥äeïµ¡±Ω§Åï–Å±ÑÅµΩ—•ŸÖ—•Ω∏Åë‘ÅçÖπë•ëÖ–∏ÅYÖ±Ω…•ÕîÅ±ïÃÅÖ—Ω’—ÃÅçΩç£•ÃÅ’π•≈’ïµïπ–Å±Ω…Õ≈◊äe•±ÃÅÕΩπ–ÅŸ…Ö•Ã∏ÅM§É
+¨ÅÖπç•ïπ}µ•±•—Ö•…îÉ
+ÏÅïÕ–ÅŸ…Ö§∞ÅÕΩ’±•ùπîÅ±ïÃÅçΩµ√•—ïπçïÃÅ—…ÖπÕõ•…Öâ±ïÃÅÕÖπÃÅ•πŸïπ—ï»ÅìäeÖ…∑•î∞ÅëîÅù…Öëî∞ÅëîÅµ•ÕÕ•Ω∏Åπ§ÅëîÅë’À•î∏ÅM§É
+¨ÅçÖ…—ï}¡…ΩôïÕÕ•Ωππï±±ï}çπÖ¡ÃÉ
+ÏÅïÕ–ÅŸ…Ö§∞Åµïπ—•ΩππîÅ’πîÅçÖ…—îÅ¡…ΩôïÕÕ•Ωππï±±îÅ9ALÅÕÖπÃÅ•πŸïπ—ï»ÅÕÑÅçÖ”•ùΩ…•îÅπ§ÅÕΩ∏ÅÖπç•ïππï”§∏ÅM§ÅëïÃÅ¡ï…Õ¡ïç—•ŸïÃÅìäeïµâÖ’ç°îÅÕΩπ–Å•πë•≈◊•ïÃ∞Å…ïÕ—îÅï·Öç—ïµïπ–ÅÖ‘Åπ•ŸïÖ‘ÅëîÅ¡À•ç•Õ•Ω∏ÅôΩ’…π§∏();äe•πŸïπ—îÅÖ’ç’∏ÅôÖ•–∞Åç°•ôô…îÅëîÅµÖ…ç£§∞Åïµ¡±ΩÂï’»∞Å¡…ΩµïÕÕîÅìäeïµâÖ’ç°î∞ÅÕÖ±Ö•…î∞Åë•¡≥—µî∞Åπ•ŸïÖ‘ÅëîÅçï…—•ô•çÖ—•Ω∏∞ÅÖπç•ïππï”§∞Å…ïçΩππÖ•ÕÕÖπçîÅΩôô•ç•ï±±îÅΩ‘ÅùÖ…Öπ—•îÅëîÅ…ïç…’—ïµïπ–∏Å;äe’—•±•ÕîÅ¡ÖÃÅ±ïÃÅç°Öµ¡ÃÅŸ•ëïÃÅï–ÅπîÅ—…ÖπÕôΩ…µîÅ©ÖµÖ•ÃÅ’πîÅÕ•µ¡±îÅ•π—ïπ—•Ω∏Åï∏Åì•µÖ…ç°îÅì•´ÄÅÖççΩµ¡±•î∏Å9îÅµïπ—•ΩππîÅ¡ÖÃÅ±ïÃÅçΩπÕ•ùπïÃÅëîÅÀ•ëÖç—•Ω∏Åπ§Å±ïÃÅëΩπª•ïÃÅÕ—…’ç—’À•ïÃ∏ààà(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅùïπï…Ö—ïêÄÙÅ}ç…µ}Ö§†(ÄÄÄÄÄÄÄÄÄÄÄÅÕÂÕ—ïµ}¡…Ωµ¡–∞(ÄÄÄÄÄÄÄÄÄÄÄÅ©ÕΩ∏πë’µ¡Ã°Ïâ•πôΩ…µÖ—•ΩπÕ}ôÖç—’ï±±ïÕ}Ö’—Ω…•ÕïïÃàËÅôÖç—ÕÙ∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî§∞(ÄÄÄÄÄÄÄÄÄÄÄÄƒƒ¿¿∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅùïπï…Ö—ïêÄÙÅÕ—»°ùïπï…Ö—ïêÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅ±ï∏°ùïπï…Ö—ïê§Ä¯ÅI5}I9}QIY%1}IEUMQ}5a}!IQILË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1îÅ—ï·—îÅü•ª•À§Åì•¡ÖÕÕîÅ±ÑÅ±•µ•—îÅëîÄ»Ä¿¿¿ÅçÖ…Öç”°…ïÃ∏ÅK•ü•ª•…ïËÅ’πîÅŸï…Õ•Ω∏Å¡±’ÃÅçΩ’…—î∏à(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–»»(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï·—îàËÅùïπï…Ö—ïê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµÖ·}ç°Ö…Öç—ï…ÃàËÅI5}I9}QIY%1}IEUMQ}5a}!IQIL∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄâô…Öπçï}—…ÖŸÖ•±}…ï≈’ïÕ—}ùïπï…Ö—•Ω∏ÅçΩπ—Öç–ÙïÃÅï……Ω»ÙïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•ê∞Å—Â¡î°ï·å§π}}πÖµï}|∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅü•ª•…Ö—•Ω∏ÅëîÅ±ÑÅëïµÖπëîÅ…ÖπçîÅQ…ÖŸÖ•∞ÅïÕ–ÅµΩµïπ—Öª•µïπ–Å•πë•Õ¡Ωπ•â±îâÙ§∞Ä‘¿»(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩÕÂπ—°ïÕîà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çΩπ—Öç—}Õ’µµÖ…‰°çΩπ—Öç—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅëΩÕÕ•ï»ÄÙÅÌ≠ï‰ËÅçΩπ—Öç–πùï–°≠ï‰∞Äàà§ÅôΩ»Å≠ï‰Å•∏Ä†(ÄÄÄÄÄÄÄÄâ¡…ïπΩ¥à∞ÄâπΩ¥à∞ÄâôΩ…µÖ—•Ω∏à∞Äâ±•ï‘à∞ÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏à∞ÄâÕ—Ö—’–à∞Äâç¡òà∞(ÄÄÄÄÄÄÄÄâô•πÖπçïµïπ—}ô–à∞ÄâçÖ…—ï}¡…ºà∞ÄâÖπ—ïçïëïπ—Ãà∞ÄâçΩµµïπ—Ö•…ïÃà•Ù(ÄÄÄÅëΩÕÕ•ï…lâëï…π•ï…ïÕ}Öç—•Ÿ•—ïÃâtÄÙÄ°çΩπ—Öç–πùï–†âÖç—•Ÿ•—•ïÃà§ÅΩ»Åmt•lËƒ¡t(ÄÄÄÅÖ¡¡Ω•π—µïπ—ÃÄÙÅm•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†âçΩπ—Öç—}•êà§ÄÙÙÅçΩπ—Öç—}•ët(ÄÄÄÅëΩÕÕ•ï…lâ…ïπëïÈ}ŸΩ’Õ}çÖ±ïπë±‰âtÄÙÅÕΩ…—ïê°Ö¡¡Ω•π—µïπ—Ã∞(ÄÄÄÄÄÄÄÅ≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅ•—ï¥πùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà∞Å…ïŸï…ÕîıQ…’î•lËƒ¡t(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ—ï·—îÄÙÅ}ç…µ}Ö§†âK•ë•ùîÅ’πîÅÕÂπ—£°ÕîÅI4Åì•—Ö•±≥•îÅï–ÅÕ—…’ç—’À•îÅï∏Åô…ÖªùÖ•ÃÄ†ÿÉÄÄƒ¿Å¡°…ÖÕïÃ§∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâ%πë•≈’îÅï·¡±•ç•—ïµïπ–Å±îÅ¡…Ωç°Ö•∏Å…ïπëïËµŸΩ’ÃÅ¡À•Ÿ‘Ä°ëÖ—î∞Å°ï’…îÅï–ÅΩâ©ï–§ÅΩ‘Å≈‘ùÖ’ç’∏Å…ïπëïËµŸΩ’ÃÅ∏ùïÕ–Å¡À•Ÿ‘∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâE’Ö±•ô•îÅ±îÅœ•…•ï’‡Åï–Å±ÑÅµÖ—’…•”§Åë‘Å¡…ΩÕ¡ïç–Å’π•≈’ïµïπ–ÉÄÅ¡Ö…—•»ÅëîÅÕ•ùπÖ’‡ÅôÖç—’ï±ÃÄ£•ç°ÖπùïÃ∞ÅÕ—Ö—’–∞Åô•πÖπçïµïπ–∞Å…ïπëïËµŸΩ’Ã∞ÅçΩµ¡≥•—’ëî§∞Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡À•Õïπ—îÅ±ïÃÅ¡Ω•π—ÃÅôΩ…—Ã∞Å±ïÃÅâ±ΩçÖùïÃÅΩ‘Å•πôΩ…µÖ—•ΩπÃÅµÖπ≈’Öπ—ïÃÅï–Å—ï…µ•πîÅ¡Ö»Å±ïÃÅ¡…Ωç°Ö•πïÃÅÖç—•ΩπÃÅçΩπçÀ°—ïÃ∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄâ8ù•πŸïπ—îÅÖ’ç’πîÅ•πôΩ…µÖ—•Ω∏Åï–ÅÕ•ùπÖ±îÅç±Ö•…ïµïπ–ÅçîÅ≈’§Å∏ùïÕ–Å¡ÖÃÅ…ïπÕï•ùª§∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÅ©ÕΩ∏πë’µ¡Ã°ëΩÕÕ•ï»∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî§∞Äÿ¿¿§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ—ï·—îàËÅ—ï·—ïÙ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ¡…•π–†â……ï’»ÅÕÂπ—£°ÕîÅI4Ëà∞Åï·å§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅÕÂπ—£°ÕîÅïÕ–ÅµΩµïπ—Öª•µïπ–Å•πë•Õ¡Ωπ•â±îâÙ§∞Ä‘¿»(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩÖ§µÖπÖ±ÂÕ•Ãà∞Åµï—°ΩëÃılâPà∞ÄâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Ã°çΩπ—Öç—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅ•òÅπΩ–Å}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâPàË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ùï—}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Õ}Õ—Ö—î°çΩπ—Öç—}•ê∞ÅëÖ—Ñ§§(ÄÄÄÅôΩ…çîÄÙÅâΩΩ∞†°…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ§πùï–†âôΩ…çîà∞ÅÖ±Õî§§(ÄÄÄÅ›•—†Å}I5}%}91eM%M}1=-M}UIË(ÄÄÄÄÄÄÄÅ±Ωç¨ÄÙÅ}I5}%}91eM%M}1=-LπÕï—ëïôÖ’±–°çΩπ—Öç—}•ê∞Å—°…ïÖë•πúπ1Ωç¨†§§(ÄÄÄÅ›•—†Å±Ωç¨Ë(ÄÄÄÄÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÄåÅUπîÅü•ª•…Ö—•Ω∏Å%ÅïÕ–Åì•´ÄÅ’πîÅΩ√•…Ö—•Ω∏Å±Ωπù’îÄËÅï±±îÅπîÅëΩ•–Å¡ÖÃ(ÄÄÄÄÄÄÄÄåÅÖ©Ω’—ï»Å’∏ÅÕïçΩπêÅÖ¡¡ï∞ÅÀ•ÕïÖ‘ÅÕÂπç°…ΩπîÅŸï…ÃÅïÕ—•Ω∏ÅM—Öù•Ö•…ïÃ∏(ÄÄÄÄÄÄÄÅçΩπ—ï·–ÄÙÅâ’•±ë}çÖπë•ëÖ—ï}Ö•}çΩπ—ï·–°çΩπ—Öç—}•ê∞ÅëÖ—Ñ∞Åôï—ç°}±•Ÿï}ŸÖîıÖ±Õî§(ÄÄÄÄÄÄÄÅµïÖπ•πùô’∞ÄÙÄ°Öπ‰°çΩπ—ï·–πùï–°≠ï‰§ÅôΩ»Å≠ï‰Å•∏Ä†âôΩ…µÖ—•Ω∏à∞Äâô’πë•πúà∞Äâ•π—ïù…Ö—•Ωπ}ÕçΩ…ï}…ïÖë}Ωπ±‰à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïù’±Ö—Ω…Â}ëïç±Ö…Ö—•ΩπÕ}…ïÖë}Ωπ±‰à∞Äâµï—Ö}ôΩ…µ}ÖπÕ›ï…Õ}’π—…’Õ—ïêà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïçïπ—}πΩ—ïÕ}’π—…’Õ—ïêà∞Äâ…ïçïπ—}Öç—•Ÿ•—•ïÕ}’π—…’Õ—ïêà∞Äâ›ïëΩòà∞ÄâŸÖï}—…Öç≠•πù}…ïÖë}Ωπ±‰à§§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÅâΩΩ∞°çΩπ—ï·–πùï–†âÖ¡¡Ω•π—µïπ—Ãà∞ÅÌÙ§πùï–†â—Ω—Ö±}çΩ’π–à§§§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅµïÖπ•πùô’∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâÕ—Ö—’ÃàËÄâ•πÕ’ôô•ç•ïπ—}ëÖ—Ñà∞ÄâµïÕÕÖùîàËÄâ1ïÃÅ•πôΩ…µÖ—•ΩπÃÅëîÅ±ÑÅ¡•Õ—îÅÕΩπ–Å•πÕ’ôô•ÕÖπ—ïÃÅ¡Ω’»Åü•ª•…ï»Å’πîÅÖπÖ±ÂÕîÅ’—•±î∏âÙ§∞Ä–»»(ÄÄÄÄÄÄÄÅÕΩ’…çï}°ÖÕ†ÄÙÅçΩµ¡’—ï}çÖπë•ëÖ—ï}Ö•}ÕΩ’…çï}°ÖÕ†°çΩπ—ï·–§(ÄÄÄÄÄÄÄÅÕ—Ω…ïêÄÙÅëÖ—ÑπÕï—ëïôÖ’±–†âç…µ}Ö•}çÖπë•ëÖ—ï}ÖπÖ±ÂÕïÃà∞ÅÌÙ§πùï–°çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÄ°Õ—Ω…ïêÅÖπêÅÕ—Ω…ïêπùï–†âÕΩ’…çï}°ÖÕ†à§ÄÙÙÅÕΩ’…çï}°ÖÕ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—Ω…ïêπùï–†âÖπÖ±ÂÕ•Õ}Ÿï…Õ•Ω∏à§ÄÙÙÅ%}9%Q}91eM%M}YIM%=8(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—Ω…ïêπùï–†â¡…Ωµ¡—}Ÿï…Õ•Ω∏à§ÄÙÙÅ%}9%Q}AI=5AQ}YIM%=8ÅÖπêÅπΩ–ÅôΩ…çî§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅùï—}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Õ}Õ—Ö—î°çΩπ—Öç—}•ê∞ÅëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕïlâçÖç°ïêâtÄÙÅQ…’î(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°…ïÕ¡ΩπÕî§(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±–ÄÙÅùïπï…Ö—ï}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Ã°çΩπ—ï·–§(ÄÄÄÄÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ9îÅ©Ω’…πÖ±•Õï»Åπ§ÅçΩπ—ï·—îÅπ§Å¡…Ωµ¡–∏ÅUπîÅÖπÖ±ÂÕîÅ±ΩçÖ±îÅì•—ï…µ•π•Õ—î(ÄÄÄÄÄÄÄÄÄÄÄÄåÅ…ïµ¡±ÖçîÅ±ÑÅÕΩ…—•îÅôΩ’…π•ÕÕï’»ÅÖô•∏ÅëîÅπîÅ©ÖµÖ•ÃÅÀ•Öôô•ç°ï»Å’∏ÅçΩπ—ïπ‘Å√•…•∑§∏(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’Õ}çΩëîÄÙÅùï—Ö——»°ï·å∞ÄâÕ—Ö—’Õ}çΩëîà∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÖÕΩ∏ÄÙÅùï—Ö——»°ï·å∞ÄâçΩëîà∞Å9Ωπî§Å•òÅ•Õ•πÕ—Öπçî°ï·å∞ÅÖπë•ëÖ—ï%IïÕ¡ΩπÕï……Ω»§Åï±ÕîÅ9Ωπî(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—}•êÄÙÅùï—Ö——»°ï·å∞Äâ…ï≈’ïÕ—}•êà∞Å9Ωπî§(ÄÄÄÄÄÄÄÄÄÄÄÅµΩëï∞ÄÙÅΩÃπùï—ïπÿ†â=A9%}5=0à∞Äâù¡–¥—ºµµ•π§à§(ÄÄÄÄÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•ÃÅçΩπ—Öç–ÙïÃÅï……Ω»ÙïÃÅ…ïÖÕΩ∏ÙïÃÅ¡…ΩŸ•ëï…}Õ—Ö—’ÃÙïÃÅ…ï≈’ïÕ—}•êÙïÃÅµΩëï∞ÙïÃÅôΩ…µÖ–ı©ÕΩπ}Õç°ïµÑà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç—}•ê∞Å—Â¡î°ï·å§π}}πÖµï}|∞Å…ïÖÕΩ∏ÅΩ»Äâ¡…ΩŸ•ëï…}ï……Ω»à∞ÅÕ—Ö—’Õ}çΩëîÅΩ»ÄâπΩπîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ—}•êÅΩ»ÄâπΩπîà∞ÅµΩëï∞§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ’±–ÄÙÅâ’•±ë}çÖπë•ëÖ—ï}Ö•}ôÖ±±âÖç¨°çΩπ—ï·–§(ÄÄÄÄÄÄÄÅ±Ö—ïÕ–ÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°±Ö—ïÕ–∞ÅçΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÄÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÄÄÄÄÅ±Ö—ïÕ–πÕï—ëïôÖ’±–†âç…µ}Ö•}çÖπë•ëÖ—ï}ÖπÖ±ÂÕïÃà∞ÅÌÙ•mçΩπ—Öç—}•ëtÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâÖπÖ±ÂÕ•Õ}Ÿï…Õ•Ω∏àËÅ%}9%Q}91eM%M}YIM%=8∞Äâ¡…Ωµ¡—}Ÿï…Õ•Ω∏àËÅ%}9%Q}AI=5AQ}YIM%=8∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çï}°ÖÕ†àËÅÕΩ’…çï}°ÖÕ†∞Äâùïπï…Ö—ïë}Ö–àËÅ}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâùïπï…Ö—ïë}âÂ}’Õï…}•êàËÅ’Õï»πùï–†âïµÖ•∞à∞Äàà§∞Äâùïπï…Ö—ïë}âÂ}πÖµîàËÅ’Õï»πùï–†âπÖµîà∞Äã%≈’•¡îÅ%π”•ù…Ö±îà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩŸ•ëï»àËÄâ±ΩçÖ±}ôÖ±±âÖç¨àÅ•òÅ…ïÕ’±–πùï–†âôÖ±±âÖç¨à§Åï±ÕîÄâΩ¡ïπÖ§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµΩëï∞àËÄâëï—ï…µ•π•Õ—•åàÅ•òÅ…ïÕ’±–πùï–†âôÖ±±âÖç¨à§Åï±ÕîÅΩÃπùï—ïπÿ†â=A9%}5=0à∞Äâù¡–¥—ºµµ•π§à§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ïÕ’±–àËÅ…ïÕ’±—Ù(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâÖ•}ÖπÖ±ÂÕ•Ãà∞ÄâπÖ±ÂÕîÅ%Åë‘ÅçÖπë•ëÖ–ÅÖç—’Ö±•œ•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÅòâA…•Ω…•”§Å¡…Ω¡Ωœ•îÄËÅÌ…ïÕ’±—lù¡…•Ω…•—Â}±Öâï∞ùuÙà§(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°±Ö—ïÕ–§(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅùï—}çÖπë•ëÖ—ï}Ö•}ÖπÖ±ÂÕ•Õ}Õ—Ö—î°çΩπ—Öç—}•ê∞Å±Ö—ïÕ–§(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕïlâçÖç°ïêâtÄÙÅÖ±Õî(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°…ïÕ¡ΩπÕî§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ωùïπï…ï»µµïÕÕÖùîà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}ùïπï…Ö—ï}µïÕÕÖùî°çΩπ—Öç—}•ê§Ë(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°±ΩÖë}ëÖ—Ñ†§∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙÏÅ≠•πêÄÙÅ¡ÖÂ±ΩÖêπùï–†â—Â¡îà§(ÄÄÄÅ•òÅ≠•πêÅπΩ–Å•∏ÅÏâïµÖ•∞à∞ÄâÕµÃâÙËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâQÂ¡îÅ•πŸÖ±•ëîâÙ§∞Ä–¿¿(ÄÄÄÅçΩπ—ï·–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â•πÕ—…’ç—•ΩπÃà§ÅΩ»ÄâA…Ω¡ΩÕï»Å’∏ÅÕ’•Ÿ§ÅÖëÖ¡”§ÅÖ‘ÅëΩÕÕ•ï»∏à§πÕ—…•¿†§(ÄÄÄÅôÖç—ÃÄÙÅÌ¨ËÅçΩπ—Öç–πùï–°¨∞Äàà§ÅôΩ»Å¨Å•∏Ä†â¡…ïπΩ¥à∞ÄâôΩ…µÖ—•Ω∏à∞Äâ±•ï‘à∞ÄâÕ—Ö—’–à∞ÄâçΩµµïπ—Ö•…ïÃà•Ù(ÄÄÄÅçΩπÕ—…Ö•π–ÄÙÄâK•ë•ùîÅ’π•≈’ïµïπ–Å±îÅçΩ…¡ÃÅêù’∏ÅîµµÖ•∞Å¡…ΩôïÕÕ•Ωππï∞àÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅï±ÕîÄâK•ë•ùîÅ’∏ÅM5LÅ¡…ΩôïÕÕ•Ωππï∞ÅëîÄÃ»¿ÅçÖ…Öç”°…ïÃÅµÖ·•µ’¥à(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅ—ï·—îÄÙÅ}ç…µ}Ö§°òâÌçΩπÕ—…Ö•π—Ù∞Åç°Ö±ï’…ï’‡Åï–Åë•…ïç—ïµïπ–Å’—•±•ÕÖâ±î∏Å8ù•πŸïπ—îÅÖ’ç’πîÅ•πôΩ…µÖ—•Ω∏∏à∞ÅòâΩÕÕ•ï»ËÅÌ©ÕΩ∏πë’µ¡Ã°ôÖç—Ã∞ÅïπÕ’…ï}ÖÕç•§ıÖ±Õî•ıqπ=â©ïç—•òËÅÌçΩπ—ï·—Ùà§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ—ï·—îàËÅ—ï·—ïÙ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÅ¡…•π–†â……ï’»Åü•ª•…Ö—•Ω∏ÅµïÕÕÖùîÅI4Ëà∞Åï·å§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ÑÅü•ª•…Ö—•Ω∏ÅïÕ–ÅµΩµïπ—Öª•µïπ–Å•πë•Õ¡Ωπ•â±îâÙ§∞Ä‘¿»(()ëïòÅ}ç…µ}—ïµ¡±Ö—ïÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ§Ë(ÄÄÄÄààâΩπÕ—…’•–Å±ÑÅâ•â±•Ω—£°≈’îÅëîÅµΩì°±ïÃÅëï¡’•ÃÅ’∏Å•πÕ—Öπ—Öª§Åï·•Õ—Öπ–∏ààà(ÄÄÄÅ›…Ö¡¡ï…}¡Ö—†ÄÙÅΩÃπ¡Ö—†π©Ω•∏°Ö¡¿π…ΩΩ—}¡Ö—†∞Äâ—ïµ¡±Ö—ïÃà∞Äâç…µ}ïµÖ•±}›…Ö¡¡ï»π°—µ∞à§(ÄÄÄÅ›•—†ÅΩ¡ï∏°›…Ö¡¡ï…}¡Ö—†∞ÅïπçΩë•πúÙâ’—ò¥‡à§ÅÖÃÅ›…Ö¡¡ï…}ô•±îË(ÄÄÄÄÄÄÄÅïµÖ•±}Õ—Ö…—ï»ÄÙÅ›…Ö¡¡ï…}ô•±îπ…ïÖê†§π…ï¡±Öçî†(ÄÄÄÄÄÄÄÄÄÄÄÄâÌÏÅçΩπ—ïπ’ÒÕÖôîÅıÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÄàÑ¥¥Å5%1}=9Q9Q}MQIPÄ¥¥¯Ò¿˚%ç…•ŸïËÅ•ç§Å±îÅçΩπ—ïπ‘ÅëîÅŸΩ—…îÅîµµÖ•∞∏Ω¿¯Ñ¥¥Å5%1}=9Q9Q}9Ä¥¥¯à∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅÖ’—ΩµÖ—•ç}ïµÖ•∞ÄÙÅl(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµëïÕ¿µŸÖîà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâYÅM@à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâMA}Yà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄã¬~NtÅYÉäLÅ•…•ùïÖπ–Åìäeπ—…ï¡…•ÕîÅëîÅO•ç’…•”§ÅA…•€•îÄ°I9@–¿Ã‡‘§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}ŸÖï}ëïÕ¡}ïµÖ•±}°—µ∞†âÌÏÅ¡…ïπΩ¥ÅıÙà∞ÄâÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµÑÕ¿à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâÕ@ÉäLÅ	ΩëÂù’Ö…êà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâÕ@à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄã¬~Fªä7äfæ‚<ÅΩ…µÖ—•Ω∏Åùïπ–ÅëîÅA…Ω—ïç—•Ω∏ÅA°ÂÕ•≈’îÅëïÃÅAï…ÕΩππïÃÄ°Õ@§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}ÑÕ¡}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÌÏÅ¡…ïπΩ¥ÅıÙà∞Äàà∞ÄâçΩ—ï}ÖÈ’»à∞ÄâÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà∞ÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµÖ¡Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâALÉäLÅùïπ–ÅëîÅœ•ç’…•”§Å¡…•€•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâALà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄã¬~Fªä7äfæ‚<ÅΩ…µÖ—•Ω∏Åùïπ–ÅëîÅO•ç’…•”§ÅA…•€•îÄ°AL§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}Ö¡Õ}ïµÖ•±}°—µ∞†âÌÏÅ¡…ïπΩ¥ÅıÙà∞Äàà∞ÄâçΩ—ï}ÖÈ’»à∞ÄâÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµÕÕ•Ö¿ƒà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâMM%@ÄƒÉäLÅO•ç’…•”§Å•πçïπë•îà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâMM%@à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄã¬~RîÅΩ…µÖ—•Ω∏Åùïπ–ÅëîÅœ•ç’…•”§Å•πçïπë•îÅMM%@Äƒà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}ÕÕ•Ö¿≈}ïµÖ•±}°—µ∞†âÌÏÅ¡…ïπΩ¥ÅıÙà∞Äàà∞ÄâçΩ—ï}ÖÈ’»à∞ÄâÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà∞ÄâΩ’§à§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµŸ—åà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâ°Ö’ôôï’»ÅYQà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâYQà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄã¬~j\ÅΩ…µÖ—•Ω∏Å°Ö’ôôï’»ÅYQà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}Ÿ—ç}ïµÖ•±}°—µ∞†âÌÏÅ¡…ïπΩ¥ÅıÙà∞ÄâçΩ—ï}ÖÈ’»à∞ÄâÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµëïÕ¿µ•π•—•Ö∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâM@Å•π•—•Ö∞ÉäLÅ——îÅìäeÈ’»à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâMA}%9%Pà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄâYΩ—…îÅëïµÖπëîÅëîÅ…ïπÕï•ùπïµïπ—ÃÉäLÅΩ…µÖ—•Ω∏ÅM@Å•π•—•Ö∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}ëïÕ¡}•π•—}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÌÏÅ¡…ïπΩ¥ÅıÙà∞Äàà∞ÄâçΩ—ï}ÖÈ’»à∞ÄâÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà∞ÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµëïÕ¿µ•π•—•Ö∞µ¡Ö…•Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâM@Å•π•—•Ö∞ÉäLÅAÖ…•Ãà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâMA}%9%Pà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄâYΩ—…îÅëïµÖπëîÅëîÅ…ïπÕï•ùπïµïπ—ÃÉäLÅΩ…µÖ—•Ω∏ÅM@Å•π•—•Ö∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}ëïÕ¡}•π•—}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâÌÏÅ¡…ïπΩ¥ÅıÙà∞Äàà∞Äâ¡Ö…•Ãà∞ÄâÌÏÅ±•ïπ}ëïŸ•ÃÅıÙà∞ÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÅt(ÄÄÄÅµï—Ö}ÑÕ¡}Õ’â©ïç–∞Å|∞Åµï—Ö}ÑÕ¡}°—µ∞ÄÙÅ}ÑÕ¡}•πôΩ…µÖ—•Ωπ}ïµÖ•±}çΩπ—ïπ–†(ÄÄÄÄÄÄÄÄâÌÏÅ¡…ïπΩ¥ÅıÙà∞Äàà∞ÄâçΩ—ï}ÖÈ’»à∞Äàà∞ÅëÖ—Ñ∞(ÄÄÄÄÄÄÄÅ¡…Ωµ•πïπ—}¡°Ωπï}âΩΩ≠•πúıQ…’î∞(ÄÄÄÄ§(ÄÄÄÅÖ’—ΩµÖ—•ç}µï—ÑÄÙÅl(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµµï—ÑµÑÕ¿µïµÖ•∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâïµÖ•∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâ5QÅÕ@ÉäLÅµµÖ•∞Åìäe•πôΩ…µÖ—•Ω∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâÕ@à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÅµï—Ö}ÑÕ¡}Õ’â©ïç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅµï—Ö}ÑÕ¡}°—µ∞∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÄÄÄÄÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÄâÖ’—ΩµÖ—•åµµï—ÑµÑÕ¿µÕµÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÄâÕµÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÄâ5QÅÕ@ÉäLÅM5LÅëîÅÕ’•Ÿ§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÄâÕ@à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâ’•±ë}—…Ö•π•πù}•πôΩ…µÖ—•Ωπ}ÕµÕ}—ï·–†âÕ@à§∞(ÄÄÄÄÄÄÄÅÙ∞(ÄÄÄÅt(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâïµÖ•∞àËÅëÖ—Ölâç…µ}ïµÖ•±}—ïµ¡±Ö—ïÃât∞(ÄÄÄÄÄÄÄÄâÕµÃàËÅëÖ—Ölâç…µ}ÕµÕ}—ïµ¡±Ö—ïÃât∞(ÄÄÄÄÄÄÄÄâÖ’—ΩµÖ—•ç}ïµÖ•∞àËÅÖ’—ΩµÖ—•ç}ïµÖ•∞∞(ÄÄÄÄÄÄÄÄâÖ’—ΩµÖ—•ç}µï—ÑàËÅÖ’—ΩµÖ—•ç}µï—Ñ∞(ÄÄÄÄÄÄÄÄâïµÖ•±}Õ—Ö…—ï»àËÅïµÖ•±}Õ—Ö…—ï»∞(ÄÄÄÄÄÄÄÄâïµÖ•±}ô…ïï}Õ—Ö…—ï»àËÅ…ïπëï…}—ïµ¡±Ö—î†(ÄÄÄÄÄÄÄÄÄÄÄÄâç…µ}ïµÖ•±}›…Ö¡¡ï»π°—µ∞à∞Å¡…ïπΩ¥ÙâÌÏÅ¡…ïπΩ¥ÅıÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ…µÖ—•Ω∏ÙâÌÏÅôΩ…µÖ—•Ω∏ÅıÙà∞(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—ïπ‘ÙàÑ¥¥Å5%1}=9Q9Q}MQIPÄ¥¥¯Ñ¥¥Å5%1}=9Q9Q}9Ä¥¥¯à∞(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÅÙ(()ëïòÅ}ç…µ}…ï≈’ïÕ—}¡ÖÂ±ΩÖê†§Ë(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµ•µï—Â¡îÄÙÙÄâµ’±—•¡Ö…–ΩôΩ…¥µëÖ—ÑàË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ï≈’ïÕ–πôΩ…¥π—Ω}ë•ç–°ô±Ö–ıQ…’î§(ÄÄÄÅ…ï—’…∏Å…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(()ëïòÅ}ç…µ}¡ÖÂ±ΩÖë}âΩΩ±ïÖ∏°ŸÖ±’î∞ÅëïôÖ’±–ıÖ±Õî§Ë(ÄÄÄÅ•òÅŸÖ±’îÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅëïôÖ’±–(ÄÄÄÅ…ï—’…∏ÅÕ—»°ŸÖ±’î§πÕ—…•¿†§πçÖÕïôΩ±ê†§Å•∏ÅÏàƒà∞Äâ—…’îà∞ÄâΩ’§à∞ÄâÂïÃà∞ÄâΩ∏âÙ(()ëïòÅ}ç…µ}Ö——Öç°µïπ—}ï……Ω…}…ïÕ¡ΩπÕî°ï·å§Ë(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÅÕ—»°ï·å•Ù§∞Ä–ƒÃÅ•òÅ•Õ•πÕ—Öπçî°ï·å∞Å=Ÿï…ô±Ω›……Ω»§Åï±ÕîÄ–¿¿(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥Ω—ïµ¡±Ö—ïÃà∞Åµï—°ΩëÃılâPà∞ÄâA=MPât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}—ïµ¡±Ö—ïÃ†§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâPàË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°}ç…µ}—ïµ¡±Ö—ïÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ§§(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ}ç…µ}…ï≈’ïÕ—}¡ÖÂ±ΩÖê†§ÏÅ≠•πêÄÙÅ¡ÖÂ±ΩÖêπùï–†â—Â¡îà§(ÄÄÄÅ•òÅ≠•πêÅπΩ–Å•∏ÅÏâïµÖ•∞à∞ÄâÕµÃâÙËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâQÂ¡îÅ•πŸÖ±•ëîâÙ§∞Ä–¿¿(ÄÄÄÅ’¡±ΩÖëïêÄÙÅ…ï≈’ïÕ–πô•±ïÃπùï–†âÖ——Öç°µïπ–à§(ÄÄÄÅ•òÅ≠•πêÄÙÙÄâÕµÃàÅÖπêÅ’¡±ΩÖëïêÅÖπêÅ’¡±ΩÖëïêπô•±ïπÖµîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ïÃÅ¡ß°çïÃÅ©Ω•π—ïÃÅÕΩπ–ÅÀ•Õï…€•ïÃÅÖ’‡ÅîµµÖ•±Ã∏âÙ§∞Ä–¿¿(ÄÄÄÅ•—ï¥ÄÙÅÏâ•êàËÅÕ—»°’’•êπ’’•ê–†§§∞ÄâπΩ¥àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âπΩ¥à∞ÄâMÖπÃÅ—•—…îà§§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÕ’©ï–à∞Äàà§§πÕ—…•¿†§∞ÄâçΩπ—ïπ‘àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩπ—ïπ‘à∞Äàà§§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ—ïùΩ…•îàËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçÖ—ïùΩ…•îà∞Äâ•ª•…Ö∞à§§πÕ—…•¿†§ÅΩ»Äâ•ª•…Ö∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ’ÕÖùï}çΩ’π–àËÄ¿∞ÄâŸï…Õ•ΩπÃàËÅmt∞Äâç…ïÖ—ïë}Ö–àËÅ}ç…µ}πΩ‹†•Ù(ÄÄÄÅÕ—Ω…ïë}Ö——Öç°µïπ–ÄÙÅ9Ωπî(ÄÄÄÅ•òÅ’¡±ΩÖëïêÅÖπêÅ’¡±ΩÖëïêπô•±ïπÖµîË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ω…ïë}Ö——Öç°µïπ–ÄÙÅ}ç…µ}Õ—Ω…ï}ïµÖ•±}Ö——Öç°µïπ–°’¡±ΩÖëïê§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°YÖ±’ï……Ω»∞Å=Ÿï…ô±Ω›……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}Ö——Öç°µïπ—}ï……Ω…}…ïÕ¡ΩπÕî°ï·å§(ÄÄÄÄÄÄÄÅ•—ïµlâ¡•ïçï}©Ω•π—îâtÄÙÅÕ—Ω…ïë}Ö——Öç°µïπ–(ÄÄÄÅëÖ—Ömòâç…µ}Ì≠•πëı}—ïµ¡±Ö—ïÃâtπÖ¡¡ïπê°•—ï¥§(ÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅï·çï¡–Å·çï¡—•Ω∏Ë(ÄÄÄÄÄÄÄÅ}ç…µ}ëï±ï—ï}ïµÖ•±}Ö——Öç°µïπ–°Õ—Ω…ïë}Ö——Öç°µïπ–§(ÄÄÄÄÄÄÄÅ…Ö•Õî(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°•—ï¥§∞Ä»¿ƒ(()I5}11	-}A9%9ÄÙÄâ¡ïπë•πúà)I5}11	-}AI=MMÄÙÄâ¡…ΩçïÕÕïêà)I5}11	-}MQQUMLÄÙÅÌI5}11	-}A9%9∞ÅI5}11	-}AI=MMÙ(()ëïòÅ}ç…µ}çÖ±±âÖç≠}Õ—Ö—’Õ}—•µïÕ—Öµ¿†§Ë(ÄÄÄÅ…ï—’…∏ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹†(ÄÄÄÄÄÄÄÅ¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§∞(ÄÄÄÄ§π•ÕΩôΩ…µÖ–°—•µïÕ¡ïåÙâµ•ç…ΩÕïçΩπëÃà§(()ëïòÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}Õ—Ö—’Ã°ïπ—…‰§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅëïë•çÖ—ïêÅÕ—Ö—’ÃÏÅ±ïùÖç‰Åùïπï…•åÉ
+¨ÅQ…Ö•”§É
+ÏÅÕ—ÖÂÃÅ¡ïπë•πú∏ààà(ÄÄÄÅ…Ö›}Õ—Ö—’ÃÄÙÅÕ—»°ïπ—…‰πùï–†âçÖ±±âÖç≠}Õ—Ö—’Ãà§ÅΩ»Äàà§πÕ—…•¿†§πçÖÕïôΩ±ê†§(ÄÄÄÅ•òÅ…Ö›}Õ—Ö—’ÃÅ•∏ÅÏâ¡…ΩçïÕÕïêà∞Äâ—…Ö•—îà∞Äâ—…Ö•”§âÙË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅI5}11	-}AI=MM(ÄÄÄÅ…ï—’…∏ÅI5}11	-}A9%9(()ëïòÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}ëï—Ö•∞°ïπ—…‰§Ë(ÄÄÄÅπΩ—ïÃÄÙÅÕ—»°ïπ—…‰πùï–†âπΩ—ïÃà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÖ¡¡Ω•π—µïπ–ÄÙÅÕ—»°ïπ—…‰πùï–†â…ëÿà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ…ï—’…∏Äâq∏àπ©Ω•∏°l(ÄÄÄÄÄÄÄÅòâïµÖπëîÄËÅÌπΩ—ïÃÅΩ»Äù’ç’πîÅ¡À•ç•Õ•Ω∏Å…ïπÕï•ùª•î∏ùÙà∞(ÄÄÄÄÄÄÄÅòâIïπëïËµŸΩ’ÃÄËÅÌÖ¡¡Ω•π—µïπ–ÅΩ»Äù9Ω∏Å…ïπÕï•ùª§ùÙà∞(ÄÄÄÅt§(()ëïòÅ}ç…µ}±ïùÖçÂ}çÖ±±âÖç≠}…ï≈’ïÕ—}ëï—Ö•∞°ïπ—…‰§Ë(ÄÄÄÄààâIïâ’•±êÅ—°îÅëï—Ö•∞Å›…•——ï∏ÅâïôΩ…îÅçÖ±±âÖç¨ÅÖç—•Ÿ•—•ïÃÅ°ÖêÅ—°ï•»ÅΩ›∏Å≠•πê∏ààà(ÄÄÄÅ…ï—’…∏Äâq∏àπ©Ω•∏°ô•±—ï»°9Ωπî∞Ål(ÄÄÄÄÄÄÄÅÕ—»°ïπ—…‰πùï–†âπΩ—ïÃà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅΩ»ÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å—…ÖπÕµ•ÕîÅ¡Ö»Å±îÅÕïçÀ•—Ö…•Ö–∏à∞(ÄÄÄÄÄÄÄÅòâIïπëïËµŸΩ’ÃÄËÅÌïπ—…Âlù…ëÿùuÙàÅ•òÅïπ—…‰πùï–†â…ëÿà§Åï±ÕîÄàà∞(ÄÄÄÅt§§(()ëïòÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}çΩπ—Öç–°ëÖ—Ñ∞Åïπ—…‰§Ë(ÄÄÄÅÕ—Ω…ïë}çΩπ—Öç—}•êÄÙÅÕ—»°ïπ—…‰πùï–†âç…µ}çΩπ—Öç—}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅÕ—Ω…ïë}çΩπ—Öç—}•ê§Å•òÅÕ—Ω…ïë}çΩπ—Öç—}•êÅï±ÕîÅ9Ωπî(ÄÄÄÅ…ï—’…∏ÅçΩπ—Öç–ÅΩ»Å}Õïç…ï—Ö…•Ö—}ï·•Õ—•πù}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Åïπ—…‰§(()ëïòÅ}ç…µ}°Âë…Ö—ï}çÖ±±âÖç≠}…ï≈’ïÕ—}Ö¡¡Ω•π—µïπ–°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâ-ïï¿Å—°îÅçÖ±±âÖç¨Å…Ω‹ÅÖ±•ùπïêÅ›•—†Å•—ÃÅπï·–ÅçΩπô•…µïêÅ¡°ΩπîÅâΩΩ≠•πú∏ààà(ÄÄÄÅµÖ—ç†ÄÙÅ}ç…µ}πï·—}¡°Ωπï}Ö¡¡Ω•π—µïπ–°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§(ÄÄÄÅ•òÅπΩ–ÅµÖ—ç†Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÖ±Õî(ÄÄÄÅÕ—Ö…–∞ÅÖ¡¡Ω•π—µïπ–ÄÙÅµÖ—ç†(ÄÄÄÅï·¡ïç—ïêÄÙÅÏ(ÄÄÄÄÄÄÄÄâ…ëÿàËÅ}ç…µ}çÖ±ïπë±Â}ëÖ—ï—•µï}±Öâï∞°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§§∞(ÄÄÄÄÄÄÄÄâ…ëŸ}Õ—Ö—’ÃàËÄâÕç°ïë’±ïêà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}ëÖ—îàËÅÕ—Ö…–πÕ—…ô—•µî†àïêºï¥ºïdà§∞(ÄÄÄÄÄÄÄÄâ…ëŸ}—•µîàËÅÕ—Ö…–πÕ—…ô—•µî†àï Ëï4à§∞(ÄÄÄÄÄÄÄÄâ…ëŸ}µΩëîàËÄâ¡¡ï∞Å”•≥•¡°Ωπ•≈’îà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}πÖµîàËÅÖ¡¡Ω•π—µïπ–πùï–†âπÖµîà§ÅΩ»ÄâIïπëïËµŸΩ’ÃÅ”•≥•¡°Ωπ•≈’îà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}°ΩÕ—}πÖµîàËÅÖ¡¡Ω•π—µïπ–πùï–†â°ΩÕ—}πÖµîà§ÅΩ»Äàà∞(ÄÄÄÄÄÄÄÄâ…ëŸ}ÕΩ’…çîàËÄâçÖ±ïπë±‰à∞(ÄÄÄÅÙ(ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏Åï·¡ïç—ïêπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅ•òÅïπ—…‰πùï–°≠ï‰§ÄÑÙÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…Âm≠ïÂtÄÙÅŸÖ±’î(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()ëïòÅ}ç…µ}ïπÕ’…ï}çÖ±±âÖç≠}…ï≈’ïÕ—}Öç—•Ÿ•—‰°çΩπ—Öç–∞Åïπ—…‰§Ë(ÄÄÄÄààâ…ïÖ—îÅΩ»Å…ï¡Ö•»Å—°îÅ©Ω’…πÖ∞Åïπ—…‰Å±•π≠ïêÅ—ºÅΩπîÅçÖ±±âÖç¨Å…ï≈’ïÕ–∏ààà(ÄÄÄÅ…ï≈’ïÕ—}•êÄÙÅÕ—»°ïπ—…‰πùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÖç—•Ÿ•—•ïÃÄÙÅçΩπ—Öç–πÕï—ëïôÖ’±–†âÖç—•Ÿ•—•ïÃà∞Åmt§(ÄÄÄÅÖç—•Ÿ•—‰ÄÙÅπï·–††(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅÖç—•Ÿ•—•ïÃ(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§(ÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†âçÖ±±âÖç≠}…ï≈’ïÕ—}•êà§ÅΩ»Äàà§ÄÙÙÅ…ï≈’ïÕ—}•ê(ÄÄÄÄÄÄÄÅÖπêÅ•—ï¥πùï–†â—•—±îà§ÄÙÙÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å…óù’îà(ÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†âçÖ±±âÖç≠}ïŸïπ–à§ÅΩ»Äâ…ïçï•Ÿïêà§ÄÙÙÄâ…ïçï•Ÿïêà(ÄÄÄÄ§∞Å9Ωπî§(ÄÄÄÅ•òÅÖç—•Ÿ•—‰Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ±ïùÖçÂ}ëï—Ö•±ÃÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}ëï—Ö•∞°ïπ—…‰§∞(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}±ïùÖçÂ}çÖ±±âÖç≠}…ï≈’ïÕ—}ëï—Ö•∞°ïπ—…‰§∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—‰ÄÙÅπï·–††(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅÖç—•Ÿ•—•ïÃ(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅ•—ï¥πùï–†â—•—±îà§ÄÙÙÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å…óù’îà(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅπΩ–Å•—ï¥πùï–†âçÖ±±âÖç≠}…ï≈’ïÕ—}•êà§(ÄÄÄÄÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†âëï—Ö•∞à§ÅΩ»Äàà§Å•∏Å±ïùÖçÂ}ëï—Ö•±Ã(ÄÄÄÄÄÄÄÄ§∞Å9Ωπî§((ÄÄÄÅÕ—Ö—’ÃÄÙÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}Õ—Ö—’Ã°ïπ—…‰§(ÄÄÄÅï·¡ïç—ïêÄÙÅÏ(ÄÄÄÄÄÄÄÄâ≠•πêàËÄâëïµÖπëï}…Ö¡¡ï∞à∞(ÄÄÄÄÄÄÄÄâ—•—±îàËÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å…óù’îà∞(ÄÄÄÄÄÄÄÄâëï—Ö•∞àËÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}ëï—Ö•∞°ïπ—…‰§∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}…ï≈’ïÕ—}•êàËÅ…ï≈’ïÕ—}•ê∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}Õ—Ö—’ÃàËÅÕ—Ö—’Ã∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}ïŸïπ–àËÄâ…ïçï•Ÿïêà∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅÖç—•Ÿ•—‰Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÅï·¡ïç—ïëlâ≠•πêât∞(ÄÄÄÄÄÄÄÄÄÄÄÅï·¡ïç—ïëlâ—•—±îât∞(ÄÄÄÄÄÄÄÄÄÄÄÅï·¡ïç—ïëlâëï—Ö•∞ât∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖ’—°Ω…}πÖµîÙâMïçÀ•—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—‰ÄÙÅÖç—•Ÿ•—•ïÕl¡t(ÄÄÄÄÄÄÄÅ•òÅïπ—…‰πùï–†âç…ïÖ—ïë}Ö–à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—ÂlâëÖ—îâtÄÙÅÕ—»°ïπ—…Âlâç…ïÖ—ïë}Ö–ât§(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—‰π’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}…ï≈’ïÕ—}•êàËÅ…ï≈’ïÕ—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}Õ—Ö—’ÃàËÅÕ—Ö—’Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}ïŸïπ–àËÄâ…ïçï•Ÿïêà∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅQ…’î((ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅôΩ»Å≠ï‰∞ÅŸÖ±’îÅ•∏Åï·¡ïç—ïêπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅ•òÅÖç—•Ÿ•—‰πùï–°≠ï‰§ÄÑÙÅŸÖ±’îË(ÄÄÄÄÄÄÄÄÄÄÄÅÖç—•Ÿ•—Âm≠ïÂtÄÙÅŸÖ±’î(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()ëïòÅ}ç…µ}¡…ï¡Ö…ï}çÖ±±âÖç≠}…ï≈’ïÕ–°ëÖ—Ñ∞Åïπ—…‰§Ë(ÄÄÄÄààâ9Ω…µÖ±•ÈîÅΩπîÅ…ï≈’ïÕ–∞Å¡…ïÕï…ŸîÅ•—ÃÅ±ïÖêÅ±•π¨ÅÖπêÅ…ï¡Ö•»Å•—ÃÅ©Ω’…πÖ∞∏ààà(ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅ•òÅπΩ–ÅÕ—»°ïπ—…‰πùï–†â•êà§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅïπ—…Âlâ•êâtÄÙÅÕ—»°’’•êπ’’•ê–†§§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅÕ—Ö—’ÃÄÙÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}Õ—Ö—’Ã°ïπ—…‰§(ÄÄÄÅ•òÅïπ—…‰πùï–†âçÖ±±âÖç≠}Õ—Ö—’Ãà§ÄÑÙÅÕ—Ö—’ÃË(ÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}Õ—Ö—’ÃâtÄÙÅÕ—Ö—’Ã(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅπΩ–Åïπ—…‰πùï–†âçÖ±±âÖç≠}Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–à§Ë(ÄÄÄÄÄÄÄÅ•π•—•Ö±}Õ—Ö—’Õ}ëÖ—îÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…‰πùï–†âçÖ±±âÖç≠}¡…ΩçïÕÕïë}Ö–à§ÅΩ»Åïπ—…‰πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ•òÅ•π•—•Ö±}Õ—Ö—’Õ}ëÖ—îË(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–âtÄÙÅÕ—»°•π•—•Ö±}Õ—Ö—’Õ}ëÖ—î§(ÄÄÄÄÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅï·¡ïç—ïë}ùïπï…•ç}Õ—Ö—’ÃÄÙÄ†(ÄÄÄÄÄÄÄÄâQ…Ö•”§àÅ•òÅÕ—Ö—’ÃÄÙÙÅI5}11	-}AI=MMÅï±ÕîÄã Å—…Ö•—ï»à(ÄÄÄÄ§(ÄÄÄÅ•òÅïπ—…‰πùï–†âÕ—Ö—’–à§ÄÑÙÅï·¡ïç—ïë}ùïπï…•ç}Õ—Ö—’ÃË(ÄÄÄÄÄÄÄÅïπ—…ÂlâÕ—Ö—’–âtÄÙÅï·¡ïç—ïë}ùïπï…•ç}Õ—Ö—’Ã(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î((ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}çΩπ—Öç–°ëÖ—Ñ∞Åïπ—…‰§(ÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§Å•òÅçΩπ—Öç–Åï±ÕîÄàà(ÄÄÄÅ•òÅÕ—»°ïπ—…‰πùï–†âç…µ}çΩπ—Öç—}•êà§ÅΩ»Äàà§ÄÑÙÅçΩπ—Öç—}•êË(ÄÄÄÄÄÄÄÅïπ—…Âlâç…µ}çΩπ—Öç—}•êâtÄÙÅçΩπ—Öç—}•ê(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅ}ç…µ}°Âë…Ö—ï}çÖ±±âÖç≠}…ï≈’ïÕ—}Ö¡¡Ω•π—µïπ–°ëÖ—Ñ∞Åïπ—…‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ•òÅçΩπ—Öç–ÅÖπêÅ}ç…µ}ïπÕ’…ï}çÖ±±âÖç≠}…ï≈’ïÕ—}Öç—•Ÿ•—‰°çΩπ—Öç–∞Åïπ—…‰§Ë(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅQ…’î(ÄÄÄÅ…ï—’…∏Åç°Öπùïê∞ÅçΩπ—Öç–(()ëïòÅ}ç…µ}âÖç≠ô•±±}çÖ±±âÖç≠}…ï≈’ïÕ—Ã°ëÖ—Ñ§Ë(ÄÄÄÄààâIï¡Ö•»ÅçÖ±±âÖç¨ÅÕ—Ö—’ÕïÃÅÖπêÅ©Ω’…πÖ±ÃÅ›•—°Ω’–Åç…ïÖ—•πúÅÖπ‰ÅI4ÅçΩπ—Öç–∏ààà(ÄÄÄÅç°ÖπùïêÄÙÅÖ±Õî(ÄÄÄÅôΩ»Åïπ—…‰Å•∏ÅëÖ—Ñπùï–†âÕïç…ï—Ö…•Ö—}ëïµÖπëïÃà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ïπ—…‰∞Åë•ç–§ÅΩ»Åïπ—…‰πùï–†â—Â¡îà§ÄÑÙÄâÖ’—…îàË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅïπ—…Â}ç°Öπùïê∞Å|ÄÙÅ}ç…µ}¡…ï¡Ö…ï}çÖ±±âÖç≠}…ï≈’ïÕ–°ëÖ—Ñ∞Åïπ—…‰§(ÄÄÄÄÄÄÄÅç°ÖπùïêÄÙÅïπ—…Â}ç°ÖπùïêÅΩ»Åç°Öπùïê(ÄÄÄÅ…ï—’…∏Åç°Öπùïê(()ëïòÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§Ë(ÄÄÄÄààâ·¡ΩÕîÅΩπ±‰ÅÕïç…ï—Ö…•Ö–É
+¨ÅΩ—°ï»Å…ï≈’ïÕ—ÃÉ
+ÏÅ—ºÅ—°îÅçÖ±±âÖç¨Å›Ω…≠Õ¡Öçî∏ààà(ÄÄÄÅçΩπ—Öç—Õ}âÂ}•êÄÙÅÏ(ÄÄÄÄÄÄÄÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§ËÅçΩπ—Öç–(ÄÄÄÄÄÄÄÅôΩ»ÅçΩπ—Öç–Å•∏ÅëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–πùï–†â•êà§(ÄÄÄÅÙ(ÄÄÄÅ…Ω›ÃÄÙÅmt(ÄÄÄÅôΩ»Åïπ—…‰Å•∏ÅëÖ—Ñπùï–†âÕïç…ï—Ö…•Ö—}ëïµÖπëïÃà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•Õ•πÕ—Öπçî°ïπ—…‰∞Åë•ç–§ÅΩ»Åïπ—…‰πùï–†â—Â¡îà§ÄÑÙÄâÖ’—…îàË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅÕ—Ω…ïë}çΩπ—Öç—}•êÄÙÅÕ—»°ïπ—…‰πùï–†âç…µ}çΩπ—Öç—}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅçΩπ—Öç—Õ}âÂ}•êπùï–°Õ—Ω…ïë}çΩπ—Öç—}•ê§(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}Õïç…ï—Ö…•Ö—}ï·•Õ—•πù}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞Åïπ—…‰§(ÄÄÄÄÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§Å•òÅçΩπ—Öç–Åï±ÕîÄàà(ÄÄÄÄÄÄÄÅë•Õ¡±ÖÂ}πÖµîÄÙÅÕ—»°ïπ—…‰πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åë•Õ¡±ÖÂ}πÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅë•Õ¡±ÖÂ}πÖµîÄÙÄàÄàπ©Ω•∏°ô•±—ï»°9Ωπî∞Ål(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°ïπ—…‰πùï–†â¡…ïπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°ïπ—…‰πùï–†âπΩµ}ôÖµ•±±îà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÅt§§(ÄÄÄÄÄÄÄÅ…Ω›ÃπÖ¡¡ïπê°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâ•êàËÅÕ—»°ïπ—…‰πùï–†â•êà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…ïÖ—ïë}Ö–àËÅÕ—»°ïπ—…‰πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëÖ—îàËÅÕ—»°ïπ—…‰πùï–†âëÖ—îà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâë•Õ¡±ÖÂ}πÖµîàËÅë•Õ¡±ÖÂ}πÖµîÅΩ»Äâ¡¡ï±Öπ–ÅπΩ∏Å…ïπÕï•ùª§à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅÕ—»°ïπ—…‰πùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâïµÖ•∞àËÅÕ—»°ïπ—…‰πùï–†âïµÖ•∞à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ—ïÃàËÅÕ—»°ïπ—…‰πùï–†âπΩ—ïÃà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ëÿàËÅÕ—»°ïπ—…‰πùï–†â…ëÿà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ëŸ}Õ—Ö—’ÃàËÅÕ—»°ïπ—…‰πùï–†â…ëŸ}Õ—Ö—’Ãà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ëŸ}ëÖ—îàËÅÕ—»°ïπ—…‰πùï–†â…ëŸ}ëÖ—îà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ëŸ}—•µîàËÅÕ—»°ïπ—…‰πùï–†â…ëŸ}—•µîà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ëŸ}µΩëîàËÅÕ—»°ïπ—…‰πùï–†â…ëŸ}µΩëîà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ëŸ}πÖµîàËÅÕ—»°ïπ—…‰πùï–†â…ëŸ}πÖµîà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ…ëŸ}°ΩÕ—}πÖµîàËÅÕ—»°ïπ—…‰πùï–†â…ëŸ}°ΩÕ—}πÖµîà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµµïπ–àËÅÕ—»°ïπ—…‰πùï–†âçÖ±±âÖç≠}çΩµµïπ–à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµµïπ—}’¡ëÖ—ïë}Ö–àËÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…‰πùï–†âçÖ±±âÖç≠}çΩµµïπ—}’¡ëÖ—ïë}Ö–à§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩµµïπ—}’¡ëÖ—ïë}â‰àËÅÕ—»†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…‰πùï–†âçÖ±±âÖç≠}çΩµµïπ—}’¡ëÖ—ïë}â‰à§ÅΩ»Äàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…µ}çΩπ—Öç—}•êàËÅçΩπ—Öç—}•ê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…µ}çΩπ—Öç—}πÖµîàËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâÌçΩπ—Öç–πùï–†ù¡…ïπΩ¥ú∞Äúú•ÙÅÌçΩπ—Öç–πùï–†ùπΩ¥ú∞Äúú•ÙàπÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Åï±ÕîÄàà(ÄÄÄÄÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâç…µ}çΩπ—Öç—}Õ—Ö—’ÃàËÅÕ—»°çΩπ—Öç–πùï–†âÕ—Ö—’–à§ÅΩ»Äàà§Å•òÅçΩπ—Öç–Åï±ÕîÄàà∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ—Ö—’ÃàËÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}Õ—Ö—’Ã°ïπ—…‰§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïë}Ö–àËÅÕ—»°ïπ—…‰πùï–†âçÖ±±âÖç≠}¡…ΩçïÕÕïë}Ö–à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ΩçïÕÕïë}â‰àËÅÕ—»°ïπ—…‰πùï–†âçÖ±±âÖç≠}¡…ΩçïÕÕïë}â‰à§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅ…ï—’…∏ÅÕΩ…—ïê†(ÄÄÄÄÄÄÄÅ…Ω›Ã∞(ÄÄÄÄÄÄÄÅ≠ï‰ı±ÖµâëÑÅ…Ω‹ËÄ°…Ω‹πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Äàà∞Å…Ω‹πùï–†âëÖ—îà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÅ…ïŸï…ÕîıQ…’î∞(ÄÄÄÄ§(()ëïòÅ}ç…µ}çÖ±±âÖç≠}¡ïπë•πù}çΩ’π–°ëÖ—Ñ§Ë(ÄÄÄÄààâΩ’π–ÅΩπ±‰Å’π¡…ΩçïÕÕïêÅÕïç…ï—Ö…•Ö–É
+¨ÅΩ—°ï»Å…ï≈’ïÕ—ÃÉ
+Ï∏ààà(ÄÄÄÅ…ï—’…∏ÅÕ’¥†(ÄÄÄÄÄÄÄÄƒ(ÄÄÄÄÄÄÄÅôΩ»Åïπ—…‰Å•∏ÅëÖ—Ñπùï–†âÕïç…ï—Ö…•Ö—}ëïµÖπëïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°ïπ—…‰∞Åë•ç–§(ÄÄÄÄÄÄÄÅÖπêÅïπ—…‰πùï–†â—Â¡îà§ÄÙÙÄâÖ’—…îà(ÄÄÄÄÄÄÄÅÖπêÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}Õ—Ö—’Ã°ïπ—…‰§ÄÑÙÅI5}11	-}AI=MM(ÄÄÄÄ§(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥ΩâΩΩ—Õ—…Ö¿à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}âΩΩ—Õ—…Ö¿†§Ë(ÄÄÄÄààâ°Ö…ùîÅ—Ω’–Å∞ùïÕ¡ÖçîÅI4ÅÖŸïåÅ’πîÅÕï’±îÅ±ïç—’…îÅë‘Åô•ç°•ï»Å)M=8∏((ÄÄÄÅ0ùÖπç•ï∏Åì•µÖ……ÖùîÅ±ÖªùÖ•–ÅÕ•‡Å…ï≈◊©—ïÃÅï∏Å¡Ö…Ö±≥°±î∏Å°Ö≈’îÅ…ï≈◊©—î(ÄÄÄÅ…ï¡Ö…ÕÖ•–Å±îÅ∑©µîÅô•ç°•ï»ÅçΩµ¡±ï–∞ÅçîÅ≈’§Åµ’±—•¡±•Ö•–Å±îÅ¡•åÅ∑•µΩ•…î∏(ÄÄÄÄààà(ÄÄÄÅÕïç—•Ω∏ÄÙÅ…ï≈’ïÕ–πÖ…ùÃπùï–†âÕïç—•Ω∏à∞Äàà§(ÄÄÄÅ’Õï…}ïµÖ•∞ÄÙÄ°ç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ§πùï–†âïµÖ•∞à∞Äàà§(ÄÄÄÅ•òÅÕïç—•Ω∏ÄÙÙÄâëïµÖπëïÃµ…Ö¡¡ï∞àË(ÄÄÄÄÄÄÄÄåÅ=πîÅπΩ∏µëïÕ—…’ç—•ŸîÅ¡ÖÕÃÅ…ï¡Ö•…ÃÅï·•Õ—•πúÅ…ï≈’ïÕ—ÃÅÖπêÅµÖ≠ïÃÅ—°ï•»(ÄÄÄÄÄÄÄÄåÅ©Ω’…πÖ∞Åïπ—…‰ÅŸ•Õ•â±îÅâïôΩ…îÅ—°îÅçÖ±±âÖç¨Å›Ω…≠Õ¡ÖçîÅ•ÃÅ…ï—’…πïê∏(ÄÄÄÄÄÄÄÅ›•—†Å}MIQI%Q}1%YIe}1=,∞Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ω…ïë}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ}ç…µ}âÖç≠ô•±±}çÖ±±âÖç≠}…ï≈’ïÕ—Ã°Õ—Ω…ïë}ëÖ—Ñ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°Õ—Ω…ïë}ëÖ—Ñ§(ÄÄÄÅ…ïÖë}µΩëï±}≠ï‰ÄÙÅ}ç…µ}…ïÖë}µΩëï±}≠ï‰†§(ÄÄÄÅâΩΩ—Õ—…Ö¡}ï—ÖúÄÙÅ°ÖÕ°±•àπÕ°Ñ»‘ÿ°…ï¡»††(ÄÄÄÄÄÄÄÅI5}MMQ}YIM%=8∞(ÄÄÄÄÄÄÄÅÕïç—•Ω∏∞(ÄÄÄÄÄÄÄÅ’Õï…}ïµÖ•∞∞(ÄÄÄÄÄÄÄÅ…ïÖë}µΩëï±}≠ï‰∞(ÄÄÄÄ§§πïπçΩëî†â’—ò¥‡à§§π°ï·ë•ùïÕ–†§(ÄÄÄÅ•òÅ…ï≈’ïÕ–π•ô}πΩπï}µÖ—ç†πçΩπ—Ö•πÃ°âΩΩ—Õ—…Ö¡}ï—Öú§Ë(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅÖ¡¿π…ïÕ¡ΩπÕï}ç±ÖÕÃ°Õ—Ö—’ÃÙÃ¿–§(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîπÕï—}ï—Öú°âΩΩ—Õ—…Ö¡}ï—Öú§(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâÖç°îµΩπ—…Ω∞âtÄÙÄâ¡…•ŸÖ—î∞ÅπºµçÖç°îà(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(ÄÄÄÅëÖ—ÑÄÙÅ}ç…µ}¡…ï¡Ö…ïë}…ïÖë}µΩëï∞†§(ÄÄÄÅçΩπ—Öç—Ã∞Å|ÄÙÅ}ç…µ}çΩπ—Öç—}Õ’µµÖ…•ïÕ}¡ÖÂ±ΩÖê†(ÄÄÄÄÄÄÄÅëÖ—Ñ∞ÅÕïç—•Ω∏ıÕïç—•Ω∏∞Å¡…ï¡Ö…ïêıQ…’î∞(ÄÄÄÄ§(ÄÄÄÅÕï——•πùÃÄÙÅ}ç…µ}Õï——•πùÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÅÖ¡¡Ω•π—µïπ—ÃÄÙÅ}ç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅ©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâçΩπ—Öç—ÃàËÅçΩπ—Öç—Ã∞(ÄÄÄÄÄÄÄÄâ—ïµ¡±Ö—ïÃàËÅ}ç…µ}—ïµ¡±Ö—ïÕ}¡ÖÂ±ΩÖê°ëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ωπ}ÕïÕÕ•ΩπÃàËÅùï—}’¡çΩµ•πù}ôΩ…µÖ—•Ωπ}ÕïÕÕ•ΩπÃ°ëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâπΩ—•ô•çÖ—•ΩπÃàËÅ}ç…µ}πΩ—•ô•çÖ—•ΩπÕ}¡ÖÂ±ΩÖê†(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞Å’Õï…}ïµÖ•∞∞(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÄÄÄÄÄâÖ¡¡Ω•π—µïπ—ÃàËÅÖ¡¡Ω•π—µïπ—ÕlâÖ¡¡Ω•π—µïπ—Ãât∞(ÄÄÄÄÄÄÄÄâçÖ±ïπë±Â}•π—ïù…Ö—•Ω∏àËÅÖ¡¡Ω•π—µïπ—Õlâ•π—ïù…Ö—•Ω∏ât∞(ÄÄÄÄÄÄÄÄâÕï——•πùÃàËÅÕï——•πùÃ∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}¡ïπë•πù}çΩ’π–àËÅ}ç…µ}çÖ±±âÖç≠}¡ïπë•πù}çΩ’π–°ëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}…ï≈’ïÕ—ÃàËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕïç—•Ω∏ÄÙÙÄâëïµÖπëïÃµ…Ö¡¡ï∞àÅï±ÕîÅmt(ÄÄÄÄÄÄÄÄ§∞(ÄÄÄÅÙ§(ÄÄÄÅô•πÖ±}µΩëï±}≠ï‰ÄÙÅ}ç…µ}…ïÖë}µΩëï±}≠ï‰†§(ÄÄÄÅ•òÅô•πÖ±}µΩëï±}≠ï‰ÄÑÙÅ…ïÖë}µΩëï±}≠ï‰Ë(ÄÄÄÄÄÄÄÅâΩΩ—Õ—…Ö¡}ï—ÖúÄÙÅ°ÖÕ°±•àπÕ°Ñ»‘ÿ°…ï¡»††(ÄÄÄÄÄÄÄÄÄÄÄÅI5}MMQ}YIM%=8∞(ÄÄÄÄÄÄÄÄÄÄÄÅÕïç—•Ω∏∞(ÄÄÄÄÄÄÄÄÄÄÄÅ’Õï…}ïµÖ•∞∞(ÄÄÄÄÄÄÄÄÄÄÄÅô•πÖ±}µΩëï±}≠ï‰∞(ÄÄÄÄÄÄÄÄ§§πïπçΩëî†â’—ò¥‡à§§π°ï·ë•ùïÕ–†§(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—}ï—Öú°âΩΩ—Õ—…Ö¡}ï—Öú§(ÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâÖç°îµΩπ—…Ω∞âtÄÙÄâ¡…•ŸÖ—î∞ÅπºµçÖç°îà(ÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥ΩçÖ±±âÖç¨µ…ï≈’ïÕ—Ãà§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—Ã†§Ë(ÄÄÄÄààâIïç°Ö…ùîÅ’π•≈’ïµïπ–Å∞ùïÕ¡ÖçîÅëïÃÅëïµÖπëïÃÅëîÅ…Ö¡¡ï∞∏ààà(ÄÄÄÅ›•—†Å}MIQI%Q}1%YIe}1=,∞Å}I5}I=9%1%Q%=9}1=,Ë(ÄÄÄÄÄÄÄÅÕ—Ω…ïë}ëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÄÄÄÄÅ•òÅ}ç…µ}âÖç≠ô•±±}çÖ±±âÖç≠}…ï≈’ïÕ—Ã°Õ—Ω…ïë}ëÖ—Ñ§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°Õ—Ω…ïë}ëÖ—Ñ§(ÄÄÄÅëÖ—ÑÄÙÅ}ç…µ}¡…ï¡Ö…ïë}…ïÖë}µΩëï∞†§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}…ï≈’ïÕ—ÃàËÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}¡ïπë•πù}çΩ’π–àËÅ}ç…µ}çÖ±±âÖç≠}¡ïπë•πù}çΩ’π–°ëÖ—Ñ§∞(ÄÄÄÅÙ§(()Ö¡¿π¡ΩÕ–†àΩÖ¡§Ωç…¥ΩçÖ±±âÖç¨µ…ï≈’ïÕ—ÃºÒ…ï≈’ïÕ—}•ê¯ΩçΩπŸï…–à§)±Ωù•π}…ï≈’•…ïê)}Õï…•Ö±•Èï}Õïç…ï—Ö…•Ö—}ëï±•Ÿï…‰)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}çΩπŸï…—}çÖ±±âÖç≠}…ï≈’ïÕ–°…ï≈’ïÕ—}•ê§Ë(ÄÄÄÄààâ…ïÖ—îÅÖπêÅ±•π¨ÅΩπîÅI4Å±ïÖêÅ›°•±îÅ¡…ïÕï…Ÿ•πúÅ—°îÅçÖ±±âÖç¨Å…ï≈’ïÕ–∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅïπ—…‰ÄÙÅπï·–††(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âÕïç…ï—Ö…•Ö—}ëïµÖπëïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§(ÄÄÄÄÄÄÄÅÖπêÅ•—ï¥πùï–†â—Â¡îà§ÄÙÙÄâÖ’—…îà(ÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†â•êà§ÅΩ»Äàà§ÄÙÙÅÕ—»°…ï≈’ïÕ—}•ê§(ÄÄÄÄ§∞Å9Ωπî§(ÄÄÄÅ•òÅïπ—…‰Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å•π—…Ω’ŸÖâ±î∏âÙ§∞Ä–¿–((ÄÄÄÅ|∞ÅçΩπ—Öç–ÄÙÅ}ç…µ}¡…ï¡Ö…ï}çÖ±±âÖç≠}…ï≈’ïÕ–°ëÖ—Ñ∞Åïπ—…‰§(ÄÄÄÅç…ïÖ—ïêÄÙÅÖ±Õî(ÄÄÄÅ•òÅçΩπ—Öç–Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…Ö›}πÖµîÄÙÅÕ—»°ïπ—…‰πùï–†âπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅπÖµï}¡Ö…—ÃÄÙÅ…Ö›}πÖµîπÕ¡±•–°9Ωπî∞Äƒ§(ÄÄÄÄÄÄÄÅô•…Õ—}πÖµîÄÙÅÕ—»°ïπ—…‰πùï–†â¡…ïπΩ¥à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ±ÖÕ—}πÖµîÄÙÅÕ—»°ïπ—…‰πùï–†âπΩµ}ôÖµ•±±îà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Åô•…Õ—}πÖµîÅÖπêÅ±ï∏°πÖµï}¡Ö…—Ã§Ä¯ÄƒË(ÄÄÄÄÄÄÄÄÄÄÄÅô•…Õ—}πÖµîÄÙÅπÖµï}¡Ö…—Õl¡t(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å±ÖÕ—}πÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅô•…Õ—}πÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}πÖµîÄÙÅ…Ö›}πÖµî(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ±ÖÕ—}πÖµîÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅπÖµï}¡Ö…—Õl≈tÅ•òÅ±ï∏°πÖµï}¡Ö…—Ã§Ä¯Äƒ(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîÄ°πÖµï}¡Ö…—Õl¡tÅ•òÅπÖµï}¡Ö…—ÃÅï±ÕîÄâMÖπÃÅπΩ¥à§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅç…µ}¡ÖÂ±ΩÖêÄÙÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅô•…Õ—}πÖµî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÅ±ÖÕ—}πÖµî∞(ÄÄÄÄÄÄÄÄÄÄÄÄâµÖ•∞àËÅÕ—»°ïπ—…‰πùï–†âïµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅÕ—»°ïπ—…‰πùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâôΩ…µÖ—•Ω∏àËÅÕ—»°ïπ—…‰πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕΩ’…çï}ôΩ…µ’±Ö•…îàËÄâÖÕÕ•Õ—Öπ–µÕïç…ï—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÄÄÄÄÄâΩ…•ù•πîàËÄâMïçÀ•—Ö…•Ö–à∞(ÄÄÄÄÄÄÄÅÙ(ÄÄÄÄÄÄÄÅçΩπ—Öç—}çΩ’π—}âïôΩ…îÄÙÅ±ï∏°ëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§§(ÄÄÄÄÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}ç…ïÖ—ï}çΩπ—Öç—}ô…Ωµ}Õïç…ï—Ö…•Ö–†(ÄÄÄÄÄÄÄÄÄÄÄÅëÖ—Ñ∞Åïπ—…‰∞Åç…µ}¡ÖÂ±ΩÖê∞Åç…ïÖ—ï}Ωπ}Öµâ•ù’•—‰ıQ…’î∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅç…ïÖ—ïêÄÙÅ±ï∏°ëÖ—Ñπùï–†âç…µ}çΩπ—Öç—Ãà∞Åmt§§Ä¯ÅçΩπ—Öç—}çΩ’π—}âïôΩ…î(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1ÑÅëïµÖπëîÅπîÅ¡ï’–Å¡ÖÃÉ©—…îÅçΩπŸï…—•îÅï∏Åô•ç°îÅI4∏à∞(ÄÄÄÄÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰((ÄÄÄÅïπ—…Âlâç…µ}çΩπ—Öç—}•êâtÄÙÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§(ÄÄÄÅ}ç…µ}¡…ï¡Ö…ï}çÖ±±âÖç≠}…ï≈’ïÕ–°ëÖ—Ñ∞Åïπ—…‰§(ÄÄÄÅ}ç…µ}ïπÕ’…ï}Õïç…ï—Ö…•Ö—}¡’â±•çÖ—•Ω∏°çΩπ—Öç–∞Åïπ—…‰§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…Ω‹ÄÙÅπï·–†(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏Å}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ•òÅ•—ïµlâ•êâtÄÙÙÅÕ—»°…ï≈’ïÕ—}•ê§(ÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄâ…ï≈’ïÕ–àËÅ…Ω‹∞(ÄÄÄÄÄÄÄÄâçΩπ—Öç–àËÅ}ç…µ}çΩπ—Öç—}ëï—Ö•±}…ïÕ¡ΩπÕî°çΩ¡‰πëïï¡çΩ¡‰°çΩπ—Öç–§∞ÅëÖ—Ñ§∞(ÄÄÄÄÄÄÄÄâç…ïÖ—ïêàËÅç…ïÖ—ïê∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}¡ïπë•πù}çΩ’π–àËÅ}ç…µ}çÖ±±âÖç≠}¡ïπë•πù}çΩ’π–°ëÖ—Ñ§∞(ÄÄÄÅÙ§∞Ä»¿ƒÅ•òÅç…ïÖ—ïêÅï±ÕîÄ»¿¿(()Ö¡¿π¡Ö—ç††àΩÖ¡§Ωç…¥ΩçÖ±±âÖç¨µ…ï≈’ïÕ—ÃºÒ…ï≈’ïÕ—}•ê¯à§)±Ωù•π}…ï≈’•…ïê)}Õï…•Ö±•Èï}Õïç…ï—Ö…•Ö—}ëï±•Ÿï…‰)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}çÖ±±âÖç≠}…ï≈’ïÕ–°…ï≈’ïÕ—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅïπ—…‰ÄÙÅπï·–††(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–†âÕïç…ï—Ö…•Ö—}ëïµÖπëïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•Õ•πÕ—Öπçî°•—ï¥∞Åë•ç–§(ÄÄÄÄÄÄÄÅÖπêÅ•—ï¥πùï–†â—Â¡îà§ÄÙÙÄâÖ’—…îà(ÄÄÄÄÄÄÄÅÖπêÅÕ—»°•—ï¥πùï–†â•êà§ÅΩ»Äàà§ÄÙÙÅÕ—»°…ï≈’ïÕ—}•ê§(ÄÄÄÄ§∞Å9Ωπî§(ÄÄÄÅ•òÅïπ—…‰Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å•π—…Ω’ŸÖâ±î∏âÙ§∞Ä–¿–((ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅÕ—Ö—’Õ}…ï≈’ïÕ—ïêÄÙÄâÕ—Ö—’ÃàÅ•∏Å¡ÖÂ±ΩÖê(ÄÄÄÅçΩµµïπ—}…ï≈’ïÕ—ïêÄÙÄâçΩµµïπ–àÅ•∏Å¡ÖÂ±ΩÖê(ÄÄÄÅ•òÅπΩ–ÅÕ—Ö—’Õ}…ï≈’ïÕ—ïêÅÖπêÅπΩ–ÅçΩµµïπ—}…ï≈’ïÕ—ïêË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ’ç’πîÅµΩë•ô•çÖ—•Ω∏ÅëîÅ±ÑÅëïµÖπëîÅ∏ùÑÉ•”§Å—…ÖπÕµ•Õî∏à∞(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿((ÄÄÄÅ¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÄÙÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}Õ—Ö—’Ã°ïπ—…‰§(ÄÄÄÅ…ï≈’ïÕ—ïë}Õ—Ö—’ÃÄÙÅ¡…ïŸ•Ω’Õ}Õ—Ö—’Ã(ÄÄÄÅ•òÅÕ—Ö—’Õ}…ï≈’ïÕ—ïêË(ÄÄÄÄÄÄÄÅ…ï≈’ïÕ—ïë}Õ—Ö—’ÃÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÕ—Ö—’Ãà§ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÅ•òÅÕ—Ö—’Õ}…ï≈’ïÕ—ïêÅÖπêÅ…ï≈’ïÕ—ïë}Õ—Ö—’ÃÅπΩ–Å•∏ÅI5}11	-}MQQUMLË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅÕ—Ö—’–ÅëîÅ±ÑÅëïµÖπëîÅïÕ–Å•πŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅçΩµµïπ–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩµµïπ–à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅçΩµµïπ—}…ï≈’ïÕ—ïêÅÖπêÅ±ï∏°çΩµµïπ–§Ä¯Ä»¿¿¿Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1îÅçΩµµïπ—Ö•…îÅ•π—ï…πîÅπîÅ¡ï’–Å¡ÖÃÅì•¡ÖÕÕï»Ä»Ä¿¿¿ÅçÖ…Öç”°…ïÃ∏à∞(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿¿((ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ’Õï»ÄÙÅç’……ïπ—}’Õï»†§ÅΩ»ÅÌÙ(ÄÄÄÅÖç—Ω»ÄÙÅ’Õï»πùï–†âπÖµîà§ÅΩ»Å’Õï»πùï–†âïµÖ•∞à§ÅΩ»Äã%≈’•¡îÅ%π”•ù…Ö±îà(ÄÄÄÅ•òÅÕ—Ö—’Õ}…ï≈’ïÕ—ïêË(ÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}Õ—Ö—’ÃâtÄÙÅ…ï≈’ïÕ—ïë}Õ—Ö—’Ã(ÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}çÖ±±âÖç≠}Õ—Ö—’Õ}—•µïÕ—Öµ¿†§(ÄÄÄÄÄÄÄÅ•òÅ…ï≈’ïÕ—ïë}Õ—Ö—’ÃÄÙÙÅI5}11	-}AI=MMË(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÄÑÙÅ…ï≈’ïÕ—ïë}Õ—Ö—’ÃÅΩ»ÅπΩ–Åïπ—…‰πùï–†âçÖ±±âÖç≠}¡…ΩçïÕÕïë}Ö–à§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}¡…ΩçïÕÕïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}¡…ΩçïÕÕïë}â‰âtÄÙÅÖç—Ω»(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}¡…ΩçïÕÕïë}Ö–âtÄÙÄàà(ÄÄÄÄÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}¡…ΩçïÕÕïë}â‰âtÄÙÄàà(ÄÄÄÅ•òÅçΩµµïπ—}…ï≈’ïÕ—ïêË(ÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}çΩµµïπ–âtÄÙÅçΩµµïπ–(ÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}çΩµµïπ—}’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}çÖ±±âÖç≠}Õ—Ö—’Õ}—•µïÕ—Öµ¿†§(ÄÄÄÄÄÄÄÅïπ—…ÂlâçÖ±±âÖç≠}çΩµµïπ—}’¡ëÖ—ïë}â‰âtÄÙÅÖç—Ω»Å•òÅçΩµµïπ–Åï±ÕîÄàà((ÄÄÄÅ|∞ÅçΩπ—Öç–ÄÙÅ}ç…µ}¡…ï¡Ö…ï}çÖ±±âÖç≠}…ï≈’ïÕ–°ëÖ—Ñ∞Åïπ—…‰§(ÄÄÄÅ•òÅÕ—Ö—’Õ}…ï≈’ïÕ—ïêÅÖπêÅ¡…ïŸ•Ω’Õ}Õ—Ö—’ÃÄÑÙÅ…ï≈’ïÕ—ïë}Õ—Ö—’ÃÅÖπêÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ—•—±îÄÙÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å—…Ö•”•îà(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ï≈’ïÕ—ïë}Õ—Ö—’ÃÄÙÙÅI5}11	-}AI=MM(ÄÄÄÄÄÄÄÄÄÄÄÅï±ÕîÄâïµÖπëîÅëîÅ…Ö¡¡ï∞Å…Ω’Ÿï…—îà(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâëïµÖπëï}…Ö¡¡ï∞à∞(ÄÄÄÄÄÄÄÄÄÄÄÅ—•—±î∞(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—}ëï—Ö•∞°ïπ—…‰§∞(ÄÄÄÄÄÄÄÄÄÄÄÅÖ’—°Ω…}πÖµîıÖç—Ω»∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâÖç—•Ÿ•—•ïÃâul¡tπ’¡ëÖ—î°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}…ï≈’ïÕ—}•êàËÅÕ—»°ïπ—…‰πùï–†â•êà§ÅΩ»Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}Õ—Ö—’ÃàËÅ…ï≈’ïÕ—ïë}Õ—Ö—’Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}ïŸïπ–àËÅ…ï≈’ïÕ—ïë}Õ—Ö—’Ã∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹((ÄÄÄÅçΩπ—Öç—}…ïÕ¡ΩπÕîÄÙÄ†(ÄÄÄÄÄÄÄÅ}ç…µ}çΩπ—Öç—}ëï—Ö•±}…ïÕ¡ΩπÕî°çΩ¡‰πëïï¡çΩ¡‰°çΩπ—Öç–§∞ÅëÖ—Ñ§(ÄÄÄÄÄÄÄÅ•òÅçΩπ—Öç–Åï±ÕîÅ9Ωπî(ÄÄÄÄ§(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…Ω‹ÄÙÅπï·–†(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏Å}ç…µ}çÖ±±âÖç≠}…ï≈’ïÕ—Õ}¡ÖÂ±ΩÖê°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅ•òÅ•—ïµlâ•êâtÄÙÙÅÕ—»°…ï≈’ïÕ—}•ê§(ÄÄÄÄ§(ÄÄÄÅ…ïÕ¡ΩπÕîÄÙÅÏ(ÄÄÄÄÄÄÄÄâ…ï≈’ïÕ–àËÅ…Ω‹∞(ÄÄÄÄÄÄÄÄâçÖ±±âÖç≠}¡ïπë•πù}çΩ’π–àËÅ}ç…µ}çÖ±±âÖç≠}¡ïπë•πù}çΩ’π–°ëÖ—Ñ§∞(ÄÄÄÅÙ(ÄÄÄÅ•òÅçΩπ—Öç—}…ïÕ¡ΩπÕîË(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕïlâçΩπ—Öç–âtÄÙÅçΩπ—Öç—}…ïÕ¡ΩπÕî(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°…ïÕ¡ΩπÕî§(()Ö¡¿πùï–†àΩÖ¡§Ωç…¥Ω—ïµ¡±Ö—ïÃºÒ—ïµ¡±Ö—ï}•ê¯ΩÖ——Öç°µïπ–à§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}—ïµ¡±Ö—ï}Ö——Öç°µïπ–°—ïµ¡±Ö—ï}•ê§Ë(ÄÄÄÅ—ïµ¡±Ö—îÄÙÅπï·–††(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏Å±ΩÖë}ëÖ—Ñ†§πùï–†âç…µ}ïµÖ•±}—ïµ¡±Ö—ïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅ—ïµ¡±Ö—ï}•ê(ÄÄÄÄ§∞Å9Ωπî§(ÄÄÄÅ•òÅπΩ–Å—ïµ¡±Ö—îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ5Ωì°±îÅ•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅµï—ÖëÖ—ÑÄÙÅ—ïµ¡±Ö—îπùï–†â¡•ïçï}©Ω•π—îà§(ÄÄÄÅ¡Ö—†ÄÙÅ}ç…µ}ïµÖ•±}Ö——Öç°µïπ—}¡Ö—†°µï—ÖëÖ—Ñ§(ÄÄÄÅ•òÅπΩ–Å¡Ö—†Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâAß°çîÅ©Ω•π—îÅ•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ…ï—’…∏ÅÕïπë}ô•±î†(ÄÄÄÄÄÄÄÅ¡Ö—†∞(ÄÄÄÄÄÄÄÅÖÕ}Ö——Öç°µïπ–ıQ…’î∞(ÄÄÄÄÄÄÄÅëΩ›π±ΩÖë}πÖµîıµï—ÖëÖ—Ñπùï–†âπΩ¥à§ÅΩ»ÅΩÃπ¡Ö—†πâÖÕïπÖµî°¡Ö—†§∞(ÄÄÄÄÄÄÄÅµ•µï—Â¡îıµï—ÖëÖ—Ñπùï–†â—Â¡îà§ÅΩ»ÄâÖ¡¡±•çÖ—•Ω∏ΩΩç—ï–µÕ—…ïÖ¥à∞(ÄÄÄÄÄÄÄÅçΩπë•—•ΩπÖ∞ıQ…’î∞(ÄÄÄÄ§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥Ω—ïµ¡±Ö—ïÃºÒ—ïµ¡±Ö—ï}•ê¯à∞Åµï—°ΩëÃılâAQ à∞Äâ1Qât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}—ïµ¡±Ö—î°—ïµ¡±Ö—ï}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅôΩ»Å≠•πêÅ•∏Ä†âïµÖ•∞à∞ÄâÕµÃà§Ë(ÄÄÄÄÄÄÄÅ•—ïµÃÄÙÅëÖ—Ömòâç…µ}Ì≠•πëı}—ïµ¡±Ö—ïÃât(ÄÄÄÄÄÄÄÅ•—ï¥ÄÙÅπï·–†°çÖπë•ëÖ—îÅôΩ»ÅçÖπë•ëÖ—îÅ•∏Å•—ïµÃÅ•òÅçÖπë•ëÖ—îπùï–†â•êà§ÄÙÙÅ—ïµ¡±Ö—ï}•ê§∞Å9Ωπî§(ÄÄÄÄÄÄÄÅ•òÅπΩ–Å•—ï¥Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅ…ï≈’ïÕ–πµï—°ΩêÄÙÙÄâ1QàË(ÄÄÄÄÄÄÄÄÄÄÄÅΩ±ë}Ö——Öç°µïπ–ÄÙÅ•—ï¥πùï–†â¡•ïçï}©Ω•π—îà§(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµÃπ…ïµΩŸî°•—ï¥§(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}ëï±ï—ï}ïµÖ•±}Ö——Öç°µïπ–°Ω±ë}Ö——Öç°µïπ–§(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Äàà∞Ä»¿–(ÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ}ç…µ}…ï≈’ïÕ—}¡ÖÂ±ΩÖê†§(ÄÄÄÄÄÄÄÅπÖµîÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âπΩ¥à∞Å•—ï¥πùï–†âπΩ¥à∞Äàà§§§πÕ—…•¿†§(ÄÄÄÄÄÄÄÅçΩπ—ïπ–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩπ—ïπ‘à∞Å•—ï¥πùï–†âçΩπ—ïπ‘à∞Äàà§§§(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅπÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅπΩ¥Åë‘ÅµΩì°±îÅïÕ–ÅΩâ±•ùÖ—Ω•…îâÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ•òÅπΩ–ÅçΩπ—ïπ–πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅçΩπ—ïπ‘Åë‘ÅµΩì°±îÅïÕ–ÅΩâ±•ùÖ—Ω•…îâÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅ’¡±ΩÖëïêÄÙÅ…ï≈’ïÕ–πô•±ïÃπùï–†âÖ——Öç°µïπ–à§(ÄÄÄÄÄÄÄÅ•òÅ≠•πêÄÙÙÄâÕµÃàÅÖπêÅ’¡±ΩÖëïêÅÖπêÅ’¡±ΩÖëïêπô•±ïπÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ïÃÅ¡ß°çïÃÅ©Ω•π—ïÃÅÕΩπ–ÅÀ•Õï…€•ïÃÅÖ’‡ÅîµµÖ•±Ã∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅπï›}Ö——Öç°µïπ–ÄÙÅ9Ωπî(ÄÄÄÄÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅÖπêÅ’¡±ΩÖëïêÅÖπêÅ’¡±ΩÖëïêπô•±ïπÖµîË(ÄÄÄÄÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅπï›}Ö——Öç°µïπ–ÄÙÅ}ç…µ}Õ—Ω…ï}ïµÖ•±}Ö——Öç°µïπ–°’¡±ΩÖëïê§(ÄÄÄÄÄÄÄÄÄÄÄÅï·çï¡–Ä°YÖ±’ï……Ω»∞Å=Ÿï…ô±Ω›……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}Ö——Öç°µïπ—}ï……Ω…}…ïÕ¡ΩπÕî°ï·å§(ÄÄÄÄÄÄÄÅΩ±ë}Ö——Öç°µïπ–ÄÙÅ•—ï¥πùï–†â¡•ïçï}©Ω•π—îà§(ÄÄÄÄÄÄÄÅ•—ï¥πÕï—ëïôÖ’±–†âŸï…Õ•ΩπÃà∞Åmt§π•πÕï…–†¿∞ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÄâπΩ¥àËÅ•—ï¥πùï–†âπΩ¥à∞Äàà§∞ÄâÕ’©ï–àËÅ•—ï¥πùï–†âÕ’©ï–à∞Äàà§∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅ•—ï¥πùï–†âçΩπ—ïπ‘à∞Äàà§∞ÄâëÖ—îàËÅ•—ï¥πùï–†â’¡ëÖ—ïë}Ö–à§ÅΩ»Å•—ï¥πùï–†âç…ïÖ—ïë}Ö–à§ÅΩ»Å}ç…µ}πΩ‹†§∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÄÄÄÄÅ•—ïµlâŸï…Õ•ΩπÃâtÄÙÅ•—ïµlâŸï…Õ•ΩπÃâulË»¡t(ÄÄÄÄÄÄÄÅ•—ï¥π’¡ëÖ—î°ÏâπΩ¥àËÅπÖµî∞ÄâÕ’©ï–àËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÕ’©ï–à∞Å•—ï¥πùï–†âÕ’©ï–à∞Äàà§§§πÕ—…•¿†§Å•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅï±ÕîÄàà∞ÄâçΩπ—ïπ‘àËÅçΩπ—ïπ–∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâçÖ—ïùΩ…•îàËÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçÖ—ïùΩ…•îà∞Å•—ï¥πùï–†âçÖ—ïùΩ…•îà∞Äâ•ª•…Ö∞à§§§πÕ—…•¿†§ÅΩ»Äâ•ª•…Ö∞à∞Äâ’¡ëÖ—ïë}Ö–àËÅ}ç…µ}πΩ‹†•Ù§(ÄÄÄÄÄÄÄÅ•òÅπï›}Ö——Öç°µïπ–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ïµlâ¡•ïçï}©Ω•π—îâtÄÙÅπï›}Ö——Öç°µïπ–(ÄÄÄÄÄÄÄÅï±•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅÖπêÅ}ç…µ}¡ÖÂ±ΩÖë}âΩΩ±ïÖ∏°¡ÖÂ±ΩÖêπùï–†â…ïµΩŸï}Ö——Öç°µïπ–à§§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ•—ï¥π¡Ω¿†â¡•ïçï}©Ω•π—îà∞Å9Ωπî§(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÄÄÄÄÅï·çï¡–Å·çï¡—•Ω∏Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}ëï±ï—ï}ïµÖ•±}Ö——Öç°µïπ–°πï›}Ö——Öç°µïπ–§(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö•Õî(ÄÄÄÄÄÄÄÅ•òÅΩ±ë}Ö——Öç°µïπ–ÅÖπêÅΩ±ë}Ö——Öç°µïπ–ÄÑÙÅ•—ï¥πùï–†â¡•ïçï}©Ω•π—îà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ}ç…µ}ëï±ï—ï}ïµÖ•±}Ö——Öç°µïπ–°Ω±ë}Ö——Öç°µïπ–§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°•—ï¥§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ5Ωì°±îÅ•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(()I5}UA=5%9}QM}YI%	1ÄÙÄâÌÌ¡…Ωç°Ö•πïÕ}ëÖ—ïÕıÙà)I5}191e}UI0ÄÙÄâ°——¡ÃËºΩçÖ±ïπë±‰πçΩ¥Ω•π—ïù…Ö±ïÖçÖëïµ‰ΩôΩ…µÖ—•Ω∏à(()ëïòÅ}ç…µ}ôΩ…µÖ—•Ωπ}çΩëî°çΩπ—Öç–§Ë(ÄÄÄÄààâQ…ÖπÕ±Ö—îÅ—°îÅI4ùÃÅ°’µÖ∏Å±Öâï±ÃÅ—ºÅ—°îÅÕïÕÕ•Ω∏ÅÖëµ•π•Õ—…Ö—•Ω∏ÅçΩëïÃ∏ààà(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÅ•òÅôΩ…µÖ—•Ω∏ÄÙÙÄâëïÕ¿àË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâMA}YàÅ•òÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§ÄÙÙÄâYàÅï±ÕîÄâMA}%9%Pà(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâÖ¡ÃàËÄâALà∞ÄâÑÕ¿àËÄâÕ@à∞ÄâÕÕ•Ö¿àËÄâMM%@à∞ÄâÕÕ•Ö¿ÄƒàËÄâMM%@à∞(ÄÄÄÄÄÄÄÄâç°Ö’ôôï’»ÅŸ—åàËÄâYQà∞ÄâŸ—åàËÄâYQà∞(ÄÄÄÅÙπùï–°ôΩ…µÖ—•Ω∏∞ÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§§(()ëïòÅ}ç…µ}’¡çΩµ•πù}ëÖ—ïÃ°çΩπ—Öç–∞Å°—µ∞ıÖ±Õî∞ÅëÖ—Ö}Õ—Ω…îı9Ωπî§Ë(ÄÄÄÅçïπ—…îÄÙÅ}πΩ…µÖ±•Èï}çïπ—…ï}çΩëî°çΩπ—Öç–πùï–†â±•ï‘à§§(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅ}ç…µ}ôΩ…µÖ—•Ωπ}çΩëî°çΩπ—Öç–§(ÄÄÄÅ…Ω›ÃÄÙÅùï—}’¡çΩµ•πù}ôΩ…µÖ—•Ωπ}ÕïÕÕ•ΩπÃ°ëÖ—Ö}Õ—Ω…î§πùï–°çïπ—…î∞ÅÌÙ§πùï–°ôΩ…µÖ—•Ω∏∞Åmt§(ÄÄÄÅ±Öâï±ÃÄÙÅl(ÄÄÄÄÄÄÄÅÕ—»°…Ω‹πùï–†â±Öâï∞à§ÅΩ»Äàà§πÕ—…•¿†§π…ï¡±Öçî†àÄ¥Åï·Öµï∏Å±îÄà∞ÄàÉäPÅï·Öµï∏Å±îÄà§(ÄÄÄÄÄÄÄÅôΩ»Å…Ω‹Å•∏Å…Ω›ÃÅ•òÅ•Õ•πÕ—Öπçî°…Ω‹∞Åë•ç–§ÅÖπêÅÕ—»°…Ω‹πùï–†â±Öâï∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅt(ÄÄÄÅ•òÅπΩ–Å±Öâï±ÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÄâÖ—ïÃÉÄÅŸïπ•»Å¡…Ωç°Ö•πïµïπ–Ä°çΩπ—Öç—ïËµπΩ’ÃÅ¡Ω’»Å±ïÃÅçΩππáπ—…î§∏à(ÄÄÄÅ•òÅπΩ–Å°—µ∞Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâq∏àπ©Ω•∏°òãäàÅÌ±Öâï±ÙàÅôΩ»Å±Öâï∞Å•∏Å±Öâï±Ã§(ÄÄÄÅ…ï—’…∏ÄúÒ’∞ÅÕ—Â±îÙâµÖ…ù•∏Ë·¡‡Ä¿Ä·¡‡Ä»¡¡‡Ì¡Öëë•πúË¿Ïà¯úÄ¨Äààπ©Ω•∏†(ÄÄÄÄÄÄÄÅòúÒ±§ÅÕ—Â±îÙâµÖ…ù•∏Ë¿Ä¿ÄŸ¡‡Ä¿Ïà¯ÒÕ—…Ωπú˘Ì°—µ±}µΩë’±îπïÕçÖ¡î°±Öâï∞•ÙΩÕ—…Ωπú¯Ω±§¯ú(ÄÄÄÄÄÄÄÅôΩ»Å±Öâï∞Å•∏Å±Öâï±Ã(ÄÄÄÄ§Ä¨ÄàΩ’∞¯à(()ëïòÅ}ç…µ}çÖ±ïπë±Â}’…∞°çΩπ—Öç–§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅâΩΩ≠•πúÅ¡ÖùîÅµÖ—ç°•πúÅ—°îÅ—…Ö•π•πúÅÕï±ïç—ïêÅΩ∏Å—°îÅçΩπ—Öç–∏ààà(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅMIQI%Q}=I5Q%=9Lπùï–°}ç…µ}ôΩ…µÖ—•Ωπ}çΩëî°çΩπ—Öç–§∞ÅÌÙ§(ÄÄÄÅ…ï—’…∏ÅôΩ…µÖ—•Ω∏πùï–†âçÖ±ïπë±‰à§ÅΩ»ÅI5}191e}UI0(()ëïòÅ}ç…µ}ôΩ…µÖ—•Ωπ}±Öâï∞°çΩπ—Öç–§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅçΩµ¡±ï—î∞Åç’Õ—Ωµï»µôÖç•πúÅπÖµîÅ’ÕïêÅ•∏ÅµïÕÕÖùîÅ—ïµ¡±Ö—ïÃ∏ààà(ÄÄÄÅôΩ…µÖ—•Ωπ}çΩëîÄÙÅ}ç…µ}ôΩ…µÖ—•Ωπ}çΩëî°çΩπ—Öç–§(ÄÄÄÅ±Öâï±ÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâÕ@àËÄâùïπ–ÅëîÅ¡…Ω—ïç—•Ω∏Å¡°ÂÕ•≈’îÅëïÃÅ¡ï…ÕΩππïÃÄ°Õ@§à∞(ÄÄÄÄÄÄÄÄâALàËÄâùïπ–ÅëîÅ¡À•Ÿïπ—•Ω∏Åï–ÅëîÅœ•ç’…•”§Ä°AL§à∞(ÄÄÄÄÄÄÄÄâMM%@àËÄâùïπ–ÅëîÅœ•ç’…•”§Å•πçïπë•îÄ°MM%@Äƒ§à∞(ÄÄÄÄÄÄÄÄâYQàËÄâ°Ö’ôôï’»ÅëîÅ—…ÖπÕ¡Ω…–ÅÖŸïåÅç°Ö’ôôï’»Ä°YQ§à∞(ÄÄÄÄÄÄÄÄâMA}%9%PàËÄâ•…•ùïÖπ–Åìäeïπ—…ï¡…•ÕîÅëîÅœ•ç’…•”§Å¡…•€•îÄ°M@ÉäLÅ•π•—•Ö∞§à∞(ÄÄÄÄÄÄÄÄâMA}YàËÄâ•…•ùïÖπ–Åìäeïπ—…ï¡…•ÕîÅëîÅœ•ç’…•”§Å¡…•€•îÄ°M@ÉäLÅY§à∞(ÄÄÄÅÙ(ÄÄÄÅ…ï—’…∏Å±Öâï±Ãπùï–°ôΩ…µÖ—•Ωπ}çΩëî§ÅΩ»ÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§(()ëïòÅ}ç…µ}—ΩëÖÂ}Ö¡¡Ω•π—µïπ—}ŸÖ…•Öâ±ïÃ°çΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îı9Ωπî∞ÅπΩ‹ı9Ωπî§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅëÖ—îΩ—•µîÅΩòÅ—°îÅ±Ö—ïÕ–ÅÖ¡¡Ω•π—µïπ–ÅµÖ…≠ïêÅ’πÖπÕ›ï…ïê∏ààà(ÄÄÄÅ¡Ö…•ÃÄÙÅ¡Â—Ëπ—•µïÈΩπî†â’…Ω¡îΩAÖ…•Ãà§(ÄÄÄÅπΩ‹ÄÙÅπΩ‹ÅΩ»ÅëÖ—ï—•µîπëÖ—ï—•µîππΩ‹°¡Ö…•Ã§(ÄÄÄÅ•òÅπΩ‹π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅπΩ‹ÄÙÅ¡Ö…•Ãπ±ΩçÖ±•Èî°πΩ‹§(ÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÅπΩ‹ÄÙÅπΩ‹πÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÅçΩπ—Öç—}•êÄÙÅÕ—»°çΩπ—Öç–πùï–†â•êà§ÅΩ»Äàà§(ÄÄÄÅµÖ—ç°ïÃÄÙÅmt(ÄÄÄÅôΩ»ÅÖ¡¡Ω•π—µïπ–Å•∏Ä°ëÖ—Ö}Õ—Ω…îÅΩ»ÅÌÙ§πùï–†âç…µ}çÖ±ïπë±Â}Ö¡¡Ω•π—µïπ—Ãà∞Åmt§Ë(ÄÄÄÄÄÄÄÅ•òÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âçΩπ—Öç—}•êà§ÅΩ»Äàà§ÄÑÙÅçΩπ—Öç—}•êË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö—’Ãà§ÅΩ»ÄâÖç—•Ÿîà§πçÖÕïôΩ±ê†§Å•∏ÅÏâçÖπçï±ïêà∞ÄâçÖπçï±±ïêâÙË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ•òÅÖ¡¡Ω•π—µïπ–πùï–†â…ïÕ¡ΩπÕï}Õ—Ö—’Ãà§ÄÑÙÄâπΩ}ÖπÕ›ï»àË(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†âÕ—Ö…—}—•µîà§ÅΩ»Äàà§π…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—Ö…–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…–ÄÙÅ¡Â—ËπUQπ±ΩçÖ±•Èî°Õ—Ö…–§(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö…–ÄÙÅÕ—Ö…–πÖÕ—•µïÈΩπî°¡Ö…•Ã§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—•π’î(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’Õ}’¡ëÖ—ïë}Ö–ÄÙÅëÖ—ï—•µîπëÖ—ï—•µîπô…Ωµ•ÕΩôΩ…µÖ–†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—»°Ö¡¡Ω•π—µïπ–πùï–†â…ïÕ¡ΩπÕï}Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–à§ÅΩ»Äàà§π…ï¡±Öçî†âhà∞Äà¨¿¿Ë¿¿à§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅÕ—Ö—’Õ}’¡ëÖ—ïë}Ö–π—È•πôºÅ•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’Õ}’¡ëÖ—ïë}Ö–ÄÙÅ¡Â—ËπUQπ±ΩçÖ±•Èî°Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°QÂ¡ï……Ω»∞ÅYÖ±’ï……Ω»§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅÕ—Ö—’Õ}’¡ëÖ—ïë}Ö–ÄÙÅÕ—Ö…–(ÄÄÄÄÄÄÄÅµÖ—ç°ïÃπÖ¡¡ïπê†°Õ—Ö—’Õ}’¡ëÖ—ïë}Ö–∞ÅÕ—Ö…–§§(ÄÄÄÅ•òÅπΩ–ÅµÖ—ç°ïÃË(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅÏâëÖ—ï}…ëŸ}ë’}©Ω’»àËÄàà∞Äâ°ï’…ï}…ëŸ}ë’}©Ω’»àËÄàà∞ÄâëÖ—ï}°ï’…ï}…ëŸ}ë’}©Ω’»àËÄàâÙ((ÄÄÄÄåÅÅÅ…ïÕ¡ΩπÕï}Õ—Ö—’Õ}’¡ëÖ—ïë}Ö—ÅÄÅ•ëïπ—•ô•ïÃÅ—°îÅÖ¡¡Ω•π—µïπ–ÅΩ∏Å›°•ç†Å—°î(ÄÄÄÄåÅ’Õï»ÅµΩÕ–Å…ïçïπ—±‰Åç±•ç≠ïêÉäqMÖπÃÅÀ•¡ΩπÕóät∞Å…ïùÖ…ë±ïÕÃÅΩòÅ•—ÃÅÖùî∏(ÄÄÄÅÕ—Ö…–ÄÙÅµÖ‡°µÖ—ç°ïÃ∞Å≠ï‰ı±ÖµâëÑÅ•—ï¥ËÅ•—ïµl¡t•l≈t(ÄÄÄÅµΩπ—°ÃÄÙÄ†â©ÖπŸ•ï»à∞Äâõ•Ÿ…•ï»à∞ÄâµÖ…Ãà∞ÄâÖŸ…•∞à∞ÄâµÖ§à∞Äâ©’•∏à∞Äâ©’•±±ï–à∞ÄâÖøÌ–à∞ÄâÕï¡—ïµâ…îà∞ÄâΩç—Ωâ…îà∞ÄâπΩŸïµâ…îà∞Äâì•çïµâ…îà§(ÄÄÄÅëÖ—ï}±Öâï∞ÄÙÅòâÌÕ—Ö…–πëÖÂÙÅÌµΩπ—°ÕmÕ—Ö…–πµΩπ—†Ä¥Ä≈uÙÅÌÕ—Ö…–πÂïÖ…Ùà(ÄÄÄÅ—•µï}±Öâï∞ÄÙÅòâÌÕ—Ö…–π°Ω’…ı†àÄ¨Ä°òâÌÕ—Ö…–πµ•π’—îË¿…ëÙàÅ•òÅÕ—Ö…–πµ•π’—îÅï±ÕîÄàà§(ÄÄÄÅ…ï—’…∏ÅÏ(ÄÄÄÄÄÄÄÄâëÖ—ï}…ëŸ}ë’}©Ω’»àËÅëÖ—ï}±Öâï∞∞(ÄÄÄÄÄÄÄÄâ°ï’…ï}…ëŸ}ë’}©Ω’»àËÅ—•µï}±Öâï∞∞(ÄÄÄÄÄÄÄÄâëÖ—ï}°ï’…ï}…ëŸ}ë’}©Ω’»àËÅòâÌëÖ—ï}±Öâï±ÙÉÄÅÌ—•µï}±Öâï±Ùà∞(ÄÄÄÅÙ(()ëïòÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ°çΩπ—ïπ–∞ÅçΩπ—Öç–∞Å°—µ∞ıÖ±Õî∞ÅëÖ—Ö}Õ—Ω…îı9Ωπî§Ë(ÄÄÄÄààâIïÕΩ±ŸîÅI4Å—ïµ¡±Ö—îÅŸÖ…•Öâ±ïÃÅÖ–Å¡…ïŸ•ï‹ΩÕïπêÅ—•µî∞ÅπïŸï»Å›°ï∏ÅÕÖŸ•πú∏ààà(ÄÄÄÅ…ïÕΩ±ŸïêÄÙÅÕ—»°çΩπ—ïπ–ÅΩ»Äàà§π…ï¡±Öçî†(ÄÄÄÄÄÄÄÅI5}UA=5%9}QM}YI%	1∞(ÄÄÄÄÄÄÄÅ}ç…µ}’¡çΩµ•πù}ëÖ—ïÃ°çΩπ—Öç–∞Å°—µ∞ı°—µ∞∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ö}Õ—Ω…î§∞(ÄÄÄÄ§(ÄÄÄÅŸÖ…•Öâ±ïÃÄÙÅÏ(ÄÄÄÄÄÄÄÄâ¡…ïπΩ¥àËÅçΩπ—Öç–πùï–†â¡…ïπΩ¥à§∞ÄâπΩ¥àËÅçΩπ—Öç–πùï–†âπΩ¥à§∞(ÄÄÄÄÄÄÄÄâïµÖ•∞àËÅçΩπ—Öç–πùï–†âµÖ•∞à§∞ÄâµÖ•∞àËÅçΩπ—Öç–πùï–†âµÖ•∞à§∞(ÄÄÄÄÄÄÄÄâ—ï±ï¡°ΩπîàËÅçΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§∞ÄâôΩ…µÖ—•Ω∏àËÅ}ç…µ}ôΩ…µÖ—•Ωπ}±Öâï∞°çΩπ—Öç–§∞(ÄÄÄÄÄÄÄÄâ±•ï‘àËÅçΩπ—Öç–πùï–†â±•ï‘à§∞ÄâÕ—Ö—’–àËÅçΩπ—Öç–πùï–†âÕ—Ö—’–à§∞(ÄÄÄÄÄÄÄÄâëÖ—ïÕ}ôΩ…µÖ—•Ω∏àËÅçΩπ—Öç–πùï–†âëÖ—ïÕ}ôΩ…µÖ—•Ω∏à§∞(ÄÄÄÄÄÄÄÄâ±•ïπ}…ëŸ}çÖ±ïπë±‰àËÅ}ç…µ}çÖ±ïπë±Â}’…∞°çΩπ—Öç–§∞(ÄÄÄÄÄÄÄÄ®©}ç…µ}—ΩëÖÂ}Ö¡¡Ω•π—µïπ—}ŸÖ…•Öâ±ïÃ°çΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ö}Õ—Ω…î§∞(ÄÄÄÅÙ(ÄÄÄÅôΩ»ÅπÖµî∞ÅŸÖ±’îÅ•∏ÅŸÖ…•Öâ±ïÃπ•—ïµÃ†§Ë(ÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅÕ—»°ŸÖ±’îÅΩ»Äàà§(ÄÄÄÄÄÄÄÅ•òÅ°—µ∞Ë(ÄÄÄÄÄÄÄÄÄÄÄÅŸÖ±’îÄÙÅ°—µ±}µΩë’±îπïÕçÖ¡î°ŸÖ±’î§(ÄÄÄÄÄÄÄÅôΩ»ÅŸÖ…•Öâ±îÅ•∏Ä°òâÌÌÌÏÅÌπÖµïÙÅıııÙà∞ÅòâÌÌÌÌÌπÖµïııııÙà§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕΩ±ŸïêÄÙÅ…ïÕΩ±Ÿïêπ…ï¡±Öçî°ŸÖ…•Öâ±î∞ÅŸÖ±’î§(ÄÄÄÅ…ï—’…∏Å…ïÕΩ±Ÿïê(()ëïòÅ}ç…µ}ïµÖ•±}°—µ∞°âΩë‰∞ÅçΩπ—Öç–§Ë(ÄÄÄÄààâ-ïï¿ÅçΩµ¡±ï—îÅç’Õ—Ω¥ÅîµµÖ•±ÃÅ•π—Öç–ÅÖπêÅâ…ÖπêÅâΩë‰µΩπ±‰ÅµïÕÕÖùïÃ∏ààà(ÄÄÄÅâΩë‰ÄÙÅÕ—»°âΩë‰ÅΩ»Äàà§(ÄÄÄÅ•òÅ…îπÕïÖ…ç†°»à†¸ËÖëΩç—Â¡ïÒ°—µ∞•qàà∞ÅâΩë‰∞Å…îπ%9=IM§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅâΩë‰(ÄÄÄÅ•òÅπΩ–Å…îπÕïÖ…ç†°»àº˝mÑµÈumx˘t®¯à∞ÅâΩë‰∞Å…îπ%9=IM§Ë(ÄÄÄÄÄÄÄÅπΩ…µÖ±•ÈïêÄÙÅ°—µ±}µΩë’±îπ’πïÕçÖ¡î°âΩë‰§π…ï¡±Öçî†âq…q∏à∞Äâq∏à§π…ï¡±Öçî†âq»à∞Äâq∏à§(ÄÄÄÄÄÄÄÅ¡Ö…Öù…Ö¡°ÃÄÙÅl(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Ö…Öù…Ö¡†πÕ—…•¿†§(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å¡Ö…Öù…Ö¡†Å•∏Å…îπÕ¡±•–°»âqπlÅq—t©q∏¨à∞ÅπΩ…µÖ±•Èïê§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ¡Ö…Öù…Ö¡†πÕ—…•¿†§(ÄÄÄÄÄÄÄÅt(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÄààπ©Ω•∏†(ÄÄÄÄÄÄÄÄÄÄÄÄúÒ¿ÅÕ—Â±îÙâµÖ…ù•∏Ë¿Ä¿ÄƒŸ¡‡à¯ú(ÄÄÄÄÄÄÄÄÄÄÄÄ¨Å°—µ±}µΩë’±îπïÕçÖ¡î°¡Ö…Öù…Ö¡†§π…ï¡±Öçî†âq∏à∞ÄàÒâ»¯à§(ÄÄÄÄÄÄÄÄÄÄÄÄ¨ÄàΩ¿¯à(ÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å¡Ö…Öù…Ö¡†Å•∏Å¡Ö…Öù…Ö¡°Ã(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å…ïπëï…}—ïµ¡±Ö—î†(ÄÄÄÄÄÄÄÄâç…µ}ïµÖ•±}›…Ö¡¡ï»π°—µ∞à∞Å¡…ïπΩ¥ıçΩπ—Öç–πùï–†â¡…ïπΩ¥à§∞ÅçΩπ—ïπ‘ıâΩë‰(ÄÄÄÄ§()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩçπÖ¡ÃµôΩ…¥à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}Õïπë}çπÖ¡Õ}ôΩ…¥°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâMïπêÅ—°îÅçΩπô•ù’…ïêÅΩçÃÅUPÅîµµÖ•∞ÅÖπêÅ…ïµïµâï»ÅΩπ±‰ÅÕ’ççïÕÕô’∞Åëï±•Ÿï…•ïÃ∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÅ•òÅôΩ…µÖ—•Ω∏ÅπΩ–Å•∏ÅÏâALà∞ÄâÕ@âÙÅΩ»ÅÕ—»°çΩπ—Öç–πùï–†âçÖ…—ï}¡…ºà§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§ÄÑÙÄâ9=8àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅôΩ…µ’±Ö•…îÅ9ALÅïÕ–ÅÀ•Õï…€§ÅÖ’‡Å¡•Õ—ïÃÅALΩÕ@ÅÕÖπÃÅçÖ…—îÅ¡…ΩôïÕÕ•Ωππï±±î∏âÙ§∞Ä–¿‰(ÄÄÄÅ…ïç•¡•ïπ–ÄÙÅÕ—»°çΩπ—Öç–πùï–†âµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å…ïç•¡•ïπ–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIïπÕï•ùπïËÅ≥äeÖë…ïÕÕîÅîµµÖ•∞Åë‘ÅçΩπ—Öç–ÅÖŸÖπ–Å≥äeïπŸΩ§∏âÙ§∞Ä–¿‰(ÄÄÄÅ—ïµ¡±Ö—îÄÙÅ}ç…µ}πÖµïë}—ïµ¡±Ö—î°ëÖ—Ñ∞ÄâïµÖ•∞à∞ÄâΩçÃÅUPà§(ÄÄÄÅ•òÅπΩ–Å—ïµ¡±Ö—îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅµΩì°±îÅîµµÖ•∞É
+¨ÅΩçÃÅUPÉ
+ÏÅïÕ–Å•π—…Ω’ŸÖâ±îÅëÖπÃÄΩç…¥ΩµΩëï±ïÃ∏âÙ§∞Ä–¿‰((ÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îπùï–†âçΩπ—ïπ‘à§∞ÅçΩπ—Öç–∞Å°—µ∞ıQ…’î∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄ§(ÄÄÄÅÕ’â©ïç–ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îπùï–†âÕ’©ï–à§ÅΩ»ÄâΩçÃÅUPà∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄ§(ÄÄÄÅâ…ÖπëïêÄÙÅ}ç…µ}ïµÖ•±}°—µ∞°âΩë‰∞ÅçΩπ—Öç–§(ÄÄÄÅ¡±Ö•∏ÄÙÅ°—µ±}µΩë’±îπ’πïÕçÖ¡î†(ÄÄÄÄÄÄÄÅ…îπÕ’à°»âqÃ¨à∞ÄàÄà∞Å…îπÕ’à°»àÒmx˘t¨¯à∞ÄàÄà∞ÅâΩë‰§§(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å}ç…µ}Õïπë}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÅ…ïç•¡•ïπ–∞ÅÕ’â©ïç–∞Å¡±Ö•∏∞Åâ…Öπëïê∞Å—ïµ¡±Ö—îı—ïµ¡±Ö—î∞(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ3äeïπŸΩ§Åë‘ÅôΩ…µ’±Ö•…îÅÑÉ•ç°Ω◊§∏Å[•…•ô•ïËÅ±ÑÅçΩπô•ù’…Ö—•Ω∏Åï–Å≥äeÖë…ïÕÕîÅîµµÖ•∞∏âÙ§∞Ä‘¿»((ÄÄÄÅÕïπ—}Ö–ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞ÄâïµÖ•∞à∞ÄâµµÖ•∞É
+¨ÅΩçÃÅUPÉ
+ÏÅïπŸΩÁ§à∞ÅÕ’â©ïç–∞Åâ…Öπëïê§(ÄÄÄÅ—ïµ¡±Ö—ïlâ’ÕÖùï}çΩ’π–âtÄÙÅ•π–°—ïµ¡±Ö—îπùï–†â’ÕÖùï}çΩ’π–à§ÅΩ»Ä¿§Ä¨Äƒ(ÄÄÄÅ—ïµ¡±Ö—ïlâ±ÖÕ—}’Õïë}Ö–âtÄÙÅÕïπ—}Ö–(ÄÄÄÅçΩπ—Öç—lâçπÖ¡Õ}ôΩ…µ}Õïπ—}Ö–âtÄÙÅÕïπ—}Ö–(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅÕïπ—}Ö–(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°çΩπ—Öç–§(()ëïòÅ}ç…µ}ô…Öπçï}—…ÖŸÖ•±}ô’πë•πù}—ïµ¡±Ö—î°çΩπ—Öç–§Ë(ÄÄÄÄààâIï—’…∏Å—°îÅï·Öç–ÅµΩëï∞ÅçΩπô•ù’…ïêÅôΩ»ÅÖ∏Åï±•ù•â±îÅPÅô’πë•πúÅô•±î∏ààà(ÄÄÄÅôΩ…µÖ—•Ω∏ÄÙÅÕ—»°çΩπ—Öç–πùï–†âôΩ…µÖ—•Ω∏à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÅ©Ω’…πï‰ÄÙÅÕ—»°çΩπ—Öç–πùï–†âëïÕ¡}—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§(ÄÄÄÅ•òÅôΩ…µÖ—•Ω∏ÄÙÙÄâÕ@àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ•πÖπçïµïπ–ÅPÅÕ@à(ÄÄÄÅ•òÅôΩ…µÖ—•Ω∏ÄÙÙÄâM@àÅÖπêÅ©Ω’…πï‰ÄÙÙÄâ%9%Q%0àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Äâ•πÖπçïµïπ–ÅPÅM@à(ÄÄÄÅ…ï—’…∏Äàà(()Ö¡¿π…Ω’—î†(ÄÄÄÄàΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ωô…Öπçîµ—…ÖŸÖ•∞µô’πë•πúµô•±îà∞(ÄÄÄÅµï—°ΩëÃılâA=MPât∞(§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}Õïπë}ô…Öπçï}—…ÖŸÖ•±}ô’πë•πù}ô•±î°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâMïπêÅ—°îÅçΩπô•ù’…ïêÅÕ@ÅΩ»ÅM@Å•π•—•Ö∞Å…ÖπçîÅQ…ÖŸÖ•∞Åô•±î∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ•òÅÕ—»°çΩπ—Öç–πùï–†âô•πÖπçïµïπ—}ô–à§ÅΩ»Äàà§πÕ—…•¿†§π’¡¡ï»†§ÄÑÙÄâ=U$àË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ%πë•≈’ïËÅìäeÖâΩ…êÅ≈’îÅ±ÑÅ¡ï…ÕΩππîÅÕΩ’°Ö•—îÅ’∏Åô•πÖπçïµïπ–Å…ÖπçîÅQ…ÖŸÖ•∞∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅ—ïµ¡±Ö—ï}πÖµîÄÙÅ}ç…µ}ô…Öπçï}—…ÖŸÖ•±}ô’πë•πù}—ïµ¡±Ö—î°çΩπ—Öç–§(ÄÄÄÅ•òÅπΩ–Å—ïµ¡±Ö—ï}πÖµîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâï–ÅïπŸΩ§ÅïÕ–ÅÀ•Õï…€§ÅÖ’‡ÅôΩ…µÖ—•ΩπÃÅÕ@Åï–ÅM@Å•π•—•Ö∞∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅ…ïç•¡•ïπ–ÄÙÅÕ—»°çΩπ—Öç–πùï–†âµÖ•∞à§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å…ïç•¡•ïπ–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâIïπÕï•ùπïËÅ≥äeÖë…ïÕÕîÅîµµÖ•∞Åë‘ÅçΩπ—Öç–ÅÖŸÖπ–Å≥äeïπŸΩ§∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅ—ïµ¡±Ö—îÄÙÅ}ç…µ}πÖµïë}—ïµ¡±Ö—î°ëÖ—Ñ∞ÄâïµÖ•∞à∞Å—ïµ¡±Ö—ï}πÖµî§(ÄÄÄÅ•òÅπΩ–Å—ïµ¡±Ö—îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ1îÅµΩì°±îÅîµµÖ•∞É
+¨ÅÌ—ïµ¡±Ö—ï}πÖµïÙÉ
+ÏÅïÕ–Å•π—…Ω’ŸÖâ±îÅëÖπÃÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄàΩç…¥ΩµΩëï±ïÃ∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îπùï–†âçΩπ—ïπ‘à§∞ÅçΩπ—Öç–∞Å°—µ∞ıQ…’î∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ∞(ÄÄÄÄ§(ÄÄÄÅ•òÅπΩ–ÅâΩë‰πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÅòâ1îÅµΩì°±îÅîµµÖ•∞É
+¨ÅÌ—ïµ¡±Ö—ï}πÖµïÙÉ
+ÏÅïÕ–ÅŸ•ëî∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅÕ’â©ïç–ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îπùï–†âÕ’©ï–à§ÅΩ»Å—ïµ¡±Ö—ï}πÖµî∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ∞(ÄÄÄÄ§(ÄÄÄÅâ…ÖπëïêÄÙÅ}ç…µ}ïµÖ•±}°—µ∞°âΩë‰∞ÅçΩπ—Öç–§(ÄÄÄÅ¡±Ö•∏ÄÙÅ°—µ±}µΩë’±îπ’πïÕçÖ¡î†(ÄÄÄÄÄÄÄÅ…îπÕ’à°»âqÃ¨à∞ÄàÄà∞Å…îπÕ’à°»àÒmx˘t¨¯à∞ÄàÄà∞ÅâΩë‰§§(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å}ç…µ}Õïπë}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÅ…ïç•¡•ïπ–∞ÅÕ’â©ïç–∞Å¡±Ö•∏∞Åâ…Öπëïê∞Å—ïµ¡±Ö—îı—ïµ¡±Ö—î∞(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅòâ3äeïπŸΩ§Åë‘ÅµΩì°±îÉ
+¨ÅÌ—ïµ¡±Ö—ï}πÖµïÙÉ
+ÏÅÑÉ•ç°Ω◊§∏Äà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ[•…•ô•ïËÅ±ÑÅçΩπô•ù’…Ö—•Ω∏Åï–Å≥äeÖë…ïÕÕîÅîµµÖ•∞∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÙ§∞Ä‘¿»((ÄÄÄÅÕïπ—}Ö–ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÄâïµÖ•∞à∞ÅòâµµÖ•∞É
+¨ÅÌ—ïµ¡±Ö—ï}πÖµïÙÉ
+ÏÅïπŸΩÁ§à∞ÅÕ’â©ïç–∞Åâ…Öπëïê∞(ÄÄÄÄ§(ÄÄÄÅ—ïµ¡±Ö—ïlâ’ÕÖùï}çΩ’π–âtÄÙÅ•π–°—ïµ¡±Ö—îπùï–†â’ÕÖùï}çΩ’π–à§ÅΩ»Ä¿§Ä¨Äƒ(ÄÄÄÅ—ïµ¡±Ö—ïlâ±ÖÕ—}’Õïë}Ö–âtÄÙÅÕïπ—}Ö–(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅÕïπ—}Ö–(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâçΩπ—Öç–àËÅçΩπ—Öç–∞Äâ—ïµ¡±Ö—ï}πÖµîàËÅ—ïµ¡±Ö—ï}πÖµïÙ§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩµïÕÕÖùîà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}Õïπë}µïÕÕÖùî°çΩπ—Öç—}•ê§Ë(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§ÏÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ}ç…µ}…ï≈’ïÕ—}¡ÖÂ±ΩÖê†§ÏÅ≠•πêÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—Â¡îà§ÅΩ»Äàà§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—ïµ¡±Ö—ï}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅÕï±ïç—ïë}—ïµ¡±Ö—îÄÙÅπï·–††(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏ÅëÖ—Ñπùï–°òâç…µ}Ì≠•πëı}—ïµ¡±Ö—ïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅ—ïµ¡±Ö—ï}•ê(ÄÄÄÄ§∞Å9Ωπî§Å•òÅ≠•πêÅ•∏ÅÏâïµÖ•∞à∞ÄâÕµÃâÙÅÖπêÅ—ïµ¡±Ö—ï}•êÅï±ÕîÅ9Ωπî(ÄÄÄÅâΩë‰ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩπ—ïπ‘à∞Äàà§§πÕ—…•¿†§ÏÅÕ’â©ïç–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÕ’©ï–à∞Äâ%π”•ù…Ö±îÅçÖëïµ‰à§§πÕ—…•¿†§(ÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àË(ÄÄÄÄÄÄÄÅ—…‰Ë(ÄÄÄÄÄÄÄÄÄÄÄÅµÖπ’Ö±}Ö——Öç°µïπ—ÃÄÙÅ}ç…µ}…ïÖë}ïµÖ•±}Ö——Öç°µïπ—Ã†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ–πô•±ïÃπùï—±•Õ–†âÖ——Öç°µïπ–à§(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï·çï¡–Ä°YÖ±’ï……Ω»∞Å=Ÿï…ô±Ω›……Ω»§ÅÖÃÅï·åË(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å}ç…µ}Ö——Öç°µïπ—}ï……Ω…}…ïÕ¡ΩπÕî°ï·å§(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ°âΩë‰∞ÅçΩπ—Öç–∞Å°—µ∞ıQ…’î∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ§(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ°Õ’â©ïç–∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ§(ÄÄÄÄÄÄÄÅâ…ÖπëïêÄÙÅ}ç…µ}ïµÖ•±}°—µ∞°âΩë‰∞ÅçΩπ—Öç–§(ÄÄÄÄÄÄÄÅ•òÅµÖπ’Ö±}Ö——Öç°µïπ—ÃË(ÄÄÄÄÄÄÄÄÄÄÄÅ›•—†Å—ïµ¡ô•±îπQïµ¡Ω…Ö…Â•…ïç—Ω…‰°¡…ïô•‡Ùâç…¥µïµÖ•∞µÖ——Öç°µïπ–¥à§ÅÖÃÅÖ——Öç°µïπ—}ë•»Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}¡Ö—°ÃÄÙÅmt(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅôΩ»Å•πëï‡∞ÅÖ——Öç°µïπ–Å•∏Åïπ’µï…Ö—î°µÖπ’Ö±}Ö——Öç°µïπ—Ã§Ë(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅô•±ï}ë•»ÄÙÅΩÃπ¡Ö—†π©Ω•∏°Ö——Öç°µïπ—}ë•»∞ÅÕ—»°•πëï‡§§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩÃπµÖ≠ïë•…Ã°ô•±ï}ë•»∞Åï·•Õ—}Ω¨ıÖ±Õî§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}¡Ö—†ÄÙÅΩÃπ¡Ö—†π©Ω•∏°ô•±ï}ë•»∞ÅÖ——Öç°µïπ—lâô•±ïπÖµîât§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ›•—†ÅΩ¡ï∏°Ö——Öç°µïπ—}¡Ö—†∞Äâ·àà§ÅÖÃÅÖ——Öç°µïπ—}ô•±îË(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}ô•±îπ›…•—î°Ö——Öç°µïπ—lâçΩπ—ïπ–ât§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—}¡Ö—°ÃπÖ¡¡ïπê°Ö——Öç°µïπ—}¡Ö—†§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅΩ¨ÄÙÅ}ç…µ}Õïπë}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âµÖ•∞à§∞ÅÕ’â©ïç–∞ÅâΩë‰∞Åâ…Öπëïê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îıÕï±ïç—ïë}—ïµ¡±Ö—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—Õ}¡Ö—°ÃıÖ——Öç°µïπ—}¡Ö—°Ã∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅï±ÕîË(ÄÄÄÄÄÄÄÄÄÄÄÅ•πç±’ëï}—ïµ¡±Ö—ï}Ö——Öç°µïπ–ÄÙÅ}ç…µ}¡ÖÂ±ΩÖë}âΩΩ±ïÖ∏†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†â•πç±’ëï}—ïµ¡±Ö—ï}Ö——Öç°µïπ–à§∞ÅëïôÖ’±–ıQ…’î∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ¨ÄÙÅ}ç…µ}Õïπë}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅçΩπ—Öç–πùï–†âµÖ•∞à§∞ÅÕ’â©ïç–∞ÅâΩë‰∞Åâ…Öπëïê∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îıÕï±ïç—ïë}—ïµ¡±Ö—î∞(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÖ——Öç°µïπ—Õ}¡Ö—°Ãı9ΩπîÅ•òÅ•πç±’ëï}—ïµ¡±Ö—ï}Ö——Öç°µïπ–Åï±ÕîÅmt∞(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ¡…ïŸ•ï‹ÄÙÅâ…Öπëïê(ÄÄÄÅï±•òÅ≠•πêÄÙÙÄâÕµÃàË(ÄÄÄÄÄÄÄÅ’¡±ΩÖëïêÄÙÅ…ï≈’ïÕ–πô•±ïÃπùï—±•Õ–†âÖ——Öç°µïπ–à§(ÄÄÄÄÄÄÄÅ•òÅÖπ‰°•—ï¥ÅÖπêÅ•—ï¥πô•±ïπÖµîÅôΩ»Å•—ï¥Å•∏Å’¡±ΩÖëïê§Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1ïÃÅ¡ß°çïÃÅ©Ω•π—ïÃÅÕΩπ–ÅÀ•Õï…€•ïÃÅÖ’‡ÅîµµÖ•±Ã∏âÙ§∞Ä–¿¿(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ°âΩë‰∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ§(ÄÄÄÄÄÄÄÅΩ¨ÄÙÅÕïπë}ÕµÃ°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§∞ÅâΩë‰§ÏÅ¡…ïŸ•ï‹ÄÙÅâΩë‰(ÄÄÄÅï±ÕîËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâQÂ¡îÅ•πŸÖ±•ëîâÙ§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–ÅΩ¨ËÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ3äeïπŸΩ§ÅÑÉ•ç°Ω◊§∏Å[•…•ô•ïËÅ±ÑÅçΩπô•ù’…Ö—•Ω∏Åï–Å±ïÃÅçΩΩ…ëΩπª•ïÃ∏âÙ§∞Ä‘¿»(ÄÄÄÅµï—Ö}ÑÕ¡}—ïµ¡±Ö—îÄÙÅ—ïµ¡±Ö—ï}•êÄÙÙÅòâÖ’—ΩµÖ—•åµµï—ÑµÑÕ¿µÌ≠•πëÙà(ÄÄÄÅÖç—•Ÿ•—Â}—•—±îÄÙÄ†(ÄÄÄÄÄÄÄÅòâÏùµµÖ•∞úÅ•òÅ≠•πêÄÙÙÄùïµÖ•∞úÅï±ÕîÄùM5LùÙÅ5QÅÕ@ÅïπŸΩÁ§ÅµÖπ’ï±±ïµïπ–à(ÄÄÄÄÄÄÄÅ•òÅµï—Ö}ÑÕ¡}—ïµ¡±Ö—îÅï±Õî(ÄÄÄÄÄÄÄÄ†âµµÖ•∞ÅïπŸΩÁ§àÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅï±ÕîÄâM5LÅïπŸΩÁ§à§(ÄÄÄÄ§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰°çΩπ—Öç–∞Å≠•πê∞ÅÖç—•Ÿ•—Â}—•—±î∞ÅÕ’â©ïç–Å•òÅ≠•πêÄÙÙÄâïµÖ•∞àÅï±ÕîÅâΩë‰∞Å¡…ïŸ•ï‹§(ÄÄÄÅ•òÅÕï±ïç—ïë}—ïµ¡±Ö—îË(ÄÄÄÄÄÄÄÅÕï±ïç—ïë}—ïµ¡±Ö—ïlâ’ÕÖùï}çΩ’π–âtÄÙÅ•π–°Õï±ïç—ïë}—ïµ¡±Ö—îπùï–†â’ÕÖùï}çΩ’π–à§ÅΩ»Ä¿§Ä¨Äƒ(ÄÄÄÄÄÄÄÅÕï±ïç—ïë}—ïµ¡±Ö—ïlâ±ÖÕ—}’Õïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅ}ç…µ}πΩ‹†§ÏÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°çΩπ—Öç–§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯Ω≈’•ç¨µ…ïµ•πëï»à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)}ç…µ}Õï…•Ö±•Èïê)ëïòÅç…µ}Õïπë}≈’•ç≠}…ïµ•πëï»°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâMïπêÅ—°îÅçΩπô•ù’…ïêÅô•Ÿîµµ•π’—îÅ…ïµ•πëï»Åô…Ω¥ÅÑÅçΩπ—Öç–ÅÕ°ïï–∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ•òÅπΩ–ÅÕ—»°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§ÅΩ»Äàà§πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâIïπÕï•ùπïËÅ±îÅπ’∑•…ºÅëîÅ”•≥•¡°ΩπîÅÖŸÖπ–ÅìäeïπŸΩÂï»Å±îÅ…Ö¡¡ï∞∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅ—ïµ¡±Ö—îÄÙÅ}ç…µ}πÖµïë}—ïµ¡±Ö—î°ëÖ—Ñ∞ÄâÕµÃà∞ÅI5}EU%-}I5%9I}Q5A1Q§(ÄÄÄÅ•òÅπΩ–Å—ïµ¡±Ö—îË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄ†(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄâ1îÅµΩì°±îÅM5LÉ
+¨ÅIÖ¡¡ï∞ÅëÖπÃÄ’µ•∏É
+ÏÅïÕ–Å•π—…Ω’ŸÖâ±îÅëÖπÃÄà(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄàΩç…¥ΩµΩëï±ïÃ∏à(ÄÄÄÄÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îπùï–†âçΩπ—ïπ‘à§∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄ§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–ÅâΩë‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ1îÅµΩì°±îÅM5LÉ
+¨ÅIÖ¡¡ï∞ÅëÖπÃÄ’µ•∏É
+ÏÅïÕ–ÅŸ•ëî∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä–¿‰(ÄÄÄÅ•òÅπΩ–ÅÕïπë}ÕµÃ°çΩπ—Öç–πùï–†â—ï±ï¡°Ωπîà§∞ÅâΩë‰§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâï……Ω»àËÄâ3äeïπŸΩ§Åë‘ÅM5LÉ
+¨ÅIÖ¡¡ï∞ÅëÖπÃÄ’µ•∏É
+ÏÅÑÉ•ç°Ω◊§∏à(ÄÄÄÄÄÄÄÅÙ§∞Ä‘¿»((ÄÄÄÅπΩ‹ÄÙÅ}ç…µ}πΩ‹†§(ÄÄÄÅ}ç…µ}Öç—•Ÿ•—‰†(ÄÄÄÄÄÄÄÅçΩπ—Öç–∞ÄâÕµÃà∞ÅòâM5LÉ
+¨ÅÌI5}EU%-}I5%9I}Q5A1QÙÉ
+ÏÅïπŸΩÁ§à∞(ÄÄÄÄÄÄÄÅâΩë‰∞ÅâΩë‰∞(ÄÄÄÄ§(ÄÄÄÅ—ïµ¡±Ö—ïlâ’ÕÖùï}çΩ’π–âtÄÙÅ•π–°—ïµ¡±Ö—îπùï–†â’ÕÖùï}çΩ’π–à§ÅΩ»Ä¿§Ä¨Äƒ(ÄÄÄÅ—ïµ¡±Ö—ïlâ±ÖÕ—}’Õïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅçΩπ—Öç—lâ’¡ëÖ—ïë}Ö–âtÄÙÅπΩ‹(ÄÄÄÅÕÖŸï}ëÖ—Ñ°ëÖ—Ñ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°çΩπ—Öç–§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥ΩçΩπ—Öç—ÃºÒçΩπ—Öç—}•ê¯ΩµïÕÕÖùîµ¡…ïŸ•ï‹à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}µïÕÕÖùï}¡…ïŸ•ï‹°çΩπ—Öç—}•ê§Ë(ÄÄÄÄààâIïÕΩ±ŸîÅÑÅµïÕÕÖùîÅï·Öç—±‰ÅÖÃÅ•–Å›•±∞ÅâîÅÕïπ–∞Å›•—°Ω’–ÅÕ•ëîÅïôôïç—Ã∏ààà(ÄÄÄÅëÖ—ÑÄÙÅ±ΩÖë}ëÖ—Ñ†§(ÄÄÄÅçΩπ—Öç–ÄÙÅ}ç…µ}çΩπ—Öç–°ëÖ—Ñ∞ÅçΩπ—Öç—}•ê§(ÄÄÄÅ•òÅπΩ–ÅçΩπ—Öç–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâΩπ—Öç–Å•π—…Ω’ŸÖâ±îâÙ§∞Ä–¿–(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ≠•πêÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—Â¡îà§ÅΩ»ÄâïµÖ•∞à§πÕ—…•¿†§π±Ω›ï»†§(ÄÄÄÅ…Ö›}âΩë‰ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩπ—ïπ‘à§ÅΩ»Äàà§(ÄÄÄÅ•òÅ≠•πêÄÙÙÄâïµÖ•∞àË(ÄÄÄÄÄÄÄÅÕ’â©ïç–ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÄÄÄÄÅ¡ÖÂ±ΩÖêπùï–†âÕ’©ï–à∞Äàà§∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö›}âΩë‰∞ÅçΩπ—Öç–∞Å°—µ∞ıQ…’î∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ï(ÄÄÄÄÄÄÄÄÄÄÄÄâ—Â¡îàËÅ≠•πê∞(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ’©ï–àËÅÕ’â©ïç–∞(ÄÄÄÄÄÄÄÄÄÄÄÄâçΩπ—ïπ‘àËÅâΩë‰∞(ÄÄÄÄÄÄÄÄÄÄÄÄâ°—µ∞àËÅ}ç…µ}ïµÖ•±}°—µ∞°âΩë‰∞ÅçΩπ—Öç–§∞(ÄÄÄÄÄÄÄÅÙ§(ÄÄÄÅ•òÅ≠•πêÄÙÙÄâÕµÃàË(ÄÄÄÄÄÄÄÅâΩë‰ÄÙÅ}ç…µ}…ïÕΩ±Ÿï}µïÕÕÖùï}ŸÖ…•Öâ±ïÃ†(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ö›}âΩë‰∞ÅçΩπ—Öç–∞ÅëÖ—Ö}Õ—Ω…îıëÖ—Ñ(ÄÄÄÄÄÄÄÄ§(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâ—Â¡îàËÅ≠•πê∞ÄâÕ’©ï–àËÄàà∞ÄâçΩπ—ïπ‘àËÅâΩëÂÙ§(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâQÂ¡îÅ•πŸÖ±•ëîâÙ§∞Ä–¿¿(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥Ω—ïÕ–µïµÖ•∞à∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}Õïπë}—ïÕ—}ïµÖ•∞†§Ë(ÄÄÄÄààâMïπêÅÑÅ—ïµ¡±Ö—îÅ¡…ïŸ•ï‹Å›•—°Ω’–Åç…ïÖ—•πúÅÖ∏ÅÖç—•Ÿ•—‰ÅΩ∏ÅÑÅçΩπ—Öç–∏ààà(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ…ïç•¡•ïπ–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âëïÕ—•πÖ—Ö•…îà∞Äàà§§πÕ—…•¿†§(ÄÄÄÅÕ’â©ïç–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âÕ’©ï–à∞Äâ%π”•ù…Ö±îÅçÖëïµ‰à§§πÕ—…•¿†§(ÄÄÄÅâΩë‰ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩπ—ïπ‘à∞Äàà§§(ÄÄÄÅ—ïµ¡±Ö—ï}•êÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†â—ïµ¡±Ö—ï}•êà§ÅΩ»Äàà§πÕ—…•¿†§(ÄÄÄÅ—ïµ¡±Ö—îÄÙÅπï·–††(ÄÄÄÄÄÄÄÅ•—ï¥ÅôΩ»Å•—ï¥Å•∏Å±ΩÖë}ëÖ—Ñ†§πùï–†âç…µ}ïµÖ•±}—ïµ¡±Ö—ïÃà∞Åmt§(ÄÄÄÄÄÄÄÅ•òÅ•—ï¥πùï–†â•êà§ÄÙÙÅ—ïµ¡±Ö—ï}•ê(ÄÄÄÄ§∞Å9Ωπî§Å•òÅ—ïµ¡±Ö—ï}•êÅï±ÕîÅ9Ωπî(ÄÄÄÅ•òÅπΩ–Å…îπô’±±µÖ—ç†°»âmyqÕt≠myqÕt≠pπmyqÕt¨à∞Å…ïç•¡•ïπ–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIïπÕï•ùπïËÅ’πîÅÖë…ïÕÕîÅîµµÖ•∞ÅŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–ÅâΩë‰πÕ—…•¿†§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅçΩπ—ïπ‘ÅëîÅ≥äeîµµÖ•∞ÅïÕ–ÅŸ•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ¡±Ö•∏ÄÙÅ…îπÕ’à°»àÒmx˘t¨¯à∞ÄàÄà∞ÅâΩë‰§(ÄÄÄÅ¡±Ö•∏ÄÙÅ°—µ±}µΩë’±îπ’πïÕçÖ¡î°…îπÕ’à°»âqÃ¨à∞ÄàÄà∞Å¡±Ö•∏§§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å}ç…µ}Õïπë}ïµÖ•±}°—µ∞†(ÄÄÄÄÄÄÄÅ…ïç•¡•ïπ–∞ÅÕ’â©ïç–ÅΩ»Äâ%π”•ù…Ö±îÅçÖëïµ‰à∞Å¡±Ö•∏∞ÅâΩë‰∞(ÄÄÄÄÄÄÄÅ—ïµ¡±Ö—îı—ïµ¡±Ö—î∞(ÄÄÄÄ§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ3äeïπŸΩ§Åë‘ÅµÖ•∞ÅëîÅ—ïÕ–ÅÑÉ•ç°Ω◊§∏âÙ§∞Ä‘¿»(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâµïÕÕÖùîàËÄâµµÖ•∞ÅëîÅ—ïÕ–ÅïπŸΩÁ§âÙ§(()Ö¡¿π…Ω’—î†àΩÖ¡§Ωç…¥Ω—ïÕ–µÕµÃà∞Åµï—°ΩëÃılâA=MPât§)±Ωù•π}…ï≈’•…ïê)ëïòÅç…µ}Õïπë}—ïÕ—}ÕµÃ†§Ë(ÄÄÄÄààâMïπêÅÖ∏ÅM5LÅ—ïµ¡±Ö—îÅ¡…ïŸ•ï‹Å›•—°Ω’–Åç…ïÖ—•πúÅÑÅçΩπ—Öç–ÅÖç—•Ÿ•—‰∏ààà(ÄÄÄÅ¡ÖÂ±ΩÖêÄÙÅ…ï≈’ïÕ–πùï—}©ÕΩ∏°Õ•±ïπ–ıQ…’î§ÅΩ»ÅÌÙ(ÄÄÄÅ…ïç•¡•ïπ–ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âëïÕ—•πÖ—Ö•…îà∞Äàà§§πÕ—…•¿†§(ÄÄÄÅâΩë‰ÄÙÅÕ—»°¡ÖÂ±ΩÖêπùï–†âçΩπ—ïπ‘à∞Äàà§§πÕ—…•¿†§(ÄÄÄÅ•òÅπΩ–Å}πΩ…µÖ±•Õï…}—ï±ï¡°Ωπï}ÕµÃ°…ïç•¡•ïπ–§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâIïπÕï•ùπïËÅ’∏Åπ’∑•…ºÅëîÅ”•≥•¡°ΩπîÅŸÖ±•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–ÅâΩë‰Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ1îÅçΩπ—ïπ‘Åë‘ÅM5LÅïÕ–ÅŸ•ëî∏âÙ§∞Ä–¿¿(ÄÄÄÅ•òÅπΩ–ÅÕïπë}ÕµÃ°…ïç•¡•ïπ–∞ÅâΩë‰§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°Ïâï……Ω»àËÄâ3äeïπŸΩ§Åë‘ÅM5LÅëîÅ—ïÕ–ÅÑÉ•ç°Ω◊§∏âÙ§∞Ä‘¿»(ÄÄÄÅ…ï—’…∏Å©ÕΩπ•ô‰°ÏâµïÕÕÖùîàËÄâM5LÅëîÅ—ïÕ–ÅïπŸΩÁ§âÙ§(((åÅ1ÑÅ¡±Ö—ïôΩ…µîÅ¡ï’–Åç°Ö…ùï»Åë•…ïç—ïµïπ–ÅÅÅÖ¡¿ÈÖ¡¡ÅÄÅÕÖπÃÅ¡ÖÕÕï»Å¡Ö»Å±î(åÅ¡Ω•π–Åêùïπ—À•îÅÅÅç…µ}Ö¡¡ÅÄ∏Åπ…ïù•Õ—…ï»Å∞ùï·—ïπÕ•Ω∏Å•ç§ÅùÖ…Öπ—•–ÅÖ±Ω…ÃÅ≈’î(åÅ∞ùA$ÅÖôô•ç£•îÅëÖπÃÅ±îÅI4ÅïÕ–Åâ•ï∏Åë•Õ¡Ωπ•â±îÅ≈’ï∞Å≈’îÅÕΩ•–Å±îÅì•µÖ……Öùî∏)ô…Ω¥Åç…µ}ÕÖ±ïÕôΩ…çï}•µ¡Ω…–Å•µ¡Ω…–Å…ïù•Õ—ï…}ÕÖ±ïÕôΩ…çï}•µ¡Ω…–()…ïù•Õ—ï…}ÕÖ±ïÕôΩ…çï}•µ¡Ω…–†(ÄÄÄÅÖ¡¿∞(ÄÄÄÅç’……ïπ—}’Õï…}ô∏ıç’……ïπ—}’Õï»∞(ÄÄÄÅ±ΩÖë}ëÖ—Ö}ô∏ı±ΩÖë}ëÖ—Ñ∞(ÄÄÄÅ±Ωù•π}…ï≈’•…ïë}ô∏ı±Ωù•π}…ï≈’•…ïê∞(ÄÄÄÅÕÖŸï}ëÖ—Ö}ô∏ıÕÖŸï}ëÖ—Ñ∞(§(()Ö¡¿πâïôΩ…ï}…ï≈’ïÕ–)ëïòÅÕ—Ö…—}ç…µ}…ï≈’ïÕ—}—•µ•πú†§Ë(ÄÄÄÅ•òÅ…ï≈’ïÕ–π¡Ö—†πÕ—Ö…—Õ›•—††àΩÖ¡§Ωç…¥ºà§Ë(ÄÄÄÄÄÄÄÅ…ï≈’ïÕ–πïπŸ•…Ωπlâ•π—ïù…Ö±îπç…µ}Õ—Ö…—ïë}Ö–âtÄÙÅ—•µîπ¡ï…ô}çΩ’π—ï»†§(()Ö¡¿πÖô—ï…}…ï≈’ïÕ–)ëïòÅ…ï¡Ω…—}Õ±Ω›}ç…µ}…ï≈’ïÕ—Ã°…ïÕ¡ΩπÕî§Ë(ÄÄÄÅÕ—Ö…—ïë}Ö–ÄÙÅ…ï≈’ïÕ–πïπŸ•…Ω∏πùï–†â•π—ïù…Ö±îπç…µ}Õ—Ö…—ïë}Ö–à§(ÄÄÄÅ•òÅÕ—Ö…—ïë}Ö–Å•ÃÅ9ΩπîË(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(ÄÄÄÅë’…Ö—•Ωπ}µÃÄÙÄ°—•µîπ¡ï…ô}çΩ’π—ï»†§Ä¥ÅÕ—Ö…—ïë}Ö–§Ä®Äƒ¿¿¿(ÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâMï…Ÿï»µQ•µ•πúâtÄÙÅòâÖ¡¿Ìë’»ıÌë’…Ö—•Ωπ}µÃË∏≈ôÙà(ÄÄÄÅ•òÅë’…Ö—•Ωπ}µÃÄ¯ÙÄƒ¿¿¿Ë(ÄÄÄÄÄÄÄÅÖ¡¿π±Ωùùï»π›Ö…π•πú†(ÄÄÄÄÄÄÄÄÄÄÄÄâÕ±Ω›}ç…µ}…ï≈’ïÕ–Åµï—°ΩêÙïÃÅ¡Ö—†ÙïÃÅÕ—Ö—’ÃÙïÃÅë’…Ö—•Ωπ}µÃÙî∏≈òÅâÂ—ïÃÙïÃà∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ–πµï—°Ωê∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï≈’ïÕ–π¡Ö—†∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëî∞(ÄÄÄÄÄÄÄÄÄÄÄÅë’…Ö—•Ωπ}µÃ∞(ÄÄÄÄÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîπçÖ±ç’±Ö—ï}çΩπ—ïπ—}±ïπù—††§ÅΩ»Ä¿∞(ÄÄÄÄÄÄÄÄ§(ÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(()Ö¡¿πÖô—ï…}…ï≈’ïÕ–)ëïòÅçΩµ¡…ïÕÕ}ç…µ}©ÕΩ∏°…ïÕ¡ΩπÕî§Ë(ÄÄÄÄààâ-ïï¿Å—°îÅçΩµ¡Öç–ÅI4Å¡ÖÂ±ΩÖêÅôÖÕ–ÅΩ∏ÅµΩâ•±îº—ÅçΩππïç—•ΩπÃ∏ààà(ÄÄÄÅ•òÄ°πΩ–Å…ï≈’ïÕ–π¡Ö—†πÕ—Ö…—Õ›•—††àΩÖ¡§Ωç…¥ºà§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëîÄÄ»¿¿ÅΩ»Å…ïÕ¡ΩπÕîπÕ—Ö—’Õ}çΩëîÄ¯ÙÄÃ¿¿(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å…ïÕ¡ΩπÕîπµ•µï—Â¡îÄÑÙÄâÖ¡¡±•çÖ—•Ω∏Ω©ÕΩ∏à(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»Å…ïÕ¡ΩπÕîπ°ïÖëï…Ãπùï–†âΩπ—ïπ–µπçΩë•πúà§(ÄÄÄÄÄÄÄÄÄÄÄÅΩ»ÄâùÈ•¿àÅπΩ–Å•∏Å…ï≈’ïÕ–π°ïÖëï…Ãπùï–†âççï¡–µπçΩë•πúà∞Äàà§π±Ω›ï»†§§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(ÄÄÄÅâΩë‰ÄÙÅ…ïÕ¡ΩπÕîπùï—}ëÖ—Ñ†§(ÄÄÄÅ•òÅ±ï∏°âΩë‰§ÄÄƒ¿»–Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(ÄÄÄÅçΩµ¡…ïÕÕïêÄÙÅùÈ•¿πçΩµ¡…ïÕÃ°âΩë‰∞ÅçΩµ¡…ïÕÕ±ïŸï∞ÙÃ§(ÄÄÄÅ•òÅ±ï∏°çΩµ¡…ïÕÕïê§Ä¯ÙÅ±ï∏°âΩë‰§Ë(ÄÄÄÄÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(ÄÄÄÅ…ïÕ¡ΩπÕîπÕï—}ëÖ—Ñ°çΩµ¡…ïÕÕïê§(ÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâΩπ—ïπ–µπçΩë•πúâtÄÙÄâùÈ•¿à(ÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâΩπ—ïπ–µ1ïπù—†âtÄÙÅÕ—»°±ï∏°çΩµ¡…ïÕÕïê§§(ÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâYÖ…‰âtÄÙÄâççï¡–µπçΩë•πúà(ÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî(()Ö¡¿πÖô—ï…}…ï≈’ïÕ–)ëïòÅçÖç°ï}Ÿï…Õ•Ωπïë}Õ—Ö—•ç}ÖÕÕï—Ã°…ïÕ¡ΩπÕî§Ë(ÄÄÄÄààâYï…Õ•ΩπïêÅÖÕÕï—ÃÅÖ…îÅ•µµ’—Öâ±îÅÖπêÅµ’Õ–ÅπΩ–Åùïπï…Ö—îÅÑÄÃ¿–Å¡ï»Å¡Öùî∏ààà(ÄÄÄÅ•òÅ…ï≈’ïÕ–π¡Ö—†πÕ—Ö…—Õ›•—††àΩÕ—Ö—•åºà§ÅÖπêÅ…ï≈’ïÕ–πÖ…ùÃπùï–†âÿà§Ë(ÄÄÄÄÄÄÄÅ…ïÕ¡ΩπÕîπ°ïÖëï…ÕlâÖç°îµΩπ—…Ω∞âtÄÙÄâ¡’â±•å∞ÅµÖ‡µÖùîÙÃƒ‘Ãÿ¿¿¿∞Å•µµ’—Öâ±îà(ÄÄÄÅ…ï—’…∏Å…ïÕ¡ΩπÕî((()}Õ—Ö…—}›ïëΩô}âÖç≠ù…Ω’πë}ÕÂπå†§(()•òÅ}}πÖµï}|ÄÙÙÄâ}}µÖ•π}|àË(ÄÄÄÅ¡Ω…–ÄÙÅ•π–°ΩÃπïπŸ•…Ω∏πùï–†âA=IPà∞Äƒ¿¿¿¿§§(ÄÄÄÅÖ¡¿π…’∏°°ΩÕ–Ùà¿∏¿∏¿∏¿à∞Å¡Ω…–ı¡Ω…–∞Åëïâ’úıÖ±Õî§
