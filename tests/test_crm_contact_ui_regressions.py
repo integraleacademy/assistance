@@ -811,6 +811,42 @@ def test_registration_appointment_moves_to_secondary_timeline_and_migrates_histo
     assert migrate(with_secondary) is False
 
 
+def test_manual_appointment_stage_is_added_to_default_and_existing_pipelines():
+    backend = APP_PY.read_text(encoding="utf-8")
+    definitions = backend[
+        backend.index("CRM_MANUAL_APPOINTMENT_STATUS ="):
+        backend.index("CALENDLY_API_BASE")
+    ]
+    namespace = {}
+    exec(definitions, namespace)
+
+    manual_status = namespace["CRM_MANUAL_APPOINTMENT_STATUS"]
+    assert manual_status == "RDV programmé sans rendez-vous"
+    default_statuses = namespace["_crm_statuses"]({})
+    assert default_statuses.count(manual_status) == 1
+    assert default_statuses.index("RDV programmé") < default_statuses.index(manual_status)
+    assert default_statuses.index(manual_status) < default_statuses.index("En cours")
+
+    configured = {
+        "crm_statuses": [
+            "Nouveaux",
+            "RDV programmé",
+            "Étape personnalisée",
+            "En cours",
+            manual_status,
+            manual_status,
+            "A relancer",
+            "Disqualifié",
+            "Converti",
+        ]
+    }
+    statuses = namespace["_crm_statuses"](configured)
+    assert statuses.count(manual_status) == 1
+    assert statuses.index("RDV programmé") + 1 == statuses.index(manual_status)
+    assert statuses.index(manual_status) + 1 == statuses.index("En cours")
+    assert "Étape personnalisée" in statuses
+
+
 
 def test_contact_relance_tracking_is_actionable_and_visually_scoped():
     javascript = CRM_JS.read_text(encoding="utf-8")
