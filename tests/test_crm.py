@@ -1083,11 +1083,9 @@ def test_pipeline_financing_stages_follow_real_funding_request_status():
     assert "if(fundingStatus==='en_cours_instruction')statuses.add('Financement FT en cours')" in crm_js
     assert "if(fundingStatus==='refusee')statuses.add('Financement FT refusé')" in crm_js
     assert "const contactHasAnyPipelineStatus=(c,status)=>contactPipelineStatuses(c).includes(status)" in crm_js
-    assert (
-        "const contactHasPipelineStatus=(c,status)=>"
-        "!['Converti','Disqualifié'].includes(c.statut)"
-        "&&contactHasAnyPipelineStatus(c,status)"
-    ) in crm_js
+    assert "const contactHasPipelineStatus=(c,status)=>{" in crm_js
+    assert "if(!isActiveLead(c))return false;" in crm_js
+    assert "return contactHasAnyPipelineStatus(c,status);" in crm_js
     assert "activeContacts.filter(c=>contactHasPipelineStatus(c,s)).length" in crm_js
     assert "list.filter(c=>contactHasPipelineStatus(c,statusFilter))" in crm_js
     assert "!statusFilter||contactHasPipelineStatus(c,statusFilter)" in crm_js
@@ -1384,8 +1382,8 @@ def test_gunicorn_recycles_the_single_worker():
 
     assert "--max-requests ${GUNICORN_MAX_REQUESTS:-5000}" in procfile
     assert "--max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-500}" in procfile
-    assert 'max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "5000"))' in config
-    assert 'max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "500"))' in config
+    assert 'max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "1500"))' in config
+    assert 'max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "150"))' in config
     assert "max_requests = 0" not in config
 
 
@@ -1488,25 +1486,43 @@ def test_funding_request_status_automatically_updates_secondary_timeline(tmp_pat
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
 
 
-def test_primary_pipeline_places_in_progress_after_scheduled_appointment():
+def test_primary_pipeline_places_manual_appointment_before_in_progress():
     statuses = application._crm_statuses({})
 
     scheduled_index = statuses.index("RDV programmé")
-    assert statuses[scheduled_index:scheduled_index + 3] == [
-        "RDV programmé", "En cours", "A relancer",
+    assert statuses[scheduled_index:scheduled_index + 4] == [
+        "RDV programmé", "RDV programmé sans rendez-vous",
+        "En cours", "A relancer",
     ]
 
 
-def test_custom_primary_pipeline_repositions_in_progress_without_duplicate():
+def test_custom_primary_pipeline_adds_manual_appointment_without_reordering_custom_steps():
+    manual_status = "RDV programmé sans rendez-vous"
     statuses = application._crm_statuses({
         "crm_statuses": [
             "Nouveaux", "En cours", "Blocage", "RDV programmé",
+            "Étape personnalisée", manual_status, manual_status,
             "Prochain RDV inscription", "En cours",
         ],
     })
 
+    assert statuses.count(manual_status) == 1
     assert statuses.count("En cours") == 1
-    assert statuses.index("En cours") == statuses.index("RDV programmé") + 1
+    assert statuses.index(manual_status) == statuses.index("RDV programmé") + 1
+    assert statuses.index("En cours") == statuses.index(manual_status) + 1
+    assert statuses.index("Blocage") < statuses.index("Étape personnalisée")
+
+
+def test_manual_appointment_status_is_not_rewritten_without_calendly_appointment():
+    manual_status = "RDV programmé sans rendez-vous"
+    contact = {"id": "manual-appointment", "statut": manual_status}
+
+    changed = application._crm_sync_contact_calendly_status(
+        {"crm_calendly_appointments": []}, contact,
+    )
+
+    assert changed is False
+    assert contact["statut"] == manual_status
 
 
 @pytest.mark.parametrize(
@@ -3130,7 +3146,7 @@ def test_relance_no_answer_reprograms_and_sends_named_templates_only_once(tmp_pa
 
     response = c.post(
         f"/api/crm/contacts/{contact['id']}/relances/{first_relance['id']}/sans-reponse",
-        json={"next_date": "2026-08-15"},
+        json={"next_date": "2026-08-17"},
     )
 
     assert response.status_code == 200
@@ -3139,18 +3155,18 @@ def test_relance_no_answer_reprograms_and_sends_named_templates_only_once(tmp_pa
     assert payload["relance"]["status"] == "no_answer"
     assert payload["relance"]["message_template"] == "Pas de réponse relance"
     assert payload["next_relance"]["status"] == "scheduled"
-    assert payload["contact"]["relance_date"] == "2026-08-15"
+    assert payload["contact"]["relance_date"] == "2026-08-17"
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
     assert "Lina" in deliveries["sms"][0][1]
     assert "Agent de prévention et de sécurité" in deliveries["email"][0][1]
 
     duplicate = c.post(
         f"/api/crm/contacts/{contact['id']}/relances/{first_relance['id']}/sans-reponse",
-        json={"next_date": "2026-08-16"},
+        json={"next_date": "2026-08-18"},
     )
     assert duplicate.status_code == 200
     assert duplicate.get_json()["duplicate"] is True
-    assert duplicate.get_json()["contact"]["relance_date"] == "2026-08-15"
+    assert duplicate.get_json()["contact"]["relance_date"] == "2026-08-17"
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
 
 

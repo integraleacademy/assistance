@@ -8870,7 +8870,8 @@ def lookup_hebergement():
 
 
 CRM_STATUSES = [
-    "Nouveaux", "Blocage", "RDV programmé", "En cours",
+    "Nouveaux", "Blocage", "RDV programmé",
+    "RDV programmé sans rendez-vous", "En cours",
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
@@ -8918,6 +8919,7 @@ def _crm_migrate_registration_appointment_status(contact):
 
 def _crm_statuses(data=None):
     """Retourne le pipeline personnalisable, complété des statuts système."""
+    manual_appointment_status = "RDV programmé sans rendez-vous"
     configured = (data or {}).get("crm_statuses")
     if not isinstance(configured, list):
         return list(CRM_STATUSES)
@@ -8927,13 +8929,15 @@ def _crm_statuses(data=None):
         if (label and label not in clean and label not in CRM_RESERVED_STATUSES
                 and label not in CRM_SECONDARY_ONLY_STATUSES):
             clean.append(label)
-    if "En cours" in clean:
-        clean.remove("En cours")
+    for required_status in (manual_appointment_status, "En cours"):
+        if required_status in clean:
+            clean.remove(required_status)
     insertion_index = (
         clean.index("RDV programmé") + 1
         if "RDV programmé" in clean else len(clean)
     )
-    clean.insert(insertion_index, "En cours")
+    clean.insert(insertion_index, manual_appointment_status)
+    clean.insert(insertion_index + 1, "En cours")
     clean.extend(status for status in CRM_STATUSES if status in CRM_RESERVED_STATUSES)
     return clean
 
