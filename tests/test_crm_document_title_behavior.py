@@ -30,8 +30,11 @@ const sections={
 
 assert.deepEqual({...titles.SECTION_LABELS},sections);
 Object.entries(sections).forEach(([section,label])=>{
- assert.equal(titles.titleForSection(section), label+' - Intégrale CRM');
+ const expected=section==='accueil'?"CRM - Page d'accueil":label+' - Intégrale CRM';
+ assert.equal(titles.titleForSection(section), expected);
 });
+assert.equal(titles.applySection('accueil','Accueil'), "CRM - Page d'accueil");
+assert.equal(global.document.title, "CRM - Page d'accueil");
 assert.equal(titles.applySection('calendrier'), 'Calendrier - Intégrale CRM');
 assert.equal(global.document.title, 'Calendrier - Intégrale CRM');
 assert.equal(titles.titleForSection('pistes','Accueil'), 'Pistes - Intégrale CRM');
@@ -44,6 +47,8 @@ assert.equal(global.document.title, 'Marie-Claire DE LA TOUR - Intégrale CRM');
 assert.equal(titles.titleForContact({prenom:'',nom:''},'contacts'), 'Contacts - Intégrale CRM');
 assert.equal(titles.applyContact({prenom:'',nom:''},'pistes'), 'Pistes - Intégrale CRM');
 assert.equal(global.document.title, 'Pistes - Intégrale CRM');
+assert.equal(titles.applySection('accueil'), "CRM - Page d'accueil");
+assert.equal(global.document.title, "CRM - Page d'accueil");
 assert.equal(titles.titleForSection('unknown'), 'Intégrale Connect CRM');
 assert.equal(titles.reset(), 'Intégrale Connect CRM');
 assert.equal(global.document.title, 'Intégrale Connect CRM');

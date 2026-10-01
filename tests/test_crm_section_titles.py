@@ -1,6 +1,8 @@
 import ast
 from pathlib import Path
 
+from jinja2 import Environment
+
 
 ROOT = Path(__file__).parents[1]
 APP_PY = ROOT / "app.py"
@@ -48,9 +50,16 @@ def test_server_renders_a_specific_title_for_every_allowed_crm_section():
     assert _backend_page_labels() == EXPECTED_LABELS
     assert "if section not in CRM_PAGE_LABELS:" in route
     assert "page_title=CRM_PAGE_LABELS[section]" in route
-    assert "<title>{{ page_title }} - Intégrale CRM</title>" in template
+    head = template.split('</head>', 1)[0]
+    env = Environment(autoescape=True)
+    env.globals['url_for'] = lambda endpoint, **kwargs: '/static/' + kwargs['filename']
+    for section, label in EXPECTED_LABELS.items():
+        rendered = env.from_string(head).render(section=section, page_title=label)
+        expected = "CRM - Page d'accueil" if section == 'accueil' else f'{label} - Intégrale CRM'
+        assert f'<title>{expected}</title>' in rendered
+        assert 'type="image/svg+xml" sizes="any" href="/static/favicon-crm.svg"' in rendered
     assert "'page_label':page_title" in template
-    assert 'CRM_ASSET_VERSION = "20260903-ft-refusal-header-priority-1"' in backend
+    assert "asset_version=CRM_ASSET_VERSION" in route
 
 
 def test_client_navigation_uses_section_titles_without_breaking_contact_titles():
@@ -76,11 +85,15 @@ def test_client_navigation_uses_section_titles_without_breaking_contact_titles()
         in contact
     )
     assert (
-        "C.section=b.dataset.globalPage;"
-        "globalSearch.value='';globalResults.classList.remove('open');"
-        "history.pushState({},'',b.dataset.globalUrl);render()"
+        "navigateCrmSection(b.dataset.globalPage,b.dataset.globalUrl)"
         in javascript
     )
+    navigation = javascript[
+        javascript.index("function navigateCrmSection("):
+        javascript.index("document.querySelectorAll('.sidebar a[data-nav]')")
+    ]
+    assert "C.section=section;" in navigation
+    assert "render();" in navigation
     assert "const SECTION_LABELS=Object.freeze({" in title_javascript
     for section, label in EXPECTED_LABELS.items():
         key = section if section.isidentifier() else f"'{section}'"
@@ -94,4 +107,5 @@ def test_title_module_loads_before_navigation_code_with_the_shared_cache_version
         "filename='crm.js'"
     )
     assert "filename='crm_title.js',v=asset_version" in template
+    assert "home_title_version='20261001-1'" in template
     assert "filename='crm.js',v=asset_version" in template
