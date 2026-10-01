@@ -10808,7 +10808,7 @@ def _crm_calendly_appointment_is_today_or_future(appointment, now=None):
 
 
 def _crm_sync_contact_calendly_status(
-        data, contact, now=None, *, prefer_appointment=False):
+        data, contact, now=None, *, prefer_appointment=False, appointments=None):
     """Align the pipeline with current/future appointments and open follow-ups.
 
     The appointment rule is deliberately based on the calendar day in Paris:
@@ -10821,10 +10821,12 @@ def _crm_sync_contact_calendly_status(
     ``RDV programmé`` without an eligible appointment or follow-up is repaired
     to ``En cours``.
     """
+    candidates = (data.get("crm_calendly_appointments", [])
+                  if appointments is None else appointments)
     has_active_appointment = any(
         item.get("contact_id") == contact.get("id")
         and _crm_calendly_appointment_is_today_or_future(item, now)
-        for item in data.get("crm_calendly_appointments", [])
+        for item in candidates
     )
     current_status = contact.get("statut") or "Nouveaux"
     if current_status in {"Disqualifié", "Converti"}:
@@ -15996,6 +15998,13 @@ def _crm_prepare_contacts(data):
         wedof_funding_statuses = {}
 
     automatic_secondary_labels = set(CRM_FT_SECONDARY_BY_STATUS.values())
+    # Each contact needs only its own appointments. Scanning the full agenda
+    # per contact made every cache rebuild grow as contacts * appointments.
+    appointments_by_contact = {}
+    for appointment in data.get("crm_calendly_appointments", []):
+        appointments_by_contact.setdefault(
+            appointment.get("contact_id"), [],
+        ).append(appointment)
 
     for existing in data.get("crm_contacts", []):
         if _crm_clear_inconsistent_titre_sejour_cnaps(existing):
@@ -16048,7 +16057,9 @@ def _crm_prepare_contacts(data):
             changed = True
         if _crm_ensure_relances(existing):
             changed = True
-        if _crm_sync_contact_calendly_status(data, existing):
+        if _crm_sync_contact_calendly_status(
+                data, existing,
+                appointments=appointments_by_contact.get(existing.get("id"), ())):
             changed = True
         prenom = _crm_format_first_name(existing.get("prenom"))
         nom = _crm_format_last_name(existing.get("nom"))
@@ -16084,25 +16095,30 @@ def _crm_read_model_key():
 def _crm_prepared_read_model():
     """Reuse one prepared CRM model across bootstrap, detail and polling reads."""
     global _CRM_READ_MODEL_KEY, _CRM_READ_MODEL_VALUE
-    key = _crm_read_model_key()
     with _CRM_READ_MODEL_LOCK:
+        # Another reader may have rebuilt the cache while this request waited.
+        # Compare the current revision only after acquiring the shared lock.
+        key = _crm_read_model_key()
         if _CRM_READ_MODEL_VALUE is not None and _CRM_READ_MODEL_KEY == key:
             return _CRM_READ_MODEL_VALUE
 
-        data = load_data()
-        _crm_prepare_contacts(data)
-        _crm_backfill_callback_requests(data)
-        final_key = _crm_read_model_key()
-        if final_key != key:
-            # A webhook or a background WEDOF page landed while the model was
-            # being prepared. Rebuild once from the new atomic snapshot.
+        for attempt in range(2):
             data = load_data()
             _crm_prepare_contacts(data)
             _crm_backfill_callback_requests(data)
             final_key = _crm_read_model_key()
-        _CRM_READ_MODEL_KEY = final_key
-        _CRM_READ_MODEL_VALUE = data
-        return _CRM_READ_MODEL_VALUE
+            if final_key == key:
+                _CRM_READ_MODEL_KEY = key
+                _CRM_READ_MODEL_VALUE = data
+                return data
+            # A concurrent write landed. Retry once, keeping the revision from
+            # BEFORE the load so an older snapshot cannot claim a newer key.
+            key = final_key
+        # Under continuous writes, serve this bounded attempt but let the next
+        # reader rebuild. Never cache old content under the latest revision.
+        _CRM_READ_MODEL_KEY = None
+        _CRM_READ_MODEL_VALUE = None
+        return data
 
 
 def _crm_persist_prepared_contact_if_idle(prepared_contact):
