@@ -8869,8 +8869,10 @@ def lookup_hebergement():
 
 
 
+CRM_MANUAL_APPOINTMENT_STATUS = "RDV programmé sans rendez-vous"
 CRM_STATUSES = [
-    "Nouveaux", "Blocage", "RDV programmé", "En cours",
+    "Nouveaux", "Blocage", "RDV programmé",
+    CRM_MANUAL_APPOINTMENT_STATUS, "En cours",
     "A relancer", "Disqualifié", "Converti",
 ]
 CRM_RESERVED_STATUSES = {"A relancer", "Disqualifié", "Converti"}
@@ -8927,13 +8929,15 @@ def _crm_statuses(data=None):
         if (label and label not in clean and label not in CRM_RESERVED_STATUSES
                 and label not in CRM_SECONDARY_ONLY_STATUSES):
             clean.append(label)
-    if "En cours" in clean:
-        clean.remove("En cours")
+    for required_status in (CRM_MANUAL_APPOINTMENT_STATUS, "En cours"):
+        if required_status in clean:
+            clean.remove(required_status)
     insertion_index = (
         clean.index("RDV programmé") + 1
         if "RDV programmé" in clean else len(clean)
     )
-    clean.insert(insertion_index, "En cours")
+    clean.insert(insertion_index, CRM_MANUAL_APPOINTMENT_STATUS)
+    clean.insert(insertion_index + 1, "En cours")
     clean.extend(status for status in CRM_STATUSES if status in CRM_RESERVED_STATUSES)
     return clean
 
