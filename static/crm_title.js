@@ -21,6 +21,7 @@ const formatLastName=value=>String(value||'').trim().replace(/\s+/g,' ').toLocal
 const displayName=contact=>`${formatFirstName(contact?.prenom)} ${formatLastName(contact?.nom)}`.trim();
 const sectionLabel=(section,serverLabel='')=>String(SECTION_LABELS[section]||serverLabel||'').trim();
 const titleForSection=(section,serverLabel='')=>{
+ if(section==='accueil')return "CRM - Page d'accueil";
  const label=sectionLabel(section,serverLabel);
  return label?`${label} - Intégrale CRM`:DEFAULT_TITLE;
 };

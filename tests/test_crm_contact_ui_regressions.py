@@ -422,7 +422,7 @@ console.log('CRM sidebar state: OK');
     assert "window.CRMSidebarState?.initialize(document)" in javascript
     assert "classList.toggle('sidebar-collapsed')" not in javascript
     assert 'id="crmSidebar"' in template
-    assert template.count("filename='favicon_32x32.png',v=asset_version") == 2
+    assert template.count("filename='favicon_32x32.png',v=asset_version") == 1
     assert 'class="brand-full" src="{{ url_for(\'static\',filename=\'iaconnectcrm.png\',v=asset_version) }}"' in template
     assert 'class="brand-compact" src="{{ url_for(\'static\',filename=\'favicon_32x32.png\',v=asset_version) }}" alt="" aria-hidden="true">' in template
     assert 'class="brand-compact" aria-hidden="true">IA</span>' not in template
