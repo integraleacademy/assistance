@@ -450,6 +450,23 @@ def calculate_financial_readiness_score(contact):
     status = ("blocked" if blockers else
               "action_required" if not score_complete or warnings or actions or pending_funding else
               "ready")
+    # A newly imported booking can have no financing answers at all.  The
+    # training tariff alone is not evidence of a candidate's funding capacity.
+    # Keep the existing provisional lower bound once an answer is available,
+    # including an explicit zero balance or a negative answer.
+    has_financial_answers = any((
+        cpf is not None, cpf_amount_known, wants_ft is not None,
+        bool(ft_status), ft_amount_known, personal_capacity is not None,
+        personal_remainder is not None,
+    ))
+    if not has_financial_answers:
+        score, level = None, None
+        label = "Score à compléter — financement non renseigné"
+        indication = "Renseigner les réponses de financement pour calculer le score"
+        confidence, score_complete, status = 0, False, "action_required"
+        breakdown = []
+        warnings.append("Aucune réponse de financement n’est renseignée dans la fiche ; cela ne signifie pas une absence de financement.")
+        actions.append("Renseigner le CPF disponible et la solution de financement envisagée")
     return {"version": CANDIDATE_SCORING_VERSION, "score": score, "max_score": 100,
             "level": level, "label": label, "indication": indication,
             "operational_status": status, "score_complete": score_complete,
