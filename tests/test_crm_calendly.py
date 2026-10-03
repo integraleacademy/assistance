@@ -630,7 +630,7 @@ def test_webhook_infers_dirigeant_formation_from_event_name(tmp_path, monkeypatc
     assert response.status_code == 200
     updated = client.get(f"/api/crm/contacts/{response.get_json()['contact_id']}").get_json()
     assert updated["formation"] == "DESP"
-    assert updated["desp_type"] == "INITIAL"
+    assert updated["desp_type"] == ""
 
 
 def test_webhook_fills_missing_formation_on_an_existing_contact(tmp_path, monkeypatch):
@@ -649,6 +649,41 @@ def test_webhook_fills_missing_formation_on_an_existing_contact(tmp_path, monkey
     updated = client.get(f"/api/crm/contacts/{contact['id']}").get_json()
     assert updated["formation"] == "DESP"
     assert updated["desp_type"] == "VAE"
+
+
+def test_generic_desp_booking_can_receive_explicit_vae_and_cpf_answers(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    payload = calendly_payload()
+    payload["scheduled_event"]["name"] = "RDV téléphonique formation dirigeant d’entreprise"
+    response = signed_webhook(client, monkeypatch, "invitee.created", payload)
+    assert response.status_code == 200
+    data = application.load_data()
+    contact = application._crm_contact(data, response.get_json()["contact_id"])
+    assert contact["formation"] == "DESP"
+    assert contact["desp_type"] == ""
+
+    entry = {
+        "id": "synthetic-vae-request", "type": "formation", "formation": "DESP_VAE",
+        "prenom": "Lina", "nom_famille": "Martin", "nom": "Lina Martin",
+        "email": "lina@example.com", "telephone": "+33612345678",
+        "cpf_consulte": "OUI", "cpf_montant": "2500", "france_travail": "NON",
+    }
+    matched = application._crm_create_contact_from_secretariat(
+        data, entry, {"prenom": "Lina", "nom": "Martin"},
+    )
+    assert matched is contact
+    assert len(data["crm_contacts"]) == 1
+    assert matched["desp_type"] == "VAE"
+    assert matched["cpf_montant"] == "2500.00"
+    assert matched["financement_ft"] == "NON"
+    assert matched["origine"] == "Calendly"
+    assert matched["statut"] == "RDV programmé"
+
+
+def test_explicit_initial_desp_booking_still_selects_the_initial_journey():
+    assert application._crm_calendly_formation({
+        "scheduled_event": {"name": "RDV DESP formation initiale"},
+    }) == ("DESP", "INITIAL")
 
 
 def test_webhook_rejects_an_invalid_signature(tmp_path, monkeypatch):

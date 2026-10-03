@@ -1070,5 +1070,9 @@ img,svg,video,canvas,iframe{max-width:100%}
 .contact-cnaps-status.professional_card{border-color:#8fd2bb;background:#dcf7ed;color:#087458}
 .activity-publication-feed{border-bottom:1px solid #e5eaf2;background:#f7f9fc}
 .activity-publications-panel .publication-compose{border-top:1px solid #e5eaf2;border-bottom:0}
+.funding-source-note{margin:0 0 16px;padding:16px;border:1px solid #f2d9a0;border-radius:12px;background:#fff9eb;color:#5a4318}
+.funding-source-note strong,.funding-source-note small{display:block}
+.funding-source-note p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;margin:10px 0}
+.funding-source-note small{line-height:1.45;margin-top:4px}
 @media(max-width:1200px){.contact-quick-actions{align-items:flex-end}.contact-header-actions-stack{display:grid;flex:0 0 240px;width:240px;gap:7px;margin-left:auto}.contact-header-badges{position:static;display:grid;width:100%}.contact-header-badges .contact-journey-label,.contact-header-statuses{width:100%}.contact-header-statuses{order:0;flex-wrap:wrap}}
 @media(max-width:650px){.contact-header-actions-stack{flex:1 1 100%;width:100%;margin-left:0}.contact-header-statuses{flex-wrap:wrap}.contact-header-badges .contact-journey-label{font-size:16px}.contact-header-badges .contact-journey-label.formation-a3p{font-size:20px}}

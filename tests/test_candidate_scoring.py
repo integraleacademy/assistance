@@ -296,18 +296,20 @@ def test_unknown_financing_gets_a_lower_bound_without_inventing_money():
 @pytest.mark.parametrize(("formation", "extra"), [
     (formation, extra) for formation, extra, _price in TRAINING_CASES
 ])
-def test_every_supported_training_has_a_numeric_score_with_missing_answers(
+def test_every_supported_training_has_no_score_without_any_financing_answer(
         formation, extra):
     result = calculate_candidate_integration_score({
         "formation": formation,
         **extra,
     })
 
-    assert result["financial_score"] == 0
-    assert result["score"] == 0
-    assert result["score_estimated"] is True
+    assert result["financial_score"] is None
+    assert result["score"] is None
+    assert result["score_estimated"] is False
     assert result["score_complete"] is False
-    assert result["label"] == "Score provisoire — informations à compléter"
+    assert result["label"] == "Score à compléter — financement non renseigné"
+    assert result["financial_data_confidence_percent"] == 0
+    assert result["financial_breakdown"] == []
     assert result["operational_status"] == "action_required"
     assert result["cpf_amount_eur"] is None
     assert result["remaining_to_finance_eur"] is None
