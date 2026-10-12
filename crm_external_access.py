@@ -16,7 +16,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 ROLE = "external_secretariat"
 HOME = "/crm/pistes"
-VERSION = "20261012-external-meta-1"
+VERSION = "20261012-external-meta-2"
 _ACCOUNT_LOCK = threading.RLock()
 EDIT_FIELDS = {
     "prenom", "nom", "telephone", "mail", "formation", "dates_formation",

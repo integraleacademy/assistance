@@ -283,7 +283,8 @@ def test_javascript_is_valid():
         subprocess.run([node, "--check", str(root / "static" / name)], check=True, capture_output=True)
 
 
-def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path):
+@pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
+def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path, browser_name):
     browser_api = pytest.importorskip("playwright.sync_api")
     import threading
     from werkzeug.serving import make_server
@@ -294,9 +295,10 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path)
     base = f"http://127.0.0.1:{server.server_port}"
     try:
         with browser_api.sync_playwright() as playwright:
-            if not Path(playwright.chromium.executable_path).exists():
-                pytest.skip("Playwright browser unavailable")
-            browser = playwright.chromium.launch(args=["--no-sandbox"])
+            engine = getattr(playwright, browser_name)
+            if not Path(engine.executable_path).exists():
+                pytest.skip(f"Playwright {browser_name} unavailable")
+            browser = engine.launch(**({"args": ["--no-sandbox"]} if browser_name == "chromium" else {}))
             admin_context = browser.new_context(viewport={"width": 1440, "height": 1050})
             admin_context.add_cookies([{
                 "name": legacy.app.config["SESSION_COOKIE_NAME"],
@@ -324,6 +326,23 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path)
             external.wait_for_url(base + "/crm/pistes")
             browser_api.expect(external.locator('#count')).to_have_text("1")
             external.screenshot(path=str(tmp_path / "external-list.png"), full_page=True)
+            external.get_by_text("Marie TEST", exact=True).click()
+            browser_api.expect(external.locator('#sheet')).to_be_visible()
+            browser_api.expect(external.locator('#sheetTitle')).to_have_text("Marie TEST")
+            external.get_by_role("button", name="Fermer la fiche").click()
+            external.locator('#leads td').nth(1).click()
+            browser_api.expect(external.locator('#sheet')).to_be_visible()
+            external.keyboard.press("Escape")
+            browser_api.expect(external.locator('#sheet')).not_to_be_visible()
+            external.get_by_role("button", name="Ouvrir la fiche CRM de Marie TEST").focus()
+            external.keyboard.press("Enter")
+            browser_api.expect(external.locator('#sheet')).to_be_visible()
+            external.get_by_role("button", name="Fermer la fiche").click()
+            external.set_viewport_size({"width": 390, "height": 844})
+            external.locator('#leads td').nth(2).click()
+            browser_api.expect(external.locator('#sheet')).to_be_visible()
+            external.get_by_role("button", name="Fermer la fiche").click()
+            external.set_viewport_size({"width": 1440, "height": 1050})
             external.get_by_role("button", name="Traiter la demande de Marie TEST").click()
             browser_api.expect(external.locator('#sheet')).to_be_visible()
             external.get_by_label("Compte CPF", exact=True).select_option("OUI")
