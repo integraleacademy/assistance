@@ -1,6 +1,7 @@
 """Accounts and server-side scope for the external META reception desk."""
 
 import fcntl
+import hashlib
 import hmac
 import json
 import os
@@ -16,7 +17,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 ROLE = "external_secretariat"
 HOME = "/crm/pistes"
-VERSION = "20261012-external-meta-4"
+VERSION = "20261012-external-meta-5"
 _ACCOUNT_LOCK = threading.RLock()
 EDIT_FIELDS = {
     "prenom", "nom", "telephone", "mail", "formation", "lieu", "dates_formation",
@@ -150,7 +151,7 @@ def native_contact_payload(legacy, data, contact):
 
 
 def treatment_statuses(legacy, data):
-    # Conversion and appointment booking remain with the internal team.
+    # Appointment stages are set by a confirmed Calendly booking, not manually.
     permitted = {"Nouveaux", "En cours", "A relancer", "Blocage", "Disqualifié",
                  "RDV programmé sans rendez-vous"}
     return [value for value in legacy._crm_statuses(data) if value in permitted]
@@ -198,7 +199,8 @@ def install(legacy):
                 )
             return render_template("crm_external.html", user=user, version=VERSION,
                                    csrf=csrf_token())
-        if request.endpoint in {"external_meta_list", "external_meta_contact"}:
+        if request.endpoint in {"external_meta_list", "external_meta_contact",
+                                "external_meta_calendly"}:
             return None
         if request.path.startswith("/api/"):
             return jsonify({"error": "Accès limité à Pistes > Nouveaux META."}), 403
@@ -222,6 +224,95 @@ def install(legacy):
         if user.get("role") != role:
             abort(403)
         return user
+
+    def scoped_contact(contact_id):
+        data = legacy._crm_prepared_read_model()
+        contact = legacy._crm_contact(data, contact_id)
+        if not contact or not is_new_meta(contact):
+            abort(make_response(jsonify({
+                "error": "Cette piste n’est plus disponible dans Nouveaux META."
+            }), 404))
+        return data, contact
+
+    @app.route("/api/crm/external-meta/<contact_id>/calendly/<operation>", methods=["GET", "POST"])
+    def external_meta_calendly(contact_id, operation):
+        require_role(ROLE)
+        if (operation not in {"event-types", "availability", "appointments"}
+                or request.method != ("POST" if operation == "appointments" else "GET")):
+            abort(404)
+        if request.method == "POST":
+            _require_csrf()
+        data, contact = scoped_contact(contact_id)
+        payload = request.get_json(silent=True) if request.method == "POST" else None
+        if request.method == "POST" and (
+            not isinstance(payload, dict)
+            or set(payload) - {"event_type", "start_time", "timezone", "location", "answers"}
+            or any(not isinstance(payload.get(key, ""), str) or len(payload.get(key, "")) > 1000
+                   for key in ("event_type", "start_time", "timezone"))
+            or (payload.get("location") is not None and not isinstance(payload["location"], dict))
+            or not isinstance(payload.get("answers", {}), dict)
+        ):
+            return jsonify({"error": "Paramètres de réservation invalides."}), 400
+        try:
+            # The URL contact determines the formation and eligible event types.
+            # Never trust a formation or an invitee identity supplied by the client.
+            available_types = legacy._calendly_event_types_for_context(data)
+            _, contact = scoped_contact(contact_id)
+            event_types = [item for item in available_types
+                           if item.get("active") and legacy._calendly_event_type_matches_formation(
+                               item, contact.get("formation"))]
+            if operation == "event-types":
+                scoped_contact(contact_id)
+                fields = {"uri", "name", "duration", "active", "kind", "booking_method",
+                          "is_paid", "scheduling_url"}
+                question_fields = {"name", "position", "type", "enabled", "required", "answer_choices"}
+                return jsonify([
+                    {**{key: item.get(key) for key in fields},
+                     "locations": [{key: location.get(key, "") for key in ("kind", "location")}
+                                   for location in item.get("locations", []) if isinstance(location, dict)],
+                     "profile": {"name": (item.get("profile") or {}).get("name", "")},
+                     "custom_questions": [
+                         {key: question.get(key) for key in question_fields}
+                         for question in item.get("custom_questions", []) if isinstance(question, dict)
+                     ]}
+                    for item in event_types
+                ])
+            event_uri = (payload if payload is not None else request.args).get("event_type", "")
+            if not any(item.get("uri") == event_uri for item in event_types):
+                return jsonify({"error": "Ce type de rendez-vous n’est pas disponible pour cette piste."}), 403
+            if operation == "availability":
+                scoped_contact(contact_id)
+                response = make_response(legacy.crm_calendly_availability())
+                if response.status_code >= 400:
+                    return response
+                return jsonify([{"start_time": slot.get("start_time")}
+                                for slot in response.get_json() if isinstance(slot, dict)])
+
+            # An OS lock serializes two tabs/workers booking the same prospect.
+            # Other contacts and ordinary CRM edits remain available.
+            digest = hashlib.sha256(contact_id.encode("utf-8")).hexdigest()
+            lock_path = Path(legacy.DATA_FILE).parent / f"crm_external_booking_{digest}.lock"
+            with open(lock_path, "a", encoding="utf-8") as lock:
+                os.chmod(lock_path, 0o600)
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return jsonify({"error": "Une réservation est déjà en cours pour cette piste."}), 409
+                scoped_contact(contact_id)
+                response = make_response(legacy.crm_contact_calendly_appointments(
+                    contact_id, _scope_guard=lambda: scoped_contact(contact_id)[1]))
+            if response.status_code >= 400:
+                return response
+            result = response.get_json()
+            saved = result.get("contact") or {}
+            in_scope = is_new_meta(saved)
+            safe = native_contact_payload(legacy, legacy.load_data(), saved) if in_scope else None
+            appointment = result.get("appointment") or {}
+            fields = {"id", "contact_id", "name", "start_time", "end_time", "status", "host_name"}
+            return jsonify({"in_scope": in_scope, "contact": safe,
+                            "appointment": {key: appointment.get(key, "") for key in fields}}), 201
+        except (legacy.CalendlyAPIError, RuntimeError):
+            return jsonify({"error": "Calendly est momentanément indisponible. Réessayez dans quelques instants."}), 503
 
     @app.get("/crm/acces-secretariat")
     @legacy.login_required

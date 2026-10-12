@@ -1,7 +1,7 @@
 /* Keep the native CRM layout while showing only the external desk's actions. */
 .external-meta [hidden],
 .external-meta #mailBtn,.external-meta #smsBtn,.external-meta #quickReminderBtn,
-.external-meta #calendarBtn,.external-meta #convertBtn,.external-meta .contact-actions,
+.external-meta #convertBtn,.external-meta .contact-actions,
 .external-meta #addSecondaryTimeline,.external-meta #removeSecondaryTimeline,
 .external-meta #contactWedofTab,.external-meta #contactVaeTab,.external-meta #contactRelanceTab,
 .external-meta #contactWedofStatus,.external-meta #contactCnapsStatus,
