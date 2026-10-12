@@ -16,22 +16,23 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 ROLE = "external_secretariat"
 HOME = "/crm/pistes"
-VERSION = "20261012-external-meta-2"
+VERSION = "20261012-external-meta-3"
 _ACCOUNT_LOCK = threading.RLock()
 EDIT_FIELDS = {
-    "prenom", "nom", "telephone", "mail", "formation", "dates_formation",
+    "prenom", "nom", "telephone", "mail", "formation", "lieu", "dates_formation",
     "cpf", "cpf_montant", "cpf_palier", "identite_creation", "identite_ok",
-    "financement_ft", "inscrit_ft", "financement_perso_possible",
+    "financement_ft", "inscrit_ft", "financement_perso_possible", "reste_a_charge_perso",
     "carte_pro", "titre_sejour", "titre_sejour_cnaps", "antecedents", "garde_vue",
     "compte_cnaps", "integration_dracar", "desp_type", "commentaires",
     "qualification_flag", "prochaine_action_manuelle", "statut",
     "relance_date", "relance_motif", "disqualification_reason",
     "disqualification_detail",
 }
-READ_FIELDS = EDIT_FIELDS | {"id", "lieu", "created_at", "updated_at"}
+READ_FIELDS = EDIT_FIELDS | {"id", "created_at", "updated_at", "commercial", "prix_vente",
+                            "statut_demande_financement_ft", "montant_accorde_ft"}
 YES_NO_FIELDS = {
     "cpf", "identite_creation", "identite_ok", "financement_ft", "inscrit_ft",
-    "financement_perso_possible", "carte_pro", "titre_sejour", "antecedents",
+    "financement_perso_possible", "reste_a_charge_perso", "carte_pro", "titre_sejour", "antecedents",
     "garde_vue", "compte_cnaps", "integration_dracar",
 }
 
@@ -133,6 +134,21 @@ def contact_payload(contact, *, detail=True):
     return result
 
 
+def native_contact_payload(legacy, data, contact):
+    """Use the real sheet's calculated values, keeping an explicit projection."""
+    native = legacy._crm_contact_response(contact, data)
+    result = contact_payload(native)
+    result["integration_score"] = native["integration_score"]
+    appointment_fields = {"id", "contact_id", "name", "start_time", "end_time", "status",
+                          "response_status", "response_status_updated_at", "host_name"}
+    result["appointments"] = [
+        {key: item.get(key, "") for key in appointment_fields}
+        for item in data.get("crm_calendly_appointments", [])
+        if isinstance(item, dict) and str(item.get("contact_id")) == str(contact["id"])
+    ]
+    return result
+
+
 def treatment_statuses(legacy, data):
     # Conversion and appointment booking remain with the internal team.
     permitted = {"Nouveaux", "En cours", "A relancer", "Blocage", "Disqualifié",
@@ -161,13 +177,25 @@ def install(legacy):
             return None
         if request.endpoint == "static" and request.method in {"GET", "HEAD"}:
             allowed_assets = {"logo.png", "iaconnectcrm.png", "favicon_32x32.png",
-                              "crm_external.css", "crm_external.js"}
+                              "crm_external.css", "crm_external.js", "favicon-crm.svg",
+                              "crm.css", "crm_workspace.css", "crm_dashboard_origins.css",
+                              "crm_title.js", "crm_sidebar_state.js", "crm_appointment_state.js",
+                              "crm_workspace.js", "crm.js", "crm_external_contact.js",
+                              "crm_external_contact.css"}
             if (request.view_args or {}).get("filename") in allowed_assets:
                 return None
         if request.endpoint in {"crm", "crm_uppercase"} and request.method in {"GET", "HEAD"}:
             section = (request.view_args or {}).get("section")
             if request.path != HOME or section != "pistes":
                 return redirect(HOME)
+            if request.args.get("fiche"):
+                data = legacy._crm_prepared_read_model()
+                return render_template(
+                    "crm.html", user=user, section="pistes", page_title="Nouveaux META",
+                    statuses=treatment_statuses(legacy, data), crm_team=[],
+                    asset_version=VERSION, external_meta=True, external_csrf=csrf_token(),
+                    external_edit_fields=sorted(EDIT_FIELDS),
+                )
             return render_template("crm_external.html", user=user, version=VERSION,
                                    csrf=csrf_token())
         if request.endpoint in {"external_meta_list", "external_meta_contact"}:
@@ -256,7 +284,8 @@ def install(legacy):
         contacts = [contact_payload(contact, detail=False)
                     for contact in data.get("crm_contacts", []) if is_new_meta(contact)]
         contacts.sort(key=lambda contact: str(contact.get("created_at") or ""), reverse=True)
-        return jsonify({"contacts": contacts, "statuses": treatment_statuses(legacy, data)})
+        return jsonify({"contacts": contacts, "statuses": treatment_statuses(legacy, data),
+                        "formation_sessions": legacy.get_upcoming_formation_sessions(data)})
 
     @app.route("/api/crm/external-meta/<contact_id>", methods=["GET", "PATCH"])
     def external_meta_contact(contact_id):
@@ -266,7 +295,7 @@ def install(legacy):
             contact = legacy._crm_contact(data, contact_id)
             if not contact or not is_new_meta(contact):
                 return jsonify({"error": "Cette piste n’est plus disponible dans Nouveaux META."}), 404
-            return jsonify(contact_payload(contact))
+            return jsonify(native_contact_payload(legacy, data, contact))
         _require_csrf()
         payload = request.get_json(silent=True)
         if (not isinstance(payload, dict) or not payload
@@ -303,4 +332,4 @@ def install(legacy):
                 return response
             in_scope = is_new_meta(contact)
             return jsonify({"in_scope": in_scope,
-                            "contact": contact_payload(contact) if in_scope else None})
+                            "contact": native_contact_payload(legacy, data, contact) if in_scope else None})
