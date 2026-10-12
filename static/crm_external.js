@@ -52,6 +52,10 @@
   function open(id) { location.assign(`/crm/pistes?fiche=${encodeURIComponent(id)}`); }
 
   document.querySelector('#search').addEventListener('input', rows);
+  if (sessionStorage.getItem('crm-external-booking-confirmed') === '1') {
+    sessionStorage.removeItem('crm-external-booking-confirmed');
+    notify('Rendez-vous confirmé. La piste a quitté « Nouveaux META » et figure dans le suivi des rendez-vous.');
+  }
   document.querySelector('#refresh').addEventListener('click', () => load().catch(error => notify(error.message, true)));
   tbody.addEventListener('click', event => { const target = event.target.closest('[data-open]'); if (target) open(target.dataset.open); });
   load().catch(error => { document.querySelector('#listStatus').textContent = 'Chargement impossible'; notify(error.message, true); });

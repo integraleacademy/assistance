@@ -1524,6 +1524,7 @@ function calendlyQuestionHtml(question,c){
   return `<div class="field full"><label>${esc(question.name)}${marker}</label><input type="${question.type==='phone_number'?'tel':'text'}" value="${value}" data-question-position="${question.position}"${required}></div>`;
 }
 async function calendlyModal(c){
+  if(C.external_meta){try{Object.assign(c,await window.CRMExternalMeta.flush(c.id))}catch(error){return toast(error.message,true)}}
   if(!c.mail)return toast('Ajoutez d’abord l’adresse e-mail de la personne.',true);
   modal('Planifier un rendez-vous',`<div class="calendly-booking-loading"><span class="sync-spinner" aria-hidden="true"></span><div><b>Préparation du rendez-vous</b><small>Chargement du type adapté à la formation et des disponibilités…</small></div></div>`,`<button class="btn" id="calCancel">Annuler</button><button class="btn blue" id="calBook" disabled>Confirmer le rendez-vous</button>`,'calendly-modal');
   const dialog=document.querySelector('.calendly-modal');
@@ -1582,6 +1583,7 @@ async function calendlyModal(c){
       bookButton.disabled=true;bookButton.textContent='Création du rendez-vous…';
       try{
         const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments`,{method:'POST',body:JSON.stringify({event_type:selectedType.uri,start_time:selectedStart,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',location,answers})});
+        if(C.external_meta&&window.CRMExternalMeta.finishBooking(result))return;
         Object.assign(c,result.contact||{});if(result.appointment){const index=crmAppointments.findIndex(item=>String(item.id)===String(result.appointment.id)),appointment={...result.appointment,contact:{id:c.id,prenom:c.prenom,nom:c.nom,formation:c.formation,telephone:c.telephone,mail:c.mail}};if(index>=0)crmAppointments[index]=appointment;else crmAppointments.push(appointment);c.activity_counts={...(c.activity_counts||{}),appointments:crmAppointments.filter(item=>String(item.contact_id)===String(c.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase())).length}}closeModal();showContact(c.id);toast('Rendez-vous Calendly planifié');
       }catch(e){toast(e.message,true);bookButton.disabled=false;bookButton.textContent='Confirmer le rendez-vous'}
     };

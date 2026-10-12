@@ -1,6 +1,7 @@
 """The external desk must never inherit the internal CRM's broad access."""
 
 import copy
+import datetime
 import json
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import crm_external_access as access
 
 EMAIL = "desk@example.test"
 PASSWORD = "Test-password-2026"
+EVENT_TYPE = "https://api.calendly.com/event_types/META-A3P"
 
 
 @pytest.fixture
@@ -54,6 +56,49 @@ def clients(tmp_path, monkeypatch):
     with external.session_transaction() as state:
         external_headers = {"X-CSRF-Token": state["external_access_csrf"]}
     return admin, external, admin_headers, external_headers
+
+
+@pytest.fixture
+def calendly_provider(monkeypatch):
+    """Exercise the real booking handler without creating any real invitation."""
+    calls = []
+    start = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)).replace(
+        hour=10, minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
+    event = {"uri": EVENT_TYPE, "name": "Rendez-vous téléphonique A3P", "active": True,
+             "duration": 30, "kind": "solo", "is_paid": False, "booking_method": "instant",
+             "locations": [{"kind": "outbound_call", "secret": "PRIVATE LOCATION"}],
+             "custom_questions": [{"position": 0, "name": "Téléphone", "type": "phone_number",
+                                   "enabled": True, "required": True, "secret": "PRIVATE QUESTION"}],
+             "profile": {"name": "Équipe commerciale", "secret": "PRIVATE PROFILE"},
+             "secret": "PRIVATE PROVIDER DATA"}
+    monkeypatch.setattr(legacy, "_calendly_event_types_for_context", lambda data: [
+        copy.deepcopy(event), {**event, "uri": EVENT_TYPE + "-APS", "name": "Formation APS"},
+        {**event, "uri": EVENT_TYPE + "-OFF", "active": False},
+    ])
+
+    def request(method, path, *, params=None, json_body=None, **kwargs):
+        calls.append((method, path, copy.deepcopy(params or json_body)))
+        if method == "GET" and path == "/event_types/META-A3P":
+            return {"resource": copy.deepcopy(event)}
+        if method == "GET" and path == "/event_type_available_times":
+            return {"collection": [{"start_time": start, "private": "PRIVATE SLOT"}]}
+        if method == "POST" and path == "/invitees":
+            return {"resource": {"uri": "https://api.calendly.com/scheduled_events/META-EVENT/invitees/INVITEE",
+                                 "event": "https://api.calendly.com/scheduled_events/META-EVENT",
+                                 **json_body["invitee"], "status": "active",
+                                 "cancel_url": "PRIVATE CANCEL", "reschedule_url": "PRIVATE RESCHEDULE"}}
+        if method == "GET" and path == "/scheduled_events/META-EVENT":
+            return {"resource": {"uri": "https://api.calendly.com/scheduled_events/META-EVENT",
+                                 "name": event["name"], "status": "active", "start_time": start,
+                                 "end_time": start, "event_type": EVENT_TYPE,
+                                 "event_memberships": [{"user_name": "Conseillère", "user_email": "PRIVATE HOST"}]}}
+        raise AssertionError(f"Unexpected Calendly request: {method} {path}")
+
+    monkeypatch.setattr(legacy, "_calendly_request", request)
+    payload = {"event_type": EVENT_TYPE, "start_time": start, "timezone": "Europe/Paris",
+               "location": {"kind": "outbound_call", "location": "+33600000000"},
+               "answers": {"0": "+33600000000"}}
+    return {"calls": calls, "event": event, "start": start, "payload": payload}
 
 
 def test_account_management_hashes_passwords_and_preserves_internal_accounts(clients):
@@ -119,6 +164,8 @@ def test_scope_matches_new_meta_and_response_does_not_leak_secrets(clients):
     ("delete", "/api/crm/contacts/new-meta"), ("get", "/api/crm/contacts/updates"),
     ("get", "/api/crm/settings"), ("patch", "/api/crm/contacts/bulk"),
     ("post", "/api/crm/contacts/merge"), ("get", "/api/crm/calendly/appointments"),
+    ("get", "/api/crm/calendly/event-types"), ("get", "/api/crm/calendly/availability"),
+    ("post", "/api/crm/contacts/new-meta/calendly/appointments"),
     ("get", "/api/crm/notifications"), ("get", "/api/crm/exports/contacts"),
     ("post", "/api/crm/wedof/sync"), ("post", "/api/crm/test-email"),
     ("get", "/admin"), ("get", "/api/secretariat/crm-contact"),
@@ -411,7 +458,8 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path,
             browser_api.expect(external.locator('#activityFeed')).to_contain_text("Intéressée par la prochaine session.")
             external.locator('#contactInfoTab').click()
             external.screenshot(path=str(tmp_path / "external-native-sheet.png"), full_page=True)
-            for selector in ('#mailBtn', '#calendarBtn', '#convertBtn', '#contactWedofTab', '[name="cnaps_password"]'):
+            browser_api.expect(external.locator('#calendarBtn')).to_be_visible()
+            for selector in ('#mailBtn', '#convertBtn', '#contactWedofTab', '[name="cnaps_password"]'):
                 browser_api.expect(external.locator(selector)).not_to_be_visible()
             # Switching stage immediately must flush the final keystroke even
             # when the native form's 550 ms autosave has not fired yet.
@@ -438,3 +486,216 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path,
     finally:
         server.shutdown()
         worker.join(timeout=5)
+
+
+def test_external_booking_filters_types_and_slots_for_the_server_contact(clients, calendly_provider):
+    _, external, _, _ = clients
+    types = external.get('/api/crm/external-meta/new-meta/calendly/event-types?formation=APS')
+    assert types.status_code == 200
+    assert [item['uri'] for item in types.json] == [EVENT_TYPE]
+    assert 'PRIVATE' not in types.get_data(as_text=True)
+    query = {'event_type': EVENT_TYPE, 'start_time': '2099-01-01T10:00:00Z', 'end_time': '2099-01-08T10:00:00Z'}
+    slots = external.get('/api/crm/external-meta/new-meta/calendly/availability', query_string=query)
+    assert slots.status_code == 200
+    assert slots.json == [{'start_time': calendly_provider['start']}]
+    query['event_type'] = EVENT_TYPE + '-APS'
+    assert external.get('/api/crm/external-meta/new-meta/calendly/availability', query_string=query).status_code == 403
+    assert len(calendly_provider['calls']) == 1
+
+
+@pytest.mark.parametrize('contact_id', ['other-origin', 'old-meta', 'archived-meta', 'converted-meta', 'unknown'])
+def test_external_booking_denies_other_contacts_before_provider_access(clients, calendly_provider, contact_id):
+    _, external, _, headers = clients
+    for operation in ('event-types', 'availability'):
+        assert external.get(f'/api/crm/external-meta/{contact_id}/calendly/{operation}').status_code == 404
+    assert external.post(f'/api/crm/external-meta/{contact_id}/calendly/appointments',
+                         json=calendly_provider['payload'], headers=headers).status_code == 404
+    assert calendly_provider['calls'] == []
+
+
+def test_external_booking_requires_csrf_and_rejects_spoofed_invitees_or_types(clients, calendly_provider):
+    admin, external, _, headers = clients
+    path = '/api/crm/external-meta/new-meta/calendly/appointments'
+    payload = calendly_provider['payload']
+    assert external.post(path, json=payload).status_code == 403
+    assert legacy.app.test_client().post(path, json=payload).status_code == 401
+    assert admin.post(path, json=payload, headers=headers).status_code == 403
+    assert external.post(path, json={**payload, 'invitee': {'email': 'other@example.test'}}, headers=headers).status_code == 400
+    assert external.post(path, json={**payload, 'event_type': EVENT_TYPE + '-APS'}, headers=headers).status_code == 403
+    assert calendly_provider['calls'] == []
+
+
+def test_external_booking_uses_native_crm_updates_and_only_returns_safe_confirmation(clients, calendly_provider):
+    _, external, _, headers = clients
+    path = '/api/crm/external-meta/new-meta/calendly/appointments'
+    response = external.post(path, json=calendly_provider['payload'], headers=headers)
+    assert response.status_code == 201
+    assert response.json['in_scope'] is False
+    assert response.json['contact'] is None
+    assert response.json['appointment']['contact_id'] == 'new-meta'
+    assert 'PRIVATE' not in response.get_data(as_text=True)
+    assert 'NEVER EXPOSE' not in response.get_data(as_text=True)
+    data = legacy.load_data()
+    contact = legacy._crm_contact(data, 'new-meta')
+    assert contact['statut'] == 'RDV programmé'
+    assert contact['cnaps_password'] == 'NEVER EXPOSE THIS'
+    assert contact['cout_estime'] == 'SECRET COST'
+    assert any('Rendez-vous Calendly' in activity['title'] for activity in contact['activities'])
+    assert len(data['crm_calendly_appointments']) == 1
+    assert external.post(path, json=calendly_provider['payload'], headers=headers).status_code == 404
+    assert len([call for call in calendly_provider['calls'] if call[:2] == ('POST', '/invitees')]) == 1
+
+
+def test_external_booking_rechecks_scope_after_provider_lookup(clients, calendly_provider, monkeypatch):
+    _, external, _, headers = clients
+    original = legacy._calendly_request
+    def changed_contact(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        if path == '/event_types/META-A3P':
+            data = legacy.load_data()
+            legacy._crm_contact(data, 'new-meta')['statut'] = 'En cours'
+            legacy.save_data(data)
+        return result
+    monkeypatch.setattr(legacy, '_calendly_request', changed_contact)
+    response = external.post('/api/crm/external-meta/new-meta/calendly/appointments',
+                             json=calendly_provider['payload'], headers=headers)
+    assert response.status_code == 404
+    assert not any(call[0] == 'POST' for call in calendly_provider['calls'])
+    assert legacy.load_data()['crm_calendly_appointments'] == []
+
+
+def test_external_booking_serializes_two_simultaneous_requests(clients, calendly_provider, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    _, external, _, headers = clients
+    duplicate = legacy.app.test_client()
+    duplicate.set_cookie(legacy.app.config['SESSION_COOKIE_NAME'], external.get_cookie(legacy.app.config['SESSION_COOKIE_NAME']).value)
+    entered, release = threading.Event(), threading.Event()
+    original = legacy._calendly_request
+    def delayed(method, path, **kwargs):
+        if path == '/event_types/META-A3P':
+            entered.set()
+            assert release.wait(10)
+        return original(method, path, **kwargs)
+    monkeypatch.setattr(legacy, '_calendly_request', delayed)
+    path = '/api/crm/external-meta/new-meta/calendly/appointments'
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(external.post, path, json=calendly_provider['payload'], headers=headers)
+        try:
+            assert entered.wait(5)
+            assert duplicate.post(path, json=calendly_provider['payload'], headers=headers).status_code == 409
+        finally:
+            release.set()
+        assert first.result(timeout=10).status_code == 201
+    assert len([call for call in calendly_provider['calls'] if call[:2] == ('POST', '/invitees')]) == 1
+
+
+@pytest.mark.parametrize('browser_name', ['chromium', 'webkit'])
+def test_browser_can_book_a_phone_appointment_from_external_sheet(clients, calendly_provider, tmp_path, browser_name):
+    browser_api = pytest.importorskip('playwright.sync_api')
+    import threading
+    from werkzeug.serving import make_server
+    _, external, _, _ = clients
+    data = legacy.load_data()
+    legacy._crm_contact(data, 'new-meta')['mail'] = ''
+    legacy.save_data(data)
+    server = make_server('127.0.0.1', 0, legacy.app, threaded=True)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f'http://127.0.0.1:{server.server_port}'
+    try:
+        with browser_api.sync_playwright() as playwright:
+            engine = getattr(playwright, browser_name)
+            if not Path(engine.executable_path).exists():
+                pytest.skip(f'Playwright {browser_name} unavailable')
+            browser = engine.launch(**({'args': ['--no-sandbox']} if browser_name == 'chromium' else {}))
+            context = browser.new_context(viewport={'width': 1440, 'height': 1050})
+            context.route('https://fonts.googleapis.com/**', lambda route: route.fulfill(status=200, content_type='text/css', body=''))
+            context.add_cookies([{'name': legacy.app.config['SESSION_COOKIE_NAME'],
+                                 'value': external.get_cookie(legacy.app.config['SESSION_COOKIE_NAME']).value, 'url': base}])
+            page = context.new_page()
+            errors, requests = [], []
+            page.on('pageerror', lambda error: errors.append(str(error)))
+            page.on('request', lambda request: requests.append(request.url))
+            page.goto(base + '/crm/pistes?fiche=new-meta')
+            browser_api.expect(page.locator('#contactForm')).to_be_visible()
+            page.locator('[name="mail"][form="contactForm"]').fill('confirmed@example.test')
+            page.locator('[name="telephone"][form="contactForm"]').fill('+33612345678')
+            page.get_by_label('Commentaire de suivi').fill('Dernière qualification avant rendez-vous.')
+            page.locator('#calendarBtn').click()
+            browser_api.expect(page.locator('.calendly-modal')).to_be_visible()
+            browser_api.expect(page.locator('#calLocationText')).to_have_value('+33612345678')
+            browser_api.expect(page.locator('#calEventType option')).to_have_count(1)
+            page.locator('[data-slot]').first.click()
+            page.screenshot(path=str(tmp_path / 'external-phone-booking.png'), full_page=True)
+            page.set_viewport_size({'width': 390, 'height': 844})
+            browser_api.expect(page.locator('#calBook')).to_be_visible()
+            # Let the native sidebar's margin transition finish after resizing.
+            page.wait_for_function('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=str(tmp_path / 'external-phone-booking-mobile.png'), full_page=True)
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.locator('#calBook').click()
+            browser_api.expect(page.locator('#count')).to_have_text('0')
+            browser_api.expect(page.locator('#notice')).to_contain_text('Rendez-vous confirmé')
+            stored = legacy._crm_contact(legacy.load_data(), 'new-meta')
+            assert stored['mail'] == 'confirmed@example.test'
+            assert stored['commentaires'] == 'Dernière qualification avant rendez-vous.'
+            assert stored['statut'] == 'RDV programmé'
+            booking = [call[2] for call in calendly_provider['calls'] if call[:2] == ('POST', '/invitees')]
+            assert len(booking) == 1
+            assert booking[0]['invitee']['email'] == 'confirmed@example.test'
+            assert booking[0]['location']['location'] == '+33612345678'
+            assert all('/api/crm/external-' in url for url in requests if '/api/' in url)
+            assert errors == []
+            browser.close()
+    finally:
+        server.shutdown()
+        worker.join(timeout=5)
+
+
+def test_external_booking_preserves_concurrent_edits_to_other_contacts(clients, calendly_provider, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+    admin, external, _, headers = clients
+    snapshot_ready, release_booking, patch_started = threading.Event(), threading.Event(), threading.Event()
+    original = legacy._crm_upsert_calendly_appointment
+
+    def paused_upsert(data, payload, **kwargs):
+        if kwargs.get('source') == 'crm':
+            # The booking has loaded its final snapshot, but has not saved it.
+            snapshot_ready.set()
+            assert release_booking.wait(5)
+        return original(data, payload, **kwargs)
+
+    monkeypatch.setattr(legacy, '_crm_upsert_calendly_appointment', paused_upsert)
+
+    def edit_other_contact():
+        patch_started.set()
+        return admin.patch('/api/crm/contacts/other-origin', json={
+            'commentaires': 'Édition concurrente à conserver',
+        })
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        booking = pool.submit(
+            external.post, '/api/crm/external-meta/new-meta/calendly/appointments',
+            json=calendly_provider['payload'], headers=headers,
+        )
+        try:
+            assert snapshot_ready.wait(5)
+            edit = pool.submit(edit_other_contact)
+            assert patch_started.wait(5)
+            try:
+                edit.result(timeout=0.3)
+                edit_waited = False
+            except FutureTimeoutError:
+                edit_waited = True
+        finally:
+            release_booking.set()
+        assert booking.result(timeout=5).status_code == 201
+        assert edit.result(timeout=5).status_code == 200
+
+    data = legacy.load_data()
+    assert legacy._crm_contact(data, 'other-origin')['commentaires'] == 'Édition concurrente à conserver'
+    assert len(data['crm_calendly_appointments']) == 1
+    assert edit_waited, 'The booking snapshot must be saved before a concurrent CRM edit proceeds.'

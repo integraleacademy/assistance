@@ -15631,7 +15631,7 @@ def crm_calendly_availability():
 
 @app.route("/api/crm/contacts/<contact_id>/calendly/appointments", methods=["GET", "POST"])
 @login_required
-def crm_contact_calendly_appointments(contact_id):
+def crm_contact_calendly_appointments(contact_id, *, _scope_guard=None):
     data = load_data()
     contact = _crm_contact(data, contact_id)
     if not contact:
@@ -15724,6 +15724,10 @@ def crm_contact_calendly_appointments(contact_id):
         event_type = (
             _calendly_request("GET", f"/event_types/{event_type_uuid}").get("resource") or {}
         )
+        # The restricted desk rechecks access after the remote lookup, before
+        # creating an invitation. Its latest saved coordinates are used below.
+        if _scope_guard is not None:
+            contact = _scope_guard()
         if not event_type.get("active"):
             return jsonify({"error": "Ce type de rendez-vous Calendly n'est plus actif."}), 400
         contact_formation = str(contact.get("formation") or "").strip()
@@ -15810,18 +15814,19 @@ def crm_contact_calendly_appointments(contact_id):
                 "event_memberships": [],
             }
         appointment_payload = {**invitee_resource, "scheduled_event": scheduled_event}
-        latest_data = load_data()
-        latest_contact = _crm_contact(latest_data, contact_id)
-        if not latest_contact:
-            return jsonify({"error": "Le rendez-vous a été créé mais la piste n'existe plus."}), 409
-        appointment, latest_contact = _crm_upsert_calendly_appointment(
-            latest_data,
-            appointment_payload,
-            source="crm",
-            contact_id=contact_id,
-            record_activity=True,
-        )
-        save_data(latest_data)
+        with _CRM_RECONCILIATION_LOCK:
+            latest_data = load_data()
+            latest_contact = _crm_contact(latest_data, contact_id)
+            if not latest_contact:
+                return jsonify({"error": "Le rendez-vous a été créé mais la piste n'existe plus."}), 409
+            appointment, latest_contact = _crm_upsert_calendly_appointment(
+                latest_data,
+                appointment_payload,
+                source="crm",
+                contact_id=contact_id,
+                record_activity=True,
+            )
+            save_data(latest_data)
         return jsonify({"appointment": appointment, "contact": latest_contact}), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

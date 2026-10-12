@@ -7,13 +7,14 @@
   const formStates = new WeakMap();
   let writes = Promise.resolve();
   let leaving = false;
+  let booking = null;
 
-  async function request(path, payload, timeout = 20000) {
+  async function request(path, payload, timeout = 20000, method = payload ? 'PATCH' : 'GET') {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
       const response = await fetch(path, {
-        method: payload ? 'PATCH' : 'GET', credentials: 'same-origin', cache: 'no-store',
+        method, credentials: 'same-origin', cache: 'no-store',
         headers: {'Content-Type': 'application/json', 'X-CSRF-Token': config.external_csrf},
         signal: controller.signal, ...(payload ? {body: JSON.stringify(payload)} : {}),
       });
@@ -76,12 +77,36 @@
   }
 
   async function api(url, options = {}) {
-    const path = new URL(url, location.origin).pathname;
+    const parsed = new URL(url, location.origin), path = parsed.pathname;
     const method = (options.method || 'GET').toUpperCase();
     const body = options.body ? JSON.parse(options.body) : {};
     if (path === '/api/crm/bootstrap' && method === 'GET') {
       const data = await request('/api/crm/external-meta');
       return {...data, contacts: data.contacts.map(contact => ({...contact, _summary: true}))};
+    }
+    if (method === 'GET' && ['/api/crm/calendly/event-types', '/api/crm/calendly/availability'].includes(path)) {
+      const id = new URLSearchParams(location.search).get('fiche');
+      if (!id) throw new Error('Ouvrez d’abord la fiche de la personne.');
+      const operation = path.split('/').pop();
+      return request(`/api/crm/external-meta/${encodeURIComponent(id)}/calendly/${operation}${parsed.search}`, null, 60000);
+    }
+    const appointment = path.match(/^\/api\/crm\/contacts\/([^/]+)\/calendly\/appointments$/);
+    if (appointment && method === 'POST') {
+      if (booking) return booking;
+      const id = decodeURIComponent(appointment[1]);
+      booking = (async () => {
+        await patch(id, {});
+        const operation = writes.then(async () => {
+          if (leaving) throw new Error('Cette piste n’est plus disponible dans Nouveaux META.');
+          const result = await request(`/api/crm/external-meta/${encodeURIComponent(id)}/calendly/appointments`, body, 180000, 'POST');
+          if (result.in_scope) details.set(id, result.contact);
+          else { leaving = true; details.clear(); }
+          return result;
+        });
+        writes = operation.catch(() => {});
+        return operation;
+      })().finally(() => { booking = null; });
+      return booking;
     }
     const match = path.match(/^\/api\/crm\/contacts\/([^/]+)(\/appel)?$/);
     if (match && match[1] !== 'bulk') {
@@ -135,7 +160,7 @@
   }
 
   async function refresh() {
-    if (leaving) return;
+    if (leaving || booking) return;
     try {
       const data = await request('/api/crm/external-meta');
       const id = new URLSearchParams(location.search).get('fiche');
@@ -147,5 +172,13 @@
     } catch (_) { /* A failed refresh must not interrupt typing. */ }
   }
 
-  window.CRMExternalMeta = {api, captureForm, formPayload, prepareForm, restrictControls, refresh};
+  function finishBooking(result) {
+    if (result.in_scope !== false) return false;
+    sessionStorage.setItem('crm-external-booking-confirmed', '1');
+    location.replace('/crm/pistes');
+    return true;
+  }
+
+  window.CRMExternalMeta = {api, captureForm, formPayload, prepareForm, restrictControls, refresh,
+    flush: id => patch(id, {}), finishBooking};
 })();

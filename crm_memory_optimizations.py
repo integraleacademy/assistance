@@ -146,9 +146,9 @@ def install_crm_memory_optimizations(legacy):
 
     @legacy.login_required
     @wraps(original_calendly)
-    def contact_calendly(contact_id):
+    def contact_calendly(contact_id, **kwargs):
         if legacy.request.method != "GET":
-            return original_calendly(contact_id)
+            return original_calendly(contact_id, **kwargs)
         refresh = str(legacy.request.args.get("refresh") or "").strip().lower() in _TRUE
         # Authenticate every request BEFORE coalescing. Scope by logged-in user
         # as well as contact; never share a Flask Response/session across threads.
