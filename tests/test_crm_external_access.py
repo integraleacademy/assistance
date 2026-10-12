@@ -367,6 +367,10 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path,
             browser_api.expect(external.locator('.contact-header-title')).to_have_text("Fiche de Marie TEST")
             assert '/crm/pistes?fiche=new-meta' in external.url
             assert external.locator('#sheet').count() == 0
+            external.go_back()
+            browser_api.expect(external.locator('#count')).to_have_text("1")
+            external.get_by_text("Marie TEST", exact=True).click()
+            browser_api.expect(external.locator('#contactForm')).to_be_visible()
             external.reload()
             browser_api.expect(external.locator('#contactForm')).to_be_visible()
             external.locator('#backList').click()
