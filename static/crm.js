@@ -714,7 +714,8 @@ async function showContact(id,initialTab='contactInfoTab'){
   updateLeadCount();
   if(C.external_meta)replaceContactAppointments(c.id,c.appointments||[]);
   saveRecent(c);
-  history.pushState({},'',contactSheetUrl(id,returnSection));
+  if(C.external_meta&&new URLSearchParams(location.search).get('fiche')===String(id))history.replaceState({},'',contactSheetUrl(id,returnSection));
+  else history.pushState({},'',contactSheetUrl(id,returnSection));
   const last=contactLastContact(c),manualNextAction=manualNextActionValue(c),baseNextAction=window.CRMWorkspace?CRMWorkspace.nextAction(c):manualNextAction||(c.relance_date?`Relance prévue le ${new Date(c.relance_date+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})}`:'Demander les informations manquantes');
   let nextAction=relanceActionWithMotif(c,baseNextAction);
   if(manualNextAction)nextAction=manualNextAction;
