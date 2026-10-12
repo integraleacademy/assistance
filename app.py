@@ -10,6 +10,7 @@ from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
+import crm_external_access
 
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
@@ -2791,7 +2792,14 @@ def current_user():
     ue = session.get("user_email")
     if not ue: 
         return None
-    return USERS.get(ue.lower())
+    internal = USERS.get(ue.lower())
+    if internal:
+        return internal
+    external = crm_external_access.find_user(ue.lower(), DATA_FILE)
+    if (not external or session.get("external_session_version")
+            != external.get("session_version")):
+        return None
+    return {key: value for key, value in external.items() if key != "password_hash"}
 
 
 def can_manage_admin_devis_rappels():
@@ -3293,26 +3301,34 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-        user = USERS.get(email)
+        user = USERS.get(email) or crm_external_access.find_user(email, DATA_FILE)
 
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
         if not _login_attempt_allowed(client_ip):
             flash("Trop de tentatives. Veuillez patienter quelques minutes.", "error")
             return render_template("login.html"), 429
 
-        configured_password = os.environ.get(user["password_env"]) if user else None
-        if user and not configured_password:
+        external = bool(user and user.get("role") == crm_external_access.ROLE)
+        configured_password = os.environ.get(user["password_env"]) if user and not external else None
+        if user and not external and not configured_password:
             app.logger.warning("Compte CRM désactivé : variable %s absente", user["password_env"])
 
-        if user and configured_password and hmac.compare_digest(configured_password, password):
+        authenticated = (
+            crm_external_access.password_matches(user, password) if external else
+            bool(user and configured_password and hmac.compare_digest(configured_password, password))
+        )
+        if authenticated:
             _clear_login_attempts(client_ip)
             session.clear()  # renouvelle les données et l'identité de la session
             session["user_email"] = email
             session["user_name"] = user["name"]
             session["user_role"] = user["role"]
+            if external:
+                session["external_session_version"] = user["session_version"]
             session.permanent = True
 
-            next_url = _safe_next_url(request.args.get("next")) or url_for("crm")
+            next_url = (crm_external_access.HOME if external else
+                        _safe_next_url(request.args.get("next")) or url_for("crm"))
             return redirect(next_url)
 
         _record_login_failure(client_ip)
@@ -19588,6 +19604,9 @@ def cache_versioned_static_assets(response):
     return response
 
 
+
+import sys
+crm_external_access.install(sys.modules[__name__])
 
 _start_wedof_background_sync()
 

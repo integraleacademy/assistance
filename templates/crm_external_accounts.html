@@ -1,0 +1,17 @@
+{% extends 'crm_external_base.html' %}
+{% block title %}Accès secrétariat externe{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">ADMINISTRATION</p><h1>Accès secrétariat externe</h1><p>Des comptes limités à Pistes &gt; Nouveaux META, pour le traitement des nouvelles demandes.</p></div></div>
+<div class="accounts-grid">
+  <section class="panel padded"><h2>Créer un accès</h2><form id="createAccount" class="stack">
+    <label>Nom du collaborateur ou du prestataire<input name="name" required maxlength="120" autocomplete="off"></label>
+    <label>Adresse e-mail de connexion<input name="email" type="email" required maxlength="254" autocomplete="off"></label>
+    <label>Mot de passe<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="new-password"><small>12 caractères minimum.</small></label>
+    <p class="scope-box">Ce compte peut consulter les nouvelles pistes META, compléter leur qualification, consigner un appel et changer leur étape. Les autres rubriques, les exports et l’administration restent inaccessibles.</p>
+    <button class="primary" type="submit">Créer l’accès</button>
+    <p class="muted">La connexion se fait sur la page habituelle du CRM. Aucun e-mail n’est envoyé automatiquement.</p>
+  </form></section>
+  <section class="panel padded"><h2>Accès existants</h2><div id="accounts" aria-live="polite">Chargement…</div></section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='crm_external_accounts.js', v=version) }}"></script>{% endblock %}

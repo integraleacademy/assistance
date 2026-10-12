@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Nouveaux META{% endblock %} — Intégrale Connect</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon_32x32.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='crm_external.css', v=version) }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/crm/pistes"><img src="{{ url_for('static', filename='iaconnectcrm.png') }}" alt="Intégrale Connect CRM"></a>
+    <p class="nav-label">ESPACE DE TRAVAIL</p>
+    {% if user.role == 'admin' %}
+    <a class="nav-link" href="/crm">← Retour au CRM</a>
+    <a class="nav-link active" href="/crm/acces-secretariat">Accès secrétariat externe</a>
+    {% else %}
+    <span class="nav-label">Pistes</span>
+    <a class="nav-link active" href="/crm/pistes">↗ Nouveaux META</a>
+    {% endif %}
+    <div class="user"><b>{{ user.name }}</b><small>{{ 'Administrateur' if user.role == 'admin' else 'Secrétariat externe' }}</small>
+      <form action="/logout" method="post"><button type="submit" class="logout">Se déconnecter</button></form>
+    </div>
+  </aside>
+  <main>
+    <header class="topbar"><span>Intégrale Connect</span><span class="access-badge">{{ 'Administration' if user.role == 'admin' else 'Accès Nouveaux META' }}</span></header>
+    <div class="page">{% block content %}{% endblock %}</div>
+  </main>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <script>window.EXTERNAL_META_CONFIG = {{ {'csrf': csrf}|tojson }};</script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

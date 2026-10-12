@@ -1,0 +1,14 @@
+{% extends 'crm_external_base.html' %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">PISTES</p><h1>Nouveaux META <span class="count" id="count">—</span></h1><p>Consultez les nouvelles demandes et consignez vos échanges avec les prospects.</p></div><button type="button" id="refresh">Actualiser</button></div>
+<section class="panel" aria-label="Nouvelles demandes META">
+  <div class="toolbar"><label class="search-label" for="search">Rechercher une piste<input type="search" id="search" placeholder="Nom, téléphone, e-mail, formation…"></label><span class="muted" id="listStatus" aria-live="polite">Chargement…</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Prospect</th><th>Formation</th><th>Coordonnées</th><th>Demande reçue</th><th></th></tr></thead><tbody id="leads"></tbody></table></div>
+</section>
+<p class="scope-help">Les pistes qui quittent l’étape « Nouveaux » sont reprises par l’équipe commerciale et disparaissent de cet espace.</p>
+<dialog id="sheet" aria-labelledby="sheetTitle">
+  <div class="sheet-header"><div><p class="eyebrow">NOUVEAUX META</p><h2 id="sheetTitle">Fiche prospect</h2></div><button type="button" id="closeSheet" aria-label="Fermer la fiche">✕</button></div>
+  <div id="sheetBody"></div>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='crm_external.js', v=version) }}"></script>{% endblock %}
