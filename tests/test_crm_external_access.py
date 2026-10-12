@@ -152,7 +152,34 @@ def test_only_restricted_page_and_assets_are_served(clients):
         assert 'href="/crm/contacts"' not in body
         assert 'filename=' not in body
     assert external.get("/static/crm_external.js").status_code == 200
-    assert external.get("/static/crm.js").status_code == 403
+    assert external.get("/static/crm.js").status_code == 200
+    assert external.get("/static/crm_salesforce_import.js").status_code == 403
+    sheet = external.get("/crm/pistes?fiche=new-meta").get_data(as_text=True)
+    assert '"external_meta": true' in sheet
+    assert 'filename=' not in sheet
+    assert 'crm_external_contact.js' in sheet
+    assert 'id="adminToolsBtn"' not in sheet
+    assert 'id="newContact"' not in sheet
+    assert 'href="/crm/contacts"' not in sheet
+    assert 'crm_salesforce_import.js' not in sheet
+
+
+def test_native_sheet_projects_score_and_appointments_without_internal_data(clients):
+    admin, external, _, _ = clients
+    data = legacy.load_data()
+    data["crm_ai_candidate_analyses"] = {"new-meta": {"result": {"summary": "PRIVATE INTERNAL ANALYSIS"}}}
+    data["crm_calendly_appointments"] = [
+        {"id": "own", "contact_id": "new-meta", "name": "Rendez-vous", "start_time": "2026-01-01T10:00:00Z", "status": "canceled", "secret": "PRIVATE", "cancel_url": "PRIVATE"},
+        {"id": "other", "contact_id": "old-meta", "name": "PRIVATE OTHER PERSON"},
+    ]
+    legacy.save_data(data)
+    response = external.get("/api/crm/external-meta/new-meta")
+    assert response.status_code == 200
+    assert response.json["integration_score"] == admin.get("/api/crm/contacts/new-meta").json["integration_score"]
+    assert [row["id"] for row in response.json["appointments"]] == ["own"]
+    assert "PRIVATE" not in response.get_data(as_text=True)
+    assert "cnaps_password" not in response.json
+    assert "cout_estime" not in response.json
 
 
 def test_qualification_and_call_are_saved_with_author_then_status_removes_access(clients):
@@ -279,7 +306,7 @@ def test_javascript_is_valid():
     if not node:
         pytest.skip("Node.js unavailable")
     root = Path(__file__).resolve().parents[1]
-    for name in ("crm_external.js", "crm_external_accounts.js"):
+    for name in ("crm_external.js", "crm_external_accounts.js", "crm_external_contact.js", "crm.js"):
         subprocess.run([node, "--check", str(root / "static" / name)], check=True, capture_output=True)
 
 
@@ -300,6 +327,9 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path,
                 pytest.skip(f"Playwright {browser_name} unavailable")
             browser = engine.launch(**({"args": ["--no-sandbox"]} if browser_name == "chromium" else {}))
             admin_context = browser.new_context(viewport={"width": 1440, "height": 1050})
+            # Native CSS imports Google Fonts; don't let a third-party font
+            # outage block script execution in these local workflow tests.
+            admin_context.route("https://fonts.googleapis.com/**", lambda route: route.fulfill(status=200, content_type="text/css", body=""))
             admin_context.add_cookies([{
                 "name": legacy.app.config["SESSION_COOKIE_NAME"],
                 "value": admin.get_cookie(legacy.app.config["SESSION_COOKIE_NAME"]).value,
@@ -317,8 +347,11 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path,
             page.screenshot(path=str(tmp_path / "external-admin.png"), full_page=True)
 
             external_context = browser.new_context(viewport={"width": 1440, "height": 1050})
+            external_context.route("https://fonts.googleapis.com/**", lambda route: route.fulfill(status=200, content_type="text/css", body=""))
             external = external_context.new_page()
             external.on("pageerror", lambda error: errors.append(str(error)))
+            requests = []
+            external.on("request", lambda request: requests.append(request.url))
             external.goto(base + "/login?next=/crm/contacts")
             external.locator('[name="email"]').fill("phone@example.test")
             external.locator('[name="password"]').fill(PASSWORD)
@@ -327,32 +360,66 @@ def test_browser_can_create_access_and_process_a_meta_request(clients, tmp_path,
             browser_api.expect(external.locator('#count')).to_have_text("1")
             external.screenshot(path=str(tmp_path / "external-list.png"), full_page=True)
             external.get_by_text("Marie TEST", exact=True).click()
-            browser_api.expect(external.locator('#sheet')).to_be_visible()
-            browser_api.expect(external.locator('#sheetTitle')).to_have_text("Marie TEST")
-            external.get_by_role("button", name="Fermer la fiche").click()
+            try:
+                browser_api.expect(external.locator('#contactForm')).to_be_visible()
+            except AssertionError as error:
+                raise AssertionError(f"Native sheet failed to open: {errors}; {external.locator('#page').inner_text()}") from error
+            browser_api.expect(external.locator('.contact-header-title')).to_have_text("Fiche de Marie TEST")
+            assert '/crm/pistes?fiche=new-meta' in external.url
+            assert external.locator('#sheet').count() == 0
+            external.reload()
+            browser_api.expect(external.locator('#contactForm')).to_be_visible()
+            external.locator('#backList').click()
             external.locator('#leads td').nth(1).click()
-            browser_api.expect(external.locator('#sheet')).to_be_visible()
-            external.keyboard.press("Escape")
-            browser_api.expect(external.locator('#sheet')).not_to_be_visible()
+            browser_api.expect(external.locator('#contactForm')).to_be_visible()
+            external.locator('#backList').click()
             external.get_by_role("button", name="Ouvrir la fiche CRM de Marie TEST").focus()
             external.keyboard.press("Enter")
-            browser_api.expect(external.locator('#sheet')).to_be_visible()
-            external.get_by_role("button", name="Fermer la fiche").click()
+            browser_api.expect(external.locator('#contactForm')).to_be_visible()
+            external.locator('#backList').click()
             external.set_viewport_size({"width": 390, "height": 844})
             external.locator('#leads td').nth(2).click()
-            browser_api.expect(external.locator('#sheet')).to_be_visible()
-            external.get_by_role("button", name="Fermer la fiche").click()
+            browser_api.expect(external.locator('#contactForm')).to_be_visible()
+            external.screenshot(path=str(tmp_path / "external-native-mobile.png"), full_page=True)
+            assert external.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            external.locator('#backList').click()
             external.set_viewport_size({"width": 1440, "height": 1050})
             external.get_by_role("button", name="Traiter la demande de Marie TEST").click()
-            browser_api.expect(external.locator('#sheet')).to_be_visible()
-            external.get_by_label("Compte CPF", exact=True).select_option("OUI")
-            external.get_by_label("Montant CPF exact (€)").fill("2000")
-            external.get_by_label("Compte rendu de l’appel").fill("Intéressée par la prochaine session.")
-            external.screenshot(path=str(tmp_path / "external-sheet.png"), full_page=True)
-            external.get_by_label("Étape après traitement").select_option("En cours")
-            external.get_by_role("button", name="Enregistrer", exact=True).click()
-            browser_api.expect(external.locator('#sheet')).not_to_be_visible()
+            browser_api.expect(external.locator('#contactForm')).to_be_visible()
+            browser_api.expect(external.locator('#integrationScoreCard')).to_contain_text("Score d’intégration")
+            external.locator('.regulatory-section summary').click()
+            external.locator('label:has(> input[name="carte_pro"][value="NON"])').click()
+            external.locator('label:has(> input[name="compte_cnaps"][value="OUI"])').click()
+            for name in ('cnaps_username', 'cnaps_password', 'cnaps_birth_year'):
+                browser_api.expect(external.locator(f'[name="{name}"]')).not_to_be_visible()
+                browser_api.expect(external.locator(f'[name="{name}"]')).to_be_disabled()
+            browser_api.expect(external.locator('#saveState')).to_have_text("✓ Enregistré")
+            external.locator('.regulatory-section summary').click()
+            external.locator('.funding-section summary').click()
+            external.locator('label:has(> input[name="cpf"][value="OUI"])').click()
+            external.locator('[name="cpf_montant"]').fill("2000")
+            browser_api.expect(external.locator('#saveState')).to_have_text("✓ Enregistré")
+            external.locator('#callBtn').click()
+            external.get_by_label("Compte-rendu", exact=True).fill("Intéressée par la prochaine session.")
+            external.locator('#logCall').click()
+            browser_api.expect(external.locator('.call-modal')).not_to_be_visible()
+            external.locator('#contactActivityTab').click()
+            browser_api.expect(external.locator('#activityFeed')).to_contain_text("Intéressée par la prochaine session.")
+            external.locator('#contactInfoTab').click()
+            external.screenshot(path=str(tmp_path / "external-native-sheet.png"), full_page=True)
+            for selector in ('#mailBtn', '#calendarBtn', '#convertBtn', '#contactWedofTab', '[name="cnaps_password"]'):
+                browser_api.expect(external.locator(selector)).not_to_be_visible()
+            # Switching stage immediately must flush the final keystroke even
+            # when the native form's 550 ms autosave has not fired yet.
+            external.get_by_label("Commentaire de suivi").fill("Projet qualifié avant transmission.")
+            external.locator('[data-primary-step="En cours"]').click()
             browser_api.expect(external.locator('#count')).to_have_text("0")
+            stored = legacy._crm_contact(legacy.load_data(), "new-meta")
+            assert stored["commentaires"] == "Projet qualifié avant transmission."
+            assert stored["cpf_montant"] == "2000.00"
+            assert stored["cnaps_password"] == "NEVER EXPOSE THIS"
+            assert stored["cout_estime"] == "SECRET COST"
+            assert all('/api/crm/external-' in url for url in requests if '/api/' in url)
             assert external.request.get(base + "/api/crm/contacts").status == 403
             external.set_viewport_size({"width": 390, "height": 844})
             external.screenshot(path=str(tmp_path / "external-mobile.png"), full_page=True)

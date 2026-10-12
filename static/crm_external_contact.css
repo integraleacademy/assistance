@@ -1,0 +1,21 @@
+/* Keep the native CRM layout while showing only the external desk's actions. */
+.external-meta [hidden],
+.external-meta #mailBtn,.external-meta #smsBtn,.external-meta #quickReminderBtn,
+.external-meta #calendarBtn,.external-meta #convertBtn,.external-meta .contact-actions,
+.external-meta #addSecondaryTimeline,.external-meta #removeSecondaryTimeline,
+.external-meta #contactWedofTab,.external-meta #contactVaeTab,.external-meta #contactRelanceTab,
+.external-meta #contactWedofStatus,.external-meta #contactCnapsStatus,
+.external-meta .cnaps-nub-field,.external-meta .cnaps-form-action,.external-meta #cnapsPanel,
+.external-meta .ft-request-launch,.external-meta .ft-funding-file-action,
+.external-meta .tracking-details,.external-meta .contact-completeness-action,
+.external-meta #candidateAiCard,.external-meta .publication-compose,
+.external-meta [data-edit-call],.external-meta .crm-preset-group,
+.external-meta #aiBtn,.external-meta .field:has(#disqualifyReactivation),
+.external-meta #calendlyIntegration,.external-meta #appointmentList button,
+.external-meta #appointmentList a,.external-meta #appointmentList select,
+.external-meta .next-appointment-empty small{display:none!important}
+.external-meta .contact-header-coordinate input:disabled{color:inherit;opacity:1}
+.external-meta .external-followup-section{padding:16px}
+.external-meta .external-followup-section label{display:block;font-size:12px;font-weight:700;color:#40516a}
+.external-meta #externalFollowupComment{box-sizing:border-box;width:100%;min-height:100px;margin-top:10px;padding:12px;border:1px solid #dce3ed;border-radius:8px;font:inherit;resize:vertical}
+.external-meta .contact-header-actions-stack{min-width:0}
