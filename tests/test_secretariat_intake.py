@@ -203,9 +203,10 @@ const html=require('fs').readFileSync(0,'utf8');
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(check){for(let i=0;i<200;i++){if(check())return;await wait(5)}throw Error('DOM action timed out')}
 function setup(lookup={contact_id:null}){
-  const calls=[],widgets=[],errors=[],vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e));
+  const calls=[],widgets=[],copied=[],clipboardState={reject:false},errors=[],vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e));
   const dom=new JSDOM(html,{url:'https://intake.test/secretariat',runScripts:'dangerously',virtualConsole:vc,beforeParse(w){
     w.scrollTo=()=>{};w.AbortController=AbortController;
+    Object.defineProperty(w.navigator,'clipboard',{configurable:true,value:{async writeText(value){if(clipboardState.reject)throw Error('Clipboard denied');copied.push(value)}}});
     w.Calendly={initInlineWidget(options){widgets.push(options);options.parentElement.appendChild(w.document.createElement('iframe'))}};
     w.fetch=async(url,options={})=>{const body=JSON.parse(options.body||'{}');calls.push({url,body});let data={};
       if(url.includes('crm-contact'))data=lookup;
@@ -219,7 +220,7 @@ function setup(lookup={contact_id:null}){
   const click=selector=>{const e=$(selector);assert.ok(e,selector);e.click()};
   const step=()=>$('.step:not([hidden])').dataset.step;
   const close=()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[])};
-  return {w,d,$,fill,click,step,close,calls,widgets};
+  return {w,d,$,fill,click,step,close,calls,widgets,copied,clipboardState};
 }
 async function caller(t,type,mail='camille@example.com'){
   t.click(`[data-request="${type}"]`);assert.equal(t.step(),'2');
@@ -250,7 +251,21 @@ async function caller(t,type,mail='camille@example.com'){
     t.click('[name="wants_rdv"][value="oui"]');await until(()=>t.widgets.length===1);
     assert.equal(new URL(t.widgets[0].url).pathname,'/integraleacademy/btsmos');
     assert.ok(t.calls.some(call=>call.url==='/api/secretariat/calendly/prefill-schema?formation=BTS_MOS'));
-    t.click('[name="wants_rdv"][value="non"]');t.click('#reviewRequest');
+    assert.equal(t.$('#bookingLayout').hidden,false);assert.ok(t.$('main').classList.contains('booking-active'));
+    const iframe=t.$('#calendlyInline iframe'),requestsBeforeCopy=t.calls.length;
+    for(const [key,value] of Object.entries({prenom:'Camille',nom:'Martin',email:'camille@example.com',telephone:'0601020304'})){
+      const field=t.$(`[data-caller-field="${key}"]`);assert.equal(field.value,value);assert.equal(field.readOnly,true);
+      t.click(`[data-copy-caller="${key}"]`);await until(()=>t.copied.at(-1)===value&&t.$('#callerCopyStatus').textContent.includes('copié'));
+      assert.match(t.$('#callerCopyStatus').textContent,/copié/);
+    }
+    assert.equal(t.calls.length,requestsBeforeCopy);assert.equal(t.widgets.length,1);assert.equal(t.$('#calendlyInline iframe'),iframe);
+    assert.equal(t.$('#reviewRequest').disabled,true);
+    t.clipboardState.reject=true;t.click('[data-copy-caller="telephone"]');await until(()=>t.$('#callerCopyStatus').textContent.includes('Ctrl+C'));
+    const phone=t.$('#referenceTelephone');assert.equal(t.d.activeElement,phone);assert.equal(phone.selectionStart,0);assert.equal(phone.selectionEnd,phone.value.length);
+    assert.equal(t.copied.length,4);delete t.w.navigator.clipboard;t.click('[data-copy-caller="email"]');await wait(0);
+    assert.equal(t.d.activeElement,t.$('#referenceEmail'));assert.match(t.$('#callerCopyStatus').textContent,/Texte sélectionné/);
+    t.click('[name="wants_rdv"][value="non"]');assert.equal(t.$('#bookingLayout').hidden,true);t.click('#reviewRequest');
+    assert.equal(t.$('main').classList.contains('booking-active'),false);
     t.fill('precision','Projet BTS en alternance');t.click('#finish');await until(()=>t.step()==='8');const saved=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;
     assert.equal(saved.formation_date_souhaitee,'');assert.equal(saved.formation_date_status,'a_definir');assert.equal(saved.rentree_souhaitee,'Septembre 2027');assert.equal(saved.cpf_consulte,undefined);t.close();
   }
@@ -266,9 +281,13 @@ async function caller(t,type,mail='camille@example.com'){
     const saved=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;assert.equal(saved.formation_date_souhaitee,'');assert.match(saved.rdv,/réservé/);t.close();
   }
   {
-    const t=setup();await caller(t,'suivi','');t.fill('precision','Rappel avec rendez-vous');t.click('#addAppointment');t.click('[name="wants_rdv"][value="oui"]');
-    assert.equal(t.$('#bookingEmailField').hidden,false);assert.equal(t.widgets.length,0);t.fill('bookingEmail','camille@example.com');t.click('#confirmBookingEmail');
-    await until(()=>t.widgets.length===1);assert.equal(t.widgets[0].prefill.email,'camille@example.com');assert.equal(new URL(t.widgets[0].url).pathname,'/integraleacademy');t.close();
+    const t=setup();await caller(t,'suivi','');t.fill('prenom','');t.fill('precision','Rappel avec rendez-vous');t.click('#addAppointment');t.click('[name="wants_rdv"][value="oui"]');
+    assert.equal(t.$('#bookingLayout').hidden,false);assert.equal(t.$('#bookingEmailField').hidden,false);assert.equal(t.widgets.length,0);
+    assert.equal(t.$('#referencePrenom').value,'');assert.equal(t.$('[data-copy-caller="prenom"]').disabled,true);
+    assert.equal(t.$('#referenceEmail').value,'');assert.equal(t.$('[data-copy-caller="email"]').disabled,true);
+    t.fill('bookingEmail','camille@example.com');t.click('#confirmBookingEmail');
+    await until(()=>t.widgets.length===1);assert.equal(t.widgets[0].prefill.email,'camille@example.com');assert.equal(new URL(t.widgets[0].url).pathname,'/integraleacademy');
+    assert.equal(t.$('#referenceEmail').value,'camille@example.com');assert.equal(t.$('[data-copy-caller="email"]').disabled,false);t.close();
   }
   {
     const t=setup({contact_id:'known',contact:{prenom:'Camille',nom:'Martin',telephone:'0601020304',email:'updated@example.com'}});
@@ -277,8 +296,13 @@ async function caller(t,type,mail='camille@example.com'){
     t.w.dispatchEvent(new t.w.MessageEvent('message',{origin:'https://calendly.com',data:{event:'calendly.event_scheduled'}}));
     assert.equal(t.$('#reviewRequest').disabled,false);await until(()=>!t.$('#callerMatch').hidden);
     t.click('[data-step="6"] [data-back]');t.click('[data-step="7"] [data-back]');assert.equal(t.step(),'2');t.click('#useCallerMatch');
-    assert.equal(t.$('#email').value,'updated@example.com');assert.equal(t.$('#reviewRequest').disabled,true);
+    assert.equal(t.$('#email').value,'updated@example.com');assert.equal(t.$('#reviewRequest').disabled,true);assert.equal(t.$('#bookingLayout').hidden,true);
+    t.fill('prenom','  Élodie  ');t.fill('nom',"D’Angelo <test>");t.fill('telephone','+33 6 01 02 03 04');
     t.click('#callerSubmit');t.click('#addAppointment');t.click('[name="wants_rdv"][value="oui"]');await until(()=>t.widgets.length===2);
+    assert.equal(t.$('#referencePrenom').value,'Élodie');assert.equal(t.$('#referenceNom').value,"D’Angelo <test>");
+    assert.equal(t.$('#referenceTelephone').value,'+33 6 01 02 03 04');assert.equal(t.$('#referenceEmail').value,'updated@example.com');
+    t.click('[data-copy-caller="email"]');await until(()=>t.copied.at(-1)==='updated@example.com');
+    t.click('[data-copy-caller="telephone"]');await until(()=>t.copied.at(-1)==='+33 6 01 02 03 04');
     assert.equal(t.widgets[1].prefill.email,'updated@example.com');t.click('#reviewRequest');assert.equal(t.step(),'6');
     assert.equal(t.calls.filter(c=>c.url==='/api/secretariat/demandes').length,0);t.close();
   }
