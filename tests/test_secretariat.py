@@ -35,18 +35,17 @@ def test_legacy_callback_form_redirects_to_secretariat(client, monkeypatch, meth
     assert response.headers["Location"] == "/secretariat"
 
 
-def test_secretariat_page_starts_with_caller_information(client, monkeypatch):
+def test_secretariat_page_starts_with_the_three_call_reasons(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
     assert response.status_code == 200
     body = response.data.decode()
-    assert body.index("Informations sur l'appelant") < body.index("Besoin")
-    assert body.index("Besoin") < body.index("Quelle formation est concernée")
-    assert 'data-step="1"><h2>Informations sur l\'appelant' in body
-    assert 'data-step="2" hidden><h2>Besoin</h2>' in body
-    assert "La recherche dans le CRM se lance automatiquement" in body
-    assert 'data-request="formation"' in body
-    assert 'data-request="autre"' in body
+    assert body.index("Quelle est la raison") < body.index("Informations sur l'appelant")
+    assert 'data-step="1"><h2>Quelle est la raison' in body
+    assert 'data-step="2" hidden><h2>Informations sur l' in body
+    for request_type in ("formation", "suivi", "autre"):
+        assert f'data-request="{request_type}"' in body
+    assert "La recherche dans le CRM se lance dès la saisie" in body
 
 
 def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monkeypatch):
@@ -56,7 +55,7 @@ def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monke
     assert response.status_code == 200
     body = response.data.decode()
     action_targets = {
-        1: "callerSubmit",
+        2: "callerSubmit",
         3: "nextFormation",
         4: "nextQualification",
         5: "nextDates",
@@ -70,13 +69,8 @@ def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monke
         assert step.count('class="actions') == 2
         assert 'class="actions actions-top"' in step
         assert f'data-action-proxy="{target}"' in step
-        assert step.count("data-back") == (0 if step_number == 1 else 2)
+        assert step.count("data-back") == 2
 
-    need_step = body.split('data-step="2"', 1)[1].split('data-step="3"', 1)[0]
-    assert need_step.count('class="actions') == 2
-    assert need_step.count("data-back") == 2
-    assert 'data-request="formation"' in need_step
-    assert 'data-request="autre"' in need_step
 
     ids = re.findall(r'\sid="([^"]+)"', body)
     assert len(ids) == len(set(ids))
@@ -143,11 +137,10 @@ def test_secretariat_checks_crm_automatically_but_waits_for_continue(client, mon
     assert b"/api/secretariat/crm-contact" in response.data
     assert b"requestType=existingCrmContactId?'autre':'formation'" not in response.data
     assert b"callerLookupComplete=true" in response.data
-    assert b"Appelant trouv\xc3\xa9 dans le CRM. Cliquez sur" in response.data
-    assert b"Aucune fiche CRM trouv\xc3\xa9e. Cliquez sur" in response.data
+    assert "Appelant trouvé dans le CRM. Vérifiez".encode() in response.data
+    assert "Aucune fiche unique trouvée".encode() in response.data
     assert b"function continueAfterCallerLookup()" in response.data
-    assert b"if(callerLookupComplete){continueAfterCallerLookup();return}" in response.data
-    assert b"callerLookupStatus.hidden=true;showStep(2);requestChoices[0]?.focus()" in response.data
+    assert b"callerForm.reportValidity()" in response.data
     lookup_code = response.data.decode().split(
         "async function lookupCaller()", 1
     )[1].split("function continueAfterCallerLookup()", 1)[0]
@@ -164,9 +157,9 @@ def test_secretariat_need_step_controls_each_request_branch(client, monkeypatch)
     assert b"if(requestType==='formation')" in body
     assert b"showStep(3);formationSearch.focus()" in body
     assert b"showStep(7);precision.focus()" in body
-    assert b"const path=requestType==='autre'?[1,2,7,6]" in body
-    assert b"if(requestType==='autre'){save();return}" in body
-    assert b"if(requestType==='autre'){openAppointmentStep();return}" in body
+    assert b"if(requestType!=='formation')return [1,2,7,6]" in body
+    assert b"if(requestType!=='formation'){save();return}" in body
+    assert b"addAppointment.onclick" in body
 
 
 def test_secretariat_displays_training_details_after_new_caller_qualification(client, monkeypatch):
@@ -187,7 +180,7 @@ def test_secretariat_displays_training_details_after_new_caller_qualification(cl
     assert body.index('data-step="4"') < body.index('data-step="5"')
 
 
-def test_secretariat_requires_asking_for_the_preferred_training_session(client, monkeypatch):
+def test_secretariat_offers_a_session_or_dates_to_be_defined(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
@@ -196,7 +189,8 @@ def test_secretariat_requires_asking_for_the_preferred_training_session(client, 
     assert b'name="formation_date_souhaitee"' in response.data
     assert b"if(!selectedSession)" in response.data
     assert b"formation_date_souhaitee:requestType" in response.data
-    assert "Je ne sais pas encore / à définir".encode() not in response.data
+    assert "Dates à définir / Je ne sais pas encore".encode() in response.data
+    assert b'data-undecided="true"' in response.data
 
 
 def test_secretariat_only_exposes_sessions_whose_start_date_has_not_passed(client, monkeypatch):
@@ -806,7 +800,7 @@ def test_secretariat_precision_step_has_no_ai_summary_and_is_required(client, mo
     assert b"/api/secretariat/ai/request-summary" not in response.data
     assert b"payload.notes=details" in response.data
     assert b"/api/secretariat/calendly/appointment" in response.data
-    assert b"if(requestType==='autre'){openAppointmentStep();return}" in response.data
+    assert b"addAppointment.onclick" in response.data
 
 
 def test_secretariat_refreshes_calendly_before_building_summary_email(client, monkeypatch):

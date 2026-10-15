@@ -3881,7 +3881,10 @@ def secretariat():
         key=lambda row: row.get("created_at", ""),
         reverse=True,
     )
-    return render_template("secretariat.html", formations=formations, journal=journal)
+    return render_template(
+        "secretariat.html", formations=formations, journal=journal,
+        recipients=[member["name"] for member in USERS.values()],
+    )
 
 
 _SECRETARIAT_DELIVERY_LOCK = threading.Lock()
@@ -3909,17 +3912,10 @@ def _secretariat_existing_crm_contact(data, payload):
             or (phone and _crm_normalize_phone(contact.get("telephone")) == phone)
         )
 
-    selected_id = str(payload.get("crm_contact_id") or "").strip()
-    if selected_id:
-        selected = next(
-            (contact for contact in contacts
-             if str(contact.get("id") or "") == selected_id),
-            None,
-        )
-        if selected and matches(selected):
-            return selected
-
-    return next((contact for contact in contacts if matches(contact)), None)
+    # A shared phone number or conflicting email must never select the first
+    # record arbitrarily, even when the browser supplies a contact ID.
+    candidates = [contact for contact in contacts if matches(contact)]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 @app.route("/api/secretariat/crm-contact", methods=["POST"])
@@ -3927,7 +3923,63 @@ def api_secretariat_crm_contact():
     """Find an existing CRM record without exposing the contact list."""
     payload = request.get_json(silent=True) or {}
     contact = _secretariat_existing_crm_contact(load_data(), payload)
-    return jsonify({"contact_id": contact.get("id") if contact else None})
+    result = {"contact_id": contact.get("id") if contact else None}
+    user = current_user()
+    # This page is also public. Only an already-authorized internal CRM session
+    # may retrieve stored coordinates; anonymous callers keep the existing ID-only lookup.
+    if contact and user and user.get("email", "").lower() in USERS:
+        result["contact"] = {
+            "prenom": str(contact.get("prenom") or ""),
+            "nom": str(contact.get("nom") or ""),
+            "telephone": str(contact.get("telephone") or ""),
+            "email": str(contact.get("mail") or ""),
+        }
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+_SECRETARIAT_CALENDLY_SCHEMA_CACHE = {}
+_SECRETARIAT_CALENDLY_SCHEMA_LOCK = threading.Lock()
+
+
+@app.get("/api/secretariat/calendly/prefill-schema")
+def secretariat_calendly_prefill_schema():
+    """Read public booking fields for an allowlisted agenda, without invitee data."""
+    code = str(request.args.get("formation") or "").strip()
+    if code and code not in SECRETARIAT_FORMATIONS:
+        return jsonify({"error": "Formation inconnue."}), 404
+    url = SECRETARIAT_FORMATIONS.get(code, {}).get(
+        "calendly", "https://calendly.com/integraleacademy/formation",
+    )
+    now = time.monotonic()
+    with _SECRETARIAT_CALENDLY_SCHEMA_LOCK:
+        cached_at, schema = _SECRETARIAT_CALENDLY_SCHEMA_CACHE.get(url, (0, None))
+        if schema is not None and now - cached_at < 600:
+            return jsonify(schema)
+        schema = {"questions": [], "outbound_call": True}
+        if not _calendly_token():
+            return jsonify(schema)
+        try:
+            event = next((item for item in _calendly_event_types_for_context(load_data())
+                          if str(item.get("scheduling_url") or "").rstrip("/") == url.rstrip("/")), None)
+            if event:
+                schema = {
+                    "outbound_call": any(location.get("kind") == "outbound_call"
+                                         for location in event.get("locations") or []),
+                    "questions": [
+                        {key: question.get(key) for key in ("name", "position", "type", "answer_choices")}
+                        for question in event.get("custom_questions") or []
+                        if question.get("enabled")
+                        and isinstance(question.get("position"), int)
+                        and 0 <= question["position"] < 10
+                    ],
+                }
+        except (CalendlyAPIError, RuntimeError, requests.RequestException):
+            # Booking remains available when metadata cannot be fetched.
+            return jsonify(schema)
+        _SECRETARIAT_CALENDLY_SCHEMA_CACHE[url] = (now, schema)
+    return jsonify(schema)
 
 
 @app.route("/api/secretariat/demandes", methods=["POST"])
@@ -3948,6 +4000,10 @@ def api_secretariat_demandes():
         "formation_centre": str(payload.get("formation_centre", "")).strip(),
         "formation_session_label": str(payload.get("formation_session_label", "")).strip(),
         "formation_date_examen": str(payload.get("formation_date_examen", "")).strip(),
+        "formation_date_status": "a_definir" if payload.get("formation_date_status") == "a_definir" else "",
+        "rentree_souhaitee": str(payload.get("rentree_souhaitee") or "").strip()[:100],
+        "callback_motif": "suivi" if payload.get("callback_motif") == "suivi" else "message",
+        "callback_recipient": str(payload.get("callback_recipient") or "").strip(),
         "telephone": str(payload.get("telephone", "")).strip(),
         "email": str(payload.get("email", "")).strip(),
         "crm_contact_id": str(payload.get("crm_contact_id", "")).strip(),
@@ -3976,8 +4032,23 @@ def api_secretariat_demandes():
         "created_at": now.isoformat(),
         "date": now.strftime("%d/%m/%Y %H:%M"),
     }
+    if entry["callback_recipient"] and entry["callback_recipient"] not in {
+        member["name"] for member in USERS.values()
+    }:
+        return jsonify({"ok": False, "error": "Choisissez un destinataire proposé dans la liste."}), 400
+    if entry["formation_date_status"] == "a_definir":
+        for field in ("formation_date_souhaitee", "formation_session_label", "formation_date_examen"):
+            entry[field] = ""
+    if entry["formation"].startswith("BTS_"):
+        # Switching from APS to BTS must not retain hidden qualification answers.
+        for field in ("cpf_consulte", "cpf_montant", "france_travail", "ft_refus_ok",
+                      "financement_perso", "identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour", "devis"):
+            entry[field] = ""
     data_store = load_data()
     entries = data_store.setdefault("secretariat_demandes", [])
+    if entry["type"] == "autre":
+        matched_contact = _secretariat_existing_crm_contact(data_store, entry)
+        entry["crm_contact_id"] = matched_contact.get("id", "") if matched_contact else ""
     # Le formulaire formation crée déjà une ligne « RDV à prendre ». La dernière
     # étape du parcours l'enrichit au lieu de créer un doublon dans le journal.
     def is_same_recent_submission(row):
@@ -4047,6 +4118,7 @@ def api_secretariat_demandes():
             "Appel traité par le secrétariat",
             f"Type de demande : {entry['type']}",
             f"Session souhaitée : {entry['formation_date_souhaitee']}" if entry["formation_date_souhaitee"] else "",
+            f"Rentrée souhaitée : {entry['rentree_souhaitee']}" if entry["rentree_souhaitee"] else "",
             f"Notes : {entry['notes']}" if entry["notes"] else "",
             f"Rendez-vous : {entry['rdv']}" if entry["rdv"] else "",
             f"Devis demandé : {entry['devis']}" if entry["devis"] else "",
@@ -8906,7 +8978,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20260923-activity-navigation-1"
+CRM_ASSET_VERSION = "20261015-secretariat-intake-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -12178,6 +12250,12 @@ def _crm_create_contact_from_secretariat(
 def _crm_ensure_secretariat_publication(contact, entry):
     """Publish the secretary's call details once on the matched CRM contact."""
     text = str(entry.get("notes") or "").strip()
+    if text:
+        text = "\n".join(filter(None, [
+            f"Destinataire : {entry['callback_recipient']}" if entry.get("callback_recipient") else "",
+            f"Rentrée souhaitée : {entry['rentree_souhaitee']}" if entry.get("rentree_souhaitee") else "",
+            text,
+        ]))
     if not contact or not text:
         return None
 
@@ -18537,10 +18615,12 @@ def _crm_callback_request_status(entry):
 def _crm_callback_request_detail(entry):
     notes = str(entry.get("notes") or "").strip()
     appointment = str(entry.get("rdv") or "").strip()
-    return "\n".join([
+    return "\n".join(filter(None, [
+        f"Destinataire : {entry['callback_recipient']}" if entry.get("callback_recipient") else "",
+        "Motif : Suivi de dossier / Déjà inscrit" if entry.get("callback_motif") == "suivi" else "",
         f"Demande : {notes or 'Aucune précision renseignée.'}",
         f"Rendez-vous : {appointment or 'Non renseigné'}",
-    ])
+    ]))
 
 
 def _crm_legacy_callback_request_detail(entry):
@@ -18718,6 +18798,8 @@ def _crm_callback_requests_payload(data):
             "telephone": str(entry.get("telephone") or ""),
             "email": str(entry.get("email") or ""),
             "notes": str(entry.get("notes") or ""),
+            "recipient": str(entry.get("callback_recipient") or ""),
+            "motif": str(entry.get("callback_motif") or ""),
             "rdv": str(entry.get("rdv") or ""),
             "rdv_status": str(entry.get("rdv_status") or ""),
             "rdv_date": str(entry.get("rdv_date") or ""),
