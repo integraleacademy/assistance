@@ -173,7 +173,7 @@ const contactInStore=id=>contacts.find(c=>c.id===id);
 const mergeContactInStore=(id,update)=>Object.assign(contactInStore(id),update);
 const crmActiveContacts=()=>contacts.filter(c=>!c.archived_at);
 const canonicalCrmOrigin=()=> 'Autre';
-const refreshPipelineAppointments=async()=>{};
+let crmUpdateCursor='',lastCrmRefreshAt=0;
 const updateLeadCount=()=>{},updateVisibleAppointmentData=()=>{};
 const scheduleCrmRefresh=()=>{schedules++};
 let updates=[{id:'one',cpf_status:'accepted'}], fresh=[];
