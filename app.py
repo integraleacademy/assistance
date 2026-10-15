@@ -500,6 +500,8 @@ FORMATION_CENTRES = {
     "paris": "Intégrale Academy Paris",
 }
 
+SECRETARIAT_GENERIC_CALENDLY_URL = "https://calendly.com/integraleacademy"
+
 SECRETARIAT_FORMATIONS = {
     "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "purpose": "Se former à la protection rapprochée des personnes et exercer comme agent de protection physique.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/apr"},
     "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "purpose": "Obtenir les compétences nécessaires aux missions de surveillance, de prévention et de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/aps"},
@@ -507,12 +509,12 @@ SECRETARIAT_FORMATIONS = {
     "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "175 h à distance + 70 h en présentiel", "purpose": "Acquérir l'aptitude professionnelle permettant de créer et diriger une entreprise de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "DESP_VAE": {"short": "VAE DESP", "duration": "Accompagnement individualisé", "price": "3 800 € TTC", "format": "100 % à distance", "purpose": "Faire reconnaître son expérience afin d'obtenir la certification de dirigeant d'entreprise de sécurité privée.", "funding": "CPF, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 500 € TTC", "format": "Hybride", "purpose": "Préparer l'examen VTC et maîtriser les bases nécessaires à l'activité de chauffeur professionnel.", "funding": "CPF, France Travail ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
-    "BTS_MOS": {"short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Piloter des prestations de sécurité et encadrer des équipes opérationnelles.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
-    "BTS_MCO": {"short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Gérer une unité commerciale et développer la relation client et les ventes.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
-    "BTS_CI": {"short": "BTS CI", "label": "BTS Commerce International (CI)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Développer et suivre les activités commerciales d'une entreprise à l'international.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
-    "BTS_NDRC": {"short": "BTS NDRC", "label": "BTS Négociation et Digitalisation de la Relation Client (NDRC)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Développer la clientèle, négocier et piloter la relation client sur tous les canaux.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
-    "BTS_PI": {"short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Se préparer aux métiers de la transaction et de la gestion immobilières.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
-    "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/formation"},
+    "BTS_MOS": {"short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Piloter des prestations de sécurité et encadrer des équipes opérationnelles.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmos"},
+    "BTS_MCO": {"short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Gérer une unité commerciale et développer la relation client et les ventes.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmco"},
+    "BTS_CI": {"short": "BTS CI", "label": "BTS Commerce International (CI)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Développer et suivre les activités commerciales d'une entreprise à l'international.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsci"},
+    "BTS_NDRC": {"short": "BTS NDRC", "label": "BTS Négociation et Digitalisation de la Relation Client (NDRC)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Développer la clientèle, négocier et piloter la relation client sur tous les canaux.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsndrc"},
+    "BTS_PI": {"short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Se préparer aux métiers de la transaction et de la gestion immobilières.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/professionsimmobilieres"},
+    "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": SECRETARIAT_GENERIC_CALENDLY_URL},
 }
 
 SECRETARIAT_WEBSITE_URL = "https://www.integraleacademy.com/"
@@ -3883,6 +3885,7 @@ def secretariat():
     )
     return render_template(
         "secretariat.html", formations=formations, journal=journal,
+        generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
         recipients=[member["name"] for member in USERS.values()],
     )
 
@@ -3950,7 +3953,7 @@ def secretariat_calendly_prefill_schema():
     if code and code not in SECRETARIAT_FORMATIONS:
         return jsonify({"error": "Formation inconnue."}), 404
     url = SECRETARIAT_FORMATIONS.get(code, {}).get(
-        "calendly", "https://calendly.com/integraleacademy/formation",
+        "calendly", SECRETARIAT_GENERIC_CALENDLY_URL,
     )
     now = time.monotonic()
     with _SECRETARIAT_CALENDLY_SCHEMA_LOCK:

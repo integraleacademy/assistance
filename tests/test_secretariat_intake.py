@@ -148,7 +148,7 @@ def test_bts_does_not_reuse_hidden_aps_answers_or_create_a_quote(desk, monkeypat
 @pytest.mark.parametrize("code", ["", *application.SECRETARIAT_FORMATIONS])
 def test_booking_schema_uses_each_configured_agenda_and_caches_public_fields(desk, monkeypatch, code):
     client, _, _ = desk
-    url = application.SECRETARIAT_FORMATIONS.get(code, {}).get("calendly", "https://calendly.com/integraleacademy/formation")
+    url = application.SECRETARIAT_FORMATIONS.get(code, {}).get("calendly", application.SECRETARIAT_GENERIC_CALENDLY_URL)
     calls = []
     monkeypatch.setattr(application, "_calendly_token", lambda: "test-only")
     def event_types(_):
@@ -246,7 +246,11 @@ async function caller(t,type,mail='camille@example.com'){
   {
     const t=setup();await caller(t,'formation');t.click('[data-formation-code="BTS_MOS"]');t.click('#nextFormation');
     assert.equal(t.step(),'5');assert.ok(t.$('[data-undecided]').checked);assert.equal(t.$('[name="cpf_consulte"]').disabled,true);
-    t.fill('rentreeSouhaitee','Septembre 2027');t.click('#nextDates');assert.equal(t.step(),'6');t.click('[name="wants_rdv"][value="non"]');t.click('#reviewRequest');
+    t.fill('rentreeSouhaitee','Septembre 2027');t.click('#nextDates');assert.equal(t.step(),'6');
+    t.click('[name="wants_rdv"][value="oui"]');await until(()=>t.widgets.length===1);
+    assert.equal(new URL(t.widgets[0].url).pathname,'/integraleacademy/btsmos');
+    assert.ok(t.calls.some(call=>call.url==='/api/secretariat/calendly/prefill-schema?formation=BTS_MOS'));
+    t.click('[name="wants_rdv"][value="non"]');t.click('#reviewRequest');
     t.fill('precision','Projet BTS en alternance');t.click('#finish');await until(()=>t.step()==='8');const saved=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;
     assert.equal(saved.formation_date_souhaitee,'');assert.equal(saved.formation_date_status,'a_definir');assert.equal(saved.rentree_souhaitee,'Septembre 2027');assert.equal(saved.cpf_consulte,undefined);t.close();
   }
@@ -264,7 +268,7 @@ async function caller(t,type,mail='camille@example.com'){
   {
     const t=setup();await caller(t,'suivi','');t.fill('precision','Rappel avec rendez-vous');t.click('#addAppointment');t.click('[name="wants_rdv"][value="oui"]');
     assert.equal(t.$('#bookingEmailField').hidden,false);assert.equal(t.widgets.length,0);t.fill('bookingEmail','camille@example.com');t.click('#confirmBookingEmail');
-    await until(()=>t.widgets.length===1);assert.equal(t.widgets[0].prefill.email,'camille@example.com');t.close();
+    await until(()=>t.widgets.length===1);assert.equal(t.widgets[0].prefill.email,'camille@example.com');assert.equal(new URL(t.widgets[0].url).pathname,'/integraleacademy');t.close();
   }
   {
     const t=setup({contact_id:'known',contact:{prenom:'Camille',nom:'Martin',telephone:'0601020304',email:'updated@example.com'}});
