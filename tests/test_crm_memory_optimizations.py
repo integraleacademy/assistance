@@ -89,6 +89,9 @@ class Legacy:
     def _crm_normalize_email(self, value):
         return str(value or "").lower()
 
+    def _crm_normalize_phone(self, value):
+        return str(value or "")
+
     def _crm_now(self):
         return "2026-09-12T08:00:00+02:00"
 
@@ -144,7 +147,7 @@ class MemoryTests(unittest.TestCase):
         legacy = Legacy()
         before = copy.deepcopy(legacy.store)
         self.assertEqual(self.get(legacy, False)[1], 200)
-        self.assertEqual((legacy.loads, legacy.saves, legacy.remote_calls), (1, 0, 0))
+        self.assertEqual((legacy.loads, legacy.saves, legacy.remote_calls), (0, 0, 0))
         self.assertEqual(legacy.store, before)
 
     def test_missing_contact_does_not_copy_database(self):

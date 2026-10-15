@@ -14,7 +14,7 @@ import threading
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 from functools import wraps
 
-VERSION = "20260912-memory-1"
+VERSION = "20261015-memory-2"
 _TRUE = {"1", "true", "yes", "oui"}
 
 
@@ -107,7 +107,41 @@ def _finish_calendly_lookup(legacy, contact_id, fetched, lookup, succeeded, warn
                 "lookup": lookup}, 200
 
 
+def local_calendly_contact(legacy, contact_id, warning=""):
+    """A consultation must not queue behind a save or copy the database."""
+    data = legacy._load_data_snapshot()
+    contact = legacy._crm_contact(data, contact_id)
+    if contact is None:
+        return {"error": "Contact introuvable"}, 404
+    email = legacy._crm_normalize_email(contact.get("mail"))
+    phone = legacy._crm_normalize_phone(contact.get("telephone"))
+    known_ids = {item.get("id") for item in data.get("crm_contacts", [])}
+    appointments = []
+    for item in data.get("crm_calendly_appointments", []):
+        if item.get("contact_id") == contact_id:
+            appointments.append(item)
+        elif item.get("contact_id") not in known_ids and (
+            (email and legacy._crm_normalize_email(item.get("invitee_email")) == email)
+            or (phone and legacy._crm_normalize_phone(item.get("invitee_phone")) == phone)
+        ):
+            # Preserve visibility of legacy orphans without writing during a
+            # consultation. Explicit refresh persists the existing repair rules.
+            appointments.append(dict(item, contact_id=contact_id))
+    appointments = sorted(
+        appointments,
+        key=lambda item: item.get("start_time") or "", reverse=True,
+    )
+    integration = legacy._crm_calendly_status_payload(data)
+    if warning:
+        integration["lookup_warning"] = warning
+    return {"appointments": appointments, "integration": integration,
+            "lookup": {"method": "local", "processed_events": 0,
+                       "matched_appointments": len(appointments)}}, 200
+
+
 def calendly_contact_get(legacy, contact_id, refresh, remote_slots):
+    if not refresh:
+        return local_calendly_contact(legacy, contact_id)
     context, contact = _lookup_identity(legacy, contact_id)
     if contact is None:
         return {"error": "Contact introuvable"}, 404
@@ -120,9 +154,10 @@ def calendly_contact_get(legacy, contact_id, refresh, remote_slots):
                       and state.get("organization")
                       and legacy._crm_normalize_email(contact.get("mail")))
     if refresh and can_lookup:
-        acquired = remote_slots.acquire(timeout=10)
+        acquired = remote_slots.acquire(blocking=False)
         if not acquired:
             warning = "Actualisations Calendly en cours. Les rendez-vous enregistrés restent affichés ; réessayez dans quelques instants."
+            return local_calendly_contact(legacy, contact_id, warning)
         else:
             try:
                 fetched, lookup = legacy._crm_calendly_fetch_contact_appointments(context, contact)

@@ -11,6 +11,7 @@ from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
 import crm_external_access
+from crm_read_cache import LastProjection, UpdateSnapshots
 
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
@@ -8981,7 +8982,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261015-secretariat-intake-1"
+CRM_ASSET_VERSION = "20261015-crm-performance-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -9052,6 +9053,17 @@ class CalendlyAPIError(RuntimeError):
         return str(self.payload.get("title") or "").lower() == "insufficient scope"
 
 
+class CalendlyTransportError(RuntimeError):
+    def __init__(self, *, booking_uncertain=False):
+        self.booking_uncertain = booking_uncertain
+        super().__init__(
+            "La réponse de Calendly n'a pas pu être confirmée. Vérifiez les rendez-vous "
+            "dans Calendly avant toute nouvelle réservation."
+            if booking_uncertain else
+            "Calendly est momentanément injoignable. Réessayez dans quelques instants."
+        )
+
+
 def _calendly_token():
     return (
         os.getenv("CALENDLY_ACCESS_TOKEN")
@@ -9069,28 +9081,49 @@ def _calendly_request(method, path, *, params=None, json_body=None, timeout=25):
     token = _calendly_token()
     if not token:
         raise RuntimeError("CALENDLY_ACCESS_TOKEN n'est pas configuré dans Render.")
-    response = requests.request(
-        method,
-        f"{CALENDLY_API_BASE}{path}",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        params=params,
-        json=json_body,
-        timeout=timeout,
-    )
+    booking = method.upper() == "POST" and path == "/invitees"
+    try:
+        response = requests.request(
+            method,
+            f"{CALENDLY_API_BASE}{path}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            params=params,
+            json=json_body,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        app.logger.warning("calendly_transport_error kind=%s booking=%s", type(exc).__name__, booking)
+        raise CalendlyTransportError(booking_uncertain=booking) from exc
     if response.status_code >= 400:
         try:
             payload = response.json()
         except ValueError:
             payload = {"message": response.text[:500] or "Réponse Calendly invalide."}
+        if not isinstance(payload, dict):
+            payload = {"message": "Réponse Calendly invalide."}
+        # Never log the token, invitee coordinates, answers or provider message.
+        parameters = [
+            str(detail.get("parameter"))
+            for detail in (payload.get("details") or []) if isinstance(detail, dict)
+            and re.fullmatch(r"(?:invitee|event_type|start_time|timezone|location|questions_and_answers)(?:\.[a-z_]+)*", str(detail.get("parameter") or ""))
+        ]
+        title = str(payload.get("title") or "").casefold()
+        code = title if title in {"invalid argument", "unauthenticated", "permission denied", "insufficient scope", "not found", "resource exhausted", "already exists"} else "provider_error"
+        app.logger.warning("calendly_api_error status=%s code=%s parameters=%s booking=%s",
+                           response.status_code, code, ",".join(parameters), booking)
+        if booking and response.status_code >= 500:
+            raise CalendlyTransportError(booking_uncertain=True)
         raise CalendlyAPIError(response.status_code, payload)
     if response.status_code == 204 or not response.content:
         return {}
     try:
         return response.json()
     except ValueError as exc:
+        if booking:
+            raise CalendlyTransportError(booking_uncertain=True) from exc
         raise RuntimeError("Calendly a renvoyé une réponse illisible.") from exc
 
 
@@ -9158,6 +9191,9 @@ def _calendly_context_from_data(data):
 
 
 def _calendly_route_error(exc, *, action=""):
+    if isinstance(exc, CalendlyTransportError):
+        return jsonify({"error": str(exc), "stage": action,
+                        "reason": "booking_unconfirmed" if exc.booking_uncertain else "calendly_unavailable"}), 504
     if isinstance(exc, RuntimeError) and not isinstance(exc, CalendlyAPIError):
         payload = {"error": str(exc)}
         if action:
@@ -9184,10 +9220,13 @@ def _calendly_route_error(exc, *, action=""):
                 "le numéro de téléphone et les réponses obligatoires."
             )
         message = f"Calendly a refusé {action} : {message}.{guidance}".replace("..", ".")
-    payload = {"error": message}
+    payload = {"error": message, "reason": "calendly_rejected"}
     if action:
         payload["stage"] = action
-    return jsonify(payload), 502
+    status = exc.status_code if isinstance(exc, CalendlyAPIError) else 502
+    if status not in {400, 409, 422, 429}:
+        status = 503 if status in {401, 403} else 502
+    return jsonify(payload), status
 
 
 def _crm_normalize_email(value):
@@ -15381,7 +15420,7 @@ def _calendly_create_or_reuse_webhook(context, scope, callback_url):
 @app.route("/api/crm/calendly/status")
 @login_required
 def crm_calendly_status():
-    return jsonify(_crm_calendly_status_payload(load_data()))
+    return jsonify(_crm_calendly_status_payload(_load_data_snapshot()))
 
 
 CRM_CALENDAR_CONTACT_FIELDS = (
@@ -15427,16 +15466,36 @@ def _crm_calendar_contact_payload(data, contact):
 
 
 def _crm_calendly_appointments_payload(data):
-    """Construit l'agenda CRM sans relire le fichier de données."""
-    contacts = {item.get("id"): item for item in data.get("crm_contacts", [])}
-    appointments = []
-    for item in data.get("crm_calendly_appointments", []):
-        contact = contacts.get(item.get("contact_id")) or {}
-        appointments.append({
-            **item,
-            "contact": _crm_calendar_contact_payload(data, contact),
-        })
-    appointments.sort(key=lambda item: item.get("start_time") or "")
+    """Cache the agenda independently of histories, templates and settings."""
+    raw = data.get("crm_calendly_appointments", [])
+    linked_ids = {item.get("contact_id") for item in raw}
+    contacts = {
+        item.get("id"): {
+            key: item.get(key)
+            for key in (*CRM_CALENDAR_CONTACT_FIELDS, "formation_code")
+            if key in item
+        }
+        for item in data.get("crm_contacts", []) if item.get("id") in linked_ids
+    }
+    snapshots = data.get("crm_cnaps_scoring_snapshots", {})
+    dependencies = (raw, contacts, {
+        str(key): snapshots.get(str(key)) for key in linked_ids
+    })
+
+    def build():
+        # Score a person once, even when they have several appointments.
+        projected = {
+            key: _crm_calendar_contact_payload(data, contact)
+            for key, contact in contacts.items()
+        }
+        missing = _crm_calendar_contact_payload(data, {})
+        return sorted(
+            ({**item, "contact": projected.get(item.get("contact_id"), missing)}
+             for item in raw),
+            key=lambda item: item.get("start_time") or "",
+        )
+
+    appointments = _CRM_PROJECTIONS.get("calendar", dependencies, build)
     return {
         "appointments": appointments,
         "integration": _crm_calendly_status_payload(data),
@@ -15445,10 +15504,9 @@ def _crm_calendly_appointments_payload(data):
 
 @app.route("/api/crm/calendly/appointments")
 @login_required
-@_crm_serialized
 def crm_calendly_appointments():
     """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
-    return jsonify(_crm_calendly_appointments_payload(load_data()))
+    return jsonify(_crm_calendly_appointments_payload(_crm_prepared_read_model()))
 
 
 @app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
@@ -15867,6 +15925,8 @@ def crm_contact_calendly_appointments(contact_id, *, _scope_guard=None):
         invitee_resource = (
             _calendly_request("POST", "/invitees", json_body=booking_body).get("resource") or {}
         )
+        if not invitee_resource.get("uri") or not invitee_resource.get("event"):
+            raise CalendlyTransportError(booking_uncertain=True)
         event_uri = invitee_resource.get("event") or ""
         event_uuid = _calendly_resource_uuid(event_uri, "scheduled_events")
         scheduled_event = {}
@@ -16189,13 +16249,45 @@ def _crm_clear_inconsistent_titre_sejour_cnaps(contact):
 _CRM_READ_MODEL_LOCK = threading.RLock()
 _CRM_READ_MODEL_KEY = None
 _CRM_READ_MODEL_VALUE = None
+_CRM_PROJECTIONS = LastProjection()
+_CRM_UPDATE_SNAPSHOTS = UpdateSnapshots()
 
 
 def _crm_read_model_key():
     wedof_signature = (
         _wedof_db_signature() if os.path.exists(_wedof_db_path()) else None
     )
-    return _data_file_signature(), wedof_signature
+    # Callback eligibility can change with time even without a database write.
+    return _data_file_signature(), wedof_signature, int(time.time() // 60)
+
+
+def _crm_prepare_read_snapshot(snapshot, key):
+    """Only copy the sections migrations can modify; keep other reads shared."""
+    dependencies = tuple(snapshot.get(field) for field in (
+        "crm_contacts", "crm_calendly_appointments", "crm_statuses",
+        "crm_meta_lead_submissions", "formation_sessions", "secretariat_demandes",
+    )) + (key[1:],)
+
+    def build():
+        prepared = dict(snapshot)
+        for field in ("crm_contacts", "secretariat_demandes"):
+            prepared[field] = copy.deepcopy(snapshot.get(field, []))
+        # These are the same normalizers installed around load_data in crm_app.
+        if globals().get("_crm_location_normalization_installed"):
+            from crm_location_normalization import canonicalize_crm_locations
+            canonicalize_crm_locations(prepared)
+        if globals().get("_crm_pipeline_status_consistency_installed"):
+            from crm_pipeline_status_consistency import normalize_crm_pipeline_statuses
+            normalize_crm_pipeline_statuses(prepared)
+        _crm_prepare_contacts(prepared)
+        _crm_backfill_callback_requests(prepared)
+        return {field: prepared[field] for field in ("crm_contacts", "secretariat_demandes")}
+
+    data = dict(snapshot)
+    data.update(_CRM_PROJECTIONS.get("contacts", dependencies, build, immutable=True))
+    # Settings normalization adds defaults; never let it mutate the disk cache.
+    data["crm_settings"] = copy.deepcopy(snapshot.get("crm_settings", {}))
+    return data
 
 
 def _crm_prepared_read_model():
@@ -16209,9 +16301,7 @@ def _crm_prepared_read_model():
             return _CRM_READ_MODEL_VALUE
 
         for attempt in range(2):
-            data = load_data()
-            _crm_prepare_contacts(data)
-            _crm_backfill_callback_requests(data)
+            data = _crm_prepare_read_snapshot(_load_data_snapshot(), key)
             final_key = _crm_read_model_key()
             if final_key == key:
                 _CRM_READ_MODEL_KEY = key
@@ -16236,10 +16326,11 @@ def _crm_persist_prepared_contact_if_idle(prepared_contact):
         model_key = _CRM_READ_MODEL_KEY
         if not model_key or model_key[0] != _data_file_signature():
             return False
-        data = load_data()
-        stored = _crm_contact(data, prepared_contact.get("id"))
+        stored = _crm_contact(_load_data_snapshot(), prepared_contact.get("id"))
         if stored is None or stored == prepared_contact:
             return False
+        data = load_data()
+        stored = _crm_contact(data, prepared_contact.get("id"))
         index = data["crm_contacts"].index(stored)
         data["crm_contacts"][index] = copy.deepcopy(prepared_contact)
         save_data(data)
@@ -16597,6 +16688,12 @@ def crm_contact_updates():
     }
     if section == "demandes-rappel":
         payload["callback_requests"] = _crm_callback_requests_payload(data)
+    if request.args.get("delta") == "1":
+        user = current_user() or {}
+        payload = _CRM_UPDATE_SNAPSHOTS.response(
+            payload, request.args.get("cursor", ""),
+            (str(user.get("email") or ""), section, request.args.get("contact_id", "")),
+        )
     return jsonify(payload)
 
 
@@ -18896,15 +18993,9 @@ def crm_bootstrap():
             if section == "demandes-rappel" else []
         ),
     })
-    final_model_key = _crm_read_model_key()
-    if final_model_key != read_model_key:
-        bootstrap_etag = hashlib.sha256(repr((
-            CRM_ASSET_VERSION,
-            section,
-            user_email,
-            final_model_key,
-        )).encode("utf-8")).hexdigest()
-    response.set_etag(bootstrap_etag)
+    # A response built during a write must not claim the newer revision.
+    if _crm_read_model_key() == read_model_key:
+        response.set_etag(bootstrap_etag)
     response.headers["Cache-Control"] = "private, no-cache"
     return response
 

@@ -1585,7 +1585,7 @@ def test_booking_invalid_argument_returns_actionable_retry_error(tmp_path, monke
         },
     )
 
-    assert response.status_code == 502
+    assert response.status_code == 400
     payload = response.get_json()
     assert payload["stage"] == "la création du rendez-vous"
     assert "Vérifiez le type de rendez-vous" in payload["error"]

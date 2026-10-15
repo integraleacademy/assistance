@@ -1095,8 +1095,9 @@ def test_contact_completeness_modal_lists_every_missing_requirement():
 def test_calendly_booking_error_keeps_modal_retry_available():
     crm_js = CRM_JS.read_text(encoding="utf-8")
 
-    assert "catch(e){toast(e.message,true);bookButton.disabled=false" in crm_js
-    assert "bookButton.textContent='Confirmer le rendez-vous'" in crm_js
+    assert "bookButton.disabled=uncertain" in crm_js
+    assert "if(!uncertain)calendlyBookingsInFlight.delete(String(c.id))" in crm_js
+    assert "bookButton.textContent=uncertain?'Vérifiez la réservation dans Calendly':'Confirmer le rendez-vous'" in crm_js
 
 
 def test_programmed_appointment_date_is_rendered_under_pipeline_status():
@@ -1208,18 +1209,11 @@ def test_activity_sms_preview_uses_the_ios_style_bubble_for_inline_and_loaded_co
     assert 'class="sms-preview-bubble"' in javascript
 
 
-def test_calendly_refreshes_silently_after_cached_contact_render():
+def test_calendly_reads_local_appointments_and_refreshes_only_on_request():
     javascript = CRM_JS.read_text(encoding="utf-8")
-
-    assert "activeCalendlyContactId=''" in javascript
-    assert "async function refreshCalendlyOnOpen(c,cached)" in javascript
-    assert "calendly/appointments?refresh=1" in javascript
-    assert "refresh_in_progress:true" in javascript
-    assert "if(!manual)refreshCalendlyOnOpen(c,result)" in javascript
+    assert "refreshCalendlyOnOpen" not in javascript
+    assert "manual?'?refresh=1':''" in javascript
     assert "activeCalendlyContactId!==String(c.id)" in javascript
-    assert "Calendly : actualisation en cours…" in javascript
-    assert "cached.appointments||[]" in javascript
-    assert "lookup_warning:error.message" in javascript
     assert "if(button&&manual){button.disabled=false" in javascript
 
 
@@ -1373,67 +1367,14 @@ def test_calendar_page_rerenders_from_the_collaborative_snapshot():
     assert "if(hasAppointments&&(appointmentsChanged||C.section==='calendrier'))crmAppointments=snapshot.appointments;" in refresh
     assert "/api/crm/calendly/appointments" not in refresh
 
-def test_pistes_refreshes_recent_calendly_without_opening_a_contact():
+def test_pistes_polling_does_not_start_remote_calendly_sync():
     javascript = CRM_JS.read_text(encoding="utf-8")
-    backend = APP_PY.read_text(encoding="utf-8")
-    refresh_helpers = javascript[
-        javascript.index("const CRM_REFRESH_INTERVAL_MS="):
-        javascript.index("function scheduleCrmRefresh")
-    ]
-    script = """
-const document={hidden:false};
-const C={section:'pistes',is_admin:true};
-const calls=[];
-const api=async(url,options)=>{calls.push([url,options]);return{}};
-const assert=(condition,message)=>{if(!condition)throw new Error(message)};
-""" + refresh_helpers + """
-(async()=>{
- assert(await refreshPipelineAppointments(1000)===true,'first Pistes refresh runs');
- assert(calls.length===1,'one sync request');
- assert(calls[0][0]==='/api/crm/calendly/sync','existing global sync endpoint');
- assert(calls[0][1].method==='POST','sync uses POST');
- assert(calls[0][1].timeout===60000,'sync has a bounded timeout');
- assert(JSON.parse(calls[0][1].body).restart===true,'sync refreshes the latest Calendly batch');
- assert(await refreshPipelineAppointments(2000)===false,'fresh sync is throttled');
- assert(calls.length===1,'throttled refresh does not call the API');
- assert(await refreshPipelineAppointments(301001)===true,'stale sync runs again');
- assert(calls.length===2,'five-minute refresh calls the API again');
- pipelineAppointmentRefreshInFlight=true;
- assert(await refreshPipelineAppointments(700000)===false,'concurrent sync is prevented');
- pipelineAppointmentRefreshInFlight=false;
- lastPipelineAppointmentRefreshAt=0;
- C.section='contacts';
- assert(await refreshPipelineAppointments(800000)===false,'other CRM sections do not sync');
- C.section='pistes';
- C.is_admin=false;
- assert(await refreshPipelineAppointments(800000)===false,'non-admin users do not call the protected endpoint');
- C.is_admin=true;
- document.hidden=true;
- assert(await refreshPipelineAppointments(800000)===false,'hidden tabs do not sync');
- console.log('CRM Pistes Calendly refresh: OK');
-})().catch(error=>{console.error(error);process.exit(1)});
-"""
-
-    completed = subprocess.run(
-        ["node", "-e", script],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert "CRM Pistes Calendly refresh: OK" in completed.stdout
-    assert "if(!fiche&&C.section==='pistes')refreshCrmSnapshot()" in javascript
-    refresh_body = javascript[
-        javascript.index("async function refreshCrmSnapshot()"):
-        javascript.index("document.addEventListener('visibilitychange'")
-    ]
-    assert "if(!id)await refreshPipelineAppointments();" in refresh_body
-    assert refresh_body.index("if(!id)await refreshPipelineAppointments();") < refresh_body.index(
-        "const snapshot=await api("
-    )
-    assert "updateVisibleAppointmentData();" in refresh_body
-    assert "CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000" in javascript
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in backend
+    refresh = javascript[javascript.index("const CRM_REFRESH_INTERVAL_MS="):]
+    assert "refreshPipelineAppointments" not in javascript
+    assert "/api/crm/calendly/sync" not in refresh
+    assert "delta:'1'" in refresh
+    assert "CRM_VISIBILITY_REFRESH_MIN_MS=30000" in refresh
+    assert "if(snapshot.unchanged){lastCrmRefreshAt=Date.now();return}" in refresh
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():

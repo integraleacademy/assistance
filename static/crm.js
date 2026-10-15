@@ -1,6 +1,7 @@
 const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['Prochain RDV inscription','POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Prochain RDV inscription','Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Transition pro','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],callbackRequests=[],callbackRequestPendingCount=0,crmAppointments=[],crmSettings={},statusFilter='',callbackRequestFilter='pending',callbackRequestSearch='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='month',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='',activeCalendlyContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
 const callComposerRoot=document.querySelector('#callComposerRoot');
 const CALENDLY_AVAILABILITY_WINDOW_DAYS=7;
+const calendlyBookingsInFlight=new Set();
 const CALENDLY_APPOINTMENT_PAST_DELAY_MS=2*60*60*1000;
 const CALENDLY_COMPLETED_RESPONSE_STATUSES=new Set(['answered','no_answer']);
 const CRM_SALE_PRICES=Object.freeze({APS:1650,A3P:4200,VTC:1500,DESP_INITIAL:4300,DESP_VAE:3800,SSIAP_1:1230});
@@ -1472,19 +1473,6 @@ function renderCalendlyAppointments(c,items,integration){
   if(emptyBook)emptyBook.onclick=event=>{event.preventDefault();event.stopPropagation();calendlyModal(c)};
   bindAppointmentResponseControls(ordered,()=>renderCalendlyAppointments(c,ordered,integration));
 }
-async function refreshCalendlyOnOpen(c,cached){
-  try{
-    const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments?refresh=1`,{timeout:60000});
-    if(activeCalendlyContactId!==String(c.id))return;
-    const appointments=result.appointments||[];
-    replaceContactAppointments(c.id,appointments);
-    updateVisibleAppointmentData();
-    renderCalendlyAppointments(c,appointments,result.integration||{});
-  }catch(error){
-    if(activeCalendlyContactId!==String(c.id))return;
-    renderCalendlyAppointments(c,cached.appointments||[],{...(cached.integration||{}),lookup_warning:error.message});
-  }
-}
 async function loadCalendlyAppointments(c,manual=false){
   if(C.external_meta){renderCalendlyAppointments(c,c.appointments||[],{configured:true,connected:true,signing_key_configured:true});document.querySelector('#calendlySyncStatus').textContent='Rendez-vous enregistrés';return}
   activeCalendlyContactId=String(c.id);
@@ -1492,11 +1480,11 @@ async function loadCalendlyAppointments(c,manual=false){
   if(button&&manual){button.disabled=true;button.textContent='Recherche…'}
   try{
     const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments${manual?'?refresh=1':''}`,manual?{timeout:60000}:{});
+    if(activeCalendlyContactId!==String(c.id))return;
     const appointments=result.appointments||[];
     replaceContactAppointments(c.id,appointments);
     updateVisibleAppointmentData();
-    renderCalendlyAppointments(c,appointments,manual?result.integration||{}:{...(result.integration||{}),refresh_in_progress:true});
-    if(!manual)refreshCalendlyOnOpen(c,result);
+    renderCalendlyAppointments(c,appointments,result.integration||{});
   }catch(e){
     if(manual){
       const box=document.querySelector('#calendlyIntegration');
@@ -1524,6 +1512,7 @@ function calendlyQuestionHtml(question,c){
   return `<div class="field full"><label>${esc(question.name)}${marker}</label><input type="${question.type==='phone_number'?'tel':'text'}" value="${value}" data-question-position="${question.position}"${required}></div>`;
 }
 async function calendlyModal(c){
+  if(calendlyBookingsInFlight.has(String(c.id)))return toast('Une réservation est en cours ou reste à confirmer. Vérifiez les rendez-vous dans Calendly avant de recommencer.',true);
   if(C.external_meta){try{Object.assign(c,await window.CRMExternalMeta.flush(c.id))}catch(error){return toast(error.message,true)}}
   if(!c.mail)return toast('Ajoutez d’abord l’adresse e-mail de la personne.',true);
   modal('Planifier un rendez-vous',`<div class="calendly-booking-loading"><span class="sync-spinner" aria-hidden="true"></span><div><b>Préparation du rendez-vous</b><small>Chargement du type adapté à la formation et des disponibilités…</small></div></div>`,`<button class="btn" id="calCancel">Annuler</button><button class="btn blue" id="calBook" disabled>Confirmer le rendez-vous</button>`,'calendly-modal');
@@ -1569,23 +1558,34 @@ async function calendlyModal(c){
         const times=await api(`/api/crm/calendly/availability?event_type=${encodeURIComponent(selectedType.uri)}&start_time=${encodeURIComponent(actualStart.toISOString())}&end_time=${encodeURIComponent(end.toISOString())}`);
         const groups={};times.forEach(slot=>{const day=new Date(slot.start_time).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});(groups[day]??=[]).push(slot)});
         slots.innerHTML=times.length?Object.entries(groups).map(([day,daySlots])=>`<section class="slot-day"><h4>${esc(day)}</h4><div>${daySlots.map(slot=>`<button type="button" class="slot" data-slot="${esc(slot.start_time)}">${new Date(slot.start_time).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</button>`).join('')}</div></section>`).join(''):'<div class="activity-empty">Aucun créneau disponible sur cette période.</div>';
-        document.querySelectorAll('[data-slot]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-slot]').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');selectedStart=button.dataset.slot;bookButton.disabled=false});
+        document.querySelectorAll('[data-slot]').forEach(button=>button.onclick=()=>{if(calendlyBookingsInFlight.has(String(c.id)))return;document.querySelectorAll('[data-slot]').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');selectedStart=button.dataset.slot;bookButton.disabled=false});
       }catch(e){slots.innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`}
     };
     typeSelect.onchange=renderType;
     document.querySelector('#calPrev').onclick=()=>{rangeStart.setDate(rangeStart.getDate()-CALENDLY_AVAILABILITY_WINDOW_DAYS);const today=new Date();today.setHours(0,0,0,0);if(rangeStart<today)rangeStart=today;loadSlots()};
     document.querySelector('#calNext').onclick=()=>{rangeStart.setDate(rangeStart.getDate()+CALENDLY_AVAILABILITY_WINDOW_DAYS);loadSlots()};
     bookButton.onclick=async()=>{
+      if(calendlyBookingsInFlight.has(String(c.id)))return;
       if(!selectedStart)return toast('Choisissez un horaire.',true);
       const answers={};document.querySelectorAll('[data-question-position]').forEach(field=>{answers[field.dataset.questionPosition]=field.multiple?[...field.selectedOptions].map(x=>x.value):field.value});
       const locations=selectedType.locations||[],locationSelect=document.querySelector('#calLocationKind'),selectedLocation=locations[Number(locationSelect?.value||0)]||locations[0]||null;
       const location=selectedLocation?{kind:selectedLocation.kind,location:document.querySelector('#calLocationText')?.value||selectedLocation.location||''}:null;
       bookButton.disabled=true;bookButton.textContent='Création du rendez-vous…';
+      calendlyBookingsInFlight.add(String(c.id));
+      const controls=[...dialog.querySelectorAll('button,input,select,textarea')].map(control=>[control,control.disabled]);
+      controls.forEach(([control])=>control.disabled=true);
       try{
-        const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments`,{method:'POST',body:JSON.stringify({event_type:selectedType.uri,start_time:selectedStart,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',location,answers})});
+        const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments`,{method:'POST',timeout:110000,body:JSON.stringify({event_type:selectedType.uri,start_time:selectedStart,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',location,answers})});
+        calendlyBookingsInFlight.delete(String(c.id));
         if(C.external_meta&&window.CRMExternalMeta.finishBooking(result))return;
         Object.assign(c,result.contact||{});if(result.appointment){const index=crmAppointments.findIndex(item=>String(item.id)===String(result.appointment.id)),appointment={...result.appointment,contact:{id:c.id,prenom:c.prenom,nom:c.nom,formation:c.formation,telephone:c.telephone,mail:c.mail}};if(index>=0)crmAppointments[index]=appointment;else crmAppointments.push(appointment);c.activity_counts={...(c.activity_counts||{}),appointments:crmAppointments.filter(item=>String(item.contact_id)===String(c.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase())).length}}closeModal();showContact(c.id);toast('Rendez-vous Calendly planifié');
-      }catch(e){toast(e.message,true);bookButton.disabled=false;bookButton.textContent='Confirmer le rendez-vous'}
+      }catch(e){
+        const uncertain=e.reason==='booking_unconfirmed'||(!['calendly_rejected','calendly_unavailable'].includes(e.reason)&&(!e.status||e.status>=500));
+        if(!uncertain)calendlyBookingsInFlight.delete(String(c.id));
+        controls.forEach(([control,disabled])=>control.disabled=disabled);
+        bookButton.disabled=uncertain;bookButton.textContent=uncertain?'Vérifiez la réservation dans Calendly':'Confirmer le rendez-vous';
+        toast(uncertain?'La réservation n’a pas pu être confirmée. Vérifiez les rendez-vous dans Calendly avant toute nouvelle tentative.':e.message,true);
+      }
     };
     renderType();
   }catch(e){dialog.querySelector('.modal-body').innerHTML=`<div class="activity-empty error-text">${esc(e.message)}</div>`;bookButton.style.display='none'}
@@ -2041,7 +2041,7 @@ function render(){
  if(window.CRMWorkspace){page.innerHTML=CRMWorkspace.listPage(C.section,workspaceContext());CRMWorkspace.bindList(C.section,workspaceContext());return}
  page.innerHTML=listPage(C.section);bindList(C.section);bindRows();
 }
-async function init(){try{const snapshot=await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`);contacts=snapshot.contacts||[];templates=snapshot.templates||{email:[],sms:[]};formationSessions=snapshot.formation_sessions||{};notifications=snapshot.notifications||[];callbackRequests=snapshot.callback_requests||[];callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);crmAppointments=snapshot.appointments||[];crmSettings=snapshot.settings||{};updateNotificationCount();updateCallbackRequestNavCount();const fiche=new URLSearchParams(location.search).get('fiche');fiche?await showContact(fiche):render();if(!fiche&&C.section==='pistes')refreshCrmSnapshot()}catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}}
+async function init(){try{const snapshot=await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`);contacts=snapshot.contacts||[];templates=snapshot.templates||{email:[],sms:[]};formationSessions=snapshot.formation_sessions||{};notifications=snapshot.notifications||[];callbackRequests=snapshot.callback_requests||[];callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);crmAppointments=snapshot.appointments||[];crmSettings=snapshot.settings||{};updateNotificationCount();updateCallbackRequestNavCount();const fiche=new URLSearchParams(location.search).get('fiche');fiche?await showContact(fiche):render();lastCrmRefreshAt=Date.now()}catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}}
 function developmentSupportModal(){
  modal('Support développement',`<form id="developmentSupportForm" class="fields" enctype="multipart/form-data"><div class="field"><label for="developmentSupportPlatform">Plateforme concernée</label><select id="developmentSupportPlatform" name="platform" required><option value="CRM">CRM</option><option value="Gestion stagiaires">GESTION STAGIAIRES</option><option value="Site internet officiel">SITE OFFICIEL</option></select></div><div class="field full"><label for="developmentSupportUrl">URL de la page concernée</label><input id="developmentSupportUrl" name="page_url" type="url" value="${esc(location.href)}" maxlength="2000" required></div><div class="field full"><label for="developmentSupportActions">Actions à mener</label><textarea id="developmentSupportActions" name="actions" rows="8" minlength="20" maxlength="6000" placeholder="Décrivez précisément toutes les modifications et le résultat attendu." required></textarea><small>La demande sera reformulée par l’IA, puis le texte original sera aussi conservé dans Notion.</small></div><div class="field full"><label for="developmentSupportAttachment">Pièce jointe (facultative)</label><input id="developmentSupportAttachment" name="attachment" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.heic,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"><small>Image, PDF, document Word/Excel, CSV ou TXT · 20 Mo maximum. Les images seront affichées directement dans la page Notion.</small></div></form>`,`<button class="btn" id="developmentSupportCancel">Annuler</button><button class="btn blue" id="developmentSupportSubmit">ENVOYER</button>`,'development-support-modal');
  const form=document.querySelector('#developmentSupportForm'),cancel=document.querySelector('#developmentSupportCancel'),submit=document.querySelector('#developmentSupportSubmit');
@@ -2111,21 +2111,8 @@ globalSearch.onkeydown=e=>{if(e.key==='Enter'){if(C.external_meta){globalResults
 // Synchronisation collaborative légère : une seule requête à la fois, uniquement
 // lorsque l'onglet est visible. Un rechargement complet n'a lieu que si la liste
 // des contacts a réellement changé.
-const CRM_REFRESH_INTERVAL_MS=180000,CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS=300000;
-let crmRefreshTimer=null,crmRefreshInFlight=false,lastPipelineAppointmentRefreshAt=0,pipelineAppointmentRefreshInFlight=false;
-async function refreshPipelineAppointments(now=Date.now()){
- if(C.section!=='pistes'||!C.is_admin||document.hidden||pipelineAppointmentRefreshInFlight)return false;
- if(lastPipelineAppointmentRefreshAt&&now-lastPipelineAppointmentRefreshAt<CRM_CALENDLY_LIST_REFRESH_INTERVAL_MS)return false;
- pipelineAppointmentRefreshInFlight=true;
- lastPipelineAppointmentRefreshAt=now;
- try{
-  await api('/api/crm/calendly/sync',{method:'POST',body:JSON.stringify({restart:true}),timeout:60000});
-  return true;
- }catch(error){
-  if(error.status!==409)console.warn('Actualisation Calendly de la liste impossible',error);
-  return false;
- }finally{pipelineAppointmentRefreshInFlight=false}
-}
+const CRM_REFRESH_INTERVAL_MS=180000,CRM_VISIBILITY_REFRESH_MIN_MS=30000;
+let crmRefreshTimer=null,crmRefreshInFlight=false,lastCrmRefreshAt=0,crmUpdateCursor='';
 function scheduleCrmRefresh(delay=CRM_REFRESH_INTERVAL_MS){clearTimeout(crmRefreshTimer);crmRefreshTimer=setTimeout(refreshCrmSnapshot,delay)}
 function refreshPipelineQueues(){
  if(C.section!=='pistes'||new URLSearchParams(location.search).has('fiche'))return;
@@ -2141,22 +2128,31 @@ async function refreshCrmSnapshot(){
  if(document.hidden||crmRefreshInFlight){scheduleCrmRefresh();return}
  crmRefreshInFlight=true;
  try{
-  const id=new URLSearchParams(location.search).get('fiche'),refreshParams=new URLSearchParams();
+  const id=new URLSearchParams(location.search).get('fiche'),section=C.section,refreshParams=new URLSearchParams({delta:'1'});
   if(id)refreshParams.set('contact_id',id);
   if(C.section==='demandes-rappel')refreshParams.set('section',C.section);
-  const suffix=refreshParams.size?`?${refreshParams}`:'';
-  if(!id)await refreshPipelineAppointments();
+  if(crmUpdateCursor)refreshParams.set('cursor',crmUpdateCursor);
+  const suffix=`?${refreshParams}`;
   const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
+  if(section!==C.section||id!==new URLSearchParams(location.search).get('fiche'))return;
+  if(snapshot.unchanged){lastCrmRefreshAt=Date.now();return}
   const updates=snapshot.contacts||[];
   const pipelineChanged=updates.some(update=>['cpf_status','relance_date','statut','statut_secondaire'].some(field=>Object.prototype.hasOwnProperty.call(update,field)&&contactInStore(update.id)?.[field]!==update[field]));
   const hasAppointments=Array.isArray(snapshot.appointments);
+  if(snapshot.delta&&hasAppointments){
+   const merged=new Map(crmAppointments.map(item=>[String(item.id),item]));
+   (snapshot.removed_appointments||[]).forEach(id=>merged.delete(String(id)));
+   snapshot.appointments.forEach(item=>merged.set(String(item.id),item));
+   snapshot.appointments=[...merged.values()].sort((a,b)=>String(a.start_time||'').localeCompare(String(b.start_time||'')));
+  }
   const appointmentsChanged=hasAppointments&&window.CRMAppointmentState.signature(snapshot.appointments)!==window.CRMAppointmentState.signature(crmAppointments);
   if(hasAppointments&&(appointmentsChanged||C.section==='calendrier'))crmAppointments=snapshot.appointments;
   const knownIds=new Set(contacts.map(contact=>String(contact.id)));
-  const membershipChanged=updates.length!==contacts.length||updates.some(contact=>!knownIds.has(String(contact.id)));
+  const membershipChanged=(!snapshot.delta&&updates.length!==contacts.length)||(snapshot.removed_contacts||[]).length>0||updates.some(contact=>!knownIds.has(String(contact.id)));
   if(membershipChanged){
    const detailed=new Map(contacts.filter(contact=>!contact._summary).map(contact=>[String(contact.id),contact]));
    const fresh=await api(`/api/crm/contacts?section=${encodeURIComponent(C.section)}`);
+   if(section!==C.section||id!==new URLSearchParams(location.search).get('fiche'))return;
    contacts=fresh.map(summary=>{
     const detail=detailed.get(String(summary.id));
     if(!detail)return summary;
@@ -2166,10 +2162,12 @@ async function refreshCrmSnapshot(){
    });
   }else updates.forEach(update=>mergeContactInStore(update.id,update));
   if(snapshot.selected)mergeContactInStore(snapshot.selected.id,snapshot.selected);
-  if(Array.isArray(snapshot.callback_requests)){
-   callbackRequests=snapshot.callback_requests;
+  if(Object.prototype.hasOwnProperty.call(snapshot,'callback_pending_count')){
    callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);
    updateCallbackRequestNavCount();
+  }
+  if(Array.isArray(snapshot.callback_requests)){
+   callbackRequests=snapshot.callback_requests;
    if(C.section==='demandes-rappel'&&!id)drawCallbackRequests();
   }
   updateLeadCount();
@@ -2183,7 +2181,9 @@ async function refreshCrmSnapshot(){
    if(filterRoot)refreshActivity();else if(feedRoot)feedRoot.innerHTML=feed(current);
    if(pubRoot&&!filterRoot){pubRoot.innerHTML=publications(current);bindPublicationFeed(current,pubRoot,refreshActivity)}
   }
- }catch(_){/* Une coupure réseau ne doit pas interrompre la saisie. */}
+  crmUpdateCursor=snapshot.cursor||'';
+  lastCrmRefreshAt=Date.now();
+ }catch(_){crmUpdateCursor='';/* Reprendre un instantané complet après une application partielle. */}
  finally{crmRefreshInFlight=false;scheduleCrmRefresh()}
 }
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(crmRefreshTimer);refreshCrmSnapshot()}});scheduleCrmRefresh();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){const remaining=CRM_VISIBILITY_REFRESH_MIN_MS-(Date.now()-lastCrmRefreshAt);if(remaining<=0){clearTimeout(crmRefreshTimer);refreshCrmSnapshot()}else scheduleCrmRefresh(remaining)}});scheduleCrmRefresh();

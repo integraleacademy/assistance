@@ -41,6 +41,7 @@ def make_app():
         save_data=forbidden, _CRM_RECONCILIATION_LOCK=threading.RLock(),
         _crm_contact=lambda data, key: next((c for c in data["crm_contacts"] if c["id"] == key), None),
         _calendly_token=lambda: "", _crm_normalize_email=lambda value: str(value or ""),
+        _crm_normalize_phone=lambda value: str(value or ""),
         _crm_calendly_fetch_contact_appointments=forbidden,
         _crm_calendly_relink_appointments=lambda *args: False,
         _crm_sync_contact_calendly_status=lambda *args: False,

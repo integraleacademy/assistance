@@ -91,7 +91,7 @@ const document={hidden:false,querySelector(selector){
 const contactInStore=id=>contacts.find(c=>c.id===id);
 const mergeContactInStore=(id,update)=>Object.assign(contactInStore(id),update);
 const crmActiveContacts=()=>contacts.filter(c=>!c.archived_at);
-const refreshPipelineAppointments=async()=>{};
+let crmUpdateCursor='',lastCrmRefreshAt=0;
 const updateLeadCount=()=>{},updateVisibleAppointmentData=()=>{},scheduleCrmRefresh=()=>{};
 let updates=[{id:'one',statut:'A relancer',relance_date:'2026-10-05'}],fresh=[];
 const api=async url=>url.startsWith('/api/crm/contacts/updates')?{contacts:updates}:fresh;

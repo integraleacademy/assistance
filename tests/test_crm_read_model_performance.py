@@ -52,9 +52,13 @@ def test_second_write_during_preparation_is_not_cached_as_a_newer_revision(monke
         if len(prepared) <= 2:
             revision[0] += 1
 
+    def prepare_snapshot(data, key):
+        prepare(data)
+        return data
+
     monkeypatch.setattr(application, "_crm_read_model_key", lambda: revision[0])
-    monkeypatch.setattr(application, "load_data", lambda: {"revision": revision[0]})
-    monkeypatch.setattr(application, "_crm_prepare_contacts", prepare)
+    monkeypatch.setattr(application, "_load_data_snapshot", lambda: {"revision": revision[0]})
+    monkeypatch.setattr(application, "_crm_prepare_read_snapshot", prepare_snapshot)
     monkeypatch.setattr(application, "_crm_backfill_callback_requests", lambda data: None)
     monkeypatch.setattr(application, "_CRM_READ_MODEL_KEY", None)
     monkeypatch.setattr(application, "_CRM_READ_MODEL_VALUE", None)
