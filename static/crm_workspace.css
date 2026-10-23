@@ -114,3 +114,15 @@
 .contact-disqualification-summary>b{color:#7f1d1d}
 .contact-disqualification-summary>p{margin:0;white-space:pre-wrap;color:#475569}
 .contact-disqualification-summary>small{color:#64748b}
+
+/* Grouped reminder e-mails: selection follows the current filtered list. */
+.reminder-bulk-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:0 0 14px;padding:14px 16px;border:1px solid #cedbf4;border-radius:13px;background:#f3f7ff}
+.reminder-select-all{display:flex;align-items:center;gap:9px;color:#244a9d;font-size:12px;font-weight:800;cursor:pointer}
+.reminder-bulk-toolbar>span{font-size:11px;color:#62728a}
+.reminder-bulk-toolbar>div{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
+.reminder-select-all input,.reminder-select input{width:18px;height:18px;margin:0;accent-color:#356ae6;cursor:pointer}
+.reminder-command:has(.reminder-select){grid-template-columns:22px 56px minmax(0,1fr) auto}
+.reminder-select{display:flex;align-items:center;justify-content:center;min-height:32px;cursor:pointer}
+.reminder-command.is-selected{background:#f3f7ff;border-color:#9bb5ec}
+.reminder-preview-help{margin:10px 0;color:#62728a;font-size:12px;line-height:1.5}
+@media(max-width:700px){.reminder-command:has(.reminder-select){grid-template-columns:22px 48px minmax(0,1fr);gap:10px}.reminder-bulk-toolbar>div{width:100%;margin-left:0}.reminder-bulk-toolbar>div>.btn{flex:1}}
