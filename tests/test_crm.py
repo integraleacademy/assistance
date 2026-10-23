@@ -776,7 +776,7 @@ def test_pistes_support_selection_and_individualized_bulk_messages():
         'id="leadSelectAll"', "data-lead-select", 'id="selectAllLeads"',
         'id="leadBulkBar"', 'data-bulk-message="email"',
         'data-bulk-message="sms"', 'id="changeSelectedLeadStatus"',
-        'id="deleteSelectedLeads"', "function bulkMessageModal(type)",
+        'id="deleteSelectedLeads"', "function bulkMessageModal(type,options={})",
         "function bulkLeadStatusModal()", "function bulkLeadDeleteModal()",
     ):
         assert marker in crm_js
