@@ -44,7 +44,10 @@ def crm_browser(tmp_path, monkeypatch):
         mail=f'prospect{index}@example.test', telephone='',
         formation='A3P' if index < 264 else 'APS', lieu='Puget-sur-Argens',
         statut='A relancer', relance_date='2020-01-06',
-        activities=[], relances=[], created_at='2020-01-01T12:00:00',
+        activities=[], relances=[
+            {'id': f'scheduled-{index}', 'status': 'scheduled', 'scheduled_date': '2020-01-06'},
+            {'id': f'history-{index}', 'status': 'no_answer', 'scheduled_date': '2020-01-03'},
+        ], created_at='2020-01-01T12:00:00',
     ) for index in range(266)]
     for key, overrides in [
         ('future', {'relance_date': '2099-01-06'}),
@@ -52,7 +55,7 @@ def crm_browser(tmp_path, monkeypatch):
         ('converted', {'statut': 'Converti'}),
         ('archived', {'archived_at': '2020-01-07'}),
     ]:
-        contacts.append({**contacts[0], 'id': key, 'mail': f'{key}@example.test', **overrides})
+        contacts.append({**contacts[0], 'id': key, 'mail': f'{key}@example.test', 'activities': [], 'relances': [], **overrides})
     data['crm_contacts'] = contacts
     application.save_data(data)
     sent = []
@@ -117,10 +120,15 @@ def test_all_266_reminders_preview_edit_send_and_retry_only_failures(crm_browser
     expect(page.locator('#bulkMessagePreviewLabel')).to_contain_text('Agent de protection physique des personnes (A3P)')
     expect(page.frame_locator('#bulkMessagePreview iframe').locator('body')).to_contain_text('Prénom 000')
     expect(page.frame_locator('#bulkMessagePreview iframe').locator('body')).to_contain_text('Et votre projet de formation ?')
+    booking = page.frame_locator('#bulkMessagePreview iframe').get_by_role(
+        'link', name='Prendre un rendez-vous téléphonique'
+    )
+    expect(booking).to_have_attribute('href', 'https://calendly.com/integraleacademy/apr')
     page.locator('#bulkPreviewRecipient').select_option('overdue-264')
     expect(page.locator('#sendBulkMessage')).to_be_disabled()
     page.locator('#previewBulkMessage').click()
     expect(page.locator('#bulkMessagePreviewLabel')).to_contain_text('Agent de prévention et de sécurité (APS)')
+    expect(booking).to_have_attribute('href', 'https://calendly.com/integraleacademy/aps')
     page.locator('#bulkSubject').fill('Votre projet {{ formation }}')
     expect(page.locator('#sendBulkMessage')).to_be_disabled()
     page.locator('#previewBulkMessage').click()
@@ -132,6 +140,7 @@ def test_all_266_reminders_preview_edit_send_and_retry_only_failures(crm_browser
     assert len(attempts) == 266 and sum(attempts.values()) == 266
     assert all(payload['sujet'] == 'Votre projet {{ formation }}' for payload in payloads)
     assert len({payload['contenu'] for payload in payloads}) == 1
+    assert 'href="{{ lien_rdv_calendly }}"' in payloads[0]['contenu']
     expect(page.locator('#reminderSelectionCount')).to_have_text('2 relances sélectionnées')
     page.locator('#sendBulkMessage').click()
     expect(page.locator('#modalRoot')).to_be_empty(timeout=10000)
@@ -168,7 +177,85 @@ def test_reminder_assets_use_a_new_browser_cache_key():
     template = (ROOT / 'templates/crm.html').read_text()
     for filename in ('crm.js', 'crm_workspace.js', 'crm_workspace.css'):
         tag = next(tag for tag in template.split('{{') if f"filename='{filename}'" in tag)
-        assert "relances_bulk_version='20261023-1'" in tag
+        assert "relances_bulk_version='20261023-2'" in tag
+
+
+def test_mobile_preview_fits_the_screen_and_keeps_send_action_visible(crm_browser):
+    page, expect, requests, attempts, payloads, failures, errors, sent, tmp_path = crm_browser
+    page.set_viewport_size({'width': 390, 'height': 844})
+    page.locator('#reminderOverdue').click()
+    page.locator('#reminderSelectAll').check()
+    page.locator('#reminderBulkEmail').click()
+    page.locator('#previewBulkMessage').click()
+    expect(page.locator('#sendBulkMessage')).to_be_enabled()
+    page.locator('#bulkMessagePreview').scroll_into_view_if_needed()
+    frame = page.frame_locator('#bulkMessagePreview iframe')
+    expect(frame.get_by_role('link', name='Prendre un rendez-vous téléphonique')).to_have_count(1)
+    assert frame.locator('html').evaluate('(el)=>el.scrollWidth<=window.innerWidth')
+    bounds = page.locator('#sendBulkMessage').bounding_box()
+    assert 0 <= bounds['y'] and bounds['y'] + bounds['height'] <= 844
+    assert not attempts and not errors and not sent
+
+
+def test_disqualify_all_266_requires_reason_and_preserves_other_contacts_and_history(crm_browser):
+    page, expect, requests, attempts, payloads, failures, errors, sent, tmp_path = crm_browser
+    before = application.load_data()['crm_contacts']
+    page.locator('#reminderOverdue').click()
+    expect(page.locator('#reminderBulkDisqualify')).to_be_disabled()
+    page.locator('#reminderSelectAll').check()
+    page.locator('#reminderBulkDisqualify').click()
+    expect(page.locator('.reminder-disqualify-modal h2')).to_have_text('Disqualifier 266 pistes')
+    page.locator('#cancelReminderDisqualify').click()
+    assert application.load_data()['crm_contacts'] == before
+    page.locator('#reminderBulkDisqualify').click()
+    page.locator('#confirmReminderDisqualify').click()
+    expect(page.locator('#toast')).to_contain_text('Choisissez un motif')
+    assert application.load_data()['crm_contacts'] == before
+    page.locator('#reminderDisqualifyReason').select_option('Injoignable')
+    page.locator('#reminderDisqualifyDetail').fill('Aucun retour aux précédentes relances')
+    page.locator('#confirmReminderDisqualify').click()
+    expect(page.locator('#modalRoot')).to_be_empty()
+    expect(page.locator('[data-select-reminder]')).to_have_count(0)
+    expect(page.locator('#reminderSelectionCount')).to_have_text('Aucune sélection')
+    expect(page.locator('#reminderOverdue b')).to_have_text('0')
+    expect(page.locator('#reminderPlanned b')).to_have_text('1')
+    expect(page.locator('#reminderMissing b')).to_have_text('1')
+    expect(page.locator('#reminderBulkDisqualify')).to_be_disabled()
+    after = application.load_data()['crm_contacts']
+    assert len(after) == len(before)
+    assert after[266:] == before[266:]
+    for index, contact in enumerate(after[:266]):
+        assert contact['statut'] == 'Disqualifié'
+        assert contact['disqualification_reason'] == 'Injoignable'
+        assert contact['disqualification_detail'] == 'Aucun retour aux précédentes relances'
+        assert not contact['relance_date']
+        assert not any(item['status'] == 'scheduled' for item in contact['relances'])
+        assert any(item['id'] == f'history-{index}' for item in contact['relances'])
+        assert any(activity['title'] == 'Piste disqualifiée' for activity in contact['activities'])
+    assert requests.count(('PATCH', '/api/crm/contacts/bulk')) == 1
+    assert not errors and not sent and not attempts
+
+
+def test_failed_disqualification_retains_selection_for_retry(crm_browser):
+    page, expect, requests, attempts, payloads, failures, errors, sent, tmp_path = crm_browser
+    page.locator('#reminderOverdue').click()
+    page.locator('[data-select-reminder]').first.check()
+    page.locator('#reminderBulkDisqualify').click()
+    page.locator('#reminderDisqualifyReason').select_option('Projet abandonné')
+    page.route('**/api/crm/contacts/bulk', lambda route: route.fulfill(
+        status=503, json={'error': 'Erreur temporaire simulée'}
+    ))
+    page.locator('#confirmReminderDisqualify').click()
+    expect(page.locator('#reminderDisqualifyProgress')).to_contain_text('Erreur temporaire simulée')
+    expect(page.locator('#confirmReminderDisqualify')).to_be_enabled()
+    expect(page.locator('#reminderSelectionCount')).to_have_text('1 relance sélectionnée')
+    assert application.load_data()['crm_contacts'][0]['statut'] == 'A relancer'
+    page.unroute('**/api/crm/contacts/bulk')
+    page.locator('#confirmReminderDisqualify').click()
+    expect(page.locator('#modalRoot')).to_be_empty()
+    expect(page.locator('#reminderOverdue b')).to_have_text('265')
+    assert application.load_data()['crm_contacts'][0]['statut'] == 'Disqualifié'
+    assert not errors and not sent and not attempts
 
 
 def test_stale_or_failed_preview_cannot_enable_sending(crm_browser):

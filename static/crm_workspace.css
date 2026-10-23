@@ -126,3 +126,8 @@
 .reminder-command.is-selected{background:#f3f7ff;border-color:#9bb5ec}
 .reminder-preview-help{margin:10px 0;color:#62728a;font-size:12px;line-height:1.5}
 @media(max-width:700px){.reminder-command:has(.reminder-select){grid-template-columns:22px 48px minmax(0,1fr);gap:10px}.reminder-bulk-toolbar>div{width:100%;margin-left:0}.reminder-bulk-toolbar>div>.btn{flex:1}}
+
+/* Keep reminder actions available while reviewing a long email preview. */
+.reminder-email-modal{display:flex;flex-direction:column;overflow:hidden}
+.reminder-email-modal .modal-head,.reminder-email-modal .modal-foot{flex-shrink:0}
+.reminder-email-modal .modal-body{min-height:0;overflow-y:auto}
