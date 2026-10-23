@@ -131,22 +131,6 @@ function bindReminderLinkNavigation(link,open){
  link.onclick=event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();open()};
 }
 function reminderPeriodMatches(contact,mode,selectedDate){const date=reminderDate(contact);if(mode==='missing')return!date;if(mode==='overdue')return Boolean(date)&&isOverdue(contact);if(mode==='planned')return Boolean(date);return date===selectedDate}
-function reminderInterestTemplate(ctx){
- const content=`<p style="margin:0 0 18px">Vous nous aviez contactés au sujet de la formation <strong>{{ formation }}</strong>. Votre projet est-il toujours d’actualité ?</p>
-<p style="margin:0 0 18px">Si vous êtes toujours intéressé(e), prenons quelques minutes pour en parler : prochaines sessions, déroulement de la formation, conditions d’accès et possibilités de financement.</p>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0"><tr><td style="background:#245bd6;border-radius:10px;text-align:center"><a href="{{ lien_rdv_calendly }}" target="_blank" style="display:inline-block;padding:16px 24px;color:#ffffff;text-decoration:none;font-weight:bold">Prendre un rendez-vous téléphonique</a></td></tr></table>
-<p style="margin:0 0 18px">Choisissez le créneau qui vous convient : notre équipe vous appellera pour faire le point sur votre projet.</p>
-<p style="margin:0 0 18px">Vous pouvez aussi répondre directement à ce mail. Si votre projet a changé ou si vous ne souhaitez plus être recontacté(e), dites-le-nous simplement en réponse afin que nous mettions votre dossier à jour.</p>
-<p style="margin:0">À bientôt,<br>L’équipe Intégrale Academy</p>`;
- let body=ctx.templates.email_free_starter||'';
- if(body.includes('<!-- EMAIL_CONTENT_START -->')){
-  const replace=(key,value)=>{body=body.replace(new RegExp(`(<!-- EMAIL_${key}_START -->)[\\s\\S]*?(<!-- EMAIL_${key}_END -->)`),(_,start,end)=>start+value+end)};
-  replace('HEADER_TITLE','Et si nous faisions le point ?');
-  replace('HEADER_SUBTITLE','Votre projet de formation : <strong>{{ formation }}</strong>');
-  replace('CONTENT',content);
- }else body=content;
- return{id:'reminder-interest',nom:'Relance — Votre projet de formation',type:'email',sujet:'Votre projet de formation {{ formation }} est-il toujours d’actualité ?',contenu:body};
-}
 function reminderDisqualifyModal(rows,ctx,onUpdated){
  if(!rows.length)return ctx.toast('Sélectionnez au moins une piste',true);
  const reasons=['Injoignable','Projet abandonné','Projet reporté','Financement refusé','Prix trop élevé','Distance / mobilité','Prérequis non remplis','Choix d’un autre organisme','Autre'];
@@ -182,13 +166,13 @@ function remindersPage(ctx){
  const today=dayKey(new Date());
  let selectedDate=today;
  let periodMode='date';
- const selected=new Set();
- let visibleRows=[];
+ const selectedReminderIds=new Set();
+ let visibleReminders=[];
  const longDate=value=>{
   const date=new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime())?value:date.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
  };
- ctx.page.innerHTML=ctx.header('SUIVI COMMERCIAL','Relances','Traitez immédiatement les retards, réponses et prochaines actions.')+`<div class="workspace-metrics reminder-metrics"><article class="metric-action missing-metric" id="reminderMissing" role="button" tabindex="0" aria-pressed="false"><span>Sans relance</span><b>${missing.length}</b><small>Afficher les pistes sans relance</small></article><article class="metric-action overdue-metric" id="reminderOverdue" role="button" tabindex="0" aria-pressed="false"><span>En retard</span><b>${planned.filter(isOverdue).length}</b><small>Afficher les relances échues</small></article><article class="metric-action today-metric" id="reminderTodayMetric" role="button" tabindex="0" aria-pressed="true"><span>Aujourd’hui</span><b>${planned.filter(c=>reminderDate(c)===today).length}</b><small>Afficher les relances du jour</small></article><article class="metric-action planned-metric" id="reminderPlanned" role="button" tabindex="0" aria-pressed="false"><span>Planifiées</span><b>${planned.length}</b><small>Afficher toutes les relances</small></article><article><span>Taux de réponse</span><b>${answered+noAnswer?Math.round(answered/(answered+noAnswer)*100):0} %</b></article></div><section class="reminder-date-toolbar" aria-label="Choisir le jour des relances"><div class="reminder-date-navigation"><button class="btn reminder-date-arrow" id="reminderPreviousDay" type="button" aria-label="Jour précédent">‹</button><label for="workspaceReminderDate"><span>Date affichée</span><input id="workspaceReminderDate" type="date" value="${selectedDate}"></label><button class="btn reminder-date-arrow" id="reminderNextDay" type="button" aria-label="Jour suivant">›</button><button class="btn" id="reminderToday" type="button">Aujourd’hui</button></div><div class="reminder-date-context" aria-live="polite"><span id="reminderDateLabel"></span><b id="reminderDateCount"></b></div><button class="btn blue" id="reminderShowAll" type="button">Voir toutes les relances</button></section><section class="workspace-toolbar"><div class="workspace-search"><span>⌕</span><input id="reminderSearch" placeholder="Rechercher une personne…"></div><select id="reminderCommercial">${filterOptions(followUpContacts.map(c=>teamName(c,ctx.C)),'','Tous les commerciaux',ctx.esc)}</select><select id="reminderFormation">${filterOptions(followUpContacts.map(c=>c.formation),'','Toutes les formations',ctx.esc)}</select><select id="reminderOrigin">${filterOptions(followUpContacts.map(sourceLabel),'','Toutes les origines',ctx.esc)}</select><label class="reminder-origin-exclusion"><input id="reminderExcludeMeta" type="checkbox"> Exclure META</label></section><section class="reminder-bulk-toolbar" aria-label="Actions groupées sur les relances"><label class="reminder-select-all"><input id="reminderSelectAll" type="checkbox"><span id="reminderSelectAllLabel">Tout sélectionner</span></label><span id="reminderSelectedCount" role="status">0 sélectionnée</span><button class="btn blue" id="reminderBulkEmail" disabled>Préparer un e-mail groupé</button><button class="btn danger" id="reminderBulkDisqualify" disabled>Disqualifier la sélection</button><button class="btn" id="reminderClearSelection" disabled>Annuler la sélection</button></section><section class="reminder-command-list" id="reminderCommandList"></section>`;
+ ctx.page.innerHTML=ctx.header('SUIVI COMMERCIAL','Relances','Traitez immédiatement les retards, réponses et prochaines actions.')+`<div class="workspace-metrics reminder-metrics"><article class="metric-action missing-metric" id="reminderMissing" role="button" tabindex="0" aria-pressed="false"><span>Sans relance</span><b>${missing.length}</b><small>Afficher les pistes sans relance</small></article><article class="metric-action overdue-metric" id="reminderOverdue" role="button" tabindex="0" aria-pressed="false"><span>En retard</span><b>${planned.filter(isOverdue).length}</b><small>Afficher les relances échues</small></article><article class="metric-action today-metric" id="reminderTodayMetric" role="button" tabindex="0" aria-pressed="true"><span>Aujourd’hui</span><b>${planned.filter(c=>reminderDate(c)===today).length}</b><small>Afficher les relances du jour</small></article><article class="metric-action planned-metric" id="reminderPlanned" role="button" tabindex="0" aria-pressed="false"><span>Planifiées</span><b>${planned.length}</b><small>Afficher toutes les relances</small></article><article><span>Taux de réponse</span><b>${answered+noAnswer?Math.round(answered/(answered+noAnswer)*100):0} %</b></article></div><section class="reminder-date-toolbar" aria-label="Choisir le jour des relances"><div class="reminder-date-navigation"><button class="btn reminder-date-arrow" id="reminderPreviousDay" type="button" aria-label="Jour précédent">‹</button><label for="workspaceReminderDate"><span>Date affichée</span><input id="workspaceReminderDate" type="date" value="${selectedDate}"></label><button class="btn reminder-date-arrow" id="reminderNextDay" type="button" aria-label="Jour suivant">›</button><button class="btn" id="reminderToday" type="button">Aujourd’hui</button></div><div class="reminder-date-context" aria-live="polite"><span id="reminderDateLabel"></span><b id="reminderDateCount"></b></div><button class="btn blue" id="reminderShowAll" type="button">Voir toutes les relances</button></section><section class="workspace-toolbar"><div class="workspace-search"><span>⌕</span><input id="reminderSearch" placeholder="Rechercher une personne…"></div><select id="reminderCommercial">${filterOptions(followUpContacts.map(c=>teamName(c,ctx.C)),'','Tous les commerciaux',ctx.esc)}</select><select id="reminderFormation">${filterOptions(followUpContacts.map(c=>c.formation),'','Toutes les formations',ctx.esc)}</select><select id="reminderOrigin">${filterOptions(followUpContacts.map(sourceLabel),'','Toutes les origines',ctx.esc)}</select><label class="reminder-origin-exclusion"><input id="reminderExcludeMeta" type="checkbox"> Exclure META</label></section><section class="reminder-bulk-toolbar" aria-label="Actions groupées sur les relances"><label class="reminder-select-all"><input id="reminderSelectAll" type="checkbox"><span id="reminderSelectAllLabel">Tout sélectionner</span></label><span id="reminderSelectionCount" aria-live="polite">Aucune sélection</span><div><button class="btn" id="reminderClearSelection" type="button" disabled>Tout désélectionner</button><button class="btn danger" id="reminderBulkDisqualify" type="button" disabled>Disqualifier</button><button class="btn blue" id="reminderBulkEmail" type="button" disabled>Préparer un e-mail</button></div></section><section class="reminder-command-list" id="reminderCommandList"></section>`;
  const search=document.querySelector('#reminderSearch');
  const commercialFilter=document.querySelector('#reminderCommercial');
  const formationFilter=document.querySelector('#reminderFormation');
@@ -203,33 +187,39 @@ function remindersPage(ctx){
  const todayMetric=document.querySelector('#reminderTodayMetric');
  const plannedMetric=document.querySelector('#reminderPlanned');
  const selectAll=document.querySelector('#reminderSelectAll');
- const emailButton=document.querySelector('#reminderBulkEmail');
- const disqualifyButton=document.querySelector('#reminderBulkDisqualify');
- const clearButton=document.querySelector('#reminderClearSelection');
- const syncSelection=()=>{
-  const count=selected.size;
-  document.querySelector('#reminderSelectedCount').textContent=`${count} piste${count>1?'s':''} sélectionnée${count>1?'s':''}`;
-  document.querySelector('#reminderSelectAllLabel').textContent=`Tout sélectionner (${visibleRows.length})`;
-  selectAll.checked=visibleRows.length>0&&count===visibleRows.length;
-  selectAll.indeterminate=count>0&&count<visibleRows.length;
-  selectAll.disabled=!visibleRows.length;
-  [emailButton,disqualifyButton,clearButton].forEach(button=>{button.disabled=!count});
-  document.querySelectorAll('[data-reminder-select]').forEach(input=>{
-   input.checked=selected.has(input.dataset.reminderSelect);
-   input.closest('[data-reminder-contact]').classList.toggle('is-selected',input.checked);
+ const selectionCount=document.querySelector('#reminderSelectionCount');
+ const bulkEmailButton=document.querySelector('#reminderBulkEmail');
+ const bulkDisqualifyButton=document.querySelector('#reminderBulkDisqualify');
+ const clearSelectionButton=document.querySelector('#reminderClearSelection');
+ const updateSelection=()=>{
+  const count=selectedReminderIds.size;
+  selectAll.checked=visibleReminders.length>0&&count===visibleReminders.length;
+  selectAll.indeterminate=count>0&&count<visibleReminders.length;
+  selectAll.disabled=!visibleReminders.length;
+  document.querySelector('#reminderSelectAllLabel').textContent=`Tout sélectionner (${visibleReminders.length})`;
+  selectionCount.textContent=count?`${count} relance${count>1?'s':''} sélectionnée${count>1?'s':''}`:'Aucune sélection';
+  bulkEmailButton.disabled=!count;
+  bulkDisqualifyButton.disabled=!count;
+  clearSelectionButton.disabled=!count;
+  document.querySelectorAll('[data-select-reminder]').forEach(input=>{
+   input.checked=selectedReminderIds.has(input.dataset.selectReminder);
+   input.closest('.reminder-command').classList.toggle('is-selected',input.checked);
   });
  };
+ selectAll.onchange=()=>{visibleReminders.forEach(contact=>{const id=String(contact.id);if(selectAll.checked)selectedReminderIds.add(id);else selectedReminderIds.delete(id)});updateSelection()};
+ clearSelectionButton.onclick=()=>{selectedReminderIds.clear();updateSelection()};
+ bulkEmailButton.onclick=()=>ctx.bulkReminderEmailModal(visibleReminders.filter(contact=>selectedReminderIds.has(String(contact.id))),sentIds=>{sentIds.forEach(id=>selectedReminderIds.delete(String(id)));updateSelection()});
  const renderRows=()=>{
+  const currentFollowUps=ctx.contacts.filter(hasReminderStatus),currentPlanned=currentFollowUps.filter(contact=>reminderDate(contact));
+  missingMetric.querySelector('b').textContent=currentFollowUps.length-currentPlanned.length;
+  overdueMetric.querySelector('b').textContent=currentPlanned.filter(isOverdue).length;
+  todayMetric.querySelector('b').textContent=currentPlanned.filter(contact=>reminderDate(contact)===today).length;
+  plannedMetric.querySelector('b').textContent=currentPlanned.length;
   const q=normalize(search.value),commercial=commercialFilter.value,formation=formationFilter.value,origin=originFilter.value;
-  const rows=followUpContacts.filter(contact=>hasReminderStatus(contact)&&reminderPeriodMatches(contact,periodMode,selectedDate)&&(!q||normalize(ctx.displayName(contact)).includes(q))&&(!commercial||teamName(contact,ctx.C)===commercial)&&(!formation||contact.formation===formation)&&reminderOriginMatches(contact,origin,excludeMetaFilter.checked)).sort((a,b)=>(reminderDate(a)||'9999').localeCompare(reminderDate(b)||'9999')||ctx.displayName(a).localeCompare(ctx.displayName(b),'fr'));
-  visibleRows=rows;
+  const rows=currentFollowUps.filter(contact=>reminderPeriodMatches(contact,periodMode,selectedDate)&&(!q||normalize(ctx.displayName(contact)).includes(q))&&(!commercial||teamName(contact,ctx.C)===commercial)&&(!formation||contact.formation===formation)&&reminderOriginMatches(contact,origin,excludeMetaFilter.checked)).sort((a,b)=>(reminderDate(a)||'9999').localeCompare(reminderDate(b)||'9999')||ctx.displayName(a).localeCompare(ctx.displayName(b),'fr'));
+  visibleReminders=rows;
   const visibleIds=new Set(rows.map(contact=>String(contact.id)));
-  selected.forEach(id=>{if(!visibleIds.has(id))selected.delete(id)});
-  const active=ctx.contacts.filter(hasReminderStatus),activePlanned=active.filter(contact=>reminderDate(contact));
-  missingMetric.querySelector('b').textContent=active.length-activePlanned.length;
-  overdueMetric.querySelector('b').textContent=activePlanned.filter(isOverdue).length;
-  todayMetric.querySelector('b').textContent=activePlanned.filter(contact=>reminderDate(contact)===today).length;
-  plannedMetric.querySelector('b').textContent=activePlanned.length;
+  selectedReminderIds.forEach(id=>{if(!visibleIds.has(id))selectedReminderIds.delete(id)});
   const root=document.querySelector('#reminderCommandList');
   dateInput.value=selectedDate;
   dateLabel.textContent=periodMode==='missing'?'Pistes sans relance programmée':periodMode==='overdue'?'Relances en retard':periodMode==='planned'?'Toutes les relances planifiées':selectedDate===today?`Aujourd’hui · ${longDate(selectedDate)}`:longDate(selectedDate);
@@ -245,23 +235,18 @@ function remindersPage(ctx){
   plannedMetric.classList.toggle('active',periodMode==='planned');
   plannedMetric.setAttribute('aria-pressed',String(periodMode==='planned'));
   const emptyMessage=periodMode==='missing'?'Toutes les pistes à relancer ont une date programmée.':periodMode==='overdue'?'Aucune relance en retard correspondant aux filtres.':periodMode==='planned'?'Aucune relance correspondant aux filtres.':`Aucune relance prévue le ${longDate(selectedDate)}.`;
-  root.innerHTML=rows.map(contact=>{const [label,tone]=reminderStatus(contact),date=reminderDate(contact),relance=(contact.relances||[]).find(item=>item.status==='scheduled'&&item.scheduled_date===date),contactUrl=`/crm/contacts?fiche=${encodeURIComponent(contact.id)}`,dateCard=date?`<time><strong>${new Date(date+'T12:00:00').getDate()}</strong><span>${new Date(date+'T12:00:00').toLocaleDateString('fr-FR',{month:'short'})}</span></time>`:'<time class="reminder-no-date"><strong>—</strong><span>À planifier</span></time>',actions=date?`<button class="btn success" data-reminder-answered>A répondu</button><button class="btn warning" data-reminder-no-answer ${relance?'':'disabled'}>Pas de réponse</button><button class="btn" data-reminder-reschedule>Reprogrammer</button><a class="btn" data-reminder-open href="${contactUrl}">Ouvrir</a>`:`<button class="btn blue" data-reminder-reschedule>Planifier</button><a class="btn" data-reminder-open href="${contactUrl}">Ouvrir</a>`;return`<article class="reminder-command ${tone}" data-reminder-contact="${contact.id}" role="link" tabindex="0" aria-label="Ouvrir le suivi des relances de ${ctx.esc(ctx.displayName(contact))}"><label class="reminder-row-selection"><input type="checkbox" data-reminder-select="${ctx.esc(String(contact.id))}" aria-label="Sélectionner ${ctx.esc(ctx.displayName(contact))}"></label>${dateCard}<div><span class="reminder-tone">${label}</span><h3><a class="reminder-contact-link" data-reminder-name href="${contactUrl}">${ctx.esc(ctx.displayName(contact))}</a></h3><p>${ctx.esc(contact.formation||'Formation à définir')} · ${ctx.esc(sourceLabel(contact))} · ${ctx.esc(teamName(contact,ctx.C))}</p><small>${(contact.relances||[]).filter(item=>item.status==='no_answer').length} tentative(s) sans réponse</small></div><div class="reminder-command-actions">${actions}</div></article>`}).join('')||`<div class="empty">${ctx.esc(emptyMessage)}</div>`;
+  root.innerHTML=rows.map(contact=>{const [label,tone]=reminderStatus(contact),date=reminderDate(contact),relance=(contact.relances||[]).find(item=>item.status==='scheduled'&&item.scheduled_date===date),contactUrl=`/crm/contacts?fiche=${encodeURIComponent(contact.id)}`,dateCard=date?`<time><strong>${new Date(date+'T12:00:00').getDate()}</strong><span>${new Date(date+'T12:00:00').toLocaleDateString('fr-FR',{month:'short'})}</span></time>`:'<time class="reminder-no-date"><strong>—</strong><span>À planifier</span></time>',actions=date?`<button class="btn success" data-reminder-answered>A répondu</button><button class="btn warning" data-reminder-no-answer ${relance?'':'disabled'}>Pas de réponse</button><button class="btn" data-reminder-reschedule>Reprogrammer</button><a class="btn" data-reminder-open href="${contactUrl}">Ouvrir</a>`:`<button class="btn blue" data-reminder-reschedule>Planifier</button><a class="btn" data-reminder-open href="${contactUrl}">Ouvrir</a>`;return`<article class="reminder-command ${tone}" data-reminder-contact="${contact.id}" role="link" tabindex="0" aria-label="Ouvrir le suivi des relances de ${ctx.esc(ctx.displayName(contact))}"><label class="reminder-select"><input type="checkbox" data-select-reminder="${ctx.esc(contact.id)}" aria-label="Sélectionner ${ctx.esc(ctx.displayName(contact))}"></label>${dateCard}<div><span class="reminder-tone">${label}</span><h3><a class="reminder-contact-link" data-reminder-name href="${contactUrl}">${ctx.esc(ctx.displayName(contact))}</a></h3><p>${ctx.esc(contact.formation||'Formation à définir')} · ${ctx.esc(sourceLabel(contact))} · ${ctx.esc(teamName(contact,ctx.C))}</p><small>${(contact.relances||[]).filter(item=>item.status==='no_answer').length} tentative(s) sans réponse</small></div><div class="reminder-command-actions">${actions}</div></article>`}).join('')||`<div class="empty">${ctx.esc(emptyMessage)}</div>`;
   root.querySelectorAll('[data-reminder-contact]').forEach(card=>{const contact=ctx.contacts.find(c=>c.id===card.dataset.reminderContact),relance=(contact.relances||[]).find(item=>item.status==='scheduled'&&item.scheduled_date===contact.relance_date),open=bindReminderCardNavigation(card,contact,ctx),answeredButton=card.querySelector('[data-reminder-answered]');bindReminderLinkNavigation(card.querySelector('[data-reminder-open]'),open);bindReminderLinkNavigation(card.querySelector('[data-reminder-name]'),open);card.querySelector('[data-reminder-reschedule]').onclick=()=>ctx.relaunchModal(contact,{returnTab:'contactRelanceTab'});if(answeredButton)answeredButton.onclick=()=>ctx.callModal(contact,{relance,returnTab:'contactRelanceTab'});if(relance)card.querySelector('[data-reminder-no-answer]').onclick=()=>ctx.noAnswerRelanceModal(contact,relance)});
-  root.querySelectorAll('[data-reminder-select]').forEach(input=>{input.onchange=()=>{input.checked?selected.add(input.dataset.reminderSelect):selected.delete(input.dataset.reminderSelect);syncSelection()}});
-  syncSelection();
   root.querySelectorAll('[data-reminder-contact]').forEach(card=>{
    const contact=ctx.contacts.find(item=>item.id===card.dataset.reminderContact);
    const relance=(contact?.relances||[]).find(item=>item.status==='scheduled'&&item.scheduled_date===contact.relance_date);
    const details=card.querySelector('small');
    if(relance?.motif&&details)details.insertAdjacentHTML('beforebegin',`<small class="reminder-motif"><b>Motif :</b> ${ctx.esc(relance.motif)}</small>`);
   });
+  root.querySelectorAll('[data-select-reminder]').forEach(input=>input.onchange=()=>{if(input.checked)selectedReminderIds.add(input.dataset.selectReminder);else selectedReminderIds.delete(input.dataset.selectReminder);updateSelection()});
+  updateSelection();
  };
- selectAll.onchange=()=>{visibleRows.forEach(contact=>{selectAll.checked?selected.add(String(contact.id)):selected.delete(String(contact.id))});syncSelection()};
- clearButton.onclick=()=>{selected.clear();syncSelection()};
- const selectedRows=()=>visibleRows.filter(contact=>selected.has(String(contact.id)));
- const onUpdated=ids=>{ids.forEach(id=>selected.delete(String(id)));renderRows()};
- emailButton.onclick=()=>ctx.bulkMessageModal('email',{selectedContacts:selectedRows(),defaultTemplate:reminderInterestTemplate(ctx),requirePreview:true,onSent:onUpdated});
- disqualifyButton.onclick=()=>reminderDisqualifyModal(selectedRows(),ctx,onUpdated);
+ bulkDisqualifyButton.onclick=()=>reminderDisqualifyModal(visibleReminders.filter(contact=>selectedReminderIds.has(String(contact.id))),ctx,updatedIds=>{updatedIds.forEach(id=>selectedReminderIds.delete(id));renderRows()});
  const moveDate=offset=>{const date=new Date(`${selectedDate}T12:00:00`);date.setDate(date.getDate()+offset);selectedDate=dayKey(date);periodMode='date';renderRows()};
  const showToday=()=>{selectedDate=today;periodMode='date';renderRows()};
  const toggleMissing=()=>{periodMode=periodMode==='missing'?'date':'missing';renderRows()};

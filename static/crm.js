@@ -235,8 +235,9 @@ const header=(tag,title,sub)=>`<div class="page-title"><div><span class="eyebrow
 const workspaceContext=()=>({
  C,S,contacts,templates,notifications,settings:crmSettings,page,api,esc,fmt,toast,header,initials,displayName,
  appointments:()=>crmAppointments,setAppointments:rows=>{crmAppointments=rows},showContact,render,modal,closeModal,
- relaunchModal,noAnswerRelanceModal,callModal,bulkMessageModal,appointmentResponseControl,bindAppointmentResponseControls,
+ relaunchModal,noAnswerRelanceModal,callModal,appointmentResponseControl,bindAppointmentResponseControls,
  publicationCard,bindPublicationFeed,templatesPage,updateNotificationCount,
+ bulkReminderEmailModal:(selected,onSent)=>bulkMessageModal('email',{selected,reminder:true,onSent}),
  reloadContacts:async()=>{contacts=await api(`/api/crm/contacts?section=${encodeURIComponent(C.section)}`);return contacts},
  removeContact:id=>{contacts=contacts.filter(contact=>String(contact.id)!==String(id))},
 });
@@ -1912,37 +1913,60 @@ function messageModal(c,type,draft={}){
  previewButton.onclick=async()=>{pauseVoiceDictation();previewButton.disabled=true;const draftState={contenu:messageField.value,sujet:isMail?subjectField.value:'',template_id:templateSelect.value};draftState.email_layout=emailLayoutValues();draftState.attachments=[...manualAttachments];draftState.include_template_attachment=includeTemplateAttachment;try{if(isMail){const result=await api(`/api/crm/contacts/${c.id}/message-preview`,{method:'POST',body:JSON.stringify({contenu:messageContent()})});destroyVoiceDictation();previewModal(result.html,true,null,null,()=>messageModal(c,type,draftState))}else{destroyVoiceDictation();previewModal(smsPreviewHtml(messageField.value),false,null,{contenu:messageField.value,destinataire:c.telephone},()=>messageModal(c,type,draftState))}}catch(e){toast(e.message,true)}finally{previewButton.disabled=false}};
  sendButton.onclick=async()=>{pauseVoiceDictation();sendButton.disabled=true;try{let options;if(isMail){const formData=new FormData();formData.append('type',type);formData.append('contenu',messageContent());formData.append('sujet',subjectField.value);formData.append('template_id',templateSelect.value);formData.append('include_template_attachment',String(includeTemplateAttachment));manualAttachments.forEach(file=>formData.append('attachment',file,file.name));options={method:'POST',headers:{},body:formData}}else{options={method:'POST',body:JSON.stringify({type,contenu:messageField.value,sujet:'',template_id:templateSelect.value})}}Object.assign(c,await api(`/api/crm/contacts/${c.id}/message`,options));destroyVoiceDictation();closeModal();showContact(c.id);toast(`${isMail?'E-mail':'SMS'} envoyé`)}catch(e){toast(e.message,true);sendButton.disabled=false}}
 }
+function bulkMessageRecipients(type,selected,deduplicate=false){
+ const eligible=[],missing=[],duplicates=[],seen=new Set();
+ selected.forEach(contact=>{
+  const address=String((type==='email'?contact.mail:contact.telephone)||'').trim(),key=address.toLowerCase();
+  if(!address||(deduplicate&&type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)))missing.push(contact);
+  else if(deduplicate&&seen.has(key))duplicates.push(contact);
+  else{seen.add(key);eligible.push(contact)}
+ });
+ return{eligible,missing,duplicates};
+}
+const reminderInterestDraft={
+ sujet:'{{ formation }} — votre projet est-il toujours d’actualité ?',
+ contenu:'Vous aviez manifesté votre intérêt pour la formation {{ formation }} chez Intégrale Academy.\n\nÊtes-vous toujours intéressé(e) par cette formation ?\n\nVous pouvez simplement répondre à cet e-mail pour nous indiquer si :\n• vous souhaitez poursuivre votre projet ;\n• vous préférez le reporter à plus tard ;\n• vous n’êtes plus intéressé(e).\n\nSi votre projet est toujours d’actualité, nous pourrons faire le point ensemble sur les prochaines sessions, les démarches d’inscription et les possibilités de financement adaptées à votre situation.\n\nVous pouvez réserver un rendez-vous téléphonique avec notre équipe grâce au bouton ci-dessous, au créneau qui vous convient.\n\nUn simple retour de votre part nous permettra de vous accompagner au mieux.\n\nAu plaisir d’avoir de vos nouvelles !'
+};
+function reminderInterestHtml(starter,content){
+ const booking='<p style="margin:28px 0;text-align:center"><a href="{{ lien_rdv_calendly }}" target="_blank" rel="noopener" style="display:inline-block;padding:15px 24px;border-radius:8px;background:#ff6b35;color:#ffffff;text-decoration:none;font-family:Arial,sans-serif;font-size:16px;font-weight:bold">Prendre un rendez-vous téléphonique</a></p>';
+ const html=starter?buildFreeEmailHtml(starter,content,{HEADER_TITLE:'Et votre projet de formation ?',HEADER_SUBTITLE:'Formation {{ formation }}'}).replace('</head>','<style>@media(max-width:680px){.email-shell{table-layout:fixed;overflow-wrap:anywhere}}</style></head>'):emailContentToHtml(content);
+ return html.includes('<!-- EMAIL_CONTENT_END -->')?html.replace('<!-- EMAIL_CONTENT_END -->',()=>booking+'<!-- EMAIL_CONTENT_END -->'):html+booking;
+}
 function bulkMessageModal(type,options={}){
- const isMail=type==='email',selected=options.selectedContacts?options.selectedContacts.filter(isActiveLead):contacts.filter(contact=>selectedLeadIds.has(String(contact.id))&&isActiveLead(contact)),eligible=selected.filter(contact=>String((isMail?contact.mail:contact.telephone)||'').trim()),missing=selected.filter(contact=>!eligible.includes(contact));
+ const isMail=type==='email',isReminder=Boolean(options.reminder),selection=options.selected||contacts.filter(contact=>selectedLeadIds.has(String(contact.id))),selected=[...new Map(selection.filter(contact=>isActiveLead(contact)&&!contact.archived_at).map(contact=>[String(contact.id),contact])).values()],{eligible,missing,duplicates}=bulkMessageRecipients(type,selected,isReminder);
  if(!selected.length)return toast('Sélectionnez au moins une piste',true);
- if(!eligible.length)return toast(`Aucune piste sélectionnée ne possède ${isMail?'d’adresse e-mail':'de numéro de téléphone'}.`,true);
- const formations=[...new Set(eligible.map(contact=>contact.formation).filter(Boolean))],formation=formations.length===1?formations[0]:'',allMetaA3p=eligible.every(contact=>dashboardOrigin(contact)==='META'||String(contact.formation||'').trim().toLocaleUpperCase('fr-FR')==='A3P'),automaticMeta=allMetaA3p?(templates.automatic_meta||[]).filter(template=>template.type===type):[],modelPool=[...(options.defaultTemplate?[options.defaultTemplate]:[]),...(isMail?templates.automatic_email||[]:[]),...automaticMeta,...templates[type]],list=[...new Map(modelPool.map(template=>[String(template.id),template])).values()];
- modal(isMail?'Envoyer un e-mail groupé':'Envoyer un SMS groupé',`<div class="bulk-message-summary"><span>${crmIcon(isMail?'mail':'message')}</span><div><b>${eligible.length} destinataire${eligible.length>1?'s':''}</b><p>Chaque piste recevra un message individuel et les variables seront remplacées avec ses propres informations.</p>${missing.length?`<small>${missing.length} piste${missing.length>1?'s':''} ignorée${missing.length>1?'s':''} faute ${isMail?'d’adresse e-mail':'de numéro de téléphone'}.</small>`:''}</div></div><div class="field"><label>Utiliser un modèle</label><select id="bulkTpl">${messageTemplateOptions(list,formation,true)}</select></div>${isMail?'<div class="field"><label>Objet</label><input id="bulkSubject" value="Intégrale Academy — Votre formation"></div>':''}${options.requirePreview?'<details class="bulk-email-editor"><summary>Modifier le contenu du mail</summary>':''}<div class="field"><label>Message ${isMail?'(HTML accepté)':''}</label><textarea id="bulkMsg" placeholder="Votre message…"></textarea></div>${options.requirePreview?'</details>':''}<div class="field"><label for="bulkPreviewContact">Destinataire de l’aperçu</label><select id="bulkPreviewContact">${eligible.map(contact=>`<option value="${esc(String(contact.id))}">${esc(displayName(contact))} · ${esc(contact.formation||'Formation à définir')} · ${esc(isMail?contact.mail:contact.telephone)}</option>`).join('')}</select></div>${options.requirePreview?'<p class="bulk-preview-required">Prévisualisez le mail avant de confirmer l’envoi. Gardez cette fenêtre ouverte pendant l’envoi.</p>':''}<section class="bulk-message-preview" id="bulkMessagePreview" aria-live="polite" aria-busy="false" hidden><p id="bulkMessagePreviewLabel"></p><iframe title="Aperçu du message groupé" class="message-preview-frame" sandbox scrolling="yes"></iframe></section><div class="bulk-message-progress" id="bulkMessageProgress" hidden><div><i id="bulkMessageProgressBar"></i></div><p id="bulkMessageProgressText"></p></div>`,`<button class="btn" id="cancelBulkMessage">Annuler</button><button class="btn" id="previewBulkMessage">Prévisualiser</button><button class="btn blue" id="sendBulkMessage" ${options.requirePreview?'disabled':''}>Envoyer à ${eligible.length} piste${eligible.length>1?'s':''}</button>`,`message-modal bulk-message-modal${options.requirePreview?' reminder-email-modal':''}`);
- const templateSelect=document.querySelector('#bulkTpl'),messageField=document.querySelector('#bulkMsg'),subjectField=document.querySelector('#bulkSubject'),previewButton=document.querySelector('#previewBulkMessage'),previewRoot=document.querySelector('#bulkMessagePreview'),previewLabel=document.querySelector('#bulkMessagePreviewLabel'),previewFrame=previewRoot.querySelector('iframe'),sendButton=document.querySelector('#sendBulkMessage'),cancelButton=document.querySelector('#cancelBulkMessage'),progress=document.querySelector('#bulkMessageProgress'),progressBar=document.querySelector('#bulkMessageProgressBar'),progressText=document.querySelector('#bulkMessageProgressText');
- const previewContact=document.querySelector('#bulkPreviewContact'),closeButton=document.querySelector('.bulk-message-modal .close');
- let bulkPreviewRequest=0,previewed=false,sending=false;
- const hideBulkPreview=()=>{bulkPreviewRequest+=1;previewRoot.hidden=true;previewRoot.setAttribute('aria-busy','false');previewed=false;if(options.requirePreview)sendButton.disabled=true};
- previewContact.onchange=hideBulkPreview;
- templateSelect.onchange=()=>{const template=list.find(item=>String(item.id)===String(templateSelect.value));if(template){messageField.value=template.contenu;if(isMail)subjectField.value=template.sujet}hideBulkPreview()};
- messageField.addEventListener('input',hideBulkPreview);subjectField?.addEventListener('input',hideBulkPreview);
+ if(!eligible.length)return toast(`Aucune piste sélectionnée ne possède ${isMail?'d’adresse e-mail valide':'de numéro de téléphone'}.`,true);
+ const formations=[...new Set(eligible.map(contact=>contact.formation).filter(Boolean))],formation=formations.length===1?formations[0]:'',allMetaA3p=eligible.every(contact=>dashboardOrigin(contact)==='META'||String(contact.formation||'').trim().toLocaleUpperCase('fr-FR')==='A3P'),automaticMeta=allMetaA3p?(templates.automatic_meta||[]).filter(template=>template.type===type):[],modelPool=[...(isMail?templates.automatic_email||[]:[]),...automaticMeta,...templates[type]],list=[...new Map(modelPool.map(template=>[String(template.id),template])).values()];
+ const recipientOptions=eligible.map(contact=>`<option value="${esc(contact.id)}">${esc(displayName(contact))} · ${esc(contact.formation||'Formation à définir')} · ${esc(contact.mail||contact.telephone)}</option>`).join('');
+ modal(isReminder?'Relancer par e-mail':isMail?'Envoyer un e-mail groupé':'Envoyer un SMS groupé',`<div class="bulk-message-summary"><span>${crmIcon(isMail?'mail':'message')}</span><div><b>${eligible.length} destinataire${eligible.length>1?'s':''}${isReminder?` · ${selected.length} relance${selected.length>1?'s':''} sélectionnée${selected.length>1?'s':''}`:''}</b><p>Chaque piste recevra un message individuel et les variables seront remplacées avec ses propres informations.</p>${missing.length?`<small>${missing.length} piste${missing.length>1?'s':''} ignorée${missing.length>1?'s':''} faute ${isMail?'d’adresse e-mail valide':'de numéro de téléphone'}.</small>`:''}${duplicates.length?`<small>${duplicates.length} adresse${duplicates.length>1?'s':''} en double : un seul e-mail par adresse.</small>`:''}</div></div><div class="field"><label for="bulkTpl">Utiliser un modèle</label><select id="bulkTpl">${isReminder?'<option value="reminder-interest">Toujours intéressé par votre formation ?</option>':''}${messageTemplateOptions(list,formation,true)}</select></div>${isMail?`<div class="field"><label for="bulkSubject">Objet</label><input id="bulkSubject" value="${esc(isReminder?reminderInterestDraft.sujet:'Intégrale Academy — Votre formation')}"></div>`:''}<div class="field"><label for="bulkMsg">Message ${isMail?'(HTML accepté)':''}</label><textarea id="bulkMsg" placeholder="Votre message…">${esc(isReminder?reminderInterestDraft.contenu:'')}</textarea></div>${isReminder?`<p class="reminder-preview-help">Le prénom, la formation et le lien de rendez-vous sont personnalisés automatiquement. Le modèle proposé ajoute un bouton pour réserver un appel téléphonique. Choisissez un destinataire pour vérifier son mail. Prévisualisez le message avant de confirmer l’envoi.</p><div class="field"><label for="bulkPreviewRecipient">Destinataire à prévisualiser (${eligible.length})</label><select id="bulkPreviewRecipient">${recipientOptions}</select></div>`:''}<section class="bulk-message-preview" id="bulkMessagePreview" aria-live="polite" aria-busy="false" hidden><p id="bulkMessagePreviewLabel"></p><iframe title="Aperçu du message groupé" class="message-preview-frame" sandbox scrolling="yes"></iframe></section><div class="bulk-message-progress" id="bulkMessageProgress" hidden><div><i id="bulkMessageProgressBar"></i></div><p id="bulkMessageProgressText"></p></div>`,`<button class="btn" id="cancelBulkMessage">Annuler</button><button class="btn" id="previewBulkMessage">Prévisualiser</button><button class="btn blue" id="sendBulkMessage" ${isReminder?'disabled':''}>${isReminder?`Envoyer les ${eligible.length} e-mail${eligible.length>1?'s':''}`:`Envoyer à ${eligible.length} piste${eligible.length>1?'s':''}`}</button>`,`message-modal bulk-message-modal${isReminder?' reminder-email-modal':''}`);
+ const templateSelect=document.querySelector('#bulkTpl'),messageField=document.querySelector('#bulkMsg'),subjectField=document.querySelector('#bulkSubject'),previewButton=document.querySelector('#previewBulkMessage'),previewRoot=document.querySelector('#bulkMessagePreview'),previewLabel=document.querySelector('#bulkMessagePreviewLabel'),previewFrame=previewRoot.querySelector('iframe'),sendButton=document.querySelector('#sendBulkMessage'),cancelButton=document.querySelector('#cancelBulkMessage'),progress=document.querySelector('#bulkMessageProgress'),progressBar=document.querySelector('#bulkMessageProgressBar'),progressText=document.querySelector('#bulkMessageProgressText'),recipientSelect=document.querySelector('#bulkPreviewRecipient'),closeButton=document.querySelector('.modal .close');
+ let bulkPreviewRequest=0,previewedDraft='',sending=false,pending=[...eligible],sentTotal=0;
+ const messageContent=()=>isReminder&&templateSelect.value==='reminder-interest'?reminderInterestHtml(templates.email_free_starter,messageField.value):messageField.value;
+ const messagePayload=()=>({type,contenu:messageContent(),sujet:subjectField?.value||'',template_id:templateSelect.value==='reminder-interest'?'':templateSelect.value});
+ const draftKey=()=>JSON.stringify(messagePayload());
+ const hideBulkPreview=()=>{bulkPreviewRequest+=1;previewedDraft='';previewRoot.hidden=true;previewRoot.setAttribute('aria-busy','false');if(isReminder)sendButton.disabled=true};
+ templateSelect.onchange=()=>{const template=templateSelect.value==='reminder-interest'?reminderInterestDraft:list.find(item=>String(item.id)===String(templateSelect.value));if(template){messageField.value=template.contenu;if(isMail)subjectField.value=template.sujet}hideBulkPreview()};
+ messageField.addEventListener('input',hideBulkPreview);subjectField?.addEventListener('input',hideBulkPreview);recipientSelect?.addEventListener('change',hideBulkPreview);
  previewButton.onclick=async()=>{
   if(!messageField.value.trim())return toast('Le message ne peut pas être vide',true);
-  const requestId=++bulkPreviewRequest,contact=eligible.find(item=>String(item.id)===previewContact.value)||eligible[0];
+  if(isReminder&&!subjectField.value.trim())return toast('Renseignez l’objet du mail',true);
+  const requestId=++bulkPreviewRequest,contact=eligible.find(item=>String(item.id)===recipientSelect?.value)||eligible[0],payload=messagePayload(),key=JSON.stringify(payload);
+  previewedDraft='';if(isReminder)sendButton.disabled=true;
   previewButton.disabled=true;previewButton.textContent='Préparation…';
   previewRoot.hidden=false;previewRoot.setAttribute('aria-busy','true');
   previewLabel.textContent=`Préparation de l’aperçu pour ${displayName(contact)}…`;
   previewFrame.srcdoc='';previewRoot.scrollIntoView({block:'nearest'});
   try{
-   const result=await api(`/api/crm/contacts/${contact.id}/message-preview`,{method:'POST',body:JSON.stringify({type,contenu:messageField.value,sujet:subjectField?.value||''})});
+   const result=await api(`/api/crm/contacts/${contact.id}/message-preview`,{method:'POST',body:JSON.stringify(payload)});
    if(requestId!==bulkPreviewRequest)return;
-   previewed=true;sendButton.disabled=false;
    if(isMail){
     previewFrame.srcdoc=`${result.html}<style>html,body{overflow:auto!important;min-height:100%!important}</style>`;
-    previewLabel.textContent=`${result.sujet||'Sans objet'} · aperçu e-mail personnalisé pour ${displayName(contact)}`;
+    previewLabel.textContent=`${result.sujet||'Sans objet'} · aperçu e-mail personnalisé pour ${displayName(contact)} (${contact.mail})`;
    }else{
     previewFrame.srcdoc=smsPreviewHtml(result.contenu);
     previewLabel.textContent=`Aperçu du SMS personnalisé pour ${displayName(contact)}`;
    }
+   previewedDraft=key;if(isReminder)sendButton.disabled=false;
   }catch(error){
    if(requestId!==bulkPreviewRequest)return;
    previewRoot.hidden=true;toast(error.message,true);
@@ -1951,45 +1975,47 @@ function bulkMessageModal(type,options={}){
    if(previewButton.isConnected){previewButton.disabled=false;previewButton.textContent='Prévisualiser'}
   }
  };
-  cancelButton.onclick=closeModal;
- if(options.defaultTemplate){templateSelect.value=options.defaultTemplate.id;templateSelect.onchange()}
- let pending=[...eligible],sentTotal=0;
- const setSending=value=>{
-  sending=value;
-  [sendButton,cancelButton,previewButton,templateSelect,messageField,subjectField,previewContact,closeButton].filter(Boolean).forEach(control=>{control.disabled=value});
-  if(!value&&options.requirePreview&&!previewed)sendButton.disabled=true;
- };
- const preventLeaving=event=>{event.preventDefault();event.returnValue=''};
+ const preventLeave=event=>{event.preventDefault();event.returnValue=''};
+ cancelButton.onclick=()=>{if(!sending)closeModal()};
+ closeButton.onclick=()=>{if(!sending)closeModal()};
  sendButton.onclick=async()=>{
   if(sending)return;
   if(!messageField.value.trim())return toast('Le message ne peut pas être vide',true);
-  if(options.requirePreview&&!previewed)return toast('Prévisualisez le mail avant de l’envoyer',true);
-  setSending(true);window.addEventListener('beforeunload',preventLeaving);
+  if(isReminder&&previewedDraft!==draftKey())return toast('Prévisualisez le mail avant de l’envoyer.',true);
+  const payload=messagePayload(),batch=[...pending],failures=[],sent=[];
+  sending=true;bulkPreviewRequest+=1;
+  const controls=[sendButton,cancelButton,previewButton,templateSelect,messageField,subjectField,recipientSelect,closeButton].filter(Boolean);
+  controls.forEach(control=>control.disabled=true);
+  window.addEventListener('beforeunload',preventLeave);
   progress.hidden=false;progress.classList.remove('has-errors');
-  const batch=[...pending],failures=[],sent=[];
   try{
    for(let index=0;index<batch.length;index++){
     const contact=batch[index];
-    progressText.textContent=`Envoi ${index+1} sur ${batch.length} · ${displayName(contact)}`;
+    progressText.textContent=`Envoi ${index+1} sur ${batch.length} · ${displayName(contact)}. Gardez cette fenêtre ouverte jusqu’à la fin de l’envoi.`;
     progressBar.style.width=`${Math.round(index/batch.length*100)}%`;
     try{
-     const updated=await api(`/api/crm/contacts/${contact.id}/message`,{method:'POST',body:JSON.stringify({type,contenu:messageField.value,sujet:isMail?subjectField.value:'',template_id:templateSelect.value})});
+     const updated=await api(`/api/crm/contacts/${contact.id}/message`,{method:'POST',body:JSON.stringify(payload)});
      mergeContactInStore(contact.id,updated);sent.push(String(contact.id));
     }catch(error){failures.push({contact,error:error.message})}
    }
-   progressBar.style.width='100%';sentTotal+=sent.length;
-   sent.forEach(id=>selectedLeadIds.delete(id));pending=failures.map(item=>item.contact);
-   updateLeadSelectionControls();options.onSent?.(sent);
-   if(failures.length){
-    progress.classList.add('has-errors');
-    progressText.innerHTML=`<b>${sentTotal} envoi${sentTotal>1?'s':''} réussi${sentTotal>1?'s':''}, ${failures.length} échec${failures.length>1?'s':''}.</b><span>${failures.slice(0,5).map(item=>`${esc(displayName(item.contact))} : ${esc(item.error)}`).join('<br>')}</span>`;
-    sendButton.textContent=`Réessayer les ${failures.length} échec${failures.length>1?'s':''}`;
-   }else{
-    closeModal();toast(`${sentTotal} ${isMail?'e-mail':'SMS'}${sentTotal>1?'s':''} envoyé${sentTotal>1?'s':''}${missing.length?` · ${missing.length} piste${missing.length>1?'s':''} sans coordonnée`:''}`);
-   }
-  }finally{setSending(false);window.removeEventListener('beforeunload',preventLeaving)}
+  }finally{
+   sending=false;window.removeEventListener('beforeunload',preventLeave);
+   controls.forEach(control=>control.disabled=false);
+  }
+  progressBar.style.width='100%';sentTotal+=sent.length;
+  if(isReminder){
+   const sentAddresses=new Set(batch.filter(contact=>sent.includes(String(contact.id))).map(contact=>String(contact.mail).trim().toLowerCase()));
+   options.onSent?.(selected.filter(contact=>sentAddresses.has(String(contact.mail||'').trim().toLowerCase())).map(contact=>String(contact.id)));
+  }else{sent.forEach(id=>selectedLeadIds.delete(id));updateLeadSelectionControls()}
+  pending=failures.map(item=>item.contact);
+  if(failures.length){
+   progress.classList.add('has-errors');
+   progressText.innerHTML=`<b>${sentTotal} envoi${sentTotal>1?'s':''} réussi${sentTotal>1?'s':''}, ${failures.length} échec${failures.length>1?'s':''}.</b><span>${failures.slice(0,5).map(item=>`${esc(displayName(item.contact))} : ${esc(item.error)}`).join('<br>')}</span>`;
+   sendButton.textContent=`Réessayer les ${failures.length} échec${failures.length>1?'s':''}`;
+  }else{
+   closeModal();toast(`${sentTotal} ${isMail?'e-mail':'SMS'}${sentTotal>1?'s':''} envoyé${sentTotal>1?'s':''}${missing.length?` · ${missing.length} piste${missing.length>1?'s':''} sans coordonnée valide`:''}`);
+  }
  };
-
 }
 function previewModal(content,allowCopy=false,emailData=null,smsData=null,onBack=null){const previewContent=`${content}<style>html,body{overflow:auto!important;min-height:100%!important}</style>`,backButton=typeof onBack==='function'?'<button type="button" class="btn" id="backToMessage">← Retour au message</button>':'',copyButton=allowCopy?'<button class="btn" id="copyPreviewHtml">Copier le code HTML</button>':'',testButton=emailData?'<button class="btn blue" id="sendTestEmail">Envoyer un e-mail de test</button>':smsData?'<button class="btn blue" id="sendTestSms">Envoyer un SMS de test</button>':'';modal('Prévisualisation',`<iframe title="Prévisualisation" class="message-preview-frame" sandbox scrolling="yes" srcdoc="${esc(previewContent)}"></iframe>`,`${backButton}${copyButton}${testButton}`,'preview-modal');if(typeof onBack==='function')backToMessage.onclick=onBack;if(allowCopy)copyPreviewHtml.onclick=async()=>{try{await navigator.clipboard.writeText(content);copyPreviewHtml.textContent='✓ Code HTML copié';toast('Code HTML copié')}catch(_){const area=document.createElement('textarea');area.value=content;document.body.appendChild(area);area.select();document.execCommand('copy');area.remove();copyPreviewHtml.textContent='✓ Code HTML copié';toast('Code HTML copié')}};if(emailData)sendTestEmail.onclick=async()=>{const recipient=window.prompt('À quelle adresse envoyer cet e-mail de test ?',C.user_email||'');if(recipient===null)return;sendTestEmail.disabled=true;sendTestEmail.textContent='Envoi en cours…';try{await api('/api/crm/test-email',{method:'POST',body:JSON.stringify({destinataire:recipient,sujet:emailData.sujet,contenu:emailData.contenu,template_id:emailData.template_id||''})});sendTestEmail.textContent='✓ E-mail de test envoyé';toast('E-mail de test envoyé')}catch(e){toast(e.message,true);sendTestEmail.disabled=false;sendTestEmail.textContent='Envoyer un e-mail de test'}};if(smsData)sendTestSms.onclick=async()=>{const recipient=window.prompt('À quel numéro envoyer ce SMS de test ?',smsData.destinataire||'');if(recipient===null)return;sendTestSms.disabled=true;sendTestSms.textContent='Envoi en cours…';try{await api('/api/crm/test-sms',{method:'POST',body:JSON.stringify({destinataire:recipient,contenu:smsData.contenu})});sendTestSms.textContent='✓ SMS de test envoyé';toast('SMS de test envoyé')}catch(e){toast(e.message,true);sendTestSms.disabled=false;sendTestSms.textContent='Envoyer un SMS de test'}}}
 const crmTemplateVariables=[['{{ prenom }}','Prénom'],['{{ nom }}','Nom'],['{{ email }}','Adresse e-mail'],['{{ telephone }}','Téléphone'],['{{ formation }}','Formation'],['{{ lieu }}','Lieu'],['{{ statut }}','Statut CRM'],['{{ dates_formation }}','Dates de formation'],['{{ prochaines_dates }}','Prochaines sessions disponibles'],['{{ date_rdv_du_jour }}','Date du RDV téléphonique du jour'],['{{ heure_rdv_du_jour }}','Heure du RDV téléphonique du jour'],['{{ date_heure_rdv_du_jour }}','Date et heure du RDV téléphonique du jour'],['{{ lien_rdv_calendly }}','Lien du RDV Calendly selon la formation']];

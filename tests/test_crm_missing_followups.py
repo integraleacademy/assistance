@@ -62,6 +62,6 @@ console.log('CRM missing follow-ups: OK');
     assert "const followUpContacts=ctx.contacts.filter(hasReminderStatus)" in javascript
     assert "const missing=followUpContacts.filter(contact=>!reminderDate(contact))" in javascript
     assert "periodMode==='missing'?'Pistes sans relance programmée'" in javascript
-    assert "<button class=\"btn blue\" data-reminder-reschedule>Planifier</button>" in javascript
+    assert '<button class="btn blue" data-reminder-reschedule>Planifier</button>' in javascript
     assert ".reminder-metrics{grid-template-columns:repeat(5,minmax(0,1fr))}" in stylesheet
     assert ".workspace-metrics article.missing-metric.active" in stylesheet
