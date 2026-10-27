@@ -11672,6 +11672,59 @@ def _crm_edit_call_activity(activity, detail):
 
 CRM_RELANCE_STATUSES = {"scheduled", "answered", "no_answer", "reprogrammed", "cancelled"}
 CRM_RELANCE_MOTIF_MAX_LENGTH = 160
+CRM_RELANCE_CLOSURES = (
+    (datetime.date(2026, 12, 24), datetime.date(2027, 1, 3)),
+)
+CRM_RELANCE_UNAVAILABLE_MESSAGE = (
+    "Les relances ne peuvent pas être programmées le week-end, un jour férié "
+    "ou pendant la fermeture du 24 décembre 2026 au 3 janvier 2027."
+)
+
+
+def _crm_easter_sunday(year):
+    """Return Easter Sunday for the Gregorian calendar."""
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    month_correction = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * month_correction) // 451
+    month = (h + month_correction - 7 * m + 114) // 31
+    day = ((h + month_correction - 7 * m + 114) % 31) + 1
+    return datetime.date(year, month, day)
+
+
+def _crm_french_public_holidays(year):
+    """Return national French public holidays for the requested year."""
+    easter = _crm_easter_sunday(year)
+    return {
+        datetime.date(year, 1, 1),
+        datetime.date(year, 5, 1),
+        datetime.date(year, 5, 8),
+        datetime.date(year, 7, 14),
+        datetime.date(year, 8, 15),
+        datetime.date(year, 11, 1),
+        datetime.date(year, 11, 11),
+        datetime.date(year, 12, 25),
+        easter + datetime.timedelta(days=1),
+        easter + datetime.timedelta(days=39),
+        easter + datetime.timedelta(days=50),
+    }
+
+
+def _crm_relance_date_is_unavailable(value):
+    """Return whether a new follow-up cannot be scheduled on this date."""
+    return (
+        value.weekday() >= 5
+        or value in _crm_french_public_holidays(value.year)
+        or any(start <= value <= end for start, end in CRM_RELANCE_CLOSURES)
+    )
 
 
 def _crm_relance_date(value, *, weekdays_only=False):
@@ -11683,10 +11736,8 @@ def _crm_relance_date(value, *, weekdays_only=False):
         parsed = datetime.date.fromisoformat(normalized)
     except ValueError as exc:
         raise ValueError("La date de relance est invalide.") from exc
-    if weekdays_only and parsed.weekday() >= 5:
-        raise ValueError(
-            "Les relances ne peuvent pas être programmées le samedi ou le dimanche."
-        )
+    if weekdays_only and _crm_relance_date_is_unavailable(parsed):
+        raise ValueError(CRM_RELANCE_UNAVAILABLE_MESSAGE)
     return normalized
 
 
