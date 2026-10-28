@@ -12,6 +12,7 @@ from email import encoders
 from werkzeug.utils import secure_filename
 import crm_external_access
 from crm_read_cache import LastProjection, UpdateSnapshots
+from crm_email_signatures import with_cassandre_memoji
 
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
@@ -1853,6 +1854,7 @@ def _crm_delete_email_attachment(metadata):
 def _crm_send_email_html(to_emails, subject, plain_text, html_body,
                          template=None, attachments_paths=None):
     """Send an e-mail with explicit files or the attachment saved on its template."""
+    html_body = _crm_refresh_email_signature(html_body)
     paths = attachments_paths
     if paths is None and isinstance(template, dict):
         stored_path = _crm_email_attachment_path(template.get("piece_jointe"))
@@ -12697,7 +12699,7 @@ def _secretariat_information_email(data, entry, contact):
             email_header_title="Informations sur votre formation",
             email_header_subtitle=formation.get("label") or formation.get("short") or "",
         )
-    return template, subject, plain, branded
+    return template, subject, plain, _crm_refresh_email_signature(branded)
 
 
 def _send_secretariat_information_messages(data, entry, contact):
@@ -18603,6 +18605,10 @@ def _crm_templates_payload(data):
             "{{ contenu|safe }}",
             "<!-- EMAIL_CONTENT_START --><p>Écrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
         )
+    email_starter = email_starter.replace(
+        "{% include 'emails/_cassandre_memoji.html' %}",
+        render_template("emails/_cassandre_memoji.html"),
+    )
     automatic_email = [
         {
             "id": "automatic-desp-vae",
@@ -18683,7 +18689,10 @@ def _crm_templates_payload(data):
         },
     ]
     return {
-        "email": data["crm_email_templates"],
+        "email": [
+            {**template, "contenu": _crm_refresh_email_signature(template.get("contenu"))}
+            for template in data["crm_email_templates"]
+        ],
         "sms": data["crm_sms_templates"],
         "automatic_email": automatic_email,
         "automatic_meta": automatic_meta,
@@ -19432,11 +19441,19 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
     return resolved
 
 
+def _crm_refresh_email_signature(body):
+    if "cassandre" not in str(body or "").casefold():
+        return str(body or "")
+    return with_cassandre_memoji(
+        body, render_template("emails/_cassandre_memoji.html").strip(),
+    )
+
+
 def _crm_email_html(body, contact):
     """Keep complete custom e-mails intact and brand body-only messages."""
     body = str(body or "")
     if re.search(r"<(?:!doctype|html)\b", body, re.IGNORECASE):
-        return body
+        return _crm_refresh_email_signature(body)
     if not re.search(r"</?[a-z][^>]*>", body, re.IGNORECASE):
         normalized = html_module.unescape(body).replace("\r\n", "\n").replace("\r", "\n")
         paragraphs = [
@@ -19450,9 +19467,9 @@ def _crm_email_html(body, contact):
             + "</p>"
             for paragraph in paragraphs
         )
-    return render_template(
+    return _crm_refresh_email_signature(render_template(
         "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
-    )
+    ))
 
 @app.route("/api/crm/contacts/<contact_id>/cnaps-form", methods=["POST"])
 @login_required
