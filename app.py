@@ -19,6 +19,7 @@ from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 
 from functools import wraps
+from contextlib import contextmanager
 from flask import session, flash
 
 import calendar
@@ -3928,7 +3929,7 @@ def _secretariat_existing_crm_contact(data, payload):
 def api_secretariat_crm_contact():
     """Find an existing CRM record without exposing the contact list."""
     payload = request.get_json(silent=True) or {}
-    contact = _secretariat_existing_crm_contact(load_data(), payload)
+    contact = _secretariat_existing_crm_contact(_load_data_snapshot(), payload)
     result = {"contact_id": contact.get("id") if contact else None}
     user = current_user()
     # This page is also public. Only an already-authorized internal CRM session
@@ -12427,7 +12428,7 @@ def _secretariat_information_template(data, kind, formation_code):
                  if normalise(template.get("nom")) == name), None)
 
 
-def _crm_next_phone_appointment(data, entry, contact=None, now=None):
+def _crm_next_phone_appointment(data, entry, contact=None, now=None, *, appointments=None):
     """Return the next cached phone appointment matching a secretariat call."""
     contact = contact or {}
     contact_id = str(contact.get("id") or "").strip()
@@ -12448,7 +12449,8 @@ def _crm_next_phone_appointment(data, entry, contact=None, now=None):
     else:
         now = now.astimezone(paris)
     matches = []
-    for appointment in data.get("crm_calendly_appointments", []):
+    for appointment in (data.get("crm_calendly_appointments", [])
+                        if appointments is None else appointments):
         same_contact = bool(contact_id) and str(appointment.get("contact_id") or "") == contact_id
         same_email = _crm_normalize_email(appointment.get("invitee_email")) in emails
         same_phone = _crm_normalize_phone(appointment.get("invitee_phone")) in phones
@@ -13281,7 +13283,7 @@ _CRM_AI_ANALYSIS_LOCKS_GUARD = threading.Lock()
 
 
 def build_candidate_ai_context(contact_id, data=None, now=None, *, fetch_live_vae=True):
-    data = data or load_data()
+    data = data or _load_data_snapshot()
     contact = _crm_contact(data, contact_id)
     if not contact:
         raise KeyError(contact_id)
@@ -13318,7 +13320,7 @@ def generate_candidate_ai_analysis(context):
 
 
 def get_candidate_ai_analysis_state(contact_id, data=None):
-    data = data or load_data()
+    data = data or _load_data_snapshot()
     stored = data.get("crm_ai_candidate_analyses", {}).get(contact_id)
     enabled = bool(os.getenv("OPENAI_API_KEY"))
     if not stored:
@@ -13386,65 +13388,74 @@ def _wedof_db_signature():
     for candidate in (path, f"{path}-wal"):
         try:
             stat = os.stat(candidate)
-            signature.append((stat.st_ino, stat.st_size, stat.st_mtime_ns))
+            # A read connection can create/remove an empty WAL without any
+            # data change. Treat that as absent so concurrent reads share caches.
+            signature.append(None if candidate != path and stat.st_size == 0
+                             else (stat.st_ino, stat.st_size, stat.st_mtime_ns))
         except OSError:
             signature.append(None)
     return tuple(signature)
 
 
+@contextmanager
 def _wedof_connect():
+    """Commit/roll back and close each cache connection, including failures."""
     path = _wedof_db_path()
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     connection = sqlite3.connect(path, timeout=10)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 10000")
-    connection.execute("PRAGMA journal_mode = WAL")
-    connection.execute("PRAGMA foreign_keys = ON")
-    connection.executescript("""
-        CREATE TABLE IF NOT EXISTS wedof_resources (
-            resource_type TEXT NOT NULL,
-            stable_id TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
-            remote_date TEXT,
-            synced_at TEXT NOT NULL,
-            PRIMARY KEY (resource_type, stable_id)
-        );
-        CREATE TABLE IF NOT EXISTS wedof_contact_links (
-            contact_id TEXT NOT NULL,
-            resource_type TEXT NOT NULL,
-            resource_id TEXT NOT NULL,
-            attendee_id TEXT,
-            match_method TEXT NOT NULL,
-            linked_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (resource_type, resource_id),
-            FOREIGN KEY (resource_type, resource_id)
-                REFERENCES wedof_resources(resource_type, stable_id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_wedof_links_contact
-            ON wedof_contact_links(contact_id);
-        CREATE TABLE IF NOT EXISTS wedof_sync_state (
-            sync_key TEXT PRIMARY KEY,
-            value_json TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS wedof_webhook_deliveries (
-            delivery_id TEXT PRIMARY KEY,
-            processed_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS wedof_contact_refresh_state (
-            resource_type TEXT NOT NULL,
-            resource_id TEXT NOT NULL,
-            last_attempt_at REAL NOT NULL DEFAULT 0,
-            last_success_at REAL NOT NULL DEFAULT 0,
-            last_error TEXT NOT NULL DEFAULT '',
-            lease_token TEXT NOT NULL DEFAULT '',
-            lease_expires_at REAL NOT NULL DEFAULT 0,
-            PRIMARY KEY (resource_type, resource_id)
-        );
-    """)
-    connection.commit()
-    return connection
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 10000")
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.executescript("""
+            CREATE TABLE IF NOT EXISTS wedof_resources (
+                resource_type TEXT NOT NULL,
+                stable_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                remote_date TEXT,
+                synced_at TEXT NOT NULL,
+                PRIMARY KEY (resource_type, stable_id)
+            );
+            CREATE TABLE IF NOT EXISTS wedof_contact_links (
+                contact_id TEXT NOT NULL,
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                attendee_id TEXT,
+                match_method TEXT NOT NULL,
+                linked_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (resource_type, resource_id),
+                FOREIGN KEY (resource_type, resource_id)
+                    REFERENCES wedof_resources(resource_type, stable_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_wedof_links_contact
+                ON wedof_contact_links(contact_id);
+            CREATE TABLE IF NOT EXISTS wedof_sync_state (
+                sync_key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS wedof_webhook_deliveries (
+                delivery_id TEXT PRIMARY KEY,
+                processed_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS wedof_contact_refresh_state (
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                last_attempt_at REAL NOT NULL DEFAULT 0,
+                last_success_at REAL NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                lease_token TEXT NOT NULL DEFAULT '',
+                lease_expires_at REAL NOT NULL DEFAULT 0,
+                PRIMARY KEY (resource_type, resource_id)
+            );
+        """)
+        connection.commit()
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def _wedof_now():
@@ -14656,7 +14667,7 @@ def _start_wedof_background_sync():
 
 
 def _wedof_contact_resources(contact_id, data=None):
-    data = data or load_data()
+    data = data or _load_data_snapshot()
     contact = _crm_contact(data, contact_id)
     if not contact:
         return []
@@ -14673,53 +14684,46 @@ def _wedof_contact_resources(contact_id, data=None):
         ) == contact_name
     )
 
-    # Cas courant : le dossier est déjà rattaché à cette piste. Le filtre SQL
-    # évite alors de charger et décoder tous les dossiers WEDOF de l'organisme.
+    resources = []
     with _wedof_connect() as db:
-        directly_linked_rows = db.execute("""
+        directly_linked = db.execute("""
+            SELECT 1 FROM wedof_resources r JOIN wedof_contact_links l
+              ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
+            WHERE l.contact_id=? LIMIT 1
+        """, (str(contact_id),)).fetchone()
+        query = """
             SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
                    r.synced_at, l.contact_id AS linked_contact_id,
                    l.attendee_id, l.match_method
             FROM wedof_resources r LEFT JOIN wedof_contact_links l
               ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-            WHERE l.contact_id=?
-            ORDER BY r.synced_at DESC
-        """, (str(contact_id),)).fetchall()
-
-        # Le balayage par identité ne reste nécessaire que pour une nouvelle
-        # piste non encore liée ou pour de vrais doublons nom/prénom.
-        if directly_linked_rows and same_name_count <= 1:
-            rows = directly_linked_rows
-        else:
-            rows = db.execute("""
-                SELECT r.resource_type, r.stable_id, r.payload_json, r.remote_date,
-                       r.synced_at, l.contact_id AS linked_contact_id,
-                       l.attendee_id, l.match_method
-                FROM wedof_resources r LEFT JOIN wedof_contact_links l
-                  ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
-                ORDER BY r.synced_at DESC
-            """).fetchall()
-
-    resources = []
-    for row in rows:
-        payload = json.loads(row["payload_json"])
-        directly_linked = str(row["linked_contact_id"] or "") == str(contact_id)
-        # Une même personne peut avoir plusieurs pistes CRM. Le lien WEDOF reste
-        # unique en base, mais chaque doublon d'identité doit pouvoir consulter
-        # ses dossiers sans perdre les accents de son nom dans le CRM.
-        if not directly_linked and not _wedof_contact_name_matches(payload, contact):
-            continue
-        attendee_id = row["attendee_id"]
-        match_method = row["match_method"]
-        if not directly_linked:
-            _, _, attendee_id = _wedof_attendee_values(payload)
-            match_method = "name"
-        resources.append({
-            "type": row["resource_type"], "stable_id": row["stable_id"],
-            "payload": payload, "remote_date": row["remote_date"],
-            "synced_at": row["synced_at"], "attendee_id": attendee_id,
-            "match_method": match_method,
-        })
+        """
+        parameters = ()
+        if directly_linked and same_name_count <= 1:
+            query += " WHERE l.contact_id=?"
+            parameters = (str(contact_id),)
+        # A new/unlinked contact still uses the legacy identity match, without
+        # retaining every unrelated WEDOF payload in memory at once.
+        rows = db.execute(query + " ORDER BY r.synced_at DESC", parameters)
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            directly_linked = str(row["linked_contact_id"] or "") == str(contact_id)
+            # Une même personne peut avoir plusieurs pistes CRM. Le lien WEDOF reste
+            # unique en base, mais chaque doublon d'identité doit pouvoir consulter
+            # ses dossiers sans perdre les accents de son nom dans le CRM.
+            if not directly_linked and not _wedof_contact_name_matches(payload, contact):
+                continue
+            attendee_id = row["attendee_id"]
+            match_method = row["match_method"]
+            if not directly_linked:
+                _, _, attendee_id = _wedof_attendee_values(payload)
+                match_method = "name"
+            resources.append({
+                "type": row["resource_type"], "stable_id": row["stable_id"],
+                "payload": payload, "remote_date": row["remote_date"],
+                "synced_at": row["synced_at"], "attendee_id": attendee_id,
+                "match_method": match_method,
+            })
     # Toutes les vues CPF/FT doivent partager la même source de vérité : le
     # dossier créé le plus récemment. Les autres restent consultables comme
     # historique, mais ne doivent jamais participer aux statuts calculés.
@@ -15011,6 +15015,13 @@ def _wedof_effective_funding_status(
 
 
 def _wedof_funding_statuses_by_contact(data, *, include_cpf=False):
+    # Recheck and rebuild under one lock. Concurrent readers previously each
+    # decoded the complete cache when its revision changed.
+    with _WEDOF_FUNDING_CACHE_LOCK:
+        return _wedof_build_funding_statuses(data, include_cpf=include_cpf)
+
+
+def _wedof_build_funding_statuses(data, *, include_cpf=False):
     """Calcule les statuts FT et CPF en un seul parcours du cache WEDOF.
 
     L'ancienne implémentation relisait et décodait la table complète pour chaque
@@ -15182,12 +15193,12 @@ def crm_contact_wedof(contact_id):
 @app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
 @login_required
 def crm_contact_wedof_refresh(contact_id):
-    data = load_data()
+    data = _load_data_snapshot()
     if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
     try:
         sync = _wedof_refresh_contact_resource(contact_id, data)
-        refreshed_data = load_data()
+        refreshed_data = _load_data_snapshot()
         return jsonify({
             "sync": sync,
             "resources": _wedof_contact_resources(contact_id, refreshed_data),
@@ -15204,14 +15215,14 @@ def crm_contact_wedof_refresh(contact_id):
 @login_required
 def crm_contact_wedof_refresh_on_open(contact_id):
     """Actualise au plus un dossier connu, au maximum une fois par demi-heure."""
-    data = load_data()
+    data = _load_data_snapshot()
     if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
     try:
         sync = _wedof_refresh_contact_resource(
             contact_id, data, automatic=True,
         )
-        refreshed_data = load_data()
+        refreshed_data = _load_data_snapshot()
         return jsonify({
             "sync": sync,
             "resources": _wedof_contact_resources(contact_id, refreshed_data),
@@ -15366,7 +15377,7 @@ def crm(section):
         "crm.html",
         section=section,
         page_title=CRM_PAGE_LABELS[section],
-        statuses=_crm_statuses(load_data()),
+        statuses=_crm_statuses(_load_data_snapshot()),
         user=user,
         crm_team=[
             {
@@ -18518,7 +18529,7 @@ def crm_contact_summary(contact_id):
 @app.route("/api/crm/contacts/<contact_id>/ai-analysis", methods=["GET", "POST"])
 @login_required
 def crm_candidate_ai_analysis(contact_id):
-    data = load_data()
+    data = _load_data_snapshot()
     if not _crm_contact(data, contact_id):
         return jsonify({"error": "Contact introuvable"}), 404
     if request.method == "GET":
@@ -18798,9 +18809,25 @@ def _crm_callback_request_contact(data, entry):
     return contact or _secretariat_existing_crm_contact(data, entry)
 
 
-def _crm_hydrate_callback_request_appointment(data, entry, contact):
+def _crm_hydrate_callback_request_appointment(data, entry, contact, appointment_index=None):
     """Keep the callback row aligned with its next confirmed phone booking."""
-    match = _crm_next_phone_appointment(data, entry, contact)
+    appointments = None
+    if appointment_index is not None:
+        identity = contact or {}
+        keys = [
+            ("id", str(identity.get("id") or "").strip()),
+            ("email", _crm_normalize_email(identity.get("mail"))),
+            ("email", _crm_normalize_email(entry.get("email"))),
+            ("phone", _crm_normalize_phone(identity.get("telephone"))),
+            ("phone", _crm_normalize_phone(entry.get("telephone"))),
+        ]
+        candidates = {}
+        for kind, value in keys:
+            if value:
+                candidates.update(appointment_index.get((kind, value), ()))
+        # The original agenda order decides ties at the same start time.
+        appointments = [candidates[index] for index in sorted(candidates)]
+    match = _crm_next_phone_appointment(data, entry, contact, appointments=appointments)
     if not match:
         return False
     start, appointment = match
@@ -18881,7 +18908,7 @@ def _crm_ensure_callback_request_activity(contact, entry):
     return changed
 
 
-def _crm_prepare_callback_request(data, entry):
+def _crm_prepare_callback_request(data, entry, appointment_index=None):
     """Normalize one request, preserve its lead link and repair its journal."""
     changed = False
     if not str(entry.get("id") or "").strip():
@@ -18910,7 +18937,7 @@ def _crm_prepare_callback_request(data, entry):
     if str(entry.get("crm_contact_id") or "") != contact_id:
         entry["crm_contact_id"] = contact_id
         changed = True
-    if _crm_hydrate_callback_request_appointment(data, entry, contact):
+    if _crm_hydrate_callback_request_appointment(data, entry, contact, appointment_index):
         changed = True
     if contact and _crm_ensure_callback_request_activity(contact, entry):
         changed = True
@@ -18918,12 +18945,23 @@ def _crm_prepare_callback_request(data, entry):
 
 
 def _crm_backfill_callback_requests(data):
-    """Repair callback statuses and journals without creating any CRM contact."""
+    """Repair callback statuses/journals with one pass through the agenda."""
+    entries = [entry for entry in data.get("secretariat_demandes", [])
+               if isinstance(entry, dict) and entry.get("type") == "autre"]
+    if not entries:
+        return False
+    appointment_index = {}
+    for index, appointment in enumerate(data.get("crm_calendly_appointments", [])):
+        for kind, value in (
+            ("id", str(appointment.get("contact_id") or "")),
+            ("email", _crm_normalize_email(appointment.get("invitee_email"))),
+            ("phone", _crm_normalize_phone(appointment.get("invitee_phone"))),
+        ):
+            if value:
+                appointment_index.setdefault((kind, value), []).append((index, appointment))
     changed = False
-    for entry in data.get("secretariat_demandes", []):
-        if not isinstance(entry, dict) or entry.get("type") != "autre":
-            continue
-        entry_changed, _ = _crm_prepare_callback_request(data, entry)
+    for entry in entries:
+        entry_changed, _ = _crm_prepare_callback_request(data, entry, appointment_index)
         changed = entry_changed or changed
     return changed
 

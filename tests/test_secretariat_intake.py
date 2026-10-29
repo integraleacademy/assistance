@@ -15,6 +15,7 @@ def desk(monkeypatch, tmp_path):
     data.update(crm_contacts=[], secretariat_demandes=[], demandes=[])
     monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
     monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "_load_data_snapshot", lambda: data)
     monkeypatch.setattr(application, "save_data", lambda *_: None)
     monkeypatch.setattr(application, "_calendly_token", lambda: "")
     monkeypatch.setattr(application, "_secretariat_refresh_calendly_appointments", lambda *_: None)
