@@ -1,4 +1,5 @@
 import json
+import copy
 from pathlib import Path
 import hashlib
 import hmac
@@ -62,6 +63,14 @@ def folder(identifier, email="", phone="", first_name="", last_name=""):
         "_links": {"self": {"href": "/folder"}},
         "unknownFutureField": [1, 2, 3],
     }
+
+
+def set_ft_decision(payload, status, submitted="2026-08-12T09:00:00Z"):
+    # Funding assertions require an identified solicitation, not a folder state.
+    payload["trainingActionInfo"] = copy.deepcopy(payload.get("trainingActionInfo") or {})
+    payload["trainingActionInfo"]["solicitations"] = [{
+        "fundingType": 9, "status": status, "submissionDate": submitted,
+    }]
 
 
 def test_missing_configuration_and_private_status(tmp_path, monkeypatch):
@@ -206,6 +215,7 @@ def test_contact_open_refresh_reads_only_stale_latest_folder_then_reuses_cache(
     latest = folder("latest-folder", "lina@example.test")
     latest["createdAt"] = "2026-08-13T00:00:00+02:00"
     latest["state"] = "waitingAcceptation"
+    set_ft_decision(latest, "pending")
     latest["history"] = [{"state": "waitingAcceptation"}]
     application._wedof_store_page(
         [older, latest], application.load_data(), 1,
@@ -217,6 +227,7 @@ def test_contact_open_refresh_reads_only_stale_latest_folder_then_reuses_cache(
 
     refreshed = dict(latest)
     refreshed["state"] = "validated"
+    set_ft_decision(refreshed, "refused")
     calls = []
     monkeypatch.setattr(
         application,
@@ -831,6 +842,7 @@ def test_contact_list_exposes_ft_instruction_even_with_scheduled_appointment_sta
     application.save_data(data)
     ft_folder = folder("ft-folder", "lina@example.test")
     ft_folder["state"] = "waitingAcceptation"
+    set_ft_decision(ft_folder, "pending")
     ft_folder["history"] = [{"state": "waitingAcceptation"}]
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1)
@@ -865,6 +877,7 @@ def test_contact_list_decodes_each_wedof_folder_only_once(tmp_path, monkeypatch)
     ]
     for item in folders:
         item["state"] = "waitingAcceptation"
+        set_ft_decision(item, "pending")
         item["history"] = [{"state": "waitingAcceptation"}]
     application._wedof_store_page(folders, application.load_data(), 1)
 
@@ -916,6 +929,9 @@ def test_most_recent_created_wedof_folder_status_wins_with_multiple_links(
         },
     })
 
+    set_ft_decision(older_instruction, "pending")
+    set_ft_decision(latest_refusal, "refused")
+
     # L'ordre reçu sur une page WEDOF ne doit pas permettre à un ancien
     # dossier encore en instruction de masquer le refus du dossier récent.
     application._wedof_store_page(
@@ -956,6 +972,8 @@ def test_newer_ft_instruction_wins_over_an_older_refused_folder(
         "history": [{"state": "waitingAcceptation"}],
     })
 
+    set_ft_decision(older_refusal, "refused")
+    set_ft_decision(latest_instruction, "pending")
     application._wedof_store_page(
         [older_refusal, latest_instruction], application.load_data(), 1,
     )
@@ -988,11 +1006,14 @@ def test_six_hour_ft_reconciliation_reads_only_latest_in_progress_folder(
         "createdAt": "2026-08-19T10:00:00+00:00",
         "history": [{"state": "waitingAcceptation"}],
     })
+    set_ft_decision(older, "pending")
+    set_ft_decision(latest, "pending")
     application._wedof_store_page(
         [older, latest], application.load_data(), 1,
     )
     refused = dict(latest)
     refused.update({"state": "validated", "history": []})
+    set_ft_decision(refused, "refused")
     calls = []
     monkeypatch.setattr(
         application,
@@ -1032,6 +1053,7 @@ def test_latest_created_folder_without_ft_request_clears_an_older_instruction(
         "createdAt": "2026-08-12T10:00:00+00:00",
         "history": [{"state": "waitingAcceptation"}],
     })
+    set_ft_decision(older_instruction, "pending")
     application._wedof_store_page(
         [older_instruction], application.load_data(), 1,
     )
@@ -1088,6 +1110,7 @@ def test_completed_ft_instruction_clears_automatic_secondary_timeline(
         first_name="Lina", last_name="Martin",
     )
     ft_folder["state"] = "waitingAcceptation"
+    set_ft_decision(ft_folder, "pending")
     ft_folder["history"] = [{"state": "waitingAcceptation"}]
     application._wedof_store_page([ft_folder], application.load_data(), 1)
 
@@ -1098,6 +1121,7 @@ def test_completed_ft_instruction_clears_automatic_secondary_timeline(
     assert in_progress["statut_secondaire"] == "Financement FT en cours"
 
     ft_folder["state"] = "accepted"
+    set_ft_decision(ft_folder, "accepted")
     application._wedof_store_page([ft_folder], application.load_data(), 1)
     completed = next(
         row for row in client.get("/api/crm/contacts").get_json()
@@ -1107,7 +1131,7 @@ def test_completed_ft_instruction_clears_automatic_secondary_timeline(
     assert completed["statut_secondaire"] == ""
 
 
-def test_refused_ft_instruction_returning_to_validated_updates_secondary_timeline(
+def test_validated_without_explicit_refusal_keeps_the_confirmed_instruction(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
@@ -1116,6 +1140,7 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
         first_name="Lina", last_name="Martin",
     )
     ft_folder["state"] = "waitingAcceptation"
+    set_ft_decision(ft_folder, "pending")
     ft_folder["history"] = [{"state": "waitingAcceptation"}]
     application._wedof_store_page([ft_folder], application.load_data(), 1)
 
@@ -1126,7 +1151,7 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
     assert in_progress["statut_demande_financement_ft"] == "en_cours_instruction"
     assert in_progress["statut_secondaire"] == "Financement FT en cours"
 
-    # WEDOF revient à « En attente d'acceptation du candidat » après le refus FT.
+    # Le retour à validated sans décision explicite ne prouve pas un refus FT.
     ft_folder["state"] = "validated"
     ft_folder.pop("history")
     application._wedof_store_page([ft_folder], application.load_data(), 1)
@@ -1135,11 +1160,11 @@ def test_refused_ft_instruction_returning_to_validated_updates_secondary_timelin
         if row["id"] == contact["id"]
     )
 
-    assert refused["statut_demande_financement_ft"] == "refusee"
-    assert refused["statut_secondaire"] == "Financement FT refusé"
+    assert refused["statut_demande_financement_ft"] == "en_cours_instruction"
+    assert refused["statut_secondaire"] == "Financement FT en cours"
 
 
-def test_financer_refusal_history_survives_later_cpf_acceptance(
+def test_explicit_ft_solicitation_refusal_survives_later_cpf_acceptance(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
@@ -1151,6 +1176,7 @@ def test_financer_refusal_history_survives_later_cpf_acceptance(
         "state": "waitingAcceptation",
         "history": [{"state": "waitingAcceptation"}],
     })
+    set_ft_decision(ft_folder, "pending")
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
@@ -1168,6 +1194,9 @@ def test_financer_refusal_history_survives_later_cpf_acceptance(
         [ft_folder], application.load_data(), 1,
     )
 
+    set_ft_decision(ft_folder, "refused")
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
     result = next(
         row for row in client.get("/api/crm/contacts").get_json()
         if row["id"] == contact["id"]
@@ -1176,7 +1205,7 @@ def test_financer_refusal_history_survives_later_cpf_acceptance(
     assert result["statut_secondaire"] == "Financement FT refusé"
 
 
-def test_cached_financer_refusal_repairs_stale_automatic_timeline(
+def test_cached_ft_refusal_repairs_status_without_recreating_processed_relance(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
@@ -1185,6 +1214,7 @@ def test_cached_financer_refusal_repairs_stale_automatic_timeline(
         first_name="Lina", last_name="Martin",
     )
     ft_folder["state"] = "waitingAcceptation"
+    set_ft_decision(ft_folder, "pending")
     application._wedof_store_page([ft_folder], application.load_data(), 1)
 
     ft_folder["state"] = "validated"
@@ -1193,6 +1223,9 @@ def test_cached_financer_refusal_repairs_stale_automatic_timeline(
         "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
         "refusedByOrganismDate": None,
     }
+    application._wedof_store_page([ft_folder], application.load_data(), 1)
+
+    set_ft_decision(ft_folder, "refused")
     application._wedof_store_page([ft_folder], application.load_data(), 1)
 
     # Reproduit une fiche restée sur l'ancien état alors que le cache WEDOF
@@ -1220,14 +1253,14 @@ def test_cached_financer_refusal_repairs_stale_automatic_timeline(
 
     assert repaired["statut_demande_financement_ft"] == "refusee"
     assert repaired["statut_secondaire"] == "Financement FT refusé"
-    assert repaired["statut"] == "A relancer"
+    assert repaired["statut"] == "Nouveaux"
     scheduled = [
         item for item in repaired["relances"]
         if item.get("status") == "scheduled"
     ]
-    assert len(scheduled) == 1
-    assert scheduled[0]["source"] == "wedof_ft_refusal"
-    assert repaired["relance_date"] == scheduled[0]["scheduled_date"]
+    # Une décision déjà traitée ne recrée pas la relance retirée par l’équipe.
+    assert scheduled == []
+    assert repaired["relance_date"] == ""
     assert len(application.load_data()["crm_notifications"]) == notification_count
 
     application._wedof_store_page([ft_folder], application.load_data(), 1)
@@ -1238,10 +1271,10 @@ def test_cached_financer_refusal_repairs_stale_automatic_timeline(
     assert len([
         item for item in replayed["relances"]
         if item.get("status") == "scheduled"
-    ]) == 1
+    ]) == 0
 
 
-def test_explicit_ft_rejection_without_history_updates_secondary_timeline(
+def test_generic_rejection_without_funder_does_not_set_ft_timeline(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
@@ -1260,16 +1293,16 @@ def test_explicit_ft_rejection_without_history_updates_secondary_timeline(
         if row["id"] == contact["id"]
     )
 
-    assert result["statut_demande_financement_ft"] == "refusee"
-    assert result["statut_secondaire"] == "Financement FT refusé"
+    assert result["statut_demande_financement_ft"] == ""
+    assert result["statut_secondaire"] == ""
     update = next(
         row for row in client.get(
             f"/api/crm/contacts/updates?contact_id={contact['id']}"
         ).get_json()["contacts"]
         if row["id"] == contact["id"]
     )
-    assert update["statut_demande_financement_ft"] == "refusee"
-    assert update["statut_secondaire"] == "Financement FT refusé"
+    assert update["statut_demande_financement_ft"] == ""
+    assert update["statut_secondaire"] == ""
 
 
 def test_solicitation_refusal_overrides_manual_ft_instruction(
@@ -1361,7 +1394,7 @@ def test_ft_status_reads_nested_wedof_history():
         },
     }
 
-    assert application._wedof_france_travail_status(payload) == "refusee"
+    assert application._wedof_france_travail_status(payload) == ""
     assert application._wedof_france_travail_status({
         "registrationState": "validated",
         "events": {"changes": [{"details": {"state": "validated"}}]},
@@ -1372,14 +1405,14 @@ def test_ft_status_reads_nested_wedof_history():
             "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
             "refusedByOrganismDate": None,
         },
-    }) == "refusee"
+    }) == ""
     assert application._wedof_france_travail_status({
         "state": "accepted",
         "history": {
             "refusedByFinancerDate": "2026-08-23T13:35:00+00:00",
             "acceptedDate": "2026-08-23T14:00:00+00:00",
         },
-    }) == "refusee"
+    }) == ""
     assert application._wedof_france_travail_status({
         "state": "validated",
         "history": {"refusedByFinancerDate": None},
@@ -1400,7 +1433,7 @@ def test_ft_status_reads_nested_wedof_history():
         "trainingActionInfo": {
             "solicitations": [{"fundingType": 9, "status": "accepted"}],
         },
-    }) == ""
+    }) == "acceptee"
 
 
 def test_collaborative_updates_endpoint_returns_a_small_payload(tmp_path, monkeypatch):
@@ -1614,12 +1647,14 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
         first_name="Lina", last_name="Martin",
     )
     ft_folder["state"] = "waitingAcceptation"
+    set_ft_decision(ft_folder, "pending")
     ft_folder["history"] = [{"state": "waitingAcceptation"}]
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
 
     ft_folder["state"] = "validated"
+    set_ft_decision(ft_folder, "refused")
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
@@ -1701,10 +1736,12 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
 
     ft_folder["state"] = "waitingAcceptation"
+    set_ft_decision(ft_folder, "pending", "2026-10-15T09:00:00Z")
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
     ft_folder["state"] = "validated"
+    set_ft_decision(ft_folder, "refused", "2026-10-15T09:00:00Z")
     application._wedof_store_page(
         [ft_folder], application.load_data(), 1,
     )
@@ -1724,7 +1761,7 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     assert len([
         item for item in final_contact["activities"]
         if item.get("title") == "Relance France Travail planifiée"
-    ]) == 1
+    ]) == 2
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 2
 
 

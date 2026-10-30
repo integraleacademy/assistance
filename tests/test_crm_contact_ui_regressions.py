@@ -647,18 +647,25 @@ def test_legacy_cpf_badge_is_removed_below_converted_stage():
         javascript.index("function updateFundingBadges(c,resources=[]){"):
         javascript.index("function refreshFundingBadges(c)")
     ]
+    funding_guard = javascript[
+        javascript.index("function contactExcludesFranceTravail(c={})"):
+        javascript.index("function wedofFtSolicitationDecisions(p)")
+    ]
     script = r"""
 const assert=require('node:assert/strict');
 const root={innerHTML:'stale',hidden:false};
 const document={querySelector:()=>root};
 const wedofFundingSummary=resources=>resources.length?{latest:resources[0],cpf:'validated',ft:''}:{latest:null,cpf:'',ft:''};
-""" + helper + r"""
+""" + funding_guard + helper + r"""
 updateFundingBadges({cpf:'OUI',financement_ft:'NON'},[{payload:{state:'validated'}}]);
 assert.equal(root.innerHTML,'');
 assert.equal(root.hidden,true);
 updateFundingBadges({financement_ft:'OUI',statut_demande_financement_ft:'en_cours_instruction'},[]);
 assert.match(root.innerHTML,/Demande FT en cours d’instruction/);
 assert.equal(root.hidden,false);
+updateFundingBadges({financement_ft:'OUI',statut_secondaire:'C2P en cours',statut_demande_financement_ft:'refusee'},[]);
+assert.equal(root.innerHTML,'');
+assert.equal(root.hidden,true);
 """
 
     completed = subprocess.run(
@@ -875,8 +882,13 @@ def test_pipeline_overview_displays_primary_and_secondary_steps():
         javascript.index("const isActiveLead="):
         javascript.index("const manualNextActionValue=")
     ]
+    funding_guard = javascript[
+        javascript.index("function contactExcludesFranceTravail(c={})"):
+        javascript.index("function wedofFtSolicitationDecisions(p)")
+    ]
     script = f"""
 const canonicalCrmOrigin=()=> 'Autre';
+{funding_guard}
 {pipeline_helpers}
 const assert=(condition,message)=>{{if(!condition)throw new Error(message)}};
 const active={{statut:'Nouveau',statut_secondaire:'Transition pro'}};
@@ -887,6 +899,7 @@ assert(contactHasPipelineStatus(active,'Transition pro'),'an active Transition p
 assert(!contactHasPipelineStatus(converted,'Transition pro'),'a converted Transition pro contact is excluded');
 assert(!contactHasPipelineStatus(disqualified,'Transition pro'),'a disqualified Transition pro contact is excluded');
 assert(contactHasAnyPipelineStatus(appointmentOutsidePipeline,'RDV programmé'),'general appointment detection remains available outside the pipeline');
+assert(!contactHasPipelineStatus({{statut:'Nouveau',statut_secondaire:'C2P en cours',financement_ft:'OUI',statut_demande_financement_ft:'refusee'}},'Financement FT refusé'),'C2P does not enter the FT refusal pipeline');
 console.log('CRM pipeline counters: OK');
 """
     completed = subprocess.run(
