@@ -13,6 +13,12 @@ from werkzeug.utils import secure_filename
 import crm_external_access
 from crm_read_cache import LastProjection, UpdateSnapshots
 from crm_email_signatures import with_cassandre_memoji
+from contextvars import ContextVar
+from crm_funding_safety import (
+    excludes_france_travail, france_travail_decision,
+    merge_folder as _wedof_merge_folder, modified_at as _wedof_modified_at,
+    timestamp as _funding_timestamp,
+)
 
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
@@ -1686,6 +1692,9 @@ def _send_email_brevo(to_emails, subject, plain_text, html_body, attachments_pat
     return False
 
 
+_FT_REFUSAL_DELIVERY = ContextVar("ft_refusal_delivery", default=False)
+
+
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
     recipients = _email_recipients(to_emails)
     if not recipients:
@@ -1724,12 +1733,21 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
                 part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(chemin)}")
                 msg.attach(part)
 
+    submission_started = False
+    submission_accepted = False
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as serveur:
             serveur.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+            submission_started = True
             serveur.send_message(msg)
+            submission_accepted = True
         return True
     except Exception as e:
+        if _FT_REFUSAL_DELIVERY.get() and submission_started:
+            # The server may have accepted DATA before disconnecting. In that
+            # case falling back to Brevo risks delivering the same refusal twice.
+            app.logger.warning("FT SMTP submission ended unexpectedly; fallback blocked")
+            return submission_accepted
         print("❌ Erreur envoi email SMTP :", e)
         return _send_email_brevo(
             recipients,
@@ -8984,7 +9002,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261015-crm-performance-1"
+CRM_ASSET_VERSION = "20261030-ft-funding-safety-1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -11966,7 +11984,8 @@ def _crm_schedule_relance(
 def _crm_schedule_ft_refusal_relance(
         contact, *, source, stable_id="", now=None):
     """Planifie la relance ouvrée suivant un nouveau refus France Travail."""
-    if contact.get("statut") in {"Converti", "Disqualifié"}:
+    if (excludes_france_travail(contact)
+            or contact.get("statut") in {"Converti", "Disqualifié"}):
         return None, False
 
     paris = pytz.timezone("Europe/Paris")
@@ -13151,7 +13170,8 @@ def _crm_named_template(data, kind, name):
 CRM_QUICK_REMINDER_TEMPLATE = "Rappel dans 5min"
 
 
-def _crm_send_appointment_followup(data, contact, template_name):
+def _crm_send_appointment_followup(
+        data, contact, template_name, *, channels=("sms", "email")):
     """Send the e-mail and SMS bearing the configured appointment template name."""
     delivery = {"sms": False, "email": False}
     sms_template = _crm_named_template(data, "sms", template_name)
@@ -13166,14 +13186,14 @@ def _crm_send_appointment_followup(data, contact, template_name):
             "sujet": f"Intégrale Academy — Votre formation {contact.get('formation') or ''}".strip(),
             "contenu": fallback,
         }
-    if sms_template and contact.get("telephone"):
+    if "sms" in channels and sms_template and contact.get("telephone"):
         sms_body = _crm_resolve_message_variables(
             sms_template.get("contenu"), contact, data_store=data
         )
         delivery["sms"] = send_sms(contact.get("telephone"), sms_body)
         if delivery["sms"]:
             _crm_activity(contact, "sms", f"SMS « {template_name} » envoyé", sms_body, sms_body)
-    if email_template and contact.get("mail"):
+    if "email" in channels and email_template and contact.get("mail"):
         email_body = _crm_resolve_message_variables(
             email_template.get("contenu"), contact, html=True, data_store=data
         )
@@ -13191,12 +13211,95 @@ def _crm_send_appointment_followup(data, contact, template_name):
     return delivery
 
 
-def _crm_send_ft_refusal_messages(data, contact):
-    """Envoie les modèles e-mail et SMS lors d'un nouveau refus France Travail."""
-    if has_app_context():
-        return _crm_send_appointment_followup(data, contact, "FT refusé")
-    with app.app_context():
-        return _crm_send_appointment_followup(data, contact, "FT refusé")
+def _crm_claim_ft_refusal(data, contact, scope, decision, channel):
+    """Commit an at-most-once claim BEFORE any external delivery.
+
+    A crash or ambiguous transport failure stays claimed: automatically retrying
+    could send the same refusal twice. Existing historical sends seed the ledger.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cycle = decision.get("cycle") or "undated"
+    submitted_at = decision.get("submitted_at")
+    legacy = [item for item in contact.get("activities", [])
+              if "« FT refusé » envoyé" in str(item.get("title") or "")
+              and item.get("kind") == channel]
+    if channel == "crm":
+        legacy = [item for item in data.get("crm_notifications", [])
+                  if item.get("kind") == "funding_refused"
+                  and item.get("contact_id") == contact.get("id")
+                  and item.get("source_wedof_folder_id") == scope]
+    legacy_seen = any(
+        submitted_at is None or (_funding_timestamp(item.get("date")) or 0)
+        >= submitted_at for item in legacy
+    )
+    with _wedof_connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("""
+            SELECT 1 FROM crm_ft_refusal_deliveries
+            WHERE contact_id=? AND scope=? AND channel=? LIMIT 1
+        """, (str(contact["id"]), scope, channel)).fetchone():
+            legacy_seen = False
+        # An undated event later enriched with a submission date is the same
+        # event unless that submission demonstrably happened after the claim.
+        undated = db.execute("""
+            SELECT claimed_at FROM crm_ft_refusal_deliveries
+            WHERE contact_id=? AND scope=? AND cycle='undated' AND channel=?
+        """, (str(contact["id"]), scope, channel)).fetchone()
+        if undated and (submitted_at is None or submitted_at <= (
+                _funding_timestamp(undated["claimed_at"]) or 0)):
+            return False
+        if cycle == "undated" and db.execute("""
+            SELECT 1 FROM crm_ft_refusal_deliveries
+            WHERE contact_id=? AND scope=? AND channel=? LIMIT 1
+        """, (str(contact["id"]), scope, channel)).fetchone():
+            return False
+        inserted = db.execute("""
+            INSERT OR IGNORE INTO crm_ft_refusal_deliveries
+                (contact_id, scope, cycle, channel, status, claimed_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (str(contact["id"]), scope, cycle, channel,
+              "legacy" if legacy_seen else "claimed", now)).rowcount
+    return bool(inserted and not legacy_seen)
+
+
+def _crm_send_ft_refusal_messages(data, contact, *, scope="", decision=None):
+    """Send once per confirmed funding decision, independently for each channel."""
+    delivery = {"sms": False, "email": False}
+    if excludes_france_travail(contact):
+        return delivery
+    if decision is None:
+        # The manual timeline is an explicit decision, not a WEDOF inference.
+        if (contact.get("statut_demande_financement_ft_source") != "manual"
+                or contact.get("statut_demande_financement_ft") != "refusee"):
+            return delivery
+        latest = _wedof_latest_linked_resource(contact["id"])
+        scope = str(latest.get("stable_id") or "manual")
+        decision = france_travail_decision(latest.get("payload") or {})
+        decision = decision or {"cycle": "undated", "submitted_at": None}
+    for channel, address in (("sms", "telephone"), ("email", "mail")):
+        if (not contact.get(address)
+                or not _crm_named_template(data, channel, "FT refusé")):
+            continue
+        if not _crm_claim_ft_refusal(data, contact, scope, decision, channel):
+            continue
+        token = _FT_REFUSAL_DELIVERY.set(True)
+        try:
+            with app.app_context():
+                result = _crm_send_appointment_followup(
+                    data, contact, "FT refusé", channels=(channel,),
+                )
+            delivery[channel] = bool(result.get(channel))
+        except Exception:
+            app.logger.warning("FT refusal delivery uncertain; automatic retry blocked (%s)", channel)
+        finally:
+            _FT_REFUSAL_DELIVERY.reset(token)
+        with _wedof_connect() as db:
+            db.execute("""
+                UPDATE crm_ft_refusal_deliveries SET status=?
+                WHERE contact_id=? AND scope=? AND cycle=? AND channel=?
+            """, ("sent" if delivery[channel] else "failed_or_unknown",
+                  str(contact["id"]), scope, decision.get("cycle") or "undated", channel))
+    return delivery
 
 
 def _crm_ai(system_prompt, user_prompt, max_tokens=500):
@@ -13441,6 +13544,15 @@ def _wedof_connect():
             lease_token TEXT NOT NULL DEFAULT '',
             lease_expires_at REAL NOT NULL DEFAULT 0,
             PRIMARY KEY (resource_type, resource_id)
+        );
+        CREATE TABLE IF NOT EXISTS crm_ft_refusal_deliveries (
+            contact_id TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            cycle TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            status TEXT NOT NULL,
+            claimed_at TEXT NOT NULL,
+            PRIMARY KEY (contact_id, scope, cycle, channel)
         );
     """)
     connection.commit()
@@ -14102,6 +14214,120 @@ def _wedof_match_contact(folder, contacts):
     return None, None
 
 
+def _wedof_latest_linked_resource(contact_id):
+    resources = []
+    with _wedof_connect() as db:
+        for row in db.execute("""
+            SELECT r.stable_id, r.payload_json, r.remote_date, r.synced_at
+            FROM wedof_resources r JOIN wedof_contact_links l
+              ON r.resource_type=l.resource_type AND r.stable_id=l.resource_id
+            WHERE l.contact_id=? AND r.resource_type='registrationFolder'
+        """, (str(contact_id),)):
+            try:
+                resources.append({**dict(row), "payload": json.loads(row["payload_json"])})
+            except (TypeError, ValueError):
+                continue
+    return max(resources, key=lambda item: _wedof_folder_recency_key(
+        item["payload"], fallback=item["remote_date"] or item["synced_at"],
+        stable_id=item["stable_id"],
+    ), default={})
+
+
+def _crm_repair_unconfirmed_ft_refusal(contact, live_status=None):
+    """Archive and remove only invalid automatic funding follow-ups."""
+    excluded = excludes_france_travail(contact)
+    automatic = (contact.get("statut_demande_financement_ft_source") != "manual"
+                 and not (contact.get("statut_secondaire_source") == "manual"
+                          and contact.get("statut_secondaire") in CRM_FT_STATUS_BY_SECONDARY))
+    invalid = excluded or (automatic and live_status is not None and live_status != "refusee")
+    if not invalid:
+        return False
+    wrong_relances = [item for item in contact.get("relances", [])
+                      if item.get("status") == "scheduled"
+                      and item.get("source") == "wedof_ft_refusal"]
+    wrong_status = (contact.get("statut_demande_financement_ft") == "refusee"
+                    or (excluded and contact.get("statut_demande_financement_ft")))
+    wrong_secondary = ((contact.get("statut_secondaire") == "Financement FT refusé"
+                        or (excluded and contact.get("statut_secondaire") in CRM_FT_STATUS_BY_SECONDARY))
+                       and (excluded or contact.get("statut_secondaire_source") != "manual"))
+    if not (wrong_relances or wrong_status or wrong_secondary):
+        return False
+    now = _crm_now()
+    contact.setdefault("funding_safety_history", []).append({
+        "date": now,
+        "reason": "non_ft_funding" if excluded else "unconfirmed_ft_refusal",
+        "previous": {key: contact.get(key) for key in (
+            "statut_demande_financement_ft", "statut_demande_financement_ft_source",
+            "statut_secondaire", "statut_secondaire_source", "relance_date",
+        )},
+        "cancelled_automatic_relances": copy.deepcopy(wrong_relances),
+    })
+    if wrong_status or excluded:
+        contact["statut_demande_financement_ft"] = "" if excluded else (live_status or "")
+        contact.pop("statut_demande_financement_ft_source", None)
+    if wrong_secondary:
+        contact["statut_secondaire"] = ""
+        contact.pop("statut_secondaire_source", None)
+    if wrong_relances:
+        contact["relances"] = [item for item in contact["relances"] if item not in wrong_relances]
+        # Clear the legacy scalar too, so normalization cannot recreate it.
+        contact["relance_date"] = ""
+        _crm_refresh_relance_date(contact)
+    contact["ft_refusal_invalidated_before"] = now
+    contact["ft_refusal_invalidated_at_epoch"] = time.time()
+    _crm_activity(contact, "suivi", "Financement France Travail vérifié",
+                  "Le financement courant ne justifie plus ce refus automatique : statut et relances corrigés. "
+                  "Les informations précédentes sont conservées dans l’historique de correction.",
+                  author_name="CRM")
+    return True
+
+
+def _crm_apply_confirmed_wedof_funding(data, contact):
+    latest = _wedof_latest_linked_resource(contact["id"])
+    decision = france_travail_decision(latest.get("payload") or {})
+    live_status = decision["status"] if decision else ""
+    changed = _crm_repair_unconfirmed_ft_refusal(contact, live_status)
+    if excludes_france_travail(contact) or live_status != "refusee":
+        return changed
+    if (contact.get("statut_demande_financement_ft_source") == "manual"
+            and contact.get("statut_demande_financement_ft") != "en_cours_instruction"):
+        return changed
+    if contact.get("statut_demande_financement_ft") != "refusee":
+        contact["statut_demande_financement_ft"] = "refusee"
+        changed = True
+    if contact.pop("statut_demande_financement_ft_source", None):
+        changed = True
+    if (contact.get("statut_secondaire_source") != "manual"
+            or contact.get("statut_secondaire") == "Financement FT en cours"):
+        if contact.get("statut_secondaire") != "Financement FT refusé":
+            contact["statut_secondaire"] = "Financement FT refusé"
+            contact.pop("statut_secondaire_source", None)
+            changed = True
+    scope = str(latest["stable_id"])
+    if _crm_claim_ft_refusal(data, contact, scope, decision, "crm"):
+        _crm_add_funding_refusal_notifications(data, contact, scope)
+        _crm_schedule_ft_refusal_relance(contact, source="wedof_ft_refusal", stable_id=scope)
+        changed = True
+    delivery = _crm_send_ft_refusal_messages(data, contact, scope=scope, decision=decision)
+    return changed or any(delivery.values())
+
+
+def _crm_repair_ft_funding_at_startup():
+    """One reversible pass over cached evidence; no API calls or deliveries."""
+    try:
+        with _CRM_RECONCILIATION_LOCK:
+            data = load_data()
+            statuses = _wedof_funding_statuses_by_contact(data)
+            repaired = sum(_crm_repair_unconfirmed_ft_refusal(
+                contact, statuses.get(str(contact.get("id"))),
+            ) for contact in data.get("crm_contacts", []))
+            if repaired:
+                save_data(data)
+            app.logger.warning("FT funding safety audit completed: %s contact(s) repaired", repaired)
+    except Exception as exc:
+        app.logger.error("FT funding safety audit failed (%s)", type(exc).__name__)
+
+
 def _wedof_store_page(
         items, data, page, total_count=None, *, update_sync_state=True):
     """Rapproche et persiste une page sans concurrencer une autre mutation CRM."""
@@ -14120,29 +14346,26 @@ def _wedof_store_page_locked(
     created_contacts = 0
     linked_folders = 0
     pending_reviews = 0
+    touched_contacts = set()
     with _wedof_connect() as db:
         for folder in items:
             if not isinstance(folder, dict) or not folder.get("externalId"):
                 continue
             stable_id = str(folder["externalId"])
-            previous_funding_status = ""
             previous_resource = db.execute("""
                 SELECT payload_json FROM wedof_resources
                 WHERE resource_type='registrationFolder' AND stable_id=?
             """, (stable_id,)).fetchone()
             if previous_resource:
                 try:
-                    previous_funding_status = _wedof_france_travail_status(
-                        json.loads(previous_resource["payload_json"])
+                    folder = _wedof_merge_folder(
+                        json.loads(previous_resource["payload_json"]), folder,
                     )
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    previous_funding_status = ""
+                except (TypeError, ValueError):
+                    pass
             crm_payload = _wedof_contact_payload(folder, data)
             payload_json = json.dumps(folder, ensure_ascii=False, separators=(",", ":"))
-            remote_date = next((str(folder.get(key)) for key in (
-                "updatedAt", "updatedOn", "modifiedAt", "dateUpdated",
-                "createdAt", "createdOn",
-            ) if folder.get(key)), None)
+            remote_date = _wedof_modified_at(folder)
             db.execute("""
                 INSERT INTO wedof_resources
                     (resource_type, stable_id, payload_json, remote_date, synced_at)
@@ -14235,76 +14458,7 @@ def _wedof_store_page_locked(
                         match_method=excluded.match_method,
                         updated_at=excluded.updated_at
                 """, (contact["id"], stable_id, attendee_id, method, now, now))
-                previous_status_evidence = previous_funding_status
-                if (not previous_status_evidence
-                        and contact.get("statut_demande_financement_ft_source")
-                        != CRM_MANUAL_STATUS_SOURCE
-                        and str(contact.get("source_wedof_folder_id") or "")
-                        == stable_id):
-                    # Répare aussi les dossiers dont le retour à ``validated``
-                    # a déjà remplacé le payload d'instruction dans le cache.
-                    previous_status_evidence = str(
-                        contact.get("statut_demande_financement_ft") or ""
-                    ).strip()
-                current_funding_status = _wedof_france_travail_status(
-                    folder, previous_status=previous_status_evidence,
-                )
-                # « En cours » reste une étape provisoire : une décision de
-                # refus remontée par WEDOF doit pouvoir la clôturer, même si
-                # cette étape avait été sélectionnée manuellement. Les autres
-                # choix manuels restent protégés.
-                manual_funding_is_provisional = (
-                    contact.get("statut_demande_financement_ft_source")
-                    == CRM_MANUAL_STATUS_SOURCE
-                    and contact.get("statut_demande_financement_ft")
-                    == "en_cours_instruction"
-                )
-                if (current_funding_status == "refusee"
-                        and (contact.get(
-                            "statut_demande_financement_ft_source"
-                        ) != CRM_MANUAL_STATUS_SOURCE
-                        or manual_funding_is_provisional)):
-                    stored_funding_was_refused = (
-                        contact.get("statut_demande_financement_ft")
-                        == "refusee"
-                    )
-                    if not stored_funding_was_refused:
-                        contact["statut_demande_financement_ft"] = "refusee"
-                        crm_changed = True
-                    if manual_funding_is_provisional:
-                        contact.pop(
-                            "statut_demande_financement_ft_source", None,
-                        )
-                        crm_changed = True
-                    manual_secondary_is_provisional = (
-                        contact.get("statut_secondaire_source")
-                        == CRM_MANUAL_STATUS_SOURCE
-                        and contact.get("statut_secondaire")
-                        == "Financement FT en cours"
-                    )
-                    if ((contact.get("statut_secondaire_source")
-                            != CRM_MANUAL_STATUS_SOURCE
-                            or manual_secondary_is_provisional)
-                            and contact.get("statut_secondaire")
-                            != "Financement FT refusé"):
-                        contact["statut_secondaire"] = "Financement FT refusé"
-                        if manual_secondary_is_provisional:
-                            contact.pop("statut_secondaire_source", None)
-                        crm_changed = True
-                    if previous_funding_status != "refusee":
-                        _crm_add_funding_refusal_notifications(
-                            data, contact, stable_id,
-                        )
-                        _crm_send_ft_refusal_messages(data, contact)
-                        crm_changed = True
-                    if (not stored_funding_was_refused
-                            or previous_funding_status != "refusee"):
-                        _, relance_changed = _crm_schedule_ft_refusal_relance(
-                            contact,
-                            source="wedof_ft_refusal",
-                            stable_id=stable_id,
-                        )
-                        crm_changed = relance_changed or crm_changed
+                touched_contacts.add(str(contact["id"]))
                 linked_folders += 1
         if update_sync_state:
             state = {"next_page": page + 1, "in_progress": True, "last_error": ""}
@@ -14318,6 +14472,15 @@ def _wedof_store_page_locked(
             """, (json.dumps(state), now))
         if crm_changed:
             save_data(data)
+    # Delivery claims need their own committed transaction. Never send while
+    # the cache update is uncommitted, and evaluate only the latest linked folder
+    # after the entire page has been stored (independent of API item order).
+    for contact_id in touched_contacts:
+        contact = next(c for c in contacts if str(c.get("id")) == contact_id)
+        if _crm_apply_confirmed_wedof_funding(data, contact):
+            crm_changed = True
+    if crm_changed:
+        save_data(data)
     return {
         "created_contacts": created_contacts,
         "linked_folders": linked_folders,
@@ -14507,7 +14670,7 @@ def _wedof_ft_watchlist(data=None):
         contact_id, (_recency, stable_id, payload, synced_at)
     ) in latest_by_contact.items():
         status = _wedof_france_travail_status(payload)
-        if status == "en_cours_instruction":
+        if status == "en_cours_instruction" and not excludes_france_travail(contacts[contact_id]):
             watchlist.append({
                 "contact_id": contact_id,
                 "folder_id": stable_id,
@@ -14866,97 +15029,10 @@ def _wedof_normalize_code(value):
     ).encode("ascii", "ignore").decode().lower())
 
 
-def _wedof_solicitation_statuses(payload):
-    """Lit les décisions de financement imbriquées dans le dossier WEDOF."""
-    training_info = payload.get("trainingActionInfo")
-    if not isinstance(training_info, dict):
-        return set()
-    solicitations = training_info.get("solicitations")
-    statuses = set()
-
-    def visit(value):
-        if isinstance(value, dict):
-            for key in ("status", "state", "result"):
-                candidate = value.get(key)
-                if candidate not in (None, "", False) and not isinstance(
-                        candidate, (dict, list, tuple)):
-                    statuses.add(_wedof_normalize_code(candidate))
-            for nested in value.values():
-                if isinstance(nested, (dict, list, tuple)):
-                    visit(nested)
-        elif isinstance(value, (list, tuple)):
-            for nested in value:
-                visit(nested)
-
-    visit(solicitations)
-    return statuses
-
-
 def _wedof_france_travail_status(payload, previous_status=""):
-    """Déduit le statut FT d'un dossier WEDOF sans dépendre du statut commercial."""
-    normalize = _wedof_normalize_code
-    state = normalize(payload.get("state") or payload.get("status")
-                      or payload.get("registrationState"))
-    history = payload.get("history") or payload.get("stateHistory") or payload.get("events") or []
-
-    def history_values(value):
-        if isinstance(value, dict):
-            for key, nested in value.items():
-                if nested in (None, "", False) or nested in ([], {}):
-                    continue
-                yield key
-                yield from history_values(nested)
-        elif isinstance(value, (list, tuple)):
-            for nested in value:
-                yield from history_values(nested)
-        elif value not in (None, "", False):
-            yield value
-
-    history_markers = {
-        normalize(value) for value in history_values(history) if value
-    }
-
-    # Un refus explicite est une preuve suffisante en lui-même, y compris
-    # lorsque WEDOF ne fournit pas l'historique de l'instruction FT.
-    solicitation_has_refusal = any(
-        re.search(r"refus|reject", status)
-        for status in _wedof_solicitation_statuses(payload)
-    )
-    if re.search(r"refus|reject", state) or solicitation_has_refusal:
-        return "refusee"
-    history_has_financer_refusal = any(
-        ("financer" in marker or "financeur" in marker)
-        and ("refus" in marker or "reject" in marker)
-        for marker in history_markers
-    )
-    had_instruction = (
-        str(previous_status or "").strip() == "en_cours_instruction"
-        or state == "waitingacceptation"
-        or any(
-            "waitingacceptation" in marker
-            for marker in history_markers
-        )
-    )
-    # Le statut commercial du dossier peut ensuite redevenir ``accepted``
-    # lorsque le candidat le valide de nouveau. La preuve de refus du financeur
-    # reste néanmoins valable pour la seconde timeline de ce même dossier.
-    if history_has_financer_refusal:
-        return "refusee"
-    if not had_instruction:
-        return ""
-    if re.search(r"cancel|annul|abandon", state):
-        return "annulee"
-    if state in {"accepted", "intraining", "terminated", "servicedonedeclared",
-                 "servicedonevalidated", "tobill", "billed", "paid"}:
-        return "acceptee"
-    # Après un refus de financement France Travail, WEDOF ne conserve pas un
-    # état terminal dédié : le dossier CPF revient à ``validated`` afin que le
-    # candidat puisse de nouveau l'accepter ou choisir un autre financement.
-    # La présence antérieure de ``waitingAcceptation`` permet de distinguer ce
-    # retour d'un dossier simplement validé qui n'a jamais été transmis à FT.
-    if state == "validated":
-        return "refusee"
-    return "en_cours_instruction"
+    """Only a solicitation identifying France Travail can establish its decision."""
+    decision = france_travail_decision(payload)
+    return decision["status"] if decision else ""
 
 
 def _wedof_folder_recency_key(payload, *, fallback="", stable_id=""):
@@ -14999,15 +15075,7 @@ def _wedof_effective_funding_status(
     ]
     if not clean:
         return ""
-    _, status, stable_id = max(clean, key=lambda item: item[0])
-    if (not status
-            and str(fallback_status or "").strip() == "refusee"
-            and (stable_id == str(fallback_folder_id or "")
-                 or len(clean) == 1)):
-        # Le payload ``validated`` peut perdre son historique après un refus.
-        # Conserver alors la dernière preuve persistée de ce même dossier.
-        return str(fallback_status or "").strip()
-    return status
+    return max(clean, key=lambda item: item[0])[1]
 
 
 def _wedof_funding_statuses_by_contact(data, *, include_cpf=False):
@@ -15028,6 +15096,7 @@ def _wedof_funding_statuses_by_contact(data, *, include_cpf=False):
             str(contact.get("id") or ""),
             _wedof_normalize_name(contact.get("prenom")),
             _wedof_normalize_name(contact.get("nom")),
+            excludes_france_travail(contact),
         )
         for contact in contacts
     )
@@ -15102,7 +15171,7 @@ def _wedof_funding_statuses_by_contact(data, *, include_cpf=False):
     result = {}
     for contact_id, statuses in statuses_by_contact.items():
         contact = contacts_by_id.get(contact_id, {})
-        result[contact_id] = _wedof_effective_funding_status(
+        result[contact_id] = "" if excludes_france_travail(contact) else _wedof_effective_funding_status(
             statuses,
             fallback_status=contact.get("statut_demande_financement_ft"),
             fallback_folder_id=contact.get("source_wedof_folder_id"),
@@ -16242,6 +16311,8 @@ def _crm_prepare_contacts(data):
 
         contact_id = str(existing.get("id") or "")
         live_funding_status = wedof_funding_statuses.get(contact_id)
+        if _crm_repair_unconfirmed_ft_refusal(existing, live_funding_status):
+            changed = True
         if (contact_id in wedof_funding_statuses
                 and existing.get("statut_demande_financement_ft_source")
                 != CRM_MANUAL_STATUS_SOURCE
@@ -17515,6 +17586,12 @@ def crm_contact_cnaps_card_validity(contact_id):
 def _crm_patch_contact_locked(data, contact, contact_id):
     """Apply one contact PATCH while the caller holds the CRM write lock."""
     payload = request.get_json(silent=True) or {}
+    proposed = {**contact, **payload}
+    explicit_ft = (payload.get("statut_demande_financement_ft")
+                   or CRM_FT_STATUS_BY_SECONDARY.get(payload.get("statut_secondaire")))
+    if explicit_ft not in {None, "", "aucune_demande"} and excludes_france_travail(proposed):
+        return jsonify({"error": "Ce dossier indique un financement C2P ou hors France Travail. "
+                        "Corrigez le financeur avant de saisir une décision France Travail."}), 400
     effective_titre_sejour = payload.get(
         "titre_sejour", contact.get("titre_sejour")
     )
@@ -17694,6 +17771,8 @@ def _crm_patch_contact_locked(data, contact, contact_id):
                 _crm_activity(contact, "relance", "Relance annulée")
     if contact.get("statut_secondaire") == "Session FT":
         contact["statut_secondaire"] = "Marché FT"
+    if excludes_france_travail(contact):
+        _crm_repair_unconfirmed_ft_refusal(contact)
     if "statut_secondaire" in payload:
         # Une étape choisie dans la timeline est volontaire : elle ne doit plus
         # être écrasée au prochain GET par une valeur WEDOF encore en cache.
@@ -18119,6 +18198,7 @@ def _crm_add_funding_refusal_notifications(data, contact, stable_id):
             "author": "France Travail",
             "date": _crm_now(),
             "kind": "funding_refused",
+            "created_at_epoch": time.time(),
             "text": f"Le financement France Travail de {contact_name} a été refusé.",
             "read": False,
             "contact_id": contact["id"],
@@ -18128,9 +18208,22 @@ def _crm_add_funding_refusal_notifications(data, contact, stable_id):
 
 
 def _crm_notifications_payload(data, email):
+    contacts = {str(contact.get("id")): contact for contact in data.get("crm_contacts", [])}
+
+    def valid(item):
+        if item.get("kind") != "funding_refused":
+            return True
+        contact = contacts.get(str(item.get("contact_id")), {})
+        invalidated_at = (contact.get("ft_refusal_invalidated_at_epoch")
+                          or _funding_timestamp(contact.get("ft_refusal_invalidated_before")))
+        return not excludes_france_travail(contact) and not (
+            invalidated_at is not None
+            and (item.get("created_at_epoch") or _funding_timestamp(item.get("date")) or 0) <= invalidated_at
+        )
+
     return [
         item for item in data.get("crm_notifications", [])
-        if item.get("recipient_email") == email
+        if item.get("recipient_email") == email and valid(item)
     ]
 
 
@@ -19606,6 +19699,11 @@ def crm_send_message(contact_id):
         item for item in data.get(f"crm_{kind}_templates", [])
         if item.get("id") == template_id
     ), None) if kind in {"email", "sms"} and template_id else None
+    if (selected_template
+            and str(selected_template.get("nom") or "").strip().casefold() == "ft refusé"
+            and excludes_france_travail(contact)):
+        return jsonify({"error": "Le modèle « FT refusé » ne peut pas être envoyé "
+                        "à un dossier C2P ou hors France Travail."}), 409
     body = str(payload.get("contenu", "")).strip(); subject = str(payload.get("sujet", "Intégrale Academy")).strip()
     if kind == "email":
         try:
