@@ -5,13 +5,14 @@ import json
 import os
 import sqlite3
 import threading
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
 import pytest
 
 import app as application
-from test_crm_wedof import authenticated_client, folder
+from test_crm_wedof import authenticated_client, folder, set_ft_decision
 
 
 def seed_cache(monkeypatch, tmp_path):
@@ -113,6 +114,40 @@ def test_unlinked_contact_lookup_streams_rows_and_preserves_identity_matching(tm
     assert [row["stable_id"] for row in result] == ["one"]
     assert result[0]["match_method"] == "name" and result[0]["is_latest"]
     assert data == before
+
+
+def test_scheduled_ft_watchlist_releases_decoded_folders_and_uses_read_only_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEDOF_DB_PATH", str(tmp_path / "wedof.sqlite3"))
+    contacts = [{"id": str(i)} for i in range(8)]
+    contacts[-1]["statut_secondaire"] = "C2P"
+    monkeypatch.setattr(application, "_load_data_snapshot", lambda: {"crm_contacts": contacts})
+    monkeypatch.setattr(application, "load_data", lambda: pytest.fail("copied the CRM for a read"))
+    with application._wedof_connect() as db:
+        for contact in contacts:
+            key = contact["id"]
+            payload = folder(key)
+            set_ft_decision(payload, "accepted" if key == "6" else "pending")
+            db.execute("INSERT INTO wedof_resources VALUES ('registrationFolder', ?, ?, '', 'today')",
+                       (key, json.dumps(payload)))
+            db.execute("INSERT INTO wedof_contact_links VALUES (?, 'registrationFolder', ?, NULL, 'test', '', '')",
+                       (key, key))
+
+    class TrackedFolder(dict):
+        pass
+
+    loads = json.loads
+    decoded = weakref.WeakValueDictionary()
+
+    def track_folder(raw):
+        payload = TrackedFolder(loads(raw))
+        decoded[payload["externalId"]] = payload
+        assert len(decoded) <= 2, "the scan retained previous full WEDOF folders"
+        return payload
+
+    monkeypatch.setattr(application.json, "loads", track_folder)
+    assert application._wedof_ft_watchlist() == [
+        {"contact_id": str(i), "folder_id": str(i), "synced_at": "today"} for i in range(6)
+    ]
 
 
 def test_sheet_read_helpers_do_not_copy_the_complete_database(tmp_path, monkeypatch):
