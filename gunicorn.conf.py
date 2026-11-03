@@ -40,3 +40,11 @@ def post_request(worker, req, environ, resp):
             pass
     finally:
         _memory_log_lock.release()
+
+
+def post_worker_init(worker):
+    from app import run_hebergement_reminders
+
+    threading.Thread(
+        target=run_hebergement_reminders, name="hebergement-rappels", daemon=True,
+    ).start()
