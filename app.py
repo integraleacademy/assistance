@@ -9149,7 +9149,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261103-relances-modeles"
+CRM_ASSET_VERSION = "20261103-modele-point-dossier"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -13359,6 +13359,11 @@ def _crm_relance_email_template(data, choice):
         saved = _crm_named_template(data, "email", "Pas de réponse relance")
         if saved:
             return saved
+    elif choice == "appointment":
+        template_id = data.get("crm_dossier_email_template_id")
+        saved = next((row for row in data.get("crm_email_templates", []) if row.get("id") == template_id), None)
+        if template_id and saved:
+            return saved
     draft = CRM_RELANCE_EMAILS[choice]
     paragraphs = "".join("<p>" + html_module.escape(p).replace("\n", "<br>") + "</p>"
                          for p in draft["contenu"].split("\n\n"))
@@ -13366,9 +13371,28 @@ def _crm_relance_email_template(data, choice):
     return {
         **draft, "contenu": render_template(
             "crm_email_wrapper.html", prenom="{{ prenom }}", formation="{{ formation }}",
-            email_header_title=draft["titre"], contenu=paragraphs + button,
+            email_header_title=draft["titre"],
+            contenu=f"<!-- EMAIL_CONTENT_START -->{paragraphs}<!-- EMAIL_CONTENT_END -->{button}",
         ),
     }
+
+
+def _crm_register_dossier_email_once():
+    """Add the existing follow-up to the library, respecting later edits or deletion."""
+    with _CRM_RECONCILIATION_LOCK:
+        if _load_data_snapshot().get("crm_dossier_email_template_id"):
+            return
+        data = load_data()
+        template = _crm_named_template(data, "email", CRM_RELANCE_EMAILS["appointment"]["nom"])
+        if template is None:
+            with app.app_context():
+                template = _crm_relance_email_template(data, "appointment")
+            template.update(id=str(uuid.uuid4()), categorie="Relance", usage_count=0,
+                            versions=[], created_at=_crm_now())
+            data["crm_email_templates"].append(template)
+        template["relance_choice"] = "appointment"
+        data["crm_dossier_email_template_id"] = template["id"]
+        save_data(data)
 
 
 CRM_QUICK_REMINDER_TEMPLATE = "Rappel dans 5min"
