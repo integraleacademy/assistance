@@ -7128,31 +7128,46 @@ def _hebergement_reminder_email(reservation, arrival, *, logo_src=HEBERGEMENT_MA
     subject = f"Votre arrivée à Intégrale Academy le {arrival_label}"
     first_name = str(reservation.get("prenom") or "").strip()
     greeting = f"Bonjour {first_name}," if first_name else "Bonjour,"
-    arrival_text = f"Présentez-vous le {arrival_label}, entre 08h00 et 17h00."
-    appointment = _hebergement_arrival_fields(reservation).get("arrival_time") or ""
-    if re.fullmatch(r"(?:0[89]|1[0-6]):[0-5][0-9]|17:00", str(appointment)):
-        arrival_text += f" Votre heure d’arrivée prévue est {appointment.replace(':', 'h')}."
-    payment = ("Prévoyez le chèque de caution selon les modalités de votre confirmation."
-               if reservation.get("paiement") == "Payé" else
-               "Prévoyez le règlement de votre hébergement et le chèque de caution selon les modalités de votre confirmation.")
-    paragraphs = [
-        greeting,
-        "Nous vous attendons pour la remise des clés de votre hébergement.",
-        arrival_text,
-        HEBERGEMENT_ADDRESS,
-        f"Session A3P · {reservation.get('session') or ''}",
-        "Après 17h00, nous ne pourrons plus vous remettre les clés. Si vous arrivez plus tard, "
-        "prévoyez un hébergement pour cette nuit et rejoignez le centre le lendemain à l’heure indiquée sur votre convocation.",
-        "Pensez à prendre votre sac de couchage ou une couverture, votre oreiller et vos affaires de toilette. "
-        + payment,
-        "L’équipe Intégrale Academy",
+    fields = _hebergement_arrival_fields(reservation)
+    time_value = str(fields.get("arrival_time") or "")
+    appointment = (time_value.replace(":", "h") if
+                   re.fullmatch(r"(?:0[89]|1[0-6]):[0-5][0-9]|17:00", time_value) else "")
+    welcome = ("Je suis Aurélie BAYARD. C’est moi qui vous accueillerai à Intégrale Academy "
+               "pour votre séjour pendant la formation A3P. À votre arrivée, présentez-vous à l’accueil "
+               "du centre. Nous signerons ensemble votre convention d’hébergement et je vous remettrai vos clés.")
+    hours = "Entre 08h00 et 17h00"
+    checklist = [
+        ("Pour la nuit", "Prenez un sac de couchage ou une couverture et un oreiller. Un drap-housse est fourni."),
+        ("Pour le séjour", "Prévoyez vos affaires de toilette et de la lessive."),
     ]
-    parts = [html_module.escape(line) for line in paragraphs]
-    body = "".join(f"<p>{line}</p>" for line in parts[:2])
-    body += f'<div style="padding:16px;background:#fff7e6;border-left:4px solid #b27a12"><strong>{parts[2]}</strong><br>{parts[3]}</div>'
-    body += "".join(f"<p>{line}</p>" for line in parts[4:])
-    html = _wrap_html("<h1>Votre arrivée au centre</h1>", body, logo_src=logo_src)
-    return subject, "\n\n".join(paragraphs), html
+    if reservation.get("paiement") != "Payé":
+        checklist.append(("Règlement", "Préparez le montant indiqué dans votre confirmation, par chèque "
+                          "ou en espèces, dans une enveloppe portant vos nom et prénom."))
+    if fields.get("deposit_received") != "Oui":
+        checklist.append(("Caution", "Apportez le chèque de caution distinct prévu dans votre confirmation."))
+    late = ("Appelez-moi dès que possible. La remise des clés se termine à 17 h. Au-delà, vous devrez "
+            "prévoir un autre hébergement pour cette nuit et vous présenter au centre le lendemain "
+            "à l’heure indiquée sur votre convocation.")
+    contact_invite = "Si vous avez une question avant votre arrivée, vous pouvez me joindre directement."
+    closing = "À bientôt à Puget-sur-Argens,"
+    session_label = reservation.get("session") or ""
+    maps_url = "https://www.google.com/maps/dir/?api=1&destination=" + quote(HEBERGEMENT_ADDRESS, safe="")
+    plain = [
+        greeting, welcome, f"ARRIVÉE ET REMISE DES CLÉS\n{arrival_label} · {hours}",
+        f"Votre heure d’arrivée prévue est {appointment}." if appointment else "",
+        HEBERGEMENT_ADDRESS, maps_url, f"Session A3P · {session_label}",
+        "À PRÉPARER AVANT DE PARTIR\n" + "\n".join(f"- {label}. {detail}" for label, detail in checklist),
+        f"Si vous risquez d’arriver après 17 h\n{late}",
+        f"{contact_invite}\n04 87 83 06 15 · aurelie@integraleacademy.com",
+        closing, "Aurélie BAYARD\nResponsable des BTS · Chargée des relations clients\nIntégrale Academy",
+    ]
+    markup = app.jinja_env.get_template("emails/hebergement_rappel.html").render(
+        subject=subject, logo_src=logo_src, greeting=greeting, welcome=welcome,
+        arrival_label=arrival_label, hours=hours, appointment=appointment, address=HEBERGEMENT_ADDRESS,
+        maps_url=maps_url, session_label=session_label, checklist=checklist, late=late,
+        contact_invite=contact_invite, closing=closing,
+    )
+    return subject, "\n\n".join(line for line in plain if line), markup
 
 
 def _send_hebergement_reminder(reservation, arrival, address):
