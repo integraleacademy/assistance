@@ -224,3 +224,40 @@ def test_modeles_combine_public_sst_variants_and_crm_only_dates(tmp_path, monkey
     assert 'examen le 1er mars 2027 (avec SST)' in html
     assert 'examen le 1er mars 2027 (sans SST) (session demandée)' in html
     assert 'Du 4 au 15 mars 2027' in html
+
+
+def test_dossier_template_is_editable_and_shared_by_library_and_relances(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, 'DATA_FILE', str(tmp_path / 'data.json'))
+    client = application.app.test_client()
+    with client.session_transaction() as session:
+        session['user_email'] = 'clement@integraleacademy.com'
+    application._crm_register_dossier_email_once()
+    application._crm_register_dossier_email_once()
+    templates = client.get('/api/crm/templates').get_json()['email']
+    dossier, = [row for row in templates if row['nom'] == 'Faire le point sur votre dossier']
+    assert dossier['categorie'] == 'Relance' and dossier['relance_choice'] == 'appointment'
+    path = '/api/crm/templates/' + dossier['id']
+    preview = client.get(path + '/email-preview').get_json()['html']
+    assert 'href="{{ lien_rdv_calendly }}"' in preview and preview.count('Memoji de Cassandre MENARD') == 1
+    assert '<!-- EMAIL_CONTENT_START -->' in preview
+    edit = client.patch(path, json={'nom': 'Suivi personnalisé', 'sujet': 'Votre rendez-vous {{ formation }}'})
+    assert edit.status_code == 200 and edit.get_json()['relance_choice'] == 'appointment'
+    application._crm_register_dossier_email_once()
+    data = application.load_data()
+    assert application._crm_relance_email_template(data, 'appointment')['sujet'] == 'Votre rendez-vous {{ formation }}'
+    assert client.delete(path).status_code == 204
+    application._crm_register_dossier_email_once()
+    assert not client.get('/api/crm/templates').get_json()['email']
+
+
+def test_dossier_registration_reuses_existing_model_without_overwriting_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, 'DATA_FILE', str(tmp_path / 'data.json'))
+    data = application.load_data()
+    data['crm_email_templates'] = [{'id': 'custom', 'nom': 'Faire le point sur votre dossier',
+                                    'sujet': 'Mon objet', 'contenu': '<p>Mon texte</p>'}]
+    application.save_data(data)
+    application._crm_register_dossier_email_once()
+    data = application.load_data()
+    assert data['crm_dossier_email_template_id'] == 'custom'
+    template, = data['crm_email_templates']
+    assert template['sujet'] == 'Mon objet' and template['contenu'] == '<p>Mon texte</p>'
