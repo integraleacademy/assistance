@@ -55,3 +55,42 @@ def with_cassandre_memoji(body, avatar):
     for start, end, replacement in reversed(edits):
         body = body[:start] + replacement + body[end:]
     return body
+
+
+_SIGNATURE_BLOCK = re.compile(r"<!-- EMAIL_SIGNATURE_START -->.*?<!-- EMAIL_SIGNATURE_END -->", re.S)
+_DIRECTOR_SIGNATURE = re.compile(
+    r"<p\b[^>]*>\s*<(?:strong|b)\b[^>]*>\s*Clément\s+VAILLANT\s*</(?:strong|b)>\s*"
+    r"<br\s*/?>\s*Directeur\b(?:(?!</p>).)*</p>", re.I | re.S,
+)
+_LOGO_SRC = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.I | re.S)
+
+
+def brand_saved_template(body, logo_url, signature, avatar, *, saved):
+    """Normalize copies for display/delivery, without rewriting saved versions."""
+    def logo_image(match):
+        image = match.group()
+        src = _LOGO_SRC.search(image)
+        if not src:
+            return image
+        url = src[3]
+        if (url in ("/static/logo.png", "cid:logo_cid", "cid:integrale-academy-logo", logo_url)
+                or "integraleacademy.file.force.com/file-asset-public/Logo_" in url):
+            return image[:src.start()] + f'{src[1]}"{logo_url}"' + image[src.end():]
+        return image
+
+    body = _IMAGE.sub(logo_image, body)
+    if saved:
+        body = _SIGNATURE_BLOCK.sub(lambda _: signature, body)
+        body = _DIRECTOR_SIGNATURE.sub(lambda _: signature, body)
+    body = with_cassandre_memoji(body, avatar)
+    if saved and re.search(r"<(?:!doctype|html)\b", body, re.I):
+        if not any(logo_url in image.group() for image in _IMAGE.finditer(body)):
+            logo = f'<div style="text-align:center;padding:16px"><img src="{logo_url}" width="105" alt="Intégrale Academy"></div>'
+            opening = re.search(r"<body\b[^>]*>", body, re.I) or re.search(r"</head>|<html\b[^>]*>", body, re.I)
+            at = opening.end() if opening else 0
+            body = body[:at] + logo + body[at:]
+        if signature not in body and avatar not in body:
+            closing = re.search(r"</body\s*>|</html\s*>", body, re.I)
+            at = closing.start() if closing else len(body)
+            body = body[:at] + signature + body[at:]
+    return body

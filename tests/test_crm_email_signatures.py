@@ -115,7 +115,112 @@ def test_secretariat_saved_information_template_is_refreshed(monkeypatch, avatar
         _, _, _, result = application._secretariat_information_email(
             {}, {'formation': 'APS'}, {'prenom': 'Lina', 'formation': 'APS'},
         )
-    # A fragment receives the existing wrapper signature as well; both are updated.
-    assert result.count(avatar) == (1 if complete_document else 2)
+    assert result.count(avatar) == 1
     assert '>CM</div>' not in result
     assert template['contenu'] == content
+
+
+def test_library_training_dates_and_branding(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, 'DATA_FILE', str(tmp_path / 'data.json'))
+    data = application.load_data()
+    data['formation_sessions'] = {'cote_azur': {
+        code: [{'label': f'Du {day} au 28 février {year} - examen le 1er mars {year}'}
+               for day, year in [(1, 2000), (2, 2099), (3, 2099)]]
+        for code in ['APS', 'SSIAP']
+    }}
+    with application.app.test_request_context():
+        templates = application._crm_templates_payload(data)
+    for template in templates['automatic_email'] + [templates['automatic_meta'][0]]:
+        body = template['contenu']
+        assert body.count('Memoji de Cassandre MENARD') == 1
+        assert 'Clément VAILLANT' not in body and 'force.com' not in body
+        assert application.HEBERGEMENT_MAIL_LOGO in body
+        if template['formation'] in ('APS', 'SSIAP'):
+            assert 'Du 1 au' not in body
+            for day in [2, 3]:
+                assert f'Du {day} au 28 février 2099 — examen le 1er mars 2099' in body
+
+
+def test_legacy_saved_html_and_snippets_preview_with_one_signature(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, 'DATA_FILE', str(tmp_path / 'data.json'))
+    app = application.app
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session['user_email'] = 'clement@integraleacademy.com'
+    old_logo = 'https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=old'
+    bodies = [
+        "<html><body><img src='" + old_logo + "'><p>Mon message</p>"
+        '<p><strong>Clément VAILLANT</strong><br>Directeur Intégrale Group</p></body></html>',
+        '<html><body><p>Mon message</p></body></html>',
+        '<p>Mon message</p>',
+    ]
+    original = application.load_data()
+    for idx, body in enumerate(bodies):
+        original['crm_email_templates'].append({'id': str(idx), 'nom': 'Mon modèle', 'contenu': body})
+    application.save_data(original)
+    for idx in range(len(bodies)):
+        response = client.get(f'/api/crm/templates/{idx}/email-preview')
+        assert response.status_code == 200
+        body = response.get_json()['html']
+        assert body.count('Memoji de Cassandre MENARD') == 1
+        assert 'Mon message' in body and 'Clément VAILLANT' not in body
+        assert body.count(application.HEBERGEMENT_MAIL_LOGO) == 1 and old_logo not in body
+        assert application._crm_refresh_email_signature(body, saved=True) == body
+    assert application.load_data()['crm_email_templates'] == original['crm_email_templates']
+
+
+def test_unanswered_call_uses_chosen_email_and_original_sms_only_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(application, 'DATA_FILE', str(tmp_path / 'data.json'))
+    data = application.load_data()
+    data['crm_contacts'] = [{
+        'id': 'prospect', 'prenom': 'Lina', 'formation': 'APS', 'mail': 'test@example.test',
+        'telephone': '+33600000000', 'relance_date': '2026-08-13', 'statut': 'A relancer',
+        'relances': [{'id': 'call', 'status': 'scheduled', 'scheduled_date': '2026-08-13'}],
+    }]
+    data['crm_sms_templates'] = [{'id': 'sms', 'nom': 'Pas de réponse relance', 'contenu': 'SMS habituel'}]
+    data['crm_email_templates'] = [{'id': 'mail', 'nom': 'Pas de réponse relance', 'sujet': 'Ancien modèle', 'contenu': 'Ancien texte'}]
+    application.save_data(data)
+    emails, sms = [], []
+    monkeypatch.setattr(application, 'send_email_html', lambda *args: emails.append(args) or True)
+    monkeypatch.setattr(application, 'send_sms', lambda number, body: sms.append(body) or True)
+    client = application.app.test_client()
+    with client.session_transaction() as session:
+        session['user_email'] = 'clement@integraleacademy.com'
+    endpoint = '/api/crm/contacts/prospect/relances/call/sans-reponse'
+    assert client.post(endpoint, json={'next_date': '2026-08-17', 'email_model': 'unknown'}).status_code == 400
+    assert not sms and not emails
+    payload = {'next_date': '2026-08-17', 'email_model': 'appointment'}
+    response = client.post(endpoint, json=payload)
+    assert response.status_code == 200 and response.get_json()['delivery'] == {'sms': True, 'email': True}
+    assert client.post(endpoint, json=payload).get_json()['duplicate']
+    assert sms == ['SMS habituel'] and len(emails) == 1
+    _, subject, _, body = emails[0]
+    assert 'faisons le point' in subject and 'Ancien texte' not in body
+    assert 'Bonjour <strong>Lina</strong>' in body and 'Agent de prévention et de sécurité (APS)' in body
+    assert 'href="https://calendly.com/integraleacademy/aps"' in body
+    assert body.count('Memoji de Cassandre MENARD') == 1
+    history = application.load_data()['crm_contacts'][0]['relances']
+    assert next(x for x in history if x['id'] == 'call')['email_model'] == 'appointment'
+
+
+def test_modeles_combine_public_sst_variants_and_crm_only_dates(tmp_path, monkeypatch):
+    from datetime import date
+    from crm_public_sessions import _public_calendar
+    monkeypatch.setattr(application, 'DATA_FILE', str(tmp_path / 'data.json'))
+    monkeypatch.setitem(application.app.config, 'CRM_USE_PUBLIC_CALENDAR', True)
+    data = {'formation_sessions': {'cote_azur': {'SSIAP': [
+        {'label': 'Du 15 au 26 février 2027'}, {'label': 'Du 4 au 15 mars 2027'},
+    ]}}}
+    common = {'training': {'slug': 'ssiap-1'}, 'status': 'OPEN', 'location': 'Puget-sur-Argens / Côte d’Azur',
+              'examDate': '2027-03-01', 'endDate': '2027-02-26'}
+    rows = [{**common, 'title': 'SSIAP 1 avec SST', 'startDate': '2027-02-11'},
+            {**common, 'title': 'SSIAP 1 sans SST', 'startDate': '2027-02-15'},
+            {**common, 'title': 'Autre centre', 'startDate': '2027-02-19', 'location': 'Paris'},
+            {**common, 'title': 'Non publié', 'startDate': '2027-02-22', 'status': 'HIDDEN'}]
+    monkeypatch.setattr(application.crm_public_sessions, '_published_sessions', lambda: _public_calendar(rows))
+    html = application._format_upcoming_sessions_for_email('cote_azur', 'SSIAP', data, today=date(2026, 11, 3),
+                                                          selected='Du 15 au 26 février 2027')
+    assert html.count('<li ') == 3
+    assert 'examen le 1er mars 2027 (avec SST)' in html
+    assert 'examen le 1er mars 2027 (sans SST) (session demandée)' in html
+    assert 'Du 4 au 15 mars 2027' in html

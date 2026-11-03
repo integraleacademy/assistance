@@ -15,7 +15,7 @@ ROOT = Path(__file__).parents[1]
 def test_recipient_validation_has_no_100_contact_limit_and_deduplicates_addresses():
     javascript = (ROOT / 'static/crm.js').read_text()
     helper = javascript.split('function bulkMessageRecipients', 1)[1].split(
-        'const reminderInterestDraft=', 1
+        'function reminderEmailOptions', 1
     )[0]
     script = 'function bulkMessageRecipients' + helper + r'''
 const assert=require('node:assert/strict');
@@ -283,3 +283,21 @@ def test_stale_or_failed_preview_cannot_enable_sending(crm_browser):
     expect(page.locator('#toast')).to_contain_text('Aperçu indisponible')
     expect(page.locator('#sendBulkMessage')).to_be_disabled()
     assert not attempts and not errors and not sent
+
+
+def test_second_reminder_draft_is_personalized_without_sending(crm_browser):
+    page, expect, _, attempts, _, _, errors, sent, _ = crm_browser
+    page.locator('#reminderOverdue').click()
+    page.locator('[data-select-reminder]').first.check()
+    page.locator('#reminderBulkEmail').click()
+    expect(page.locator('#bulkTpl')).to_have_value('reminder-interest')
+    page.locator('#bulkTpl').select_option('reminder-appointment')
+    page.locator('#previewBulkMessage').click()
+    frame = page.frame_locator('#bulkMessagePreview iframe')
+    expect(frame.locator('body')).to_contain_text('faire le point ensemble sur votre dossier')
+    expect(frame.locator('body')).to_contain_text('Agent de protection physique des personnes (A3P)')
+    expect(frame.get_by_role('link', name='Prendre un rendez-vous téléphonique')).to_have_attribute(
+        'href', 'https://calendly.com/integraleacademy/apr')
+    page.locator('#bulkTpl').select_option('reminder-interest')
+    expect(page.locator('#sendBulkMessage')).to_be_disabled()
+    assert not attempts and not sent and not errors
