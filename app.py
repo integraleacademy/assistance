@@ -12,8 +12,9 @@ from email import encoders
 from werkzeug.utils import secure_filename
 import hebergement_reminders
 import crm_external_access
+import crm_public_sessions
 from crm_read_cache import LastProjection, UpdateSnapshots
-from crm_email_signatures import with_cassandre_memoji
+from crm_email_signatures import brand_saved_template
 from contextvars import ContextVar
 from crm_funding_safety import (
     excludes_france_travail, france_travail_decision,
@@ -1062,6 +1063,7 @@ USERS = {
 
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+app.config["CRM_USE_PUBLIC_CALENDAR"] = bool(os.getenv("RENDER_SERVICE_ID"))
 from datetime import timedelta
 
 _secret_key = os.environ.get("SECRET_KEY")
@@ -1560,7 +1562,7 @@ def supprimer_fichiers_demande(demande):
 # Email helper
 # -------------------------------------------------------------------
 def _brand_header_table(logo_src=None):
-    logo_src = logo_src or "https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F"
+    logo_src = logo_src or HEBERGEMENT_MAIL_LOGO
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
       <tr>
@@ -1885,7 +1887,7 @@ def _crm_delete_email_attachment(metadata):
 def _crm_send_email_html(to_emails, subject, plain_text, html_body,
                          template=None, attachments_paths=None):
     """Send an e-mail with explicit files or the attachment saved on its template."""
-    html_body = _crm_refresh_email_signature(html_body)
+    html_body = _crm_refresh_email_signature(html_body, saved=bool(template))
     paths = attachments_paths
     if paths is None and isinstance(template, dict):
         stored_path = _crm_email_attachment_path(template.get("piece_jointe"))
@@ -2031,11 +2033,20 @@ def envoyer_sms_formulaire_formation_abandonne(draft_entry: dict, fields: dict) 
 
 
 
+CASSANDRE_SIGNATURE_TEXT = "Cassandre MENARD\nResponsable commerciale – Intégrale Academy\n04 22 47 07 68 · cassandre@integraleacademy.com"
+
+
+def _cassandre_signature():
+    return app.jinja_env.get_template("emails/_cassandre_signature.html").render().strip()
+
+
 def _render_email_template(template_name: str, **kwargs) -> str:
     template_path = os.path.join(app.root_path, "templates", "emails", template_name)
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
 
+    if "{cassandre_signature}" in html:
+        kwargs["cassandre_signature"] = _cassandre_signature()
     for key, value in kwargs.items():
         html = html.replace("{" + key + "}", str(value))
 
@@ -2054,7 +2065,7 @@ def build_vae_desp_email_plain(prenom, devis_url):
         "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
         "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
         "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
-        "Clément VAILLANT\nDirecteur – Intégrale Academy"
+        f"{CASSANDRE_SIGNATURE_TEXT}"
     )
 
 
@@ -2279,8 +2290,7 @@ def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis
         f"Réserver un rendez-vous : {config['calendly']}\n"
         "Identité Numérique La Poste : https://lidentitenumerique.laposte.fr\n\n"
         "Vous pouvez répondre directement à ce mail.\n\n"
-        "Clément VAILLANT\nDirecteur Intégrale Group\n"
-        "04 22 47 07 68\n"
+        f"{CASSANDRE_SIGNATURE_TEXT}\n"
     )
 
 
@@ -2571,23 +2581,41 @@ def _extract_exam_label_from_dates_txt(dates_txt: str) -> str:
     return match.group(1).strip(" .)")
 
 
-def _format_upcoming_sessions_for_email(
-    centre_code: str, formation_code: str, data_store=None, today=None,
-) -> str:
+def _upcoming_session_labels(centre_code, formation_code, data_store=None, today=None):
     sessions = get_upcoming_formation_sessions(data_store, today=today)
-    rows = sessions.get(_normalize_centre_code(centre_code), {}).get(formation_code, [])
+    centre = _normalize_centre_code(centre_code)
+    rows = sessions.get(centre, {}).get(formation_code, [])
     labels = [
-        (row.get("label") or "").strip()
+        _format_selected_session_date(row.get("label"))
         for row in rows
         if isinstance(row, dict) and (row.get("label") or "").strip()
     ]
+    if formation_code in {"APS", "SSIAP"} and app.config["CRM_USE_PUBLIC_CALENDAR"]:
+        today = today or datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
+        return crm_public_sessions.email_session_labels(centre, formation_code, labels, today, _session_date_range)
+    return labels
+
+
+def _format_upcoming_sessions_for_email(
+    centre_code: str, formation_code: str, data_store=None, today=None, *, selected="",
+) -> str:
+    labels = _upcoming_session_labels(centre_code, formation_code, data_store, today)
+    chosen = _format_selected_session_date(selected)
+    selected_note = ""
+    if chosen and chosen not in labels:
+        period = _session_date_range(chosen)
+        matches = [label for label in labels if period[0] and _session_date_range(label) == period]
+        if len(matches) == 1:
+            chosen = matches[0]
+    if chosen and chosen not in labels:
+        selected_note = f"<p>Session demandée : <strong>{html_module.escape(chosen)}</strong></p>"
     if not labels:
-        return '<p style="margin:0 0 6px 0;">📅 <strong>Dates à venir prochainement</strong></p>'
+        return selected_note + '<p style="margin:0 0 6px 0;">📅 <strong>Dates à venir prochainement</strong></p>'
     items = "".join(
-        f'<li style="margin:0 0 6px 0;"><strong>{label.replace(" - examen le ", " — examen le ")}</strong></li>'
+        f'<li style="margin:0 0 6px 0;"><strong>{html_module.escape(label)}{" (session demandée)" if label == chosen else ""}</strong></li>'
         for label in labels
     )
-    return f'<ul style="margin:0 0 8px 18px; padding:0;">{items}</ul>'
+    return selected_note + f'<ul style="margin:0 0 8px 18px; padding:0;">{items}</ul>'
 
 
 def _normalize_centre_code(centre_code: str) -> str:
@@ -2720,7 +2748,7 @@ def _a3p_information_email_content(
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
         + (booking_text if not prominent_phone_booking else "")
         + "Je reste à votre disposition pour toute information complémentaire.\n\n"
-        "Clément VAILLANT\nDirecteur – Intégrale Academy"
+        f"{CASSANDRE_SIGNATURE_TEXT}"
     )
     return (
         "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
@@ -2736,14 +2764,9 @@ def _a3p_information_email_content(
 
 
 
-def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str):
-    session_date = _format_selected_session_date(dates_txt)
+def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None):
     centre_label, centre_address = _centre_label_and_address(centre_code)
-    session_html = (
-        f"<p style=\"margin:0; line-height:1.65;\">📅 <strong>{session_date}</strong></p>"
-        if session_date
-        else "<p style=\"margin:0; line-height:1.65;\">📅 <strong>Date transmise lors de notre échange téléphonique.</strong></p>"
-    )
+    session_html = _format_upcoming_sessions_for_email(centre_code, "APS", data_store, selected=dates_txt)
     return _render_email_template(
         "aps.html",
         prenom=prenom,
@@ -2763,18 +2786,14 @@ def build_ssiap1_email_html(
     centre_code: str,
     devis_url: str,
     ssiap_secourisme_valide: str,
+    data_store=None,
 ):
-    session_date = _format_selected_session_date(dates_txt)
     centre_label, centre_address = _centre_label_and_address(centre_code)
     tarif = get_formation_tarif(
         "SSIAP",
         {"ssiap_secourisme_valide": ssiap_secourisme_valide},
     )
-    session_html = (
-        f'<p style="margin:0; line-height:1.65;">📅 <strong>{html_module.escape(session_date)}</strong></p>'
-        if session_date
-        else '<p style="margin:0; line-height:1.65;">📅 <strong>Date transmise lors de notre échange téléphonique.</strong></p>'
-    )
+    session_html = _format_upcoming_sessions_for_email(centre_code, "SSIAP", data_store, selected=dates_txt)
     secourisme_info = (
         "Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis."
         if ssiap_secourisme_valide == "NON"
@@ -4554,7 +4573,7 @@ def demande_informations_formations():
                 "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
                 "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
                 "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
-                "Clément VAILLANT\nDirecteur – Intégrale Academy"
+                f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_vae_desp_email_html(prenom, devis_url)
             email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
@@ -4565,10 +4584,12 @@ def demande_informations_formations():
         elif form_data.get("formation") == "APS":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
             centre_label, centre_address = _centre_label_and_address(form_data.get("centre", ""))
+            upcoming = _upcoming_session_labels(form_data.get("centre", ""), "APS", data_store)
             plain = (
                 f"Bonjour {prenom},\n\n"
                 "Voici les informations détaillées concernant notre formation Agent de Sécurité Privée (APS).\n"
-                + (f"Session : {session_date}\n" if session_date else "")
+                + (f"Session demandée : {session_date}\n" if session_date else "")
+                + ("Prochaines sessions :\n" + "\n".join(upcoming) + "\n" if upcoming else "")
                 + f"Lieu : {centre_label} — {centre_address}\n"
                 "Tarif : 1 650 € TTC.\n"
                 "Durée : 175 heures sur 5 semaines.\n\n"
@@ -4576,9 +4597,9 @@ def demande_informations_formations():
                 f"Devis détaillé : {devis_url}\n"
                 "Identité numérique La Poste : https://lidentitenumerique.laposte.fr\n"
                 "Contact : 04 22 47 07 68\n\n"
-                "Clément VAILLANT\nDirecteur – Intégrale Academy"
+                f"{CASSANDRE_SIGNATURE_TEXT}"
             )
-            html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
+            html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url, data_store)
             email_subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
         elif form_data.get("formation") == "SSIAP":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
@@ -4588,24 +4609,25 @@ def demande_informations_formations():
                 if form_data.get("ssiap_secourisme_valide") == "NON"
                 else "Tarif applicable avec un certificat SST ou PSC1 de moins de 2 ans."
             )
+            upcoming = _upcoming_session_labels(form_data.get("centre", ""), "SSIAP", data_store)
             plain = (
                 f"Bonjour {prenom},\n\n"
                 "Voici les informations concernant notre formation Agent de sécurité incendie SSIAP 1.\n"
-                + (f"Session : {session_date}\n" if session_date else "")
-                + "Examen : 28 octobre 2026\n"
-                "Lieu : Intégrale Academy Côte d’Azur — 54 chemin du Carreou, 83480 Puget-sur-Argens.\n"
+                + (f"Session demandée : {session_date}\n" if session_date else "")
+                + ("Prochaines sessions :\n" + "\n".join(upcoming) + "\n" if upcoming else "")
+                + "Lieu : Intégrale Academy Côte d’Azur — 54 chemin du Carreou, 83480 Puget-sur-Argens.\n"
                 f"Tarif : {tarif_ssiap} € TTC. {secourisme_info}\n\n"
                 f"Devis détaillé : {devis_url}\n"
                 "Prendre rendez-vous : https://calendly.com/integraleacademy/ssiap1\n"
                 "Contact : 04 22 47 07 68\n\n"
-                "Clément VAILLANT\nDirecteur – Intégrale Academy"
+                f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_ssiap1_email_html(
                 prenom,
                 form_data.get("dates", ""),
                 form_data.get("centre", ""),
                 devis_url,
-                form_data.get("ssiap_secourisme_valide", ""),
+                form_data.get("ssiap_secourisme_valide", ""), data_store,
             )
             email_subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
         elif form_data.get("formation") == "VTC":
@@ -4624,7 +4646,7 @@ def demande_informations_formations():
                 "Programme : https://www.integraleacademy.com/dossiersfc\n"
                 "Agrément VTC : https://www.integraleacademy.com/_files/ugd/008e7b_0e29b04a71dd4dcc9c0f266d28f0514b.pdf\n"
                 "Prendre rendez-vous : https://calendly.com/integraleacademy/chauffeurvtc\n\n"
-                "Clément VAILLANT\nDirecteur – Intégrale Academy"
+                f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_vtc_email_html(prenom, form_data.get("centre", ""), devis_url)
             email_subject = "🚗 Formation Chauffeur VTC"
@@ -4649,7 +4671,7 @@ def demande_informations_formations():
                 "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
                 "Je reste à votre disposition pour tous renseignements complémentaires.\n"
                 "Je vous souhaite une excellente journée.\n\n"
-                "Clément VAILLANT\nDirecteur Intégrale Group"
+                f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_desp_init_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
             email_subject = "Votre demande de renseignements – Formation DESP initial"
@@ -4662,7 +4684,7 @@ def demande_informations_formations():
                 + f"Vous pouvez télécharger votre devis détaillé ici : {devis_url}\n\n"
                 + ("Pour utiliser votre Compte Personnel de Formation, vous devez créer votre Identité Numérique La Poste : https://lidentitenumerique.laposte.fr/\n\n" if form_data.get("identite_numerique") == "NON" else "")
                 + "Je vous souhaite une bonne journée,\n\n"
-                "Clément VAILLANT\nDirecteur Intégrale Academy"
+                f"{CASSANDRE_SIGNATURE_TEXT}"
             )
 
             html = _wrap_html(
@@ -4675,7 +4697,7 @@ def demande_informations_formations():
                 {extra_devis}
                 {extra_identite}
                 <p>Je vous souhaite une bonne journée,</p>
-                <p><strong>Clément VAILLANT</strong><br>Directeur Intégrale Academy</p>
+                {_cassandre_signature()}
                 """
             )
             email_subject = "Votre demande de renseignements – Intégrale Academy"
@@ -9112,7 +9134,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261030-ft-funding-safety-1"
+CRM_ASSET_VERSION = "20261103-relances-modeles"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -12729,13 +12751,13 @@ def _secretariat_automatic_information_template(data, entry, contact):
     elif formation_code == "APS":
         template_id = "automatic-aps"
         subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
-        body = build_aps_email_html(prenom, dates, centre_code, devis_url)
+        body = build_aps_email_html(prenom, dates, centre_code, devis_url, data)
     elif formation_code == "SSIAP":
         template_id = "automatic-ssiap1"
         subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
         body = build_ssiap1_email_html(
             prenom, dates, centre_code, devis_url,
-            entry.get("ssiap_secourisme_valide", ""),
+            entry.get("ssiap_secourisme_valide", ""), data,
         )
     elif formation_code == "VTC":
         template_id = "automatic-vtc"
@@ -12780,7 +12802,7 @@ def _secretariat_automatic_information_template(data, entry, contact):
             {devis_html}
             <p>Notre équipe reste à votre disposition au <strong>04 22 47 07 68</strong>.</p>
             <p>Je vous souhaite une bonne journée,</p>
-            <p><strong>Clément VAILLANT</strong><br>Directeur Intégrale Academy</p>
+            {_cassandre_signature()}
             """,
         )
 
@@ -12821,15 +12843,16 @@ def _secretariat_information_email(data, entry, contact):
         branded = body
     else:
         formation = _secretariat_formation_config(entry.get("formation"))
+        body = _crm_refresh_email_signature(body, saved=True)
         branded = render_template(
             "crm_email_wrapper.html",
             prenom=contact.get("prenom") or entry.get("prenom") or "",
             formation=formation.get("label") or formation.get("short") or "",
-            contenu=body,
+            contenu=body, include_signature=not _has_cassandre_signature(body),
             email_header_title="Informations sur votre formation",
             email_header_subtitle=formation.get("label") or formation.get("short") or "",
         )
-    return template, subject, plain, _crm_refresh_email_signature(branded)
+    return template, subject, plain, _crm_refresh_email_signature(branded, saved=True)
 
 
 def _send_secretariat_information_messages(data, entry, contact):
@@ -13278,15 +13301,70 @@ def _crm_named_template(data, kind, name):
                  if str(item.get("nom") or "").strip().casefold() == expected), None)
 
 
+CRM_RELANCE_EMAILS = {
+    "interest": {
+        "nom": "Votre projet est-il toujours d’actualité ?",
+        "titre": "Et votre projet de formation ?",
+        "sujet": "{{ formation }} — votre projet est-il toujours d’actualité ?",
+        "contenu": (
+            "Vous aviez manifesté votre intérêt pour la formation {{ formation }} chez Intégrale Academy.\n\n"
+            "Êtes-vous toujours intéressé(e) par cette formation ?\n\n"
+            "Vous pouvez simplement répondre à cet e-mail pour nous indiquer si :\n"
+            "• vous souhaitez poursuivre votre projet ;\n"
+            "• vous préférez le reporter à plus tard ;\n"
+            "• vous n’êtes plus intéressé(e).\n\n"
+            "Si votre projet est toujours d’actualité, nous pourrons faire le point ensemble sur les "
+            "prochaines sessions, les démarches d’inscription et les possibilités de financement adaptées à "
+            "votre situation.\n\n"
+            "Vous pouvez réserver un rendez-vous téléphonique avec notre équipe grâce au bouton ci-dessous, "
+            "au créneau qui vous convient.\n\n"
+            "Un simple retour de votre part nous permettra de vous accompagner au mieux.\n\n"
+            "Au plaisir d’avoir de vos nouvelles !"
+        ),
+    },
+    "appointment": {
+        "nom": "Faire le point sur votre dossier",
+        "titre": "Faisons le point sur votre dossier",
+        "sujet": "{{ formation }} — faisons le point sur votre dossier",
+        "contenu": (
+            "Je me permets de revenir vers vous concernant votre formation {{ formation }} afin que nous "
+            "puissions faire le point ensemble sur votre dossier.\n\n"
+            "Vous serait-il possible de réserver un rendez-vous téléphonique au créneau qui vous convient ? "
+            "Nous pourrons répondre à vos questions et convenir ensemble de la prochaine étape.\n\n"
+            "Si vous préférez, vous pouvez aussi me répondre directement par e-mail en m’indiquant vos "
+            "disponibilités.\n\n"
+            "Bien cordialement,"
+        ),
+    },
+}
+
+
+def _crm_relance_email_template(data, choice):
+    if choice == "interest":
+        saved = _crm_named_template(data, "email", "Pas de réponse relance")
+        if saved:
+            return saved
+    draft = CRM_RELANCE_EMAILS[choice]
+    paragraphs = "".join("<p>" + html_module.escape(p).replace("\n", "<br>") + "</p>"
+                         for p in draft["contenu"].split("\n\n"))
+    button = '<p><a href="{{ lien_rdv_calendly }}" style="display:inline-block;padding:14px 22px;background:#102c5c;color:white;border-radius:8px;text-decoration:none">Prendre un rendez-vous téléphonique</a></p>'
+    return {
+        **draft, "contenu": render_template(
+            "crm_email_wrapper.html", prenom="{{ prenom }}", formation="{{ formation }}",
+            email_header_title=draft["titre"], contenu=paragraphs + button,
+        ),
+    }
+
+
 CRM_QUICK_REMINDER_TEMPLATE = "Rappel dans 5min"
 
 
 def _crm_send_appointment_followup(
-        data, contact, template_name, *, channels=("sms", "email")):
+        data, contact, template_name, *, channels=("sms", "email"), email_template=None):
     """Send the e-mail and SMS bearing the configured appointment template name."""
     delivery = {"sms": False, "email": False}
     sms_template = _crm_named_template(data, "sms", template_name)
-    email_template = _crm_named_template(data, "email", template_name)
+    email_template = email_template or _crm_named_template(data, "email", template_name)
     # Historical databases may not yet contain the newly named templates. Keep
     # the existing missed-call follow-up operational until an administrator
     # saves its custom versions in the library.
@@ -13308,7 +13386,7 @@ def _crm_send_appointment_followup(
         email_body = _crm_resolve_message_variables(
             email_template.get("contenu"), contact, html=True, data_store=data
         )
-        email_html = _crm_email_html(email_body, contact)
+        email_html = _crm_email_html(email_body, contact, saved=True)
         subject = _crm_resolve_message_variables(
             email_template.get("sujet") or template_name, contact, data_store=data
         )
@@ -13318,7 +13396,7 @@ def _crm_send_appointment_followup(
             template=email_template,
         )
         if delivery["email"]:
-            _crm_activity(contact, "email", f"E-mail « {template_name} » envoyé", subject, email_html)
+            _crm_activity(contact, "email", f"E-mail « {email_template.get('nom') or template_name} » envoyé", subject, email_html)
     return delivery
 
 
@@ -15552,6 +15630,7 @@ def crm(section):
         "crm.html",
         section=section,
         page_title=CRM_PAGE_LABELS[section],
+        reminder_emails=CRM_RELANCE_EMAILS,
         statuses=_crm_statuses(_load_data_snapshot()),
         user=user,
         crm_team=[
@@ -18201,6 +18280,9 @@ def crm_relance_no_answer(contact_id, relance_id):
         })
 
     payload = request.get_json(silent=True) or {}
+    email_choice = payload.get("email_model", "interest")
+    if not isinstance(email_choice, str) or email_choice not in CRM_RELANCE_EMAILS:
+        return jsonify({"error": "Choisissez un modèle d’e-mail de relance valide."}), 400
     try:
         next_date = _crm_relance_date(
             payload.get("next_date"), weekdays_only=True,
@@ -18229,9 +18311,14 @@ def crm_relance_no_answer(contact_id, relance_id):
         f"Nouvelle relance programmée le {next_date}",
     )
 
-    delivery = _crm_send_appointment_followup(data, contact, "Pas de réponse relance")
+    email_template = _crm_relance_email_template(data, email_choice)
+    delivery = _crm_send_appointment_followup(
+        data, contact, "Pas de réponse relance", email_template=email_template,
+    )
+    relance = next(item for item in contact["relances"] if item["id"] == relance_id)
     relance.update({
-        "message_template": "Pas de réponse relance",
+        "message_template": email_template["nom"],
+        "email_model": email_choice,
         "delivery": delivery,
         "messages_processed_at": _crm_now(),
     })
@@ -18809,15 +18896,12 @@ def crm_generate_message(contact_id):
 
 def _crm_templates_payload(data):
     """Construit la bibliothèque de modèles depuis un instantané existant."""
-    wrapper_path = os.path.join(app.root_path, "templates", "crm_email_wrapper.html")
-    with open(wrapper_path, encoding="utf-8") as wrapper_file:
-        email_starter = wrapper_file.read().replace(
-            "{{ contenu|safe }}",
-            "<!-- EMAIL_CONTENT_START --><p>Écrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
-        )
-    email_starter = email_starter.replace(
-        "{% include 'emails/_cassandre_memoji.html' %}",
-        render_template("emails/_cassandre_memoji.html"),
+    email_free_starter = render_template(
+        "crm_email_wrapper.html", prenom="{{ prenom }}", formation="{{ formation }}",
+        contenu="<!-- EMAIL_CONTENT_START --><!-- EMAIL_CONTENT_END -->",
+    )
+    email_starter = email_free_starter.replace(
+        "<!-- EMAIL_CONTENT_END -->", "<p>Écrivez ici le contenu de votre e-mail.</p><!-- EMAIL_CONTENT_END -->",
     )
     automatic_email = [
         {
@@ -18841,14 +18925,14 @@ def _crm_templates_payload(data):
             "nom": "APS – Agent de sécurité privée",
             "formation": "APS",
             "sujet": "👮‍♂️ Formation Agent de Sécurité Privée (APS)",
-            "contenu": build_aps_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}"),
+            "contenu": build_aps_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data),
         },
         {
             "id": "automatic-ssiap1",
             "nom": "SSIAP 1 – Sécurité incendie",
             "formation": "SSIAP",
             "sujet": "🔥 Formation Agent de sécurité incendie SSIAP 1",
-            "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui"),
+            "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui", data),
         },
         {
             "id": "automatic-vtc",
@@ -18900,18 +18984,14 @@ def _crm_templates_payload(data):
     ]
     return {
         "email": [
-            {**template, "contenu": _crm_refresh_email_signature(template.get("contenu"))}
+            {**template, "contenu": _crm_refresh_email_signature(template.get("contenu"), saved=True)}
             for template in data["crm_email_templates"]
         ],
         "sms": data["crm_sms_templates"],
         "automatic_email": automatic_email,
         "automatic_meta": automatic_meta,
         "email_starter": email_starter,
-        "email_free_starter": render_template(
-            "crm_email_wrapper.html", prenom="{{ prenom }}",
-            formation="{{ formation }}",
-            contenu="<!-- EMAIL_CONTENT_START --><!-- EMAIL_CONTENT_END -->",
-        ),
+        "email_free_starter": email_free_starter,
     }
 
 
@@ -19259,6 +19339,7 @@ def crm_bootstrap():
     read_model_key = _crm_read_model_key()
     bootstrap_etag = hashlib.sha256(repr((
         CRM_ASSET_VERSION,
+        int(time.time()) // crm_public_sessions.REFRESH_SECONDS,
         section,
         user_email,
         read_model_key,
@@ -19550,7 +19631,6 @@ def crm_template(template_id):
     return jsonify({"error": "Modèle introuvable"}), 404
 
 
-CRM_UPCOMING_DATES_VARIABLE = "{{prochaines_dates}}"
 CRM_CALENDLY_URL = "https://calendly.com/integraleacademy/formation"
 
 
@@ -19568,11 +19648,7 @@ def _crm_formation_code(contact):
 def _crm_upcoming_dates(contact, html=False, data_store=None):
     centre = _normalize_centre_code(contact.get("lieu"))
     formation = _crm_formation_code(contact)
-    rows = get_upcoming_formation_sessions(data_store).get(centre, {}).get(formation, [])
-    labels = [
-        str(row.get("label") or "").strip().replace(" - examen le ", " — examen le ")
-        for row in rows if isinstance(row, dict) and str(row.get("label") or "").strip()
-    ]
+    labels = _upcoming_session_labels(centre, formation, data_store)
     if not labels:
         return "Dates à venir prochainement (contactez-nous pour les connaître)."
     if not html:
@@ -19656,10 +19732,9 @@ def _crm_today_appointment_variables(contact, data_store=None, now=None):
 
 def _crm_resolve_message_variables(content, contact, html=False, data_store=None):
     """Resolve CRM template variables at preview/send time, never when saving."""
-    resolved = str(content or "").replace(
-        CRM_UPCOMING_DATES_VARIABLE,
-        _crm_upcoming_dates(contact, html=html, data_store=data_store),
-    )
+    resolved = re.sub(r"\{\{\s*prochaines_dates\s*\}\}",
+                      lambda _: _crm_upcoming_dates(contact, html=html, data_store=data_store),
+                      str(content or ""))
     variables = {
         "prenom": contact.get("prenom"), "nom": contact.get("nom"),
         "email": contact.get("mail"), "mail": contact.get("mail"),
@@ -19678,19 +19753,40 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
     return resolved
 
 
-def _crm_refresh_email_signature(body):
-    if "cassandre" not in str(body or "").casefold():
-        return str(body or "")
-    return with_cassandre_memoji(
-        body, render_template("emails/_cassandre_memoji.html").strip(),
+@app.get("/api/crm/templates/<template_id>/email-preview")
+@login_required
+def crm_saved_email_preview(template_id):
+    data = load_data()
+    template = next((row for row in data.get("crm_email_templates", []) if row["id"] == template_id), None)
+    if not template:
+        return jsonify({"error": "Modèle d’e-mail introuvable."}), 404
+    body = str(template.get("contenu") or "")
+    # A library preview has no recipient. Resolve dates only for a named training.
+    training = re.search(r"\b(SSIAP\s*1|APS|A3P)\b", template.get("nom") or "", re.I)
+    if training:
+        formation = re.sub(r"SSIAP\s*1", "SSIAP", training[0], flags=re.I)
+        body = re.sub(r"\{\{\s*prochaines_dates\s*\}\}",
+                      lambda _: _crm_upcoming_dates({"formation": formation}, html=True, data_store=data), body)
+    return jsonify({"html": _crm_email_html(body, {"prenom": "{{ prenom }}", "formation": "{{ formation }}"}, saved=True)})
+
+
+def _crm_refresh_email_signature(body, *, saved=False):
+    return brand_saved_template(
+        str(body or ""), HEBERGEMENT_MAIL_LOGO, _cassandre_signature(),
+        app.jinja_env.get_template("emails/_cassandre_memoji.html").render().strip(), saved=saved,
     )
 
 
-def _crm_email_html(body, contact):
+def _has_cassandre_signature(body):
+    return "Memoji de Cassandre MENARD" in body or "<!-- EMAIL_SIGNATURE_START -->" in body
+
+
+def _crm_email_html(body, contact, *, saved=False):
     """Keep complete custom e-mails intact and brand body-only messages."""
     body = str(body or "")
     if re.search(r"<(?:!doctype|html)\b", body, re.IGNORECASE):
-        return _crm_refresh_email_signature(body)
+        return _crm_refresh_email_signature(body, saved=saved)
+    body = _crm_refresh_email_signature(body, saved=saved)
     if not re.search(r"</?[a-z][^>]*>", body, re.IGNORECASE):
         normalized = html_module.unescape(body).replace("\r\n", "\n").replace("\r", "\n")
         paragraphs = [
@@ -19705,7 +19801,8 @@ def _crm_email_html(body, contact):
             for paragraph in paragraphs
         )
     return _crm_refresh_email_signature(render_template(
-        "crm_email_wrapper.html", prenom=contact.get("prenom"), contenu=body
+        "crm_email_wrapper.html", prenom=contact.get("prenom"), formation=_crm_formation_label(contact),
+        contenu=body, include_signature=not _has_cassandre_signature(body),
     ))
 
 @app.route("/api/crm/contacts/<contact_id>/cnaps-form", methods=["POST"])
@@ -19858,7 +19955,7 @@ def crm_send_message(contact_id):
             return _crm_attachment_error_response(exc)
         body = _crm_resolve_message_variables(body, contact, html=True, data_store=data)
         subject = _crm_resolve_message_variables(subject, contact, data_store=data)
-        branded = _crm_email_html(body, contact)
+        branded = _crm_email_html(body, contact, saved=bool(selected_template))
         if manual_attachments:
             with tempfile.TemporaryDirectory(prefix="crm-email-attachment-") as attachment_dir:
                 attachment_paths = []
@@ -19973,7 +20070,7 @@ def crm_message_preview(contact_id):
             "type": kind,
             "sujet": subject,
             "contenu": body,
-            "html": _crm_email_html(body, contact),
+            "html": _crm_email_html(body, contact, saved=bool(payload.get("template_id"))),
         })
     if kind == "sms":
         body = _crm_resolve_message_variables(
@@ -20002,8 +20099,9 @@ def crm_send_test_email():
         return jsonify({"error": "Le contenu de l’e-mail est vide."}), 400
     plain = re.sub(r"<[^>]+>", " ", body)
     plain = html_module.unescape(re.sub(r"\s+", " ", plain)).strip()
+    preview = _crm_email_html(body, {"prenom": "{{ prenom }}", "formation": "{{ formation }}"}, saved=True)
     if not _crm_send_email_html(
-        recipient, subject or "Intégrale Academy", plain, body,
+        recipient, subject or "Intégrale Academy", plain, preview,
         template=template,
     ):
         return jsonify({"error": "L’envoi du mail de test a échoué."}), 502

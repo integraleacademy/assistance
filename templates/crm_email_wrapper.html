@@ -10,7 +10,7 @@
     <tr><td align="center" style="padding:28px 12px">
       <table role="presentation" class="email-shell" width="640" cellpadding="0" cellspacing="0" style="width:640px;max-width:640px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 12px 36px rgba(20,37,63,.10)">
         <tr><td align="center" class="mobile-pad" style="padding:28px 44px 30px;background:#102c5c;background-image:linear-gradient(135deg,#102c5c 0%,#3269da 100%);color:#fff">
-          <img src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" width="148" alt="Intégrale Academy" style="display:block;width:148px;max-width:100%;height:auto;margin:0 auto 20px;border:0">
+          <img src="https://assistance-alw9.onrender.com/static/logo.png" width="148" alt="Intégrale Academy" style="display:block;width:148px;max-width:100%;height:auto;margin:0 auto 20px;border:0">
           <div style="font-size:12px;line-height:16px;font-weight:700;letter-spacing:2.1px;text-transform:uppercase;opacity:.88"><!-- EMAIL_BRAND_START -->Intégrale Academy<!-- EMAIL_BRAND_END --></div>
           <h1 style="margin:9px 0 8px;font-size:32px;line-height:38px;color:#fff"><!-- EMAIL_HEADER_TITLE_START -->{{ email_header_title|default('Le résumé de notre échange', true) }}<!-- EMAIL_HEADER_TITLE_END --></h1>
           <div style="font-size:15px;line-height:22px;color:#e9f0ff"><!-- EMAIL_HEADER_SUBTITLE_START -->{% if email_header_subtitle|default('', true) %}{{ email_header_subtitle }}{% else %}Votre projet : <strong>Formation {{ formation }}</strong>{% endif %}<!-- EMAIL_HEADER_SUBTITLE_END --></div>
@@ -21,10 +21,7 @@
           <p style="margin:0 0 18px;font-size:17px"><!-- EMAIL_GREETING_START -->Bonjour <strong>{{ prenom }}</strong>,<!-- EMAIL_GREETING_END --></p>
           {{ contenu|safe }}
           <div style="height:1px;background:#e6ebf2;margin:30px 0 24px"></div>
-          <!-- EMAIL_SIGNATURE_START --><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%"><tr>
-            <td valign="top" width="60" style="width:60px;padding-right:13px">{% include 'emails/_cassandre_memoji.html' %}</td>
-            <td valign="top" style="font-size:13px;line-height:20px;color:#516078"><strong style="font-size:15px;color:#172033">Cassandre MENARD</strong><br>Responsable commerciale – Intégrale Academy<br><a href="tel:0422470768" style="color:#102c5c;font-weight:700;text-decoration:none">04 22 47 07 68</a>&nbsp;·&nbsp;<a href="mailto:cassandre@integraleacademy.com" style="color:#102c5c;text-decoration:none">cassandre@integraleacademy.com</a><br>54 chemin du Carreou – 83480 Puget-sur-Argens</td>
-          </tr></table><!-- EMAIL_SIGNATURE_END -->
+          {% if include_signature|default(true) %}{% include 'emails/_cassandre_signature.html' %}{% endif %}
         </td></tr>
         <tr><td class="mobile-pad" style="padding:25px 44px 28px;background:#0f1f33;color:#d6deeb;text-align:center">
           <div style="font-size:13px;line-height:20px;font-weight:700;color:#f4c45a"><!-- EMAIL_FOOTER_TAGLINE_START -->Faites le premier pas vers votre futur métier<!-- EMAIL_FOOTER_TAGLINE_END --></div>

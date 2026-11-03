@@ -2879,7 +2879,10 @@ def test_crm_can_send_a_template_test_email(tmp_path, monkeypatch):
     })
 
     assert response.status_code == 200
-    assert sent == {"to": "equipe@example.com", "subject": "Aperçu formation", "plain": "Bonjour Voici le programme.", "html": "<h1>Bonjour</h1><p>Voici le programme.</p>"}
+    assert sent["to"] == "equipe@example.com" and sent["subject"] == "Aperçu formation"
+    assert sent["plain"] == "Bonjour Voici le programme."
+    assert "<h1>Bonjour</h1><p>Voici le programme.</p>" in sent["html"]
+    assert "Cassandre MENARD" in sent["html"]
     assert c.post("/api/crm/test-email", json={"destinataire": "invalide", "contenu": "test"}).status_code == 400
 
 
@@ -3655,7 +3658,7 @@ def test_crm_email_has_branding_and_legal_footer(tmp_path, monkeypatch):
     )
 
     assert response.status_code == 200
-    assert "Logo_Integrale_Academy_officielpdf" in captured["html"]
+    assert application.HEBERGEMENT_MAIL_LOGO in captured["html"] and "force.com" not in captured["html"]
     assert "Faites le premier pas vers votre futur métier" in captured["html"]
     assert "SIREN 840 899 884" in captured["html"]
     assert "Votre avenir, notre engagement" not in captured["html"]
