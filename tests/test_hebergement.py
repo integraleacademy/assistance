@@ -965,3 +965,19 @@ def test_reminder_uses_convention_arrival_only_for_current_session():
     arrival = application._hebergement_booking_arrival(booking)
     assert arrival == datetime.date(2027, 1, 18)
     assert "09h30" not in application._hebergement_reminder_email(booking, arrival)[1]
+
+
+@pytest.mark.parametrize("paid,deposit", [(False, False), (True, False), (False, True), (True, True)])
+def test_arrival_reminder_introduces_host_and_only_requests_outstanding_items(paid, deposit):
+    booking = _reservation(paiement="Payé" if paid else "Non payé")
+    booking["convention_hebergement"] = {"fields": {"deposit_received": "Oui" if deposit else "Non"}}
+    _, plain, markup = application._hebergement_reminder_email(booking, datetime.date(2026, 11, 9))
+    for content in (plain, markup):
+        assert "Je suis Aurélie BAYARD" in content and "vous accueillerai" in content
+        assert "04 87 83 06 15" in content and "aurelie@integraleacademy.com" in content
+        assert "sac de couchage" in content and "17 h" in content
+        assert ("Préparez le montant" in content) == (not paid)
+        assert ("chèque de caution distinct" in content) == (not deposit)
+    assert 'href="tel:+33487830615"' in markup and 'href="mailto:aurelie@integraleacademy.com"' in markup
+    assert 'static/messaging/aurelie.png' in markup and "Chargée des relations clients" in markup
+    assert "maps/dir/?api=1&amp;destination=" in markup
