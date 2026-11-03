@@ -70,7 +70,7 @@
         padding: 22px 28px 48px;
     }
 
-    .app-header, .hero, .stats-grid, .filters-panel {
+    .app-header, .hero, .stats-grid, .filters-panel, .bookings-panel {
         width: min(100%, 1724px);
         margin-inline: auto;
     }
@@ -130,10 +130,10 @@
         display: flex;
         align-items: flex-end;
         justify-content: space-between;
-        min-height: 188px;
+        min-height: 132px;
         gap: 30px;
         margin-bottom: 18px;
-        padding: 34px 38px;
+        padding: 24px 30px;
         overflow: hidden;
         color: var(--white);
         background: linear-gradient(128deg, #111827 0%, #1d2940 72%, #2b3850 100%);
@@ -382,7 +382,7 @@
         scrollbar-color: #c7ccd6 transparent;
         scrollbar-width: thin;
     }
-    .booking-table { width: 100%; min-width: 1480px; border-collapse: separate; border-spacing: 0; }
+    .booking-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
     .booking-table th {
         position: sticky;
         z-index: 2;
@@ -409,16 +409,13 @@
     .booking-table tbody tr:hover td { background: #fcfcfd; }
     .booking-table th:first-child, .booking-table td:first-child { padding-left: 22px; }
     .booking-table th:last-child, .booking-table td:last-child { padding-right: 22px; }
-    .col-person { width: 220px; }
-    .col-contact { width: 225px; }
-    .col-session { width: 255px; }
-    .col-payment { width: 164px; }
-    .col-mode { width: 172px; }
-    .col-key { width: 78px; }
-    .col-key-state { width: 232px; }
-    .col-date { width: 130px; }
-    .col-actions { width: 164px; }
-
+    .col-person { width: 25%; }
+    .col-session { width: 16%; }
+    .col-payment { width: 18%; }
+    .col-key { width: 20%; }
+    .col-actions { width: 21%; }
+    .cell-stack { display: grid; justify-items: start; gap: 7px; }
+    .rappel-preview { color: #2457a7; text-decoration: underline; font-weight: 650; }
     .person-profile { align-items: flex-start; gap: 11px; }
     .avatar {
         display: grid;
@@ -434,7 +431,8 @@
         font-weight: 820;
         letter-spacing: .02em;
     }
-    .person-name { min-width: 0; }
+    .person-name { flex: 1; min-width: 0; }
+    .person-name .editable { width: 100%; font-size: .9rem; overflow-wrap: break-word; }
     .editable {
         display: block;
         width: fit-content;
@@ -456,10 +454,10 @@
     }
     .nom-cell { font-weight: 780; text-transform: uppercase; }
     .prenom-cell { color: var(--slate-600); font-size: .72rem; font-weight: 600; text-transform: capitalize; }
-    .contact-stack { display: grid; gap: 5px; }
+    .contact-stack { display: grid; gap: 4px; margin-top: 8px; }
     .contact-line { min-width: 0; gap: 7px; color: var(--slate-700); }
     .contact-line svg { width: .9rem; height: .9rem; color: var(--slate-500); }
-    .contact-line .editable { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .contact-line .editable { white-space: normal; overflow-wrap: anywhere; }
     .phone-value { color: var(--green-700); font-weight: 720; }
     .session-editor { width: 100%; color: var(--slate-700); font-size: .74rem; font-weight: 650; line-height: 1.45; }
 
@@ -494,6 +492,7 @@
     .choice-button.is-active.is-danger { color: var(--red-700); background: var(--red-100); }
     .choice-button.is-active.is-blue { color: var(--blue-700); background: var(--blue-100); }
     .choice-button.is-active.is-gold { color: #76570f; background: var(--gold-100); }
+    .key-state-group { flex-wrap: wrap; }
     .key-state-group .choice-button { padding-inline: 8px; }
     .key-input {
         width: 57px;
@@ -634,6 +633,16 @@
     @media (max-width: 1240px) {
         .filters-panel { align-items: stretch; flex-direction: column; }
         .toolbar-actions { justify-content: flex-end; }
+    }
+
+    @media screen and (min-width: 721px) and (max-width: 1140px) {
+        .booking-table, .booking-table tbody { display: block; }
+        .booking-table thead { display: none; }
+        .booking-table tbody { padding: 12px; background: var(--slate-50); }
+        .booking-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 12px; border: 1px solid var(--slate-300); border-radius: 12px; overflow: hidden; }
+        .booking-table td { padding: 12px 16px; }
+        .booking-table td:first-child { grid-column: span 2; }
+        .booking-table td::before { display: block; content: attr(data-label); margin-bottom: 7px; color: var(--slate-600); font-size: .7rem; font-weight: 700; }
     }
 
     @media (max-width: 920px) {
@@ -847,10 +856,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>
                     Réinitialiser
                 </a>
-                <button type="button" onclick="window.print()" class="button button-secondary">
+                <a href="{{ url_for('admin_hebergement', vue='liste', q=search_query, session_filter=selected_session, tri=tri) }}" target="_blank" rel="noopener" class="button button-secondary">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><path d="M6 14h12v7H6z"></path></svg>
-                    Imprimer
-                </button>
+                    Imprimer la liste
+                </a>
             </div>
         </section>
 
@@ -874,13 +883,9 @@
                     <thead>
                         <tr>
                             <th class="col-person">Stagiaire</th>
-                            <th class="col-contact">Contact</th>
                             <th class="col-session">Session</th>
                             <th class="col-payment">Paiement</th>
-                            <th class="col-mode">Mode</th>
                             <th class="col-key">Clé</th>
-                            <th class="col-key-state">Suivi de clé</th>
-                            <th class="col-date">Date paiement</th>
                             <th class="col-actions actions-column">Actions</th>
                         </tr>
                     </thead>
@@ -895,8 +900,7 @@
                                         <span class="editable prenom-cell" contenteditable="true" role="textbox" tabindex="0" spellcheck="false" title="Cliquer pour modifier le prénom" onblur="updateField('{{ h.id }}', 'prenom', this.innerText)">{{ h.prenom|title }}</span>
                                     </div>
                                 </div>
-                            </td>
-                            <td data-label="Contact">
+
                                 <div class="contact-stack">
                                     <div class="contact-line">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2.1Z"></path></svg>
@@ -911,31 +915,28 @@
                             <td data-label="Session">
                                 <span class="editable session-editor" contenteditable="true" role="textbox" tabindex="0" spellcheck="false" title="Cliquer pour modifier la session" onblur="updateField('{{ h.id }}', 'session', this.innerText)">{{ h.session }}</span>
                             </td>
-                            <td data-label="Paiement">
+                            <td data-label="Paiement"><div class="cell-stack">
                                 <div class="choice-group" aria-label="État du paiement de {{ h.prenom }} {{ h.nom }}">
                                     <button type="button" class="choice-button {% if h.paiement == 'Payé' %}is-active is-success{% endif %}" aria-pressed="{{ 'true' if h.paiement == 'Payé' else 'false' }}" onclick="updatePaiement('{{ h.id }}', 'Payé')">Payé</button>
                                     <button type="button" class="choice-button {% if h.paiement != 'Payé' %}is-active is-danger{% endif %}" aria-pressed="{{ 'true' if h.paiement != 'Payé' else 'false' }}" onclick="updatePaiement('{{ h.id }}', 'Non payé')">Non payé</button>
                                 </div>
-                            </td>
-                            <td data-label="Mode">
+
                                 <div class="choice-group" aria-label="Mode de paiement de {{ h.prenom }} {{ h.nom }}">
                                     <button type="button" class="choice-button {% if h.mode_paiement == 'Chèque' %}is-active{% endif %}" aria-pressed="{{ 'true' if h.mode_paiement == 'Chèque' else 'false' }}" onclick="updateMode('{{ h.id }}', 'Chèque')">Chèque</button>
                                     <button type="button" class="choice-button {% if h.mode_paiement == 'Espèces' %}is-active is-gold{% endif %}" aria-pressed="{{ 'true' if h.mode_paiement == 'Espèces' else 'false' }}" onclick="updateMode('{{ h.id }}', 'Espèces')">Espèces</button>
                                 </div>
+                                {% if h.date_paiement %}<span class="date-value">{{ h.date_paiement }}</span>{% endif %}
+                                </div>
                             </td>
-                            <td data-label="Clé">
+                            <td data-label="Suivi de clé"><div class="cell-stack">
                                 <label class="sr-only" for="key-{{ h.id }}">Numéro de clé de {{ h.prenom }} {{ h.nom }}</label>
                                 <input id="key-{{ h.id }}" type="text" class="key-input" value="{{ h.cle_numero or '' }}" placeholder="—" onchange="updateCleNumero('{{ h.id }}', this.value)">
-                            </td>
-                            <td data-label="Suivi de clé">
                                 <div class="choice-group key-state-group" aria-label="État de la clé de {{ h.prenom }} {{ h.nom }}">
                                     <button type="button" class="choice-button {% if h.cle_etat == 'A donner' %}is-active{% endif %}" aria-pressed="{{ 'true' if h.cle_etat == 'A donner' else 'false' }}" onclick="updateCleEtat('{{ h.id }}', 'A donner')">À donner</button>
                                     <button type="button" class="choice-button {% if h.cle_etat == 'Donnee' %}is-active is-blue{% endif %}" aria-pressed="{{ 'true' if h.cle_etat == 'Donnee' else 'false' }}" onclick="updateCleEtat('{{ h.id }}', 'Donnee')">Donnée</button>
                                     <button type="button" class="choice-button {% if h.cle_etat == 'Restituee' %}is-active is-gold{% endif %}" aria-pressed="{{ 'true' if h.cle_etat == 'Restituee' else 'false' }}" onclick="updateCleEtat('{{ h.id }}', 'Restituee')">Restituée</button>
                                 </div>
-                            </td>
-                            <td data-label="Date paiement">
-                                {% if h.date_paiement %}<span class="date-value">{{ h.date_paiement }}</span>{% else %}<span class="muted-value">Non renseignée</span>{% endif %}
+                                </div>
                             </td>
                             <td data-label="Actions" class="actions-column">
                                 {% set stored_convention = h.get('convention_hebergement', {}) %}
@@ -943,7 +944,7 @@
                                 {% set stored_yousign = convention_data.get('yousign', {}) %}
                                 {% set yousign_data = stored_yousign if stored_yousign is mapping else {} %}
                                 {% set yousign_status = yousign_data.get('status', 'draft') %}
-                                <div class="row-actions">
+                                <div class="cell-stack"><div class="row-actions">
                                     <a class="action-button convention-action" href="{{ url_for('admin_hebergement_convention_editor', reservation_id=h.id) }}" title="Préparer et faire signer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}" aria-label="Préparer et faire signer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M8 13h8M8 17h6M16.5 12.5l2 2 3.5-4"></path></svg>
                                         {% if yousign_status in ['done', 'signed'] %}Convention signée{% elif yousign_status in ['approval', 'ongoing'] %}Suivre la signature{% else %}Préparer / signer{% endif %}
@@ -983,6 +984,8 @@ Clément VAILLANT{% endset %}
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"></path></svg>
                                         </button>
                                     </form>
+                                </div>
+                                <a class="rappel-preview" href="{{ url_for('admin_hebergement_rappel', reservation_id=h.id) }}" target="_blank" rel="noopener">Aperçu du rappel J−2</a>
                                 </div>
                             </td>
                         </tr>

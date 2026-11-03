@@ -10,6 +10,7 @@ from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email import encoders
 from werkzeug.utils import secure_filename
+import hebergement_reminders
 import crm_external_access
 from crm_read_cache import LastProjection, UpdateSnapshots
 from crm_email_signatures import with_cassandre_memoji
@@ -1558,12 +1559,13 @@ def supprimer_fichiers_demande(demande):
 # -------------------------------------------------------------------
 # Email helper
 # -------------------------------------------------------------------
-def _brand_header_table():
-    return """
+def _brand_header_table(logo_src=None):
+    logo_src = logo_src or "https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F"
+    return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
       <tr>
         <td align="center" style="padding:16px 16px 8px 16px;margin:0;">
-          <img src="https://integraleacademy.file.force.com/file-asset-public/Logo_Integrale_Academy_officielpdf?oid=00DJ9000000PT9F" alt="Intégrale Academy" height="56" style="display:block;height:56px;width:auto;max-width:220px;">
+          <img src="{logo_src}" alt="Intégrale Academy" height="56" style="display:block;height:56px;width:auto;max-width:220px;">
         </td>
       </tr>
       <tr>
@@ -1575,7 +1577,7 @@ def _brand_header_table():
     </table>
     """
 
-def _wrap_html(title_html, body_html):
+def _wrap_html(title_html, body_html, *, logo_src=None):
     return f"""
     <!DOCTYPE html>
     <html>
@@ -1585,7 +1587,7 @@ def _wrap_html(title_html, body_html):
           <td align="center" style="padding:24px;">
             <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;max-width:600px;width:100%; background:#ffffff;border:1px solid #eeeeee;border-radius:12px;overflow:hidden;">
               <tr>
-                <td style="padding:0;">{_brand_header_table()}</td>
+                <td style="padding:0;">{_brand_header_table(logo_src)}</td>
               </tr>
               <tr>
                 <td style="padding:22px;">
@@ -1689,10 +1691,13 @@ def _send_email_brevo(to_emails, subject, plain_text, html_body, attachments_pat
             return True
         print("❌ Erreur envoi email Brevo :", response.status_code, response.text)
     except Exception as e:
+        if _HEBERGEMENT_REMINDER_DELIVERY.get() and not isinstance(e, requests.ConnectTimeout):
+            raise hebergement_reminders.DeliveryUncertain("Réponse Brevo non reçue") from e
         print("❌ Erreur envoi email Brevo :", e)
     return False
 
 
+_HEBERGEMENT_REMINDER_DELIVERY = ContextVar("hebergement_reminder_delivery", default=False)
 _FT_REFUSAL_DELIVERY = ContextVar("ft_refusal_delivery", default=False)
 
 
@@ -1712,9 +1717,11 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
     alt = MIMEMultipart("alternative")
     related.attach(alt)
     alt.attach(MIMEText(plain_text, "plain", "utf-8"))
-    alt.attach(MIMEText(html_body, "html", "utf-8"))
+    # SMTP transporte le logo avec le message. Le secours HTTP garde l’URL du PNG.
+    smtp_html = html_body.replace(f'src="{HEBERGEMENT_MAIL_LOGO}"', 'src="cid:integrale-academy-logo"')
+    alt.attach(MIMEText(smtp_html, "html", "utf-8"))
 
-    if "cid:integrale-academy-logo" in html_body:
+    if "cid:integrale-academy-logo" in smtp_html:
         logo_path = os.path.join(app.root_path, "static", "logo.png")
         if os.path.exists(logo_path):
             with open(logo_path, "rb") as logo_file:
@@ -1744,6 +1751,11 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
             submission_accepted = True
         return True
     except Exception as e:
+        if _HEBERGEMENT_REMINDER_DELIVERY.get() and submission_started:
+            if submission_accepted:
+                return True
+            if not isinstance(e, (smtplib.SMTPRecipientsRefused, smtplib.SMTPResponseException)):
+                raise hebergement_reminders.DeliveryUncertain("Réponse SMTP non reçue") from e
         if _FT_REFUSAL_DELIVERY.get() and submission_started:
             # The server may have accepted DATA before disconnecting. In that
             # case falling back to Brevo risks delivering the same refusal twice.
@@ -6358,6 +6370,7 @@ def rappel():
 
     return render_template("rappel.html")
 
+HEBERGEMENT_MAIL_LOGO = "https://assistance-alw9.onrender.com/static/logo.png"
 HEBERGEMENT_ADDRESS = "Intégrale Academy, 54 chemin du Carreou, 83480 Puget-sur-Argens"
 _HEBERGEMENT_WEEKDAYS = (
     "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
@@ -7065,9 +7078,98 @@ def _hebergement_confirmation_email(prenom, session):
           <strong>Important :</strong> tout manquement à ces règles peut entraîner des sanctions et la fin de la mise à disposition de l’hébergement.
         </div>
         <p style="margin:0;color:#344054;">Nous vous remercions de prendre vos dispositions avant votre arrivée.<br><br><strong>L’équipe Intégrale Academy</strong></p>
-        """
+        """,
+        logo_src=HEBERGEMENT_MAIL_LOGO,
     )
     return subject, plain, html_body
+
+
+def _hebergement_arrival_fields(reservation):
+    session = reservation.get("session")
+    convention = reservation.get("convention_hebergement") or {}
+    fields = convention.get("fields", {}) if isinstance(convention, dict) else {}
+    if isinstance(fields, dict) and fields.get("session", session) == session:
+        return fields
+    return {}
+
+
+def _hebergement_booking_arrival(reservation):
+    arrival = _hebergement_date_input(_hebergement_arrival_fields(reservation).get("arrival_date"))
+    if arrival:
+        return datetime.date.fromisoformat(arrival)
+    start, _ = _hebergement_session_dates(reservation.get("session"))
+    return start - datetime.timedelta(days=1) if start else None
+
+
+def _hebergement_reminder_email(reservation, arrival, *, logo_src=HEBERGEMENT_MAIL_LOGO):
+    arrival_label = _format_hebergement_date_fr(arrival)
+    subject = f"Votre arrivée à Intégrale Academy le {arrival_label}"
+    first_name = str(reservation.get("prenom") or "").strip()
+    greeting = f"Bonjour {first_name}," if first_name else "Bonjour,"
+    arrival_text = f"Présentez-vous le {arrival_label}, entre 08h00 et 17h00."
+    appointment = _hebergement_arrival_fields(reservation).get("arrival_time") or ""
+    if re.fullmatch(r"(?:0[89]|1[0-6]):[0-5][0-9]|17:00", str(appointment)):
+        arrival_text += f" Votre heure d’arrivée prévue est {appointment.replace(':', 'h')}."
+    payment = ("Prévoyez le chèque de caution selon les modalités de votre confirmation."
+               if reservation.get("paiement") == "Payé" else
+               "Prévoyez le règlement de votre hébergement et le chèque de caution selon les modalités de votre confirmation.")
+    paragraphs = [
+        greeting,
+        "Nous vous attendons pour la remise des clés de votre hébergement.",
+        arrival_text,
+        HEBERGEMENT_ADDRESS,
+        f"Session A3P · {reservation.get('session') or ''}",
+        "Après 17h00, nous ne pourrons plus vous remettre les clés. Si vous arrivez plus tard, "
+        "prévoyez un hébergement pour cette nuit et rejoignez le centre le lendemain à l’heure indiquée sur votre convocation.",
+        "Pensez à prendre votre sac de couchage ou une couverture, votre oreiller et vos affaires de toilette. "
+        + payment,
+        "L’équipe Intégrale Academy",
+    ]
+    parts = [html_module.escape(line) for line in paragraphs]
+    body = "".join(f"<p>{line}</p>" for line in parts[:2])
+    body += f'<div style="padding:16px;background:#fff7e6;border-left:4px solid #b27a12"><strong>{parts[2]}</strong><br>{parts[3]}</div>'
+    body += "".join(f"<p>{line}</p>" for line in parts[4:])
+    html = _wrap_html("<h1>Votre arrivée au centre</h1>", body, logo_src=logo_src)
+    return subject, "\n\n".join(paragraphs), html
+
+
+def _send_hebergement_reminder(reservation, arrival, address):
+    message = _hebergement_reminder_email(reservation, arrival)
+    token = _HEBERGEMENT_REMINDER_DELIVERY.set(True)
+    try:
+        return send_email_html(address, *message)
+    finally:
+        _HEBERGEMENT_REMINDER_DELIVERY.reset(token)
+
+
+def run_hebergement_reminders():
+    while True:
+        try:
+            bookings = _load_data_snapshot().get("hebergements", [])
+            hebergement_reminders.deliver_due(
+                bookings, datetime.datetime.now(pytz.timezone("Europe/Paris")), DATA_FILE,
+                _hebergement_booking_arrival, _send_hebergement_reminder, app.logger,
+            )
+        except Exception:
+            app.logger.exception("Échec du passage des rappels d’hébergement")
+        time.sleep(15 * 60)
+
+
+@app.get("/admin_hebergement/<reservation_id>/rappel")
+@login_required
+def admin_hebergement_rappel(reservation_id):
+    booking = _find_hebergement_reservation(_load_data_snapshot(), reservation_id)
+    if booking is None:
+        abort(404)
+    arrival = _hebergement_booking_arrival(booking)
+    subject = message = scheduled = None
+    if arrival:
+        subject, _, message = _hebergement_reminder_email(
+            booking, arrival, logo_src=url_for("static", filename="logo.png"),
+        )
+        scheduled = _format_hebergement_date_fr(arrival - datetime.timedelta(days=2))
+    return render_template("admin_hebergement_rappel.html", booking=booking,
+                           scheduled=scheduled, subject=subject, message=message)
 
 
 @app.route("/hebergement", methods=["GET", "POST"])
@@ -7936,6 +8038,13 @@ def admin_hebergement():
 
 
     # ------------------------------------------------------------------
+
+    if request.method == "GET" and request.args.get("vue") == "liste":
+        return render_template(
+            "admin_hebergement_liste.html", hebergements=hebergements,
+            selected_session=session_filter, search_query=q,
+            arrival_for=_hebergement_booking_arrival,
+        )
 
     return render_template(
         "admin_hebergement.html",

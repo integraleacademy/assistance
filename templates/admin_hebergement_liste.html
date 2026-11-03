@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liste des personnes hébergées · Intégrale Academy</title>
+<style>
+* {box-sizing:border-box} body {margin:0;background:#f1f3f6;color:#172033;font:15px/1.45 system-ui,sans-serif}
+main {max-width:950px;margin:24px auto;padding:24px 30px;background:white}
+.toolbar {display:flex;justify-content:flex-end} button {padding:10px 16px;border:0;border-radius:8px;background:#172033;color:white;font:inherit;cursor:pointer}
+header {border-bottom:2px solid #b9891c;padding-bottom:10px} header small {font-weight:bold;color:#6c5220} h1 {font-size:1.6rem;margin:3px 0} header p {margin:2px 0}
+h2 {font-size:1.05rem;margin:20px 0 4px} table {width:100%;border-collapse:collapse;table-layout:fixed} th,td {padding:7px;text-align:left;border-bottom:1px solid #d5d9e0;overflow-wrap:break-word}
+th {font-size:.86em;color:#475467} th:first-child {width:30%} th:nth-child(2) {width:18%}
+@page {size:A4 portrait;margin:12mm}
+@media print {body {background:white;font-size:10pt} main {margin:0;padding:0;max-width:none} .toolbar {display:none}
+h2, header {break-after:avoid} thead {display:table-header-group} tr {break-inside:avoid}}
+</style>
+</head><body><main>
+<div class="toolbar"><button onclick="window.print()">Imprimer / Enregistrer en PDF</button></div>
+<header><small>INTÉGRALE ACADEMY · ACCUEIL DE PUGET-SUR-ARGENS</small><h1>Liste des personnes hébergées</h1>
+<p>{{ selected_session or 'Toutes les sessions' }} · {{ hebergements|length }} personne{% if hebergements|length > 1 %}s{% endif %}</p>
+{% if search_query %}<p>Recherche · {{ search_query }}</p>{% endif %}</header>
+{% for group in hebergements|groupby('session', default='Session non renseignée') %}
+<h2>{{ group.grouper }}</h2>
+<table><thead><tr><th scope="col">Nom et prénom</th><th scope="col">Arrivée</th><th scope="col">Téléphone</th><th scope="col">Paiement</th><th scope="col">Clé</th></tr></thead>
+<tbody>{% for h in group.list|sort(attribute='prenom')|sort(attribute='nom') %}
+{% set arrival = arrival_for(h) %}
+<tr><td><strong>{{ h.nom|upper }}</strong> {{ h.prenom }}</td><td>{{ arrival.strftime('%d/%m/%Y') if arrival else 'À préciser' }}</td><td>{{ h.telephone or '—' }}</td><td>{{ h.paiement or 'Non payé' }}</td>
+<td>{{ ('N° ' ~ h.cle_numero ~ ' · ') if h.cle_numero else '' }}{{ {'Donnee':'Donnée','Restituee':'Restituée'}.get(h.cle_etat,'À donner') }}</td></tr>
+{% endfor %}</tbody></table>
+{% else %}<p>Aucune personne hébergée pour ces filtres.</p>{% endfor %}
+</main></body></html>

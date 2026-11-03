@@ -845,3 +845,123 @@ def test_admin_hebergement_can_cancel_yousign_before_signature(monkeypatch):
         "Convention d'hébergement annulée par Intégrale Academy.",
     )]
     assert saved
+
+
+def test_roster_preserves_filters_and_lists_occupants_for_reception(monkeypatch):
+    client, data, saved, deliveries = _client(monkeypatch)
+    data["hebergements"] = [
+        _reservation(session=SESSION, nom="ZIMMERMANN-LEGRAND", prenom="Anne-Marie"),
+        _reservation(id="2", session=SESSION, nom="ALBERT"),
+        _reservation(id="3", nom="HORS-SESSION"),
+    ]
+    params = {"session_filter": SESSION, "vue": "liste"}
+    assert client.get("/admin_hebergement", query_string=params).status_code == 302
+    with client.session_transaction() as auth:
+        auth["user_email"] = "clement@integraleacademy.com"
+    page = client.get("/admin_hebergement", query_string={"session_filter": SESSION})
+    assert "Imprimer la liste" in page.text and "Aperçu du rappel J−2" in page.text
+    roster = client.get("/admin_hebergement", query_string=params).text
+    assert roster.index("ALBERT") < roster.index("ZIMMERMANN-LEGRAND")
+    assert "Anne-Marie" in roster and "08/11/2026" in roster
+    assert "HORS-SESSION" not in roster and "contenteditable" not in roster
+    filtered = client.get("/admin_hebergement", query_string={**params, "q": "Anne-Marie"}).text
+    assert "ZIMMERMANN-LEGRAND" in filtered and "ALBERT" not in filtered
+    assert saved == deliveries == []
+
+
+def test_reminder_preview_matches_email_without_sending(monkeypatch):
+    import html
+    client, data, saved, deliveries = _client(monkeypatch)
+    booking = _reservation(prenom="Lina <Test>", session="Du 19 janvier au 16 mars 2027")
+    data["hebergements"] = [booking]
+    monkeypatch.setattr(application, "_load_data_snapshot", lambda: data)
+    path = "/admin_hebergement/reservation-1/rappel"
+    assert client.get(path).status_code == 302
+    with client.session_transaction() as auth:
+        auth["user_email"] = "clement@integraleacademy.com"
+    page = client.get(path)
+    assert page.status_code == 200 and "samedi 16 janvier 2027" in page.text
+    arrival = application._hebergement_booking_arrival(booking)
+    subject, plain, markup = application._hebergement_reminder_email(booking, arrival)
+    assert "lundi 18 janvier 2027" in plain and "08h00 et 17h00" in plain
+    assert application.HEBERGEMENT_ADDRESS in plain
+    assert subject in page.text
+    assert markup.replace(application.HEBERGEMENT_MAIL_LOGO, "/static/logo.png") in html.unescape(page.text)
+    assert "Lina &lt;Test&gt;" in markup
+    assert client.get("/admin_hebergement/inconnu/rappel").status_code == 404
+    booking["session"] = "Dates à préciser"
+    assert "date d’arrivée ne peut pas être déterminée" in client.get(path).text
+    assert saved == deliveries == []
+
+
+def test_confirmation_and_reminder_attach_the_actual_logo(monkeypatch):
+    from pathlib import Path
+    from unittest.mock import MagicMock
+    smtp = MagicMock()
+    monkeypatch.setattr(application.smtplib, "SMTP_SSL", lambda *a, **kw: smtp)
+    mailer = smtp.__enter__.return_value
+    for message in (
+        application._hebergement_confirmation_email("Lina", SESSION),
+        application._hebergement_reminder_email(_reservation(), datetime.date(2026, 11, 8)),
+    ):
+        assert application.HEBERGEMENT_MAIL_LOGO in message[2] and "force.com" not in message[2]
+        assert application.send_email_html("lina@example.com", *message)
+        mime = mailer.send_message.call_args.args[0]
+        html_part = next(p for p in mime.walk() if p.get_content_type() == "text/html")
+        assert b'src="cid:integrale-academy-logo"' in html_part.get_payload(decode=True)
+        images = [part for part in mime.walk() if part.get_content_type() == "image/png"]
+        assert len(images) == 1
+        assert images[0]["Content-ID"] == "<integrale-academy-logo>"
+        assert images[0].get_payload(decode=True) == (Path(application.app.static_folder) / "logo.png").read_bytes()
+
+
+def test_reminder_j2_catchup_concurrency_and_retry(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from unittest.mock import Mock
+    from hebergement_reminders import deliver_due, DeliveryUncertain
+    bookings = [
+        _reservation(id="due", session="Du 10 novembre 2026 au 14 janvier 2027"),
+        _reservation(id="catchup", session="Du 9 novembre 2026 au 14 janvier 2027"),
+        _reservation(id="future", session="Du 11 novembre 2026 au 14 janvier 2027"),
+        _reservation(id="arrived", session="Du 8 novembre 2026 au 14 janvier 2027"),
+        _reservation(id="bad", session="Session inconnue"),
+        _reservation(id="missing", mail="", session="Du 10 novembre 2026 au 14 janvier 2027"),
+        _reservation(id="handed", cle_etat="Donnee", session="Du 10 novembre 2026 au 14 janvier 2027"),
+    ]
+    attempts = []
+    logger = Mock()
+    def send(booking, arrival, address):
+        assert address == "lina@example.com"
+        attempts.append(booking["id"])
+        return True
+    def run(hour=8, sender=send, records=bookings):
+        deliver_due(records, datetime.datetime(2026, 11, 7, hour), tmp_path / "crm.json",
+                    application._hebergement_booking_arrival, sender, logger)
+    run(7)
+    assert not attempts
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        list(pool.map(lambda _: run(), range(3)))
+    run()
+    assert sorted(attempts) == ["catchup", "due"]
+    failing = [{**bookings[0], "id": "retry"}]
+    run(sender=lambda *args: False, records=failing)
+    run(records=failing)
+    assert attempts.count("retry") == 1
+    uncertain = [{**bookings[0], "id": "uncertain"}]
+    run(sender=Mock(side_effect=DeliveryUncertain()), records=uncertain)
+    run(records=uncertain)
+    assert "uncertain" not in attempts
+
+
+def test_reminder_uses_convention_arrival_only_for_current_session():
+    booking = _reservation(session="Du 10 novembre 2026 au 14 janvier 2027")
+    booking["convention_hebergement"] = {"fields": {
+        "session": booking["session"], "arrival_date": "2026-11-10", "arrival_time": "09:30",
+    }}
+    arrival = application._hebergement_booking_arrival(booking)
+    assert arrival == datetime.date(2026, 11, 10)
+    assert "09h30" in application._hebergement_reminder_email(booking, arrival)[1]
+    booking["session"] = "Du 19 janvier au 16 mars 2027"
+    arrival = application._hebergement_booking_arrival(booking)
+    assert arrival == datetime.date(2027, 1, 18)
+    assert "09h30" not in application._hebergement_reminder_email(booking, arrival)[1]
