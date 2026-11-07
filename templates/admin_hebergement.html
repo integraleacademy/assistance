@@ -945,11 +945,13 @@
                                 {% set yousign_data = stored_yousign if stored_yousign is mapping else {} %}
                                 {% set yousign_status = yousign_data.get('status', 'draft') %}
                                 <div class="cell-stack"><div class="row-actions">
-                                    <a class="action-button convention-action" href="{{ url_for('admin_hebergement_convention_editor', reservation_id=h.id) }}" title="Préparer et faire signer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}" aria-label="Préparer et faire signer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
+                                    <a class="action-button convention-action" href="{{ url_for('admin_hebergement_convention_editor', reservation_id=h.id) }}" title="Préparer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}" aria-label="Préparer la convention d’hébergement de {{ h.prenom }} {{ h.nom }}">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M8 13h8M8 17h6M16.5 12.5l2 2 3.5-4"></path></svg>
-                                        {% if yousign_status in ['done', 'signed'] %}Convention signée{% elif yousign_status in ['approval', 'ongoing'] %}Suivre la signature{% else %}Préparer / signer{% endif %}
+                                        Préparer la convention
                                     </a>
-                                    <span class="contract-status is-{{ yousign_status }}">{{ hebergement_yousign_status_label(yousign_status) }}</span>
+                                    {% if yousign_status in ['done', 'signed'] and yousign_data.get('signatureRequestId') %}
+                                    <a class="action-button" href="{{ url_for('admin_hebergement_convention_yousign_download', reservation_id=h.id) }}">Télécharger l’original signé</a>
+                                    {% endif %}
                                     <a class="icon-button" href="{{ url_for('admin_hebergement_convention', reservation_id=h.id) }}" title="Télécharger le PDF actuel" aria-label="Télécharger le PDF de la convention de {{ h.prenom }} {{ h.nom }}">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path></svg>
                                     </a>

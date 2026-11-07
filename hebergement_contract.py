@@ -246,8 +246,7 @@ def _callout(title, text, styles, danger=False):
     return KeepTogether([Spacer(1, 3), table, Spacer(1, 5)])
 
 
-def _signature_table(left_title, left_note, right_title, right_note, styles, compact=False):
-    height = 30 * mm if compact else 43 * mm
+def _signature_table(left_title, left_note, right_title, right_note, styles):
     left = Paragraph(
         f"<b>{_safe(left_title)}</b><br/><font color=\"#667085\"><i>{_safe(left_note)}</i></font>"
         "<br/><br/>Nom : ______________________________"
@@ -261,7 +260,7 @@ def _signature_table(left_title, left_note, right_title, right_note, styles, com
         "<br/><br/>Signature :",
         styles["Signature"],
     )
-    table = Table([[left, right]], colWidths=[84 * mm, 84 * mm], rowHeights=[height])
+    table = Table([[left, right]], colWidths=[84 * mm, 84 * mm], minRowHeights=[43 * mm])
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.55, LINE),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -466,8 +465,8 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ),
         _heading("2. Documents contractuels et engagement de l'Occupant", styles),
         _body(
-            "La convention, la fiche de remise des clés et de réception des sommes, "
-            "l'état des lieux d'entrée et de sortie ainsi que l'attestation de prise "
+            "La convention, la fiche de remise des clés et de réception des sommes "
+            "ainsi que l'attestation de prise "
             "de connaissance des règles forment un ensemble indivisible.",
             styles,
         ),
@@ -491,7 +490,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         _body(
             f"L'Occupant peut se présenter le <b>{_safe(arrival)}</b>, veille du premier "
             "jour de formation, impérativement entre <b>08h00 et 17h00</b>. La "
-            "signature de la présente convention, l'état des lieux d'entrée, le "
+            "signature de la présente convention, le "
             "versement de la participation, la remise du chèque de caution et la "
             "remise des clés sont réalisés dans ce créneau.",
             styles,
@@ -566,31 +565,14 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles,
         ),
         _body(
-            "Lorsque l'état des lieux de sortie, la vérification des équipements et la "
-            "restitution des clés ne font apparaître aucune somme due, le chèque est "
+            "Après restitution des clés, si aucune somme n'est due, le chèque est "
             "rendu à l'Occupant. Si une vérification complémentaire est nécessaire, la "
             "restitution du chèque ou du solde intervient dans un délai maximal de 30 "
             "jours calendaires après la remise des clés.",
             styles,
         ),
-        _heading("7. État des lieux et inventaire", styles),
-        _body(
-            "Un état des lieux contradictoire est établi à l'entrée et à la sortie. "
-            "L'Occupant signale immédiatement toute anomalie, dégradation ou élément "
-            "manquant. À défaut de réserve portée sur l'état des lieux d'entrée, les "
-            "éléments accessibles sont réputés remis dans un état compatible avec leur "
-            "usage normal, sous réserve des vices non apparents.",
-            styles,
-        ),
-        _body(
-            "Des photographies datées peuvent compléter l'état des lieux lorsqu'elles "
-            "sont strictement nécessaires à la constatation de l'état des locaux ou "
-            "d'un dommage. Elles sont conservées pendant la durée utile au traitement "
-            "du dossier.",
-            styles,
-        ),
         PageBreak(),
-        _heading("8. Équipements mis à disposition", styles),
+        _heading("7. Équipements mis à disposition", styles),
         _body("Selon l'affectation et les disponibilités, l'hébergement collectif comprend notamment :", styles),
     ])
     _bullets(story, [
@@ -608,7 +590,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "lui-même sur une installation technique.",
             styles,
         ),
-        _heading("9. Matériel et consommables à apporter", styles),
+        _heading("8. Matériel et consommables à apporter", styles),
         _body("L'Occupant doit arriver avec le matériel personnel suivant :", styles),
     ])
     _bullets(story, [
@@ -625,8 +607,8 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "la responsabilité de l'Occupant.",
             styles,
         ),
-        _heading("10. Propreté, rangement et vie collective", styles),
-        _subheading("10.1 - Entretien courant", styles),
+        _heading("9. Propreté, rangement et vie collective", styles),
+        _subheading("9.1 - Entretien courant", styles),
     ])
     _bullets(story, [
         "Maintenir son couchage, sa zone personnelle et les espaces communs propres et rangés.",
@@ -635,7 +617,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         "Utiliser les installations, le mobilier et les appareils conformément à leur destination et aux consignes affichées.",
         "Ne pas déplacer durablement le mobilier ou les équipements sans autorisation.",
     ], styles)
-    story.append(_subheading("10.2 - Comportement et tenue", styles))
+    story.append(_subheading("9.2 - Comportement et tenue", styles))
     _bullets(story, [
         "Adopter en permanence un comportement courtois et respectueux envers les autres occupants, le personnel, les intervenants et le voisinage.",
         "Porter une tenue correcte dans les espaces communs ; il est interdit d'y circuler torse nu ou en sous-vêtements, avant, pendant ou après les heures de formation.",
@@ -645,7 +627,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     story.append(PageBreak())
 
     story.extend([
-        _heading("11. Calme et respect du voisinage", styles),
+        _heading("10. Calme et respect du voisinage", styles),
         _callout(
             "Silence obligatoire après 22h00",
             "À compter de 22h00, aucun bruit ne doit être perceptible de nature à "
@@ -661,8 +643,8 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "retours tardifs autorisés.",
             styles,
         ),
-        _heading("12. Interdictions essentielles", styles),
-        _subheading("12.1 - Tabac et vapotage", styles),
+        _heading("11. Interdictions essentielles", styles),
+        _subheading("11.1 - Tabac et vapotage", styles),
         _body(
             "Il est strictement interdit de fumer ou de vapoter à l'intérieur des "
             "locaux, y compris dans les dortoirs, sanitaires, cuisine, couloirs et "
@@ -670,7 +652,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "utilisées proprement et sans nuisance.",
             styles,
         ),
-        _subheading("12.2 - Alcool, drogues et état d'ébriété", styles),
+        _subheading("11.2 - Alcool, drogues et état d'ébriété", styles),
         _body(
             "L'introduction, la détention, la distribution ou la consommation de "
             "boissons alcoolisées, de stupéfiants ou de substances illicites dans les "
@@ -678,7 +660,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "ou de séjourner dans le Centre en état d'ivresse ou sous l'emprise de drogue.",
             styles,
         ),
-        _subheading("12.3 - Personnes extérieures", styles),
+        _subheading("11.3 - Personnes extérieures", styles),
         _body(
             "Aucune personne extérieure - membre de la famille, ami, connaissance ou "
             "autre tiers - ne peut être introduite ou hébergée, même temporairement. "
@@ -686,7 +668,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "autorisés et au personnel habilité.",
             styles,
         ),
-        _subheading("12.4 - Objets et pratiques dangereux", styles),
+        _subheading("11.4 - Objets et pratiques dangereux", styles),
     ])
     _bullets(story, [
         "Il est interdit d'allumer des bougies, flammes nues, encens ou appareils de cuisson hors des emplacements prévus.",
@@ -695,7 +677,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         "Les animaux ne sont pas admis, sauf obligation légale ou accord écrit préalable du Centre pour une situation particulière.",
     ], styles)
     story.extend([
-        _heading("13. Sécurité des personnes et des locaux", styles),
+        _heading("12. Sécurité des personnes et des locaux", styles),
     ])
     _bullets(story, [
         "Prendre connaissance des issues de secours, plans d'évacuation, consignes incendie et points de rassemblement.",
@@ -711,7 +693,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "fonctionnement collectif.",
             styles,
         ),
-        _heading("14. Clés, contrôle des accès et droit d'intervention", styles),
+        _heading("13. Clés, contrôle des accès et droit d'intervention", styles),
         _body(
             "L'Occupant veille à la fermeture des accès et ne communique aucun code ni "
             "moyen d'accès. Toute perte ou anomalie est signalée immédiatement. Les "
@@ -729,8 +711,8 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles,
         ),
         PageBreak(),
-        _heading("15. Responsabilité, assurance et effets personnels", styles),
-        _subheading("15.1 - Responsabilité de l'Occupant", styles),
+        _heading("14. Responsabilité, assurance et effets personnels", styles),
+        _subheading("14.1 - Responsabilité de l'Occupant", styles),
         _body(
             "L'Occupant répond des dommages directs qu'il cause aux locaux, équipements, "
             "autres occupants ou tiers par faute, négligence ou non-respect de la "
@@ -738,14 +720,14 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "permettre sa sécurisation et son traitement.",
             styles,
         ),
-        _subheading("15.2 - Assurance", styles),
+        _subheading("14.2 - Assurance", styles),
         _body(
             "L'Occupant déclare être couvert par une assurance de responsabilité civile "
             "en cours de validité pour les dommages susceptibles d'être causés à des "
             "tiers. Le Centre peut demander une attestation lorsque la situation le justifie.",
             styles,
         ),
-        _subheading("15.3 - Effets personnels", styles),
+        _subheading("14.3 - Effets personnels", styles),
         _body(
             "Les effets personnels, espèces, documents, appareils électroniques et "
             "objets de valeur demeurent sous la garde de l'Occupant. Il lui appartient "
@@ -754,7 +736,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "ou dans les autres cas prévus par la loi.",
             styles,
         ),
-        _heading("16. Manquements, mesures de protection et fin anticipée", styles),
+        _heading("15. Manquements, mesures de protection et fin anticipée", styles),
         _body("Selon la gravité et la répétition des faits, le non-respect de la convention peut entraîner :", styles),
     ])
     _bullets(story, [
@@ -781,12 +763,11 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles,
             danger=True,
         ),
-        _heading("17. Départ, restitution et contrôle de sortie", styles),
+        _heading("16. Départ et restitution des clés", styles),
     ])
     _bullets(story, [
         "Libérer entièrement la place attribuée à la date et à l'heure convenues.",
         "Retirer tous les effets personnels, denrées et déchets ; nettoyer et ranger les espaces utilisés.",
-        "Participer à l'état des lieux de sortie ou permettre qu'il soit réalisé dans les conditions convenues.",
         "Restituer personnellement toutes les clés, badges et moyens d'accès au représentant désigné du Centre.",
         "Communiquer un moyen de contact valable si le retour de la caution doit intervenir après une vérification complémentaire.",
     ], styles)
@@ -798,11 +779,11 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles,
         ),
         PageBreak(),
-        _heading("18. Données personnelles", styles),
+        _heading("17. Données personnelles", styles),
         _body(
             "Les données recueillies dans la convention sont utilisées par le Centre "
             "pour gérer l'attribution de l'hébergement, les accès, les paiements, la "
-            "caution, l'état des lieux, la sécurité et les éventuels incidents ou "
+            "caution, la sécurité et les éventuels incidents ou "
             "litiges. Elles sont accessibles aux seules personnes habilitées et "
             "conservées pendant la durée nécessaire à ces finalités et au respect des "
             "obligations légales.",
@@ -815,7 +796,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "peut également saisir la CNIL.",
             styles,
         ),
-        _heading("19. Réclamations, droit applicable et litiges", styles),
+        _heading("18. Réclamations, droit applicable et litiges", styles),
         _body(
             "La convention est soumise au droit français. Toute difficulté fait "
             "d'abord l'objet d'une tentative de résolution amiable avec le Centre. À "
@@ -829,7 +810,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "stipulations demeurent applicables dans toute la mesure permise par la loi.",
             styles,
         ),
-        _heading("20. Acceptation et signature", styles),
+        _heading("19. Acceptation et signature", styles),
         _body(
             "L'Occupant reconnaît avoir lu la convention et ses annexes, avoir pu "
             "demander toute explication utile et accepter sans réserve les obligations "
@@ -843,7 +824,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             center_signature_title,
             f"{center_role} - Signature et cachet",
             f"L'OCCUPANT - {occupant_name}",
-            "Signature électronique Yousign - mention « Lu et approuvé »",
+            "Faire précéder la signature manuscrite de « Lu et approuvé ».",
             styles,
         ),
         PageBreak(),
@@ -865,8 +846,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ], styles),
         _heading("A. Participation financière - 300 €", styles),
         _body(
-            "Le Centre reconnaît avoir reçu la participation forfaitaire de 300 € au "
-            "moment de la signature de la convention et de la remise des clés.",
+            "À la remise des clés, cochez la case ci-dessous pour confirmer le règlement.",
             styles,
         ),
     ])
@@ -886,7 +866,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         _key_value_table([
             ("Mode de règlement", f"{cash_box} Espèces dans une enveloppe au nom de l'Occupant &nbsp;&nbsp; {cheque_box} Chèque"),
             ("Si chèque", f"N° : {_safe(payment_cheque_number, 'Non applicable')} &nbsp; Banque : {_safe(payment_bank, 'Non applicable')} &nbsp; Date : {_safe(payment_cheque_date, 'Non applicable')}"),
-            ("Montant reçu", "300 € - trois cents euros"),
+            ("Montant reçu", f"{'[X]' if payment_status == 'Payé' else '[ ]'} 300 € - trois cents euros"),
             ("Reçu remis", f"{receipt_yes} Oui &nbsp;&nbsp; {receipt_no} Non &nbsp;&nbsp; N° de reçu / référence : {_safe(receipt_reference, 'Sans référence')}"),
         ], styles),
         Paragraph(
@@ -899,8 +879,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ),
         _heading("B. Dépôt de garantie - chèque de caution de 200 €", styles),
         _body(
-            "Le Centre reconnaît avoir reçu un chèque de caution distinct de 200 €, "
-            "remis au même moment.",
+            "Cochez la case ci-dessous à la réception du chèque de caution.",
             styles,
         ),
         _key_value_table([
@@ -908,7 +887,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             ("Banque", _safe(context.get("deposit_bank"), "À compléter")),
             ("N° du chèque", _safe(context.get("deposit_cheque_number"), "À compléter")),
             ("Date du chèque", _safe(context.get("deposit_cheque_date"), "À compléter")),
-            ("Montant", "200 € - deux cents euros"),
+            ("Chèque reçu", f"{'[X]' if context.get('deposit_received') == 'Oui' else '[ ]'} 200 € - deux cents euros"),
         ], styles),
         _heading("C. Remise des documents et moyens d'accès", styles),
     ])
@@ -916,7 +895,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     mark = lambda key: "[X]" if handover.get(key) else "[ ]"
     checklist = Table([
         [Paragraph(f"{mark('convention_reviewed')} Convention relue avec l'Occupant", styles["Cell"]), Paragraph(f"{mark('copy_delivery_planned')} Copie prévue pour l'Occupant", styles["Cell"])],
-        [Paragraph(f"{mark('inventory_completed')} État des lieux d'entrée complété", styles["Cell"]), Paragraph(f"{mark('rules_explained')} Règles essentielles reconnues et signées", styles["Cell"])],
+        [Paragraph(f"{mark('rules_explained')} Règles essentielles expliquées", styles["Cell"]), ""],
         [Paragraph(f"{mark('key_handed_over')} Clé / badge remis", styles["Cell"]), Paragraph(f"{mark('safety_explained')} Consignes de sécurité et issues de secours indiquées", styles["Cell"])],
     ], colWidths=[84 * mm, 84 * mm])
     checklist.setStyle(TableStyle([
@@ -934,117 +913,14 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             f"CENTRE - {center_representative}",
             f"{center_role} - certifie les sommes et moyens d'accès",
             f"OCCUPANT - {occupant_name}",
-            "Signature électronique : sommes remises, documents reçus et clé obtenue",
+            "Signature manuscrite à la remise des sommes, des documents et de la clé.",
             styles,
-            compact=True,
         ),
         PageBreak(),
     ])
 
     story.extend(_annex_header(
         "2",
-        "ÉTAT DES LIEUX D'ENTRÉE ET DE SORTIE",
-        "Les observations doivent être précises ; joindre des photographies datées si nécessaire",
-        styles,
-    ))
-    story.extend([
-        _key_value_table([
-            ("Occupant", _safe(occupant_name)),
-            (
-                "Affectation",
-                f"Dortoir / chambre : {_safe(room, 'À compléter')} &nbsp; "
-                f"Lit : {_safe(bed, 'À compléter')} &nbsp; "
-                f"Clé n° : {_safe(key_number, 'À compléter')}",
-            ),
-            ("Entrée", f"{_safe(arrival)} - Heure : {_safe(arrival_time)}"),
-            (
-                "Sortie prévue",
-                f"{_safe(departure)} - Heure : {_safe(departure_time)}",
-            ),
-        ], styles),
-        Spacer(1, 5),
-        Paragraph(
-            "<i>Échelle conseillée : B = bon état ; U = usure normale ; A = anomalie ; "
-            "D = dégradation ; M = manquant ; N/A = non applicable.</i>",
-            styles["ContractSmall"],
-        ),
-    ])
-    inventory_items = context.get("inventory") or {}
-    inventory_data = [[
-        Paragraph("Élément contrôlé", styles["CellHeader"]),
-        Paragraph("État à l'entrée", styles["CellHeader"]),
-        Paragraph("État à la sortie", styles["CellHeader"]),
-        Paragraph("Observations / coût éventuel", styles["CellHeader"]),
-    ]]
-    for item in inventory_items.values():
-        inventory_data.append([
-            Paragraph(f"<b>{_safe(item.get('label'))}</b>", styles["Cell"]),
-            Paragraph(_safe(item.get("entry_state"), "B"), styles["Cell"]),
-            Paragraph("________", styles["Cell"]),
-            Paragraph(_safe(item.get("observations")), styles["Cell"]),
-        ])
-    inventory = Table(
-        inventory_data,
-        colWidths=[52 * mm, 25 * mm, 25 * mm, 66 * mm],
-        repeatRows=1,
-    )
-    inventory_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("GRID", (0, 0), (-1, -1), 0.4, LINE),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (1, 1), (2, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]
-    for row_index in range(2, len(inventory_data), 2):
-        inventory_style.append(("BACKGROUND", (0, row_index), (-1, row_index), LIGHT))
-    inventory.setStyle(TableStyle(inventory_style))
-    story.extend([
-        inventory,
-        PageBreak(),
-        Spacer(1, 7 * mm),
-        Paragraph("ANNEXE 2 - SUITE", styles["ContractKicker"]),
-        Paragraph("OBSERVATIONS ET SIGNATURES", styles["ContractTitle"]),
-        _subheading("Observations générales à l'entrée", styles),
-        _body(_safe(context.get("entry_observations"), "Néant"), styles),
-        _subheading("Observations générales à la sortie et sommes éventuellement retenues", styles),
-        _body("________________________________________________________________________________<br/>________________________________________________________________________________<br/>________________________________________________________________________________", styles),
-        _key_value_table([
-            (
-                "Photographies annexées",
-                "Entrée : "
-                f"{'[X] Non' if str(context.get('entry_photos_count') or '0') == '0' else '[X] Oui'}"
-                f", nombre : {_safe(context.get('entry_photos_count'), '0')}"
-                " &nbsp;&nbsp; Sortie : [ ] Non &nbsp; [ ] Oui, nombre : ____",
-            ),
-            ("Clés restituées", "[ ] Oui, le ____ / ____ / ______ à ____ h ____ &nbsp;&nbsp; [ ] Non"),
-            ("Caution", "[ ] Chèque rendu &nbsp; [ ] Restitution différée &nbsp; [ ] Retenue envisagée : ______ €"),
-        ], styles),
-        _subheading("Signatures - état des lieux d'entrée", styles),
-        _signature_table(
-            f"CENTRE - ENTRÉE - {center_representative}",
-            "Certifie l'exactitude des constatations d'entrée",
-            f"OCCUPANT - ENTRÉE - {occupant_name}",
-            "Signature électronique Yousign : certifie les constatations d'entrée",
-            styles,
-            compact=True,
-        ),
-        _subheading("Signatures - état des lieux de sortie", styles),
-        _signature_table(
-            "CENTRE - SORTIE",
-            "Certifie l'exactitude des constatations de sortie",
-            "OCCUPANT - SORTIE",
-            "Certifie l'exactitude des constatations de sortie",
-            styles,
-            compact=True,
-        ),
-        PageBreak(),
-    ])
-
-    story.extend(_annex_header(
-        "3",
         "ATTESTATION DE PRISE DE CONNAISSANCE DES RÈGLES",
         "Chaque engagement ci-dessous constitue une condition de l'hébergement collectif",
         styles,
@@ -1068,7 +944,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ("Alcool et drogues", "Je n'introduis, ne détiens et ne consomme aucun alcool ni drogue dans les locaux et je n'y entre pas sous leur emprise."),
         ("Personnes extérieures", "Je ne fais entrer et n'héberge aucune personne extérieure, y compris famille, amis ou connaissances."),
         ("Sécurité", "Je respecte les consignes incendie, les issues de secours, les équipements de sécurité et je signale immédiatement tout incident ou dommage."),
-        ("Départ", "Je nettoie et libère les lieux à la date convenue, participe à l'état des lieux et restitue personnellement toutes les clés et badges."),
+        ("Départ", "Je nettoie et libère les lieux à la date convenue et restitue personnellement toutes les clés et badges."),
         ("Sanctions", "Je comprends qu'un manquement grave ou répété peut entraîner la fin immédiate de l'hébergement et l'obligation de trouver une autre solution à mes frais."),
     ]
     ack_data = [[
@@ -1078,7 +954,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     ]]
     for label, declaration in acknowledgements:
         ack_data.append([
-            Paragraph("[X]", styles["Cell"]),
+            Paragraph("[ ]", styles["Cell"]),
             Paragraph(f"<b>{_safe(label)}</b>", styles["Cell"]),
             Paragraph(_safe(declaration), styles["Cell"]),
         ])
@@ -1108,7 +984,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             f"POUR LE CENTRE - {center_representative}",
             f"{center_role} - Signature et cachet",
             f"L'OCCUPANT - {occupant_name}",
-            "Signature électronique Yousign - mention « Lu et approuvé »",
+            "Faire précéder la signature manuscrite de « Lu et approuvé ».",
             styles,
         ),
     ])

@@ -1,6 +1,8 @@
 import copy
 import datetime
 import io
+import shutil
+import subprocess
 import zipfile
 
 import pytest
@@ -95,14 +97,9 @@ def _complete_convention_form(action="save"):
         "deposit_bank": "Banque Exemple",
         "deposit_cheque_number": "CAU-123456",
         "deposit_cheque_date": "2026-08-31",
-        "entry_photos_count": "2",
-        "entry_observations": "État conforme lors de la remise des clés.",
     }
     for check_key, _label in application.HEBERGEMENT_HANDOVER_CHECKLIST:
         form[f"checklist_{check_key}"] = "on"
-    for item_key, _label in application.HEBERGEMENT_INVENTORY_ITEMS:
-        form[f"inventory_{item_key}_state"] = "B"
-        form[f"inventory_{item_key}_observations"] = ""
     return form
 
 
@@ -262,7 +259,7 @@ def test_new_admin_session_booking_uses_its_dates_in_email_confirmation_and_conv
     assert "lundi 9 novembre 2026" in client.get(response.headers["Location"]).get_data(as_text=True)
     reservation = data_store["hebergements"][0]
     fields = application._hebergement_convention_record(reservation)["fields"]
-    assert fields["contract_date"] == "2026-11-10"
+    assert fields["contract_date"] == "2026-11-09"
     assert fields["arrival_date"] == "2026-11-09"
     assert fields["departure_date"] == "2027-01-14"
 
@@ -280,7 +277,8 @@ def test_new_admin_session_booking_uses_its_dates_in_email_confirmation_and_conv
         "payment_date": "2026-11-09", "deposit_cheque_date": "2026-11-09",
     }
     record = application._hebergement_convention_from_form(reservation, form)
-    assert application._hebergement_signature_validation_errors(record) == []
+    assert record["fields"]["arrival_date"] == form["arrival_date"]
+    assert record["fields"]["departure_date"] == form["departure_date"]
 
 
 def test_existing_booking_keeps_its_dates_after_admin_session_removal(monkeypatch):
@@ -457,8 +455,8 @@ def test_admin_hebergement_displays_modern_dashboard_and_row_actions(monkeypatch
     assert '@media (max-width: 720px)' in body
     assert 'data-label="Suivi de clé"' in body
     assert "Modifications enregistrées automatiquement" in body
-    assert body.count("Préparer / signer") == 2
-    assert body.count("À préparer") == 2
+    assert body.count("Préparer la convention\n") == 2
+    assert "Suivre la signature" not in body
     assert 'href="/admin_hebergement/reservation-1/convention/preparer"' in body
     assert 'href="/admin_hebergement/reservation-2/convention/preparer"' in body
     assert 'href="/admin_hebergement/reservation-1/convention"' in body
@@ -523,7 +521,7 @@ def test_admin_hebergement_convention_returns_404_for_unknown_booking(monkeypatc
     assert response.status_code == 404
 
 
-def test_admin_hebergement_convention_editor_is_prefilled_and_explains_yousign(
+def test_admin_hebergement_convention_editor_is_prefilled_for_paper_signature(
     monkeypatch,
 ):
     data = copy.deepcopy(application.DEFAULT_DATA)
@@ -540,12 +538,13 @@ def test_admin_hebergement_convention_editor_is_prefilled_and_explains_yousign(
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Préparer la convention" in body
-    assert "Connexion Yousign à configurer" in body
-    assert "authentification OTP par SMS" in body
+    assert "yousign" not in body.lower()
+    assert "signature électronique" not in body.lower()
     assert 'value="2026-08-31"' in body
-    assert 'name="inventory_access_state"' in body
-    assert body.count('class="check-card"') == 6
-    assert "Envoyer pour signature" in body
+    assert "inventory_" not in body
+    assert "état des lieux" not in body.lower()
+    assert body.count('class="check-card"') == 5
+    assert "Ouvrir le PDF à imprimer" in body
     assert "const sessionSchedule" in body
     assert '"arrival_date": "2026-08-31"' in body
 
@@ -569,7 +568,8 @@ def test_admin_hebergement_convention_editor_saves_all_arrival_information(
     convention = reservation["convention_hebergement"]
     assert convention["fields"]["personal_address"] == "10 rue des Orangers"
     assert convention["fields"]["deposit_cheque_number"] == "CAU-123456"
-    assert convention["inventory"]["access"]["entry_state"] == "B"
+    assert "inventory" not in convention
+    assert "yousign" not in convention
     assert all(convention["checklist"].values())
     assert reservation["paiement"] == "Payé"
     assert reservation["mode_paiement"] == "Espèces"
@@ -578,148 +578,83 @@ def test_admin_hebergement_convention_editor_saves_all_arrival_information(
     assert saved
 
 
-def test_admin_hebergement_blocks_yousign_when_arrival_checks_are_incomplete(
-    monkeypatch,
-):
+def test_obsolete_signature_actions_do_not_send_or_modify_the_booking(monkeypatch):
     data = copy.deepcopy(application.DEFAULT_DATA)
     data["hebergements"] = [_reservation()]
-    monkeypatch.setattr(application, "is_yousign_configured", lambda: True)
-
-    class UnexpectedYousignClient:
-        def __init__(self):
-            raise AssertionError("Yousign ne doit pas être appelé")
-
-    monkeypatch.setattr(application, "YousignClient", UnexpectedYousignClient)
-    client, _, _, _ = _client(monkeypatch, data)
+    client, _, saved, deliveries = _client(monkeypatch, data)
     with client.session_transaction() as flask_session:
         flask_session["user_email"] = "clement@integraleacademy.com"
+    monkeypatch.setattr(application, "YousignClient", lambda: pytest.fail("unexpected Yousign call"))
+    url = "/admin_hebergement/reservation-1/convention"
+    assert client.post(url + "/preparer", data=_complete_convention_form("send_yousign")).status_code == 400
+    assert client.post(url + "/yousign/remind").status_code == 404
+    assert not saved
+    assert not deliveries
 
-    response = client.post(
-        "/admin_hebergement/reservation-1/convention/preparer",
-        data={"editor_action": "send_yousign", "payment_status": "Non payé"},
-    )
 
+@pytest.mark.parametrize("status", ["ongoing", "done"])
+def test_print_from_legacy_booking_uses_current_fields_and_keeps_archives(monkeypatch, status):
+    archive = {
+        "version": 2,
+        "yousign": {"signatureRequestId": "old-request", "status": status},
+        "inventory": {"window": {"observations": "Ancienne observation"}},
+        "fields": {"entry_observations": "Ancienne observation", "contract_date": "2026-09-02"},
+        "checklist": {"inventory_completed": True, "key_handed_over": True},
+    }
+    data = copy.deepcopy(application.DEFAULT_DATA)
+    data["hebergements"] = [_reservation(cle_etat="Restituee", convention_hebergement=copy.deepcopy(archive))]
+    client, _, saved, deliveries = _client(monkeypatch, data)
+    monkeypatch.setattr(application, "YousignClient", lambda: pytest.fail("unexpected Yousign call"))
+    with client.session_transaction() as flask_session:
+        flask_session["user_email"] = "clement@integraleacademy.com"
+    url = "/admin_hebergement/reservation-1/convention/preparer"
+    body = client.get(url).get_data(as_text=True)
+    assert "old-request" not in body
+    assert "Ancienne observation" not in body
+    response = client.post(url, data={"editor_action": "preview", "room": "Chambre Sapin", "checklist_key_handed_over": "on"},
+                           follow_redirects=True)
     assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert "La convention n’a pas été envoyée" in body
-    assert "participation de 300 € doit être enregistrée comme payée" in body
-    assert "chèque de caution de 200 € doit être enregistré comme reçu" in body
-    assert "Validez toutes les vérifications de remise" in body
+    assert response.mimetype == "application/pdf"
+    assert response.headers["Content-Disposition"].startswith("inline;")
+    updated = saved[-1]["hebergements"][0]["convention_hebergement"]
+    assert saved[-1]["hebergements"][0]["cle_etat"] == "Restituee"
+    assert updated["fields"]["contract_date"] == "2026-09-02"
+    assert updated["fields"]["room"] == "Chambre Sapin"
+    assert updated["fields"]["entry_observations"] == "Ancienne observation"
+    assert updated["inventory"] == archive["inventory"]
+    assert updated["yousign"] == archive["yousign"]
+    assert updated["checklist"]["inventory_completed"] is True
+    assert not deliveries
+    listing = client.get("/admin_hebergement").get_data(as_text=True)
+    assert ("Télécharger l’original signé" in listing) == (status == "done")
 
 
-def test_admin_hebergement_blocks_yousign_for_late_arrival_or_late_payment(
-    monkeypatch,
-):
-    data = copy.deepcopy(application.DEFAULT_DATA)
-    data["hebergements"] = [_reservation()]
-    monkeypatch.setattr(application, "is_yousign_configured", lambda: True)
-    client, _, _, _ = _client(monkeypatch, data)
-    with client.session_transaction() as flask_session:
-        flask_session["user_email"] = "clement@integraleacademy.com"
-    form = _complete_convention_form("send_yousign")
-    form["arrival_time"] = "17:30"
-    form["payment_date"] = "2026-09-01"
-
-    response = client.post(
-        "/admin_hebergement/reservation-1/convention/preparer",
-        data=form,
-    )
-
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert "comprise entre 08h00 et 17h00" in body
-    assert "doit correspondre à la date d&#39;arrivée" in body
-
-
-def test_admin_hebergement_sends_complete_convention_with_sms_otp(monkeypatch):
-    data = copy.deepcopy(application.DEFAULT_DATA)
-    data["hebergements"] = [_reservation()]
-    calls = []
-
-    class FakeYousignClient:
-        def create_signature_request(self, name, external_id=""):
-            calls.append(("create", name, external_id))
-            return {"id": "sr-123"}
-
-        def upload_file(self, request_id, content, filename, parse_anchors=False):
-            calls.append(("upload", request_id, filename, parse_anchors))
-            assert content.startswith(b"%PDF-")
-            return {"id": "doc-123"}
-
-        def add_signer(self, request_id, first_name, last_name, email, phone):
-            calls.append(
-                ("signer", request_id, first_name, last_name, email, phone)
-            )
-            return {"id": "signer-123"}
-
-        def add_signature_field(self, request_id, document_id, signer_id, **field):
-            calls.append(("field", request_id, document_id, signer_id, field))
-            return {"id": "field-123"}
-
-        def activate_signature_request(self, request_id):
-            calls.append(("activate", request_id))
-            return {"status": "ongoing"}
-
-    monkeypatch.setattr(application, "is_yousign_configured", lambda: True)
-    monkeypatch.setattr(application, "YousignClient", FakeYousignClient)
-    client, data_store, saved, _ = _client(monkeypatch, data)
-    with client.session_transaction() as flask_session:
-        flask_session["user_email"] = "clement@integraleacademy.com"
-
-    response = client.post(
-        "/admin_hebergement/reservation-1/convention/preparer",
-        data=_complete_convention_form("send_yousign"),
-    )
-
-    assert response.status_code == 302
-    state = data_store["hebergements"][0]["convention_hebergement"]["yousign"]
-    assert state["signatureRequestId"] == "sr-123"
-    assert state["documentId"] == "doc-123"
-    assert state["signerId"] == "signer-123"
-    assert state["fieldId"] == "field-123"
-    assert state["status"] == "ongoing"
-    assert state["recipientPhone"] == "+33600000000"
-    assert next(call for call in calls if call[0] == "signer")[5] == "06 00 00 00 00"
-    signature_field = next(call for call in calls if call[0] == "field")[4]
-    assert signature_field == application.HEBERGEMENT_YOUSIGN_SIGNATURE_FIELD
-    assert saved
-
-
-def test_completed_convention_keeps_signature_field_on_page_eleven():
-    reservation = _reservation(
-        paiement="Payé",
-        mode_paiement="Espèces",
-        cle_numero="12",
-        cle_etat="Donnee",
-        date_paiement="31/08/2026 09:30",
-    )
-    record = application._hebergement_convention_record(
-        reservation, "Clément Vaillant"
-    )
-    record = application._hebergement_convention_from_form(
-        reservation,
-        _complete_convention_form(),
-        "Clément Vaillant",
-    )
-    for item in record["inventory"].values():
-        item["observations"] = (
-            "Observation contrôlée lors de l'arrivée." * 3
-        )[:80]
-    reservation["convention_hebergement"] = record
-
+@pytest.mark.skipif(not shutil.which("pdftotext"), reason="Poppler requis pour lire le PDF")
+def test_paper_pdf_contains_handwritten_signatures_and_no_inventory():
+    reservation = _reservation(convention_hebergement={
+        "fields": {"room": "Chambre Sapin", "entry_observations": "Ancienne observation"},
+        "inventory": {"door": {"observations": "Ancienne observation"}},
+    })
     pdf = application._build_hebergement_convention_pdf(reservation)
-
-    assert application._hebergement_pdf_page_count(pdf) == 11
+    output = subprocess.run(["pdftotext", "-enc", "UTF-8", "-", "-"],
+                            input=pdf, capture_output=True, check=True)
+    text = " ".join(output.stdout.decode().casefold().split())
+    for removed in ("yousign", "signature électronique", "état des lieux", "inventaire",
+                    "ancienne observation", "photographies annexées", "annexe 3"):
+        assert removed not in text
+    for retained in ("chambre sapin", "signature manuscrite", "pour le centre", "l'occupant",
+                     "annexe 1", "annexe 2", "attestation de prise de connaissance des règles"):
+        assert retained in text
 
 
 def test_hebergement_yousign_webhook_marks_the_convention_as_signed(monkeypatch):
     reservation = _reservation()
     record = application._hebergement_convention_record(reservation)
-    record["yousign"].update({
+    record["yousign"] = {
         "signatureRequestId": "sr-123",
         "externalId": "hebergement-reservation-1",
         "status": "ongoing",
-    })
+    }
     reservation["convention_hebergement"] = record
     data = copy.deepcopy(application.DEFAULT_DATA)
     data["hebergements"] = [reservation]
@@ -749,11 +684,11 @@ def test_hebergement_yousign_webhook_marks_the_convention_as_signed(monkeypatch)
 def test_admin_hebergement_syncs_yousign_and_downloads_signed_pdf(monkeypatch):
     reservation = _reservation()
     record = application._hebergement_convention_record(reservation)
-    record["yousign"].update({
+    record["yousign"] = {
         "signatureRequestId": "sr-123",
         "signerId": "signer-123",
         "status": "ongoing",
-    })
+    }
     reservation["convention_hebergement"] = record
     data = copy.deepcopy(application.DEFAULT_DATA)
     data["hebergements"] = [reservation]
@@ -811,11 +746,11 @@ def test_admin_hebergement_syncs_yousign_and_downloads_signed_pdf(monkeypatch):
 def test_admin_hebergement_can_cancel_yousign_before_signature(monkeypatch):
     reservation = _reservation()
     record = application._hebergement_convention_record(reservation)
-    record["yousign"].update({
+    record["yousign"] = {
         "signatureRequestId": "sr-123",
         "signerId": "signer-123",
         "status": "ongoing",
-    })
+    }
     reservation["convention_hebergement"] = record
     data = copy.deepcopy(application.DEFAULT_DATA)
     data["hebergements"] = [reservation]

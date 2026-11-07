@@ -64,9 +64,6 @@ from yousign_service import (
     YousignError,
     get_yousign_config,
     is_yousign_configured,
-    is_yousign_sandbox,
-    normalize_french_mobile,
-    sanitize_yousign_external_id,
     yousign_service_access_message,
 )
 
@@ -6401,14 +6398,7 @@ _HEBERGEMENT_MONTHS = (
     "janvier", "février", "mars", "avril", "mai", "juin",
     "juillet", "août", "septembre", "octobre", "novembre", "décembre",
 )
-HEBERGEMENT_CONVENTION_VERSION = 2
-HEBERGEMENT_YOUSIGN_SIGNATURE_FIELD = {
-    "page": 11,
-    "x": 352,
-    "y": 655,
-    "width": 168,
-    "height": 42,
-}
+HEBERGEMENT_CONVENTION_VERSION = 3
 HEBERGEMENT_YOUSIGN_ACTIVE_STATUSES = {"draft", "approval", "ongoing"}
 HEBERGEMENT_YOUSIGN_SIGNED_STATUSES = {"done", "signed"}
 HEBERGEMENT_YOUSIGN_STATUS_LABELS = {
@@ -6423,30 +6413,9 @@ HEBERGEMENT_YOUSIGN_STATUS_LABELS = {
     "rejected": "Rejetée",
     "error": "Erreur d'envoi",
 }
-HEBERGEMENT_INVENTORY_ITEMS = (
-    ("access", "Clé, badge et moyen d'accès"),
-    ("door", "Porte, serrure et poignée"),
-    ("walls", "Murs et plafond de l'espace de couchage"),
-    ("floor", "Sol et plinthes"),
-    ("window", "Fenêtre, vitrage, fermeture et occultation"),
-    ("bed_frame", "Lit, sommier et structure"),
-    ("mattress", "Matelas"),
-    ("sheet", "Protection / drap-housse fourni"),
-    ("storage", "Rangement et mobilier attribués"),
-    ("electricity", "Éclairage, interrupteurs et prises visibles"),
-    ("heating", "Chauffage et ventilation visibles"),
-    ("safety", "Détecteur / équipement de sécurité visible"),
-    ("bathroom", "Douche et salle de bain"),
-    ("toilets", "Toilettes"),
-    ("kitchen", "Cuisine et équipements communs"),
-    ("laundry", "Machine à laver et sèche-linge"),
-    ("common_areas", "Espaces communs"),
-    ("other", "Autre élément"),
-)
 HEBERGEMENT_HANDOVER_CHECKLIST = (
     ("convention_reviewed", "Convention relue avec le stagiaire"),
     ("copy_delivery_planned", "Copie de la convention prévue pour le stagiaire"),
-    ("inventory_completed", "État des lieux d'entrée complété"),
     ("rules_explained", "Règles essentielles expliquées"),
     ("key_handed_over", "Clé ou badge remis"),
     ("safety_explained", "Consignes de sécurité et issues indiquées"),
@@ -6461,7 +6430,6 @@ HEBERGEMENT_CONVENTION_FIELD_NAMES = (
     "payment_bank", "payment_cheque_date", "receipt_issued",
     "receipt_reference", "deposit_received", "deposit_holder",
     "deposit_bank", "deposit_cheque_number", "deposit_cheque_date",
-    "entry_photos_count", "entry_observations",
 )
 HEBERGEMENT_CONVENTION_FIELD_LIMITS = {
     "nom": 80,
@@ -6483,8 +6451,6 @@ HEBERGEMENT_CONVENTION_FIELD_LIMITS = {
     "deposit_holder": 120,
     "deposit_bank": 100,
     "deposit_cheque_number": 60,
-    "entry_photos_count": 4,
-    "entry_observations": 600,
 }
 
 
@@ -6616,14 +6582,6 @@ def _normalize_hebergement_yousign_state(state=None):
     return normalized
 
 
-def _hebergement_yousign_is_locked(state):
-    normalized = _normalize_hebergement_yousign_state(state)
-    return bool(normalized.get("signatureRequestId")) and (
-        normalized.get("status") in HEBERGEMENT_YOUSIGN_ACTIVE_STATUSES
-        or normalized.get("status") in HEBERGEMENT_YOUSIGN_SIGNED_STATUSES
-    )
-
-
 def _hebergement_convention_record(reservation, current_user=""):
     stored = reservation.get("convention_hebergement")
     if not isinstance(stored, dict):
@@ -6648,7 +6606,7 @@ def _hebergement_convention_record(reservation, current_user=""):
         "personal_address": "",
         "postal_code": "",
         "city": "",
-        "contract_date": start_date.isoformat() if start_date else "",
+        "contract_date": arrival_date.isoformat() if arrival_date else "",
         "contract_time": "",
         "arrival_date": arrival_date.isoformat() if arrival_date else "",
         "arrival_time": "",
@@ -6676,8 +6634,6 @@ def _hebergement_convention_record(reservation, current_user=""):
         "deposit_bank": "",
         "deposit_cheque_number": "",
         "deposit_cheque_date": "",
-        "entry_photos_count": "0",
-        "entry_observations": "Néant",
     }
     fields = {
         key: str(stored_fields.get(key, default) or "").strip()[
@@ -6685,25 +6641,6 @@ def _hebergement_convention_record(reservation, current_user=""):
         ]
         for key, default in defaults.items()
     }
-
-    stored_inventory = stored.get("inventory")
-    if not isinstance(stored_inventory, dict):
-        stored_inventory = {}
-    inventory = {}
-    for item_key, item_label in HEBERGEMENT_INVENTORY_ITEMS:
-        saved_item = stored_inventory.get(item_key)
-        if not isinstance(saved_item, dict):
-            saved_item = {}
-        state = str(saved_item.get("entry_state") or "B").strip().upper()
-        if state not in {"B", "U", "A", "D", "M", "N/A"}:
-            state = "B"
-        inventory[item_key] = {
-            "label": item_label,
-            "entry_state": state,
-            "observations": str(
-                saved_item.get("observations") or ""
-            ).strip()[:80],
-        }
 
     stored_checklist = stored.get("checklist")
     if not isinstance(stored_checklist, dict):
@@ -6713,14 +6650,11 @@ def _hebergement_convention_record(reservation, current_user=""):
         for key, _label in HEBERGEMENT_HANDOVER_CHECKLIST
     }
     return {
+        **stored,
         "version": HEBERGEMENT_CONVENTION_VERSION,
-        "fields": fields,
-        "inventory": inventory,
-        "checklist": checklist,
+        "fields": {**stored_fields, **fields},
+        "checklist": {**stored_checklist, **checklist},
         "updated_at": str(stored.get("updated_at") or ""),
-        "yousign": _normalize_hebergement_yousign_state(
-            stored.get("yousign")
-        ),
     }
 
 
@@ -6743,160 +6677,12 @@ def _hebergement_convention_from_form(reservation, form, current_user=""):
     if fields["deposit_received"] not in {"", "Oui", "Non"}:
         fields["deposit_received"] = ""
 
-    record["checklist"] = {
+    record["checklist"].update({
         key: form.get(f"checklist_{key}") == "on"
         for key, _label in HEBERGEMENT_HANDOVER_CHECKLIST
-    }
-    for item_key, item_label in HEBERGEMENT_INVENTORY_ITEMS:
-        state = str(
-            form.get(f"inventory_{item_key}_state") or "B"
-        ).strip().upper()
-        if state not in {"B", "U", "A", "D", "M", "N/A"}:
-            state = "B"
-        record["inventory"][item_key] = {
-            "label": item_label,
-            "entry_state": state,
-            "observations": str(
-                form.get(f"inventory_{item_key}_observations") or ""
-            ).strip()[:80],
-        }
+    })
     record["updated_at"] = _hebergement_now_iso()
     return record
-
-
-def _hebergement_signature_validation_errors(record):
-    fields = record.get("fields") or {}
-    required = {
-        "nom": "nom",
-        "prenom": "prénom",
-        "telephone": "téléphone portable",
-        "mail": "adresse e-mail",
-        "session": "session de formation",
-        "personal_address": "adresse personnelle",
-        "postal_code": "code postal",
-        "city": "ville",
-        "contract_date": "date de signature",
-        "contract_time": "heure de signature",
-        "arrival_date": "date d'arrivée",
-        "arrival_time": "heure d'arrivée",
-        "departure_date": "date de départ prévue",
-        "departure_time": "heure de départ prévue",
-        "room": "dortoir ou chambre",
-        "bed": "numéro de lit",
-        "key_number": "numéro de clé ou badge",
-        "center_representative": "représentant du centre",
-        "center_role": "fonction du représentant",
-        "payment_method": "mode de règlement",
-        "payment_date": "date du règlement",
-        "receipt_issued": "indication sur le reçu",
-        "deposit_holder": "titulaire du chèque de caution",
-        "deposit_bank": "banque du chèque de caution",
-        "deposit_cheque_number": "numéro du chèque de caution",
-        "deposit_cheque_date": "date du chèque de caution",
-    }
-    errors = [
-        f"Renseignez le champ « {label} »."
-        for key, label in required.items()
-        if not str(fields.get(key) or "").strip()
-    ]
-    if not all(_hebergement_session_dates(fields.get("session"))):
-        errors.append("Sélectionnez une session de formation valide.")
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", fields.get("mail", "")):
-        errors.append("L'adresse e-mail du signataire est invalide.")
-    try:
-        normalize_french_mobile(fields.get("telephone", ""))
-    except YousignError as exc:
-        errors.append(str(exc))
-
-    arrival_date = _hebergement_date_input(fields.get("arrival_date"))
-    departure_date = _hebergement_date_input(fields.get("departure_date"))
-    payment_date = _hebergement_date_input(fields.get("payment_date"))
-    contract_date = _hebergement_date_input(fields.get("contract_date"))
-    date_fields = {
-        "arrival_date": (arrival_date, "La date d'arrivée est invalide."),
-        "departure_date": (departure_date, "La date de départ est invalide."),
-        "payment_date": (payment_date, "La date de remise des 300 € est invalide."),
-        "payment_cheque_date": (
-            _hebergement_date_input(fields.get("payment_cheque_date")),
-            "La date du chèque de règlement est invalide.",
-        ),
-        "contract_date": (contract_date, "La date de signature est invalide."),
-        "deposit_cheque_date": (
-            _hebergement_date_input(fields.get("deposit_cheque_date")),
-            "La date du chèque de caution est invalide.",
-        ),
-    }
-    for field_name, (parsed_value, error_message) in date_fields.items():
-        if fields.get(field_name) and not parsed_value:
-            errors.append(error_message)
-    if arrival_date and departure_date and departure_date < arrival_date:
-        errors.append("La date de départ doit être postérieure à la date d'arrivée.")
-    if (
-        contract_date and arrival_date and departure_date
-        and not arrival_date <= contract_date <= departure_date
-    ):
-        errors.append(
-            "La date de signature doit être comprise dans la période "
-            "d'hébergement."
-        )
-    arrival_time = str(fields.get("arrival_time") or "").strip()
-    if arrival_time:
-        try:
-            parsed_arrival_time = datetime.time.fromisoformat(arrival_time)
-            if not (
-                datetime.time(8, 0)
-                <= parsed_arrival_time
-                <= datetime.time(17, 0)
-            ):
-                errors.append(
-                    "L'heure d'arrivée doit impérativement être comprise entre "
-                    "08h00 et 17h00."
-                )
-        except ValueError:
-            errors.append("L'heure d'arrivée est invalide.")
-    for field_name, label in (
-        ("contract_time", "L'heure de signature est invalide."),
-        ("departure_time", "L'heure de départ est invalide."),
-    ):
-        raw_time = str(fields.get(field_name) or "").strip()
-        if raw_time:
-            try:
-                datetime.time.fromisoformat(raw_time)
-            except ValueError:
-                errors.append(label)
-    if fields.get("payment_status") != "Payé":
-        errors.append("La participation de 300 € doit être enregistrée comme payée.")
-    elif arrival_date and payment_date and payment_date != arrival_date:
-        errors.append(
-            "La date de remise des 300 € doit correspondre à la date d'arrivée."
-        )
-    if fields.get("deposit_received") != "Oui":
-        errors.append("Le chèque de caution de 200 € doit être enregistré comme reçu.")
-    if fields.get("payment_method") == "Chèque":
-        cheque_required = {
-            "payment_cheque_number": "numéro du chèque de règlement",
-            "payment_bank": "banque du chèque de règlement",
-            "payment_cheque_date": "date du chèque de règlement",
-        }
-        errors.extend(
-            f"Renseignez le champ « {label} »."
-            for key, label in cheque_required.items()
-            if not str(fields.get(key) or "").strip()
-        )
-    missing_checks = [
-        label for key, label in HEBERGEMENT_HANDOVER_CHECKLIST
-        if not (record.get("checklist") or {}).get(key)
-    ]
-    if missing_checks:
-        errors.append(
-            "Validez toutes les vérifications de remise avant l'envoi Yousign."
-        )
-    return list(dict.fromkeys(errors))
-
-
-app.jinja_env.globals["hebergement_yousign_status_label"] = (
-    _hebergement_yousign_status_label
-)
 
 
 def _hebergement_convention_context(reservation):
@@ -6915,7 +6701,7 @@ def _hebergement_convention_context(reservation):
 
     return {
         "contract_reference": f"HEB-CDA-{reference_suffix}",
-        "contract_version": "3 septembre 2026",
+        "contract_version": "7 novembre 2026",
         "generated_on": _format_hebergement_date_fr(generated_on),
         "formation_label": "Agent de protection physique des personnes (A3P)",
         "session_label": session_label or "À compléter",
@@ -6972,13 +6758,7 @@ def _hebergement_convention_context(reservation):
         "deposit_cheque_date": _hebergement_date_label(
             fields.get("deposit_cheque_date"), "Non renseignée"
         ),
-        "entry_photos_count": fields.get("entry_photos_count", "0"),
-        "entry_observations": fields.get("entry_observations", "Néant"),
-        "inventory": convention.get("inventory") or {},
         "handover_checklist": convention.get("checklist") or {},
-        "electronically_prepared": bool(
-            convention.get("yousign", {}).get("signatureRequestId")
-        ),
     }
 
 
@@ -7358,166 +7138,6 @@ def _hebergement_sync_yousign_state(client, state):
     return _normalize_hebergement_yousign_state(updates)
 
 
-def _hebergement_pdf_page_count(pdf_content):
-    counts = [
-        int(value)
-        for value in re.findall(rb"/Count\s+(\d+)\s+/Kids", pdf_content)
-    ]
-    return max(counts) if counts else 0
-
-
-def _send_hebergement_convention_yousign(data, reservation):
-    record = _hebergement_convention_record(reservation)
-    state = record["yousign"]
-    if state.get("signatureRequestId") and (
-        state.get("status") in HEBERGEMENT_YOUSIGN_ACTIVE_STATUSES
-    ):
-        return "Une demande de signature Yousign est déjà en cours."
-    if not is_yousign_configured():
-        return (
-            "Yousign n'est pas configuré sur Assistance : ajoutez la variable "
-            "YOUSIGN_API_KEY sur le service Render."
-        )
-
-    fields = record["fields"]
-    pdf_content = _build_hebergement_convention_pdf(reservation)
-    page_count = _hebergement_pdf_page_count(pdf_content)
-    expected_page = HEBERGEMENT_YOUSIGN_SIGNATURE_FIELD["page"]
-    if page_count != expected_page:
-        return (
-            "Le nombre de pages de la convention a changé "
-            f"({page_count or 'inconnu'} au lieu de {expected_page}). "
-            "L'envoi est bloqué pour éviter une signature mal positionnée."
-        )
-
-    client = YousignClient()
-    now = _hebergement_now_iso()
-    request_id = ""
-    document_id = ""
-    signer_id = ""
-    field_id = ""
-    external_id = sanitize_yousign_external_id(
-        "hebergement-"
-        f"{reservation.get('id')}-{uuid.uuid4().hex[:8]}"
-    )
-    occupant_name = " ".join(filter(None, [
-        fields.get("prenom"), fields.get("nom")
-    ]))
-    try:
-        signature_request = client.create_signature_request(
-            f"Convention d'hébergement - {occupant_name}",
-            external_id=external_id,
-        )
-        request_id = str(signature_request.get("id") or "")
-        if not request_id:
-            raise YousignError(
-                "Yousign n'a pas retourné d'identifiant de demande."
-            )
-
-        document = client.upload_file(
-            request_id,
-            pdf_content,
-            f"Convention_hebergement_{secure_filename(occupant_name)}.pdf",
-            parse_anchors=False,
-        )
-        document_id = str(document.get("id") or "")
-        if not document_id:
-            raise YousignError(
-                "Yousign n'a pas retourné d'identifiant de document."
-            )
-
-        signer = client.add_signer(
-            request_id,
-            fields.get("prenom", ""),
-            fields.get("nom", ""),
-            fields.get("mail", ""),
-            fields.get("telephone", ""),
-        )
-        signer_id = str(signer.get("id") or "")
-        if not signer_id:
-            raise YousignError(
-                "Yousign n'a pas retourné d'identifiant de signataire."
-            )
-
-        signature_field = client.add_signature_field(
-            request_id,
-            document_id,
-            signer_id,
-            **HEBERGEMENT_YOUSIGN_SIGNATURE_FIELD,
-        )
-        field_id = str(signature_field.get("id") or "")
-        if not field_id:
-            raise YousignError(
-                "Le champ de signature n'a pas pu être ajouté à la convention."
-            )
-
-        activated = client.activate_signature_request(request_id)
-        status = str(activated.get("status") or "ongoing").strip()
-        if status not in HEBERGEMENT_YOUSIGN_STATUS_LABELS:
-            status = "ongoing"
-        record["yousign"] = _normalize_hebergement_yousign_state({
-            "signatureRequestId": request_id,
-            "documentId": document_id,
-            "signerId": signer_id,
-            "fieldId": field_id,
-            "externalId": external_id,
-            "status": status,
-            "sentAt": now,
-            "lastSyncedAt": now,
-            "lastEvent": "signature_request.activated",
-            "lastEventAt": now,
-            "recipientEmail": fields.get("mail", ""),
-            "recipientPhone": normalize_french_mobile(
-                fields.get("telephone", "")
-            ),
-            "error": "",
-        })
-        reservation["convention_hebergement"] = record
-        save_data(data)
-        return ""
-    except YousignError as exc:
-        if request_id:
-            try:
-                client.cancel_signature_request(
-                    request_id,
-                    "Envoi de la convention d'hébergement interrompu.",
-                )
-            except YousignError:
-                app.logger.warning(
-                    "Annulation de la demande Yousign incomplète impossible "
-                    "reservation=%s request=%s",
-                    reservation.get("id"), request_id,
-                )
-        user_error = yousign_service_access_message(
-            exc.status_code, exc.payload
-        )
-        record["yousign"] = _normalize_hebergement_yousign_state({
-            **state,
-            "signatureRequestId": request_id or state.get(
-                "signatureRequestId", ""
-            ),
-            "documentId": document_id,
-            "signerId": signer_id,
-            "fieldId": field_id,
-            "externalId": external_id,
-            "status": "error",
-            "lastSyncedAt": now,
-            "lastEvent": "api.error",
-            "lastEventAt": now,
-            "recipientEmail": fields.get("mail", ""),
-            "error": user_error,
-            "errorPayload": exc.payload,
-        })
-        reservation["convention_hebergement"] = record
-        save_data(data)
-        app.logger.warning(
-            "Envoi Yousign hébergement impossible reservation=%s status=%s "
-            "error=%s",
-            reservation.get("id"), exc.status_code, user_error,
-        )
-        return user_error
-
-
 def _sync_hebergement_reservation_from_convention(reservation, record):
     fields = record["fields"]
     for field in ("nom", "prenom", "telephone", "mail", "session"):
@@ -7536,7 +7156,7 @@ def _sync_hebergement_reservation_from_convention(reservation, record):
         )
     elif reservation["paiement"] != "Payé":
         reservation["date_paiement"] = ""
-    if record.get("checklist", {}).get("key_handed_over"):
+    if record["checklist"].get("key_handed_over") and reservation.get("cle_etat") != "Restituee":
         reservation["cle_etat"] = "Donnee"
     reservation["convention_hebergement"] = record
 
@@ -7553,27 +7173,16 @@ def admin_hebergement_convention_editor(reservation_id):
         abort(404)
 
     current_user = session.get("user_name") or session.get("user_email") or ""
-    record = _hebergement_convention_record(reservation, current_user)
-    validation_errors = []
-
     if request.method == "POST":
-        if _hebergement_yousign_is_locked(record.get("yousign")):
-            flash(
-                "La convention est verrouillée car elle a déjà été envoyée en "
-                "signature. Actualisez son statut avant toute modification.",
-                "error",
-            )
-            return redirect(url_for(
-                "admin_hebergement_convention_editor",
-                reservation_id=reservation_id,
-            ))
+        action = request.form.get("editor_action") or "save"
+        if action not in {"save", "preview"}:
+            abort(400, description="Action indisponible. Rechargez la page de la convention.")
 
         record = _hebergement_convention_from_form(
             reservation, request.form, current_user
         )
         _sync_hebergement_reservation_from_convention(reservation, record)
         save_data(data)
-        action = request.form.get("editor_action") or "save"
 
         if action == "preview":
             return redirect(url_for(
@@ -7581,28 +7190,13 @@ def admin_hebergement_convention_editor(reservation_id):
                 reservation_id=reservation_id,
                 inline="1",
             ))
-        if action == "send_yousign":
-            validation_errors = _hebergement_signature_validation_errors(record)
-            if not validation_errors:
-                error = _send_hebergement_convention_yousign(data, reservation)
-                if not error:
-                    flash(
-                        "Convention envoyée en signature Yousign. Le stagiaire "
-                        "recevra l'invitation par e-mail et le code par SMS.",
-                        "success",
-                    )
-                    return redirect(url_for(
-                        "admin_hebergement_convention_editor",
-                        reservation_id=reservation_id,
-                    ))
-                validation_errors = [error]
-        else:
-            flash("Convention enregistrée.", "success")
-            return redirect(url_for(
-                "admin_hebergement_convention_editor",
-                reservation_id=reservation_id,
-            ))
+        flash("Convention enregistrée.", "success")
+        return redirect(url_for(
+            "admin_hebergement_convention_editor",
+            reservation_id=reservation_id,
+        ))
 
+    record = _hebergement_convention_record(reservation, current_user)
     session_options = [
         option["label"]
         for option in _hebergement_sessions_for_template(data, include_past=True)
@@ -7614,9 +7208,10 @@ def admin_hebergement_convention_editor(reservation_id):
     for label in session_options:
         start_date, end_date = _hebergement_session_dates(label)
         if start_date and end_date:
+            arrival = (start_date - datetime.timedelta(days=1)).isoformat()
             session_schedule[label] = {
-                "contract_date": start_date.isoformat(),
-                "arrival_date": (start_date - datetime.timedelta(days=1)).isoformat(),
+                "contract_date": arrival,
+                "arrival_date": arrival,
                 "departure_date": end_date.isoformat(),
             }
 
@@ -7625,13 +7220,7 @@ def admin_hebergement_convention_editor(reservation_id):
         reservation=reservation,
         convention=record,
         fields=record["fields"],
-        inventory_items=HEBERGEMENT_INVENTORY_ITEMS,
         handover_checklist=HEBERGEMENT_HANDOVER_CHECKLIST,
-        validation_errors=validation_errors,
-        yousign_state=record["yousign"],
-        form_locked=_hebergement_yousign_is_locked(record["yousign"]),
-        yousign_configured=is_yousign_configured(),
-        yousign_sandbox=is_yousign_sandbox(),
         session_options=session_options,
         session_schedule=session_schedule,
     )
@@ -7645,7 +7234,7 @@ def admin_hebergement_convention_yousign_sync(reservation_id):
     if reservation is None:
         abort(404)
     record = _hebergement_convention_record(reservation)
-    state = record["yousign"]
+    state = _normalize_hebergement_yousign_state(record.get("yousign"))
     if not state.get("signatureRequestId"):
         flash("Aucune demande Yousign à actualiser.", "error")
     elif not is_yousign_configured():
@@ -7674,45 +7263,6 @@ def admin_hebergement_convention_yousign_sync(reservation_id):
     ))
 
 
-@app.post("/admin_hebergement/<reservation_id>/convention/yousign/remind")
-@login_required
-def admin_hebergement_convention_yousign_remind(reservation_id):
-    data = load_data()
-    reservation = _find_hebergement_reservation(data, reservation_id)
-    if reservation is None:
-        abort(404)
-    record = _hebergement_convention_record(reservation)
-    state = record["yousign"]
-    if (
-        not state.get("signatureRequestId")
-        or not state.get("signerId")
-        or state.get("status") != "ongoing"
-    ):
-        flash("Aucune signature en attente ne peut être relancée.", "error")
-    else:
-        try:
-            YousignClient().send_signer_reminder(
-                state["signatureRequestId"], state["signerId"]
-            )
-            state["lastReminderAt"] = _hebergement_now_iso()
-            state["lastEvent"] = "signer.reminder_sent"
-            state["lastEventAt"] = state["lastReminderAt"]
-            record["yousign"] = _normalize_hebergement_yousign_state(state)
-            reservation["convention_hebergement"] = record
-            save_data(data)
-            flash("Relance Yousign envoyée au stagiaire.", "success")
-        except YousignError as exc:
-            flash(
-                "Relance Yousign impossible : "
-                f"{yousign_service_access_message(exc.status_code, exc.payload)}",
-                "error",
-            )
-    return redirect(url_for(
-        "admin_hebergement_convention_editor",
-        reservation_id=reservation_id,
-    ))
-
-
 @app.post("/admin_hebergement/<reservation_id>/convention/yousign/cancel")
 @login_required
 def admin_hebergement_convention_yousign_cancel(reservation_id):
@@ -7721,7 +7271,7 @@ def admin_hebergement_convention_yousign_cancel(reservation_id):
     if reservation is None:
         abort(404)
     record = _hebergement_convention_record(reservation)
-    state = record["yousign"]
+    state = _normalize_hebergement_yousign_state(record.get("yousign"))
     if (
         not state.get("signatureRequestId")
         or state.get("status") not in HEBERGEMENT_YOUSIGN_ACTIVE_STATUSES
@@ -7748,8 +7298,7 @@ def admin_hebergement_convention_yousign_cancel(reservation_id):
             reservation["convention_hebergement"] = record
             save_data(data)
             flash(
-                "Demande Yousign annulée. La convention peut de nouveau être "
-                "modifiée puis renvoyée.",
+                "Ancienne demande de signature annulée.",
                 "success",
             )
         except YousignError as exc:
@@ -7790,7 +7339,7 @@ def admin_hebergement_convention_yousign_download(reservation_id):
     if reservation is None:
         abort(404)
     record = _hebergement_convention_record(reservation)
-    state = record["yousign"]
+    state = _normalize_hebergement_yousign_state(record.get("yousign"))
     if state.get("status") not in HEBERGEMENT_YOUSIGN_SIGNED_STATUSES:
         flash("La convention n'est pas encore signée.", "error")
         return redirect(url_for(
@@ -7909,7 +7458,7 @@ def hebergement_yousign_webhook():
     data = load_data()
     for reservation in data.get("hebergements", []):
         record = _hebergement_convention_record(reservation)
-        state = record["yousign"]
+        state = _normalize_hebergement_yousign_state(record.get("yousign"))
         if not (
             signature_request_id
             and state.get("signatureRequestId") == signature_request_id
