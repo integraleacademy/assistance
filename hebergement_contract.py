@@ -909,7 +909,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         _key_value_table([
             ("Occupant", _safe(occupant_name)),
             ("Session", _safe(session)),
-            ("Documents remis", "Convention d’hébergement, fiche de remise de la clé et des sommes, attestation de prise de connaissance des règles."),
+            ("Documents à remettre", "Convention d’hébergement, fiche de remise de la clé et des sommes, attestation de prise de connaissance des règles."),
         ], styles),
         Spacer(1, 9 * mm),
         _body(f"<b>Fait à Puget-sur-Argens, le</b> {_safe(contract_date)} &nbsp;&nbsp; <b>à</b> {_safe(contract_time)}", styles),
@@ -975,7 +975,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             ("Chèque reçu", f"{checkbox(context.get('deposit_received') == 'Oui')} 200 € - deux cents euros"),
         ], styles),
         PageBreak(),
-        *_annex_header("1", "Clé et documents remis", f"{occupant_name} · {reference}", styles),
+        *_annex_header("1", "Remise de la clé et des documents", f"{occupant_name} · {reference}", styles),
         _heading("C. À la remise de la clé", styles),
     ])
     handover = context.get("handover_checklist") or {}
