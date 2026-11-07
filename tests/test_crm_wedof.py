@@ -6,6 +6,8 @@ import hmac
 import sqlite3
 from types import SimpleNamespace
 
+import pytest
+
 import app as application
 
 
@@ -74,7 +76,7 @@ def set_ft_decision(payload, status, submitted="2026-08-12T09:00:00Z"):
 
 
 def test_missing_configuration_and_private_status(tmp_path, monkeypatch):
-    monkeypatch.delenv("WEDOF_API_KEY", raising=False)
+    monkeypatch.delenv("GESTION_STAGIAIRES_API_TOKEN", raising=False)
     client = authenticated_client(tmp_path, monkeypatch)
     payload = client.get("/api/crm/wedof/status").get_json()
     assert payload["configured"] is False
@@ -84,7 +86,7 @@ def test_missing_configuration_and_private_status(tmp_path, monkeypatch):
 
 def test_background_sync_starts_only_when_wedof_is_configured(monkeypatch):
     monkeypatch.setattr(application, "_WEDOF_POLLER_STARTED", False)
-    monkeypatch.delenv("WEDOF_API_KEY", raising=False)
+    monkeypatch.delenv("GESTION_STAGIAIRES_API_TOKEN", raising=False)
     assert application._start_wedof_background_sync() is False
 
     started = []
@@ -96,17 +98,17 @@ def test_background_sync_starts_only_when_wedof_is_configured(monkeypatch):
         def start(self):
             started.append("started")
 
-    monkeypatch.setenv("WEDOF_API_KEY", SECRET)
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", SECRET)
     monkeypatch.setattr(application.threading, "Thread", FakeThread)
-    monkeypatch.setenv("WEDOF_CRM_RECONCILIATION_ENABLED", "false")
+    monkeypatch.setenv("INTEGRALE_EDOF_CRM_SYNC_ENABLED", "false")
     assert application._start_wedof_background_sync() is False
     # L'ancien drapeau ne peut plus réactiver le poller historique de 5 min.
     monkeypatch.setenv("WEDOF_AUTO_SYNC_ENABLED", "true")
     assert application._start_wedof_background_sync() is False
     # Sans désactivation explicite, le nouveau passage ciblé de six heures est actif.
-    monkeypatch.delenv("WEDOF_CRM_RECONCILIATION_ENABLED")
+    monkeypatch.delenv("INTEGRALE_EDOF_CRM_SYNC_ENABLED")
     assert application._start_wedof_background_sync() is True
-    assert started[0]["name"] == "wedof-crm-reconciliation"
+    assert started[0]["name"] == "integrale-edof-crm"
     assert started[0]["daemon"] is True
     assert started[1] == "started"
     assert application._start_wedof_background_sync() is False
@@ -165,7 +167,7 @@ def test_contact_wedof_returns_empty_cache_and_status_without_remote_check(
         tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = create_contact(client, email="lina@example.test")
-    monkeypatch.setenv("WEDOF_API_KEY", SECRET)
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", SECRET)
     monkeypatch.setattr(
         application, "_wedof_request",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
@@ -201,7 +203,7 @@ def test_contact_refresh_reads_only_the_latest_known_folder(
 
     assert response.status_code == 200
     assert response.get_json()["sync"]["processed"] == 1
-    assert calls == ["/api/registrationFolders/cached-folder"]
+    assert calls == ["/dossiers/cached-folder"]
     assert response.get_json()["resources"][0]["stable_id"] == "cached-folder"
     assert response.get_json()["resources"][0]["payload"]["state"] == "inTraining"
 
@@ -251,7 +253,7 @@ def test_contact_open_refresh_reads_only_stale_latest_folder_then_reuses_cache(
     assert first.get_json()["contact"]["statut_demande_financement_ft"] == "refusee"
     assert first.get_json()["contact"]["statut_secondaire"] == "Financement FT refusé"
     assert calls == [(
-        "/api/registrationFolders/latest-folder",
+        "/dossiers/latest-folder",
         "refresh_latest_folder_on_open",
         0,
     )]
@@ -351,7 +353,7 @@ def test_contact_open_refresh_cools_down_after_a_remote_failure(
     assert second.status_code == 200
     assert second.get_json()["sync"]["reason"] == "retry_cooldown"
     assert second.get_json()["sync"]["processed"] == 0
-    assert calls == ["/api/registrationFolders/failing-folder"]
+    assert calls == ["/dossiers/failing-folder"]
 
 
 def test_contact_refresh_without_known_folder_sends_no_wedof_request(
@@ -404,7 +406,7 @@ def test_contact_refresh_error_does_not_erase_cached_resources(
 
 def test_api_key_header_and_errors_never_leak_secret(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
-    monkeypatch.setenv("WEDOF_API_KEY", SECRET)
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", SECRET)
     captured = {}
 
     def fake_get(url, **kwargs):
@@ -413,11 +415,11 @@ def test_api_key_header_and_errors_never_leak_secret(tmp_path, monkeypatch):
 
     monkeypatch.setattr(application.requests, "get", fake_get)
     response = client.get("/api/crm/wedof/status")
+    assert captured["url"] == "https://gestionstagiaires-r5no.onrender.com/api/integrations/crm/integrale-edof/status"
+    assert captured["allow_redirects"] is False
     assert captured["headers"] == {
-        "X-Api-Key": SECRET,
+        "Authorization": f"Bearer {SECRET}",
         "Accept": "application/json",
-        "User-Agent": "IntegraleAcademy-CRM/2026.08",
-        "X-Integrale-Application": "crm",
     }
     assert SECRET.encode() not in response.data
     assert SECRET not in json.dumps(response.get_json())
@@ -425,7 +427,7 @@ def test_api_key_header_and_errors_never_leak_secret(tmp_path, monkeypatch):
 
 def test_pagination_complete_json_and_idempotent_upsert(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
-    monkeypatch.setenv("WEDOF_API_KEY", SECRET)
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", SECRET)
     calls = []
     first = folder("folder-1", "lina@example.test")
     second_page = folder("folder-2", "other@example.test")
@@ -458,7 +460,17 @@ def test_pagination_complete_json_and_idempotent_upsert(tmp_path, monkeypatch):
     assert stored["unknownFutureField"] == [1, 2, 3]
 
 
-def test_new_cpf_folder_creates_and_links_one_crm_lead(tmp_path, monkeypatch):
+@pytest.fixture
+def during_fixture_session(monkeypatch):
+    # These scenarios exercise the actual September 2026 session catalogue.
+    class AugustDateTime(application.datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 20, 12, tzinfo=application.datetime.timezone.utc).astimezone(tz)
+    monkeypatch.setattr(application.datetime, "datetime", AugustDateTime)
+
+
+def test_new_cpf_folder_creates_and_links_one_crm_lead(tmp_path, monkeypatch, during_fixture_session):
     authenticated_client(tmp_path, monkeypatch)
     cpf_request = folder(
         "cpf-new-lead", "lina@example.test", "+33 6 12 34 56 78",
@@ -534,7 +546,7 @@ def test_cpf_desp_vae_title_populates_crm_fields_and_keeps_origin(tmp_path, monk
 
 
 def test_cpf_desp_initial_populates_selectable_training_campus_and_session(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, during_fixture_session):
     authenticated_client(tmp_path, monkeypatch)
     cpf_request = folder(
         "cpf-desp-initial", "samuel@example.test", first_name="Samuel",
@@ -642,7 +654,7 @@ def test_existing_cpf_link_repairs_missing_origin(tmp_path, monkeypatch):
 
 
 def test_existing_cpf_link_repairs_missing_or_legacy_training_fields(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, during_fixture_session):
     authenticated_client(tmp_path, monkeypatch)
     cpf_request = folder(
         "cpf-training-repair", "samuel@example.test", first_name="Samuel",
@@ -1023,7 +1035,7 @@ def test_six_hour_ft_reconciliation_reads_only_latest_in_progress_folder(
 
     result = application._wedof_reconcile_ft_watchlist(max_folders=10)
 
-    assert calls == ["/api/registrationFolders/latest-instruction"]
+    assert calls == ["/dossiers/latest-instruction"]
     assert result == {
         "ok": True,
         "candidates": 1,
@@ -1591,10 +1603,12 @@ def test_ambiguous_match_is_not_linked_and_creates_no_contact(tmp_path, monkeypa
 
 def test_route_access_control_and_all_error_responses_hide_secret(tmp_path, monkeypatch):
     admin = authenticated_client(tmp_path, monkeypatch)
-    monkeypatch.setenv("WEDOF_API_KEY", SECRET)
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", SECRET)
     user = application.app.test_client()
     with user.session_transaction() as session:
-        session["user_email"] = "elsaduq83@gmail.com"
+        email = "crm-member@example.test"
+        monkeypatch.setitem(application.USERS, email, {"email":email, "role":"user", "name":"Test"})
+        session["user_email"] = email
     assert user.post("/api/crm/wedof/sync").status_code == 403
 
     monkeypatch.setattr(
@@ -1679,7 +1693,10 @@ def test_ft_refusal_notifies_each_crm_account_once_and_allows_a_new_cycle(
     )
     today = application.datetime.datetime.now(
         application.pytz.timezone("Europe/Paris")
-    ).date().isoformat()
+    ).date()
+    while application._crm_relance_date_is_unavailable(today):
+        today += application.datetime.timedelta(days=1)
+    today = today.isoformat()
     scheduled_relances = [
         item for item in refused_contact["relances"]
         if item.get("status") == "scheduled"
@@ -1776,55 +1793,31 @@ def test_ft_refusal_notification_ui_is_system_only():
     assert "presentation.reply?" in source
 
 
-def _signed_wedof_webhook(client, payload, *, delivery="delivery-1"):
-    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
-    signature = hmac.new(SECRET.encode(), raw, hashlib.sha512).hexdigest()
-    return client.post(
-        "/api/webhooks/wedof", data=raw, content_type="application/json",
-        headers={
-            "X-Wedof-Signature": signature,
-            "X-Wedof-Delivery": delivery,
-        },
-    )
-
-
-def test_webhook_uses_embedded_folder_without_remote_request(tmp_path, monkeypatch):
+def test_new_native_webhook_rejects_wedof_and_authenticates_transfers(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
-    monkeypatch.setenv("WEDOF_WEBHOOK_SECRET", SECRET)
-    monkeypatch.setattr(
-        application, "_wedof_request",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("an embedded WEDOF folder must not be fetched again")
-        ),
-    )
-    payload = folder("webhook-folder", "lina@example.test")
-
-    first = _signed_wedof_webhook(client, payload)
-    duplicate = _signed_wedof_webhook(client, payload)
-
-    assert first.status_code == 200
-    assert first.get_json() == {"ok": True, "processed": True, "source": "payload"}
-    assert duplicate.get_json() == {"ok": True, "duplicate": True}
-    with sqlite3.connect(tmp_path / "wedof.sqlite3") as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM wedof_resources WHERE stable_id='webhook-folder'"
-        ).fetchone()[0] == 1
+    monkeypatch.setenv("GESTION_STAGIAIRES_API_TOKEN", SECRET)
+    monkeypatch.setenv("WEDOF_WEBHOOK_SECRET", "obsolete")
+    payload = {**folder("123456789", "lina@example.test"), "provider": "integrale_edof"}
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    signature = hmac.digest(SECRET.encode(), b"integrale-edof-crm-v1\0" + body, "sha256").hex()
+    assert client.post("/api/webhooks/wedof", json=payload, headers={"X-Wedof-Secret": "obsolete"}).status_code == 410
+    path = "/api/webhooks/integrale-edof"
+    assert client.post(path, json=payload).status_code == 401
+    post = lambda: client.post(path, data=body, content_type="application/json",
+                               headers={"X-Integrale-EDOF-Signature": signature})
+    assert post().get_json() == {"ok": True, "processed": True}
+    assert post().get_json() == {"ok": True, "duplicate": True}
+    assert len(application.load_data()["crm_contacts"]) == 1
 
 
-def test_webhook_with_only_an_id_performs_one_targeted_get(tmp_path, monkeypatch):
-    client = authenticated_client(tmp_path, monkeypatch)
-    monkeypatch.setenv("WEDOF_WEBHOOK_SECRET", SECRET)
-    calls = []
-    remote = folder("target-folder", "lina@example.test")
-    monkeypatch.setattr(
-        application, "_wedof_request",
-        lambda path, **_kwargs: calls.append(path) or (remote, {}),
-    )
-
-    response = _signed_wedof_webhook(
-        client, {"folderId": "target-folder"}, delivery="delivery-2",
-    )
-
-    assert response.status_code == 200
-    assert response.get_json()["source"] == "targeted_get"
-    assert calls == ["/api/registrationFolders/target-folder"]
+def test_integrale_edof_overrides_legacy_funding_and_older_native_reads():
+    old = folder("123456")
+    set_ft_decision(old, "refused")
+    old["updatedAt"] = "2026-10-20"
+    native = {"provider": "integrale_edof", "edofObservedAt": 200,
+              "state":"accepted", "updatedAt":"2026-10-01", "trainingActionInfo":{"solicitations":[]}}
+    merged = application._wedof_merge_folder(old, native)
+    assert merged["attendee"] == old["attendee"]
+    assert not application._wedof_france_travail_status(merged)
+    stale = dict(native, edofObservedAt=100, state="validated")
+    assert application._wedof_merge_folder(merged, stale)["state"] == "accepted"
