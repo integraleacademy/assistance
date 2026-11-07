@@ -6424,8 +6424,8 @@ HEBERGEMENT_CONVENTION_FIELD_NAMES = (
     "nom", "prenom", "telephone", "mail", "session",
     "personal_address", "postal_code", "city",
     "contract_date", "contract_time", "arrival_date", "arrival_time",
-    "departure_date", "departure_time", "room", "bed", "key_number",
-    "center_representative", "center_role", "payment_status",
+    "departure_date", "departure_time", "key_number",
+    "reception_agent", "payment_status",
     "payment_method", "payment_date", "payment_cheque_number",
     "payment_bank", "payment_cheque_date", "receipt_issued",
     "receipt_reference", "deposit_received", "deposit_holder",
@@ -6440,11 +6440,8 @@ HEBERGEMENT_CONVENTION_FIELD_LIMITS = {
     "personal_address": 180,
     "postal_code": 12,
     "city": 80,
-    "room": 80,
-    "bed": 40,
     "key_number": 40,
-    "center_representative": 120,
-    "center_role": 120,
+    "reception_agent": 120,
     "payment_cheque_number": 60,
     "payment_bank": 100,
     "receipt_reference": 80,
@@ -6582,7 +6579,7 @@ def _normalize_hebergement_yousign_state(state=None):
     return normalized
 
 
-def _hebergement_convention_record(reservation, current_user=""):
+def _hebergement_convention_record(reservation):
     stored = reservation.get("convention_hebergement")
     if not isinstance(stored, dict):
         stored = {}
@@ -6612,11 +6609,8 @@ def _hebergement_convention_record(reservation, current_user=""):
         "arrival_time": "",
         "departure_date": end_date.isoformat() if end_date else "",
         "departure_time": "",
-        "room": "",
-        "bed": "",
         "key_number": str(reservation.get("cle_numero") or "").strip(),
-        "center_representative": str(current_user or "").strip(),
-        "center_role": "Direction Intégrale Academy",
+        "reception_agent": "",
         "payment_status": str(
             reservation.get("paiement") or "Non payé"
         ).strip(),
@@ -6658,8 +6652,8 @@ def _hebergement_convention_record(reservation, current_user=""):
     }
 
 
-def _hebergement_convention_from_form(reservation, form, current_user=""):
-    record = _hebergement_convention_record(reservation, current_user)
+def _hebergement_convention_from_form(reservation, form):
+    record = _hebergement_convention_record(reservation)
     fields = record["fields"]
     for field_name in HEBERGEMENT_CONVENTION_FIELD_NAMES:
         if field_name in form:
@@ -6714,17 +6708,17 @@ def _hebergement_convention_context(reservation):
         "contract_date_label": _hebergement_date_label(
             fields.get("contract_date")
         ),
-        "contract_time": fields.get("contract_time") or "À compléter",
+        "contract_time": fields.get("contract_time"),
         "arrival_label": _hebergement_date_label(
             fields.get("arrival_date"),
             _hebergement_arrival_label(session_label),
         ),
-        "arrival_time": fields.get("arrival_time") or "À compléter",
+        "arrival_time": fields.get("arrival_time"),
         "departure_label": _hebergement_date_label(
             fields.get("departure_date"),
             _format_hebergement_date_fr(end_date) if end_date else "À compléter",
         ),
-        "departure_time": fields.get("departure_time") or "À compléter",
+        "departure_time": fields.get("departure_time"),
         "occupant": {
             "nom": fields.get("nom", "").upper(),
             "prenom": fields.get("prenom", "").title(),
@@ -6734,20 +6728,17 @@ def _hebergement_convention_context(reservation):
             "postal_code": fields.get("postal_code", ""),
             "city": fields.get("city", ""),
         },
-        "room": fields.get("room", ""),
-        "bed": fields.get("bed", ""),
         "key_number": fields.get("key_number", ""),
-        "center_representative": fields.get("center_representative", ""),
-        "center_role": fields.get("center_role", ""),
+        "reception_agent": fields.get("reception_agent", ""),
         "payment_status": fields.get("payment_status", "Non payé"),
         "payment_method": fields.get("payment_method", ""),
         "payment_date": _hebergement_date_label(
-            fields.get("payment_date"), "Non renseignée"
+            fields.get("payment_date"), ""
         ),
         "payment_cheque_number": fields.get("payment_cheque_number", ""),
         "payment_bank": fields.get("payment_bank", ""),
         "payment_cheque_date": _hebergement_date_label(
-            fields.get("payment_cheque_date"), "Non renseignée"
+            fields.get("payment_cheque_date"), ""
         ),
         "receipt_issued": fields.get("receipt_issued", ""),
         "receipt_reference": fields.get("receipt_reference", ""),
@@ -6756,7 +6747,7 @@ def _hebergement_convention_context(reservation):
         "deposit_bank": fields.get("deposit_bank", ""),
         "deposit_cheque_number": fields.get("deposit_cheque_number", ""),
         "deposit_cheque_date": _hebergement_date_label(
-            fields.get("deposit_cheque_date"), "Non renseignée"
+            fields.get("deposit_cheque_date"), ""
         ),
         "handover_checklist": convention.get("checklist") or {},
     }
@@ -7172,15 +7163,12 @@ def admin_hebergement_convention_editor(reservation_id):
     if reservation is None:
         abort(404)
 
-    current_user = session.get("user_name") or session.get("user_email") or ""
     if request.method == "POST":
         action = request.form.get("editor_action") or "save"
         if action not in {"save", "preview"}:
             abort(400, description="Action indisponible. Rechargez la page de la convention.")
 
-        record = _hebergement_convention_from_form(
-            reservation, request.form, current_user
-        )
+        record = _hebergement_convention_from_form(reservation, request.form)
         _sync_hebergement_reservation_from_convention(reservation, record)
         save_data(data)
 
@@ -7196,7 +7184,7 @@ def admin_hebergement_convention_editor(reservation_id):
             reservation_id=reservation_id,
         ))
 
-    record = _hebergement_convention_record(reservation, current_user)
+    record = _hebergement_convention_record(reservation)
     session_options = [
         option["label"]
         for option in _hebergement_sessions_for_template(data, include_past=True)

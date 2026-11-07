@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import io
 import os
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
@@ -73,9 +74,9 @@ def _styles():
         parent=styles["BodyText"],
         fontName="Helvetica",
         fontSize=8.55,
-        leading=11.2,
+        leading=12.3,
         textColor=INK,
-        alignment=TA_JUSTIFY,
+        alignment=TA_LEFT,
         spaceAfter=5,
     ))
     styles.add(ParagraphStyle(
@@ -92,7 +93,7 @@ def _styles():
         parent=styles["Title"],
         fontName="Helvetica-Bold",
         fontSize=22,
-        leading=23,
+        leading=25,
         textColor=NAVY,
         alignment=TA_LEFT,
         spaceAfter=5,
@@ -113,7 +114,7 @@ def _styles():
         fontSize=13.1,
         leading=15,
         textColor=GOLD,
-        spaceBefore=9,
+        spaceBefore=11,
         spaceAfter=5,
         keepWithNext=True,
     ))
@@ -133,7 +134,7 @@ def _styles():
         parent=styles["BodyText"],
         fontName="Helvetica",
         fontSize=8.45,
-        leading=10.8,
+        leading=11.6,
         textColor=INK,
         leftIndent=10,
         firstLineIndent=-8,
@@ -243,24 +244,31 @@ def _callout(title, text, styles, danger=False):
         ("TOPPADDING", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
-    return KeepTogether([Spacer(1, 3), table, Spacer(1, 5)])
+    return KeepTogether([Spacer(1, 5), table, Spacer(1, 7)])
 
 
-def _signature_table(left_title, left_note, right_title, right_note, styles):
-    left = Paragraph(
-        f"<b>{_safe(left_title)}</b><br/><font color=\"#667085\"><i>{_safe(left_note)}</i></font>"
-        "<br/><br/>Nom : ______________________________"
-        "<br/>Date : ______________________________"
-        "<br/><br/>Signature / cachet :",
-        styles["Signature"],
-    )
-    right = Paragraph(
-        f"<b>{_safe(right_title)}</b><br/><font color=\"#667085\"><i>{_safe(right_note)}</i></font>"
-        "<br/><br/>Date : ______________________________"
-        "<br/><br/>Signature :",
-        styles["Signature"],
-    )
-    table = Table([[left, right]], colWidths=[84 * mm, 84 * mm], minRowHeights=[43 * mm])
+def _signature_table(occupant_name, occupant_note, centre_visa, styles):
+    left = [
+        Paragraph("<b>POUR LE CENTRE</b>", styles["Signature"]),
+        Spacer(1, 4),
+        Paragraph("Clément VAILLANT<br/>Directeur général", styles["Signature"]),
+        Spacer(1, 8),
+    ]
+    if centre_visa:
+        mark = Image(io.BytesIO(centre_visa), width=68 * mm, height=17 * mm)
+        mark.hAlign = "LEFT"
+        left.append(mark)
+    else:
+        left.append(Paragraph("Signature et cachet du centre :", styles["Signature"]))
+    right = [
+        Paragraph(f"<b>L'OCCUPANT</b><br/>{_safe(occupant_name)}", styles["Signature"]),
+        Spacer(1, 6),
+        Paragraph(_safe(occupant_note), styles["Signature"]),
+        Spacer(1, 5),
+        Paragraph("Signature :", styles["Signature"]),
+    ]
+    table = Table([[left, right]], colWidths=[84 * mm, 84 * mm],
+                  minRowHeights=[41 * mm], hAlign="LEFT")
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.55, LINE),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -334,23 +342,19 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     formation = str(context.get("formation_label") or "À compléter")
     session = str(context.get("session_label") or "À compléter")
     arrival = str(context.get("arrival_label") or "la veille du premier jour de formation")
-    arrival_time = str(context.get("arrival_time") or "À compléter")
+    arrival_time = str(context.get("arrival_time") or "____ h ____")
     start = str(context.get("formation_start_label") or "À compléter")
     end = str(context.get("formation_end_label") or "À compléter")
     departure = str(context.get("departure_label") or end)
-    departure_time = str(context.get("departure_time") or "À compléter")
+    departure_time = str(context.get("departure_time") or "____ h ____")
     contract_date = str(context.get("contract_date_label") or "À compléter")
-    contract_time = str(context.get("contract_time") or "À compléter")
-    room = str(context.get("room") or "À compléter")
-    bed = str(context.get("bed") or "À compléter")
-    key_number = str(context.get("key_number") or "").strip()
-    center_representative = str(
-        context.get("center_representative") or "Représentant habilité"
-    )
-    center_role = str(context.get("center_role") or "Intégrale Academy")
-    center_signature_title = (
-        f"POUR LE CENTRE - {center_representative}"
-    )
+    contract_time = str(context.get("contract_time") or "____ h ____")
+    key_number = _safe(context.get("key_number"), "________________")
+    reception_agent = str(context.get("reception_agent") or "").strip()
+    if reception_agent.casefold() in {"clément", "clement", "clément vaillant", "clement vaillant"}:
+        reception_agent = "Clément VAILLANT"
+    configured_visa = os.environ.get("HEBERGEMENT_CENTRE_VISA_PNG_BASE64", "")
+    centre_visa = base64.b64decode(configured_visa, validate=True) if configured_visa else None
 
     brand_cells = []
     if logo_path and os.path.exists(logo_path):
@@ -364,7 +368,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         "<para align=right><b>INTÉGRALE ACADEMY</b><br/>"
         '<font color="#667085" size="7.2">SASU Intégrale Sécurité Formations<br/>'
         "54 chemin du Carreou - 83480 Puget-sur-Argens<br/>"
-        "SIREN 840 899 884 - RCS Fréjus - NDA 93830600283</font></para>",
+        "SIREN 840 899 884 - RCS Fréjus - NDA 93830600283<br/>Accueil : 04 22 47 07 68</font></para>",
         styles["ContractBody"],
     )
     brand_cells.append(legal)
@@ -378,7 +382,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     ]))
     story.extend([
         brand,
-        Spacer(1, 13 * mm),
+        Spacer(1, 9 * mm),
         Paragraph("HÉBERGEMENT COLLECTIF SUR LE SITE DE PUGET-SUR-ARGENS", styles["ContractKicker"]),
         Paragraph("CONVENTION D'HÉBERGEMENT TEMPORAIRE", styles["ContractTitle"]),
         Paragraph(
@@ -412,16 +416,16 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             ("Formation", _safe(formation)),
             ("Session", _safe(session)),
             ("Période de formation", f"Du {_safe(start)} au {_safe(end)}"),
-            ("Occupation", f"Arrivée le {_safe(arrival)} à {_safe(arrival_time)} - Départ prévu le {_safe(departure)} à {_safe(departure_time)}"),
-            ("Affectation", f"Dortoir / chambre : {_safe(room)} &nbsp; Lit : {_safe(bed)} &nbsp; Clé n° : {_safe(key_number or 'À compléter')}"),
+            ("Période d’hébergement", f"Arrivée : {_safe(arrival)} à {_safe(arrival_time)}<br/>Départ prévu : {_safe(departure)} à {_safe(departure_time)}"),
+            ("Clé d’entrée n°", key_number),
         ], styles),
         _heading("Entre les soussignés", styles),
         _body(
             "<b>D'une part</b>, la SASU Intégrale Sécurité Formations, exerçant sous "
             "l'enseigne Intégrale Academy, dont le siège social est situé 54 chemin "
             "du Carreou, 83480 Puget-sur-Argens, immatriculée au RCS de Fréjus sous le "
-            "numéro 840 899 884, représentée par son représentant légal ou toute "
-            "personne dûment habilitée, ci-après désignée « le Centre ».",
+            "numéro 840 899 884, représentée par Clément VAILLANT, "
+            "directeur général, ci-après désignée « le Centre ».",
             styles,
         ),
         _body(
@@ -431,7 +435,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ),
         _key_value_table([
             ("Nom et prénom", _safe(occupant_name)),
-            ("Adresse personnelle", f"{_safe(occupant.get('address'), 'À compléter')}<br/>{_safe(occupant.get('postal_code'))} {_safe(occupant.get('city'))}"),
+            ("Adresse personnelle", f"{_safe(occupant.get('address'), '____________________________________________')}<br/>{_safe(occupant.get('postal_code'), '________')} {_safe(occupant.get('city'), '_______________________________')}"),
             ("Téléphone", _safe(occupant.get("telephone"), "________________________________")),
             ("E-mail", _safe(occupant.get("mail"), "____________________________________________")),
         ], styles),
@@ -507,9 +511,8 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         _heading("4. Nature et conditions d'occupation", styles),
     ])
     _bullets(story, [
-        "La place attribuée est déterminée par le Centre en fonction des disponibilités et des contraintes d'organisation.",
+        "Les stagiaires sont hébergés en dortoir collectif, sans attribution individuelle de chambre ou de lit.",
         "L'hébergement est collectif : l'Occupant accepte le partage des dortoirs, sanitaires, espaces de vie et équipements communs.",
-        "Aucun changement de lit, de chambre ou d'affectation ne peut intervenir sans l'accord préalable du Centre.",
         "L'accès est réservé aux seuls stagiaires expressément autorisés et enregistrés comme occupants.",
         "L'Occupant ne peut céder, prêter, sous-louer ou mettre sa place à disposition d'un tiers, même gratuitement.",
     ], styles)
@@ -573,7 +576,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ),
         PageBreak(),
         _heading("7. Équipements mis à disposition", styles),
-        _body("Selon l'affectation et les disponibilités, l'hébergement collectif comprend notamment :", styles),
+        _body("L'hébergement collectif comprend notamment les équipements suivants :", styles),
     ])
     _bullets(story, [
         "un dortoir ou espace de couchage collectif avec lit et matelas ;",
@@ -621,7 +624,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     _bullets(story, [
         "Adopter en permanence un comportement courtois et respectueux envers les autres occupants, le personnel, les intervenants et le voisinage.",
         "Porter une tenue correcte dans les espaces communs ; il est interdit d'y circuler torse nu ou en sous-vêtements, avant, pendant ou après les heures de formation.",
-        "Respecter l'intimité, le sommeil, les effets personnels et l'espace attribué à chaque occupant.",
+        "Respecter l'intimité, le sommeil, les effets personnels et l'espace utilisé par les autres occupants.",
         "Tout harcèlement, menace, violence, intimidation, propos discriminatoire ou comportement dangereux est interdit.",
     ], styles)
     story.append(PageBreak())
@@ -694,6 +697,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "fonctionnement collectif.",
             styles,
         ),
+        PageBreak(),
         _heading("13. Clés, contrôle des accès et droit d'intervention", styles),
         _body(
             "L'Occupant veille à la fermeture des accès et ne communique aucun code ni "
@@ -711,7 +715,6 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "meilleurs délais.",
             styles,
         ),
-        PageBreak(),
         _heading("14. Responsabilité, assurance et effets personnels", styles),
         _subheading("14.1 - Responsabilité de l'Occupant", styles),
         _body(
@@ -767,7 +770,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         _heading("16. Départ et restitution des clés", styles),
     ])
     _bullets(story, [
-        "Libérer entièrement la place attribuée à la date et à l'heure convenues.",
+        "Libérer le couchage utilisé à la date et à l'heure convenues.",
         "Retirer tous les effets personnels, denrées et déchets ; nettoyer et ranger les espaces utilisés.",
         "Restituer personnellement toutes les clés, badges et moyens d'accès au représentant désigné du Centre.",
         "Communiquer un moyen de contact valable si le retour de la caution doit intervenir après une vérification complémentaire.",
@@ -820,30 +823,26 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "aux drogues constituent des conditions essentielles de l'hébergement.",
             styles,
         ),
+        _body("La convention et ses annexes sont établies en deux exemplaires. "
+              "Un exemplaire signé est remis à l’Occupant, l’autre est conservé par le Centre.", styles),
         _body(f"<b>Fait à Puget-sur-Argens, le</b> {_safe(contract_date)} &nbsp;&nbsp; <b>à</b> {_safe(contract_time)}", styles),
-        _signature_table(
-            center_signature_title,
-            f"{center_role} - Signature et cachet",
-            f"L'OCCUPANT - {occupant_name}",
-            "Faire précéder la signature manuscrite de « Lu et approuvé ».",
-            styles,
-        ),
+        _signature_table(occupant_name, "Faire précéder la signature manuscrite de « Lu et approuvé ».", centre_visa, styles),
         PageBreak(),
     ])
 
     story.extend(_annex_header(
         "1",
-        "FICHE DE REMISE DES CLÉS ET RÉCEPTION DES SOMMES",
+        "REMISE DE LA CLÉ ET DES SOMMES",
         "À compléter impérativement lors de l'arrivée, avant l'accès à l'hébergement",
         styles,
     ))
     story.extend([
         _key_value_table([
             ("Occupant", _safe(occupant_name)),
-            ("Formation / session", f"{_safe(formation)}<br/>{_safe(session)}"),
+            ("Session de formation", _safe(session)),
             ("Arrivée", f"{_safe(arrival)} - Heure : {_safe(arrival_time)}"),
-            ("Affectation", f"Dortoir / chambre : {_safe(room)} &nbsp; Lit : {_safe(bed)} &nbsp; Clé / badge n° : {_safe(key_number or 'À compléter')}"),
-            ("Agent du Centre", f"{_safe(center_representative)} - {_safe(center_role)}"),
+            ("Clé d’entrée n°", key_number),
+            ("Agent d’accueil présent", _safe(reception_agent, "________________________________")),
         ], styles),
         _heading("A. Participation financière - 300 €", styles),
         _body(
@@ -851,54 +850,54 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles,
         ),
     ])
+    def checkbox(checked):
+        return "[X]" if checked else "[&nbsp;&nbsp;]"
+
     payment_method = str(context.get("payment_method") or "")
-    payment_status = str(context.get("payment_status") or "Non payé")
-    payment_date = str(context.get("payment_date") or "")
-    payment_cheque_number = str(context.get("payment_cheque_number") or "")
-    payment_bank = str(context.get("payment_bank") or "")
-    payment_cheque_date = str(context.get("payment_cheque_date") or "")
-    receipt_issued = str(context.get("receipt_issued") or "")
-    receipt_reference = str(context.get("receipt_reference") or "")
-    cash_box = "[X]" if payment_method == "Espèces" else "[ ]"
-    cheque_box = "[X]" if payment_method == "Chèque" else "[ ]"
-    receipt_yes = "[X]" if receipt_issued == "Oui" else "[ ]"
-    receipt_no = "[X]" if receipt_issued == "Non" else "[ ]"
+    cash = checkbox(payment_method == "Espèces")
+    cheque = checkbox(payment_method == "Chèque")
+    receipt = context.get("receipt_issued")
+    payment_rows = [
+        ("Mode de règlement", f"{cash} Espèces &nbsp;&nbsp;&nbsp; {cheque} Chèque"),
+        ("Participation reçue", f"{checkbox(context.get('payment_status') == 'Payé')} 300 € &nbsp;&nbsp; le {_safe(context.get('payment_date'), '____ / ____ / ______')}"),
+    ]
+    if payment_method != "Espèces":
+        payment_rows.append((
+            "Si paiement par chèque",
+            f"N° {_safe(context.get('payment_cheque_number'), '_______________')} &nbsp; "
+            f"Banque : {_safe(context.get('payment_bank'), '______________________')}<br/>"
+            f"Date du chèque : {_safe(context.get('payment_cheque_date'), '____ / ____ / ______')}",
+        ))
+    payment_rows.append((
+        "Reçu remis",
+        f"{checkbox(receipt == 'Oui')} Oui &nbsp;&nbsp; {checkbox(receipt == 'Non')} Non"
+        f" &nbsp;&nbsp; Référence : {_safe(context.get('receipt_reference'), '_______________')}",
+    ))
     story.extend([
-        _key_value_table([
-            ("Mode de règlement", f"{cash_box} Espèces dans une enveloppe au nom de l'Occupant &nbsp;&nbsp; {cheque_box} Chèque"),
-            ("Si chèque", f"N° : {_safe(payment_cheque_number, 'Non applicable')} &nbsp; Banque : {_safe(payment_bank, 'Non applicable')} &nbsp; Date : {_safe(payment_cheque_date, 'Non applicable')}"),
-            ("Montant reçu", f"{'[X]' if payment_status == 'Payé' else '[ ]'} 300 € - trois cents euros"),
-            ("Reçu remis", f"{receipt_yes} Oui &nbsp;&nbsp; {receipt_no} Non &nbsp;&nbsp; N° de reçu / référence : {_safe(receipt_reference, 'Sans référence')}"),
-        ], styles),
-        Paragraph(
-            "Information enregistrée dans l'administration avant génération : paiement "
-            f'« {_safe(payment_status)} »' +
-            (f", daté du {_safe(payment_date)}" if payment_date else "") +
-            (f', mode « {_safe(payment_method)} »' if payment_method else "") +
-            ". La présente fiche signée fait foi de la remise effective.",
-            styles["ContractSmall"],
-        ),
+        _key_value_table(payment_rows, styles),
         _heading("B. Dépôt de garantie - chèque de caution de 200 €", styles),
         _body(
             "Cochez la case ci-dessous à la réception du chèque de caution.",
             styles,
         ),
         _key_value_table([
-            ("Titulaire du compte", _safe(context.get("deposit_holder"), "À compléter")),
-            ("Banque", _safe(context.get("deposit_bank"), "À compléter")),
-            ("N° du chèque", _safe(context.get("deposit_cheque_number"), "À compléter")),
-            ("Date du chèque", _safe(context.get("deposit_cheque_date"), "À compléter")),
-            ("Chèque reçu", f"{'[X]' if context.get('deposit_received') == 'Oui' else '[ ]'} 200 € - deux cents euros"),
+            ("Titulaire du compte", _safe(context.get("deposit_holder"), "________________________________")),
+            ("Banque", _safe(context.get("deposit_bank"), "________________________________")),
+            ("N° du chèque", _safe(context.get("deposit_cheque_number"), "________________________")),
+            ("Date du chèque", _safe(context.get("deposit_cheque_date"), "____ / ____ / ______")),
+            ("Chèque reçu", f"{checkbox(context.get('deposit_received') == 'Oui')} 200 € - deux cents euros"),
         ], styles),
         _heading("C. Remise des documents et moyens d'accès", styles),
     ])
     handover = context.get("handover_checklist") or {}
-    mark = lambda key: "[X]" if handover.get(key) else "[ ]"
+    def mark(key):
+        return checkbox(handover.get(key))
+
     checklist = Table([
         [Paragraph(f"{mark('convention_reviewed')} Convention relue avec l'Occupant", styles["Cell"]), Paragraph(f"{mark('copy_delivery_planned')} Copie prévue pour l'Occupant", styles["Cell"])],
         [Paragraph(f"{mark('rules_explained')} Règles essentielles expliquées", styles["Cell"]), ""],
         [Paragraph(f"{mark('key_handed_over')} Clé / badge remis", styles["Cell"]), Paragraph(f"{mark('safety_explained')} Consignes de sécurité et issues de secours indiquées", styles["Cell"])],
-    ], colWidths=[84 * mm, 84 * mm])
+    ], colWidths=[84 * mm, 84 * mm], hAlign="LEFT")
     checklist.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.45, LINE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -910,13 +909,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     story.extend([
         checklist,
         Spacer(1, 7),
-        _signature_table(
-            f"CENTRE - {center_representative}",
-            f"{center_role} - certifie les sommes et moyens d'accès",
-            f"OCCUPANT - {occupant_name}",
-            "Signature manuscrite à la remise des sommes, des documents et de la clé.",
-            styles,
-        ),
+        _signature_table(occupant_name, "Signature manuscrite à la remise des sommes, des documents et de la clé.", centre_visa, styles),
         PageBreak(),
     ])
 
@@ -956,11 +949,11 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     ]]
     for label, declaration in acknowledgements:
         ack_data.append([
-            Paragraph("[ ]", styles["Cell"]),
+            Paragraph(checkbox(False), styles["Cell"]),
             Paragraph(f"<b>{_safe(label)}</b>", styles["Cell"]),
             Paragraph(_safe(declaration), styles["Cell"]),
         ])
-    ack_table = Table(ack_data, colWidths=[11 * mm, 38 * mm, 119 * mm], repeatRows=1)
+    ack_table = Table(ack_data, colWidths=[11 * mm, 38 * mm, 119 * mm], repeatRows=1, hAlign="LEFT")
     ack_style = [
         ("BACKGROUND", (0, 0), (-1, 0), NAVY),
         ("GRID", (0, 0), (-1, -1), 0.4, LINE),
@@ -982,13 +975,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             f"<b>à</b> {_safe(contract_time)}",
             styles,
         ),
-        _signature_table(
-            f"POUR LE CENTRE - {center_representative}",
-            f"{center_role} - Signature et cachet",
-            f"L'OCCUPANT - {occupant_name}",
-            "Faire précéder la signature manuscrite de « Lu et approuvé ».",
-            styles,
-        ),
+        _signature_table(occupant_name, "Faire précéder la signature manuscrite de « Lu et approuvé ».", centre_visa, styles),
     ])
 
     def page_decorator(canvas, document):

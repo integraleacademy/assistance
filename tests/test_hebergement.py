@@ -1,3 +1,4 @@
+import base64
 import copy
 import datetime
 import io
@@ -79,11 +80,8 @@ def _complete_convention_form(action="save"):
         "arrival_time": "09:15",
         "departure_date": "2026-10-27",
         "departure_time": "17:00",
-        "room": "Dortoir A",
-        "bed": "4",
         "key_number": "12",
-        "center_representative": "Clément Vaillant",
-        "center_role": "Direction Intégrale Academy",
+        "reception_agent": "Clément Vaillant",
         "payment_status": "Payé",
         "payment_method": "Espèces",
         "payment_date": "2026-08-31",
@@ -545,6 +543,8 @@ def test_admin_hebergement_convention_editor_is_prefilled_for_paper_signature(
     assert "état des lieux" not in body.lower()
     assert body.count('class="check-card"') == 5
     assert "Ouvrir le PDF à imprimer" in body
+    assert 'name="room"' not in body and 'name="bed"' not in body
+    assert "Agent d’accueil présent" in body
     assert "const sessionSchedule" in body
     assert '"arrival_date": "2026-08-31"' in body
 
@@ -598,7 +598,8 @@ def test_print_from_legacy_booking_uses_current_fields_and_keeps_archives(monkey
         "version": 2,
         "yousign": {"signatureRequestId": "old-request", "status": status},
         "inventory": {"window": {"observations": "Ancienne observation"}},
-        "fields": {"entry_observations": "Ancienne observation", "contract_date": "2026-09-02"},
+        "fields": {"entry_observations": "Ancienne observation", "contract_date": "2026-09-02",
+                   "center_representative": "Ancien représentant"},
         "checklist": {"inventory_completed": True, "key_handed_over": True},
     }
     data = copy.deepcopy(application.DEFAULT_DATA)
@@ -611,7 +612,8 @@ def test_print_from_legacy_booking_uses_current_fields_and_keeps_archives(monkey
     body = client.get(url).get_data(as_text=True)
     assert "old-request" not in body
     assert "Ancienne observation" not in body
-    response = client.post(url, data={"editor_action": "preview", "room": "Chambre Sapin", "checklist_key_handed_over": "on"},
+    assert 'name="reception_agent" value=""' in body
+    response = client.post(url, data={"editor_action": "preview", "key_number": "25", "checklist_key_handed_over": "on"},
                            follow_redirects=True)
     assert response.status_code == 200
     assert response.mimetype == "application/pdf"
@@ -619,7 +621,9 @@ def test_print_from_legacy_booking_uses_current_fields_and_keeps_archives(monkey
     updated = saved[-1]["hebergements"][0]["convention_hebergement"]
     assert saved[-1]["hebergements"][0]["cle_etat"] == "Restituee"
     assert updated["fields"]["contract_date"] == "2026-09-02"
-    assert updated["fields"]["room"] == "Chambre Sapin"
+    assert updated["fields"]["key_number"] == "25"
+    assert updated["fields"]["center_representative"] == "Ancien représentant"
+    assert updated["fields"]["reception_agent"] == ""
     assert updated["fields"]["entry_observations"] == "Ancienne observation"
     assert updated["inventory"] == archive["inventory"]
     assert updated["yousign"] == archive["yousign"]
@@ -630,21 +634,35 @@ def test_print_from_legacy_booking_uses_current_fields_and_keeps_archives(monkey
 
 
 @pytest.mark.skipif(not shutil.which("pdftotext"), reason="Poppler requis pour lire le PDF")
-def test_paper_pdf_contains_handwritten_signatures_and_no_inventory():
+def test_paper_pdf_contains_handwritten_signatures_and_no_inventory(monkeypatch):
     reservation = _reservation(convention_hebergement={
-        "fields": {"room": "Chambre Sapin", "entry_observations": "Ancienne observation"},
+        "fields": {"room": "Chambre Sapin", "bed": "Lit violet", "center_representative": "Ancien représentant", "reception_agent": "Aurélie",
+                   "entry_observations": "Ancienne observation"},
         "inventory": {"door": {"observations": "Ancienne observation"}},
     })
+    # Exercise the production rendering path with a synthetic centre mark.
+    from PIL import Image
+    mark = io.BytesIO()
+    Image.new("RGB", (80, 20), "blue").save(mark, format="PNG")
+    monkeypatch.setenv("HEBERGEMENT_CENTRE_VISA_PNG_BASE64", base64.b64encode(mark.getvalue()).decode())
     pdf = application._build_hebergement_convention_pdf(reservation)
     output = subprocess.run(["pdftotext", "-enc", "UTF-8", "-", "-"],
                             input=pdf, capture_output=True, check=True)
     text = " ".join(output.stdout.decode().casefold().split())
     for removed in ("yousign", "signature électronique", "état des lieux", "inventaire",
-                    "ancienne observation", "photographies annexées", "annexe 3"):
+                    "ancienne observation", "ancien représentant", "photographies annexées", "annexe 3", "chambre sapin", "lit violet",
+                    "à à compléter", "date du non renseignée"):
         assert removed not in text
-    for retained in ("chambre sapin", "signature manuscrite", "pour le centre", "l'occupant",
+    assert text.count("clément vaillant") == 4  # Identification and the three centre signature panels.
+    assert text.count("directeur général") == 4
+    for retained in ("aurélie", "deux exemplaires", "clé d’entrée", "signature manuscrite", "pour le centre", "l'occupant",
                      "annexe 1", "annexe 2", "attestation de prise de connaissance des règles"):
         assert retained in text
+    if shutil.which("pdfimages"):
+        report = subprocess.run(["pdfimages", "-list", "-"], input=pdf, capture_output=True, check=True)
+        mark_pages = [int(cols[0]) for line in report.stdout.decode().splitlines()
+                      if len(cols := line.split()) > 4 and cols[2:5] == ["image", "80", "20"]]
+        assert len(set(mark_pages)) == 3
     rules, acknowledgement = text.rsplit("attestation de prise de connaissance des règles", 1)
     assert "strictement interdit de brancher un véhicule électrique sur une prise du site" in rules
     assert "je ne branche aucun véhicule électrique sur les prises du site" in acknowledgement
