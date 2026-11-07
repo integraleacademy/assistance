@@ -1072,3 +1072,5 @@ img,svg,video,canvas,iframe{max-width:100%}
 .activity-publications-panel .publication-compose{border-top:1px solid #e5eaf2;border-bottom:0}
 @media(max-width:1200px){.contact-quick-actions{align-items:flex-end}.contact-header-actions-stack{display:grid;flex:0 0 240px;width:240px;gap:7px;margin-left:auto}.contact-header-badges{position:static;display:grid;width:100%}.contact-header-badges .contact-journey-label,.contact-header-statuses{width:100%}.contact-header-statuses{order:0;flex-wrap:wrap}}
 @media(max-width:650px){.contact-header-actions-stack{flex:1 1 100%;width:100%;margin-left:0}.contact-header-statuses{flex-wrap:wrap}.contact-header-badges .contact-journey-label{font-size:16px}.contact-header-badges .contact-journey-label.formation-a3p{font-size:20px}}
+
+.wedof-detail-source{margin:10px 16px;color:#536782;font-size:.85rem}
