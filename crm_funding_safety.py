@@ -139,6 +139,12 @@ def merge_folder(previous, incoming):
         return result
 
     result = merge(previous, incoming)
+    incoming_detail = incoming.get("edofDetail")
+    if native and isinstance(incoming_detail, dict):
+        old_detail = previous.get("edofDetail") or {}
+        # Each verified read is one dossier snapshot, including empty lists.
+        newest = max((old_detail, incoming_detail), key=lambda item: item.get("readAt") or 0)
+        result["edofDetail"] = copy.deepcopy(newest)
     old_info = previous.get("trainingActionInfo") or {}
     new_info = incoming.get("trainingActionInfo") or {}
     if isinstance(old_info, dict) and isinstance(new_info, dict):

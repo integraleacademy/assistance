@@ -8681,7 +8681,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261107-integrale-edof"
+CRM_ASSET_VERSION = "20261107-integrale-edof-details"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -14617,7 +14617,13 @@ def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
             "reason": "no_known_folder",
             "processed": 0,
         }
-    age_seconds = _wedof_resource_age_seconds(latest)
+    def refresh_age(resource):
+        payload = (resource or {}).get("payload") or {}
+        if payload.get("provider") == "integrale_edof" and not payload.get("edofDetail"):
+            return None
+        return _wedof_resource_age_seconds(resource)
+
+    age_seconds = refresh_age(latest)
     if (automatic and age_seconds is not None
             and age_seconds < WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS):
         return {
@@ -14656,7 +14662,7 @@ def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
                 return _wedof_refresh_contact_resource(
                     contact_id, automatic=True,
                 )
-            current_age = _wedof_resource_age_seconds(current_latest)
+            current_age = refresh_age(current_latest)
             if (current_age is not None
                     and current_age < WEDOF_CONTACT_OPEN_REFRESH_MIN_AGE_SECONDS):
                 _wedof_cancel_contact_refresh(external_id, token)
