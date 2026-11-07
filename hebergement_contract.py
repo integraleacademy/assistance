@@ -673,6 +673,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     _bullets(story, [
         "Il est interdit d'allumer des bougies, flammes nues, encens ou appareils de cuisson hors des emplacements prévus.",
         "Les chauffages d'appoint, branchements électriques improvisés, multiprises en cascade et appareils présentant un danger sont interdits.",
+        "Il est strictement interdit de brancher un véhicule électrique sur une prise du site, à l'intérieur comme à l'extérieur, y compris avec une rallonge.",
         "Il est interdit d'introduire tout objet ou produit prohibé par la loi ou susceptible de compromettre la sécurité des personnes et des biens.",
         "Les animaux ne sont pas admis, sauf obligation légale ou accord écrit préalable du Centre pour une situation particulière.",
     ], styles)
@@ -944,6 +945,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ("Alcool et drogues", "Je n'introduis, ne détiens et ne consomme aucun alcool ni drogue dans les locaux et je n'y entre pas sous leur emprise."),
         ("Personnes extérieures", "Je ne fais entrer et n'héberge aucune personne extérieure, y compris famille, amis ou connaissances."),
         ("Sécurité", "Je respecte les consignes incendie, les issues de secours, les équipements de sécurité et je signale immédiatement tout incident ou dommage."),
+        ("Véhicule électrique", "Je ne branche aucun véhicule électrique sur les prises du site, même avec une rallonge."),
         ("Départ", "Je nettoie et libère les lieux à la date convenue et restitue personnellement toutes les clés et badges."),
         ("Sanctions", "Je comprends qu'un manquement grave ou répété peut entraîner la fin immédiate de l'hébergement et l'obligation de trouver une autre solution à mes frais."),
     ]

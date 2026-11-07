@@ -645,6 +645,9 @@ def test_paper_pdf_contains_handwritten_signatures_and_no_inventory():
     for retained in ("chambre sapin", "signature manuscrite", "pour le centre", "l'occupant",
                      "annexe 1", "annexe 2", "attestation de prise de connaissance des règles"):
         assert retained in text
+    rules, acknowledgement = text.rsplit("attestation de prise de connaissance des règles", 1)
+    assert "strictement interdit de brancher un véhicule électrique sur une prise du site" in rules
+    assert "je ne branche aucun véhicule électrique sur les prises du site" in acknowledgement
 
 
 def test_hebergement_yousign_webhook_marks_the_convention_as_signed(monkeypatch):
