@@ -116,7 +116,13 @@ def merge_folder(previous, incoming):
     """Keep rich evidence when a list/webhook omits it; reject older versions."""
     old_version = timestamp(modified_at(previous))
     new_version = timestamp(modified_at(incoming))
-    if (old_version is not None and new_version is not None
+    native = incoming.get("provider") == "integrale_edof"
+    if native and previous.get("provider") == "integrale_edof":
+        old_observed = previous.get("edofObservedAt") or 0
+        new_observed = incoming.get("edofObservedAt") or 0
+        if old_observed and new_observed and new_observed < old_observed:
+            return copy.deepcopy(previous)
+    if (not native and old_version is not None and new_version is not None
             and new_version < old_version):
         return copy.deepcopy(previous)
 
@@ -136,6 +142,11 @@ def merge_folder(previous, incoming):
     old_info = previous.get("trainingActionInfo") or {}
     new_info = incoming.get("trainingActionInfo") or {}
     if isinstance(old_info, dict) and isinstance(new_info, dict):
+        # An explicit EDOF solicitation list is authoritative, including an
+        # empty list. Old rich WEDOF folders can still supply omitted fields.
+        if native and "solicitations" in new_info:
+            result["trainingActionInfo"]["solicitations"] = copy.deepcopy(new_info["solicitations"])
+            return result
         old_decision = france_travail_decision(previous)
         new_decision = france_travail_decision(incoming)
         incomplete = not solicitation_decisions(incoming, ft_only=False)

@@ -52,13 +52,8 @@ from crm_exports import (
     build_crm_export_workbook,
     crm_export_filename,
 )
-from wedof_governor_client import (
-    WedofGovernorError,
-    WedofQuotaExceeded,
-    acquire_wedof_lock,
-    release_wedof_lock,
-    reserve_wedof_request,
-)
+import fcntl
+from integrale_edof_client import EdofAPIError as WedofAPIError, read as _wedof_request, token as _edof_token
 from yousign_service import (
     YousignClient,
     YousignError,
@@ -8686,7 +8681,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261103-modele-point-dossier"
+CRM_ASSET_VERSION = "20261107-integrale-edof"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -11237,8 +11232,8 @@ def _crm_contact_response(contact, data=None, regulatory_snapshot=None,
             contact.get("refus_ft_perso") or ""
         )
     response.setdefault("qualification_flag", "")
-    # Le statut WEDOF est calculé une seule fois pour toute la liste des contacts
-    # puis injecté ici. Ne jamais relire toute la base WEDOF depuis cette fonction :
+    # Le statut Intégrale EDOF est calculé une seule fois pour toute la liste des contacts
+    # puis injecté ici. Ne jamais relire toute la base Intégrale EDOF depuis cette fonction :
     # elle est appelée une fois par piste et transformerait la requête en N × M.
     if (funding_status
             and contact.get("statut_demande_financement_ft_source")
@@ -11286,7 +11281,7 @@ def _crm_activity(
                 "name", "Équipe Intégrale"
             )
         except RuntimeError:
-            # Les synchronisations WEDOF s'exécutent aussi hors requête Flask.
+            # Les synchronisations Intégrale EDOF s'exécutent aussi hors requête Flask.
             author_name = "Équipe Intégrale"
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": kind,
@@ -11712,7 +11707,7 @@ def _crm_schedule_ft_refusal_relance(
             f"Relance prévue le {display_date}."
         )
         if stable_id:
-            detail += f" Dossier WEDOF : {stable_id}."
+            detail += f" Dossier Intégrale EDOF : {stable_id}."
         _crm_activity(
             contact,
             "relance",
@@ -13033,7 +13028,7 @@ def _crm_send_ft_refusal_messages(data, contact, *, scope="", decision=None):
     if excludes_france_travail(contact):
         return delivery
     if decision is None:
-        # The manual timeline is an explicit decision, not a WEDOF inference.
+        # The manual timeline is an explicit decision, not a Intégrale EDOF inference.
         if (contact.get("statut_demande_financement_ft_source") != "manual"
                 or contact.get("statut_demande_financement_ft") != "refusee"):
             return delivery
@@ -13218,15 +13213,7 @@ def _gestion_stagiaires_payload(contact):
     }
 
 
-# --------------- WEDOF (cache local en lecture seule) ---------------
-class WedofAPIError(RuntimeError):
-    """Erreur WEDOF dont le message peut être retourné sans divulguer la clé."""
-
-    def __init__(self, message, status_code=None):
-        super().__init__(message)
-        self.status_code = status_code
-
-
+# --------------- Intégrale EDOF (cache local en lecture seule) ---------------
 _WEDOF_SYNC_LOCK = threading.Lock()
 _WEDOF_POLLER_STARTED = False
 _WEDOF_POLLER_STOP = threading.Event()
@@ -13429,80 +13416,11 @@ def _wedof_cancel_contact_refresh(resource_id, token):
 def _wedof_clean(value):
     """Retire la clé de tout message provenant du réseau ou d'une exception."""
     text = str(value or "")
-    secret = os.getenv("WEDOF_API_KEY", "")
+    secret = _edof_token()
     if secret:
         text = text.replace(secret, "[REDACTED]")
     text = re.sub(r"(?i)(x-api-key\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]", text)
     return text[:500]
-
-
-def _wedof_request_operation(path):
-    normalized = re.sub(
-        r"(/registrationFolders/)[^/]+", r"\1:id", str(path or ""),
-    )
-    if normalized.rstrip("/").endswith("/registrationFolders"):
-        return "list_registration_folders"
-    if "/registrationFolders/:id" in normalized:
-        return "get_registration_folder"
-    if normalized.rstrip("/").endswith("/organisms/me"):
-        return "get_current_organism"
-    return "get_wedof_resource"
-
-
-def _wedof_request(path, *, params=None, operation=None, retry_budget=None):
-    key = os.getenv("WEDOF_API_KEY", "").strip()
-    if not key:
-        raise WedofAPIError("WEDOF_API_KEY non configurée")
-    base_url = os.getenv("WEDOF_BASE_URL", "https://www.wedof.fr").rstrip("/")
-    timeout = float(os.getenv("WEDOF_TIMEOUT", "15"))
-    retries = (
-        max(0, min(int(os.getenv("WEDOF_GET_RETRIES", "2")), 5))
-        if retry_budget is None
-        else max(0, min(int(retry_budget), 5))
-    )
-    headers = {
-        "X-Api-Key": key,
-        "Accept": "application/json",
-        "User-Agent": "IntegraleAcademy-CRM/2026.08",
-        "X-Integrale-Application": "crm",
-    }
-    for attempt in range(retries + 1):
-        try:
-            try:
-                reserve_wedof_request(
-                    operation=operation or _wedof_request_operation(path),
-                    method="GET",
-                    path=re.sub(
-                        r"(/registrationFolders/)[^/]+", r"\1:id", str(path),
-                    ),
-                )
-            except WedofQuotaExceeded as exc:
-                raise WedofAPIError(str(exc), 429) from exc
-            except WedofGovernorError as exc:
-                raise WedofAPIError(str(exc), 503) from exc
-            response = requests.get(
-                f"{base_url}/{path.lstrip('/')}", headers=headers,
-                params=params, timeout=timeout,
-            )
-            if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < retries:
-                time.sleep(min(0.25 * (2 ** attempt), 1.0))
-                continue
-            if not 200 <= response.status_code < 300:
-                raise WedofAPIError(
-                    f"WEDOF a répondu avec le statut {response.status_code}.",
-                    response.status_code,
-                )
-            try:
-                return response.json(), response.headers
-            except (ValueError, json.JSONDecodeError):
-                raise WedofAPIError("WEDOF a retourné une réponse JSON invalide.")
-        except WedofAPIError:
-            raise
-        except requests.RequestException as exc:
-            if attempt < retries:
-                time.sleep(min(0.25 * (2 ** attempt), 1.0))
-                continue
-            raise WedofAPIError(f"Connexion à WEDOF impossible : {_wedof_clean(exc)}")
 
 
 def _wedof_items(payload):
@@ -13512,7 +13430,7 @@ def _wedof_items(payload):
         for key in ("items", "resources", "data", "registrationFolders"):
             if isinstance(payload.get(key), list):
                 return payload[key]
-    raise WedofAPIError("Format de liste WEDOF inattendu.")
+    raise WedofAPIError("Format de liste Intégrale EDOF inattendu.")
 
 
 def _wedof_attendee_values(folder):
@@ -13532,7 +13450,7 @@ def _wedof_attendee_values(folder):
 
 
 def _wedof_normalize_name(value):
-    """Return an accent-insensitive identity value for WEDOF matching."""
+    """Return an accent-insensitive identity value for Intégrale EDOF matching."""
     decomposed = unicodedata.normalize("NFKD", str(value or "").strip())
     without_accents = "".join(
         character for character in decomposed
@@ -13565,7 +13483,7 @@ _FRENCH_MONTH_NAMES = (
 
 
 def _wedof_value(payload, *paths):
-    """Return the first non-empty value from dotted WEDOF payload paths."""
+    """Return the first non-empty value from dotted Intégrale EDOF payload paths."""
     for path in paths:
         value = payload
         for key in path.split("."):
@@ -13579,7 +13497,7 @@ def _wedof_value(payload, *paths):
 
 
 def _wedof_location_text(value):
-    """Flatten the usual WEDOF address variants into searchable text."""
+    """Flatten the usual Intégrale EDOF address variants into searchable text."""
     if isinstance(value, (list, tuple)):
         parts = [_wedof_location_text(item) for item in value]
         return ", ".join(part for part in parts if part)
@@ -13686,7 +13604,7 @@ def _wedof_session_code(formation, desp_type):
 
 
 def _wedof_crm_session(data, formation, desp_type, raw_location, start, end):
-    """Resolve WEDOF dates/address to the exact selectable CRM session."""
+    """Resolve Intégrale EDOF dates/address to the exact selectable CRM session."""
     centre_code = _wedof_crm_centre_code(raw_location)
     session_code = _wedof_session_code(formation, desp_type)
     candidates = []
@@ -13720,7 +13638,7 @@ def _wedof_crm_session(data, formation, desp_type, raw_location, start, end):
 
 
 def _wedof_contact_payload(folder, data=None):
-    """Extrait les informations utiles à une piste sans altérer le JSON WEDOF."""
+    """Extrait les informations utiles à une piste sans altérer le JSON Intégrale EDOF."""
     attendee = _wedof_value(folder, "attendee", "learner", "trainee")
     attendee = attendee if isinstance(attendee, dict) else {}
     first_name = next((attendee.get(key) for key in (
@@ -13767,12 +13685,12 @@ def _wedof_contact_payload(folder, data=None):
         "lieu": str(location or "").strip(),
         "dates_formation": dates,
         "cpf": "OUI",
-        "commentaire": f"Demande CPF reçue via WEDOF · dossier {stable_id}",
+        "commentaire": f"Demande CPF reçue via Intégrale EDOF · dossier {stable_id}",
     }
 
 
 def _wedof_has_usable_identity(payload):
-    """Empêche la création d'une piste vide si WEDOF omet l'identité."""
+    """Empêche la création d'une piste vide si Intégrale EDOF omet l'identité."""
     return bool(
         _crm_normalize_email(payload.get("mail"))
         or _crm_normalize_phone(payload.get("telephone"))
@@ -13787,7 +13705,7 @@ WEDOF_CPF_LEAD_START_DATE = datetime.date(2026, 8, 12)
 
 
 def _wedof_folder_creation_date(folder):
-    """Retourne la date de création WEDOF, sans utiliser une date de mise à jour."""
+    """Retourne la date de création Intégrale EDOF, sans utiliser une date de mise à jour."""
     raw_value = next((folder.get(key) for key in (
         "createdAt", "createdOn", "dateCreated", "creationDate",
     ) if folder.get(key)), None)
@@ -13841,7 +13759,7 @@ def _wedof_is_open_cpf_request(folder):
 
 
 def _wedof_is_cpf_folder(folder):
-    """Indique si le dossier WEDOF provient de Mon Compte Formation."""
+    """Indique si le dossier Intégrale EDOF provient de Mon Compte Formation."""
     folder_type = unicodedata.normalize(
         "NFD", str(folder.get("type") or "")
     ).encode("ascii", "ignore").decode().casefold()
@@ -13853,7 +13771,7 @@ def _wedof_activity(contact, title, detail):
     contact.setdefault("activities", []).insert(0, {
         "id": str(uuid.uuid4()), "date": _crm_now(), "kind": "inbound_request",
         "title": title, "detail": detail, "preview": "",
-        "author": "Automatisation WEDOF",
+        "author": "Automatisation Intégrale EDOF",
     })
 
 
@@ -13881,14 +13799,14 @@ def _wedof_new_crm_contact(data, payload, stable_id):
         "financement_perso_possible": "", "refus_ft_perso": "",
         "reste_a_charge_perso": "", "inscrit_ft": "", "relance_date": "",
         "statut_secondaire": "", "origine": "Mon Compte Formation",
-        "commentaires": f"Demande CPF reçue automatiquement via WEDOF · dossier {stable_id}.",
+        "commentaires": f"Demande CPF reçue automatiquement via Intégrale EDOF · dossier {stable_id}.",
         "created_at": now, "updated_at": now, "activities": [],
         "source": "wedof_cpf", "source_wedof_folder_id": stable_id,
     }
     _wedof_activity(
         contact,
         "Piste créée depuis Mon Compte Formation",
-        f"Dossier CPF {stable_id} synchronisé automatiquement via WEDOF.",
+        f"Dossier CPF {stable_id} synchronisé automatiquement via Intégrale EDOF.",
     )
     return contact
 
@@ -14170,7 +14088,7 @@ def _wedof_store_page_locked(
                     if contact:
                         _wedof_activity(
                             contact, "Nouvelle demande CPF reçue",
-                            f"Dossier {stable_id} associé automatiquement via WEDOF.",
+                            f"Dossier {stable_id} associé automatiquement via Intégrale EDOF.",
                         )
                 elif (_wedof_has_usable_identity(crm_payload)
                       and _wedof_is_open_cpf_request(folder)):
@@ -14189,7 +14107,7 @@ def _wedof_store_page_locked(
                         method = method or "matched"
                         _wedof_activity(
                             contact, "Nouvelle demande CPF reçue",
-                            f"Dossier {stable_id} associé automatiquement via WEDOF.",
+                            f"Dossier {stable_id} associé automatiquement via Intégrale EDOF.",
                         )
                     elif inbound.get("status") == "pending_review":
                         pending_reviews += 1
@@ -14198,18 +14116,18 @@ def _wedof_store_page_locked(
                 if repaired_fields:
                     _wedof_activity(
                         contact, "Informations CPF synchronisées",
-                        "Champs complétés depuis WEDOF : "
+                        "Champs complétés depuis Intégrale EDOF : "
                         + ", ".join(repaired_fields) + ".",
                     )
                     crm_changed = True
-                # La présence du dossier WEDOF prouve que le compte CPF est actif,
+                # La présence du dossier Intégrale EDOF prouve que le compte CPF est actif,
                 # y compris si une ancienne réponse CRM indiquait encore « NON ».
                 if str(contact.get("cpf") or "").strip().upper() != "OUI":
                     contact["cpf"] = "OUI"
                     contact["updated_at"] = _crm_now()
                     crm_changed = True
                 # Répare aussi les pistes créées ou rapprochées avant que leur
-                # provenance WEDOF soit enregistrée dans le CRM.
+                # provenance Intégrale EDOF soit enregistrée dans le CRM.
                 if _wedof_is_cpf_folder(folder):
                     if _crm_record_origin(
                         contact,
@@ -14240,7 +14158,7 @@ def _wedof_store_page_locked(
                 state["total_count"] = total_count
             db.execute("""
                 INSERT INTO wedof_sync_state(sync_key, value_json, updated_at)
-                VALUES ('registrationFolders', ?, ?)
+                VALUES ('integrale-edof-dossiers', ?, ?)
                 ON CONFLICT(sync_key) DO UPDATE SET
                     value_json=excluded.value_json, updated_at=excluded.updated_at
             """, (json.dumps(state), now))
@@ -14267,7 +14185,7 @@ def _wedof_set_state(**state):
     with _wedof_connect() as db:
         db.execute("""
             INSERT INTO wedof_sync_state(sync_key, value_json, updated_at)
-            VALUES ('registrationFolders', ?, ?)
+            VALUES ('integrale-edof-dossiers', ?, ?)
             ON CONFLICT(sync_key) DO UPDATE SET
                 value_json=excluded.value_json, updated_at=excluded.updated_at
         """, (json.dumps(state), now))
@@ -14275,7 +14193,7 @@ def _wedof_set_state(**state):
 
 def _wedof_state():
     with _wedof_connect() as db:
-        row = db.execute("SELECT value_json, updated_at FROM wedof_sync_state WHERE sync_key='registrationFolders'").fetchone()
+        row = db.execute("SELECT value_json, updated_at FROM wedof_sync_state WHERE sync_key='integrale-edof-dossiers'").fetchone()
     if not row:
         return {}
     try:
@@ -14292,25 +14210,17 @@ def _wedof_sync(*, page_budget=None):
             "created_contacts": 0, "linked_folders": 0,
             "pending_reviews": 0,
         }
-    lease = {}
     try:
-        try:
-            lease = acquire_wedof_lock(
-                "wedof-global-reconciliation", ttl_seconds=3600,
-            )
-        except WedofGovernorError as exc:
-            raise WedofAPIError(str(exc), 503) from exc
-        if not lease.get("acquired", False):
-            return {
-                "ok": True, "in_progress": True, "processed": 0,
-                "created_contacts": 0, "linked_folders": 0,
-                "pending_reviews": 0,
-            }
-        return _wedof_sync_locked(page_budget=page_budget)
+        # The CRM's persistent disk is shared by its Gunicorn workers.
+        os.makedirs(os.path.dirname(os.path.abspath(_wedof_db_path())), exist_ok=True)
+        with open(_wedof_db_path() + ".sync.lock", "a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"ok": True, "in_progress": True, "processed": 0,
+                        "created_contacts": 0, "linked_folders": 0, "pending_reviews": 0}
+            return _wedof_sync_locked(page_budget=page_budget)
     finally:
-        release_wedof_lock(
-            "wedof-global-reconciliation", str(lease.get("token") or ""),
-        )
         _WEDOF_SYNC_LOCK.release()
 
 
@@ -14332,7 +14242,7 @@ def _wedof_sync_locked(*, page_budget=None):
     try:
         for _ in range(pages_this_run):
             payload, headers = _wedof_request(
-                "/api/registrationFolders", params={"limit": 100, "page": page}
+                "/dossiers", params={"limit": 100, "page": page}
             )
             items = _wedof_items(payload)
             total = headers.get("x-total-count") or headers.get("X-Total-Count")
@@ -14385,13 +14295,6 @@ def _wedof_sync_locked(*, page_budget=None):
         message = _wedof_clean(exc)
         _wedof_set_state(next_page=page, in_progress=True, last_error=message)
         raise WedofAPIError(message)
-
-
-def _wedof_positive_interval(name, default, minimum):
-    try:
-        return max(minimum, int(os.getenv(name, str(default))))
-    except (TypeError, ValueError):
-        return default
 
 
 def _wedof_ft_watchlist(data=None):
@@ -14475,7 +14378,7 @@ def _wedof_reconcile_ft_watchlist(*, max_folders=None):
         folder_id = item["folder_id"]
         try:
             payload, _headers = _wedof_request(
-                f"/api/registrationFolders/{quote(folder_id, safe='')}"
+                f"/dossiers/{quote(folder_id, safe='')}"
             )
             folder = (
                 payload.get("data")
@@ -14485,11 +14388,11 @@ def _wedof_reconcile_ft_watchlist(*, max_folders=None):
             )
             if not isinstance(folder, dict):
                 raise WedofAPIError(
-                    "WEDOF a retourné un dossier dans un format inattendu."
+                    "Intégrale EDOF a retourné un dossier dans un format inattendu."
                 )
-            returned_id = str(folder.get("externalId") or folder_id).strip()
+            returned_id = str(folder.get("externalId") or "").strip()
             if returned_id != folder_id:
-                raise WedofAPIError("WEDOF a retourné un autre numéro de dossier.")
+                raise WedofAPIError("Intégrale EDOF a retourné un autre numéro de dossier.")
             if not folder.get("externalId"):
                 folder = {**folder, "externalId": folder_id}
             if (_wedof_france_travail_status(
@@ -14522,7 +14425,7 @@ def _wedof_scheduled_reconciliation():
     """Exécute le contrôle FT prioritaire puis quelques pages globales."""
     try:
         page_budget = int(os.getenv(
-            "WEDOF_RECONCILIATION_PAGE_BUDGET", "5",
+            "INTEGRALE_EDOF_RECONCILIATION_PAGE_BUDGET", "20",
         ))
     except (TypeError, ValueError):
         page_budget = 5
@@ -14536,55 +14439,79 @@ def _wedof_scheduled_reconciliation():
     }
 
 
+def _edof_claim_period(name, seconds):
+    now = time.time()
+    with _wedof_connect() as db:
+        cursor = db.execute("""
+            INSERT INTO wedof_sync_state(sync_key, value_json, updated_at) VALUES (?, ?, '')
+            ON CONFLICT(sync_key) DO UPDATE SET value_json=excluded.value_json
+            WHERE CAST(wedof_sync_state.value_json AS REAL) <= ?
+        """, (name, str(now + seconds), now))
+        return cursor.rowcount == 1
+
+
+def _edof_sync_requests():
+    # Import newly filed requests between full reconciliations, including when
+    # the CRM was offline during their arrival. Never start a portal session.
+    page = 1
+    while True:
+        payload, headers = _wedof_request("/dossiers", params={"scope": "requests", "page": page})
+        items = _wedof_items(payload)
+        # A fresh portal observation can contain exactly the same requests.
+        # Only write a page again when its business data (including contacts) changed.
+        key = f"integrale-edof-requests-page-{page}"
+        content = [{k: v for k, v in item.items() if k != "edofObservedAt"} for item in items]
+        signature = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
+        with _wedof_connect() as db:
+            previous = db.execute("SELECT value_json FROM wedof_sync_state WHERE sync_key=?", (key,)).fetchone()
+        if not previous or previous[0] != signature:
+            if items:
+                _wedof_store_page(items, None, page, update_sync_state=False)
+            with _wedof_connect() as db:
+                db.execute("INSERT OR REPLACE INTO wedof_sync_state VALUES (?, ?, ?)", (key, signature, _wedof_now()))
+        if len(items) < 100 or page * 100 >= int(headers["X-Total-Count"]):
+            return
+        page += 1
+
+
 def _wedof_background_sync_loop():
-    initial_delay = _wedof_positive_interval(
-        "WEDOF_SYNC_INITIAL_DELAY_SECONDS", 300, 60,
-    )
-    interval = _wedof_positive_interval(
-        "WEDOF_RECONCILIATION_INTERVAL_SECONDS", 21600, 21600,
-    )
-    if _WEDOF_POLLER_STOP.wait(initial_delay):
+    if _WEDOF_POLLER_STOP.wait(15):
         return
     while not _WEDOF_POLLER_STOP.is_set():
         try:
-            # Plusieurs workers web peuvent démarrer ce thread. Ce bail n'est
-            # volontairement pas libéré : son expiration matérialise le délai
-            # de six heures et empêche un second worker de refaire le passage.
-            schedule = acquire_wedof_lock(
-                "wedof-crm-reconciliation-schedule",
-                ttl_seconds=interval,
-            )
-            if not schedule.get("acquired", False):
-                result = {"ok": True, "status": "already_scheduled"}
-            else:
-                result = _wedof_scheduled_reconciliation()
-            created = result.get("global", {}).get("created_contacts", 0)
-            if created:
-                app.logger.info(
-                    "wedof auto-sync created_contacts=%s processed=%s",
-                    created, result.get("global", {}).get("processed", 0),
-                )
+            if _edof_claim_period("integrale-edof-requests-schedule", 120):
+                _edof_sync_requests()
+            if _edof_claim_period("integrale-edof-global-schedule", 6 * 3600):
+                finished = False
+                try:
+                    result = _wedof_scheduled_reconciliation()
+                    finished = result["ok"] and not result["global"].get("in_progress")
+                    app.logger.info("Intégrale EDOF CRM : réconciliation, %s dossiers lus, %s nouvelles pistes.",
+                                    result["global"].get("processed", 0), result["global"].get("created_contacts", 0))
+                finally:
+                    if not finished:
+                        with _wedof_connect() as db:
+                            db.execute("UPDATE wedof_sync_state SET value_json=? WHERE sync_key=?",
+                                       (str(time.time() + 120), "integrale-edof-global-schedule"))
         except Exception as exc:
-            app.logger.warning("wedof auto-sync failed: %s", _wedof_clean(exc))
-        if _WEDOF_POLLER_STOP.wait(interval):
+            app.logger.warning("Synchronisation Intégrale EDOF : %s", _wedof_clean(exc))
+        if _WEDOF_POLLER_STOP.wait(60):
             return
 
 
 def _start_wedof_background_sync():
-    """Réconciliation globale optionnelle, désactivée par défaut et au plus 4 fois/jour."""
+    """Active les lectures du répertoire EDOF synchronisé dans Gestion Stagiaires."""
     global _WEDOF_POLLER_STARTED
-    # Nouveau drapeau volontaire : une ancienne configuration
-    # WEDOF_AUTO_SYNC_ENABLED=true ne doit jamais ressusciter le poller 5 min.
     enabled = str(os.getenv(
-        "WEDOF_CRM_RECONCILIATION_ENABLED", "true",
+        "INTEGRALE_EDOF_CRM_SYNC_ENABLED", "true",
     )).strip().casefold()
-    if (_WEDOF_POLLER_STARTED or not os.getenv("WEDOF_API_KEY", "").strip()
+    if (_WEDOF_POLLER_STARTED or not _edof_token()
             or enabled in {"0", "false", "non", "no", "off"}):
         return False
     _WEDOF_POLLER_STARTED = True
     threading.Thread(
         target=_wedof_background_sync_loop,
-        name="wedof-crm-reconciliation", daemon=True,
+        name="integrale-edof-crm", daemon=True,
     ).start()
     return True
 
@@ -14626,12 +14553,12 @@ def _wedof_contact_resources(contact_id, data=None):
             query += " WHERE l.contact_id=?"
             parameters = (str(contact_id),)
         # A new/unlinked contact still uses the legacy identity match, without
-        # retaining every unrelated WEDOF payload in memory at once.
+        # retaining every unrelated Intégrale EDOF payload in memory at once.
         rows = db.execute(query + " ORDER BY r.synced_at DESC", parameters)
         for row in rows:
             payload = json.loads(row["payload_json"])
             directly_linked = str(row["linked_contact_id"] or "") == str(contact_id)
-            # Une même personne peut avoir plusieurs pistes CRM. Le lien WEDOF reste
+            # Une même personne peut avoir plusieurs pistes CRM. Le lien Intégrale EDOF reste
             # unique en base, mais chaque doublon d'identité doit pouvoir consulter
             # ses dossiers sans perdre les accents de son nom dans le CRM.
             if not directly_linked and not _wedof_contact_name_matches(payload, contact):
@@ -14664,7 +14591,7 @@ def _wedof_contact_resources(contact_id, data=None):
 
 
 def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
-    """Relit uniquement le dossier WEDOF le plus récent déjà connu du contact.
+    """Relit uniquement le dossier Intégrale EDOF le plus récent déjà connu du contact.
 
     En ouverture automatique, un cache de moins de trente minutes est renvoyé
     sans requête distante. Le bouton manuel conserve la possibilité de forcer
@@ -14743,7 +14670,7 @@ def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
                 }
 
         payload, _headers = _wedof_request(
-            f"/api/registrationFolders/{quote(external_id, safe='')}",
+            f"/dossiers/{quote(external_id, safe='')}",
             operation=(
                 "refresh_latest_folder_on_open"
                 if automatic else "refresh_latest_folder_manual"
@@ -14756,13 +14683,13 @@ def _wedof_refresh_contact_resource(contact_id, data=None, *, automatic=False):
         folder = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(folder, dict) or not folder.get("externalId"):
             folder = payload
-        if not isinstance(folder, dict):
+        if not isinstance(folder, dict) or not folder.get("externalId"):
             raise WedofAPIError(
-                "WEDOF a retourné un dossier dans un format inattendu."
+                "Intégrale EDOF a retourné un dossier dans un format inattendu."
             )
         returned_id = str(folder.get("externalId") or "").strip()
         if returned_id and returned_id != external_id:
-            raise WedofAPIError("WEDOF a retourné un autre numéro de dossier.")
+            raise WedofAPIError("Intégrale EDOF a retourné un autre numéro de dossier.")
         if not returned_id:
             folder = {**folder, "externalId": external_id}
         result = _wedof_store_page(
@@ -14832,7 +14759,7 @@ def _wedof_folder_recency_key(payload, *, fallback="", stable_id=""):
 
 def _wedof_effective_funding_status(
         statuses, *, fallback_status="", fallback_folder_id=""):
-    """Retient exclusivement l'état du dossier WEDOF créé le plus récemment."""
+    """Retient exclusivement l'état du dossier Intégrale EDOF créé le plus récemment."""
     clean = [
         (recency, str(status or "").strip(), str(stable_id or ""))
         for recency, status, stable_id in statuses
@@ -14850,11 +14777,11 @@ def _wedof_funding_statuses_by_contact(data, *, include_cpf=False):
 
 
 def _wedof_build_funding_statuses(data, *, include_cpf=False):
-    """Calcule les statuts FT et CPF en un seul parcours du cache WEDOF.
+    """Calcule les statuts FT et CPF en un seul parcours du cache Intégrale EDOF.
 
     L'ancienne implémentation relisait et décodait la table complète pour chaque
     contact. Cette fonction construit d'abord un index des contacts par identité,
-    puis ne décode chaque dossier WEDOF qu'une seule fois.
+    puis ne décode chaque dossier Intégrale EDOF qu'une seule fois.
     """
     global _WEDOF_FUNDING_CACHE_AT, _WEDOF_FUNDING_CACHE_KEY
     global _WEDOF_FUNDING_CACHE_VALUE, _WEDOF_CPF_STATE_CACHE_VALUE
@@ -14903,13 +14830,13 @@ def _wedof_build_funding_statuses(data, *, include_cpf=False):
         """)
 
         # Itérer sur le curseur plutôt que fetchall() garde un seul gros JSON
-        # WEDOF en mémoire à la fois, même avec plusieurs milliers de dossiers.
+        # Intégrale EDOF en mémoire à la fois, même avec plusieurs milliers de dossiers.
         for row in rows:
             try:
                 payload = json.loads(row["payload_json"])
             except (TypeError, ValueError, json.JSONDecodeError):
                 app.logger.warning(
-                    "Dossier WEDOF ignoré : JSON local illisible (%s)",
+                    "Dossier Intégrale EDOF ignoré : JSON local illisible (%s)",
                     row["stable_id"],
                 )
                 continue
@@ -14969,13 +14896,17 @@ def _wedof_cpf_states_by_contact(data):
 
 
 def _wedof_status_payload(test_connection=True):
-    configured = bool(os.getenv("WEDOF_API_KEY", "").strip())
+    configured = bool(_edof_token())
     connected = False
     error = ""
+    checked = None
     if configured and test_connection:
         try:
-            _wedof_request("/api/organisms/me")
-            connected = True
+            health, _ = _wedof_request("/status")
+            connected = isinstance(health, dict) and health.get("provider") == "integrale_edof"
+            checked = health.get("source_checked_at") if connected else None
+            if not connected:
+                error = "Réponse de connexion Intégrale EDOF inattendue."
         except Exception as exc:
             error = _wedof_clean(exc)
     state = _wedof_state()
@@ -14983,7 +14914,7 @@ def _wedof_status_payload(test_connection=True):
         resources = db.execute("SELECT COUNT(*) FROM wedof_resources").fetchone()[0]
         linked = db.execute("SELECT COUNT(*) FROM wedof_contact_links").fetchone()[0]
     return {
-        "configured": configured, "connected": connected,
+        "configured": configured, "connected": connected, "source_checked_at": checked,
         "last_sync_at": state.get("last_sync_at") or "",
         "resource_count": resources, "linked_folder_count": linked,
         "error": error or _wedof_clean(state.get("last_error", "")),
@@ -14991,16 +14922,18 @@ def _wedof_status_payload(test_connection=True):
 
 
 @app.route("/api/crm/wedof/status")
+@app.route("/api/crm/integrale-edof/status")
 @login_required
 def crm_wedof_status():
     return jsonify(_wedof_status_payload())
 
 
 @app.route("/api/crm/wedof/sync", methods=["POST"])
+@app.route("/api/crm/integrale-edof/sync", methods=["POST"])
 @login_required
 def crm_wedof_sync():
     if (current_user() or {}).get("role") != "admin":
-        return jsonify({"error": "Seul un administrateur peut synchroniser WEDOF."}), 403
+        return jsonify({"error": "Seul un administrateur peut synchroniser Intégrale EDOF."}), 403
     try:
         return jsonify(_wedof_sync())
     except WedofAPIError as exc:
@@ -15008,6 +14941,7 @@ def crm_wedof_sync():
 
 
 @app.route("/api/crm/contacts/<contact_id>/wedof")
+@app.route("/api/crm/contacts/<contact_id>/integrale-edof")
 @login_required
 def crm_contact_wedof(contact_id):
     data = load_data()
@@ -15020,6 +14954,7 @@ def crm_contact_wedof(contact_id):
 
 
 @app.route("/api/crm/contacts/<contact_id>/wedof/refresh", methods=["POST"])
+@app.route("/api/crm/contacts/<contact_id>/integrale-edof/refresh", methods=["POST"])
 @login_required
 def crm_contact_wedof_refresh(contact_id):
     data = _load_data_snapshot()
@@ -15037,6 +14972,7 @@ def crm_contact_wedof_refresh(contact_id):
         return jsonify({"error": _wedof_clean(exc)}), 503
 
 
+@app.post("/api/crm/contacts/<contact_id>/integrale-edof/refresh-on-open")
 @app.route(
     "/api/crm/contacts/<contact_id>/wedof/refresh-on-open",
     methods=["POST"],
@@ -15062,131 +14998,36 @@ def crm_contact_wedof_refresh_on_open(contact_id):
         return jsonify({"error": _wedof_clean(exc)}), status_code
 
 
-def _wedof_webhook_authenticated(raw_body):
-    secret_text = (os.getenv("WEDOF_WEBHOOK_SECRET") or "").strip()
-    if not secret_text:
-        return False
-    signature = (request.headers.get("X-Wedof-Signature") or "").strip()
-    if signature:
-        supplied = signature.split("=", 1)[-1].strip().strip('"').strip("'")
-        # WEDOF signe officiellement le corps brut en HMAC-SHA512 hexadécimal.
-        # Les variantes SHA256 restent acceptées pendant la transition pour ne
-        # pas casser un éventuel émetteur interne historique.
-        candidates = []
-        for algorithm in (hashlib.sha512, hashlib.sha256):
-            digest_bytes = hmac.new(
-                secret_text.encode("utf-8"), raw_body, algorithm,
-            ).digest()
-            candidates.extend((
-                digest_bytes.hex(),
-                digest_bytes.hex().upper(),
-                base64.b64encode(digest_bytes).decode("ascii"),
-                base64.urlsafe_b64encode(digest_bytes).decode("ascii").rstrip("="),
-            ))
-        return any(hmac.compare_digest(supplied, candidate) for candidate in candidates)
-    supplied_secret = (
-        request.headers.get("X-Wedof-Secret")
-        or request.headers.get("X-Webhook-Secret")
-        or ""
-    ).strip()
-    authorization = (request.headers.get("Authorization") or "").strip()
-    if authorization.casefold().startswith("bearer "):
-        supplied_secret = authorization[7:].strip()
-    return bool(supplied_secret) and hmac.compare_digest(
-        supplied_secret, secret_text,
-    )
-
-
-def _wedof_webhook_folder(payload):
-    """Trouve un dossier complet inclus dans l'événement, sans appel distant."""
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("externalId") and any(
-            key in payload for key in ("state", "attendee", "trainingActionInfo")):
-        return payload
-    for key in ("registrationFolder", "folder", "resource", "data", "payload"):
-        candidate = _wedof_webhook_folder(payload.get(key))
-        if candidate:
-            return candidate
-    return None
-
-
-def _wedof_webhook_folder_id(payload):
-    folder = _wedof_webhook_folder(payload)
-    if folder:
-        return str(folder.get("externalId") or "").strip()
-    if not isinstance(payload, dict):
-        return ""
-    for key in (
-        "externalId", "folderId", "registrationFolderId",
-        "registration_folder_id", "resourceId", "dossierId",
-    ):
-        value = str(payload.get(key) or "").strip()
-        if value:
-            return value
-    for key in ("registrationFolder", "folder", "resource", "data", "payload"):
-        value = _wedof_webhook_folder_id(payload.get(key))
-        if value:
-            return value
-    return ""
-
-
 @app.post("/api/webhooks/wedof")
 def crm_wedof_webhook():
-    raw_body = request.get_data(cache=True) or b""
-    if not (os.getenv("WEDOF_WEBHOOK_SECRET") or "").strip():
-        return jsonify({"ok": False, "error": "webhook_not_configured"}), 503
-    if not _wedof_webhook_authenticated(raw_body):
-        return jsonify({"ok": False, "error": "forbidden"}), 403
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify({"ok": False, "error": "invalid_payload"}), 400
-    delivery_id = (
-        request.headers.get("X-Wedof-Delivery")
-        or hashlib.sha256(raw_body).hexdigest()
-    ).strip()[:200]
-    with _wedof_connect() as db:
-        duplicate = db.execute(
-            "SELECT 1 FROM wedof_webhook_deliveries WHERE delivery_id=?",
-            (delivery_id,),
-        ).fetchone()
-    if duplicate:
-        return jsonify({"ok": True, "duplicate": True}), 200
+    return jsonify(error="Cette connexion a été remplacée par Intégrale EDOF."), 410
 
-    folder = _wedof_webhook_folder(payload)
-    folder_id = _wedof_webhook_folder_id(payload)
-    source = "payload"
-    try:
-        if folder is None and folder_id:
-            remote_payload, _headers = _wedof_request(
-                f"/api/registrationFolders/{quote(folder_id, safe='')}"
-            )
-            folder = (
-                remote_payload.get("data")
-                if isinstance(remote_payload, dict)
-                and isinstance(remote_payload.get("data"), dict)
-                else remote_payload
-            )
-            source = "targeted_get"
-        if isinstance(folder, dict):
-            if folder_id and not folder.get("externalId"):
-                folder = {**folder, "externalId": folder_id}
-            _wedof_store_page(
-                [folder], None, 0, update_sync_state=False,
-            )
-        with _wedof_connect() as db:
-            db.execute(
-                "INSERT OR IGNORE INTO wedof_webhook_deliveries "
-                "(delivery_id, processed_at) VALUES (?, ?)",
-                (delivery_id, _wedof_now()),
-            )
-        return jsonify({
-            "ok": True,
-            "processed": bool(isinstance(folder, dict)),
-            "source": source if isinstance(folder, dict) else "event_only",
-        }), 200
-    except WedofAPIError as exc:
-        return jsonify({"ok": False, "error": _wedof_clean(exc)}), 503
+
+@app.post("/api/webhooks/integrale-edof")
+def crm_integrale_edof_webhook():
+    secret = _edof_token()
+    raw = request.get_data()
+    signature = hmac.digest(secret.encode(), b"integrale-edof-crm-v1\0" + raw, "sha256").hex()
+    if not secret or not hmac.compare_digest(signature, request.headers.get("X-Integrale-EDOF-Signature", "")):
+        return jsonify(error="Authentification invalide"), 401
+    folder = request.get_json(silent=True)
+    if (not isinstance(folder, dict) or folder.get("provider") != "integrale_edof"
+            or not re.fullmatch(r"[0-9]{6,20}", str(folder.get("externalId", "")))
+            or not _wedof_is_cpf_folder(folder)):
+        return jsonify(error="Dossier Intégrale EDOF invalide"), 400
+    folder_id = str(folder["externalId"])
+    delivery = "integrale-edof-request-" + folder_id
+    with _wedof_connect() as db:
+        if db.execute("SELECT 1 FROM wedof_webhook_deliveries WHERE delivery_id=?", (delivery,)).fetchone():
+            return jsonify(ok=True, duplicate=True)
+    _wedof_store_page([folder], None, 0, update_sync_state=False)
+    with _wedof_connect() as db:
+        linked = db.execute("SELECT 1 FROM wedof_contact_links WHERE resource_type='registrationFolder' AND resource_id=?",
+                            (folder_id,)).fetchone()
+        if not linked:
+            return jsonify(error="Ce dossier requiert un rapprochement dans le CRM."), 422
+        db.execute("INSERT OR IGNORE INTO wedof_webhook_deliveries VALUES (?, ?)", (delivery, _wedof_now()))
+    return jsonify(ok=True, processed=True)
 
 
 @app.route("/crm", defaults={"section": "accueil"})
@@ -16044,16 +15885,16 @@ def _crm_workspace_backfill(contact):
 
 
 def _crm_prepare_contacts(data):
-    """Applique les migrations légères et les statuts WEDOF en un seul passage."""
+    """Applique les migrations légères et les statuts Intégrale EDOF en un seul passage."""
     changed = _crm_backfill_meta_submissions(data)
     statuses = _crm_statuses(data)
     try:
         wedof_funding_statuses = _wedof_funding_statuses_by_contact(data)
     except Exception as exc:
-        # Le CRM doit rester disponible même si son cache WEDOF est momentanément
+        # Le CRM doit rester disponible même si son cache Intégrale EDOF est momentanément
         # verrouillé ou illisible. Les dernières valeurs persistées sont conservées.
         app.logger.warning(
-            "Synchronisation des statuts WEDOF ignorée (%s)", type(exc).__name__,
+            "Synchronisation des statuts Intégrale EDOF ignorée (%s)", type(exc).__name__,
         )
         wedof_funding_statuses = {}
 
@@ -16214,7 +16055,7 @@ def _crm_prepared_read_model():
 
 
 def _crm_persist_prepared_contact_if_idle(prepared_contact):
-    """Persist a one-time legacy migration without ever waiting behind WEDOF."""
+    """Persist a one-time legacy migration without ever waiting behind Intégrale EDOF."""
     acquired = _CRM_RECONCILIATION_LOCK.acquire(blocking=False)
     if not acquired:
         return False
@@ -17262,7 +17103,7 @@ def crm_contact(contact_id):
         ))
 
     # Mutations remain serialized; read-only contact sheets no longer queue
-    # behind a long WEDOF reconciliation or another user's autosave.
+    # behind a long Intégrale EDOF reconciliation or another user's autosave.
     with _CRM_RECONCILIATION_LOCK:
         data = load_data()
         contact = _crm_contact(data, contact_id)
@@ -17378,7 +17219,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         # A partial PATCH changing the holder answer must also purge a legacy
         # assessment omitted by the disabled browser control.
         payload["titre_sejour_cnaps"] = ""
-    # La provenance d'une piste WEDOF reste Mon Compte Formation lorsque
+    # La provenance d'une piste Intégrale EDOF reste Mon Compte Formation lorsque
     # l'équipe corrige manuellement la formation ou un autre champ.
     if contact.get("source") == "wedof_cpf":
         payload["origine"] = "Mon Compte Formation"
@@ -17547,7 +17388,7 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         _crm_repair_unconfirmed_ft_refusal(contact)
     if "statut_secondaire" in payload:
         # Une étape choisie dans la timeline est volontaire : elle ne doit plus
-        # être écrasée au prochain GET par une valeur WEDOF encore en cache.
+        # être écrasée au prochain GET par une valeur Intégrale EDOF encore en cache.
         contact["statut_secondaire_source"] = CRM_MANUAL_STATUS_SOURCE
         manual_funding_status = CRM_FT_STATUS_BY_SECONDARY.get(
             contact.get("statut_secondaire")
@@ -17962,7 +17803,7 @@ def _crm_add_mention_notifications(data, text, contact, publication, *, kind="me
 
 
 def _crm_add_funding_refusal_notifications(data, contact, stable_id):
-    """Alerte chaque compte CRM une fois lors d'un nouveau refus WEDOF."""
+    """Alerte chaque compte CRM une fois lors d'un nouveau refus Intégrale EDOF."""
     contact_name = " ".join(
         part for part in [contact.get("prenom"), contact.get("nom")]
         if str(part or "").strip()
