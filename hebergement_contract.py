@@ -73,30 +73,30 @@ def _styles():
         name="ContractBody",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=8.55,
-        leading=12.3,
+        fontSize=11,
+        leading=16,
         textColor=INK,
         alignment=TA_LEFT,
-        spaceAfter=5,
+        spaceAfter=9,
     ))
     styles.add(ParagraphStyle(
         name="ContractSmall",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.2,
-        leading=9,
+        fontSize=9,
+        leading=13,
         textColor=MUTED,
-        spaceAfter=3,
+        spaceAfter=6,
     ))
     styles.add(ParagraphStyle(
         name="ContractTitle",
         parent=styles["Title"],
         fontName="Helvetica-Bold",
-        fontSize=22,
-        leading=25,
+        fontSize=24,
+        leading=28,
         textColor=NAVY,
         alignment=TA_LEFT,
-        spaceAfter=5,
+        spaceAfter=9,
     ))
     styles.add(ParagraphStyle(
         name="ContractSubtitle",
@@ -111,34 +111,34 @@ def _styles():
         name="ContractH2",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=13.1,
-        leading=15,
-        textColor=GOLD,
-        spaceBefore=11,
-        spaceAfter=5,
+        fontSize=15,
+        leading=19,
+        textColor=NAVY,
+        spaceBefore=14,
+        spaceAfter=8,
         keepWithNext=True,
     ))
     styles.add(ParagraphStyle(
         name="ContractH3",
         parent=styles["Heading3"],
         fontName="Helvetica-Bold",
-        fontSize=9.7,
-        leading=11,
+        fontSize=12,
+        leading=16,
         textColor=NAVY,
         spaceBefore=6,
-        spaceAfter=3,
+        spaceAfter=6,
         keepWithNext=True,
     ))
     styles.add(ParagraphStyle(
         name="ContractBullet",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=8.45,
-        leading=11.6,
+        fontSize=10.75,
+        leading=15.5,
         textColor=INK,
         leftIndent=10,
         firstLineIndent=-8,
-        spaceAfter=3,
+        spaceAfter=6,
     ))
     styles.add(ParagraphStyle(
         name="ContractKicker",
@@ -153,8 +153,8 @@ def _styles():
         name="Cell",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.8,
-        leading=9.7,
+        fontSize=10,
+        leading=14,
         textColor=INK,
         spaceAfter=0,
     ))
@@ -162,8 +162,8 @@ def _styles():
         name="CellLabel",
         parent=styles["BodyText"],
         fontName="Helvetica-Bold",
-        fontSize=7.8,
-        leading=9.7,
+        fontSize=10,
+        leading=14,
         textColor=NAVY,
         spaceAfter=0,
     ))
@@ -171,8 +171,8 @@ def _styles():
         name="CellHeader",
         parent=styles["BodyText"],
         fontName="Helvetica-Bold",
-        fontSize=7.1,
-        leading=8.5,
+        fontSize=9,
+        leading=12,
         textColor=WHITE,
         alignment=TA_CENTER,
         spaceAfter=0,
@@ -181,8 +181,8 @@ def _styles():
         name="Signature",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.6,
-        leading=10,
+        fontSize=10,
+        leading=14,
         textColor=INK,
         spaceAfter=0,
     ))
@@ -220,8 +220,8 @@ def _key_value_table(rows, styles, label_width=43 * mm):
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 7),
         ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     return table
 
@@ -268,7 +268,7 @@ def _signature_table(occupant_name, occupant_note, centre_visa, styles):
         Paragraph("Signature :", styles["Signature"]),
     ]
     table = Table([[left, right]], colWidths=[84 * mm, 84 * mm],
-                  minRowHeights=[41 * mm], hAlign="LEFT")
+                  minRowHeights=[57 * mm], hAlign="LEFT")
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.55, LINE),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -278,6 +278,52 @@ def _signature_table(occupant_name, occupant_note, centre_visa, styles):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
     return table
+
+
+def _chapter(title, styles):
+    return [
+        PageBreak(),
+        Paragraph("CONVENTION D’HÉBERGEMENT TEMPORAIRE", styles["ContractKicker"]),
+        Paragraph(_safe(title), styles["ContractTitle"]),
+        Spacer(1, 4 * mm),
+    ]
+
+
+class _ContractDocument(SimpleDocTemplate):
+    def afterFlowable(self, flowable):
+        if isinstance(flowable, Paragraph) and flowable.style.name == "ContractTitle":
+            anchor = f"rubrique-{self.page}"
+            self.canv.bookmarkPage(anchor)
+            self.canv.addOutlineEntry(flowable.getPlainText(), anchor)
+
+
+def _acknowledgement_table(items, styles):
+    ack_data = [[
+        Paragraph("Visa", styles["CellHeader"]),
+        Paragraph("Engagement", styles["CellHeader"]),
+        Paragraph("Déclaration de l'Occupant", styles["CellHeader"]),
+    ]]
+    for label, declaration in items:
+        ack_data.append([
+            Paragraph("[&nbsp;&nbsp;]", styles["Cell"]),
+            Paragraph(f"<b>{_safe(label)}</b>", styles["Cell"]),
+            Paragraph(_safe(declaration), styles["Cell"]),
+        ])
+    ack_table = Table(ack_data, colWidths=[15 * mm, 39 * mm, 114 * mm], repeatRows=1, hAlign="LEFT")
+    ack_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("GRID", (0, 0), (-1, -1), 0.4, LINE),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]
+    for row_index in range(2, len(ack_data), 2):
+        ack_style.append(("BACKGROUND", (0, row_index), (-1, row_index), LIGHT))
+    ack_table.setStyle(TableStyle(ack_style))
+    return ack_table
 
 
 def _annex_header(number, title, subtitle, styles):
@@ -301,7 +347,7 @@ def _draw_header_footer(canvas, doc, contract_reference):
         page_height - 11 * mm,
         "INTEGRALE ACADEMY  |  HEBERGEMENT STAGIAIRES",
     )
-    canvas.setFont("Helvetica", 6.6)
+    canvas.setFont("Helvetica", 7.5)
     canvas.drawString(17 * mm, 9 * mm, "Paraphe de l'occupant : __________")
     canvas.drawCentredString(
         page_width / 2,
@@ -321,7 +367,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     styles = _styles()
     output = io.BytesIO()
     reference = str(context.get("contract_reference") or "HEB-CDA")
-    doc = SimpleDocTemplate(
+    doc = _ContractDocument(
         output,
         pagesize=A4,
         rightMargin=21 * mm,
@@ -398,10 +444,10 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ("CALME", "Aucun bruit<br/>après 22h00"),
     ]
     metrics = Table([[Paragraph(
-        f'<font color="#B78616" size="6.5"><b>{label}</b></font><br/>'
-        f'<font color="#182132" size="7.6"><b>{value}</b></font>',
+        f'<font color="#B78616" size="8"><b>{label}</b></font><br/>'
+        f'<font color="#182132" size="9.5"><b>{value}</b></font>',
         styles["Cell"],
-    ) for label, value in metric_data]], colWidths=[42 * mm] * 4, rowHeights=[23 * mm])
+    ) for label, value in metric_data]], colWidths=[42 * mm] * 4, minRowHeights=[24 * mm], hAlign="LEFT")
     metrics.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), GOLD_LIGHT),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E3D3A7")),
@@ -410,8 +456,9 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     ]))
     story.extend([
         metrics,
-        _heading("Identification de la convention", styles),
+        _heading("Votre séjour", styles),
         _key_value_table([
+            ("Occupant", _safe(occupant_name)),
             ("Référence", f"{_safe(reference)} - Version du {_safe(context.get('contract_version'))}<br/><font color=\"#667085\" size=\"7\">Document généré le {_safe(context.get('generated_on'))}</font>"),
             ("Formation", _safe(formation)),
             ("Session", _safe(session)),
@@ -419,6 +466,17 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             ("Période d’hébergement", f"Arrivée : {_safe(arrival)} à {_safe(arrival_time)}<br/>Départ prévu : {_safe(departure)} à {_safe(departure_time)}"),
             ("Clé d’entrée n°", key_number),
         ], styles),
+        _callout(
+            "Condition préalable à l'accès",
+            "La présente convention doit être lue et signée au premier jour "
+            "d'occupation, avant toute remise de clé. La participation de 300 € et "
+            "le chèque de caution de 200 € sont remis impérativement au même moment.",
+            styles,
+        ),
+        _subheading("Où signer les deux exemplaires ?", styles),
+        _body("Trois cadres sont prévus pour votre signature : l’article 19, la fiche de remise "
+              "de la clé et des sommes (annexe 1), puis l’attestation des règles (annexe 2).", styles),
+        *_chapter("Les parties et leur engagement", styles),
         _heading("Entre les soussignés", styles),
         _body(
             "<b>D'une part</b>, la SASU Intégrale Sécurité Formations, exerçant sous "
@@ -439,14 +497,6 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             ("Téléphone", _safe(occupant.get("telephone"), "________________________________")),
             ("E-mail", _safe(occupant.get("mail"), "____________________________________________")),
         ], styles),
-        _callout(
-            "Condition préalable à l'accès",
-            "La présente convention doit être lue et signée au premier jour "
-            "d'occupation, avant toute remise de clé. La participation de 300 € et "
-            "le chèque de caution de 200 € sont remis impérativement au même moment.",
-            styles,
-        ),
-        PageBreak(),
     ])
 
     story.extend([
@@ -481,6 +531,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "s'engage à les respecter pendant toute son occupation.",
             styles,
         ),
+        *_chapter("Arrivée et accès au centre", styles),
         _heading("3. Durée, arrivée et remise des clés", styles),
         _subheading("3.1 - Période d'occupation", styles),
         _body(
@@ -501,6 +552,9 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ),
         _callout("Aucune remise de clés après 17h00", ARRIVAL_LATE_COPY, styles, danger=True),
         _subheading("3.3 - Conditions de remise des clés", styles),
+        _body("À l’accueil, indiquez vos nom, prénom et session. L’agent vérifie la réservation, "
+              "note le numéro de la clé remise et complète avec vous la première annexe. "
+              "Gardez votre exemplaire avec les coordonnées du centre.", styles),
         _body(
             "Les clés ne sont remises qu'après accomplissement de l'ensemble des "
             "formalités prévues au point 3.2. Elles sont strictement personnelles. "
@@ -516,9 +570,9 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         "L'accès est réservé aux seuls stagiaires expressément autorisés et enregistrés comme occupants.",
         "L'Occupant ne peut céder, prêter, sous-louer ou mettre sa place à disposition d'un tiers, même gratuitement.",
     ], styles)
-    story.append(PageBreak())
 
     story.extend([
+        *_chapter("Règlement du séjour", styles),
         _heading("5. Participation financière de 300 €", styles),
         _callout("Versement impératif dès l'arrivée", PARTICIPATION_COPY, styles),
         _body(
@@ -542,6 +596,13 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "légales impératives et des circonstances examinées par le Centre.",
             styles,
         ),
+        _subheading("Comment remplir la fiche à l’accueil", styles),
+        _key_value_table([
+            ("En espèces", "Inscrire le nom du stagiaire sur l’enveloppe. Cocher le mode de règlement et dater la réception dans l’annexe 1."),
+            ("Par chèque", "Reporter le numéro du chèque, le nom de la banque et la date. Utiliser la rubrique distincte pour le chèque de caution."),
+            ("Reçu", "Indiquer sur les deux exemplaires si un reçu a été remis, et reporter sa référence lorsqu’elle existe."),
+        ], styles),
+        *_chapter("Le chèque de caution", styles),
         _heading("6. Dépôt de garantie - chèque de caution de 200 €", styles),
         _callout("Remise impérative dès l'arrivée", DEPOSIT_COPY, styles),
         _body("Le chèque de caution garantit notamment :", styles),
@@ -574,7 +635,11 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "jours calendaires après la remise des clés.",
             styles,
         ),
-        PageBreak(),
+        _subheading("Lors de la restitution", styles),
+        _body("La dernière rubrique de l’annexe 1 permet de noter la date de retour de la clé "
+              "et de suivre séparément le chèque de caution. Si les deux remises n’ont pas lieu "
+              "le même jour, indiquez la date réelle de chacune.", styles),
+        *_chapter("Équipements et bagages", styles),
         _heading("7. Équipements mis à disposition", styles),
         _body("L'hébergement collectif comprend notamment les équipements suivants :", styles),
     ])
@@ -593,6 +658,15 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "lui-même sur une installation technique.",
             styles,
         ),
+    ])
+    story.append(_subheading("Après avoir utilisé un espace partagé", styles))
+    shared_spaces = [
+        ("Cuisine", "Lavez et rangez votre vaisselle, essuyez le plan de travail et laissez l’évier libre pour la personne suivante."),
+        ("Laverie", "Récupérez votre linge à la fin du cycle. Laissez le tambour vide et l’espace autour de la machine propre."),
+        ("Sanitaires", "Reprenez vos affaires de toilette et laissez la douche et le lavabo propres après usage."),
+    ]
+    story.append(_key_value_table(shared_spaces, styles))
+    story.extend([
         _heading("8. Matériel et consommables à apporter", styles),
         _body("L'Occupant doit arriver avec le matériel personnel suivant :", styles),
     ])
@@ -610,6 +684,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "la responsabilité de l'Occupant.",
             styles,
         ),
+        *_chapter("La vie en dortoir", styles),
         _heading("9. Propreté, rangement et vie collective", styles),
         _subheading("9.1 - Entretien courant", styles),
     ])
@@ -627,7 +702,6 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         "Respecter l'intimité, le sommeil, les effets personnels et l'espace utilisé par les autres occupants.",
         "Tout harcèlement, menace, violence, intimidation, propos discriminatoire ou comportement dangereux est interdit.",
     ], styles)
-    story.append(PageBreak())
 
     story.extend([
         _heading("10. Calme et respect du voisinage", styles),
@@ -646,6 +720,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "retours tardifs autorisés.",
             styles,
         ),
+        *_chapter("Les interdictions sur le site", styles),
         _heading("11. Interdictions essentielles", styles),
         _subheading("11.1 - Tabac et vapotage", styles),
         _body(
@@ -681,6 +756,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         "Les animaux ne sont pas admis, sauf obligation légale ou accord écrit préalable du Centre pour une situation particulière.",
     ], styles)
     story.extend([
+        *_chapter("Sécurité et moyens d’accès", styles),
         _heading("12. Sécurité des personnes et des locaux", styles),
     ])
     _bullets(story, [
@@ -697,7 +773,10 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "fonctionnement collectif.",
             styles,
         ),
-        PageBreak(),
+        _subheading("Si une clé est perdue ou si un accès est bloqué", styles),
+        _body("Prévenez l’accueil au 04 22 47 07 68 ou adressez-vous à un membre du personnel "
+              "présent. Donnez votre nom, votre session et, si vous le connaissez, le numéro "
+              "de la clé inscrit sur votre convention.", styles),
         _heading("13. Clés, contrôle des accès et droit d'intervention", styles),
         _body(
             "L'Occupant veille à la fermeture des accès et ne communique aucun code ni "
@@ -715,6 +794,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "meilleurs délais.",
             styles,
         ),
+        *_chapter("Responsabilités pendant le séjour", styles),
         _heading("14. Responsabilité, assurance et effets personnels", styles),
         _subheading("14.1 - Responsabilité de l'Occupant", styles),
         _body(
@@ -767,6 +847,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             styles,
             danger=True,
         ),
+        *_chapter("Le départ et les démarches", styles),
         _heading("16. Départ et restitution des clés", styles),
     ])
     _bullets(story, [
@@ -782,7 +863,6 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "remboursement des frais justifiés de conservation ou d'expédition.",
             styles,
         ),
-        PageBreak(),
         _heading("17. Données personnelles", styles),
         _body(
             "Les données recueillies dans la convention sont utilisées par le Centre "
@@ -814,6 +894,7 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             "stipulations demeurent applicables dans toute la mesure permise par la loi.",
             styles,
         ),
+        *_chapter("Signature de la convention", styles),
         _heading("19. Acceptation et signature", styles),
         _body(
             "L'Occupant reconnaît avoir lu la convention et ses annexes, avoir pu "
@@ -825,6 +906,12 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ),
         _body("La convention et ses annexes sont établies en deux exemplaires. "
               "Un exemplaire signé est remis à l’Occupant, l’autre est conservé par le Centre.", styles),
+        _key_value_table([
+            ("Occupant", _safe(occupant_name)),
+            ("Session", _safe(session)),
+            ("Documents remis", "Convention d’hébergement, fiche de remise de la clé et des sommes, attestation de prise de connaissance des règles."),
+        ], styles),
+        Spacer(1, 9 * mm),
         _body(f"<b>Fait à Puget-sur-Argens, le</b> {_safe(contract_date)} &nbsp;&nbsp; <b>à</b> {_safe(contract_time)}", styles),
         _signature_table(occupant_name, "Faire précéder la signature manuscrite de « Lu et approuvé ».", centre_visa, styles),
         PageBreak(),
@@ -887,7 +974,9 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
             ("Date du chèque", _safe(context.get("deposit_cheque_date"), "____ / ____ / ______")),
             ("Chèque reçu", f"{checkbox(context.get('deposit_received') == 'Oui')} 200 € - deux cents euros"),
         ], styles),
-        _heading("C. Remise des documents et moyens d'accès", styles),
+        PageBreak(),
+        *_annex_header("1", "Clé et documents remis", f"{occupant_name} · {reference}", styles),
+        _heading("C. À la remise de la clé", styles),
     ])
     handover = context.get("handover_checklist") or {}
     def mark(key):
@@ -908,8 +997,20 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
     ]))
     story.extend([
         checklist,
-        Spacer(1, 7),
+        Spacer(1, 6 * mm),
         _signature_table(occupant_name, "Signature manuscrite à la remise des sommes, des documents et de la clé.", centre_visa, styles),
+        Spacer(1, 6 * mm),
+        _heading("D. Au départ : retour de la clé et de la caution", styles),
+        _body("À remplir au moment de chaque remise. Les signatures ci-dessus concernent l’arrivée.", styles),
+        _key_value_table([
+            ("Clé restituée", "N° ___________________    Date : ____ / ____ / ______<br/>Reçue par : ___________________________________"),
+            ("Chèque de caution", "[&nbsp;&nbsp;] Rendu le ____ / ____ / ______<br/>"
+                                 "[&nbsp;&nbsp;] À restituer ultérieurement<br/>"
+                                 "[&nbsp;&nbsp;] Retenue à préciser selon l’article 6"),
+            ("Suivi de la caution", "Remis à : ___________________________________<br/>"
+                                   "Date et suite donnée : __________________________<br/>"
+                                   "____________________________________________"),
+        ], styles),
         PageBreak(),
     ])
 
@@ -942,33 +1043,11 @@ def build_hebergement_contract_pdf(context: dict, logo_path: str | None = None) 
         ("Départ", "Je nettoie et libère les lieux à la date convenue et restitue personnellement toutes les clés et badges."),
         ("Sanctions", "Je comprends qu'un manquement grave ou répété peut entraîner la fin immédiate de l'hébergement et l'obligation de trouver une autre solution à mes frais."),
     ]
-    ack_data = [[
-        Paragraph("Visa", styles["CellHeader"]),
-        Paragraph("Engagement", styles["CellHeader"]),
-        Paragraph("Déclaration de l'Occupant", styles["CellHeader"]),
-    ]]
-    for label, declaration in acknowledgements:
-        ack_data.append([
-            Paragraph(checkbox(False), styles["Cell"]),
-            Paragraph(f"<b>{_safe(label)}</b>", styles["Cell"]),
-            Paragraph(_safe(declaration), styles["Cell"]),
-        ])
-    ack_table = Table(ack_data, colWidths=[11 * mm, 38 * mm, 119 * mm], repeatRows=1, hAlign="LEFT")
-    ack_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("GRID", (0, 0), (-1, -1), 0.4, LINE),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 1), (0, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]
-    for row_index in range(2, len(ack_data), 2):
-        ack_style.append(("BACKGROUND", (0, row_index), (-1, row_index), LIGHT))
-    ack_table.setStyle(TableStyle(ack_style))
+    story.append(_acknowledgement_table(acknowledgements[:7], styles))
+    story.append(PageBreak())
+    story.extend(_annex_header("2", "Sécurité et départ", f"{occupant_name} · {reference}", styles))
     story.extend([
-        ack_table,
+        _acknowledgement_table(acknowledgements[7:], styles),
         _callout("Déclaration finale", FINAL_ACKNOWLEDGEMENT_COPY, styles),
         _body(
             f"<b>Fait à Puget-sur-Argens, le</b> {_safe(contract_date)} "

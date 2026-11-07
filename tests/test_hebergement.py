@@ -649,6 +649,16 @@ def test_paper_pdf_contains_handwritten_signatures_and_no_inventory(monkeypatch)
     output = subprocess.run(["pdftotext", "-enc", "UTF-8", "-", "-"],
                             input=pdf, capture_output=True, check=True)
     text = " ".join(output.stdout.decode().casefold().split())
+    pages = [" ".join(page.casefold().split())
+             for page in output.stdout.decode().split("\f") if page.strip()]
+    def page_of(label):
+        return next(i for i, page in enumerate(pages) if label in page)
+
+    assert page_of("5. participation financière") < page_of("6. dépôt de garantie")
+    assert page_of("a. participation financière") < page_of("d. au départ")
+    assert page_of("chaque engagement ci-dessous") < page_of("déclaration finale")
+    assert "suivi de la caution" in pages[page_of("d. au départ")]
+    assert len(pages) > 9
     for removed in ("yousign", "signature électronique", "état des lieux", "inventaire",
                     "ancienne observation", "ancien représentant", "photographies annexées", "annexe 3", "chambre sapin", "lit violet",
                     "à à compléter", "date du non renseignée"):
