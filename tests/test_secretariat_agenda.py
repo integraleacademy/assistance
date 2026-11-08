@@ -61,6 +61,36 @@ def test_home_action_order_and_directory(desk):
     assert "54 chemin du Carreou" in body and "83480 PUGET SUR ARGENS" in body
 
 
+def test_laptop_step_navigation_stays_usable_beside_the_agenda(desk):
+    playwright = pytest.importorskip("playwright.sync_api")
+    client, _ = desk
+    with playwright.sync_playwright() as engine:
+        try:
+            browser = engine.chromium.launch()
+        except playwright.Error as error:
+            pytest.skip(f"Chromium indisponible : {error}")
+        try:
+            page = browser.new_page(viewport={"width": 1024, "height": 800})
+            def serve(route):
+                from urllib.parse import urlsplit
+                url = urlsplit(route.request.url)
+                if url.netloc != "desk.test":
+                    return route.abort()
+                response = client.get(url.path)
+                route.fulfill(status=response.status_code, body=response.data, content_type=response.content_type)
+
+            page.route("**/*", serve)
+            page.goto("https://desk.test/secretariat")
+            page.click('[data-request="suivi"]')
+            link = page.locator('[data-go-step="1"]')
+            assert link.is_visible() and link.is_enabled()
+            assert page.locator(".desk-agenda").bounding_box()["x"] > page.locator(".card").bounding_box()["x"]
+            link.click()
+            assert page.locator('[data-step="1"]').is_visible()
+        finally:
+            browser.close()
+
+
 def test_day_includes_all_phone_slots_in_paris_keeps_cancellations_and_recorded_outcomes(desk):
     client, data = desk
     def meeting(start, **fields):
