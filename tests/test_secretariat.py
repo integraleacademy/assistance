@@ -162,7 +162,7 @@ def test_secretariat_need_step_controls_each_request_branch(client, monkeypatch)
 
     assert response.status_code == 200
     body = response.data
-    assert b"requestType=button.dataset.request" in body
+    assert b"startRequest(button.dataset.request)" in body
     assert b"if(requestType==='formation')" in body
     assert b"showStep(3);formationSearch.focus()" in body
     assert b"showStep(7);precision.focus()" in body
@@ -228,7 +228,7 @@ def test_secretariat_form_collects_funding_and_regulatory_information(client, mo
         b"titre_sejour",
     ):
         assert b'name="' + field + b'"' in response.data
-    assert "Tous les champs affichés sont obligatoires".encode() in response.data
+    assert "les points qui restent à confirmer".encode() in response.data
     assert b'name="cpf_consulte" value="OUI" required' in response.data
     assert b'name="france_travail" value="OUI" required' in response.data
     assert b'name="financement_perso" value="OUI" required' in response.data
@@ -811,7 +811,7 @@ def test_secretariat_precision_step_has_no_ai_summary_and_is_required(client, mo
     assert b'required></textarea>' in response.data
     assert "Résumé proposé par l’IA".encode() not in response.data
     assert b"/api/secretariat/ai/request-summary" not in response.data
-    assert b"payload.notes=details" in response.data
+    assert b"payload.notes = details" in response.data
     assert b"/api/secretariat/calendly/appointment" in response.data
     assert b"addAppointment.onclick" in response.data
 

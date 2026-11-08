@@ -507,6 +507,16 @@ async function saveCallbackRequestStatus(requestId,nextStatus){
  if(result.contact?.id){const stored=contactInStore(result.contact.id);if(stored){Object.assign(stored,result.contact);delete stored._summary}}
  return result;
 }
+function callbackRequestBrief(row) {
+ const lines = [];
+ if (row.recipient) lines.push(`<b>À rappeler par ${esc(row.recipient)}</b>`);
+ if (row.due_label) lines.push(`<b>Avant le ${esc(row.due_label)}</b>`);
+ if (row.motif === 'suivi') lines.push('<small>Suivi de dossier / Déjà inscrit</small>');
+ if (row.formation) lines.push(`<small>${esc([row.formation, row.session_label].filter(Boolean).join(' · '))}</small>`);
+ if (row.funding_note) lines.push(`<small>${esc(row.funding_note)}</small>`);
+ lines.push(`<span class="callback-request-note">${esc(row.notes || 'Aucune précision renseignée.')}</span>`);
+ return lines.join('<br>');
+}
 function callbackRequestsTable(rows){
  if(!rows.length){
   const emptyTitle=callbackRequestFilter==='pending'?'Aucune demande à traiter':callbackRequestFilter==='processed'?'Aucune demande traitée':'Aucune demande de rappel';
@@ -514,7 +524,7 @@ function callbackRequestsTable(rows){
  }
  return `<section class="card table-card callback-request-card"><div class="table-wrap" tabindex="0" aria-label="Liste des demandes de rappel"><table class="callback-request-table"><colgroup><col class="callback-request-col-caller"><col class="callback-request-col-contact"><col class="callback-request-col-note"><col class="callback-request-col-appointment"><col class="callback-request-col-crm"><col class="callback-request-col-received"><col class="callback-request-col-status"><col class="callback-request-col-action"></colgroup><thead><tr><th>Appelant</th><th>Coordonnées</th><th>Demande</th><th>Rendez-vous</th><th>Fiche CRM</th><th>Reçue le</th><th>Statut</th><th>Action</th></tr></thead><tbody>${rows.map(row=>{
   const processed=row.status==='processed',contactMarkup=row.crm_contact_id?`<div class="callback-request-link"><span class="callback-request-linked">Fiche existante</span><b>${esc(row.crm_contact_name||row.display_name)}</b>${row.crm_contact_status?`<small>${esc(row.crm_contact_status)}</small>`:''}<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Ouvrir la fiche</a></div>`:'<div class="callback-request-link"><span class="callback-request-unlinked">Aucune piste existante</span><small>Créez une fiche en conservant cette demande.</small><button class="btn blue callback-request-convert" type="button">Convertir en fiche</button></div>',phone=row.telephone?`<a href="tel:${encodeURIComponent(row.telephone)}">${esc(formatContactPhone(row.telephone))}</a>`:'<span>—</span>',email=row.email?`<a href="mailto:${encodeURIComponent(row.email)}">${esc(row.email)}</a>`:'',statusMarkup=processed?`<div class="callback-request-status processed"><b>✓ Traité</b>${row.processed_at?`<small>${fmt(row.processed_at)}${row.processed_by?` · ${esc(row.processed_by)}`:''}</small>`:''}</div>`:'<div class="callback-request-status pending"><b>● Non traitée</b><small>Action requise</small></div>';
-  return`<tr class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td>${row.recipient?`<b>À rappeler par ${esc(row.recipient)}</b><br>`:''}${row.motif==='suivi'?'<small>Suivi de dossier / Déjà inscrit</small><br>':''}<span class="callback-request-note">${esc(row.notes||'Aucune précision renseignée.')}</span></td><td>${callbackRequestAppointment(row)}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td><button class="btn ${processed?'':'blue'} callback-request-action" type="button" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button></td></tr>${callbackRequestCommentRow(row)}`;
+  return`<tr class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td>${callbackRequestBrief(row)}</td><td>${callbackRequestAppointment(row)}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td><button class="btn ${processed?'':'blue'} callback-request-action" type="button" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button></td></tr>${callbackRequestCommentRow(row)}`;
  }).join('')}</tbody></table></div></section>`;
 }
 function drawCallbackRequests(){
@@ -527,7 +537,7 @@ function drawCallbackRequests(){
  if(pendingLabel)pendingLabel.textContent=`demande${pending>1?'s':''} en attente`;
  if(processedLabel)processedLabel.textContent=`demande${processed>1?'s':''} clôturée${processed>1?'s':''}`;
  document.querySelectorAll('[data-callback-filter]').forEach(button=>{const value=button.dataset.callbackFilter,total=value==='pending'?pending:value==='processed'?processed:callbackRequests.length,buttonCount=button.querySelector('span');if(buttonCount)buttonCount.textContent=total});
- const query=normalizeGlobalSearch(callbackRequestSearch),filtered=callbackRequests.filter(row=>callbackRequestFilter==='all'||(callbackRequestFilter==='processed'?row.status==='processed':row.status!=='processed')).filter(row=>normalizeGlobalSearch([row.display_name,row.telephone,row.email,row.notes,row.recipient,row.motif,row.rdv,row.comment,row.crm_contact_name,row.crm_contact_status,row.processed_by].join(' ')).includes(query));
+ const query=normalizeGlobalSearch(callbackRequestSearch),filtered=callbackRequests.filter(row=>callbackRequestFilter==='all'||(callbackRequestFilter==='processed'?row.status==='processed':row.status!=='processed')).filter(row=>normalizeGlobalSearch([row.display_name,row.telephone,row.email,row.notes,row.recipient,row.motif,row.formation,row.due_label,row.funding_note,row.rdv,row.comment,row.crm_contact_name,row.crm_contact_status,row.processed_by].join(' ')).includes(query));
  results.innerHTML=callbackRequestsTable(filtered);
  count.textContent=`${filtered.length} demande${filtered.length>1?'s':''}`;
  results.querySelectorAll('.callback-request-action').forEach(button=>button.onclick=async()=>{

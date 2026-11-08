@@ -318,15 +318,25 @@ def register_secretariat_followup_patch(app_module):
             requests_list.append(quote)
         token = _text(quote.get("token_plan")) or uuid.uuid4().hex
         centre_code, centre_label, city, session = split_session(entry.get("formation_date_souhaitee"))
+        pending = entry.get("financement_a_confirmer") or []
+
+        def quote_answer(field, legacy_default):
+            if field == "cpf_montant" and app_module.secretariat_calls.FINANCING_FIELDS["cpf_consulte"] in pending:
+                return ""
+            if app_module.secretariat_calls.FINANCING_FIELDS[field] in pending:
+                return ""
+            return _text(entry.get(field) or legacy_default)
+
         details = {
             "nom": _text(contact.get("nom")), "prenom": first_name(contact.get("prenom")),
             "telephone": _text(entry.get("telephone")), "mail": _text(entry.get("email")),
             "formation": _text(entry.get("formation")), "dates": session, "centre": centre_code,
             "date_examen": app_module._parse_exam_date_from_dates_txt(session) if session else "",
             "ssiap_secourisme_valide": _text(entry.get("ssiap_secourisme_valide")),
-            "cpf_consulte": _text(entry.get("cpf_consulte")), "cpf_montant": _text(entry.get("cpf_montant") or "0"),
-            "france_travail": _text(entry.get("france_travail") or "NON"), "ft_refus_ok": _text(entry.get("ft_refus_ok")),
-            "financement_perso": _text(entry.get("financement_perso")), "identite_numerique": _text(entry.get("identite_numerique") or "NON"),
+            "cpf_consulte": _text(entry.get("cpf_consulte")), "cpf_montant": quote_answer("cpf_montant", "0"),
+            "france_travail": quote_answer("france_travail", "NON"), "ft_refus_ok": _text(entry.get("ft_refus_ok")),
+            "financement_perso": _text(entry.get("financement_perso")), "identite_numerique": quote_answer("identite_numerique", "NON"),
+            "financement_a_confirmer": pending,
             "cnaps_ok": _text(entry.get("cnaps_ok")), "source_secretariat_id": entry.get("id"),
         }
         if created:
@@ -519,11 +529,15 @@ def register_secretariat_followup_patch(app_module):
             " Lorsqu’un financement personnel est possible, précise que le reste peut être financé par ses propres moyens et que le paiement peut être étalé en plusieurs fois jusqu’à la fin de la formation."
             " Pour A3P, si l’identité numérique et l’autorisation préalable CNAPS ne sont pas acquises, indique clairement ces deux éléments et l’accompagnement de l’équipe dans cette démarche."
         )
-        try:
-            content = validate_ai(app_module._crm_ai(system, json.dumps(facts, ensure_ascii=False), max_tokens=900), backup, displayed_first_name, entry)
-        except Exception as exc:
-            print("Compte rendu IA indisponible, fallback personnalisé :", exc)
+        if entry.get("financement_a_confirmer"):
             content = backup
+            content["summary_paragraphs"].append(app_module.secretariat_calls.funding_note(entry) + ".")
+        else:
+            try:
+                content = validate_ai(app_module._crm_ai(system, json.dumps(facts, ensure_ascii=False), max_tokens=900), backup, displayed_first_name, entry)
+            except Exception as exc:
+                print("Compte rendu IA indisponible, fallback personnalisé :", exc)
+                content = backup
         content["next_steps"] = project_steps(code)
         rows = project_rows(entry, config)
         appointment = app_module._secretariat_rdv(entry)
@@ -543,7 +557,9 @@ def register_secretariat_followup_patch(app_module):
     app_module._secretariat_hydrate_appointment_from_crm = hydrate_appointment_from_crm
     app_module._build_secretariat_followup_email = build_email
 
-    def send_with_quote(data, entry, contact):
+    def send_with_quote(data, entry, contact, *, only=None):
+        if only:
+            return original_send(data, entry, contact, only=only)
         hydrate_appointment_from_crm(data, entry, contact)
         quote = ensure_quote(data, entry, contact)
         results = original_send(data, entry, contact)
