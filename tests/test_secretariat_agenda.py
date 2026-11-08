@@ -149,6 +149,8 @@ def test_confirmed_dossier_and_live_cnaps_are_separate_from_declared_card(desk, 
     response = client.post("/api/secretariat/suivi-cnaps", json={**lookup, "refresh": True})
     assert calls == [("test", True)] and response.json["cnaps"]["status"] == "En instruction"
     assert "01/01/2027" in response.json["cnaps"]["titles"][0] and "private" not in response.get_data(as_text=True)
+    assert response.json["cnaps"]["documents"][0]["name"] == "Autorisation d’entrer en formation de surveillance et de gardiennage"
+    assert "étudie votre demande" in response.json["cnaps"]["request_wording"]
     assert client.post("/api/secretariat/suivi-cnaps", json={**lookup, "confirmed_contact_id": "other"}).status_code == 403
     monkeypatch.setattr(app, "_crm_read_reglementaire", lambda *a, **kw: (app.jsonify(error="remote credentials"), 502))
     assert client.post("/api/secretariat/suivi-cnaps", json=lookup).status_code == 503
@@ -200,8 +202,74 @@ def test_external_operator_requires_desk_permission_and_verified_identity(desk):
     limited = operator.post(url, json=known, headers=scoped).json
     assert limited["summary"]["statut"] == "Disqualifié" and "contact" not in limited
     assert not limited["summary"]["prochaine_action"]
+    assert limited["summary"]["stage_label"] == "Demande clôturée"
+    assert limited["summary"]["course_label"] == "Agent de prévention et de sécurité (APS)"
+    assert "surveiller des sites" in limited["summary"]["course_purpose"].lower()
+    assert "envoyée au CNAPS" in limited["summary"]["cnaps"]["request_wording"]
     data["crm_contacts"].append({"id": "second", "telephone": known["telephone"]})
     assert operator.post(url, json=known, headers=scoped).status_code == 404
+
+
+def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossier(desk, monkeypatch):
+    from urllib.parse import urlsplit
+
+    playwright = pytest.importorskip("playwright.sync_api")
+    admin, data = desk
+    data["crm_contacts"][0].update(statut="Converti", carte_pro="NON")
+    sign_in(admin)
+    admin.get("/crm/acces-secretariat")
+    with admin.session_transaction() as session:
+        csrf = {"X-CSRF-Token": session["external_access_csrf"]}
+    login = {"email": "accueil@example.test", "password": "operateur-de-test-123"}
+    assert admin.post("/api/crm/external-accounts", json={**login, "name": "Accueil", "desk_access": True}, headers=csrf).status_code == 201
+    operator = app.app.test_client()
+    assert operator.post("/login?next=/secretariat", data=login).location == "/secretariat"
+    def cnaps(_, *, refresh_requested):
+        item = {"type": "CP A3P" if refresh_requested else "AP SH", "state": "ACTIF", "expires_at": "2090-11-20"}
+        return app.jsonify(cnaps={"cnaps_status": "EN INSTRUCTION", "titles": [item]})
+    monkeypatch.setattr(app, "_crm_read_reglementaire", cnaps)
+
+    with playwright.sync_playwright() as engine:
+        try:
+            browser = engine.chromium.launch()
+        except playwright.Error as error:
+            pytest.skip(f"Chromium indisponible : {error}")
+        try:
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            def serve(route):
+                req, url = route.request, urlsplit(route.request.url)
+                if url.netloc != "desk.test":
+                    return route.abort()
+                response = operator.open(url.path, query_string=url.query, method=req.method,
+                    json=req.post_data_json if req.method == "POST" else None,
+                    headers={"X-CSRF-Token": req.headers.get("x-csrf-token", "")})
+                route.fulfill(status=response.status_code, body=response.data, content_type=response.content_type)
+            page.route("**/*", serve)
+            page.goto("https://desk.test/secretariat")
+            page.click('[data-request="suivi"]')
+            page.fill("#telephone", "0600000000")
+            page.wait_for_selector("#useCallerMatch")
+            assert not page.locator("#verifiedDossier").is_visible()
+            page.fill("#prenom", "Chloé")
+            page.fill("#nom", "Du-Pré")
+            page.click("#useCallerMatch")
+            page.wait_for_selector(".dossier-documents li")
+            assert page.locator("#dossierCourse").inner_text() == "Agent de prévention et de sécurité (APS)"
+            assert "suivi des inscriptions" in page.locator("#dossierWording").inner_text()
+            assert "Autorisation d’entrer en formation" in page.locator(".dossier-documents").inner_text()
+            assert "20/11/2090" in page.locator(".dossier-documents").inner_text()
+            assert not page.locator("#cnapsOriginal").is_visible()
+            page.click("#dossierReferences summary")
+            assert "AP SH" in page.locator("#cnapsOriginal").inner_text()
+            page.click("#refreshDeskCnaps")
+            page.wait_for_function("document.querySelector('.dossier-documents').textContent.includes('Carte professionnelle')")
+            assert "protection rapprochée" in page.locator(".dossier-documents").inner_text()
+            assert "AP SH" not in page.locator("#cnapsOriginal").inner_text()
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.click("#callerSubmit")
+            assert page.locator("#followupDossierSlot #dossierCourse").is_visible()
+        finally:
+            browser.close()
 
 
 def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
