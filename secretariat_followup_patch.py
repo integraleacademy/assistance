@@ -329,6 +329,17 @@ def register_secretariat_followup_patch(app_module):
             "financement_perso": _text(entry.get("financement_perso")), "identite_numerique": _text(entry.get("identite_numerique") or "NON"),
             "cnaps_ok": _text(entry.get("cnaps_ok")), "source_secretariat_id": entry.get("id"),
         }
+        if created:
+            details["secretariat_fee_euros"] = app_module._secretariat_call_price(entry)
+        else:
+            previous_details = quote.get("details") or {}
+            if isinstance(previous_details, str):
+                try:
+                    previous_details = json.loads(previous_details)
+                except ValueError:
+                    previous_details = {}
+            if isinstance(previous_details, dict) and "secretariat_fee_euros" in previous_details:
+                details["secretariat_fee_euros"] = previous_details["secretariat_fee_euros"]
         now = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
         quote.update({
             "token_plan": token, "source_secretariat_id": entry.get("id"), "nom": details["nom"], "prenom": details["prenom"],

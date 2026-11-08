@@ -196,7 +196,7 @@ def test_secretariat_offers_a_session_or_dates_to_be_defined(client, monkeypatch
     assert response.status_code == 200
     assert b'id="sessionTitle">Session souhait' in response.data
     assert b'name="formation_date_souhaitee"' in response.data
-    assert b"if(!selectedSession)" in response.data
+    assert b'id="sessionError" role="alert" hidden' in response.data
     assert "Dates à définir".encode() in response.data
 
 
