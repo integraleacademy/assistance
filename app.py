@@ -4045,10 +4045,13 @@ def api_secretariat_crm_contact():
             staff=role == "internal",
         )
         code = _crm_formation_code(contact)
+        desk_code = secretariat_calls.desk_course_code(code, SECRETARIAT_FORMATIONS)
+        summary["course_label"], summary["course_purpose"] = secretariat_calls.desk_course(
+            desk_code, SECRETARIAT_FORMATIONS, summary["formation"])
         if code in SECRETARIAT_FORMATIONS:
             summary["formation"] = SECRETARIAT_FORMATIONS[code]["short"]
         snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact["id"]))
-        summary["cnaps"] = secretariat_calls.cnaps_overview(contact, code, snapshot)
+        summary["cnaps"] = secretariat_calls.cnaps_overview(contact, desk_code, snapshot)
         result.update(contact_id=contact["id"], summary=summary)
     elif role == "external" and payload.get("verify_identity"):
         return _secretariat_private(jsonify(error="Le nom, le prénom et les coordonnées doivent correspondre à un dossier unique."), 404)
@@ -4082,7 +4085,7 @@ def secretariat_suivi_cnaps():
     contact = _secretariat_existing_crm_contact(data, payload)
     if not _secretariat_identity_confirmed(role, contact, payload) or payload.get("confirmed_contact_id") != contact["id"]:
         return _secretariat_private(jsonify(error="Confirmez l’identité de l’appelant."), 403)
-    code = _crm_formation_code(contact)
+    code = secretariat_calls.desk_course_code(_crm_formation_code(contact), SECRETARIAT_FORMATIONS)
     if code not in {"APS", "A3P", "PARCOURS_SECURITE_ALTERNANCE"}:
         return _secretariat_private(jsonify(error="Suivi non applicable à cette formation."), 400)
     from crm_cnaps_tracking import proxy_reglementaire, scoring_snapshot_from_remote
