@@ -12,6 +12,10 @@ from email import encoders
 from werkzeug.utils import secure_filename
 import hebergement_reminders
 import crm_external_access
+from secretariat_catalogue import (
+    BTS_ADMISSIONS, BTS_COURSES, BTS_INTAKES, PROFESSIONAL_COURSES,
+    PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
+)
 import crm_public_sessions
 from crm_read_cache import LastProjection, UpdateSnapshots
 from crm_email_signatures import brand_saved_template
@@ -383,6 +387,12 @@ def _parse_dates_range(dates_txt: str):
     return (d1, d2)
 
 def get_formation_tarif(formation_code: str, formation_details=None) -> int:
+    details = formation_details if isinstance(formation_details, dict) else {}
+    saved_fee = details.get("secretariat_fee_euros")
+    if details.get("source_secretariat_id") and type(saved_fee) is int:
+        allowed = SST_FEES.values() if formation_code == "SSIAP" else SESSION_FEES.get(formation_code, {}).values()
+        if saved_fee in allowed:
+            return saved_fee
     return PLAN_TARIFS.get(formation_code, 0)
 
 
@@ -408,37 +418,34 @@ def build_devis_context(
 
     # Lignes selon formation
     lignes = []
-    total = 0
+    total = get_formation_tarif(formation_code, formation_details)
 
     if formation_code == "A3P":
         lignes = [
-            {"intitule": "Agent de Protection Physique des Personnes (A3P)", "prix_unitaire": _eur(4200), "quantite": 1, "total": _eur(4200)},
+            {"intitule": "Agent de Protection Physique des Personnes (A3P)", "prix_unitaire": _eur(total), "quantite": 1, "total": _eur(total)},
             {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
         ]
-        total = 4200
 
     elif formation_code == "APS":
         lignes = [
-            {"intitule": "Agent de Prévention et de Sécurité (APS)", "prix_unitaire": _eur(1650), "quantite": 1, "total": _eur(1650)},
+            {"intitule": "Agent de Prévention et de Sécurité (APS)", "prix_unitaire": _eur(total), "quantite": 1, "total": _eur(total)},
             {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
         ]
-        total = 1650
 
     elif formation_code == "DESP_INIT":
         lignes = [
-            {"intitule": "Formation initiale DSP Dirigeant d’entreprise de sécurité privée", "prix_unitaire": _eur(4300), "quantite": 1, "total": _eur(4300)},
+            {"intitule": "Formation initiale DSP Dirigeant d’entreprise de sécurité privée", "prix_unitaire": _eur(total), "quantite": 1, "total": _eur(total)},
             {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
             {"intitule": "Accès formation en ligne e-learning", "prix_unitaire": "INCLUS", "quantite": 1, "total": _eur(0)},
         ]
-        total = 4300
 
     elif formation_code == "DESP_VAE":
+        deposit = round(total * 0.30)
         lignes = [
             {"intitule": "Etude de recevabilité (Livret 1)", "prix_unitaire": "OFFERTE", "quantite": 1, "total": _eur(0)},
-            {"intitule": "Suivi de dossier, frais administratifs, présentation du dossier auprès du certificateur (acompte de 30%)", "prix_unitaire": _eur(1140), "quantite": 1, "total": _eur(1140)},
-            {"intitule": "Passage devant le jury de certification (solde)", "prix_unitaire": _eur(2660), "quantite": 1, "total": _eur(2660)},
+            {"intitule": "Suivi de dossier, frais administratifs, présentation du dossier auprès du certificateur (acompte de 30%)", "prix_unitaire": _eur(deposit), "quantite": 1, "total": _eur(deposit)},
+            {"intitule": "Passage devant le jury de certification (solde)", "prix_unitaire": _eur(total - deposit), "quantite": 1, "total": _eur(total - deposit)},
         ]
-        total = 3800
 
     elif formation_code == "VTC":
         lignes = [
@@ -537,12 +544,12 @@ SECRETARIAT_FORMATIONS = {
     "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "175 h à distance + 70 h en présentiel", "purpose": "Acquérir l'aptitude professionnelle permettant de créer et diriger une entreprise de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "DESP_VAE": {"short": "VAE DESP", "duration": "Accompagnement individualisé", "price": "3 800 € TTC", "format": "100 % à distance", "purpose": "Faire reconnaître son expérience afin d'obtenir la certification de dirigeant d'entreprise de sécurité privée.", "funding": "CPF, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 500 € TTC", "format": "Hybride", "purpose": "Préparer l'examen VTC et maîtriser les bases nécessaires à l'activité de chauffeur professionnel.", "funding": "CPF, France Travail ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
-    "BTS_MOS": {"source_url": "https://www.integraleacademy.com/btsmos", "short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Piloter des prestations de sécurité et encadrer des équipes opérationnelles.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmos"},
-    "BTS_MCO": {"source_url": "https://www.integraleacademy.com/btsmco", "short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Gérer une unité commerciale et développer la relation client et les ventes.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmco"},
-    "BTS_CI": {"source_url": "https://www.integraleacademy.com/commerceinternational", "short": "BTS CI", "label": "BTS Commerce International (CI)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Développer et suivre les activités commerciales d'une entreprise à l'international.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsci"},
-    "BTS_NDRC": {"source_url": "https://www.integraleacademy.com/btsndrc", "short": "BTS NDRC", "label": "BTS Négociation et Digitalisation de la Relation Client (NDRC)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Développer la clientèle, négocier et piloter la relation client sur tous les canaux.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsndrc"},
-    "BTS_PI": {"source_url": "https://www.integraleacademy.com/btsprofessionsimmobilieres", "short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Se préparer aux métiers de la transaction et de la gestion immobilières.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/professionsimmobilieres"},
-    "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": SECRETARIAT_GENERIC_CALENDLY_URL},
+    "BTS_MOS": {"short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Piloter des prestations de sécurité et encadrer des équipes opérationnelles.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmos"},
+    "BTS_MCO": {"short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Gérer une unité commerciale et développer la relation client et les ventes.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmco"},
+    "BTS_CI": {"short": "BTS CI", "label": "BTS Commerce International (CI)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Développer et suivre les activités commerciales d'une entreprise à l'international.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsci"},
+    "BTS_NDRC": {"short": "BTS NDRC", "label": "BTS Négociation et Digitalisation de la Relation Client (NDRC)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Développer la clientèle, négocier et piloter la relation client sur tous les canaux.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsndrc"},
+    "BTS_PI": {"short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Se préparer aux métiers de la transaction et de la gestion immobilières.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/professionsimmobilieres"},
+    "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité et gestion (CG)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": SECRETARIAT_GENERIC_CALENDLY_URL},
 }
 
 SECRETARIAT_WEBSITE_URL = "https://www.integraleacademy.com/"
@@ -595,7 +602,9 @@ class _SecretariatWebsiteTextParser(HTMLParser):
 
 
 def _secretariat_official_url(url):
-    if url == SECURITY_APPRENTICESHIP_PAGE:
+    if url == SECURITY_APPRENTICESHIP_PAGE or any(
+        url == details.get("source_url") for details in SECRETARIAT_FORMATIONS.values()
+    ):
         return True
     parsed = urlparse(url)
     return parsed.scheme == "https" and (parsed.hostname or "").lower() in {
@@ -684,77 +693,23 @@ def _secretariat_website_context(formation_code, question):
         app.logger.exception("Lecture du site Intégrale Academy impossible")
         return ""
 
-# Repères volontairement rédigés pour une personne qui ne connaît pas encore les
-# formations. Les conditions définitives restent validées par l'équipe admissions.
-_SECURITY_TRAINING_GUIDANCE = {
-    "A3P": {
-        "source_url": "https://www.integraleacademy.com/a3p",
-        "location": "Puget-sur-Argens (83)",
-        "audience": "Personnes souhaitant travailler dans la protection rapprochée.",
-        "prerequisites": "Projet compatible avec les conditions d'accès aux métiers de la sécurité privée ; l'équipe vérifie la situation et les démarches CNAPS.",
-        "certification": "Titre A3P reconnu par l'État (niveau 4) et préparation aux démarches de carte professionnelle CNAPS.",
-        "topics": ["Cadre légal de la sécurité privée", "Préparation et sécurisation des déplacements", "Gestion des risques et situations sensibles", "Posture, discrétion et communication professionnelles"],
-    },
-    "APS": {
-        "source_url": "https://www.integraleacademy.com/securiteprivee",
-        "audience": "Personnes souhaitant devenir agent de sécurité privée.",
-        "prerequisites": "Projet compatible avec les conditions d'accès à la sécurité privée ; l'équipe accompagne la vérification des démarches CNAPS.",
-        "certification": "Formation réglementée préparant à l'exercice du métier et aux démarches de carte professionnelle CNAPS.",
-        "topics": ["Surveillance et prévention", "Accueil, filtrage et contrôle d'accès", "Gestion des conflits", "Incendie et secours à personne"],
-    },
-    "SSIAP": {
-        "source_url": "https://www.integraleacademy.com/ssiap1",
-        "location": "Puget-sur-Argens (83)",
-        "audience": "Personnes visant un poste d'agent de sécurité incendie en ERP ou IGH.",
-        "prerequisites": "Des prérequis réglementaires s'appliquent, notamment en secourisme et aptitude médicale ; faire valider le dossier par l'équipe.",
-        "certification": "Préparation au diplôme SSIAP 1, sous réserve de réussite aux épreuves.",
-        "topics": ["Prévention incendie", "Installations techniques", "Rôles et missions de l'agent", "Mises en situation et préparation à l'examen"],
-    },
-    "DESP_INIT": {
-        "source_url": "https://www.integraleacademy.com/dirigeant",
-        "location": "Puget-sur-Argens, Aurillac ou Paris",
-        "audience": "Créateurs, repreneurs ou futurs dirigeants d'une entreprise de sécurité privée.",
-        "prerequisites": "Le projet et les conditions réglementaires d'accès à la direction d'une activité de sécurité privée doivent être vérifiés.",
-        "certification": "Préparation à l'aptitude professionnelle de dirigeant d'entreprise de sécurité privée.",
-        "topics": ["Cadre juridique et réglementaire", "Gestion administrative et financière", "Management et ressources humaines", "Développement commercial"],
-    },
-    "DESP_VAE": {
-        "source_url": "https://www.integraleacademy.com/vaedirigeant",
-        "audience": "Professionnels expérimentés souhaitant faire reconnaître leur expérience de direction en sécurité privée.",
-        "prerequisites": "L'expérience doit correspondre aux compétences de la certification ; un entretien permet de confirmer la recevabilité du projet.",
-        "certification": "Accompagnement à la VAE du titre de dirigeant d'entreprise de sécurité privée.",
-        "topics": ["Diagnostic de l'expérience", "Constitution du dossier", "Explicitation des compétences", "Préparation au jury"],
-    },
-    "VTC": {
-        "source_url": "https://www.integraleacademy.com/vtc",
-        "audience": "Personnes ayant un projet de chauffeur VTC salarié ou indépendant.",
-        "prerequisites": "Le candidat doit faire vérifier les conditions réglementaires applicables à l'examen et à la carte professionnelle VTC.",
-        "certification": "Préparation à l'examen VTC et aux démarches nécessaires au lancement de l'activité.",
-        "topics": ["Réglementation VTC", "Gestion et développement commercial", "Sécurité routière", "Préparation théorique et pratique à l'examen"],
-    },
-}
-_BTS_TRAINING_TOPICS = {
-    "BTS_MOS": ["Préparer une prestation de sécurité", "Organiser les équipes et les plannings", "Suivre le client et coordonner la prestation"],
-    "BTS_MCO": ["Conseiller et fidéliser les clients", "Animer l’offre commerciale", "Piloter les stocks, les résultats et l’équipe"],
-    "BTS_CI": ["Communiquer en contexte international", "Coordonner les opérations d’import-export", "Prospecter de nouveaux marchés"],
-    "BTS_NDRC": ["Prospecter et négocier", "Développer la relation client à distance", "Animer les réseaux de partenaires"],
-    "BTS_CG": ["Enregistrer et contrôler les opérations", "Suivre la fiscalité et la paie", "Analyser les coûts et la trésorerie"],
-    "BTS_PI": ["Accompagner les ventes et les locations", "Suivre les copropriétés", "Conseiller sur les travaux et la rénovation"],
-}
-
 for _code, _details in SECRETARIAT_FORMATIONS.items():
-    if _code.startswith("BTS_"):
+    if _code in BTS_COURSES:
+        _bts = BTS_COURSES[_code]
         _details.update({
-            "audience": "Candidats souhaitant préparer un diplôme Bac+2 en alternance.",
-            "prerequisites": "Être titulaire du baccalauréat ou d'un titre équivalent et faire valider sa candidature.",
-            "certification": "Diplôme d'État de niveau 5 (Bac+2), sous réserve de réussite à l'examen.",
-            "location": "Campus de Puget-sur-Argens (83)",
-            "topics": _BTS_TRAINING_TOPICS.get(_code, ["Enseignements professionnels", "Mise en pratique en entreprise", "Préparation aux épreuves du BTS"]),
+            "location": "Puget-sur-Argens ou visioconférence",
+            "rhythm": "2 jours à l’école et 3 jours en entreprise par semaine.",
+            "prerequisites": "Bac ou titre équivalent. Admission sur dossier et validation du projet d’alternance.",
+            "certification": f"{_details['short']} · Diplôme national de niveau 5 (bac +2)." + (
+                f" RNCP{_bts['rncp']}." if _bts.get("rncp") else ""
+            ),
+            "source_url": f"{PUBLIC_CATALOGUE}/bts/{_bts['path']}",
+            "application_url": BTS_ADMISSIONS, "action_label": "Portail des admissions BTS",
+            "intakes": BTS_INTAKES,
+            **_bts,
         })
     else:
-        _details.update(_SECURITY_TRAINING_GUIDANCE.get(_code, {}))
-    # Source unique des faits affichés dans le compte rendu. Les dates restent
-    # toujours celles de la session choisie et ne figurent donc pas ici.
+        _details.update(PROFESSIONAL_COURSES.get(_code, {}))
     _details.update({
         "label": _details.get("label") or PLAN_FORMATIONS.get(_code, _details.get("short", _code)),
         "apprenticeship": _details["format"] == "Alternance",
@@ -763,14 +718,6 @@ for _code, _details in SECRETARIAT_FORMATIONS.items():
         "dossier_url": _details.get("application_url") or _details.get("dossier_url", SECRETARIAT_DOSSIER_URL),
         "planning_url": SECRETARIAT_PLANNING_URL,
     })
-
-SECRETARIAT_FORMATIONS["APS"].update({
-    "format": "Du lundi au vendredi",
-    "location": "Puget-sur-Argens, entre Cannes et Saint-Tropez",
-    "capacity": "Groupe limité à 12 personnes",
-    "certification": "TFP APS, puis demande de carte professionnelle CNAPS",
-    "prerequisites": "Autorisation d’entrée en formation CNAPS obligatoire, avec accompagnement de notre équipe.",
-})
 
 PLAN_DATES = {
     "A3P": [
@@ -2093,8 +2040,11 @@ def _render_email_template(template_name: str, **kwargs) -> str:
 
     return html
 
-def build_vae_desp_email_html(prenom, devis_url):
-    return _render_email_template("vae_desp.html", prenom=prenom, devis_url=devis_url)
+def build_vae_desp_email_html(prenom, devis_url, *, tuition=3800):
+    return _render_email_template(
+        "vae_desp.html", prenom=prenom, devis_url=devis_url, tuition=_eur_display(tuition),
+        deposit=f"{round(tuition * 0.30):,} €".replace(",", " "),
+    )
 
 
 def build_vae_desp_email_plain(prenom, devis_url):
@@ -2733,7 +2683,7 @@ def _centre_legal_block(centre_code: str) -> str:
 
 def build_a3p_email_html(
     prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
-    *, include_phone_booking=True, prominent_phone_booking=False,
+    *, include_phone_booking=True, prominent_phone_booking=False, tuition=4200, lodging=300,
 ):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
@@ -2747,7 +2697,7 @@ def build_a3p_email_html(
             "Télécharger mon devis détaillé</a></p>"
         )
     return _render_email_template(
-        "a3p.html", prenom=prenom, centre_display=centre_display,
+        "a3p.html", prenom=prenom, centre_display=centre_display, tuition=_eur_display(tuition), lodging=_eur_display(lodging),
         session_html=session_html, devis_button_html=devis_button_html,
         phone_booking_html=(_render_email_template("a3p_phone_booking.html")
                             if include_phone_booking and not prominent_phone_booking else ""),
@@ -2760,7 +2710,7 @@ def build_a3p_email_html(
 
 def _a3p_information_email_content(
     prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
-    *, include_phone_booking=True, prominent_phone_booking=False,
+    *, include_phone_booking=True, prominent_phone_booking=False, tuition=4200, lodging=300,
 ):
     """Return the A3P message shared by the public form and META leads."""
     session_date = _format_selected_session_date(dates_txt)
@@ -2783,9 +2733,9 @@ def _a3p_information_email_content(
         "Durée et organisation : 328 heures de formation.\n"
         + (f"Session : {session_date}\n" if session_date else "")
         + f"Lieu : {centre_label} — {centre_address}\n\n"
-        "Tarif : 4200 € TTC (financement possible via CPF).\n"
+        f"Tarif : {tuition} € TTC (financement possible via CPF).\n"
         "Identité Numérique La Poste requise pour le CPF.\n"
-        "Hébergement possible : 300 € TTC pour toute la formation.\n\n"
+        f"Hébergement possible : {lodging} € TTC pour toute la formation.\n\n"
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
         + (booking_text if not prominent_phone_booking else "")
         + "Je reste à votre disposition pour toute information complémentaire.\n\n"
@@ -2797,7 +2747,7 @@ def _a3p_information_email_content(
         build_a3p_email_html(
             prenom, dates_txt, centre_code, devis_url, data_store,
             include_phone_booking=include_phone_booking,
-            prominent_phone_booking=prominent_phone_booking,
+            prominent_phone_booking=prominent_phone_booking, tuition=tuition, lodging=lodging,
         ),
     )
 
@@ -2805,12 +2755,12 @@ def _a3p_information_email_content(
 
 
 
-def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None):
+def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None, *, tuition=1650):
     centre_label, centre_address = _centre_label_and_address(centre_code)
     session_html = _format_upcoming_sessions_for_email(centre_code, "APS", data_store, selected=dates_txt)
     return _render_email_template(
         "aps.html",
-        prenom=prenom,
+        prenom=prenom, tuition=_eur_display(tuition),
         session_html=session_html,
         centre_label=centre_label,
         centre_address=centre_address,
@@ -2827,10 +2777,10 @@ def build_ssiap1_email_html(
     centre_code: str,
     devis_url: str,
     ssiap_secourisme_valide: str,
-    data_store=None,
+    data_store=None, *, tuition=None,
 ):
     centre_label, centre_address = _centre_label_and_address(centre_code)
-    tarif = get_formation_tarif(
+    tarif = tuition if tuition is not None else get_formation_tarif(
         "SSIAP",
         {"ssiap_secourisme_valide": ssiap_secourisme_valide},
     )
@@ -2861,14 +2811,14 @@ def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
 
 
 def build_desp_init_email_html(
-    prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None,
+    prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None, *, tuition=4300,
 ):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
     session_html = _format_upcoming_sessions_for_email(
         centre_code, "DESP_INIT", data_store,
     )
-    return _render_email_template("desp_init.html", prenom=prenom, centre_display=centre_display, session_html=session_html, devis_url=devis_url)
+    return _render_email_template("desp_init.html", prenom=prenom, tuition=_eur_display(tuition), centre_display=centre_display, session_html=session_html, devis_url=devis_url)
 
 
 
@@ -3945,16 +3895,21 @@ def _supprimer_brouillon_formulaire_soumis(data, form_data):
     data["formulaires_abandonnes"] = abandons_filtres
     return True
 
-@app.route("/secretariat")
-def secretariat():
-    data_store = load_data()
+def _secretariat_catalogue(data_store):
     formations = []
-    sessions = get_upcoming_formation_sessions(data_store)
-    current_month = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%Y-%m")
+    today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
+    sessions = crm_public_sessions.desk_calendar(
+        get_upcoming_formation_sessions(data_store), today=today, date_range=_session_date_range,
+        use_public=app.config["CRM_USE_PUBLIC_CALENDAR"],
+    )
+    current_month = today.strftime("%Y-%m")
     for code, details in SECRETARIAT_FORMATIONS.items():
         centres = []
+        month_choices = []
         for centre_code, centre_label in FORMATION_CENTRES.items():
             rows = sessions.get(centre_code, {}).get(code, [])
+            month_choices.extend(row["month_preference"] for row in rows if row.get("month_preference"))
+            rows = [row for row in rows if not row.get("month_preference")]
             if rows:
                 centres.append({"code": centre_code, "label": centre_label, "sessions": rows})
         category = "bts" if code.startswith("BTS_") else "security"
@@ -3973,10 +3928,18 @@ def secretariat():
             "category": category,
             "description": description,
             **details,
+            "month_choices": list(dict.fromkeys(month_choices)),
+            "session_fees": SESSION_FEES.get(code, {}),
+            "sst_fees": SST_FEES if code == "SSIAP" else None,
             "intakes": [intake for intake in details.get("intakes", []) if intake["start_month"] >= current_month],
         })
+    return formations
+
+
+@app.route("/secretariat")
+def secretariat():
     return render_template(
-        "secretariat.html", formations=formations,
+        "secretariat.html", formations=_secretariat_catalogue(load_data()),
         generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
         recipients=[member["name"] for member in USERS.values()],
     )
@@ -4216,7 +4179,7 @@ def api_secretariat_demandes():
             "Appel traité par le secrétariat",
             f"Type de demande : {entry['type']}",
             f"Session souhaitée : {entry['formation_date_souhaitee']}" if entry["formation_date_souhaitee"] else "",
-            f"Rentrée souhaitée : {entry['rentree_souhaitee']}" if entry["rentree_souhaitee"] else "",
+            f"{_secretariat_period_label(entry)} : {entry['rentree_souhaitee']}" if entry["rentree_souhaitee"] else "",
             f"Notes : {entry['notes']}" if entry["notes"] else "",
             f"Rendez-vous : {entry['rdv']}" if entry["rdv"] else "",
             f"Devis demandé : {entry['devis']}" if entry["devis"] else "",
@@ -4248,19 +4211,15 @@ def api_secretariat_demandes():
 
 
 def _secretariat_ai_context(formation_code):
-    """Build the trusted training context; no training facts come from the browser."""
-    details = SECRETARIAT_FORMATIONS.get(formation_code)
-    if not details:
+    """Use the same course, sessions and reference tariffs as the call sheet."""
+    if formation_code not in SECRETARIAT_FORMATIONS:
         return None
-    sessions = get_formation_sessions(load_data())
-    centres = []
-    for centre_code, centre_label in FORMATION_CENTRES.items():
-        rows = sessions.get(centre_code, {}).get(formation_code, [])
-        if rows:
-            centres.append({"centre": centre_label, "sessions": rows})
-    return {"code": formation_code,
-            "nom": details.get("label", PLAN_FORMATIONS.get(formation_code, formation_code)),
-            **details, "centres_et_sessions": centres}
+    course = next(item for item in _secretariat_catalogue(load_data()) if item["code"] == formation_code)
+    price = " · ".join(f"{year} : {_eur_display(amount)}" for year, amount in course["session_fees"].items())
+    return {
+        **course, "nom": course["label"], "price": price or course["price"],
+        "centres_et_sessions": [{"centre": item["label"], "sessions": item["sessions"]} for item in course["centres"]],
+    }
 
 
 def _call_secretariat_ai(formation_code, task, conversation=None):
@@ -11908,6 +11867,31 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
     return matched
 
 
+def _secretariat_call_price(entry):
+    """Resolve the tariff on the server from the course, session start or requested month."""
+    code = entry.get("formation")
+    label = entry.get("formation_session_label") or entry.get("formation_date_souhaitee") or ""
+    start = _session_start_date(label)
+    year_match = re.search(r"\b(20\d{2})\b", str(entry.get("rentree_souhaitee") or label))
+    if start:
+        year = start.year
+    elif year_match:
+        year = int(year_match.group(1))
+    else:
+        recorded = str(entry.get("created_at") or "")[:4]
+        year = int(recorded) if recorded.isdigit() else datetime.datetime.now(pytz.timezone("Europe/Paris")).year
+    if code == "SSIAP":
+        variant = re.search(r"\b(avec|sans) SST\b", label, re.I)
+        if variant:
+            return SST_FEES[variant[1].lower()]
+    return SESSION_FEES.get(code, {}).get(year, PLAN_TARIFS.get(code, 0))
+
+
+def _secretariat_period_label(entry):
+    course = SECRETARIAT_FORMATIONS.get(entry.get("formation"), {})
+    return "Démarrage souhaité" if course.get("flexible_start") else "Rentrée souhaitée"
+
+
 def _secretariat_session_details(entry):
     """Return the CRM centre code and date label selected by the secretary."""
     preferred_session = str(entry.get("formation_date_souhaitee") or "").strip()
@@ -12097,7 +12081,7 @@ def _crm_ensure_secretariat_publication(contact, entry):
     if text:
         text = "\n".join(filter(None, [
             f"Destinataire : {entry['callback_recipient']}" if entry.get("callback_recipient") else "",
-            f"Rentrée souhaitée : {entry['rentree_souhaitee']}" if entry.get("rentree_souhaitee") else "",
+            f"{_secretariat_period_label(entry)} : {entry['rentree_souhaitee']}" if entry.get("rentree_souhaitee") else "",
             text,
         ]))
     if not contact or not text:
@@ -12337,25 +12321,26 @@ def _secretariat_automatic_information_template(data, entry, contact):
     centre_code, _ = _secretariat_session_details(entry)
     devis_url = str(entry.get("devis_url") or contact.get("devis_url") or "").strip()
 
+    tuition = _secretariat_call_price(entry)
     if formation_code == "DESP_VAE":
         template_id = "automatic-desp-vae"
         subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
-        body = build_vae_desp_email_html(prenom, devis_url)
+        body = build_vae_desp_email_html(prenom, devis_url, tuition=tuition)
     elif formation_code == "A3P":
         template_id = "automatic-a3p"
         subject, _, body = _a3p_information_email_content(
-            prenom, dates, centre_code, devis_url, data,
+            prenom, dates, centre_code, devis_url, data, tuition=tuition, lodging=350 if tuition == SESSION_FEES["A3P"][2027] else 300,
         )
     elif formation_code == "APS":
         template_id = "automatic-aps"
         subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
-        body = build_aps_email_html(prenom, dates, centre_code, devis_url, data)
+        body = build_aps_email_html(prenom, dates, centre_code, devis_url, data, tuition=tuition)
     elif formation_code == "SSIAP":
         template_id = "automatic-ssiap1"
         subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
         body = build_ssiap1_email_html(
             prenom, dates, centre_code, devis_url,
-            entry.get("ssiap_secourisme_valide", ""), data,
+            entry.get("ssiap_secourisme_valide", ""), data, tuition=tuition,
         )
     elif formation_code == "VTC":
         template_id = "automatic-vtc"
@@ -12365,7 +12350,7 @@ def _secretariat_automatic_information_template(data, entry, contact):
         template_id = "automatic-desp-initial"
         subject = "Votre demande de renseignements – Formation DESP initial"
         body = build_desp_init_email_html(
-            prenom, dates, centre_code, devis_url, data,
+            prenom, dates, centre_code, devis_url, data, tuition=tuition,
         )
     else:
         # Les formations en alternance n'ont pas de modèle automatique dédié dans le CRM.
@@ -12376,7 +12361,7 @@ def _secretariat_automatic_information_template(data, entry, contact):
         formation_label = formation.get("label") or formation.get("short") or "Formation Intégrale Academy"
         dossier_url = html_module.escape(formation["dossier_url"], quote=True)
         dossier_intro = ("Vous pouvez préparer votre candidature ici :"
-                        if formation_code == "PARCOURS_SECURITE_ALTERNANCE"
+                        if formation.get("apprenticeship")
                         else "Vous pouvez consulter le dossier de présentation de nos formations :")
         session_html = (
             f"<p>Session souhaitée : <strong>{html_module.escape(dates)}</strong></p>"
@@ -12554,9 +12539,9 @@ def _secretariat_formation_name(formation_code):
 
 
 def _build_secretariat_followup_sms(formation_code):
-    formation_name = _secretariat_formation_name(formation_code)
-    if formation_code == "PARCOURS_SECURITE_ALTERNANCE":
-        config = SECRETARIAT_FORMATIONS[formation_code]
+    config = _secretariat_formation_config(formation_code)
+    formation_name = config["label"]
+    if config.get("apprenticeship"):
         return (
             f"Suite à notre échange sur le {formation_name}, vous pouvez préparer "
             f"votre candidature ici : {config['dossier_url']}\n\n"
@@ -12624,6 +12609,8 @@ def _ensure_secretariat_quote(data, entry, contact):
     if quote is None:
         quote_id, token = str(uuid.uuid4()), uuid.uuid4().hex
         details = {
+            "source_secretariat_id": entry.get("id"),
+            "secretariat_fee_euros": _secretariat_call_price(entry),
             "formation": entry.get("formation", ""),
             "dates": entry.get("formation_session_label") or entry.get("formation_date_souhaitee", ""),
             "centre": entry.get("formation_centre", ""),

@@ -291,7 +291,8 @@ async function caller(t,type,mail='camille@example.com'){
   {
     const t=setup();await caller(t,'formation');t.click('[data-formation-code="BTS_MOS"]');t.click('#nextFormation');
     assert.equal(t.step(),'5');assert.ok(t.$('[data-undecided]').checked);assert.equal(t.$('[name="cpf_consulte"]').disabled,true);
-    t.fill('rentreeSouhaitee','Septembre 2027');t.click('#nextDates');assert.equal(t.step(),'6');
+    assert.match(t.$('#trainingFacts').textContent,/15 jours/);
+    t.click('[data-intake="Septembre 2027"]');t.click('#nextDates');assert.equal(t.step(),'6');
     t.click('[name="wants_rdv"][value="oui"]');await until(()=>t.widgets.length===1);
     assert.equal(new URL(t.widgets[0].url).pathname,'/integraleacademy/btsmos');
     assert.ok(t.calls.some(call=>call.url==='/api/secretariat/calendly/prefill-schema?formation=BTS_MOS'));
@@ -314,9 +315,12 @@ async function caller(t,type,mail='camille@example.com'){
     assert.equal(saved.formation_date_souhaitee,'');assert.equal(saved.formation_date_status,'a_definir');assert.equal(saved.rentree_souhaitee,'Septembre 2027');assert.equal(saved.cpf_consulte,undefined);t.close();
   }
   {
-    const t=setup();await caller(t,'formation');t.click('[data-formation-code="APS"]');t.click('#nextFormation');assert.equal(t.step(),'4');
+    const t=setup();await caller(t,'formation');t.click('[data-formation-code="APS"]');t.click('#nextFormation');assert.equal(t.step(),'5');
+    assert.equal(t.$('#qualificationForm').closest('.step').hidden,true);
+    t.click('#nextDates');assert.equal(t.step(),'5');assert.equal(t.$('#sessionError').hidden,false);
+    t.click('[data-undecided]');t.click('#nextDates');assert.equal(t.step(),'4');
     for(const [name,value] of Object.entries({cpf_consulte:'NON',france_travail:'NON',financement_perso:'NON',identite_numerique:'OUI',cnaps_ok:'OUI',devis:'NON'}))t.click(`[name="${name}"][value="${value}"]`);
-    t.click('#nextQualification');assert.equal(t.step(),'5');t.click('[data-undecided]');t.click('#nextDates');t.click('[name="wants_rdv"][value="oui"]');
+    t.click('#nextQualification');assert.equal(t.step(),'6');t.click('[name="wants_rdv"][value="oui"]');
     await until(()=>t.widgets.length===1);const settings=t.widgets[0];assert.equal(settings.prefill.firstName,'Camille');assert.equal(settings.prefill.lastName,'Martin');
     assert.equal(settings.prefill.email,'camille@example.com');assert.equal(settings.prefill.customAnswers.a2,'+33601020304');assert.equal(settings.prefill.customAnswers.a1,undefined);
     assert.equal(new URL(settings.url).searchParams.get('location'),'+33601020304');assert.equal(t.$('#reviewRequest').disabled,true);
@@ -401,28 +405,53 @@ async function caller(t,type,mail='camille@example.com'){
   {
     const t=setup(); await caller(t,'formation');
     const codes=[...t.d.querySelectorAll('[data-formation-code]')].map(b=>b.dataset.formationCode);
+    const profiles={
+      PARCOURS_SECURITE_ALTERNANCE:'surveillance', A3P:'garde du corps', APS:'magasin',
+      SSIAP:'sécurité incendie', DESP_INIT:'responsable d’exploitation', DESP_VAE:'faisabilité', VTC:'Chauffeur',
+      BTS_MOS:'chef d’équipe', BTS_MCO:'responsable de rayon', BTS_NDRC:'animateur de réseau',
+      BTS_CI:'agent de transit', BTS_PI:'copropriété', BTS_CG:'cabinet'
+    };
+    assert.deepEqual(new Set(codes),new Set(Object.keys(profiles)));
     for(const code of codes){
       t.click('[data-formation-code="'+code+'"]'); t.click('#nextFormation');
-      if(t.step()==='4'){
-        for(const name of ['cpf_consulte','france_travail','financement_perso','identite_numerique','cnaps_ok','devis']){
-          const input=t.$('[name="'+name+'"][value="'+(name==='cnaps_ok'?'OUI':'NON')+'"]');
-          if(!input.disabled) input.click();
-        }
-        t.click('#nextQualification');
-      }
-      assert.equal(t.step(),'5'); assert.equal(t.$('#trainingInfo').dataset.formation,code);
+      assert.equal(t.step(),'5',code+' must open its sheet directly'); assert.equal(t.$('#trainingInfo').dataset.formation,code);
       assert.ok(t.$('#trainingTitle').textContent.trim()); assert.ok(t.$('#trainingPurpose').textContent.trim());
       assert.ok(t.$('#trainingFacts').children.length>=3); assert.ok(t.$('#trainingTopics').children.length>=3);
       assert.equal(t.$('#trainingAward').hidden,false); assert.ok(t.$('#trainingAdmission').children.length>=3);
+      assert.ok(t.$('#trainingProfession').textContent.includes('Évaluation'));
+      assert.ok(t.$('#trainingInfo').textContent.toLowerCase().includes(profiles[code].toLowerCase()),code);
+      assert.doesNotMatch(t.$('#trainingInfo').textContent,/NaN|undefined/);
       assert.equal(t.$('#trainingAiPanel').open,false);
-      if(code==='BTS_MCO') assert.match(t.$('#trainingTopics').textContent,/stocks/);
-      if(code==='BTS_CI') assert.match(t.$('#trainingTopics').textContent,/import-export/);
-      if(code==='APS'){
+      if(code.startsWith('BTS_')){
+        assert.ok(t.$('[data-intake="Septembre 2027"]'));assert.ok(t.$('#trainingAdmission').textContent.includes('Entreprises d’accueil'));
+        assert.match(t.$('#trainingFacts').textContent,code==='BTS_MOS'?/15 jours/:/3 jours/);
+        t.click('[data-intake="Septembre 2027"]');
+      } else if(code==='PARCOURS_SECURITE_ALTERNANCE'){
+        t.click('[data-intake="Juin 2027"]');
+      } else if(code==='APS'){
         const choice=t.$('[data-date-examen="2026-12-31"]');
-        assert.ok(choice); choice.click();
-        assert.match(choice.closest('label').textContent,/Examen/);
-        t.click('[data-step="5"] [data-back]'); t.click('#nextQualification'); assert.equal(choice.checked,true);
+        assert.ok(choice);choice.click();assert.match(choice.closest('label').textContent,/Examen/);
+        t.click('#nextDates');assert.equal(t.step(),'4');t.click('[data-step="4"] [data-back]');assert.equal(choice.checked,true);
+      } else if(code==='VTC'||code==='DESP_VAE'){
+        t.fill('rentreeSouhaitee','Mars 2027'); assert.equal(t.$('#rentreeSouhaitee').disabled,false);
+        assert.equal(t.w.eval('callData(true).rentree_souhaitee'),'Mars 2027');
+        assert.equal(t.w.eval('callData(true).formation_date_souhaitee'),'');
       }
+      t.click('#nextDates');
+      const alternate=code.startsWith('BTS_')||code==='PARCOURS_SECURITE_ALTERNANCE';
+      assert.equal(t.step(),alternate?'6':'4',code);
+      if(!alternate){
+        t.click('#nextQualification');
+        if(t.step()==='4'){
+          for(const name of ['cpf_consulte','france_travail','financement_perso','identite_numerique','cnaps_ok','devis']){
+            const input=t.$('[name="'+name+'"][value="'+(name==='cnaps_ok'?'OUI':'NON')+'"]');
+            if(!input.disabled)input.click();
+          }
+          t.click('#nextQualification');
+        }
+        assert.equal(t.step(),'6',code+' requires completed qualification before booking');
+      }
+      t.click('[data-step="6"] [data-back]'); assert.equal(t.step(),alternate?'5':'4');
       t.click('[data-go-step="3"]'); assert.equal(t.step(),'3');
     }
     t.close();
