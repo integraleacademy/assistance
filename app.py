@@ -3981,12 +3981,12 @@ def secretariat_agenda():
             raise ValueError
     except ValueError:
         return _secretariat_private(jsonify(error="Date invalide."), 400)
-    data = _load_data_snapshot()
-    sync = data.get("crm_calendly") or {}
+    calendar = _crm_calendly_appointments_payload(_crm_prepared_read_model())
+    sync = calendar["integration"]
     return _secretariat_private(jsonify(
         date=value, today=now.date().isoformat(),
         last_sync=secretariat_calls.date_label(sync.get("last_sync_at") or sync.get("last_full_sync_at")),
-        appointments=secretariat_calls.day_appointments(data, day, now),
+        appointments=secretariat_calls.day_appointments(calendar["appointments"], value, now),
     ))
 
 
@@ -15456,6 +15456,25 @@ def _crm_calendar_contact_payload(data, contact):
     return payload
 
 
+def _crm_calendar_slot(appointment, contact):
+    """Shared by the CRM day view and the restricted call-desk projection."""
+    if str(appointment.get("status") or "").strip().lower() in CRM_CANCELLED_APPOINTMENT_STATUSES:
+        return None
+    try:
+        start = datetime.datetime.fromisoformat(str(appointment.get("start_time") or "").replace("Z", "+00:00"))
+        paris = secretariat_calls.PARIS
+        local = paris.localize(start) if start.tzinfo is None else start.astimezone(paris)
+        timestamp = local.timestamp()
+    except (ValueError, OverflowError, OSError):
+        return None
+    first = _crm_format_first_name(" ".join(str(contact.get("prenom") or "").split()))
+    last = _crm_format_last_name(" ".join(str(contact.get("nom") or "").split()))
+    return {
+        "day": local.date().isoformat(), "time": local.strftime("%H:%M"), "start": timestamp,
+        "person": " ".join(filter(None, [first, last])) or appointment.get("invitee_name") or "Invité Calendly",
+    }
+
+
 def _crm_calendly_appointments_payload(data):
     """Cache the agenda independently of histories, templates and settings."""
     raw = data.get("crm_calendly_appointments", [])
@@ -15480,11 +15499,11 @@ def _crm_calendly_appointments_payload(data):
             for key, contact in contacts.items()
         }
         missing = _crm_calendar_contact_payload(data, {})
-        return sorted(
-            ({**item, "contact": projected.get(item.get("contact_id"), missing)}
-             for item in raw),
-            key=lambda item: item.get("start_time") or "",
-        )
+        rows = []
+        for item in raw:
+            contact = projected.get(item.get("contact_id"), missing)
+            rows.append({**item, "contact": contact, "calendar_slot": _crm_calendar_slot(item, contact)})
+        return sorted(rows, key=lambda item: item.get("start_time") or "")
 
     appointments = _CRM_PROJECTIONS.get("calendar", dependencies, build)
     return {

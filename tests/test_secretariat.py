@@ -280,7 +280,8 @@ def test_secretariat_gives_the_calendly_widget_more_space(client, monkeypatch):
     assert response.status_code == 200
     assert b'/static/secretariat.css' in response.data
     stylesheet = client.get('/static/secretariat.css').get_data(as_text=True)
-    assert re.search(r"\.booking-active\s*\{[^}]*max-width:\s*1540px", stylesheet)
+    assert re.search(r"\.workspace\.booking-active\s*\{[^}]*grid-template-columns:", stylesheet)
+    assert ".masthead-inner, .workspace, .directory-inner { width: var(--shell-width);" in stylesheet
     assert re.search(r"\.calendly-widget-host\s*\{[^}]*height:\s*720px", stylesheet)
 
 def test_secretariat_api_records_a_request(client, monkeypatch):

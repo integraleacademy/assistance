@@ -1263,9 +1263,9 @@ def test_crm_javascript_loads_and_binds_calendly_without_losing_conversion():
         "Rendez-vous annulés",
         "tone==='upcoming'?calendlyActions(a):''",
         "b.dataset.primaryStep==='Converti'",
-        "calendarSelectedDate=calendarDateKey(new Date())",
+        "calendarSelectedDate=initialCalendarDay()",
         'id="calendarDate" type="date"',
-        "calendarDateKey(new Date(a.start_time))===calendarSelectedDate",
+        "a.calendar_slot?.day===calendarSelectedDate",
         "changeCalendarDate(-1)",
         "changeCalendarDate(1)",
         "Interlocuteur :",
@@ -1318,17 +1318,17 @@ def test_calendar_appointments_expose_and_render_contact_scores(tmp_path, monkey
         "/api/crm/contacts",
         json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
     ).get_json()
-    client.patch(
+    updated = client.patch(
         f"/api/crm/contacts/{contact['id']}",
         json={
             "mail": "lina@example.com", "telephone": "+33612345678",
             "lieu": "Côte d’Azur", "dates_formation": "Septembre",
             "origine": "Site internet", "cpf": "NON",
             "identite_creation": "NON", "financement_ft": "NON",
-            "statut_demande_financement_ft": "non_demandee",
             "inscrit_ft": "NON", "carte_pro": "OUI",
         },
     )
+    assert updated.status_code == 200
     signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
 
     linked = client.get(
@@ -1437,10 +1437,8 @@ def test_spotlight_appointment_displays_the_result_control():
     with open(application.app.root_path + "/templates/crm.html", encoding="utf-8") as source:
         crm_template = source.read()
 
-    spotlight = crm_js[
-        crm_js.index("const nextCard=spotlight.length?"):
-        crm_js.index("const spotlightIds=")
-    ]
+    start = crm_js.index("const nextCard=spotlight.length?")
+    spotlight = crm_js[start:crm_js.index("const sections=", start)]
 
     assert "next-appointment-side" in spotlight
     assert "appointmentResponseControl(a,'Résultat du rendez-vous')" in spotlight

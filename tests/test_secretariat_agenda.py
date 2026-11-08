@@ -91,29 +91,38 @@ def test_laptop_step_navigation_stays_usable_beside_the_agenda(desk):
             browser.close()
 
 
-def test_day_includes_all_phone_slots_in_paris_keeps_cancellations_and_recorded_outcomes(desk):
+def test_day_matches_the_crm_active_slots_across_types_reschedules_midnight_and_ties(desk):
     client, data = desk
     def meeting(start, **fields):
         return {"name": "Rendez-vous téléphonique", "start_time": start, "host_name": "Conseiller Test",
                 "contact_id": "test", "invitee_email": "private@example.test", "cancel_url": "https://private.invalid", **fields}
     data["crm_calendly_appointments"] = [
         meeting("2026-03-29T13:00:00Z", status="canceled", rescheduled=True),
-        meeting("2026-03-28T23:30:00Z", response_status="answered"),
-        meeting("2026-03-29T10:00:00Z", name="Dossier", location={"type": "outbound_call"}, response_status="no_answer"),
+        meeting("2026-03-28T23:30:00Z", response_status="answered", invitee_name="Ancien nom"),
+        meeting("2026-03-29T10:00:00Z", name="Dossier", response_status="no_answer"),
         meeting("2026-03-29T12:00:00Z", name="Visio", location={"kind": "zoom"}),
-        meeting("2026-03-29T14:00:00Z", invitee_name="Appelant A"),
+        meeting("2026-03-29T14:00:00Z", contact_id="", invitee_name="Zoé", status="active", rescheduled=True),
+        meeting("2026-03-29T14:00:00Z", contact_id="", invitee_name="Alex"),
         meeting("2026-03-29T15:00:00Z", status="cancelled"),
         meeting("2026-03-29T22:00:00Z"), meeting("bad"),
     ]
     assert client.get("/api/secretariat/agenda?date=2026-03-29").status_code == 401
     sign_in(client)
+    reference = client.get("/api/crm/calendly/appointments").json["appointments"]
+    assert len(reference) == 9  # the full CRM history retains the old and cancelled events
     response = client.get("/api/secretariat/agenda?date=2026-03-29")
     assert response.status_code == 200 and "no-store" in response.headers["Cache-Control"]
     rows = response.json["appointments"]
     assert [(r["time"], r["state"]) for r in rows] == [
-        ("00:30", "repondu"), ("12:00", "sans_reponse"), ("15:00", "reporte"), ("16:00", "sans_resultat"), ("17:00", "annule")]
-    assert rows[0]["person"] == "Chloé Du-Pré" and rows[3]["person"] == "Appelant A"
-    assert "private" not in response.get_data(as_text=True) and "contact_id" not in rows[0]
+        ("00:30", "repondu"), ("12:00", "sans_reponse"), ("14:00", "sans_resultat"),
+        ("16:00", "sans_resultat"), ("16:00", "sans_resultat")]
+    assert [r["person"] for r in rows] == ["Chloé DU-PRÉ"] * 3 + ["Zoé", "Alex"]
+    slots = sorted((a for a in reference if (a["calendar_slot"] or {}).get("day") == "2026-03-29"),
+                   key=lambda a: a["calendar_slot"]["start"])
+    assert [(r["time"], r["person"], r["host"], r["subject"]) for r in rows] == [
+        (a["calendar_slot"]["time"], a["calendar_slot"]["person"], a["host_name"], a["name"]) for a in slots]
+    assert "private" not in response.get_data(as_text=True)
+    assert all(set(r) == {"time", "person", "host", "subject", "state"} for r in rows)
     assert client.get("/api/secretariat/agenda?date=2026-03-30").json["appointments"][0]["time"] == "00:00"
     assert client.get("/api/secretariat/agenda?date=2026-02-30").status_code == 400
 
@@ -193,3 +202,85 @@ def test_external_operator_requires_desk_permission_and_verified_identity(desk):
     assert not limited["summary"]["prochaine_action"]
     data["crm_contacts"].append({"id": "second", "telephone": known["telephone"]})
     assert operator.post(url, json=known, headers=scoped).status_code == 404
+
+
+def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
+    from urllib.parse import urlsplit
+
+    playwright = pytest.importorskip("playwright.sync_api")
+    client, data = desk
+    sign_in(client)
+    day = "2026-11-09"
+    records = []
+    for sequence in range(24):
+        hour, minute = divmod(8 * 60 + sequence * 15, 60)
+        records.append({
+            "id": f"meeting-{sequence}", "start_time": f"{day}T{hour:02}:{minute:02}:00Z",
+            "status": "canceled" if sequence in (2, 4) else "active",
+            "rescheduled": sequence in (2, 3), "name": "Entretien admissions" if sequence % 2 else "RDV téléphonique APS",
+            "invitee_name": f"Invité {sequence}", "host_name": "Conseiller test",
+            "contact_id": "test" if sequence == 0 else "", "response_status": "answered" if sequence == 1 else "",
+        })
+    data["crm_calendly_appointments"] = records
+    with playwright.sync_playwright() as engine:
+        try:
+            browser = engine.chromium.launch()
+        except playwright.Error as exc:
+            pytest.skip(f"Chromium indisponible : {exc}")
+        try:
+            context = browser.new_context(viewport={"width": 1908, "height": 890}, locale="fr-FR", timezone_id="America/Los_Angeles")
+            def serve(route):
+                url = urlsplit(route.request.url)
+                if url.netloc != "desk.test" or route.request.method != "GET":
+                    return route.abort()
+                response = client.get(url.path, query_string=url.query)
+                route.fulfill(status=response.status_code, body=response.data, content_type=response.content_type)
+
+            context.route("**/*", serve)
+            page = context.new_page()
+            page.goto("https://desk.test/secretariat")
+            page.locator("#agendaDay").fill(day)
+            page.wait_for_function("document.querySelectorAll('#agendaList li').length===22")
+            desk_rows = page.locator("#agendaList li").evaluate_all("""items => items.map(el => [
+                el.querySelector('time').textContent, el.querySelector('strong').textContent, el.querySelector('small').textContent])""")
+            assert desk_rows[0][:2] == ["09:00", "Chloé DU-PRÉ"]
+            assert not any(row[1] in {"Invité 2", "Invité 4"} for row in desk_rows)
+            with page.expect_popup() as opened:
+                page.locator("#agendaCrm").click()
+            crm = opened.value
+            crm.wait_for_selector("#calendarContent .calendar-event")
+            assert crm.locator("#calendarDate").input_value() == day
+            crm_rows = crm.locator("#calendarContent .calendar-event").evaluate_all("""items => items.map(el => [
+                el.querySelector('time').textContent, el.querySelector('div > span').textContent.split(' · ')[0],
+                el.querySelector('div > b').textContent])""")
+            assert crm_rows == desk_rows
+            crm.close()
+
+            dimensions = page.evaluate("""() => {
+              const box = s => document.querySelector(s).getBoundingClientRect(), list = document.querySelector('#agendaList');
+              return {left:[box('.masthead-inner').left, box('.workspace').left, box('.directory-inner').left],
+                right:[box('.masthead-inner').right, box('.workspace').right, box('.directory-inner').right],
+                cardBottom:box('.card').bottom, agendaBottom:box('.agenda-card').bottom,
+                footerTop:box('.desk-directory').top, listHeight:list.clientHeight, listContent:list.scrollHeight,
+                scrollHeight:document.documentElement.scrollHeight, viewport:window.innerHeight};
+            }""")
+            for edges in (dimensions["left"], dimensions["right"]):
+                assert max(edges) - min(edges) < 2
+            assert 90 < dimensions["listHeight"] < dimensions["listContent"]
+            assert dimensions["agendaBottom"] <= dimensions["cardBottom"] + 2
+            assert 0 <= dimensions["footerTop"] - dimensions["cardBottom"] < 45
+            assert dimensions["scrollHeight"] <= dimensions["viewport"] + 1
+            control_y = page.locator("#agendaDay").bounding_box()["y"]
+            page.locator("#agendaList").evaluate("el => el.scrollTop=el.scrollHeight")
+            assert page.locator("#agendaList").evaluate("el => el.scrollTop") > 0
+            assert page.locator("#agendaDay").bounding_box()["y"] == control_y
+            assert page.locator("#agendaList li:last-child").inner_text().find("Invité 23") >= 0
+            page.set_viewport_size({"width": 390, "height": 780})
+            page.wait_for_function("document.querySelector('#agendaPanel').hidden")
+            page.locator("#agendaToggle").click()
+            page.wait_for_selector("#agendaList li")
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.locator("#agendaSearch").fill("Invité 23")
+            assert page.locator("#agendaList li").count() == 1
+        finally:
+            browser.close()
