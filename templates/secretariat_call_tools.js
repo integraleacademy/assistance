@@ -30,28 +30,100 @@ function setCpfBalance(consulted) {
 document.getElementById('cpfPending').addEventListener('change', () => setCpfBalance(true));
 for (const input of [callerForm.elements.prenom, callerForm.elements.nom]) {
   input.addEventListener('input', () => {
-    if (pendingCallerMatch && callerMatch.hidden) scheduleCallerLookup();
+    if (useCallerMatch.disabled || (!verifiedDossier.hidden) || (pendingCallerMatch && callerMatch.hidden)) scheduleCallerLookup();
   });
+}
+
+function deskJsonHeaders() {
+  const headers = {'Content-Type': 'application/json'};
+  if (document.body.dataset.deskCsrf) headers['X-CSRF-Token'] = document.body.dataset.deskCsrf;
+  return headers;
+}
+
+function dossierGroup(parent, title, facts) {
+  const entries = facts.filter(([, value]) => typeof value === 'string' && value.trim());
+  if (!entries.length) return;
+  if (title) {
+    const heading = document.createElement('h4');
+    heading.textContent = title;
+    parent.append(heading);
+  }
+  const list = document.createElement('dl');
+  for (const [label, value] of entries) {
+    const term = document.createElement('dt'), detail = document.createElement('dd');
+    term.textContent = label;
+    detail.textContent = value;
+    list.append(term, detail);
+  }
+  parent.append(list);
+}
+
+function renderDeskCnaps(facts) {
+  cnapsDesk.hidden = !facts;
+  if (!facts) return;
+  cnapsResult.replaceChildren();
+  const status = document.createElement('strong');
+  status.className = 'cnaps-state';
+  status.textContent = facts.status;
+  cnapsResult.append(status);
+  dossierGroup(cnapsResult, '', [
+    ['Dernière vérification', facts.checked], ['Compte CNAPS déclaré', facts.account], ['Carte professionnelle déclarée', facts.card],
+    ['Titres enregistrés', (facts.titles || []).join(' • ')], ['Contrôle de la carte', facts.card_checked],
+  ]);
+  refreshDeskCnaps.hidden = !facts.can_check;
 }
 
 function showDossier(summary) {
   dossierFacts.replaceChildren();
-  for (const [label, value] of [
-    ['Formation', summary.formation || 'À préciser'],
-    ['Conseiller chargé du dossier', summary.conseiller || 'Non renseigné'],
+  dossierStatus.textContent = [summary.statut || 'Statut non renseigné', summary.archive ? 'Archivé' : ''].filter(Boolean).join(' · ');
+  dossierStatus.dataset.tone = summary.statut === 'Converti' ? 'success' : (summary.statut === 'Disqualifié' ? 'closed' : 'active');
+  dossierGroup(dossierFacts, 'Situation du dossier', [
+    ['Étape complémentaire', summary.statut_secondaire], ['Statut depuis le', summary.statut_depuis],
+    ['Motif de disqualification', summary.motif_disqualification], ['Réactivation prévue', summary.reactivation],
+    ['Formation', summary.formation || 'À préciser'], ['Centre', summary.centre], ['Session', summary.session],
+    ['Financement déclaré', summary.financement], ['Conseiller', summary.conseiller || 'Non renseigné'],
+  ]);
+  dossierGroup(dossierFacts, 'Suivi de l’appelant', [
     ['Dernier échange', summary.dernier_echange || 'Aucun échange consigné'],
     ['Prochain rendez-vous', summary.rdv || 'Aucun rendez-vous confirmé'],
     ['Rappel demandé', summary.rappel || 'Aucune demande en attente'],
-    ['Relance prévue', summary.relance],
-  ]) {
-    if (!value) continue;
-    const term = document.createElement('dt'), detail = document.createElement('dd');
-    term.textContent = label;
-    detail.textContent = value;
-    dossierFacts.append(term, detail);
-  }
+    ['Relance prévue', summary.relance], ['Prochaine action', summary.prochaine_action],
+  ]);
+  cnapsFeedback.textContent = '';
+  renderDeskCnaps(summary.cnaps);
   verifiedDossier.hidden = false;
+  if (currentStep === 2) {
+    const heading = verifiedDossier.querySelector('h3');
+    heading.tabIndex = -1;
+    heading.focus({preventScroll: true});
+    verifiedDossier.scrollIntoView?.({block: 'start'});
+  }
+  if (summary.cnaps?.can_check) loadDeskCnaps(false);
 }
+
+function currentDeskIdentity() {
+  const form = callerForm.elements;
+  return {confirmed_contact_id: existingCrmContactId, verify_identity: true, email: form.email.value,
+    telephone: form.telephone.value, prenom: form.prenom.value, nom: form.nom.value};
+}
+
+async function loadDeskCnaps(refresh) {
+  const version = callerLookupVersion, identity = currentDeskIdentity();
+  refreshDeskCnaps.disabled = true;
+  cnapsFeedback.textContent = 'Consultation du suivi…';
+  try {
+    const result = await aiFetch('/api/secretariat/suivi-cnaps', {...identity, refresh});
+    if (version !== callerLookupVersion || existingCrmContactId !== identity.confirmed_contact_id) return;
+    if (!result.cnaps) throw new Error('Suivi indisponible');
+    renderDeskCnaps(result.cnaps);
+    cnapsFeedback.textContent = '';
+  } catch (_) {
+    if (version === callerLookupVersion) cnapsFeedback.textContent = 'Actualisation indisponible. Vous pouvez réessayer.';
+  } finally {
+    if (version === callerLookupVersion) refreshDeskCnaps.disabled = false;
+  }
+}
+refreshDeskCnaps.onclick = () => loadDeskCnaps(true);
 
 function setCallbackMode(active) {
   interruption.hidden = !active;
@@ -119,7 +191,7 @@ notesForm.addEventListener('submit', async event => {
 });
 
 async function postDeskData(path, payload) {
-  const response = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+  const response = await fetch(path, {method: 'POST', headers: deskJsonHeaders(), body: JSON.stringify(payload)});
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result.ok === false) throw new Error(result.error || 'L’enregistrement a échoué. Réessayez.');
   return result;

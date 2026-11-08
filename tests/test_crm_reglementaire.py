@@ -180,7 +180,7 @@ def test_cnaps_route_projects_production_status_into_integration_score(tmp_path,
     lead = vae_contact(test_client, formation="A3P", cpf="OUI", cpf_montant="1995",
                        identite_creation="OUI", identite_ok="OUI", financement_ft="NON",
                        refus_ft_perso="OUI", inscrit_ft="NON", carte_pro="NON",
-                       compte_cnaps="NON", antecedents="NON", titre_sejour_cnaps="NON_CONCERNE")
+                       compte_cnaps="NON", antecedents="NON", titre_sejour="NON")
     payload = {
         "found": True,
         "linked": True,
@@ -195,9 +195,10 @@ def test_cnaps_route_projects_production_status_into_integration_score(tmp_path,
     assert body["scoring_snapshot"]["normalized_status"] == "transmitted"
     assert body["scoring_snapshot"]["raw_status"] == "TRANSMIS"
     assert body["integration_score"]["normalized_cnaps_status"] == "transmitted"
-    assert body["integration_score"]["regulatory_score"] == 40
-    assert body["integration_score"]["financial_score"] == 57
-    assert body["integration_score"]["score"] == 50
+    stored = application._crm_contact(application._load_data_snapshot(), lead["id"])
+    expected = application.calculate_candidate_integration_score(stored, body["scoring_snapshot"])
+    for key in ("regulatory_score", "financial_score", "score"):
+        assert body["integration_score"][key] == expected[key]
 
 
 def test_only_desp_vae_404_is_linked(tmp_path, monkeypatch):

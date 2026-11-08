@@ -1,8 +1,11 @@
 """Small projections used by the call desk and the CRM callback queue."""
 
 import datetime
+import re
+import unicodedata
 
 import pytz
+from candidate_scoring import normalize_cnaps_tracking_status
 
 
 PARIS = pytz.timezone("Europe/Paris")
@@ -14,6 +17,90 @@ FINANCING_FIELDS = {
     "financement_perso": "financement personnel du reste à charge",
     "identite_numerique": "Identité Numérique La Poste",
 }
+
+CNAPS_LABELS = {
+    "registered": "Enregistré", "transmitted": "Transmis au CNAPS", "in_review": "En instruction",
+    "accepted": "Accepté", "refused": "Refusé", "no_result": "Aucun dossier retrouvé",
+}
+
+
+def folded(value):
+    text = unicodedata.normalize("NFKD", str(value or "").casefold())
+    return " ".join(re.findall(r"[^\W_]+", "".join(c for c in text if not unicodedata.combining(c))))
+
+
+def is_phone_appointment(appointment):
+    location = appointment.get("location") or {}
+    kind = folded(location.get("kind") or location.get("type")) if isinstance(location, dict) else folded(location)
+    phone = r"\b(?:phone|call|appel|rappel|telephone\w*|telephoni\w*|tel)\b"
+    if re.search(phone, kind):
+        return True
+    if kind in {"zoom", "google conference", "google meet", "microsoft teams conference", "physical", "in person"}:
+        return False
+    if isinstance(location, dict) and re.search(phone, folded(location.get("location") or location.get("additional_info"))):
+        return True
+    return bool(re.search(phone, folded(appointment.get("name"))))
+
+
+def day_appointments(data, day, now):
+    contacts = {c.get("id"): c for c in data.get("crm_contacts", []) if c.get("id")}
+    rows = []
+    for meeting in data.get("crm_calendly_appointments", []):
+        if not isinstance(meeting, dict) or not is_phone_appointment(meeting):
+            continue
+        try:
+            at = datetime.datetime.fromisoformat(str(meeting.get("start_time")).replace("Z", "+00:00"))
+            at = PARIS.localize(at) if at.tzinfo is None else at.astimezone(PARIS)
+        except (ValueError, OverflowError):
+            continue
+        if at.date() != day:
+            continue
+        contact = contacts.get(meeting.get("contact_id")) or {}
+        name = meeting.get("invitee_name") or " ".join(filter(None, (contact.get("prenom"), contact.get("nom"))))
+        status = str(meeting.get("status") or "").casefold()
+        if status in {"cancelled", "canceled"}:
+            result = "reporte" if meeting.get("rescheduled") else "annule"
+        else:
+            result = {"answered": "repondu", "no_answer": "sans_reponse"}.get(
+                meeting.get("response_status"), "a_venir" if at > now else "sans_resultat")
+        rows.append((at.timestamp(), {
+            "time": at.strftime("%H:%M"), "person": name or "Nom non renseigné",
+            "host": meeting.get("host_name") or "", "subject": meeting.get("name") or "",
+            "state": result,
+        }))
+    return [row for _, row in sorted(rows, key=lambda pair: (pair[0], pair[1]["person"].casefold()))]
+
+
+def cnaps_overview(contact, course, snapshot=None, remote=None):
+    snapshot = snapshot or {}
+    card = contact.get("cnaps_card_validity") or {}
+    relevant = (course in {"APS", "A3P", "PARCOURS_SECURITE_ALTERNANCE"} or bool(snapshot or card)
+                or contact.get("carte_pro") == "OUI" or contact.get("compte_cnaps") == "OUI")
+    if not relevant:
+        return None
+    remote = remote or {}
+    cnaps = remote.get("cnaps") or {}
+    status = normalize_cnaps_tracking_status(snapshot)
+    label = CNAPS_LABELS.get(status) or str(snapshot.get("raw_status") or "").strip()
+    last_check = (cnaps.get("last_checked_at") or cnaps.get("checked_at") or cnaps.get("date_derniere_verification")
+                  or snapshot.get("last_checked_at") or snapshot.get("synced_at"))
+    titles = (remote.get("card_pro") or {}).get("titles") or cnaps.get("titles") or card.get("titles") or []
+    title_rows = []
+    for item in titles:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("code") or item.get("type") or item.get("label") or item.get("title") or item.get("titre") or item.get("name")
+        if title:
+            expiry = date_label(item.get("expires_at") or item.get("date_expiration") or item.get("valid_until"))
+            title_rows.append(" · ".join(str(s) for s in (title, item.get("state") or item.get("status") or item.get("etat"),
+                              "Échéance " + expiry if expiry else "") if s))
+    return {
+        "status": label or "Suivi non renseigné", "checked": date_label(last_check),
+        "account": {"OUI": "Créé", "NON": "Non créé"}.get(str(contact.get("compte_cnaps") or "").upper(), ""),
+        "card": {"OUI": "Oui", "NON": "Non"}.get(str(contact.get("carte_pro") or "").upper(), ""),
+        "titles": list(dict.fromkeys(title_rows)), "card_checked": date_label(card.get("checked_at")),
+        "can_check": course in {"APS", "A3P", "PARCOURS_SECURITE_ALTERNANCE"},
+    }
 
 
 def collect_pending_financing(entry, payload):
@@ -63,13 +150,13 @@ def date_label(value):
         return str(value)
 
 
-def desk_summary(contact, callbacks, appointment):
+def desk_summary(contact, callbacks, appointment, *, staff=True):
     entries = [c for c in callbacks if isinstance(c, dict) and contact.get("id")
                and c.get("crm_contact_id") == contact["id"]]
     exchanges = [a for a in contact.get("activities") or [] if isinstance(a, dict)
                  and a.get("kind") in {"appel", "email", "sms", "demande_rappel", "aircall", "email_recu"}
                  and a.get("date") and a.get("title")]
-    exchanges.extend({"date": c["created_at"], "title": "Appel au secrétariat · " + c["notes"][:180]}
+    exchanges.extend({"date": c["created_at"], "title": "Appel au secrétariat" + (" · " + c["notes"][:180] if staff else "")}
                      for c in entries if c.get("notes") and c.get("created_at"))
     def exchange_time(item):
         try:
@@ -84,14 +171,29 @@ def desk_summary(contact, callbacks, appointment):
     callback = ""
     if first:
         callback = " · ".join(filter(None, [date_label(first.get("callback_due_at")) or "Échéance à préciser",
-                              first.get("callback_recipient") or "Équipe", first.get("notes", "")[:160]]))
+                              first.get("callback_recipient") or "Équipe", first.get("notes", "")[:160] if staff else ""]))
     reminders = [r.get("scheduled_date") for r in contact.get("relances") or []
                  if isinstance(r, dict) and r.get("status") == "scheduled" and r.get("scheduled_date")]
     if not reminders and contact.get("relance_date") and contact.get("statut") == "A relancer":
         reminders.append(contact["relance_date"])
+    financing = []
+    if contact.get("cpf") == "OUI":
+        financing.append("CPF consulté")
+    if contact.get("financement_ft") == "OUI":
+        financing.append("Demande de financement France Travail souhaitée")
+    if contact.get("reste_a_charge_perso") == "OUI":
+        financing.append("Financement personnel envisagé")
     return {
         "formation": contact.get("formation") or "",
-        "conseiller": contact.get("salesforce_owner") or "",
+        "conseiller": contact.get("commercial") or contact.get("salesforce_owner") or "",
+        "statut": contact.get("statut") or "", "statut_secondaire": contact.get("statut_secondaire") or "",
+        "archive": bool(contact.get("archived_at")),
+        "statut_depuis": date_label(contact.get("status_changed_at") or (contact.get("converted_at") if contact.get("statut") == "Converti" else "")),
+        "motif_disqualification": contact.get("disqualification_reason") if contact.get("statut") == "Disqualifié" else "",
+        "reactivation": date_label(contact.get("reactivation_date")) if contact.get("statut") == "Disqualifié" else "",
+        "centre": contact.get("lieu") or "", "session": contact.get("dates_formation") or "",
+        "financement": " · ".join(financing),
+        "prochaine_action": contact.get("prochaine_action_manuelle") if staff else "",
         "dernier_echange": " · ".join(filter(None, [date_label(last.get("date")), last.get("title")])),
         "rdv": " · ".join(filter(None, [date_label(appointment.get("start_time")), appointment.get("host_name")])) if appointment else "",
         "rappel": callback,

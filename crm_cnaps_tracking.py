@@ -320,7 +320,7 @@ def scoring_snapshot_from_remote(remote, http_status=200, now=None):
             "synced_at": current.isoformat()}
 
 
-def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=None):
+def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=None, *, cnaps_only=False):
     """Recherche le stagiaire puis tente au besoin de rattacher le suivi demandé."""
     api_url = gestion_stagiaires_api_url()
     api_token = str(os.getenv("GESTION_STAGIAIRES_API_TOKEN") or "").strip()
@@ -328,7 +328,7 @@ def proxy_reglementaire(app, contact: Dict[str, Any], http_get=None, http_post=N
         return jsonify({"error": "Connexion Gestion Stagiaires non configurée"}), 503
 
     formation = str(contact.get("formation") or "").strip().upper()
-    is_cnaps_training = formation in {"APS", "A3P"}
+    is_cnaps_training = cnaps_only or formation in {"APS", "A3P"}
     identity = crm_contact_identity(contact)
     if is_cnaps_training:
         api_url = gestion_stagiaires_cnaps_tracking_api_url()
