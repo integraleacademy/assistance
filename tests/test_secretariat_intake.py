@@ -110,7 +110,7 @@ def test_ambiguous_coordinates_do_not_prefill_or_attach_an_arbitrary_contact(des
     assert all(not item["activities"] for item in data["crm_contacts"])
 
 
-@pytest.mark.parametrize("formation", ["APS", "BTS_MOS", "BTS_MCO"])
+@pytest.mark.parametrize("formation", ["APS", "BTS_MOS", "BTS_MCO", "PARCOURS_SECURITE_ALTERNANCE"])
 def test_request_and_appointment_can_be_saved_with_no_training_session(desk, formation):
     client, data, salesforce = desk
     result = client.post("/api/secretariat/demandes", json={
@@ -131,10 +131,11 @@ def test_request_and_appointment_can_be_saved_with_no_training_session(desk, for
     assert "Septembre 2027" in data["crm_contacts"][0]["publications"][0]["texte"]
 
 
-def test_bts_does_not_reuse_hidden_aps_answers_or_create_a_quote(desk, monkeypatch):
+@pytest.mark.parametrize("formation", ["BTS_MOS", "PARCOURS_SECURITE_ALTERNANCE"])
+def test_apprenticeship_does_not_reuse_hidden_aps_answers_or_create_a_quote(desk, formation):
     client, data, _ = desk
     response = client.post("/api/secretariat/demandes", json={
-        "type": "formation", "formation": "BTS_MOS", "nom": "Camille Martin",
+        "type": "formation", "formation": formation, "nom": "Camille Martin",
         "prenom": "Camille", "nom_famille": "Martin", "telephone": "0601020304",
         "email": "camille@example.com", "notes": "Alternance", "cpf_consulte": "OUI",
         "cpf_montant": "1200", "identite_numerique": "OUI", "france_travail": "OUI", "devis": "OUI",
@@ -144,6 +145,18 @@ def test_bts_does_not_reuse_hidden_aps_answers_or_create_a_quote(desk, monkeypat
     for key in ("cpf_consulte", "cpf_montant", "identite_numerique", "france_travail", "devis"):
         assert entry[key] == ""
     assert not data["demandes"]
+    if formation == "PARCOURS_SECURITE_ALTERNANCE":
+        contact = data["crm_contacts"][0]
+        assert contact["formation"] == "Parcours sécurité en alternance"
+        assert application._crm_formation_code(contact) == formation
+        config = application.SECRETARIAT_FORMATIONS[formation]
+        assert entry["calendly_url"] == "https://calendly.com/integraleacademy/parcourssecurite"
+        assert config["dossier_url"] in application._build_secretariat_followup_sms(formation)
+        assert "CPF" not in application._build_secretariat_followup_sms(formation)
+        with application.app.test_request_context():
+            email = application._secretariat_automatic_information_template(data, entry, contact)
+        assert config["dossier_url"] in email["contenu"]
+
 
 
 @pytest.mark.parametrize("code", ["", *application.SECRETARIAT_FORMATIONS])
@@ -307,7 +320,40 @@ async function caller(t,type,mail='camille@example.com'){
     assert.equal(t.widgets[1].prefill.email,'updated@example.com');t.click('#reviewRequest');assert.equal(t.step(),'6');
     assert.equal(t.calls.filter(c=>c.url==='/api/secretariat/demandes').length,0);t.close();
   }
-  console.log('All seven intake journeys passed without external requests.');
+  {
+    const t=setup(); await caller(t,'formation');
+    const visible=()=>[...t.d.querySelectorAll('[data-formation-code]')].filter(button=>!button.hidden);
+    const course='PARCOURS_SECURITE_ALTERNANCE', selector='[data-formation-code="'+course+'"]';
+    assert.equal(t.$('#nextFormation').disabled,true);
+    t.click('[data-filter="alternance"]'); assert.ok(visible().some(b=>b.dataset.formationCode===course));
+    assert.ok(visible().some(b=>b.dataset.formationCode==='BTS_MOS'));
+    t.fill('formationSearch','securite parcours'); assert.deepEqual(visible().map(b=>b.dataset.formationCode),[course]);
+    t.fill('formationSearch','inconnu'); assert.equal(t.$('#formationEmpty').hidden,false);
+    t.click('#resetFormationFilters'); assert.equal(visible().length,13);
+    t.click('[data-filter="transport"]'); assert.deepEqual(visible().map(b=>b.dataset.formationCode),['VTC']);
+    t.click('[data-filter="security"]'); t.fill('formationSearch','apprentissage');
+    t.$('#formationSearch').dispatchEvent(new t.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    assert.equal(t.$(selector).getAttribute('aria-pressed'),'true');
+    assert.match(t.$('#formationSelection').textContent,/Parcours sécurité en alternance/);
+    t.click('[data-filter="bts"]'); assert.equal(t.$('#nextFormation').disabled,true);
+    t.click('[data-filter="security"]'); assert.equal(t.$('#nextFormation').disabled,false);
+    t.click('#nextFormation'); assert.equal(t.step(),'5');
+    t.click('[data-step="5"] [data-back]'); assert.equal(t.step(),'3');
+    assert.equal(t.$(selector).getAttribute('aria-pressed'),'true');
+    t.click('#nextFormation'); t.fill('rentreeSouhaitee','Janvier 2027'); t.click('#nextDates');
+    t.click('[name="wants_rdv"][value="oui"]'); await until(()=>t.widgets.length===1);
+    const agenda='https://calendly.com/integraleacademy/parcourssecurite';
+    const url=new URL(t.widgets[0].url); assert.equal(url.origin+url.pathname,agenda);
+    assert.equal(t.$('#reviewRequest').disabled,true);
+    t.w.dispatchEvent(new t.w.MessageEvent('message',{origin:'https://calendly.com',data:{event:'calendly.event_scheduled'}}));
+    t.click('#reviewRequest'); t.fill('precision','Souhaite candidater en alternance'); t.click('#finish');
+    await until(()=>t.step()==='8');
+    const payload=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;
+    assert.equal(payload.formation,course); assert.equal(payload.calendly_url,agenda);
+    assert.equal(payload.cpf_consulte,undefined); assert.equal(payload.rentree_souhaitee,'Janvier 2027');
+    assert.match(payload.rdv,/réservé/); t.close();
+  }
+  console.log('All intake journeys passed without external requests.');
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
     result = subprocess.run(["node", "-e", script], input=rendered, text=True,
