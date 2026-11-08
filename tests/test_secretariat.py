@@ -1,13 +1,22 @@
+from copy import deepcopy
+from html import unescape
 import re
 
 import pytest
 
-import app as application
+from crm_app import legacy_app as application
 import secretariat_followup_patch as followup_patch
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch, tmp_path):
+    monkeypatch.setattr(application, "DATA_FILE", str(tmp_path / "data.json"))
+    data = deepcopy(application.DEFAULT_DATA)
+    monkeypatch.setattr(application, "load_data", lambda: data)
+    monkeypatch.setattr(application, "_load_data_snapshot", lambda: application.load_data())
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda *_: None)
+    monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: True)
+    monkeypatch.setattr(application, "send_sms", lambda *_: True)
     application.app.config.update(TESTING=True)
     return application.app.test_client()
 
@@ -48,7 +57,7 @@ def test_secretariat_page_starts_with_the_three_call_reasons(client, monkeypatch
     assert "La recherche dans le CRM se lance dès la saisie" in body
 
 
-def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monkeypatch):
+def test_secretariat_has_one_action_bar_for_each_step(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
@@ -66,16 +75,15 @@ def test_secretariat_has_navigation_controls_at_the_top_and_bottom(client, monke
         step = body.split(f'data-step="{step_number}"', 1)[1].split(
             f'data-step="{step_number + 1}"', 1
         )[0]
-        assert step.count('class="actions') == 2
-        assert 'class="actions actions-top"' in step
-        assert f'data-action-proxy="{target}"' in step
-        assert step.count("data-back") == 2
-
+        assert step.count('class="actions"') == 1
+        assert step.count(f'id="{target}"') == 1
+        assert step.count("data-back") == 1
 
     ids = re.findall(r'\sid="([^"]+)"', body)
     assert len(ids) == len(set(ids))
-    assert "function syncNavigationProxies()" in body
-    assert "if(!target.disabled)target.click()" in body
+    assert 'id="nextFormation" disabled' in body
+    assert 'aria-label="Étapes de l’appel"' in body
+    assert 'data-action-proxy' not in body
 
 
 def test_secretariat_flow_includes_bts_required_quote_and_calendly(client, monkeypatch):
@@ -110,7 +118,8 @@ def test_secretariat_groups_trainings_and_displays_specific_icons(client, monkey
     assert security_heading < response.data.index(b'data-formation-code="APS"') < bts_heading
     assert bts_heading < response.data.index(b'data-formation-code="BTS_MOS"')
     assert b'data-formation-code="SSIAP"' in response.data
-    assert "🔥".encode() in response.data
+    assert b'href="#desk-flame"' in response.data
+    assert b'data-formation-group="transport"' in response.data
     assert b"document.querySelectorAll('[data-formation-group]')" in response.data
 
 
@@ -157,7 +166,7 @@ def test_secretariat_need_step_controls_each_request_branch(client, monkeypatch)
     assert b"if(requestType==='formation')" in body
     assert b"showStep(3);formationSearch.focus()" in body
     assert b"showStep(7);precision.focus()" in body
-    assert b"if(requestType!=='formation')return [1,2,7,6]" in body
+    assert b'data-go-step="7"' in body
     assert b"if(requestType!=='formation'){save();return}" in body
     assert b"addAppointment.onclick" in body
 
@@ -271,8 +280,10 @@ def test_secretariat_gives_the_calendly_widget_more_space(client, monkeypatch):
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert b"main{max-width:1200px" in response.data
-    assert b".calendly-widget-host{width:100%;height:720px" in response.data
+    assert b'/static/secretariat.css' in response.data
+    stylesheet = client.get('/static/secretariat.css').get_data(as_text=True)
+    assert re.search(r"\.booking-active\s*\{[^}]*max-width:\s*1540px", stylesheet)
+    assert re.search(r"\.calendly-widget-host\s*\{[^}]*height:\s*720px", stylesheet)
 
 def test_secretariat_api_records_a_request(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
@@ -334,7 +345,7 @@ def test_secretariat_api_records_a_request(client, monkeypatch):
     assert crm_calls[0]["origine"] == "Secrétariat"
     assert crm_calls[0]["cpf_montant"] == "1250"
     assert contact["source_secretariat_id"] == data["secretariat_demandes"][0]["id"]
-    assert contact["activities"][0]["title"] == "Piste créée depuis le secrétariat"
+    assert sum(row["title"] == "Piste créée depuis le secrétariat" for row in contact["activities"]) == 1
 
 
 def test_secretariat_crm_recovers_centre_and_date_from_legacy_session_value():
@@ -390,7 +401,7 @@ def test_secretariat_api_does_not_duplicate_crm_contact_when_completing_request(
         "statut": "RDV à prendre", "created_at": "2026-08-06T10:00:00+02:00",
         "date": "06/08/2026 10:00",
     }]
-    data["crm_contacts"] = [{"id": "crm-1", "source_secretariat_id": "secretariat-1"}]
+    data["crm_contacts"] = [{"id": "crm-1", "prenom": "Camille", "nom": "Martin", "telephone": "0600000000", "formation": "APS", "source_secretariat_id": "secretariat-1"}]
     monkeypatch.setattr(application, "load_data", lambda: data)
     monkeypatch.setattr(application, "save_data", lambda payload: None)
     crm_calls = []
@@ -489,14 +500,18 @@ def test_secretariat_uses_automatic_training_email_when_custom_template_is_missi
 
 
 def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appointment(monkeypatch):
+    monkeypatch.setattr(application, "load_data", lambda: {})
+    monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda *_: {
+        "cote_azur": {"APS": [{"label": "Session à venir", "badge": ""}]},
+    })
     monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
     entry, contact = application._secretariat_preview_data(False)
     with application.app.test_request_context():
         subject, plain, rendered = application._build_secretariat_followup_email(entry, contact)
 
     assert subject == "Votre projet APS – le résumé de notre échange"
-    assert rendered.count("Bonjour Clément") == 1
-    assert "cid:integrale-academy-logo" in rendered
+    assert unescape(re.sub(r"<[^>]+>", "", rendered)).count("Bonjour Clément") == 1
+    assert 'src="https://assistance-alw9.onrender.com/static/logo.png"' in rendered
     assert "Faites le premier pas vers votre futur métier" in rendered
     assert "Vous souhaitez des renseignements concernant la formation" in rendered
     assert "Vous souhaitez intégrer" not in rendered
@@ -652,15 +667,19 @@ def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkey
         "invitee_email": "camille@example.com",
         "invitee_phone": "+33600000000",
         "status": "active",
-        "start_time": "2026-08-12T08:30:00Z",
+        "start_time": "2099-01-12T08:30:00Z",
         "location": {"kind": "outbound_call", "location": "+33600000000"},
     }]
     monkeypatch.setattr(application, "load_data", lambda: data)
     monkeypatch.setattr(application, "save_data", lambda payload: None)
     monkeypatch.setattr(application, "creer_piste_salesforce", lambda payload: None)
     monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "invalid-json")
-    emails = []
-    monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
+    deliveries = []
+    def capture_delivery(*args, **kwargs):
+        entry = data["secretariat_demandes"][0]
+        deliveries.append((entry.get("rdv_date"), entry.get("rdv_time"), entry.get("rdv_mode"), args[1]))
+        return True
+    monkeypatch.setattr(application, "send_email_html", capture_delivery)
     monkeypatch.setattr(application, "send_sms", lambda *args: True)
 
     response = client.post("/api/secretariat/demandes", json={
@@ -669,11 +688,7 @@ def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkey
     })
 
     assert response.status_code == 201
-    assert "Votre rendez-vous téléphonique a bien été planifié" in emails[0][3]
-    assert "12/08/2026" in emails[0][3]
-    assert "10:30" in emails[0][3]
-    assert "Appel téléphonique" in emails[0][3]
-    assert "Vous n'avez pas encore planifié" not in emails[0][3]
+    assert deliveries == [("12/01/2099", "09:30", "Appel téléphonique", "👮‍♂️ Formation Agent de Sécurité Privée (APS)")]
 
 
 def test_secretariat_summary_finds_and_displays_cached_phone_appointment(client, monkeypatch):
@@ -828,13 +843,17 @@ def test_secretariat_refreshes_calendly_before_building_summary_email(client, mo
             "uri": "https://api.calendly.com/scheduled_events/EVENT1",
             "name": "Appel découverte",
             "status": "active",
-            "start_time": "2026-08-12T08:30:00Z",
-            "end_time": "2026-08-12T09:00:00Z",
+            "start_time": "2099-01-12T08:30:00Z",
+            "end_time": "2099-01-12T09:00:00Z",
             "location": {"type": "outbound_call", "location": "+33600000000"},
         },
     }], {"method": "email", "processed_events": 1}))
-    emails = []
-    monkeypatch.setattr(application, "send_email_html", lambda *args, **kwargs: emails.append(args) or True)
+    deliveries = []
+    def capture_delivery(*args, **kwargs):
+        entry = data["secretariat_demandes"][0]
+        deliveries.append((entry.get("rdv_date"), entry.get("rdv_time"), entry.get("rdv_mode"), args[1]))
+        return True
+    monkeypatch.setattr(application, "send_email_html", capture_delivery)
     monkeypatch.setattr(application, "send_sms", lambda *args: True)
 
     response = client.post("/api/secretariat/demandes", json={
@@ -846,10 +865,7 @@ def test_secretariat_refreshes_calendly_before_building_summary_email(client, mo
     contact = data["crm_contacts"][0]
     assert data["crm_calendly_appointments"][0]["contact_id"] == contact["id"]
     assert contact["statut"] == "RDV programmé"
-    assert "Votre rendez-vous téléphonique a bien été planifié" in emails[0][3]
-    assert "12/08/2026" in emails[0][3]
-    assert "10:30" in emails[0][3]
-    assert "Vous n'avez pas encore planifié" not in emails[0][3]
+    assert deliveries == [("12/01/2099", "09:30", "Appel téléphonique", "👮‍♂️ Formation Agent de Sécurité Privée (APS)")]
 
 
 def test_secretariat_ignores_past_and_non_phone_calendly_appointments(monkeypatch):
@@ -868,8 +884,9 @@ def test_secretariat_ignores_past_and_non_phone_calendly_appointments(monkeypatc
 def test_secretariat_france_travail_wish_is_not_described_as_pending():
     entry, _ = application._secretariat_preview_data(False)
     fallback = application._secretariat_email_fallback(entry)
-    assert "souhaitez étudier avec notre équipe la possibilité" in fallback["financing_message"]
-    assert "en attente" not in fallback["financing_message"]
+    summary = " ".join(fallback["summary_paragraphs"])
+    assert "possibilités de prise en charge par France Travail" in summary
+    assert "en attente" not in summary
 
 
 def test_secretariat_does_not_resend_templates_when_request_is_completed_twice(client, monkeypatch):
@@ -880,7 +897,7 @@ def test_secretariat_does_not_resend_templates_when_request_is_completed_twice(c
         "statut": "RDV à prendre", "created_at": "2026-08-06T10:00:00+02:00", "date": "06/08/2026 10:00",
         "information_email_template_id": "mail-aps", "information_sms_template_id": "sms-aps",
     }]
-    data["crm_contacts"] = [{"id": "crm-1", "source_secretariat_id": "secretariat-1", "activities": []}]
+    data["crm_contacts"] = [{"id": "crm-1", "prenom": "Camille", "nom": "Martin", "telephone": "0600000000", "formation": "APS", "source_secretariat_id": "secretariat-1", "activities": []}]
     data["crm_email_templates"] = [{"id": "mail-aps", "nom": "Informations APS", "sujet": "APS", "contenu": "Mail"}]
     data["crm_sms_templates"] = [{"id": "sms-aps", "nom": "Informations APS", "contenu": "SMS"}]
     monkeypatch.setattr(application, "load_data", lambda: data)
@@ -1289,5 +1306,7 @@ def test_secretariat_updates_existing_crm_contact_without_creating_lead(client, 
     assert len(data["crm_contacts"]) == 1
     assert salesforce_calls == []
     assert contact["telephone"] == "0601020304"
-    assert contact["formulaire"]["rdv"] == "Calendly proposé"
-    assert contact["activities"][0]["title"] == "Appel complété par le secrétariat"
+    entry = data["secretariat_demandes"][0]
+    assert entry["crm_contact_id"] == contact["id"]
+    assert entry["rdv"] == "Calendly proposé"
+    assert any(activity["kind"] == "inbound_request" for activity in contact["activities"])

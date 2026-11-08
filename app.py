@@ -504,8 +504,23 @@ FORMATION_CENTRES = {
 }
 
 SECRETARIAT_GENERIC_CALENDLY_URL = "https://calendly.com/integraleacademy"
+SECURITY_APPRENTICESHIP_LABEL = "Parcours sécurité en alternance"
+SECURITY_APPRENTICESHIP_PAGE = "https://www.integraleconnect.com/parcoursalternance"
 
 SECRETARIAT_FORMATIONS = {
+    "PARCOURS_SECURITE_ALTERNANCE": {
+        "short": SECURITY_APPRENTICESHIP_LABEL,
+        "duration": "1 an",
+        "format": "Alternance",
+        "price": "Sans frais de formation pour l’apprenti",
+        "purpose": "Préparer l’APS, l’A3P et le SSIAP 1 en alternant entre le centre de Puget-sur-Argens et l’entreprise.",
+        "funding": "Dans le cadre du contrat d’apprentissage, prise en charge par l’OPCO de l’employeur.",
+        "prerequisites": "Faire le point avec les admissions sur la mobilité, le permis B et les conditions d’accès au parcours.",
+        "topics": ["Prévention et surveillance (APS)", "Protection physique des personnes (A3P)", "Sécurité incendie (SSIAP 1)"],
+        "calendly": "https://calendly.com/integraleacademy/parcourssecurite",
+        "source_url": SECURITY_APPRENTICESHIP_PAGE,
+        "dossier_url": "https://admissions.integraleconnect.com/parcoursalternance/candidature",
+    },
     "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "purpose": "Se former à la protection rapprochée des personnes et exercer comme agent de protection physique.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/apr"},
     "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "purpose": "Obtenir les compétences nécessaires aux missions de surveillance, de prévention et de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/aps"},
     "SSIAP": {"short": "SSIAP 1", "duration": "Formation + examen", "price": "1 230 € TTC", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
@@ -530,6 +545,7 @@ _SECRETARIAT_WEBSITE_CACHE_LOCK = threading.Lock()
 _SECRETARIAT_WEBSITE_CACHE_SECONDS = 15 * 60
 _SECRETARIAT_WEBSITE_MAX_PAGES = 8
 _SECRETARIAT_WEBSITE_ALIASES = {
+    "PARCOURS_SECURITE_ALTERNANCE": ("parcours", "alternance", "apprentissage"),
     "A3P": ("a3p", "apr", "protection", "garde du corps"),
     "APS": ("aps", "agent de prevention", "agent de sécurité"),
     "SSIAP": ("ssiap", "incendie"),
@@ -569,6 +585,8 @@ class _SecretariatWebsiteTextParser(HTMLParser):
 
 
 def _secretariat_official_url(url):
+    if url == SECURITY_APPRENTICESHIP_PAGE:
+        return True
     parsed = urlparse(url)
     return parsed.scheme == "https" and (parsed.hostname or "").lower() in {
         "integraleacademy.com", "www.integraleacademy.com"
@@ -640,7 +658,8 @@ def _secretariat_website_context(formation_code, question):
                        for term in terms
                        if unicodedata.normalize("NFKD", term).encode("ascii", "ignore").decode() in normalized)
         ranked = sorted(urls, key=lambda url: (relevance(url), url == SECRETARIAT_WEBSITE_URL), reverse=True)
-        selected = [SECRETARIAT_WEBSITE_URL, *[url for url in ranked if relevance(url) > 0]]
+        source_url = SECRETARIAT_FORMATIONS.get(formation_code, {}).get("source_url", SECRETARIAT_WEBSITE_URL)
+        selected = [source_url, *[url for url in ranked if relevance(url) > 0]]
         excerpts = []
         for url in list(dict.fromkeys(selected))[:_SECRETARIAT_WEBSITE_MAX_PAGES]:
             try:
@@ -709,9 +728,10 @@ for _code, _details in SECRETARIAT_FORMATIONS.items():
     # toujours celles de la session choisie et ne figurent donc pas ici.
     _details.update({
         "label": _details.get("label") or PLAN_FORMATIONS.get(_code, _details.get("short", _code)),
-        "source_url": SECRETARIAT_WEBSITE_URL,
+        "apprenticeship": _details["format"] == "Alternance",
+        "source_url": _details.get("source_url", SECRETARIAT_WEBSITE_URL),
         "assistant_url": SECRETARIAT_AI_URL,
-        "dossier_url": SECRETARIAT_DOSSIER_URL,
+        "dossier_url": _details.get("dossier_url", SECRETARIAT_DOSSIER_URL),
         "planning_url": SECRETARIAT_PLANNING_URL,
     })
 
@@ -3900,14 +3920,6 @@ def _supprimer_brouillon_formulaire_soumis(data, form_data):
 def secretariat():
     data_store = load_data()
     formations = []
-    formation_icons = {
-        "A3P": "🧭",
-        "APS": "👮",
-        "SSIAP": "🔥",
-        "DESP_INIT": "💼",
-        "DESP_VAE": "📋",
-        "VTC": "🚘",
-    }
     sessions = get_upcoming_formation_sessions(data_store)
     for code, details in SECRETARIAT_FORMATIONS.items():
         centres = []
@@ -3915,21 +3927,25 @@ def secretariat():
             rows = sessions.get(centre_code, {}).get(code, [])
             if rows:
                 centres.append({"code": centre_code, "label": centre_label, "sessions": rows})
+        category = "bts" if code.startswith("BTS_") else "security"
+        description = details["label"].split(" – ")[-1].split(" (")[0]
+        if category == "bts":
+            description = description.removeprefix("BTS ")
+        elif code == "VTC":
+            category = "transport"
+            description = "Transport de personnes"
+        elif code == "PARCOURS_SECURITE_ALTERNANCE":
+            description = "APS, A3P et SSIAP 1 · 1 an"
         formations.append({
             "code": code,
             "label": details.get("label", PLAN_FORMATIONS.get(code, code)),
             "centres": centres,
-            "category": "bts" if code.startswith("BTS_") else "security",
-            "icon": "🎓" if code.startswith("BTS_") else formation_icons.get(code, "📘"),
+            "category": category,
+            "description": description,
             **details,
         })
-    journal = sorted(
-        data_store.get("secretariat_demandes", []),
-        key=lambda row: row.get("created_at", ""),
-        reverse=True,
-    )
     return render_template(
-        "secretariat.html", formations=formations, journal=journal,
+        "secretariat.html", formations=formations,
         generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
         recipients=[member["name"] for member in USERS.values()],
     )
@@ -4087,8 +4103,11 @@ def api_secretariat_demandes():
     if entry["formation_date_status"] == "a_definir":
         for field in ("formation_date_souhaitee", "formation_session_label", "formation_date_examen"):
             entry[field] = ""
-    if entry["formation"].startswith("BTS_"):
-        # Switching from APS to BTS must not retain hidden qualification answers.
+    if entry["formation"] == "PARCOURS_SECURITE_ALTERNANCE":
+        entry["calendly_url"] = SECRETARIAT_FORMATIONS[entry["formation"]]["calendly"]
+    if (SECRETARIAT_FORMATIONS.get(entry["formation"], {}).get("apprenticeship")
+            or entry["formation"].startswith("BTS_")):
+        # A previous individual training choice must not qualify an apprenticeship request.
         for field in ("cpf_consulte", "cpf_montant", "france_travail", "ft_refus_ok",
                       "financement_perso", "identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour", "devis"):
             entry[field] = ""
@@ -11893,6 +11912,7 @@ def _crm_secretariat_answer_values(entry):
     formation = {
         "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
         "VTC": "Chauffeur VTC",
+        "PARCOURS_SECURITE_ALTERNANCE": SECURITY_APPRENTICESHIP_LABEL,
     }.get(formation_key, formation_key)
     centre_code, session_label = _secretariat_session_details(entry)
 
@@ -12317,12 +12337,16 @@ def _secretariat_automatic_information_template(data, entry, contact):
             prenom, dates, centre_code, devis_url, data,
         )
     else:
-        # Les BTS n'ont pas encore de modèle automatique dédié dans le CRM.
+        # Les formations en alternance n'ont pas de modèle automatique dédié dans le CRM.
         # On reprend donc le message générique déjà envoyé par le formulaire
         # public, afin qu'une absence de modèle personnalisé ne bloque jamais
         # silencieusement l'e-mail du secrétariat.
         formation = _secretariat_formation_config(formation_code)
         formation_label = formation.get("label") or formation.get("short") or "Formation Intégrale Academy"
+        dossier_url = html_module.escape(formation["dossier_url"], quote=True)
+        dossier_intro = ("Vous pouvez préparer votre candidature ici :"
+                        if formation_code == "PARCOURS_SECURITE_ALTERNANCE"
+                        else "Vous pouvez consulter le dossier de présentation de nos formations :")
         session_html = (
             f"<p>Session souhaitée : <strong>{html_module.escape(dates)}</strong></p>"
             if dates else ""
@@ -12344,8 +12368,8 @@ def _secretariat_automatic_information_template(data, entry, contact):
             <p>Je fais suite à votre demande de renseignements concernant notre formation
             <strong>{html_module.escape(formation_label)}</strong>. Nous vous remercions de nous avoir contacté !</p>
             {session_html}
-            <p>Vous pouvez consulter le dossier de présentation de nos formations :</p>
-            <p><a href="{SECRETARIAT_DOSSIER_URL}">{SECRETARIAT_DOSSIER_URL}</a></p>
+            <p>{dossier_intro}</p>
+            <p><a href="{dossier_url}">{dossier_url}</a></p>
             {devis_html}
             <p>Notre équipe reste à votre disposition au <strong>04 22 47 07 68</strong>.</p>
             <p>Je vous souhaite une bonne journée,</p>
@@ -12500,6 +12524,13 @@ def _secretariat_formation_name(formation_code):
 
 def _build_secretariat_followup_sms(formation_code):
     formation_name = _secretariat_formation_name(formation_code)
+    if formation_code == "PARCOURS_SECURITE_ALTERNANCE":
+        config = SECRETARIAT_FORMATIONS[formation_code]
+        return (
+            f"Suite à notre échange sur le {formation_name}, vous pouvez préparer "
+            f"votre candidature ici : {config['dossier_url']}\n\n"
+            "L’équipe admissions est joignable au 04 22 47 07 68.\nIntégrale Academy"
+        )
     return (
         "Je fais suite à notre échange téléphonique au sujet de notre formation "
         f"{formation_name}. Merci de votre intérêt !\n\n"
@@ -19063,6 +19094,7 @@ def _crm_formation_code(contact):
     if formation == "desp":
         return "DESP_VAE" if str(contact.get("desp_type") or "").strip().upper() == "VAE" else "DESP_INIT"
     return {
+        SECURITY_APPRENTICESHIP_LABEL.lower(): "PARCOURS_SECURITE_ALTERNANCE",
         "aps": "APS", "a3p": "A3P", "ssiap": "SSIAP", "ssiap 1": "SSIAP",
         "chauffeur vtc": "VTC", "vtc": "VTC",
     }.get(formation, str(contact.get("formation") or "").strip().upper())
