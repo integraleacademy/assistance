@@ -17,6 +17,7 @@ from secretariat_catalogue import (
     PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
 )
 import crm_public_sessions
+import secretariat_calls
 from crm_read_cache import LastProjection, UpdateSnapshots
 from crm_email_signatures import brand_saved_template
 from contextvars import ContextVar
@@ -2041,9 +2042,10 @@ def _render_email_template(template_name: str, **kwargs) -> str:
     return html
 
 def build_vae_desp_email_html(prenom, devis_url, *, tuition=3800):
+    deposit = round(tuition * 0.30)
     return _render_email_template(
         "vae_desp.html", prenom=prenom, devis_url=devis_url, tuition=_eur_display(tuition),
-        deposit=f"{round(tuition * 0.30):,} €".replace(",", " "),
+        deposit=f"{deposit:,} €".replace(",", " "), balance=f"{tuition - deposit:,} €".replace(",", " "),
     )
 
 
@@ -3980,7 +3982,8 @@ def _secretariat_existing_crm_contact(data, payload):
 def api_secretariat_crm_contact():
     """Find an existing CRM record without exposing the contact list."""
     payload = request.get_json(silent=True) or {}
-    contact = _secretariat_existing_crm_contact(_load_data_snapshot(), payload)
+    data = _load_data_snapshot()
+    contact = _secretariat_existing_crm_contact(data, payload)
     result = {"contact_id": contact.get("id") if contact else None}
     user = current_user()
     # This page is also public. Only an already-authorized internal CRM session
@@ -3992,6 +3995,16 @@ def api_secretariat_crm_contact():
             "telephone": str(contact.get("telephone") or ""),
             "email": str(contact.get("mail") or ""),
         }
+        if payload.get("confirmed_contact_id") == contact.get("id"):
+            appointments = (a for a in data.get("crm_calendly_appointments", [])
+                            if not a.get("contact_id") or a.get("contact_id") == contact["id"])
+            appointment = _crm_next_phone_appointment(data, {}, contact, appointments=appointments)
+            result["summary"] = secretariat_calls.desk_summary(
+                contact, data.get("secretariat_demandes", []), appointment[1] if appointment else None,
+            )
+            course = SECRETARIAT_FORMATIONS.get(_crm_formation_code(contact))
+            if course:
+                result["summary"]["formation"] = course["short"]
     response = jsonify(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
@@ -4040,12 +4053,36 @@ def secretariat_calendly_prefill_schema():
     return jsonify(schema)
 
 
+def _secretariat_call_key(payload):
+    key = payload.get("call_key") or ""
+    return hashlib.sha256(key.encode()).hexdigest() if isinstance(key, str) and re.fullmatch(r"[a-f0-9]{32}", key) else ""
+
+
+def _secretariat_receipt(entry):
+    fields = ("id", "type", "formation", "rdv", "rdv_date", "rdv_time", "rdv_status",
+              "devis", "callback_recipient", "callback_due_at", "financement_a_confirmer")
+    details = {key: entry.get(key) for key in fields}
+    details["quote_created"] = bool(entry.get("devis_id"))
+    details["linked"] = bool(entry.get("crm_contact_id"))
+    messages = {channel: secretariat_calls.delivery_state(entry, channel) for channel in ("email", "sms")
+                if entry.get("type") == "formation"}
+    return jsonify(ok=True, demande=details, messages=messages)
+
+
 @app.route("/api/secretariat/demandes", methods=["POST"])
 @_serialize_secretariat_delivery
 def api_secretariat_demandes():
     payload = request.get_json(silent=True) or {}
     if payload.get("type") not in {"formation", "autre"}:
         return jsonify({"ok": False, "error": "Type de demande invalide"}), 400
+    call_key = _secretariat_call_key(payload)
+    if "call_key" in payload and not call_key:
+        return jsonify(error="Identifiant de l’appel invalide."), 400
+    data_store = load_data()
+    entries = data_store.setdefault("secretariat_demandes", [])
+    previous = next((row for row in reversed(entries) if call_key and row.get("call_key_hash") == call_key), None)
+    if previous and previous.get("desk_completed"):
+        return _secretariat_receipt(previous), 200
     now = datetime.datetime.now(pytz.timezone("Europe/Paris"))
     entry = {
         "id": str(uuid.uuid4()),
@@ -4060,7 +4097,7 @@ def api_secretariat_demandes():
         "formation_date_examen": str(payload.get("formation_date_examen", "")).strip(),
         "formation_date_status": "a_definir" if payload.get("formation_date_status") == "a_definir" else "",
         "rentree_souhaitee": str(payload.get("rentree_souhaitee") or "").strip()[:100],
-        "callback_motif": "suivi" if payload.get("callback_motif") == "suivi" else "message",
+        "callback_motif": payload.get("callback_motif") if payload.get("callback_motif") in ("suivi", "formation") else "message",
         "callback_recipient": str(payload.get("callback_recipient") or "").strip(),
         "telephone": str(payload.get("telephone", "")).strip(),
         "email": str(payload.get("email", "")).strip(),
@@ -4094,6 +4131,15 @@ def api_secretariat_demandes():
         member["name"] for member in USERS.values()
     }:
         return jsonify({"ok": False, "error": "Choisissez un destinataire proposé dans la liste."}), 400
+    if entry["type"] == "autre":
+        try:
+            entry["callback_due_at"] = secretariat_calls.callback_deadline(payload.get("callback_due_at"))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        if call_key and (not _normaliser_telephone_sms(entry["telephone"]) or not entry["notes"]):
+            return jsonify(error="Indiquez un numéro de rappel valide et le motif du rappel."), 400
+    if call_key:
+        entry["call_key_hash"] = call_key
     if entry["formation_date_status"] == "a_definir":
         for field in ("formation_date_souhaitee", "formation_session_label", "formation_date_examen"):
             entry[field] = ""
@@ -4105,24 +4151,26 @@ def api_secretariat_demandes():
         for field in ("cpf_consulte", "cpf_montant", "france_travail", "ft_refus_ok",
                       "financement_perso", "identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour", "devis"):
             entry[field] = ""
-    data_store = load_data()
-    entries = data_store.setdefault("secretariat_demandes", [])
+    secretariat_calls.collect_pending_financing(entry, payload)
     if entry["type"] == "autre":
         matched_contact = _secretariat_existing_crm_contact(data_store, entry)
         entry["crm_contact_id"] = matched_contact.get("id", "") if matched_contact else ""
     # Le formulaire formation crée déjà une ligne « RDV à prendre ». La dernière
     # étape du parcours l'enrichit au lieu de créer un doublon dans le journal.
     def is_same_recent_submission(row):
-        if payload.get("type") != "formation" or row.get("formation") != entry["formation"] or row.get("telephone") != entry["telephone"]:
+        if (row.get("call_key_hash") or row.get("type", "formation") != "formation" or entry["type"] != "formation"
+                or row.get("formation") != entry["formation"] or row.get("telephone") != entry["telephone"]):
             return False
         if row.get("statut") == "RDV à prendre":
-            return True
+            return not call_key or row.get("email", "") == entry["email"]
+        if call_key:
+            return False
         try:
             created = datetime.datetime.fromisoformat(str(row.get("created_at")))
             return abs((now - created).total_seconds()) < 300 and row.get("email", "") == entry["email"]
         except (TypeError, ValueError):
             return False
-    existing = next((row for row in reversed(entries) if is_same_recent_submission(row)), None)
+    existing = previous or next((row for row in reversed(entries) if is_same_recent_submission(row)), None)
     if existing:
         created_at, date_label, entry_id = existing.get("created_at"), existing.get("date"), existing.get("id")
         existing.update(entry)
@@ -4146,7 +4194,11 @@ def api_secretariat_demandes():
         if crm_contact:
             _crm_ensure_secretariat_publication(crm_contact, entry)
             crm_contact["updated_at"] = _crm_now()
+        if call_key:
+            entry["desk_completed"] = True
         save_data(data_store)
+        if call_key:
+            return _secretariat_receipt(entry), 201
         return jsonify({
             "ok": True,
             "demande": entry,
@@ -4181,6 +4233,7 @@ def api_secretariat_demandes():
             f"Session souhaitée : {entry['formation_date_souhaitee']}" if entry["formation_date_souhaitee"] else "",
             f"{_secretariat_period_label(entry)} : {entry['rentree_souhaitee']}" if entry["rentree_souhaitee"] else "",
             f"Notes : {entry['notes']}" if entry["notes"] else "",
+            secretariat_calls.funding_note(entry),
             f"Rendez-vous : {entry['rdv']}" if entry["rdv"] else "",
             f"Devis demandé : {entry['devis']}" if entry["devis"] else "",
         ])),
@@ -4199,15 +4252,78 @@ def api_secretariat_demandes():
         _secretariat_hydrate_appointment_from_crm(data_store, entry, crm_contact)
         _ensure_secretariat_quote(data_store, entry, crm_contact)
         message_results = _send_secretariat_information_messages(data_store, entry, crm_contact)
+    if call_key:
+        entry["desk_completed"] = True
     save_data(data_store)
     if creates_new_lead:
         creer_piste_salesforce(crm_payload)
+    if call_key:
+        return _secretariat_receipt(entry), 201
     return jsonify({
         "ok": True,
         "demande": entry,
         "crm_contact_id": crm_contact.get("id") if creates_new_lead and crm_contact else None,
         "messages": message_results,
     }), 201
+
+
+@app.post("/api/secretariat/demandes/<request_id>/renvoyer/<channel>")
+@_serialize_secretariat_delivery
+def secretariat_retry_channel(request_id, channel):
+    payload = request.get_json(silent=True) or {}
+    key = _secretariat_call_key(payload)
+    data = load_data()
+    entry = next((row for row in data.get("secretariat_demandes", [])
+                  if row.get("id") == request_id and row.get("type") == "formation"), None)
+    if channel not in {"email", "sms"} or not key or not entry or not hmac.compare_digest(entry.get("call_key_hash", ""), key):
+        return jsonify(error="Cette demande de renvoi est indisponible."), 404
+    state = secretariat_calls.delivery_state(entry, channel)
+    if state == "sent":
+        return _secretariat_receipt(entry)
+    if state != "failed":
+        return jsonify(error="Seul un envoi en échec peut être relancé."), 409
+    recipient = str(payload.get("recipient") or "").strip()
+    is_email = channel == "email"
+    if is_email:
+        valid = len(recipient) <= 254 and re.fullmatch(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+", recipient)
+    else:
+        valid = re.fullmatch(r"[+\d() .-]{8,30}", recipient) and re.fullmatch(r"[1-9]\d{7,14}", _normaliser_telephone_sms(recipient))
+    if not valid:
+        return jsonify(error="Vérifiez l’adresse e-mail." if is_email else "Vérifiez le numéro de téléphone."), 400
+    contact = _crm_contact(data, entry.get("crm_contact_id"))
+    if not contact:
+        return jsonify(error="La fiche liée doit être vérifiée dans le CRM."), 409
+    field = "email" if is_email else "telephone"
+    crm_field = "mail" if is_email else "telephone"
+    normalize = _crm_normalize_email if is_email else _crm_normalize_phone
+    if normalize(recipient) != normalize(entry.get(field)):
+        staff = (current_user() or {}).get("email", "").lower() in USERS
+        own_lead = contact.get("source_secretariat_id") == entry.get("id")
+        if not (staff or own_lead or normalize(contact.get(crm_field)) == normalize(recipient)):
+            return jsonify(error="Connectez-vous au CRM pour corriger le destinataire de cette fiche existante."), 403
+        if any(c.get("id") != contact.get("id") and normalize(c.get(crm_field)) == normalize(recipient)
+               for c in data.get("crm_contacts", [])):
+            return jsonify(error="Cette coordonnée est déjà liée à une autre fiche. Faites vérifier le destinataire."), 409
+        if not contact.get(crm_field) or normalize(contact.get(crm_field)) == normalize(entry.get(field)):
+            contact[crm_field] = recipient
+            contact["updated_at"] = _crm_now()
+        for quote in data.get("demandes", []):
+            if quote.get("id") == entry.get("devis_id") and quote.get("source_secretariat_id") == entry["id"]:
+                if normalize(quote.get(crm_field)) == normalize(entry.get(field)):
+                    quote[crm_field] = recipient
+                details = quote.get("details")
+                try:
+                    values = json.loads(details) if isinstance(details, str) else details
+                except ValueError:
+                    values = None
+                if isinstance(values, dict) and normalize(values.get(crm_field)) == normalize(entry.get(field)):
+                    values[crm_field] = recipient
+                    quote["details"] = json.dumps(values, ensure_ascii=False) if isinstance(details, str) else values
+                break
+        entry[field] = recipient
+    _send_secretariat_information_messages(data, entry, contact, only=channel)
+    save_data(data)
+    return _secretariat_receipt(entry)
 
 
 def _secretariat_ai_context(formation_code):
@@ -12081,6 +12197,9 @@ def _crm_ensure_secretariat_publication(contact, entry):
     if text:
         text = "\n".join(filter(None, [
             f"Destinataire : {entry['callback_recipient']}" if entry.get("callback_recipient") else "",
+            f"À rappeler avant le {secretariat_calls.date_label(entry['callback_due_at'])}" if entry.get("callback_due_at") else "",
+            _secretariat_formation_name(entry["formation"]) if entry.get("type") == "autre" and entry.get("formation") else "",
+            secretariat_calls.funding_note(entry),
             f"{_secretariat_period_label(entry)} : {entry['rentree_souhaitee']}" if entry.get("rentree_souhaitee") else "",
             text,
         ]))
@@ -12442,10 +12561,12 @@ def _secretariat_information_email(data, entry, contact):
     return template, subject, plain, _crm_refresh_email_signature(branded, saved=True)
 
 
-def _send_secretariat_information_messages(data, entry, contact):
+def _send_secretariat_information_messages(data, entry, contact, *, only=None):
     """Deliver each channel independently and persist an idempotent audit trail."""
     results = {}
     for kind, recipient_key, provider in (("email", "email", "SMTP/Brevo"), ("sms", "telephone", "Brevo")):
+        if only and kind != only:
+            continue
         recipient = entry.get(recipient_key)
         status_key = f"{kind}_summary_status"
         sent_key = f"{kind}_summary_sent_at"
@@ -12454,6 +12575,9 @@ def _send_secretariat_information_messages(data, entry, contact):
         legacy_sent_key = f"information_{kind}_sent_at"
         if entry.get(sent_key) or entry.get(legacy_sent_key) or entry.get(f"information_{kind}_template_id"):
             results[kind] = "already_sent"
+            continue
+        if entry.get("call_key_hash") and entry.get(status_key) == "sending":
+            results[kind] = "sending"
             continue
         if not recipient or (kind == "sms" and not _normaliser_telephone_sms(recipient)):
             entry[status_key] = "failed"
@@ -18539,6 +18663,8 @@ def _crm_callback_request_detail(entry):
     appointment = str(entry.get("rdv") or "").strip()
     return "\n".join(filter(None, [
         f"Destinataire : {entry['callback_recipient']}" if entry.get("callback_recipient") else "",
+        f"À rappeler avant le {secretariat_calls.date_label(entry['callback_due_at'])}" if entry.get("callback_due_at") else "",
+        _secretariat_formation_name(entry["formation"]) if entry.get("formation") else "",
         "Motif : Suivi de dossier / Déjà inscrit" if entry.get("callback_motif") == "suivi" else "",
         f"Demande : {notes or 'Aucune précision renseignée.'}",
         f"Rendez-vous : {appointment or 'Non renseigné'}",
@@ -18748,6 +18874,11 @@ def _crm_callback_requests_payload(data):
             "email": str(entry.get("email") or ""),
             "notes": str(entry.get("notes") or ""),
             "recipient": str(entry.get("callback_recipient") or ""),
+            "due_at": str(entry.get("callback_due_at") or ""),
+            "due_label": secretariat_calls.date_label(entry.get("callback_due_at")),
+            "formation": _secretariat_formation_name(entry["formation"]) if entry.get("formation") else "",
+            "session_label": str(entry.get("formation_date_souhaitee") or entry.get("rentree_souhaitee") or ""),
+            "funding_note": secretariat_calls.funding_note(entry),
             "motif": str(entry.get("callback_motif") or ""),
             "rdv": str(entry.get("rdv") or ""),
             "rdv_status": str(entry.get("rdv_status") or ""),

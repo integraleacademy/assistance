@@ -272,6 +272,24 @@ async function caller(t,type,mail='camille@example.com'){
   t.click('#callerSubmit');
 }
 (async()=>{
+  {
+    const t=setup();
+    t.click('#browseCourses');
+    for(const course of t.d.querySelectorAll('[data-formation-code]')){
+      course.click();t.click('#nextFormation');assert.equal(t.step(),'5');
+      assert.ok(t.$('#trainingTopics').children.length);
+      t.click('[data-step="5"] [data-back]');
+    }
+    assert.equal(t.calls.length,0);
+    t.click('[data-formation-code="APS"]');t.click('#nextFormation');
+    const session=t.$('#sessionOptions input[data-session-label]');session.click();
+    t.click('#nextDates');assert.equal(t.step(),'2');
+    t.fill('telephone','0601020304');t.fill('nom','Martin');t.fill('prenom','Camille');t.fill('email','camille@example.com');t.click('#callerSubmit');
+    assert.equal(t.step(),'4');assert.equal(session.checked,true);
+    t.click('[name="cpf_consulte"][value="OUI"]');t.click('#cpfPending');
+    assert.equal(t.$('#cpf_montant').required,false);assert.equal(t.$('#cpf_montant').disabled,true);
+    t.click('#cpfPending');assert.equal(t.$('#cpf_montant').required,true);t.close();
+  }
   for(const type of ['suivi','autre']){
     const t=setup();assert.equal(t.step(),'1');await caller(t,type,'');assert.equal(t.step(),'7');
     assert.equal(t.$('#email').required,false);t.fill('precision','Rappeler au sujet du dossier');
