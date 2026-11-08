@@ -176,12 +176,12 @@ def test_secretariat_displays_training_details_after_new_caller_qualification(cl
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert b"La fiche pratique de la formation" in response.data
-    assert b"Financements possibles" in response.data
-    assert b"Pr\xc3\xa9requis \xc3\xa0 v\xc3\xa9rifier" in response.data
-    assert b"Ce que l\xe2\x80\x99appelant va apprendre" in response.data
+    assert b'id="trainingFacts"' in response.data
+    assert b'id="trainingTopics"' in response.data
+    assert b'id="trainingAdmission"' in response.data
+    assert b'id="trainingAward"' in response.data
+    assert b'id="trainingSource"' in response.data
     assert b"protection rapproch" in response.data
-    assert b"site internet d\xe2\x80\x99Int\xc3\xa9grale Academy" in response.data
     body = response.data.decode()
     assert body.index('data-step="1"') < body.index('data-step="2"')
     assert body.index('data-step="2"') < body.index('data-step="3"')
@@ -194,12 +194,10 @@ def test_secretariat_offers_a_session_or_dates_to_be_defined(client, monkeypatch
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert "Quelles dates de formation souhaitez-vous".encode() in response.data
+    assert b'id="sessionTitle">Session souhait' in response.data
     assert b'name="formation_date_souhaitee"' in response.data
     assert b"if(!selectedSession)" in response.data
-    assert b"formation_date_souhaitee:requestType" in response.data
-    assert "Dates à définir / Je ne sais pas encore".encode() in response.data
-    assert b'data-undecided="true"' in response.data
+    assert "Dates à définir".encode() in response.data
 
 
 def test_secretariat_only_exposes_sessions_whose_start_date_has_not_passed(client, monkeypatch):
@@ -1006,7 +1004,7 @@ def test_secretariat_embeds_training_ai_directly_in_the_page(client, monkeypatch
     response = client.get("/secretariat")
 
     assert response.status_code == 200
-    assert "Posez votre question à l’IA".encode() in response.data
+    assert "Poser une question sur cette formation à l’IA".encode() in response.data
     assert b'id="trainingAiForm"' in response.data
     assert b'id="trainingAiQuestion"' in response.data
     assert b'id="askTrainingAi"' in response.data
@@ -1014,13 +1012,16 @@ def test_secretariat_embeds_training_ai_directly_in_the_page(client, monkeypatch
     assert b"integraleacademy.com" in response.data
 
 
-def test_secretariat_asks_for_dates_before_the_training_sheet(client, monkeypatch):
+def test_secretariat_presents_the_open_training_sheet_before_dates_and_optional_ai(client, monkeypatch):
     monkeypatch.setattr(application, "load_data", lambda: dict(application.DEFAULT_DATA))
     response = client.get("/secretariat")
 
     assert response.status_code == 200
     body = response.data.decode()
-    assert body.index("Quelles dates de formation souhaitez-vous") < body.index("La fiche pratique de la formation")
+    sheet = body.split('data-step="5" hidden>', 1)[1].split('data-step="6"', 1)[0]
+    assert sheet.index('id="trainingTitle"') < sheet.index('id="trainingFacts"') < sheet.index('id="sessionTitle"')
+    assert sheet.index('id="trainingAdmission"') < sheet.index('id="sessionTitle"') < sheet.index('<details')
+    assert '<details class="embedded-ai" id="trainingAiPanel">' in sheet
     assert "https://www.integraleacademy.com/" in body
 
 

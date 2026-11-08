@@ -511,28 +511,38 @@ SECRETARIAT_FORMATIONS = {
     "PARCOURS_SECURITE_ALTERNANCE": {
         "short": SECURITY_APPRENTICESHIP_LABEL,
         "duration": "1 an",
+        "training_hours": "573 h de formation",
         "format": "Alternance",
-        "price": "Sans frais de formation pour l’apprenti",
-        "purpose": "Préparer l’APS, l’A3P et le SSIAP 1 en alternant entre le centre de Puget-sur-Argens et l’entreprise.",
-        "funding": "Dans le cadre du contrat d’apprentissage, prise en charge par l’OPCO de l’employeur.",
-        "prerequisites": "Faire le point avec les admissions sur la mobilité, le permis B et les conditions d’accès au parcours.",
-        "topics": ["Prévention et surveillance (APS)", "Protection physique des personnes (A3P)", "Sécurité incendie (SSIAP 1)"],
+        "location": "Puget-sur-Argens (83)",
+        "price": "0 € pour l’apprenti",
+        "purpose": "Se former à la surveillance, à la protection rapprochée et à la sécurité incendie en contrat d’apprentissage.",
+        "funding": "La brochure 2027 chiffre le parcours à 6 880 €. Les frais sont pris en charge après validation du contrat et l’apprenti est rémunéré.",
+        "audience": "Candidats de moins de 26 ans, disponibles sur toute la durée du parcours.",
+        "prerequisites": "Permis B et mobilité. Droit de travailler en France, dossier CNAPS et aptitude médicale à vérifier avec les admissions.",
+        "certification": "Deux titres à finalité professionnelle (APS et A3P) et le diplôme SSIAP 1, sous réserve de réussite aux épreuves.",
+        "topics": ["APS · Prévention et sécurité · 175 h", "A3P · Protection rapprochée · 328 h", "SSIAP 1 · Sécurité incendie · 70 h"],
+        "intake_centre": "cote_azur",
+        # Brochure du parcours 2027, pages 10 et 11. Il s’agit de mois prévisionnels.
+        "intakes": [
+            {"start_month": "2027-01", "label": "Janvier 2027", "end_label": "décembre 2027", "company_hours": 1106},
+            {"start_month": "2027-06", "label": "Juin 2027", "end_label": "juin 2028", "company_hours": 1099},
+        ],
         "calendly": "https://calendly.com/integraleacademy/parcourssecurite",
         "source_url": SECURITY_APPRENTICESHIP_PAGE,
-        "dossier_url": "https://admissions.integraleconnect.com/parcoursalternance/candidature",
+        "application_url": "https://admissions.integraleconnect.com/parcoursalternance/candidature",
     },
     "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "purpose": "Se former à la protection rapprochée des personnes et exercer comme agent de protection physique.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/apr"},
     "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "purpose": "Obtenir les compétences nécessaires aux missions de surveillance, de prévention et de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/aps"},
-    "SSIAP": {"short": "SSIAP 1", "duration": "Formation + examen", "price": "1 230 € TTC", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
+    "SSIAP": {"short": "SSIAP 1", "duration": "70 h · 2 semaines", "price": "980 € seul · 1 230 € avec SST", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
     "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "175 h à distance + 70 h en présentiel", "purpose": "Acquérir l'aptitude professionnelle permettant de créer et diriger une entreprise de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "DESP_VAE": {"short": "VAE DESP", "duration": "Accompagnement individualisé", "price": "3 800 € TTC", "format": "100 % à distance", "purpose": "Faire reconnaître son expérience afin d'obtenir la certification de dirigeant d'entreprise de sécurité privée.", "funding": "CPF, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 500 € TTC", "format": "Hybride", "purpose": "Préparer l'examen VTC et maîtriser les bases nécessaires à l'activité de chauffeur professionnel.", "funding": "CPF, France Travail ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
-    "BTS_MOS": {"short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Piloter des prestations de sécurité et encadrer des équipes opérationnelles.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmos"},
-    "BTS_MCO": {"short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Gérer une unité commerciale et développer la relation client et les ventes.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmco"},
-    "BTS_CI": {"short": "BTS CI", "label": "BTS Commerce International (CI)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Développer et suivre les activités commerciales d'une entreprise à l'international.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsci"},
-    "BTS_NDRC": {"short": "BTS NDRC", "label": "BTS Négociation et Digitalisation de la Relation Client (NDRC)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Développer la clientèle, négocier et piloter la relation client sur tous les canaux.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsndrc"},
-    "BTS_PI": {"short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Se préparer aux métiers de la transaction et de la gestion immobilières.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/professionsimmobilieres"},
-    "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "Formation prise en charge en alternance", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": SECRETARIAT_GENERIC_CALENDLY_URL},
+    "BTS_MOS": {"source_url": "https://www.integraleacademy.com/btsmos", "short": "BTS MOS", "label": "BTS Management Opérationnel de la Sécurité (MOS)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Piloter des prestations de sécurité et encadrer des équipes opérationnelles.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmos"},
+    "BTS_MCO": {"source_url": "https://www.integraleacademy.com/btsmco", "short": "BTS MCO", "label": "BTS Management Commercial Opérationnel (MCO)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Gérer une unité commerciale et développer la relation client et les ventes.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsmco"},
+    "BTS_CI": {"source_url": "https://www.integraleacademy.com/commerceinternational", "short": "BTS CI", "label": "BTS Commerce International (CI)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Développer et suivre les activités commerciales d'une entreprise à l'international.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsci"},
+    "BTS_NDRC": {"source_url": "https://www.integraleacademy.com/btsndrc", "short": "BTS NDRC", "label": "BTS Négociation et Digitalisation de la Relation Client (NDRC)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Développer la clientèle, négocier et piloter la relation client sur tous les canaux.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/btsndrc"},
+    "BTS_PI": {"source_url": "https://www.integraleacademy.com/btsprofessionsimmobilieres", "short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Se préparer aux métiers de la transaction et de la gestion immobilières.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/professionsimmobilieres"},
+    "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité Gestion (CG)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": SECRETARIAT_GENERIC_CALENDLY_URL},
 }
 
 SECRETARIAT_WEBSITE_URL = "https://www.integraleacademy.com/"
@@ -678,49 +688,68 @@ def _secretariat_website_context(formation_code, question):
 # formations. Les conditions définitives restent validées par l'équipe admissions.
 _SECURITY_TRAINING_GUIDANCE = {
     "A3P": {
+        "source_url": "https://www.integraleacademy.com/a3p",
+        "location": "Puget-sur-Argens (83)",
         "audience": "Personnes souhaitant travailler dans la protection rapprochée.",
         "prerequisites": "Projet compatible avec les conditions d'accès aux métiers de la sécurité privée ; l'équipe vérifie la situation et les démarches CNAPS.",
         "certification": "Titre A3P reconnu par l'État (niveau 4) et préparation aux démarches de carte professionnelle CNAPS.",
         "topics": ["Cadre légal de la sécurité privée", "Préparation et sécurisation des déplacements", "Gestion des risques et situations sensibles", "Posture, discrétion et communication professionnelles"],
     },
     "APS": {
+        "source_url": "https://www.integraleacademy.com/securiteprivee",
         "audience": "Personnes souhaitant devenir agent de sécurité privée.",
         "prerequisites": "Projet compatible avec les conditions d'accès à la sécurité privée ; l'équipe accompagne la vérification des démarches CNAPS.",
         "certification": "Formation réglementée préparant à l'exercice du métier et aux démarches de carte professionnelle CNAPS.",
         "topics": ["Surveillance et prévention", "Accueil, filtrage et contrôle d'accès", "Gestion des conflits", "Incendie et secours à personne"],
     },
     "SSIAP": {
+        "source_url": "https://www.integraleacademy.com/ssiap1",
+        "location": "Puget-sur-Argens (83)",
         "audience": "Personnes visant un poste d'agent de sécurité incendie en ERP ou IGH.",
         "prerequisites": "Des prérequis réglementaires s'appliquent, notamment en secourisme et aptitude médicale ; faire valider le dossier par l'équipe.",
         "certification": "Préparation au diplôme SSIAP 1, sous réserve de réussite aux épreuves.",
         "topics": ["Prévention incendie", "Installations techniques", "Rôles et missions de l'agent", "Mises en situation et préparation à l'examen"],
     },
     "DESP_INIT": {
+        "source_url": "https://www.integraleacademy.com/dirigeant",
+        "location": "Puget-sur-Argens, Aurillac ou Paris",
         "audience": "Créateurs, repreneurs ou futurs dirigeants d'une entreprise de sécurité privée.",
         "prerequisites": "Le projet et les conditions réglementaires d'accès à la direction d'une activité de sécurité privée doivent être vérifiés.",
         "certification": "Préparation à l'aptitude professionnelle de dirigeant d'entreprise de sécurité privée.",
         "topics": ["Cadre juridique et réglementaire", "Gestion administrative et financière", "Management et ressources humaines", "Développement commercial"],
     },
     "DESP_VAE": {
+        "source_url": "https://www.integraleacademy.com/vaedirigeant",
         "audience": "Professionnels expérimentés souhaitant faire reconnaître leur expérience de direction en sécurité privée.",
         "prerequisites": "L'expérience doit correspondre aux compétences de la certification ; un entretien permet de confirmer la recevabilité du projet.",
         "certification": "Accompagnement à la VAE du titre de dirigeant d'entreprise de sécurité privée.",
         "topics": ["Diagnostic de l'expérience", "Constitution du dossier", "Explicitation des compétences", "Préparation au jury"],
     },
     "VTC": {
+        "source_url": "https://www.integraleacademy.com/vtc",
         "audience": "Personnes ayant un projet de chauffeur VTC salarié ou indépendant.",
         "prerequisites": "Le candidat doit faire vérifier les conditions réglementaires applicables à l'examen et à la carte professionnelle VTC.",
         "certification": "Préparation à l'examen VTC et aux démarches nécessaires au lancement de l'activité.",
         "topics": ["Réglementation VTC", "Gestion et développement commercial", "Sécurité routière", "Préparation théorique et pratique à l'examen"],
     },
 }
+_BTS_TRAINING_TOPICS = {
+    "BTS_MOS": ["Préparer une prestation de sécurité", "Organiser les équipes et les plannings", "Suivre le client et coordonner la prestation"],
+    "BTS_MCO": ["Conseiller et fidéliser les clients", "Animer l’offre commerciale", "Piloter les stocks, les résultats et l’équipe"],
+    "BTS_CI": ["Communiquer en contexte international", "Coordonner les opérations d’import-export", "Prospecter de nouveaux marchés"],
+    "BTS_NDRC": ["Prospecter et négocier", "Développer la relation client à distance", "Animer les réseaux de partenaires"],
+    "BTS_CG": ["Enregistrer et contrôler les opérations", "Suivre la fiscalité et la paie", "Analyser les coûts et la trésorerie"],
+    "BTS_PI": ["Accompagner les ventes et les locations", "Suivre les copropriétés", "Conseiller sur les travaux et la rénovation"],
+}
+
 for _code, _details in SECRETARIAT_FORMATIONS.items():
     if _code.startswith("BTS_"):
         _details.update({
             "audience": "Candidats souhaitant préparer un diplôme Bac+2 en alternance.",
             "prerequisites": "Être titulaire du baccalauréat ou d'un titre équivalent et faire valider sa candidature.",
             "certification": "Diplôme d'État de niveau 5 (Bac+2), sous réserve de réussite à l'examen.",
-            "topics": ["Enseignements professionnels du BTS", "Culture générale et langues", "Mise en pratique en entreprise", "Préparation aux épreuves nationales"],
+            "location": "Campus de Puget-sur-Argens (83)",
+            "topics": _BTS_TRAINING_TOPICS.get(_code, ["Enseignements professionnels", "Mise en pratique en entreprise", "Préparation aux épreuves du BTS"]),
         })
     else:
         _details.update(_SECURITY_TRAINING_GUIDANCE.get(_code, {}))
@@ -731,7 +760,7 @@ for _code, _details in SECRETARIAT_FORMATIONS.items():
         "apprenticeship": _details["format"] == "Alternance",
         "source_url": _details.get("source_url", SECRETARIAT_WEBSITE_URL),
         "assistant_url": SECRETARIAT_AI_URL,
-        "dossier_url": _details.get("dossier_url", SECRETARIAT_DOSSIER_URL),
+        "dossier_url": _details.get("application_url") or _details.get("dossier_url", SECRETARIAT_DOSSIER_URL),
         "planning_url": SECRETARIAT_PLANNING_URL,
     })
 
@@ -3921,6 +3950,7 @@ def secretariat():
     data_store = load_data()
     formations = []
     sessions = get_upcoming_formation_sessions(data_store)
+    current_month = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%Y-%m")
     for code, details in SECRETARIAT_FORMATIONS.items():
         centres = []
         for centre_code, centre_label in FORMATION_CENTRES.items():
@@ -3943,6 +3973,7 @@ def secretariat():
             "category": category,
             "description": description,
             **details,
+            "intakes": [intake for intake in details.get("intakes", []) if intake["start_month"] >= current_month],
         })
     return render_template(
         "secretariat.html", formations=formations,
