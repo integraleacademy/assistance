@@ -1,6 +1,8 @@
 """Regression coverage for short calls, undecided dates and booking prefills."""
 
 import copy
+import datetime
+import json
 import shutil
 import subprocess
 
@@ -194,7 +196,34 @@ def test_booking_schema_unavailability_does_not_block_the_embed(desk, monkeypatc
     assert client.get("/api/secretariat/calendly/prefill-schema?formation=unknown").status_code == 404
 
 
-def test_secretariat_complete_dom_journeys(desk, monkeypatch):
+@pytest.fixture
+def set_offer_month(monkeypatch):
+    def set_month(year, month):
+        class OfferClock(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                instant = cls(year, month, 8, 10, tzinfo=datetime.timezone.utc)
+                return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+        monkeypatch.setattr(application.datetime, "datetime", OfferClock)
+    return set_month
+
+
+@pytest.mark.parametrize(("year", "month", "expected"), [
+    (2026, 11, ["Janvier 2027", "Juin 2027"]),
+    (2027, 2, ["Juin 2027"]),
+    (2027, 6, ["Juin 2027"]),
+    (2027, 7, []),
+])
+def test_training_sheet_offers_only_current_or_future_brochure_intakes(desk, set_offer_month, year, month, expected):
+    set_offer_month(year, month)
+    client, _, _ = desk
+    html = client.get("/secretariat").get_data(as_text=True)
+    catalogue, _ = json.JSONDecoder().raw_decode(html.split("const formations=", 1)[1])
+    course = next(record for record in catalogue if record["code"] == "PARCOURS_SECURITE_ALTERNANCE")
+    assert [intake["label"] for intake in course["intakes"]] == expected
+
+
+def test_secretariat_complete_dom_journeys(desk, monkeypatch, set_offer_month):
     """Execute the rendered inline script with a DOM, mocked CRM and Calendly.
 
     Optional developer runner: npm install --prefix /tmp/desk-dom jsdom;
@@ -210,6 +239,7 @@ def test_secretariat_complete_dom_journeys(desk, monkeypatch):
     monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda *_: {
         centre: {"APS": [{"label": "Du 1 au 30 décembre 2026", "date_examen": "2026-12-31"}]},
     })
+    set_offer_month(2026, 11)
     rendered = client.get("/secretariat").get_data(as_text=True)
     script = r"""
 const {JSDOM, VirtualConsole}=require('jsdom'), assert=require('node:assert/strict');
@@ -340,7 +370,20 @@ async function caller(t,type,mail='camille@example.com'){
     t.click('#nextFormation'); assert.equal(t.step(),'5');
     t.click('[data-step="5"] [data-back]'); assert.equal(t.step(),'3');
     assert.equal(t.$(selector).getAttribute('aria-pressed'),'true');
-    t.click('#nextFormation'); t.fill('rentreeSouhaitee','Janvier 2027'); t.click('#nextDates');
+    t.click('#nextFormation');
+    assert.equal(t.$('#trainingTitle').textContent,'Parcours sécurité en alternance');
+    assert.equal(t.$('#trainingFacts').closest('details'),null); assert.equal(t.$('#trainingAiPanel').open,false);
+    assert.match(t.$('#trainingFacts').textContent,/573 h/); assert.match(t.$('#trainingFacts').textContent,/0 €/);
+    assert.match(t.$('#trainingFacts').textContent,/Puget-sur-Argens/);
+    assert.match(t.$('#trainingTopics').textContent,/175 h/); assert.match(t.$('#trainingTopics').textContent,/328 h/);
+    assert.match(t.$('#trainingTopics').textContent,/70 h/); assert.match(t.$('#trainingAdmission').textContent,/26 ans/);
+    const january=t.$('[data-intake="Janvier 2027"]'), june=t.$('[data-intake="Juin 2027"]');
+    assert.match(january.closest('label').textContent.replace(/\s/g,''),/1106h/);
+    assert.match(june.closest('label').textContent.replace(/\s/g,''),/1099h/);
+    t.click('[data-custom-intake]'); t.fill('rentreeSouhaitee','Une autre année');
+    t.click('[data-intake="Juin 2027"]'); assert.equal(t.$('#rentreeSouhaitee').disabled,true);
+    t.click('[data-step="5"] [data-back]'); t.click('#nextFormation'); assert.equal(june.checked,true);
+    t.click('#nextDates');
     t.click('[name="wants_rdv"][value="oui"]'); await until(()=>t.widgets.length===1);
     const agenda='https://calendly.com/integraleacademy/parcourssecurite';
     const url=new URL(t.widgets[0].url); assert.equal(url.origin+url.pathname,agenda);
@@ -350,8 +393,39 @@ async function caller(t,type,mail='camille@example.com'){
     await until(()=>t.step()==='8');
     const payload=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;
     assert.equal(payload.formation,course); assert.equal(payload.calendly_url,agenda);
-    assert.equal(payload.cpf_consulte,undefined); assert.equal(payload.rentree_souhaitee,'Janvier 2027');
+    assert.equal(payload.cpf_consulte,undefined); assert.equal(payload.rentree_souhaitee,'Juin 2027');
+    assert.equal(payload.formation_date_souhaitee,''); assert.equal(payload.formation_date_status,'a_definir');
+    assert.equal(payload.formation_centre,'cote_azur');
     assert.match(payload.rdv,/réservé/); t.close();
+  }
+  {
+    const t=setup(); await caller(t,'formation');
+    const codes=[...t.d.querySelectorAll('[data-formation-code]')].map(b=>b.dataset.formationCode);
+    for(const code of codes){
+      t.click('[data-formation-code="'+code+'"]'); t.click('#nextFormation');
+      if(t.step()==='4'){
+        for(const name of ['cpf_consulte','france_travail','financement_perso','identite_numerique','cnaps_ok','devis']){
+          const input=t.$('[name="'+name+'"][value="'+(name==='cnaps_ok'?'OUI':'NON')+'"]');
+          if(!input.disabled) input.click();
+        }
+        t.click('#nextQualification');
+      }
+      assert.equal(t.step(),'5'); assert.equal(t.$('#trainingInfo').dataset.formation,code);
+      assert.ok(t.$('#trainingTitle').textContent.trim()); assert.ok(t.$('#trainingPurpose').textContent.trim());
+      assert.ok(t.$('#trainingFacts').children.length>=3); assert.ok(t.$('#trainingTopics').children.length>=3);
+      assert.equal(t.$('#trainingAward').hidden,false); assert.ok(t.$('#trainingAdmission').children.length>=3);
+      assert.equal(t.$('#trainingAiPanel').open,false);
+      if(code==='BTS_MCO') assert.match(t.$('#trainingTopics').textContent,/stocks/);
+      if(code==='BTS_CI') assert.match(t.$('#trainingTopics').textContent,/import-export/);
+      if(code==='APS'){
+        const choice=t.$('[data-date-examen="2026-12-31"]');
+        assert.ok(choice); choice.click();
+        assert.match(choice.closest('label').textContent,/Examen/);
+        t.click('[data-step="5"] [data-back]'); t.click('#nextQualification'); assert.equal(choice.checked,true);
+      }
+      t.click('[data-go-step="3"]'); assert.equal(t.step(),'3');
+    }
+    t.close();
   }
   console.log('All intake journeys passed without external requests.');
 })().catch(error=>{console.error(error);process.exitCode=1});
