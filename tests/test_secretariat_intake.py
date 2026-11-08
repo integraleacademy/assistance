@@ -274,6 +274,7 @@ async function caller(t,type,mail='camille@example.com'){
 (async()=>{
   {
     const t=setup();
+    assert.match(t.$('[data-request="formation"]').textContent,/Ouvrir une demande de formation/);
     t.click('#browseCourses');
     for(const course of t.d.querySelectorAll('[data-formation-code]')){
       course.click();t.click('#nextFormation');assert.equal(t.step(),'5');
