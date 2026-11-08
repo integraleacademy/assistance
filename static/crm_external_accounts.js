@@ -13,17 +13,27 @@
   }
   async function load() {
     const accounts = await api();
-    root.innerHTML = accounts.map((account,index) => `<article class="account" data-email="${esc(account.email)}"><div class="account-title"><div><b>${esc(account.name)}</b><small>${esc(account.email)}</small></div><span class="state ${account.enabled ? '' : 'disabled'}">${account.enabled ? 'Actif' : 'Désactivé'}</span></div><div class="account-actions"><button type="button" data-enable="${!account.enabled}" class="${account.enabled ? 'danger' : ''}">${account.enabled ? 'Désactiver' : 'Réactiver'}</button><form class="reset-form"><label for="reset-${index}">Nouveau mot de passe pour ${esc(account.name)}</label><input id="reset-${index}" name="password" type="password" minlength="12" maxlength="256" required autocomplete="new-password" placeholder="Nouveau mot de passe"><button type="submit">Réinitialiser</button></form></div></article>`).join('') || '<p class="muted">Aucun accès externe pour le moment.</p>';
+    root.innerHTML = accounts.map((account,index) => `<article class="account" data-email="${esc(account.email)}"><div class="account-title"><div><b>${esc(account.name)}</b><small>${esc(account.email)}</small></div><span class="state ${account.enabled ? '' : 'disabled'}">${account.enabled ? 'Actif' : 'Désactivé'}</span></div><div class="account-actions"><button type="button" data-desk-access="${!account.desk_access}">${account.desk_access?'Retirer la prise d’appel':'Autoriser la prise d’appel'}</button><button type="button" data-enable="${!account.enabled}" class="${account.enabled ? 'danger' : ''}">${account.enabled ? 'Désactiver' : 'Réactiver'}</button><form class="reset-form"><label for="reset-${index}">Nouveau mot de passe pour ${esc(account.name)}</label><input id="reset-${index}" name="password" type="password" minlength="12" maxlength="256" required autocomplete="new-password" placeholder="Nouveau mot de passe"><button type="submit">Réinitialiser</button></form></div></article>`).join('') || '<p class="muted">Aucun accès externe pour le moment.</p>';
   }
   document.querySelector('#createAccount').addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget, button = form.querySelector('[type=submit]');
     button.disabled = true;
-    try { await api('POST', Object.fromEntries(new FormData(form))); form.reset(); notify('Accès créé. Le compte peut se connecter au CRM et accéder aux nouvelles demandes META.'); await load(); }
+    try { await api('POST', {...Object.fromEntries(new FormData(form)), desk_access:form.elements.desk_access.checked}); form.reset(); notify('Accès créé. Le compte peut se connecter au CRM et accéder aux nouvelles demandes META.'); await load(); }
     catch (error) { notify(error.message, true); }
     finally { button.disabled = false; }
   });
   root.addEventListener('click', async event => {
+    const scope = event.target.closest('[data-desk-access]');
+    if (scope) {
+      scope.disabled = true;
+      try {
+        await api('PATCH', {email:scope.closest('[data-email]').dataset.email, desk_access:scope.dataset.deskAccess === 'true'});
+        notify('Accès à la prise d’appel mis à jour. Le collaborateur doit se reconnecter.');
+        await load();
+      } catch (error) { scope.disabled = false; notify(error.message, true); }
+      return;
+    }
     const button = event.target.closest('[data-enable]');
     if (!button) return;
     button.disabled = true;

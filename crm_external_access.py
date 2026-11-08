@@ -17,7 +17,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 ROLE = "external_secretariat"
 HOME = "/crm/pistes"
-VERSION = "20261012-external-meta-5"
+VERSION = "20261108-desk-access"
 _ACCOUNT_LOCK = threading.RLock()
 EDIT_FIELDS = {
     "prenom", "nom", "telephone", "mail", "formation", "lieu", "dates_formation",
@@ -103,7 +103,7 @@ def _save_account(data_file, email, update):
 
 def public_account(email, record):
     return {"email": email, "name": record["name"],
-            "enabled": bool(record.get("enabled")), "role": ROLE}
+            "enabled": bool(record.get("enabled")), "desk_access": record.get("desk_access") is True, "role": ROLE}
 
 
 def is_new_meta(contact):
@@ -176,13 +176,24 @@ def install(legacy):
             return redirect(legacy.url_for("login", next=next_path))
         if request.endpoint in {"login", "logout"}:
             return None
+        # The call desk has its own identity checks and day-only, read-only agenda.
+        if user.get("desk_access") is True and request.endpoint in {"secretariat", "secretariat_agenda", "secretariat_calendly_prefill_schema"} and request.method in {"GET", "HEAD"}:
+            return None
+        if user.get("desk_access") is True and request.method == "POST" and request.endpoint in {
+            "api_secretariat_crm_contact", "secretariat_suivi_cnaps", "api_secretariat_demandes",
+            "secretariat_retry_channel", "api_secretariat_ai_question", "api_secretariat_calendly_appointment",
+        }:
+            _require_csrf()
+            if request.endpoint == "api_secretariat_demandes" and not legacy._secretariat_call_key(request.get_json(silent=True) or {}):
+                return jsonify(error="Identifiant d’appel requis."), 400
+            return None
         if request.endpoint == "static" and request.method in {"GET", "HEAD"}:
             allowed_assets = {"logo.png", "iaconnectcrm.png", "favicon_32x32.png",
                               "crm_external.css", "crm_external.js", "favicon-crm.svg",
                               "crm.css", "crm_workspace.css", "crm_dashboard_origins.css",
                               "crm_title.js", "crm_sidebar_state.js", "crm_appointment_state.js",
                               "crm_workspace.js", "crm.js", "crm_external_contact.js",
-                              "crm_external_contact.css"}
+                              "crm_external_contact.css", "secretariat.css", "variante_couleur.png"}
             if (request.view_args or {}).get("filename") in allowed_assets:
                 return None
         if request.endpoint in {"crm", "crm_uppercase"} and request.method in {"GET", "HEAD"}:
@@ -329,7 +340,7 @@ def install(legacy):
                             sorted(read_accounts(legacy.DATA_FILE).items())])
         _require_csrf()
         payload = request.get_json(silent=True)
-        if not isinstance(payload, dict) or set(payload) - {"email", "name", "password", "enabled"}:
+        if not isinstance(payload, dict) or set(payload) - {"email", "name", "password", "enabled", "desk_access"}:
             return jsonify({"error": "Paramètres de compte invalides."}), 400
         email = str(payload.get("email") or "").strip().lower()
         if len(email) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
@@ -339,6 +350,8 @@ def install(legacy):
         password = payload.get("password", "")
         if not isinstance(password, str) or (password and not 12 <= len(password) <= 256):
             return jsonify({"error": "Le mot de passe doit contenir entre 12 et 256 caractères."}), 400
+        if "desk_access" in payload and not isinstance(payload["desk_access"], bool):
+            return jsonify(error="Autorisation de prise d’appel invalide."), 400
         if "enabled" in payload and not isinstance(payload["enabled"], bool):
             return jsonify({"error": "Le statut du compte est invalide."}), 400
         name = str(payload.get("name") or "").strip()
@@ -356,6 +369,7 @@ def install(legacy):
             record = dict(previous or {})
             if name:
                 record["name"] = name
+            record["desk_access"] = payload.get("desk_access", record.get("desk_access", False))
             record["enabled"] = payload.get("enabled", record.get("enabled", True))
             if password:
                 record["password_hash"] = generate_password_hash(password)

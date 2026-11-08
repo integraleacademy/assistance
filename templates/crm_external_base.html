@@ -17,6 +17,7 @@
     {% else %}
     <span class="nav-label">Pistes</span>
     <a class="nav-link active" href="/crm/pistes">↗ Nouveaux META</a>
+    {% if user.desk_access %}<a class="nav-link" href="/secretariat">Prise d’appel et agenda</a>{% endif %}
     {% endif %}
     <div class="user"><b>{{ user.name }}</b><small>{{ 'Administrateur' if user.role == 'admin' else 'Secrétariat externe' }}</small>
       <form action="/logout" method="post"><button type="submit" class="logout">Se déconnecter</button></form>

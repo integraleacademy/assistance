@@ -145,8 +145,8 @@ def test_secretariat_checks_crm_automatically_but_waits_for_continue(client, mon
     assert b"callerLookupTimer=setTimeout(()=>lookupCaller(),600)" in response.data
     assert b"/api/secretariat/crm-contact" in response.data
     assert b"requestType=existingCrmContactId?'autre':'formation'" not in response.data
-    assert b"callerLookupComplete=true" in response.data
-    assert "Appelant trouvé dans le CRM. Vérifiez".encode() in response.data
+    assert b"callerLookupComplete = true" in response.data
+    assert "Appelant retrouvé dans le CRM.".encode() in response.data
     assert "Aucune fiche unique trouvée".encode() in response.data
     assert b"function continueAfterCallerLookup()" in response.data
     assert b"callerForm.reportValidity()" in response.data

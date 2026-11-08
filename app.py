@@ -3344,6 +3344,8 @@ def confirmation():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("user_email"):
+        if request.args.get("next") == "/secretariat" and _secretariat_role():
+            return redirect(url_for("secretariat"))
         return redirect(url_for("crm"))
 
     if request.method == "POST":
@@ -3375,6 +3377,8 @@ def login():
                 session["external_session_version"] = user["session_version"]
             session.permanent = True
 
+            if request.args.get("next") == "/secretariat" and (not external or user.get("desk_access") is True):
+                return redirect(url_for("secretariat"))
             next_url = (crm_external_access.HOME if external else
                         _safe_next_url(request.args.get("next")) or url_for("crm"))
             return redirect(next_url)
@@ -3940,11 +3944,50 @@ def _secretariat_catalogue(data_store):
 
 @app.route("/secretariat")
 def secretariat():
-    return render_template(
+    role = _secretariat_role()
+    page = render_template(
         "secretariat.html", formations=_secretariat_catalogue(load_data()),
         generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
         recipients=[member["name"] for member in USERS.values()],
+        desk_role=role, desk_csrf=crm_external_access.csrf_token() if role == "external" else "",
+        desk_today=datetime.datetime.now(secretariat_calls.PARIS).date().isoformat(),
     )
+    return _secretariat_private(page)
+
+
+def _secretariat_role():
+    user = current_user() or {}
+    if user.get("email", "").lower() in USERS:
+        return "internal"
+    return "external" if user.get("role") == crm_external_access.ROLE and user.get("desk_access") is True else ""
+
+
+def _secretariat_private(value, status=200):
+    response = app.make_response((value, status))
+    response.headers["Cache-Control"] = "private, no-store"
+    response.vary.add("Cookie")
+    return response
+
+
+@app.get("/api/secretariat/agenda")
+def secretariat_agenda():
+    if not _secretariat_role():
+        return _secretariat_private(jsonify(error="Connectez-vous pour consulter l’agenda."), 401)
+    now = datetime.datetime.now(secretariat_calls.PARIS)
+    value = request.args.get("date", now.date().isoformat())
+    try:
+        day = datetime.date.fromisoformat(value)
+        if value != day.isoformat():
+            raise ValueError
+    except ValueError:
+        return _secretariat_private(jsonify(error="Date invalide."), 400)
+    data = _load_data_snapshot()
+    sync = data.get("crm_calendly") or {}
+    return _secretariat_private(jsonify(
+        date=value, today=now.date().isoformat(),
+        last_sync=secretariat_calls.date_label(sync.get("last_sync_at") or sync.get("last_full_sync_at")),
+        appointments=secretariat_calls.day_appointments(data, day, now),
+    ))
 
 
 _SECRETARIAT_DELIVERY_LOCK = threading.Lock()
@@ -3985,29 +4028,74 @@ def api_secretariat_crm_contact():
     data = _load_data_snapshot()
     contact = _secretariat_existing_crm_contact(data, payload)
     result = {"contact_id": contact.get("id") if contact else None}
-    user = current_user()
-    # This page is also public. Only an already-authorized internal CRM session
-    # may retrieve stored coordinates; anonymous callers keep the existing ID-only lookup.
-    if contact and user and user.get("email", "").lower() in USERS:
+    role = _secretariat_role()
+    if contact and role == "internal":
         result["contact"] = {
-            "prenom": str(contact.get("prenom") or ""),
-            "nom": str(contact.get("nom") or ""),
-            "telephone": str(contact.get("telephone") or ""),
-            "email": str(contact.get("mail") or ""),
+            "prenom": str(contact.get("prenom") or ""), "nom": str(contact.get("nom") or ""),
+            "telephone": str(contact.get("telephone") or ""), "email": str(contact.get("mail") or ""),
         }
-        if payload.get("confirmed_contact_id") == contact.get("id"):
-            appointments = (a for a in data.get("crm_calendly_appointments", [])
-                            if not a.get("contact_id") or a.get("contact_id") == contact["id"])
-            appointment = _crm_next_phone_appointment(data, {}, contact, appointments=appointments)
-            result["summary"] = secretariat_calls.desk_summary(
-                contact, data.get("secretariat_demandes", []), appointment[1] if appointment else None,
-            )
-            course = SECRETARIAT_FORMATIONS.get(_crm_formation_code(contact))
-            if course:
-                result["summary"]["formation"] = course["short"]
-    response = jsonify(result)
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
+    if contact and role == "external":
+        result = {"contact_id": None, "verify_identity": True}
+    if _secretariat_identity_confirmed(role, contact, payload):
+        appointments = (a for a in data.get("crm_calendly_appointments", [])
+                        if not a.get("contact_id") or a.get("contact_id") == contact["id"])
+        appointment = _crm_next_phone_appointment(data, {}, contact, appointments=appointments)
+        summary = secretariat_calls.desk_summary(
+            contact, data.get("secretariat_demandes", []), appointment[1] if appointment else None,
+            staff=role == "internal",
+        )
+        code = _crm_formation_code(contact)
+        if code in SECRETARIAT_FORMATIONS:
+            summary["formation"] = SECRETARIAT_FORMATIONS[code]["short"]
+        snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact["id"]))
+        summary["cnaps"] = secretariat_calls.cnaps_overview(contact, code, snapshot)
+        result.update(contact_id=contact["id"], summary=summary)
+    elif role == "external" and payload.get("verify_identity"):
+        return _secretariat_private(jsonify(error="Le nom, le prénom et les coordonnées doivent correspondre à un dossier unique."), 404)
+    return _secretariat_private(jsonify(result))
+
+
+def _secretariat_identity_confirmed(role, contact, payload):
+    if not contact or not contact.get("id"):
+        return False
+    if role == "internal":
+        return payload.get("confirmed_contact_id") == contact["id"]
+    if role != "external" or payload.get("verify_identity") is not True:
+        return False
+    for field in ("prenom", "nom"):
+        entered = secretariat_calls.folded(payload.get(field))
+        if not entered or entered != secretariat_calls.folded(contact.get(field)):
+            return False
+    for entered, stored, normalize in (("email", "mail", _crm_normalize_email), ("telephone", "telephone", _crm_normalize_phone)):
+        if payload.get(entered) and contact.get(stored) and normalize(payload[entered]) != normalize(contact[stored]):
+            return False
+    return True
+
+
+@app.post("/api/secretariat/suivi-cnaps")
+def secretariat_suivi_cnaps():
+    role = _secretariat_role()
+    if not role:
+        return _secretariat_private(jsonify(error="Connexion au secrétariat requise."), 401)
+    payload = request.get_json(silent=True) or {}
+    data = _load_data_snapshot()
+    contact = _secretariat_existing_crm_contact(data, payload)
+    if not _secretariat_identity_confirmed(role, contact, payload) or payload.get("confirmed_contact_id") != contact["id"]:
+        return _secretariat_private(jsonify(error="Confirmez l’identité de l’appelant."), 403)
+    code = _crm_formation_code(contact)
+    if code not in {"APS", "A3P", "PARCOURS_SECURITE_ALTERNANCE"}:
+        return _secretariat_private(jsonify(error="Suivi non applicable à cette formation."), 400)
+    from crm_cnaps_tracking import proxy_reglementaire, scoring_snapshot_from_remote
+    if str(contact.get("formation") or "").upper().strip() in {"APS", "A3P"}:
+        result = _crm_read_reglementaire(contact["id"], refresh_requested=payload.get("refresh") is True)
+    else:
+        result = proxy_reglementaire(app, contact, cnaps_only=True)
+    response = app.make_response(result)
+    remote = response.get_json(silent=True) or {}
+    if response.status_code == 200 or (response.status_code == 404 and remote.get("reason") == "cnaps_not_found"):
+        snapshot = remote.get("scoring_snapshot") or scoring_snapshot_from_remote(remote, response.status_code)
+        return _secretariat_private(jsonify(cnaps=secretariat_calls.cnaps_overview(contact, code, snapshot, remote)))
+    return _secretariat_private(jsonify(error="Le suivi CNAPS est momentanément indisponible."), 503)
 
 
 _SECRETARIAT_CALENDLY_SCHEMA_CACHE = {}
@@ -12309,18 +12397,7 @@ def _crm_next_phone_appointment(data, entry, contact=None, now=None, *, appointm
             continue
         if str(appointment.get("status") or "active").casefold() in {"canceled", "cancelled"}:
             continue
-        location = appointment.get("location") or {}
-        if isinstance(location, dict):
-            location_kind = str(location.get("kind") or location.get("type") or "").casefold()
-        else:
-            location_kind = str(location).casefold()
-        # Use the common stem as Calendly event names usually contain
-        # "téléphonique" rather than the noun "téléphone".  The previous
-        # exact terms did not match "RDV téléphonique ..." when the event had
-        # no explicit location.
-        phone_terms = ("phone", "call", "appel", "téléphoni", "telephoni")
-        appointment_name = str(appointment.get("name") or "").casefold()
-        if not any(term in location_kind or term in appointment_name for term in phone_terms):
+        if not secretariat_calls.is_phone_appointment(appointment):
             continue
         try:
             start = datetime.datetime.fromisoformat(
@@ -18188,13 +18265,15 @@ def _crm_store_reglementaire_cache(contact, payload, status_code):
 @login_required
 def crm_contact_reglementaire(contact_id):
     """Expose le suivi réglementaire partagé sans transmettre le secret."""
+    refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {"1", "true", "yes", "oui"}
+    return _crm_read_reglementaire(contact_id, refresh_requested=refresh_requested)
+
+
+def _crm_read_reglementaire(contact_id, *, refresh_requested=False):
     data = load_data()
     contact = _crm_contact(data, contact_id)
     if not contact:
         return jsonify({"error": "Contact introuvable"}), 404
-    refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {
-        "1", "true", "yes", "oui",
-    }
     if not refresh_requested:
         cached = _crm_reglementaire_cached(contact)
         if cached:
