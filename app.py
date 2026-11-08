@@ -18,6 +18,7 @@ from secretariat_catalogue import (
 )
 import crm_public_sessions
 import secretariat_calls
+import secretariat_messages
 from crm_read_cache import LastProjection, UpdateSnapshots
 from crm_email_signatures import brand_saved_template
 from contextvars import ContextVar
@@ -1253,6 +1254,9 @@ _CALLBACK_LIFECYCLE_FIELDS = (
     "callback_status_updated_at",
     "callback_processed_at",
     "callback_processed_by",
+    "callback_claimed_at",
+    "callback_claimed_by",
+    "callback_outcome",
     "statut",
 )
 _CALLBACK_COMMENT_FIELDS = (
@@ -1401,6 +1405,16 @@ def _preserve_newer_callback_lifecycle(data, persisted):
             protected_request_ids.add(request_id)
             continue
         protected = False
+        if current.get("waiting_read"):
+            outgoing["waiting_read"] = True
+        # Supplements are append-only and can arrive while a CRM status is being saved.
+        old_events = current.get("callback_events") or []
+        outgoing_events = outgoing.get("callback_events") or []
+        outgoing_ids = {event["id"] for event in outgoing_events}
+        missing = [event for event in old_events if event["id"] not in outgoing_ids]
+        if missing:
+            outgoing["callback_events"] = sorted([*outgoing_events, *copy.deepcopy(missing)],
+                                                  key=lambda event: secretariat_messages.time_order(event["at"]))
         if (_callback_lifecycle_revision(current)
                 > _callback_lifecycle_revision(outgoing)):
             for field in _CALLBACK_LIFECYCLE_FIELDS:
@@ -3949,7 +3963,7 @@ def secretariat():
         "secretariat.html", formations=_secretariat_catalogue(load_data()),
         generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
         recipients=[member["name"] for member in USERS.values()],
-        desk_role=role, desk_csrf=crm_external_access.csrf_token() if role == "external" else "",
+        desk_role=role, desk_csrf=crm_external_access.csrf_token() if role else "",
         desk_today=datetime.datetime.now(secretariat_calls.PARIS).date().isoformat(),
     )
     return _secretariat_private(page)
@@ -3981,12 +3995,16 @@ def secretariat_agenda():
             raise ValueError
     except ValueError:
         return _secretariat_private(jsonify(error="Date invalide."), 400)
-    calendar = _crm_calendly_appointments_payload(_crm_prepared_read_model())
+    data = _crm_prepared_read_model()
+    calendar = _crm_calendly_appointments_payload(data)
     sync = calendar["integration"]
+    slots = secretariat_messages.waiting_slots(calendar["appointments"], value)
+    reports = {row["waiting_key"]: row for row in data.get("secretariat_demandes", []) if row.get("waiting_key")}
     return _secretariat_private(jsonify(
         date=value, today=now.date().isoformat(),
         last_sync=secretariat_calls.date_label(sync.get("last_sync_at") or sync.get("last_full_sync_at")),
-        appointments=secretariat_calls.day_appointments(calendar["appointments"], value, now),
+        appointments=secretariat_calls.day_appointments(calendar["appointments"], value, now,
+            waiting_action=lambda meeting: secretariat_messages.waiting_action(meeting, slots, reports, USERS, now)),
     ))
 
 
@@ -4052,6 +4070,7 @@ def api_secretariat_crm_contact():
             summary["formation"] = SECRETARIAT_FORMATIONS[code]["short"]
         snapshot = data.get("crm_cnaps_scoring_snapshots", {}).get(str(contact["id"]))
         summary["cnaps"] = secretariat_calls.cnaps_overview(contact, desk_code, snapshot)
+        summary["messages"] = _secretariat_message_history(data, contact, role)
         result.update(contact_id=contact["id"], summary=summary)
     elif role == "external" and payload.get("verify_identity"):
         return _secretariat_private(jsonify(error="Le nom, le prénom et les coordonnées doivent correspondre à un dossier unique."), 404)
@@ -4073,6 +4092,101 @@ def _secretariat_identity_confirmed(role, contact, payload):
         if payload.get(entered) and contact.get(stored) and normalize(payload[entered]) != normalize(contact[stored]):
             return False
     return True
+
+
+def _secretariat_message_history(data, contact, role):
+    rows = []
+    phone, email = _crm_normalize_phone(contact.get("telephone")), _crm_normalize_email(contact.get("mail"))
+    for entry in data.get("secretariat_demandes", []):
+        if entry.get("type") != "autre":
+            continue
+        if entry.get("crm_contact_id") == contact["id"]:
+            rows.append(entry)
+        elif not entry.get("crm_contact_id") and (
+                (phone and phone == _crm_normalize_phone(entry.get("telephone")))
+                or (email and email == _crm_normalize_email(entry.get("email")))):
+            if _secretariat_existing_crm_contact(data, entry) is contact:
+                rows.append(entry)
+    return secretariat_messages.message_history(rows, staff=role == "internal")
+
+
+@app.post("/api/secretariat/messages/<request_id>/complements")
+@_serialize_secretariat_delivery
+def secretariat_message_supplement(request_id):
+    role = _secretariat_role()
+    if not role:
+        return _secretariat_private(jsonify(error="Connexion au secrétariat requise."), 401)
+    crm_external_access._require_csrf()
+    payload = request.get_json(silent=True) or {}
+    data = load_data()
+    contact = _secretariat_existing_crm_contact(data, payload)
+    if not _secretariat_identity_confirmed(role, contact, payload) or payload.get("confirmed_contact_id") != contact["id"]:
+        return _secretariat_private(jsonify(error="Confirmez l’identité de l’appelant."), 403)
+    entry = next((row for row in data.get("secretariat_demandes", [])
+                  if row.get("type") == "autre" and row.get("id") == request_id), None)
+    if not entry or _crm_callback_request_contact(data, entry) is not contact:
+        return _secretariat_private(jsonify(error="Message introuvable pour ce dossier."), 404)
+    note = str(payload.get("note") or "").strip()
+    key = _secretariat_call_key(payload)
+    if not key or not 1 <= len(note) <= 2000:
+        return _secretariat_private(jsonify(error="Saisissez un complément de 1 à 2 000 caractères."), 400)
+    previous = next((event for event in entry.get("callback_events", []) if event.get("id") == key), None)
+    if previous and previous.get("text") != note:
+        return _secretariat_private(jsonify(error="Ce complément a déjà été envoyé avec un autre texte."), 409)
+    if not previous:
+        if _crm_callback_request_status(entry) == CRM_CALLBACK_PROCESSED:
+            return _secretariat_private(jsonify(error="Ce message vient d’être traité. Vous pouvez demander un nouveau rappel.",
+                                               messages=_secretariat_message_history(data, contact, role)), 409)
+        user = current_user() or {}
+        secretariat_messages.add_event(entry, "supplement", _crm_callback_status_timestamp(),
+            user.get("name") or "Secrétariat", text=note, event_id=key)
+        save_data(data)
+    return _secretariat_private(jsonify(ok=True, messages=_secretariat_message_history(data, contact, role)))
+
+
+@app.post("/api/secretariat/agenda/attente")
+@_serialize_secretariat_delivery
+def secretariat_waiting_call():
+    if not _secretariat_role():
+        return _secretariat_private(jsonify(error="Connexion au secrétariat requise."), 401)
+    crm_external_access._require_csrf()
+    payload = request.get_json(silent=True) or {}
+    key, day = str(payload.get("key") or ""), str(payload.get("day") or "")
+    if not re.fullmatch(r"[a-f0-9]{64}", key) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        return _secretariat_private(jsonify(error="Choisissez un rendez-vous dans l’agenda."), 400)
+    data = load_data()
+    entries = data.setdefault("secretariat_demandes", [])
+    previous = next((row for row in entries if row.get("waiting_key") == key), None)
+    if previous:
+        return _secretariat_private(jsonify(ok=True, recipient=previous["callback_recipient"], when=secretariat_calls.date_label(previous["created_at"])))
+    calendar = _crm_calendly_appointments_payload(data)
+    slots = secretariat_messages.waiting_slots(calendar["appointments"], day)
+    meeting = slots.get(key)
+    now = datetime.datetime.now(secretariat_calls.PARIS)
+    if not meeting or not secretariat_messages.waiting_action(meeting, slots, {}, USERS, now):
+        return _secretariat_private(jsonify(error="Ce créneau a changé ou ne peut pas être signalé. Actualisez l’agenda."), 409)
+    host = secretariat_messages.meeting_host(meeting, USERS)
+    if not host:
+        host = next((user for user in USERS.values() if user["name"] == payload.get("recipient")), None)
+    if not host:
+        return _secretariat_private(jsonify(error="Choisissez le conseiller à prévenir."), 400)
+    slot = meeting["calendar_slot"]
+    contact = _crm_contact(data, meeting.get("contact_id")) or {}
+    date_fr = datetime.date.fromisoformat(day).strftime("%d/%m/%Y")
+    when = f"{date_fr} à {slot['time']}"
+    entry = {"id": str(uuid.uuid4()), "type": "autre", "created_at": now.isoformat(), "date": now.strftime("%d/%m/%Y %H:%M"),
+             "waiting_key": key, "waiting_recipient_email": host["email"], "callback_motif": "waiting",
+             "callback_recipient": host["name"], "crm_contact_id": contact.get("id") or "",
+             "nom": slot["person"], "telephone": meeting.get("invitee_phone") or contact.get("telephone") or "",
+             "email": meeting.get("invitee_email") or contact.get("mail") or "",
+             "rdv": when, "rdv_status": "scheduled", "rdv_date": date_fr, "rdv_time": slot["time"],
+             "rdv_mode": "Appel téléphonique", "rdv_name": meeting.get("name") or "Rendez-vous téléphonique",
+             "rdv_host_name": meeting.get("host_name") or host["name"],
+             "notes": f"{slot['person']} attend votre appel pour le rendez-vous du {when}."}
+    entries.append(entry)
+    _secretariat_record_callback(data, entry, now)
+    save_data(data)
+    return _secretariat_private(jsonify(ok=True, recipient=host["name"], when=secretariat_calls.date_label(entry["created_at"])), 201)
 
 
 @app.post("/api/secretariat/suivi-cnaps")
@@ -4160,6 +4274,15 @@ def _secretariat_receipt(entry):
     return jsonify(ok=True, demande=details, messages=messages)
 
 
+def _secretariat_record_callback(data, entry, now):
+    entry.update(callback_status="pending", callback_status_updated_at=now.isoformat(),
+                 callback_processed_at="", callback_processed_by="", statut="À traiter")
+    _, contact = _crm_prepare_callback_request(data, entry)
+    if contact:
+        _crm_ensure_secretariat_publication(contact, entry)
+        contact["updated_at"] = _crm_now()
+
+
 @app.route("/api/secretariat/demandes", methods=["POST"])
 @_serialize_secretariat_delivery
 def api_secretariat_demandes():
@@ -4223,6 +4346,8 @@ def api_secretariat_demandes():
     }:
         return jsonify({"ok": False, "error": "Choisissez un destinataire proposé dans la liste."}), 400
     if entry["type"] == "autre":
+        if call_key and _secretariat_role() and payload.get("share_with_desk") is True:
+            entry["desk_shared_note"] = True
         try:
             entry["callback_due_at"] = secretariat_calls.callback_deadline(payload.get("callback_due_at"))
         except ValueError as exc:
@@ -4274,17 +4399,7 @@ def api_secretariat_demandes():
     # doit jamais créer de piste ni être envoyée à Salesforce. Lorsqu'une fiche
     # existe déjà, la demande est seulement liée et consignée dans son journal.
     if entry["type"] == "autre":
-        entry.update({
-            "callback_status": "pending",
-            "callback_status_updated_at": now.isoformat(),
-            "callback_processed_at": "",
-            "callback_processed_by": "",
-            "statut": "À traiter",
-        })
-        _, crm_contact = _crm_prepare_callback_request(data_store, entry)
-        if crm_contact:
-            _crm_ensure_secretariat_publication(crm_contact, entry)
-            crm_contact["updated_at"] = _crm_now()
+        _secretariat_record_callback(data_store, entry, now)
         if call_key:
             entry["desk_completed"] = True
         save_data(data_store)
@@ -18120,23 +18235,39 @@ def _crm_notifications_payload(data, email):
             and (item.get("created_at_epoch") or _funding_timestamp(item.get("date")) or 0) <= invalidated_at
         )
 
-    return [
+    items = [
         item for item in data.get("crm_notifications", [])
         if item.get("recipient_email") == email and valid(item)
     ]
+    waiting = [secretariat_messages.waiting_notification(entry) for entry in data.get("secretariat_demandes", [])
+               if email and entry.get("waiting_recipient_email") == email]
+    return sorted([*items, *waiting], key=lambda n: n.get("date") or "", reverse=True) if waiting else items
 
 
 @app.route("/api/crm/notifications", methods=["GET", "PATCH"])
 @login_required
 @_crm_serialized
 def crm_notifications():
-    data = load_data(); email = (current_user() or {}).get("email", "")
+    email = (current_user() or {}).get("email", "")
+    if request.method == "GET" and request.args.get("kind") == "waiting_call":
+        rows = [secretariat_messages.waiting_notification(entry)
+                for entry in _load_data_snapshot().get("secretariat_demandes", [])
+                if entry.get("waiting_recipient_email") == email and not entry.get("waiting_read")]
+        return _secretariat_private(jsonify(sorted(rows, key=lambda row: row["date"], reverse=True)))
+    data = load_data()
     items = _crm_notifications_payload(data, email)
     if request.method == "PATCH":
         notification_id = str((request.get_json(silent=True) or {}).get("id") or "")
+        waiting_ids = set()
         for item in items:
             if not notification_id or item.get("id") == notification_id:
                 item["read"] = True
+                if item.get("kind") == "waiting_call":
+                    waiting_ids.add(item["callback_request_id"])
+        if waiting_ids:
+            for entry in data.get("secretariat_demandes", []):
+                if entry.get("id") in waiting_ids:
+                    entry["waiting_read"] = True
         save_data(data)
     return jsonify(items)
 
@@ -18742,7 +18873,7 @@ def crm_templates():
 
 CRM_CALLBACK_PENDING = "pending"
 CRM_CALLBACK_PROCESSED = "processed"
-CRM_CALLBACK_STATUSES = {CRM_CALLBACK_PENDING, CRM_CALLBACK_PROCESSED}
+CRM_CALLBACK_STATUSES = {CRM_CALLBACK_PENDING, "in_progress", CRM_CALLBACK_PROCESSED}
 
 
 def _crm_callback_status_timestamp():
@@ -18753,10 +18884,7 @@ def _crm_callback_status_timestamp():
 
 def _crm_callback_request_status(entry):
     """Return the dedicated status; legacy generic « Traité » stays pending."""
-    raw_status = str(entry.get("callback_status") or "").strip().casefold()
-    if raw_status in {"processed", "traite", "traité"}:
-        return CRM_CALLBACK_PROCESSED
-    return CRM_CALLBACK_PENDING
+    return secretariat_messages.status(entry)
 
 
 def _crm_callback_request_detail(entry):
@@ -18789,6 +18917,8 @@ def _crm_callback_request_contact(data, entry):
 
 def _crm_hydrate_callback_request_appointment(data, entry, contact, appointment_index=None):
     """Keep the callback row aligned with its next confirmed phone booking."""
+    if entry.get("waiting_key"):
+        return False  # A waiting alert always identifies the actual reported slot.
     appointments = None
     if appointment_index is not None:
         identity = contact or {}
@@ -18903,9 +19033,7 @@ def _crm_prepare_callback_request(data, entry, appointment_index=None):
         if initial_status_date:
             entry["callback_status_updated_at"] = str(initial_status_date)
             changed = True
-    expected_generic_status = (
-        "Traité" if status == CRM_CALLBACK_PROCESSED else "À traiter"
-    )
+    expected_generic_status = {"processed": "Traité", "in_progress": "En cours", "pending": "À traiter"}[status]
     if entry.get("statut") != expected_generic_status:
         entry["statut"] = expected_generic_status
         changed = True
@@ -19004,6 +19132,11 @@ def _crm_callback_requests_payload(data):
             "status": _crm_callback_request_status(entry),
             "processed_at": str(entry.get("callback_processed_at") or ""),
             "processed_by": str(entry.get("callback_processed_by") or ""),
+            "claimed_by": str(entry.get("callback_claimed_by") or ""),
+            "claimed_at": str(entry.get("callback_claimed_at") or ""),
+            "outcome": str(entry.get("callback_outcome") or ""),
+            "events": secretariat_messages.message_view(entry)["events"],
+            "revision": str(entry.get("callback_status_updated_at") or ""),
         })
     return sorted(
         rows,
@@ -19195,6 +19328,20 @@ def crm_callback_request(request_id):
         requested_status = str(payload.get("status") or "").strip().lower()
     if status_requested and requested_status not in CRM_CALLBACK_STATUSES:
         return jsonify({"error": "Le statut de la demande est invalide."}), 400
+    outcome = str(payload.get("outcome") or "")
+    if outcome and (not status_requested or {"reached": "processed", "no_answer": "in_progress"}.get(outcome) != requested_status):
+        return jsonify(error="Choisissez un résultat de rappel valide."), 400
+    operation = _secretariat_call_key(payload)
+    if "call_key" in payload and not operation:
+        return jsonify(error="Identifiant d’action invalide."), 400
+    event_kind = outcome or {"pending": "reopened", "in_progress": "claimed", "processed": "processed"}[requested_status]
+    retry = next((event for event in entry.get("callback_events", []) if operation and event.get("id") == operation), None)
+    if retry and retry.get("kind") != event_kind:
+        return jsonify(error="Cette action a déjà été enregistrée avec un autre résultat."), 409
+    if status_requested and not retry and (
+            ("revision" in payload and str(payload["revision"] or "") != str(entry.get("callback_status_updated_at") or ""))
+            or (previous_status == "processed" and requested_status == "in_progress")):
+        return jsonify(error="Cette demande a changé. Actualisez la liste avant de poursuivre."), 409
     comment = str(payload.get("comment") or "").strip()
     if comment_requested and len(comment) > 2000:
         return jsonify({
@@ -19204,9 +19351,21 @@ def crm_callback_request(request_id):
     now = _crm_now()
     user = current_user() or {}
     actor = user.get("name") or user.get("email") or "Équipe Intégrale"
-    if status_requested:
+    changed = status_requested and not retry and (previous_status != requested_status or
+              outcome == "no_answer" or (outcome == "reached" and entry.get("callback_outcome") != outcome))
+    if changed:
+        entry["callback_events"] = secretariat_messages.events(entry)
         entry["callback_status"] = requested_status
         entry["callback_status_updated_at"] = _crm_callback_status_timestamp()
+        stamp = entry["callback_status_updated_at"]
+        if requested_status == "in_progress" and not entry.get("callback_claimed_at"):
+            entry.update(callback_claimed_at=stamp, callback_claimed_by=actor)
+            if outcome:
+                secretariat_messages.add_event(entry, "claimed", stamp, actor)
+        if requested_status == "pending":
+            entry.update(callback_claimed_at="", callback_claimed_by="")
+        entry["callback_outcome"] = outcome
+        secretariat_messages.add_event(entry, event_kind, stamp, actor, event_id=operation)
         if requested_status == CRM_CALLBACK_PROCESSED:
             if previous_status != requested_status or not entry.get("callback_processed_at"):
                 entry["callback_processed_at"] = now
@@ -19220,12 +19379,10 @@ def crm_callback_request(request_id):
         entry["callback_comment_updated_by"] = actor if comment else ""
 
     _, contact = _crm_prepare_callback_request(data, entry)
-    if status_requested and previous_status != requested_status and contact:
-        title = (
-            "Demande de rappel traitée"
-            if requested_status == CRM_CALLBACK_PROCESSED
-            else "Demande de rappel rouverte"
-        )
+    if changed and contact:
+        title = {"reached": "Personne rappelée et jointe", "no_answer": "Tentative de rappel sans réponse",
+                 "processed": "Demande de rappel traitée", "reopened": "Demande de rappel rouverte",
+                 "claimed": "Demande de rappel prise en charge"}[event_kind]
         _crm_activity(
             contact,
             "demande_rappel",

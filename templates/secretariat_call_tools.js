@@ -1,6 +1,9 @@
 let browsingCourses = false;
 let fromCatalogue = false;
-const deskCallKey = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+function newDeskCallKey() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+const deskCallKey = newDeskCallKey();
 const notesButton = document.getElementById('openCallNotes');
 const notesDialog = document.getElementById('notesDialog');
 const liveNotes = document.getElementById('liveNotes');
@@ -111,9 +114,9 @@ function showDossier(summary) {
     ['Conseiller qui suit le dossier', summary.conseiller || 'Non renseigné'],
     ['Dernier échange', summary.dernier_echange || 'Aucun échange consigné'],
     ['Prochain rendez-vous', summary.rdv || 'Aucun rendez-vous confirmé'],
-    ['Rappel demandé', summary.rappel || 'Aucune demande en attente'],
     ['Relance prévue', summary.relance], ['Prochaine action', summary.prochaine_action],
   ]);
+  renderDossierMessages(summary.messages || []);
   const original = document.getElementById('dossierOriginal');
   original.replaceChildren();
   dossierGroup(original, '', [
@@ -205,7 +208,7 @@ notesForm.addEventListener('submit', async event => {
     payload.rentree_souhaitee = choice?.dataset.intake || document.getElementById('rentreeSouhaitee').value;
   }
   Object.assign(payload, {
-    type: 'autre', telephone: interruptPhone.value.trim(), notes: liveNotes.value.trim(),
+    type: 'autre', share_with_desk: true, telephone: interruptPhone.value.trim(), notes: liveNotes.value.trim(),
     callback_motif: requestType === 'formation' || browsingCourses ? 'formation' : (requestType === 'suivi' ? 'suivi' : 'message'),
     callback_recipient: interruptOwner.value, callback_due_at: interruptDue.value,
   });

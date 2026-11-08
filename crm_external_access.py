@@ -176,11 +176,12 @@ def install(legacy):
             return redirect(legacy.url_for("login", next=next_path))
         if request.endpoint in {"login", "logout"}:
             return None
-        # The call desk has its own identity checks and day-only, read-only agenda.
+        # The call desk has its own identity checks and scoped agenda actions.
         if user.get("desk_access") is True and request.endpoint in {"secretariat", "secretariat_agenda", "secretariat_calendly_prefill_schema"} and request.method in {"GET", "HEAD"}:
             return None
         if user.get("desk_access") is True and request.method == "POST" and request.endpoint in {
             "api_secretariat_crm_contact", "secretariat_suivi_cnaps", "api_secretariat_demandes",
+            "secretariat_waiting_call", "secretariat_message_supplement",
             "secretariat_retry_channel", "api_secretariat_ai_question", "api_secretariat_calendly_appointment",
         }:
             _require_csrf()
