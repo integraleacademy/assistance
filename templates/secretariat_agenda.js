@@ -1,20 +1,40 @@
 (() => {
   const panel = document.getElementById('deskAgenda');
   const input = document.getElementById('agendaDay');
-  if (window.matchMedia?.('(max-width: 800px)').matches) panel.open = false;
+  const toggle = document.getElementById('agendaToggle'), body = document.getElementById('agendaPanel');
+  const compact = window.matchMedia?.('(max-width: 800px)');
+  function setExpanded(value) {
+    toggle.setAttribute('aria-expanded', String(value));
+    body.hidden = !value;
+  }
+  setExpanded(!compact?.matches);
+  toggle.onclick = () => {
+    setExpanded(body.hidden);
+    if (input && !body.hidden) refreshVisible();
+  };
+  compact?.addEventListener('change', event => {
+    setExpanded(!event.matches);
+    if (input && !body.hidden) refreshVisible();
+  });
   if (!input) return;
   const status = document.getElementById('agendaStatus'), list = document.getElementById('agendaList');
   const search = document.getElementById('agendaSearch');
   const todayButton = document.getElementById('agendaToday');
   const label = new Intl.DateTimeFormat('fr-FR', {weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC'});
-  const states = {a_venir: 'Prévu', sans_resultat: 'Résultat non renseigné', repondu: 'Appel répondu',
-    sans_reponse: 'Appel sans réponse', annule: 'Annulé', reporte: 'Reporté'};
+  const states = {a_venir: 'Prévu', sans_resultat: 'Résultat non renseigné', repondu: 'A répondu', sans_reponse: 'Sans réponse'};
+  const lastRead = new Intl.DateTimeFormat('fr-FR', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Paris'});
+  const crmLink = document.getElementById('agendaCrm');
   let today = panel.dataset.today, followToday = true, meetings = [], loadedDate = '', revision = 0, controller;
 
   function displayDay() {
     const day = new Date(input.value + 'T12:00:00Z');
     document.getElementById('agendaCaption').textContent = (input.value === today ? 'Aujourd’hui · ' : '') + label.format(day);
     todayButton.disabled = input.value === today;
+    if (crmLink) {
+      const url = new URL(crmLink.href);
+      url.searchParams.set('date', input.value);
+      crmLink.href = url.href;
+    }
   }
   function render() {
     const term = normalizedSearch(search.value).replace(/(\d)\s*h\s*(\d{2})/g, '$1:$2');
@@ -26,17 +46,27 @@
       const subject = document.createElement('small'), result = document.createElement('span');
       time.textContent = meeting.time;
       person.textContent = meeting.person;
-      subject.textContent = [meeting.host, meeting.subject].filter(Boolean).join(' · ');
+      subject.textContent = meeting.subject;
+      const meta = document.createElement('div');
+      meta.className = 'meeting-meta';
+      meta.append(subject);
+      if (meeting.host) {
+        const host = document.createElement('span');
+        host.className = 'meeting-host';
+        host.textContent = meeting.host;
+        meta.append(host);
+      }
       result.className = 'meeting-state';
       result.dataset.state = meeting.state;
       result.textContent = states[meeting.state] || 'Résultat non renseigné';
-      details.append(person);
-      if (subject.textContent) details.append(subject);
-      details.append(result);
+      const heading = document.createElement('div');
+      heading.className = 'meeting-heading';
+      heading.append(person, result);
+      details.append(heading, meta);
       item.append(time, details);
       list.append(item);
     }
-    status.textContent = !meetings.length ? 'Aucun rendez-vous téléphonique enregistré pour ce jour.'
+    status.textContent = !meetings.length ? 'Aucun rendez-vous ce jour-là.'
       : term && !visible.length ? 'Aucun rendez-vous ne correspond à la recherche.'
       : (term ? visible.length + ' sur ' : '') + meetings.length + ' rendez-vous';
   }
@@ -50,6 +80,7 @@
     displayDay();
     if (loadedDate !== date) {
       meetings = [];
+      loadedDate = '';
       list.replaceChildren();
       search.value = '';
       agendaSync.hidden = true;
@@ -82,8 +113,9 @@
       today = data.today;
       input.value = loadedDate = data.date;
       meetings = data.appointments;
-      agendaSync.hidden = !data.last_sync;
-      agendaSync.textContent = data.last_sync ? 'Dernière synchronisation CRM le ' + data.last_sync : '';
+      agendaSync.hidden = false;
+      agendaSync.textContent = 'Consulté à ' + lastRead.format(new Date());
+      agendaSync.title = data.last_sync ? 'Dernière synchronisation Calendly enregistrée le ' + data.last_sync : '';
       agendaSearchBox.hidden = meetings.length < 2;
       displayDay();
       render();
@@ -110,22 +142,16 @@
     choose(day.toISOString().slice(0, 10));
   }
   function refreshVisible() {
-    if (!panel.open || document.hidden) return;
+    if (body.hidden || document.hidden) return;
     loadDay(followToday);
   }
   agendaPrevious.onclick = () => shift(-1);
   agendaNext.onclick = () => shift(1);
   todayButton.onclick = () => { followToday = true; refreshVisible(); };
   input.onchange = () => choose(input.value || today);
-  agendaRefresh.onclick = loadDay;
+  agendaRefresh.onclick = () => loadDay(followToday);
   search.oninput = render;
-  let expanded = panel.open;
-  panel.addEventListener('toggle', () => {
-    if (expanded === panel.open) return;
-    expanded = panel.open;
-    if (expanded) refreshVisible();
-  });
   document.addEventListener('visibilitychange', refreshVisible);
-  window.setInterval(() => { if (followToday) refreshVisible(); }, 60000);
-  if (panel.open) loadDay();
+  window.setInterval(refreshVisible, 60000);
+  if (!body.hidden) loadDay();
 })();

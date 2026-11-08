@@ -42,33 +42,23 @@ def is_phone_appointment(appointment):
     return bool(re.search(phone, folded(appointment.get("name"))))
 
 
-def day_appointments(data, day, now):
-    contacts = {c.get("id"): c for c in data.get("crm_contacts", []) if c.get("id")}
+def day_appointments(appointments, day, now):
+    """Keep only the reception fields of the same active slots used by /crm/calendrier."""
     rows = []
-    for meeting in data.get("crm_calendly_appointments", []):
-        if not isinstance(meeting, dict) or not is_phone_appointment(meeting):
+    current = now.timestamp()
+    for meeting in appointments:
+        slot = meeting.get("calendar_slot")
+        if not slot or slot["day"] != day:
             continue
-        try:
-            at = datetime.datetime.fromisoformat(str(meeting.get("start_time")).replace("Z", "+00:00"))
-            at = PARIS.localize(at) if at.tzinfo is None else at.astimezone(PARIS)
-        except (ValueError, OverflowError):
-            continue
-        if at.date() != day:
-            continue
-        contact = contacts.get(meeting.get("contact_id")) or {}
-        name = meeting.get("invitee_name") or " ".join(filter(None, (contact.get("prenom"), contact.get("nom"))))
-        status = str(meeting.get("status") or "").casefold()
-        if status in {"cancelled", "canceled"}:
-            result = "reporte" if meeting.get("rescheduled") else "annule"
-        else:
-            result = {"answered": "repondu", "no_answer": "sans_reponse"}.get(
-                meeting.get("response_status"), "a_venir" if at > now else "sans_resultat")
-        rows.append((at.timestamp(), {
-            "time": at.strftime("%H:%M"), "person": name or "Nom non renseigné",
-            "host": meeting.get("host_name") or "", "subject": meeting.get("name") or "",
+        response = str(meeting.get("response_status") or "").lower()
+        result = {"answered": "repondu", "no_answer": "sans_reponse"}.get(
+            response, "a_venir" if slot["start"] > current else "sans_resultat")
+        rows.append((slot["start"], {
+            "time": slot["time"], "person": slot["person"],
+            "host": meeting.get("host_name") or "", "subject": meeting.get("name") or "Rendez-vous Calendly",
             "state": result,
         }))
-    return [row for _, row in sorted(rows, key=lambda pair: (pair[0], pair[1]["person"].casefold()))]
+    return [row for _, row in sorted(rows, key=lambda pair: pair[0])]
 
 
 def cnaps_overview(contact, course, snapshot=None, remote=None):
