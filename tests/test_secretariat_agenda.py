@@ -122,7 +122,10 @@ def test_day_matches_the_crm_active_slots_across_types_reschedules_midnight_and_
     assert [(r["time"], r["person"], r["host"], r["subject"]) for r in rows] == [
         (a["calendar_slot"]["time"], a["calendar_slot"]["person"], a["host_name"], a["name"]) for a in slots]
     assert "private" not in response.get_data(as_text=True)
-    assert all(set(r) == {"time", "person", "host", "subject", "state"} for r in rows)
+    for row in rows:
+        assert set(row) - {"waiting"} == {"time", "person", "host", "subject", "state"}
+        if "waiting" in row:
+            assert set(row["waiting"]) == {"key", "state", "recipient"}
     assert client.get("/api/secretariat/agenda?date=2026-03-30").json["appointments"][0]["time"] == "00:00"
     assert client.get("/api/secretariat/agenda?date=2026-02-30").status_code == 400
 

@@ -130,6 +130,15 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .callback-request-contact a{color:#355fba;text-decoration:none;word-break:break-word}
 .callback-request-contact a:hover{text-decoration:underline}
 .callback-request-note{display:block;max-width:400px;color:#4d5d74;line-height:1.55;white-space:pre-wrap}
+.callback-results { margin-top: 6px; font-size: 12px; }
+.callback-results summary { color: #354b77; cursor: pointer; }
+.callback-results .btn { margin-top: 5px; }
+.callback-request-row:target { outline: 2px solid #446a90; outline-offset: -2px; scroll-margin: 80px; }
+#waitingCallNotice { position: fixed; right: 16px; bottom: 16px; z-index: 50; box-sizing: border-box; width: min(360px, calc(100vw - 32px)); padding: 15px 17px; color: #183e39; background: #f2faf6; border: 1px solid #a7cdc0; border-radius: 12px; box-shadow: 0 6px 24px #17203324; }
+#waitingCallNotice p { margin: 5px 0 10px; }
+#waitingCallNotice a, #waitingCallNotice button { color: #205d50; font: inherit; font-weight: 650; }
+#waitingCallNotice .waiting-crm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+#waitingCallNotice button { background: none; border: 0; padding: 0; cursor: pointer; }
 .callback-request-appointment{display:grid;justify-items:start;gap:5px;min-width:0}
 .callback-request-appointment>span{display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
 .callback-request-appointment>span i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px currentColor;opacity:.75}

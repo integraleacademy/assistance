@@ -472,15 +472,77 @@ function bindDashboard(){
  document.querySelectorAll('[data-dashboard-shift]').forEach(button=>button.onclick=()=>{dashboardOffset=Math.min(0,dashboardOffset+Number(button.dataset.dashboardShift));render()});
 }
 function notificationPresentation(n){
+ if(n.kind==='waiting_call')return{author:'Le secrétariat',action:'signale une personne en attente de votre appel',reply:false};
  if(n.kind==='funding_refused')return{author:n.author||'France Travail',action:'a signalé un refus de financement',reply:false};
  return{author:n.author||'Équipe Intégrale',action:n.kind==='mention'?'vous a mentionné(e)':'vous a répondu',reply:true};
 }
 function notificationsPage(){
- page.innerHTML=header('ÉQUIPE','Notifications','Vos alertes France Travail, mentions et réponses, visibles uniquement depuis votre compte.')+`<section class="card notification-list">${notifications.map(n=>{const presentation=notificationPresentation(n),replyActions=presentation.reply?'<input placeholder="Répondre directement…"><button class="btn blue" data-notification-reply>Répondre</button>':'';return `<article class="notification-item ${n.read?'':'unread'}" data-notification="${n.id}"><span class="publication-avatar">${esc((presentation.author||'?')[0])}</span><div><b>${esc(presentation.author)} ${esc(presentation.action)}</b><time>${fmt(n.date)} · ${esc(n.contact_name)}</time><p>${esc(n.text)}</p><div class="notification-actions"><a class="btn" href="/crm/contacts?fiche=${n.contact_id}">Ouvrir la fiche</a>${replyActions}</div></div></article>`}).join('')||'<div class="empty">Vous n’avez aucune notification.</div>'}</section>`;
+ page.innerHTML=header('ÉQUIPE','Notifications','Vos alertes France Travail, mentions et réponses, visibles uniquement depuis votre compte.')+`<section class="card notification-list">${notifications.map(n=>{const presentation=notificationPresentation(n),replyActions=presentation.reply?'<input placeholder="Répondre directement…"><button class="btn blue" data-notification-reply>Répondre</button>':'';return `<article class="notification-item ${n.read?'':'unread'}" data-notification="${n.id}"><span class="publication-avatar">${esc((presentation.author||'?')[0])}</span><div><b>${esc(presentation.author)} ${esc(presentation.action)}</b><time>${fmt(n.date)} · ${esc(n.contact_name)}</time><p>${esc(n.text)}</p><div class="notification-actions">${n.kind==='waiting_call'?`<a class="btn" href="/crm/demandes-rappel#rappel-${encodeURIComponent(n.callback_request_id)}">Ouvrir le message</a>`:`<a class="btn" href="/crm/contacts?fiche=${n.contact_id}">Ouvrir la fiche</a>`}${replyActions}</div></div></article>`}).join('')||'<div class="empty">Vous n’avez aucune notification.</div>'}</section>`;
  document.querySelectorAll('[data-notification-reply]').forEach(button=>button.onclick=async()=>{const item=button.closest('[data-notification]'),n=notifications.find(x=>x.id===item.dataset.notification),input=item.querySelector('input'),texte=input.value.trim();if(!texte)return;button.disabled=true;try{await api(`/api/crm/contacts/${n.contact_id}/publications/${n.publication_id}/comments`,{method:'POST',body:JSON.stringify({texte})});await api('/api/crm/notifications',{method:'PATCH',body:JSON.stringify({id:n.id})});n.read=true;notificationsPage();updateNotificationCount();toast('Réponse publiée')}catch(e){button.disabled=false;toast(e.message,true)}});
  api('/api/crm/notifications',{method:'PATCH',body:'{}'}).then(()=>{notifications.forEach(n=>n.read=true);updateNotificationCount()});
 }
 function updateNotificationCount(){const count=notifications.filter(n=>!n.read).length,badge=document.querySelector('#notificationCount');if(!badge)return;badge.textContent=count;badge.hidden=!count}
+
+function showWaitingCallNotice(items){
+ const previous=document.getElementById('waitingCallNotice');
+ const notice=items.find(item=>item.kind==='waiting_call'&&!item.read&&item.awaiting_pickup);
+ if(!notice){previous?.remove();return}
+ if(previous?.dataset.id===notice.id)return;
+ const panel=previous||document.createElement('aside');
+ panel.id='waitingCallNotice';
+ panel.dataset.id=notice.id;
+ panel.setAttribute('role','status');
+ const title=document.createElement('strong'),message=document.createElement('p');
+ title.textContent='Une personne attend votre appel';
+ message.textContent=notice.text;
+ const link=document.createElement('a'),dismiss=document.createElement('button');
+ link.href='/crm/demandes-rappel#rappel-'+encodeURIComponent(notice.callback_request_id);
+ link.textContent='Ouvrir le message';
+ dismiss.type='button';
+ dismiss.textContent='Marquer comme lu';
+ async function markRead(){
+  await api('/api/crm/notifications',{method:'PATCH',body:JSON.stringify({id:notice.id})});
+  const saved=notifications.find(item=>item.id===notice.id);
+  if(saved)saved.read=true;
+  notice.read=true;
+  updateNotificationCount();
+  showWaitingCallNotice(items);
+ }
+ dismiss.onclick=async()=>{dismiss.disabled=true;try{await markRead()}catch(error){dismiss.disabled=false;toast(error.message,true)}};
+ link.onclick=async event=>{
+  if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+  event.preventDefault();
+  const destination=link.href;
+  try{await markRead()}finally{window.location.assign(destination)}
+ };
+ const actions=document.createElement('div');
+ actions.className='waiting-crm-actions';
+ actions.append(link,dismiss);
+ panel.replaceChildren(title,message,actions);
+ if(!previous)document.body.append(panel);
+}
+
+let checkingWaitingCalls=false;
+async function refreshWaitingCallNotice(){
+ if(C.external_meta||document.hidden||checkingWaitingCalls)return;
+ checkingWaitingCalls=true;
+ try{
+  const rows=await api('/api/crm/notifications?kind=waiting_call');
+  const unread=new Map(rows.map(item=>[item.id,item]));
+  for(const saved of notifications){
+   if(saved.kind!=='waiting_call')continue;
+   const current=unread.get(saved.id);
+   if(current)Object.assign(saved,current);
+   else saved.read=true;
+  }
+  for(const item of rows){
+   if(!notifications.some(saved=>saved.id===item.id))notifications.unshift(item);
+  }
+  updateNotificationCount();
+  showWaitingCallNotice(rows);
+ }catch(_){/* A transient failure is retried on the next visible poll. */}
+ finally{checkingWaitingCalls=false}
+}
 function updateCallbackRequestNavCount(){const count=Math.max(0,Number(callbackRequestPendingCount)||0),badge=document.querySelector('#callbackRequestNavCount');if(!badge)return;badge.textContent=count;badge.hidden=!count;const link=badge.closest('[data-nav="demandes-rappel"]'),suffix=count?` · ${count} à traiter`:'';if(link){link.dataset.label=`Demande de rappel${suffix}`;link.setAttribute('aria-label',count?`Demande de rappel : ${count} demande${count>1?'s':''} à traiter`:'Demande de rappel')}}
 const sessionFilterSeparator='\u001f';
 function sessionFilterRows(){const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},formationLabels={SSIAP:'SSIAP 1',VTC:'Chauffeur VTC',DESP_INIT:'DESP',DESP_VAE:'DESP'},rows=[];Object.entries(formationSessions).forEach(([centre,formations])=>Object.entries(formations||{}).forEach(([formation,sessions])=>(sessions||[]).forEach(session=>rows.push({formation:formationLabels[formation]||formation,lieu:centreLabels[centre]||centre,label:session.label}))));contacts.filter(c=>c.formation&&c.dates_formation).forEach(c=>rows.push({formation:c.formation,lieu:c.lieu||'',label:c.dates_formation}));return [...new Map(rows.filter(row=>row.label).map(row=>[[row.formation,row.lieu,row.label].join(sessionFilterSeparator),row])).values()].sort((a,b)=>`${a.formation} ${a.label} ${a.lieu}`.localeCompare(`${b.formation} ${b.label} ${b.lieu}`,'fr',{numeric:true}))}
@@ -498,8 +560,11 @@ function callbackRequestCommentRow(row){
  const audit=row.comment_updated_at?`${fmt(row.comment_updated_at)}${row.comment_updated_by?` · ${esc(row.comment_updated_by)}`:''}`:'';
  return `<tr class="callback-request-comment-row ${row.comment?'has-comment':''}" data-callback-request="${esc(row.id)}"><td colspan="8"><div class="callback-request-comment-panel"><div class="callback-request-comment-display"><b>Commentaire interne</b>${row.comment?`<p>${esc(row.comment)}</p>${audit?`<small>${audit}</small>`:''}`:'<p>Aucune indication ajoutée pour l’équipe.</p>'}</div><div class="callback-request-comment-editor"><textarea maxlength="2000" aria-label="Commentaire interne pour cette demande" placeholder="Ajouter une indication visible par vos collègues…">${esc(row.comment||'')}</textarea><button class="btn callback-request-comment-save" type="button">Enregistrer</button></div></div></td></tr>`;
 }
-async function saveCallbackRequestStatus(requestId,nextStatus){
- const result=await api(`/api/crm/callback-requests/${encodeURIComponent(requestId)}`,{method:'PATCH',body:JSON.stringify({status:nextStatus})}),index=callbackRequests.findIndex(item=>String(item.id)===String(requestId));
+async function saveCallbackRequestStatus(requestId,nextStatus,outcome=''){
+ const current=callbackRequests.find(item=>String(item.id)===String(requestId));
+ const payload={status:nextStatus,outcome,call_key:crypto.randomUUID().replaceAll('-','')};
+ if(current?.revision)payload.revision=current.revision;
+ const result=await api('/api/crm/callback-requests/'+encodeURIComponent(requestId),{method:'PATCH',body:JSON.stringify(payload)}),index=callbackRequests.findIndex(item=>String(item.id)===String(requestId));
  if(index>=0)callbackRequests[index]=result.request;
  if(result.callback_pending_count!==undefined)callbackRequestPendingCount=Math.max(0,Number(result.callback_pending_count)||0);
  else if(index>=0)callbackRequestPendingCount=callbackRequests.filter(row=>row.status!=='processed').length;
@@ -515,7 +580,23 @@ function callbackRequestBrief(row) {
  if (row.formation) lines.push(`<small>${esc([row.formation, row.session_label].filter(Boolean).join(' · '))}</small>`);
  if (row.funding_note) lines.push(`<small>${esc(row.funding_note)}</small>`);
  lines.push(`<span class="callback-request-note">${esc(row.notes || 'Aucune précision renseignée.')}</span>`);
+ for(const event of row.events||[]){
+  if(event.text)lines.push('<small><b>Complément du '+esc(event.when)+'</b> · '+esc(event.by)+'</small><span class="callback-request-note">'+esc(event.text)+'</span>');
+ }
  return lines.join('<br>');
+}
+function callbackRequestStatus(row){
+ const closed=row.status==='processed',claimed=row.status==='in_progress';
+ const label=row.outcome==='reached'?'Personne rappelée et jointe':row.outcome==='no_answer'?'Appel sans réponse':closed?'Traité':claimed?'Pris en charge':'À traiter';
+ const lastOutcome=row.outcome && (row.events||[]).filter(event=>event.kind===row.outcome).at(-1);
+ const detail=lastOutcome?[lastOutcome.when,lastOutcome.by]:closed?[row.processed_at&&fmt(row.processed_at),row.processed_by]:claimed?[row.claimed_at&&fmt(row.claimed_at),row.claimed_by]:[];
+ return '<div class="callback-request-status '+(closed?'processed':'pending')+'"><b>'+label+'</b><small>'+esc(detail.filter(Boolean).join(' · '))+'</small></div>';
+}
+function callbackRequestActions(row){
+ const button=(status,label,outcome='')=>'<button type="button" class="btn callback-request-action" data-callback-status="'+status+'" data-callback-outcome="'+outcome+'">'+label+'</button>';
+ if(row.status==='processed')return button('pending','Rouvrir');
+ const claim=row.status==='pending'?button('in_progress','Prendre en charge'):'';
+ return claim+'<details class="callback-results"><summary>Indiquer le résultat</summary>'+button('processed','Personne rappelée et jointe','reached')+button('in_progress','Appel sans réponse','no_answer')+button('processed','Marquer comme traitée')+'</details>';
 }
 function callbackRequestsTable(rows){
  if(!rows.length){
@@ -523,8 +604,8 @@ function callbackRequestsTable(rows){
   return`<section class="card callback-request-empty"><span aria-hidden="true">☎</span><b>${emptyTitle}</b><p>Aucun message ou suivi de dossier ne correspond à ce filtre ou à votre recherche.</p></section>`;
  }
  return `<section class="card table-card callback-request-card"><div class="table-wrap" tabindex="0" aria-label="Liste des demandes de rappel"><table class="callback-request-table"><colgroup><col class="callback-request-col-caller"><col class="callback-request-col-contact"><col class="callback-request-col-note"><col class="callback-request-col-appointment"><col class="callback-request-col-crm"><col class="callback-request-col-received"><col class="callback-request-col-status"><col class="callback-request-col-action"></colgroup><thead><tr><th>Appelant</th><th>Coordonnées</th><th>Demande</th><th>Rendez-vous</th><th>Fiche CRM</th><th>Reçue le</th><th>Statut</th><th>Action</th></tr></thead><tbody>${rows.map(row=>{
-  const processed=row.status==='processed',contactMarkup=row.crm_contact_id?`<div class="callback-request-link"><span class="callback-request-linked">Fiche existante</span><b>${esc(row.crm_contact_name||row.display_name)}</b>${row.crm_contact_status?`<small>${esc(row.crm_contact_status)}</small>`:''}<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Ouvrir la fiche</a></div>`:'<div class="callback-request-link"><span class="callback-request-unlinked">Aucune piste existante</span><small>Créez une fiche en conservant cette demande.</small><button class="btn blue callback-request-convert" type="button">Convertir en fiche</button></div>',phone=row.telephone?`<a href="tel:${encodeURIComponent(row.telephone)}">${esc(formatContactPhone(row.telephone))}</a>`:'<span>—</span>',email=row.email?`<a href="mailto:${encodeURIComponent(row.email)}">${esc(row.email)}</a>`:'',statusMarkup=processed?`<div class="callback-request-status processed"><b>✓ Traité</b>${row.processed_at?`<small>${fmt(row.processed_at)}${row.processed_by?` · ${esc(row.processed_by)}`:''}</small>`:''}</div>`:'<div class="callback-request-status pending"><b>● Non traitée</b><small>Action requise</small></div>';
-  return`<tr class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td>${callbackRequestBrief(row)}</td><td>${callbackRequestAppointment(row)}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td><button class="btn ${processed?'':'blue'} callback-request-action" type="button" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button></td></tr>${callbackRequestCommentRow(row)}`;
+  const processed=row.status==='processed',contactMarkup=row.crm_contact_id?`<div class="callback-request-link"><span class="callback-request-linked">Fiche existante</span><b>${esc(row.crm_contact_name||row.display_name)}</b>${row.crm_contact_status?`<small>${esc(row.crm_contact_status)}</small>`:''}<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Ouvrir la fiche</a></div>`:'<div class="callback-request-link"><span class="callback-request-unlinked">Aucune piste existante</span><small>Créez une fiche en conservant cette demande.</small><button class="btn blue callback-request-convert" type="button">Convertir en fiche</button></div>',phone=row.telephone?`<a href="tel:${encodeURIComponent(row.telephone)}">${esc(formatContactPhone(row.telephone))}</a>`:'<span>—</span>',email=row.email?`<a href="mailto:${encodeURIComponent(row.email)}">${esc(row.email)}</a>`:'',statusMarkup=callbackRequestStatus(row);
+  return`<tr id="rappel-${esc(row.id)}" class="callback-request-row ${processed?'is-processed':'is-pending'}" data-callback-request="${esc(row.id)}"><td><div class="person"><span class="avatar">${esc(callbackRequestInitials(row))}</span><div><b>${esc(row.display_name)}</b><small>Demande de rappel</small></div></div></td><td><div class="callback-request-contact">${phone}${email}</div></td><td>${callbackRequestBrief(row)}</td><td>${callbackRequestAppointment(row)}</td><td>${contactMarkup}</td><td><time>${callbackRequestReceivedAt(row)}</time></td><td>${statusMarkup}</td><td>${callbackRequestActions(row)}</td></tr>${callbackRequestCommentRow(row)}`;
  }).join('')}</tbody></table></div></section>`;
 }
 function drawCallbackRequests(){
@@ -543,13 +624,14 @@ function drawCallbackRequests(){
  results.querySelectorAll('.callback-request-action').forEach(button=>button.onclick=async()=>{
   const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,nextStatus=button.dataset.callbackStatus;
   if(!requestId)return;
+  const label=button.textContent;
   button.disabled=true;
   button.textContent='Enregistrement…';
   try{
-   await saveCallbackRequestStatus(requestId,nextStatus);
+   await saveCallbackRequestStatus(requestId,nextStatus,button.dataset.callbackOutcome);
    drawCallbackRequests();
-   toast(nextStatus==='processed'?'Demande marquée comme traitée':'Demande rouverte');
-  }catch(error){button.disabled=false;button.textContent=nextStatus==='processed'?'Marquer comme traitée':'Rouvrir';toast(error.message,true)}
+   toast('Suivi du message enregistré');
+  }catch(error){button.disabled=false;button.textContent=label;toast(error.message,true);if(error.message.includes('a changé'))refreshCrmSectionData(C.section)}
  });
  results.querySelectorAll('.callback-request-comment-save').forEach(button=>button.onclick=async()=>{
   const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,textarea=row?.querySelector('textarea'),comment=textarea?.value.trim()||'';
@@ -574,13 +656,18 @@ function drawCallbackRequests(){
   }catch(error){button.disabled=false;button.textContent=oldLabel;toast(error.message,true)}
  });
 }
+let lastCallbackAnchor='';
 function callbackRequestsPage(){
+ const target=location.hash.startsWith('#rappel-')?location.hash.slice(1):'';
+ const focusTarget=target && lastCallbackAnchor!==target;
+ if(focusTarget){callbackRequestFilter='all';callbackRequestSearch=''}
  const pending=callbackRequests.filter(row=>row.status!=='processed').length,processed=callbackRequests.length-pending;
  page.innerHTML=header('SECRÉTARIAT','Demande de rappel','Toutes les « Autres demandes » reçues par le secrétariat, sans création automatique de piste.')+`<section class="callback-request-stats"><article class="is-pending"><span>À traiter</span><strong id="callbackRequestPendingStat">${pending}</strong><small id="callbackRequestPendingLabel">demande${pending>1?'s':''} en attente</small></article><article class="is-processed"><span>Traitées</span><strong id="callbackRequestProcessedStat">${processed}</strong><small id="callbackRequestProcessedLabel">demande${processed>1?'s':''} clôturée${processed>1?'s':''}</small></article><article><span>Total reçu</span><strong id="callbackRequestTotalStat">${callbackRequests.length}</strong><small>historique complet</small></article></section><div class="callback-request-toolbar"><div class="callback-request-status-filters" role="group" aria-label="Filtrer les demandes selon leur statut"><button type="button" data-callback-filter="pending" aria-pressed="${callbackRequestFilter==='pending'}" class="${callbackRequestFilter==='pending'?'active':''}">À traiter <span>${pending}</span></button><button type="button" data-callback-filter="processed" aria-pressed="${callbackRequestFilter==='processed'}" class="${callbackRequestFilter==='processed'?'active':''}">Traitées <span>${processed}</span></button><button type="button" data-callback-filter="all" aria-pressed="${callbackRequestFilter==='all'}" class="${callbackRequestFilter==='all'?'active':''}">Toutes <span>${callbackRequests.length}</span></button></div><div class="filters callback-request-filters"><input id="callbackRequestSearch" aria-label="Rechercher une demande de rappel" placeholder="⌕  Nom, e-mail, téléphone ou demande…" value="${esc(callbackRequestSearch)}"><span class="filter-result-count" id="callbackRequestCount"></span></div></div><div id="callbackRequestResults"></div>`;
  const input=document.querySelector('#callbackRequestSearch');
  input.oninput=()=>{callbackRequestSearch=input.value;drawCallbackRequests()};
  document.querySelectorAll('[data-callback-filter]').forEach(button=>button.onclick=()=>{callbackRequestFilter=button.dataset.callbackFilter;document.querySelectorAll('[data-callback-filter]').forEach(item=>{item.classList.toggle('active',item===button);item.setAttribute('aria-pressed',String(item===button))});drawCallbackRequests()});
  drawCallbackRequests();
+ if(focusTarget){const row=document.getElementById(target);if(row){lastCallbackAnchor=target;row.scrollIntoView({block:'center'})}}
 }
 function listContactsForType(type,activeContacts=crmActiveContacts()){
  if(type==='pistes'){
@@ -909,7 +996,7 @@ function feed(c,expanded=false){
   const groups=[];
   visible.forEach(activity=>{const day=activityDateGroup(activity.date),last=groups[groups.length-1];if(last&&last.key===day.key)last.activities.push(activity);else groups.push({...day,activities:[activity]})});
   const content=groups.map(group=>`<section class="activity-day-group"><h3 class="activity-day-heading"><span>${esc(group.label)}</span><strong>${group.activities.length}</strong></h3><div class="activity-day-list">${group.activities.map(a=>{
-    const category=activityCategory(a),definition=activityFilterDefinitions.find(item=>item.key===category),sms=category==='sms',callback=a.kind==='demande_rappel'||a.callback_request_id,attention=['calendly','erreur'].includes(a.kind),processed=a.callback_status==='processed',callbackReceipt=callback&&a.callback_request_id&&(a.callback_event==='received'||(!a.callback_event&&a.title==='Demande de rappel reçue')),preview=a.preview?`data-preview="${encodeURIComponent(a.preview)}" data-preview-type="${sms?'sms':'html'}"`:a.has_preview?`data-preview-id="${esc(a.id)}" data-preview-type="${sms?'sms':'html'}"`:'',editable=a.kind==='appel'&&!callback,callbackControls=callback?`<span class="feed-callback-controls"><span class="feed-callback-status ${processed?'processed':'pending'}">${processed?'Traité':'À traiter'}</span>${callbackReceipt?`<button class="feed-callback-action ${processed?'reopen':'process'}" type="button" data-callback-action="${esc(a.callback_request_id)}" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button>`:''}</span>`:'',appointmentResult=category==='rdv'?appointmentActivityResult(c,a):null;
+    const category=activityCategory(a),definition=activityFilterDefinitions.find(item=>item.key===category),sms=category==='sms',callback=a.kind==='demande_rappel'||a.callback_request_id,attention=['calendly','erreur'].includes(a.kind),processed=a.callback_status==='processed',callbackReceipt=callback&&a.callback_request_id&&(a.callback_event==='received'||(!a.callback_event&&a.title==='Demande de rappel reçue')),preview=a.preview?`data-preview="${encodeURIComponent(a.preview)}" data-preview-type="${sms?'sms':'html'}"`:a.has_preview?`data-preview-id="${esc(a.id)}" data-preview-type="${sms?'sms':'html'}"`:'',editable=a.kind==='appel'&&!callback,callbackControls=callback?`<span class="feed-callback-controls"><span class="feed-callback-status ${processed?'processed':'pending'}">${processed?'Traité':a.callback_status==='in_progress'?'Pris en charge':'À traiter'}</span>${callbackReceipt?`<button class="feed-callback-action ${processed?'reopen':'process'}" type="button" data-callback-action="${esc(a.callback_request_id)}" data-callback-status="${processed?'pending':'processed'}">${processed?'Rouvrir':'Marquer comme traitée'}</button>`:''}</span>`:'',appointmentResult=category==='rdv'?appointmentActivityResult(c,a):null;
     return`<article class="feed-item activity-${category}${callback?' callback-activity':''}${attention?' attention-activity':''}" data-activity-id="${esc(a.id)}" data-activity-category="${category}"><span class="feed-icon">${crmIcon(definition.icon)}</span><div class="feed-content"><div class="feed-item-head"><div class="feed-title-block"><span class="feed-kind">${esc(definition.label)}</span><b>${esc(a.title)}</b></div>${appointmentResult?`<span class="feed-appointment-result ${appointmentResult.tone}">${esc(appointmentResult.label)}</span>`:''}${callbackControls}${editable?`<button class="feed-edit-call" type="button" data-edit-call="${esc(a.id)}" aria-label="Modifier le compte-rendu de l’appel">Modifier</button>`:''}</div>${sms?'':`<p>${esc(a.detail)}</p>`}<div class="feed-meta"><time>${fmt(a.date)}</time><span aria-hidden="true">•</span><span>${esc(a.author||'Équipe Intégrale')}</span></div>${a.edited_at?`<small class="feed-edited">Modifié ${fmt(a.edited_at)} · ${esc(a.edited_by||'Équipe Intégrale')}</small>`:''}${preview?`<a class="preview-link" ${preview}>${sms?'Voir le SMS':'Prévisualiser'}</a>`:''}</div></article>`
   }).join('')}</div></section>`).join('');
   const more=activities.length>5?`<button class="btn feed-more" id="feedMore">${expanded?'Voir moins':`Voir plus (${activities.length-5})`}</button>`:'';
@@ -2188,7 +2275,7 @@ function render(){
  if(window.CRMWorkspace){page.innerHTML=CRMWorkspace.listPage(C.section,workspaceContext());CRMWorkspace.bindList(C.section,workspaceContext());return}
  page.innerHTML=listPage(C.section);bindList(C.section);bindRows();
 }
-async function init(){try{const snapshot=await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`);contacts=snapshot.contacts||[];templates=snapshot.templates||{email:[],sms:[]};formationSessions=snapshot.formation_sessions||{};notifications=snapshot.notifications||[];callbackRequests=snapshot.callback_requests||[];callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);crmAppointments=snapshot.appointments||[];crmSettings=snapshot.settings||{};updateNotificationCount();updateCallbackRequestNavCount();const fiche=new URLSearchParams(location.search).get('fiche');fiche?await showContact(fiche):render();lastCrmRefreshAt=Date.now()}catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}}
+async function init(){try{const snapshot=await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`);contacts=snapshot.contacts||[];templates=snapshot.templates||{email:[],sms:[]};formationSessions=snapshot.formation_sessions||{};notifications=snapshot.notifications||[];if(!C.external_meta)showWaitingCallNotice(notifications);callbackRequests=snapshot.callback_requests||[];callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);crmAppointments=snapshot.appointments||[];crmSettings=snapshot.settings||{};updateNotificationCount();updateCallbackRequestNavCount();const fiche=new URLSearchParams(location.search).get('fiche');fiche?await showContact(fiche):render();lastCrmRefreshAt=Date.now()}catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}}
 function developmentSupportModal(){
  modal('Support développement',`<form id="developmentSupportForm" class="fields" enctype="multipart/form-data"><div class="field"><label for="developmentSupportPlatform">Plateforme concernée</label><select id="developmentSupportPlatform" name="platform" required><option value="CRM">CRM</option><option value="Gestion stagiaires">GESTION STAGIAIRES</option><option value="Site internet officiel">SITE OFFICIEL</option></select></div><div class="field full"><label for="developmentSupportUrl">URL de la page concernée</label><input id="developmentSupportUrl" name="page_url" type="url" value="${esc(location.href)}" maxlength="2000" required></div><div class="field full"><label for="developmentSupportActions">Actions à mener</label><textarea id="developmentSupportActions" name="actions" rows="8" minlength="20" maxlength="6000" placeholder="Décrivez précisément toutes les modifications et le résultat attendu." required></textarea><small>La demande sera reformulée par l’IA, puis le texte original sera aussi conservé dans Notion.</small></div><div class="field full"><label for="developmentSupportAttachment">Pièce jointe (facultative)</label><input id="developmentSupportAttachment" name="attachment" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.heic,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"><small>Image, PDF, document Word/Excel, CSV ou TXT · 20 Mo maximum. Les images seront affichées directement dans la page Notion.</small></div></form>`,`<button class="btn" id="developmentSupportCancel">Annuler</button><button class="btn blue" id="developmentSupportSubmit">ENVOYER</button>`,'development-support-modal');
  const form=document.querySelector('#developmentSupportForm'),cancel=document.querySelector('#developmentSupportCancel'),submit=document.querySelector('#developmentSupportSubmit');
@@ -2334,3 +2421,7 @@ async function refreshCrmSnapshot(){
  finally{crmRefreshInFlight=false;scheduleCrmRefresh()}
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){const remaining=CRM_VISIBILITY_REFRESH_MIN_MS-(Date.now()-lastCrmRefreshAt);if(remaining<=0){clearTimeout(crmRefreshTimer);refreshCrmSnapshot()}else scheduleCrmRefresh(remaining)}});scheduleCrmRefresh();
+if(!C.external_meta){
+ window.setInterval(refreshWaitingCallNotice,20000);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshWaitingCallNotice()});
+}
