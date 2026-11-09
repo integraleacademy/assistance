@@ -23,7 +23,6 @@
   const label = new Intl.DateTimeFormat('fr-FR', {weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC'});
   const states = {a_venir: 'Prévu', sans_resultat: 'Résultat non renseigné', repondu: 'A répondu', sans_reponse: 'Sans réponse'};
   const lastRead = new Intl.DateTimeFormat('fr-FR', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Paris'});
-  const crmLink = document.getElementById('agendaCrm');
   let today = panel.dataset.today, followToday = true, meetings = [], loadedDate = '', revision = 0, controller;
   const sending = new Set(), confirmed = new Map();
   const actionFeedback = document.getElementById('agendaActionFeedback');
@@ -92,11 +91,6 @@
     const day = new Date(input.value + 'T12:00:00Z');
     document.getElementById('agendaCaption').textContent = (input.value === today ? 'Aujourd’hui · ' : '') + label.format(day);
     todayButton.disabled = input.value === today;
-    if (crmLink) {
-      const url = new URL(crmLink.href);
-      url.searchParams.set('date', input.value);
-      crmLink.href = url.href;
-    }
   }
   function render() {
     const term = normalizedSearch(search.value).replace(/(\d)\s*h\s*(\d{2})/g, '$1:$2');

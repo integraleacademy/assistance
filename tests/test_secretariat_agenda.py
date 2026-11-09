@@ -316,9 +316,9 @@ def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
                 el.querySelector('time').textContent, el.querySelector('strong').textContent, el.querySelector('small').textContent])""")
             assert desk_rows[0][:2] == ["09:00", "Chloé DU-PRÉ"]
             assert not any(row[1] in {"Invité 2", "Invité 4"} for row in desk_rows)
-            with page.expect_popup() as opened:
-                page.locator("#agendaCrm").click()
-            crm = opened.value
+            assert page.locator('#deskAgenda a[href^="/crm"]').count() == 0
+            crm = context.new_page()
+            crm.goto(f"https://desk.test/crm/calendrier?date={day}")
             crm.wait_for_selector("#calendarContent .calendar-event")
             assert crm.locator("#calendarDate").input_value() == day
             crm_rows = crm.locator("#calendarContent .calendar-event").evaluate_all("""items => items.map(el => [

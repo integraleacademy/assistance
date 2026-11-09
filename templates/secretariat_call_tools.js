@@ -116,7 +116,7 @@ function showDossier(summary) {
     ['Prochain rendez-vous', summary.rdv || 'Aucun rendez-vous confirmé'],
     ['Relance prévue', summary.relance], ['Prochaine action', summary.prochaine_action],
   ]);
-  renderDossierMessages(summary.messages || []);
+  renderDossierMessages(summary.messages || [], summary.phone_booking_url);
   const original = document.getElementById('dossierOriginal');
   original.replaceChildren();
   dossierGroup(original, '', [
