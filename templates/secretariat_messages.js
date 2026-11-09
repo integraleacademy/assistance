@@ -5,28 +5,25 @@ const supplementDialog = document.getElementById('supplementDialog');
 const supplementNote = document.getElementById('supplementNote');
 const supplementSend = document.getElementById('sendSupplement');
 const supplementError = document.getElementById('supplementError');
+const messageAppointment = document.getElementById('messageAppointment');
+const supplementAppointment = document.getElementById('supplementAppointment');
 let supplementTarget;
 
 function clearDeskMessages() {
   messageList.replaceChildren();
   messageFeedback.textContent = '';
+  messageAppointment.hidden = supplementAppointment.hidden = true;
+  messageAppointment.href = supplementAppointment.href = genericCalendly;
   supplementTarget = null;
   if (supplementDialog.open) supplementDialog.close();
   supplementNote.value = '';
 }
 
-function newMessageCallback(recipient, note) {
-  if (Array.from(callbackRecipient.options).some(option => option.value === recipient)) callbackRecipient.value = recipient;
-  else callbackRecipient.value = '';
-  if (note) precision.value = note;
-  notesButton.click();
-  setCallbackMode(true);
-  (interruptPhone.value ? liveNotes : interruptPhone).focus();
-}
-
-function renderDossierMessages(messages) {
+function renderDossierMessages(messages, bookingUrl) {
   messageList.replaceChildren();
   messageFeedback.textContent = '';
+  if (bookingUrl) messageAppointment.href = bookingUrl;
+  messageAppointment.hidden = !messages.some(message => message.status === 'processed');
   if (!messages.length) {
     messageList.textContent = 'Aucun message transmis pour ce dossier.';
     return;
@@ -69,18 +66,19 @@ function renderDossierMessages(messages) {
       state.textContent = message.status === 'pending' ? 'En attente de prise en charge.' : message.status_label;
       card.append(state);
     }
-    if (message.id) {
+    if (message.id && message.status !== 'processed') {
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'btn secondary';
-      action.textContent = message.status === 'processed' ? 'Demander un nouveau rappel' : 'Compléter ce message';
+      action.textContent = 'Compléter ce message';
       action.onclick = () => {
-        if (message.status === 'processed') return newMessageCallback(message.recipient, '');
         supplementTarget = {message, key: newDeskCallKey(), identity: currentDeskIdentity(), version: callerLookupVersion};
         supplementNote.value = '';
         supplementError.hidden = true;
         document.getElementById('supplementContext').textContent = [message.subject, message.recipient, message.sent].filter(Boolean).join(' · ');
-        supplementSend.textContent = 'Transmettre le complément';
+        supplementSend.hidden = false;
+        supplementNote.readOnly = false;
+        supplementAppointment.hidden = true;
         supplementDialog.showModal();
         supplementNote.focus();
       };
@@ -99,7 +97,7 @@ messageRefresh.onclick = async () => {
     const response = await aiFetch('/api/secretariat/crm-contact', identity);
     if (version !== callerLookupVersion || existingCrmContactId !== identity.confirmed_contact_id) return;
     if (!response.summary) throw new Error('Confirmez à nouveau l’identité de l’appelant.');
-    renderDossierMessages(response.summary.messages);
+    renderDossierMessages(response.summary.messages, response.summary.phone_booking_url);
     messageFeedback.textContent = 'Messages à jour.';
   } catch (error) {
     if (version === callerLookupVersion) messageFeedback.textContent = error.message;
@@ -112,12 +110,8 @@ supplementDialog.addEventListener('cancel', event => { if (supplementSend.disabl
 document.getElementById('supplementForm').onsubmit = async event => {
   event.preventDefault();
   const target = supplementTarget;
-  if (!target || supplementSend.disabled || target.version !== callerLookupVersion ||
+  if (!target || target.closed || supplementSend.disabled || target.version !== callerLookupVersion ||
       existingCrmContactId !== target.identity.confirmed_contact_id || !supplementNote.value.trim()) return;
-  if (target.closed) {
-    supplementDialog.close();
-    return newMessageCallback(target.message.recipient, supplementNote.value.trim());
-  }
   supplementSend.disabled = document.getElementById('closeSupplement').disabled = true;
   try {
     const response = await fetch('/api/secretariat/messages/' + encodeURIComponent(target.message.id) + '/complements', {
@@ -129,7 +123,11 @@ document.getElementById('supplementForm').onsubmit = async event => {
     if (response.status === 409 && result.messages) {
       renderDossierMessages(result.messages);
       target.closed = true;
-      supplementSend.textContent = 'Préparer un nouveau rappel';
+      supplementSend.hidden = true;
+      supplementNote.readOnly = true;
+      supplementAppointment.href = messageAppointment.href;
+      supplementAppointment.hidden = false;
+      supplementAppointment.focus();
     }
     if (!response.ok) throw new Error(result.error || 'Le complément n’a pas pu être transmis. Réessayez.');
     renderDossierMessages(result.messages);

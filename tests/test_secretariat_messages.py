@@ -51,6 +51,19 @@ LOOKUP = "/api/secretariat/crm-contact"
 QUEUE = "/api/crm/callback-requests"
 
 
+@pytest.mark.parametrize(("formation", "expected"), [
+    ("Parcours sécurité en alternance", "https://calendly.com/integraleacademy/parcourssecurite"),
+    ("Formation à préciser", app.SECRETARIAT_GENERIC_CALENDLY_URL),
+])
+def test_followup_booking_opens_the_course_calendar_or_school_directory(desk, formation, expected):
+    operator, headers, _, _ = desk
+    data = app.load_data()
+    data["crm_contacts"][0]["formation"] = formation
+    app.save_data(data)
+    summary = operator.post(LOOKUP, json=IDENTITY, headers=headers).json["summary"]
+    assert summary["phone_booking_url"] == expected
+
+
 def test_waiting_alert_is_scoped_idempotent_and_tracks_the_original_slot(desk):
     operator, headers, owner, day = desk
     rows = operator.get(AGENDA, query_string={"date": day}).json["appointments"]
@@ -152,6 +165,7 @@ def test_message_can_be_claimed_supplemented_and_closed_with_an_explicit_outcome
     assert result.json["callback_pending_count"] == 0
     conflict = operator.post(supplement, json={**body, "call_key": "c" * 32}, headers=headers)
     assert conflict.status_code == 409
+    assert "réservez un rendez-vous téléphonique" in conflict.json["error"]
     labels = [e["label"] for e in conflict.json["messages"][0]["events"]]
     assert labels == ["Pris en charge", "Complément transmis", "Appel tenté, sans réponse", "Personne rappelée et jointe"]
     assert operator.post(supplement, json=body, headers=headers).status_code == 200
@@ -219,19 +233,31 @@ def test_secretary_and_adviser_complete_the_same_call_in_their_own_screens(desk)
             assert len(app.load_data()["secretariat_demandes"]) == 1
             adviser.reload()
             adviser.wait_for_selector('.callback-request-note:has-text("Appeler après 16 h.")')
+            reception.reload()
+            verify_caller()
+            reception.get_by_role("button", name="Compléter ce message").click()
+            reception.fill("#supplementNote", "Question sur la convocation.")
             adviser.locator(".callback-results summary").click()
             adviser.get_by_role("button", name="Personne rappelée et jointe").click()
             adviser.get_by_role("button", name="Traitées").click()
             adviser.wait_for_selector(".callback-request-status:has-text('Personne rappelée et jointe')")
-            reception.reload()
-            verify_caller()
+            reception.click("#sendSupplement")
+            reception.wait_for_selector("#supplementAppointment")
+            assert not reception.locator("#sendSupplement").is_visible()
+            assert reception.locator("#supplementNote").input_value() == "Question sur la convocation."
+            agenda_url = app.SECRETARIAT_FORMATIONS["BTS_MOS"]["calendly"]
+            assert reception.locator("#supplementAppointment").get_attribute("href") == agenda_url
+            reception.click("#closeSupplement")
             assert "Personne rappelée et jointe" in reception.locator("#deskMessages").inner_text()
-            reception.get_by_role("button", name="Demander un nouveau rappel").click()
-            assert reception.input_value("#interruptOwner") == "Cassandre MENARD"
-            reception.fill("#liveNotes", "Question sur la convocation.")
-            reception.click("#saveInterrupted")
-            reception.wait_for_selector("#callReceipt:has-text('convocation')")
+            assert reception.get_by_role("button", name="Demander un nouveau rappel").count() == 0
+            assert reception.locator(".desk-message button").count() == 0
+            reception.context.route("https://calendly.com/**", lambda route: route.fulfill(body="Agenda de test"))
+            with reception.expect_popup() as opened:
+                reception.get_by_role("link", name="Réserver un rendez-vous téléphonique").click()
+            opened.value.wait_for_url(agenda_url)
+            assert reception.locator("#verifiedDossier").is_visible()
             entries = app.load_data()["secretariat_demandes"]
-            assert len(entries) == 2 and {row["callback_status"] for row in entries} == {"pending", "processed"}
+            assert len(entries) == 1 and entries[0]["callback_status"] == "processed"
+            assert sum(e["kind"] == "supplement" for e in entries[0]["callback_events"]) == 1
         finally:
             browser.close()

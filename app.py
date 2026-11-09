@@ -4064,6 +4064,7 @@ def api_secretariat_crm_contact():
         )
         code = _crm_formation_code(contact)
         desk_code = secretariat_calls.desk_course_code(code, SECRETARIAT_FORMATIONS)
+        summary["phone_booking_url"] = SECRETARIAT_FORMATIONS.get(desk_code, {}).get("calendly") or SECRETARIAT_GENERIC_CALENDLY_URL
         summary["course_label"], summary["course_purpose"] = secretariat_calls.desk_course(
             desk_code, SECRETARIAT_FORMATIONS, summary["formation"])
         if code in SECRETARIAT_FORMATIONS:
@@ -4135,7 +4136,7 @@ def secretariat_message_supplement(request_id):
         return _secretariat_private(jsonify(error="Ce complément a déjà été envoyé avec un autre texte."), 409)
     if not previous:
         if _crm_callback_request_status(entry) == CRM_CALLBACK_PROCESSED:
-            return _secretariat_private(jsonify(error="Ce message vient d’être traité. Vous pouvez demander un nouveau rappel.",
+            return _secretariat_private(jsonify(error="Ce message vient d’être traité. Pour un nouvel appel, réservez un rendez-vous téléphonique.",
                                                messages=_secretariat_message_history(data, contact, role)), 409)
         user = current_user() or {}
         secretariat_messages.add_event(entry, "supplement", _crm_callback_status_timestamp(),
