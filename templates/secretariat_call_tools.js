@@ -31,11 +31,6 @@ function setCpfBalance(consulted) {
   if (balance.disabled) balance.value = '';
 }
 document.getElementById('cpfPending').addEventListener('change', () => setCpfBalance(true));
-for (const input of [callerForm.elements.prenom, callerForm.elements.nom]) {
-  input.addEventListener('input', () => {
-    if (useCallerMatch.disabled || (!verifiedDossier.hidden) || (pendingCallerMatch && callerMatch.hidden)) scheduleCallerLookup();
-  });
-}
 
 function deskJsonHeaders() {
   const headers = {'Content-Type': 'application/json'};
@@ -50,6 +45,7 @@ function dossierGroup(parent, facts) {
   list.className = 'dossier-rows';
   for (const [label, value] of entries) {
     const row = document.createElement('div');
+    if (value.length > 70) row.className = 'long-fact';
     const term = document.createElement('dt'), detail = document.createElement('dd');
     term.textContent = label;
     detail.textContent = value;
@@ -96,12 +92,29 @@ function renderDeskCnaps(facts) {
   refreshDeskCnaps.hidden = !facts.can_check;
 }
 
+function showNextCall(appointment, preview = false) {
+  const card = document.getElementById('dossierNext');
+  document.getElementById(preview ? 'callerAgendaSlot' : 'dossierAgendaSlot').append(card);
+  card.classList.toggle('is-booked', Boolean(appointment));
+  document.getElementById('nextCallLabel').textContent = appointment?.in_slot ? 'Rendez-vous téléphonique · créneau en cours' : 'Prochain rendez-vous téléphonique';
+  document.getElementById('nextCallWhen').textContent = appointment?.when || 'Aucun créneau confirmé';
+  const date = document.getElementById('nextCallDate');
+  date.textContent = appointment ? [appointment.full_date, 'Heure de Paris'].filter(Boolean).join(' · ') : '';
+  date.hidden = !appointment;
+  const host = document.getElementById('nextCallHost');
+  host.hidden = !appointment;
+  host.querySelector('.meeting-host-name').textContent = appointment?.host_name ? 'Avec ' + appointment.host_name : 'Conseiller à préciser';
+  const portrait = host.querySelector('.team-portrait');
+  if (appointment?.avatar) portrait.dataset.advisor = appointment.avatar;
+  else delete portrait.dataset.advisor;
+}
+
 function showDossier(summary) {
   dossierFacts.replaceChildren();
   const exchanges = document.getElementById('dossierExchanges');
   exchanges.replaceChildren();
-  document.getElementById('requestPreview').textContent = summary.centre || '';
-  document.getElementById('exchangePreview').textContent = summary.conseiller || '';
+  document.getElementById('requestPreview').textContent = summary.statut_depuis || '';
+  showNextCall(summary.next_appointment);
   for (const panel of verifiedDossier.querySelectorAll('details')) panel.open = false;
   dossierStatus.textContent = summary.stage_label || 'Situation à préciser';
   dossierStatus.dataset.tone = (summary.archive || summary.statut === 'Disqualifié') ? 'closed' : (summary.statut === 'Converti' ? 'success' : 'active');
@@ -109,19 +122,19 @@ function showDossier(summary) {
   const purpose = document.getElementById('dossierPurpose');
   purpose.textContent = summary.course_purpose || '';
   purpose.hidden = !summary.course_purpose;
-  document.getElementById('dossierWording').textContent = summary.phone_wording || 'Je peux demander à votre conseiller de vérifier.';
+  document.getElementById('dossierWording').textContent = summary.phone_wording || 'Que souhaitez-vous que je vérifie avec votre conseiller ?';
   dossierGroup(dossierFacts, [
-    ['Démarche en cours', summary.secondary_label], ['Situation mise à jour le', summary.statut_depuis],
+    ['Situation mise à jour le', summary.statut_depuis],
     ['Raison de la clôture', summary.motif_disqualification], ['Reprise du suivi prévue le', summary.reactivation],
-    ['Centre de formation', summary.centre], ['Dates de formation', summary.session], ['Financement évoqué', summary.financement],
   ]);
   document.getElementById('requestPanel').hidden = !dossierFacts.childElementCount;
   dossierGroup(exchanges, [
-    ['Conseiller qui suit le dossier', summary.conseiller || 'Non renseigné'],
-    ['Dernier échange', summary.dernier_echange || 'Aucun échange consigné'],
-    ['Prochain rendez-vous', summary.rdv || 'Aucun rendez-vous confirmé'],
-    ['Relance prévue', summary.relance], ['Prochaine action', summary.prochaine_action],
+    ['Prochaine action', summary.prochaine_action], ['Rappel en attente', summary.rappel], ['Relance prévue', summary.relance],
+    ['Conseiller du dossier', summary.conseiller], ['Dernier échange', summary.dernier_echange],
+    ['Centre de formation', summary.centre], ['Dates de formation', summary.session],
+    ['Démarche en cours', summary.secondary_label], ['Financement évoqué', summary.financement],
   ]);
+  document.getElementById('dossierEssentials').hidden = !exchanges.childElementCount;
   renderDossierMessages(summary.messages || [], summary.phone_booking_url);
   document.getElementById('messagePanel').open = Boolean(summary.messages?.some(message => message.status !== 'processed'));
   const original = document.getElementById('dossierOriginal');
@@ -145,7 +158,7 @@ function showDossier(summary) {
 
 function currentDeskIdentity() {
   const form = callerForm.elements;
-  return {confirmed_contact_id: existingCrmContactId, verify_identity: true, email: form.email.value,
+  return {confirmed_contact_id: existingCrmContactId, verify_identity: true, selected_by_name: selectedByName, email: form.email.value,
     telephone: form.telephone.value, prenom: form.prenom.value, nom: form.nom.value};
 }
 

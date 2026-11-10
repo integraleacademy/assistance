@@ -194,7 +194,7 @@ def install(legacy):
                               "crm.css", "crm_workspace.css", "crm_dashboard_origins.css",
                               "crm_title.js", "crm_sidebar_state.js", "crm_appointment_state.js",
                               "crm_workspace.js", "crm.js", "crm_external_contact.js",
-                              "crm_external_contact.css", "secretariat.css", "variante_couleur.png"}
+                              "crm_external_contact.css", "secretariat.css", "secretariat-team.svg", "variante_couleur.png"}
             if (request.view_args or {}).get("filename") in allowed_assets:
                 return None
         if request.endpoint in {"crm", "crm_uppercase"} and request.method in {"GET", "HEAD"}:

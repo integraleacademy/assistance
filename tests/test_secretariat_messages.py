@@ -200,6 +200,9 @@ def test_secretary_and_adviser_complete_the_same_call_in_their_own_screens(desk)
             reception.click("#agendaToggle")
             reception.fill("#agendaDay", day)
             reception.locator('#agendaList .meeting-host [data-advisor="cassandre"]').wait_for()
+            row = reception.locator("#agendaList .meeting-owner").first
+            face, button = (row.locator(s).bounding_box() for s in (".team-portrait", ".waiting-action"))
+            assert abs((face["y"] + face["height"]/2) - (button["y"] + button["height"]/2)) <= 1
             reception.get_by_role("button", name="Signaler l’attente de Camille", exact=False).click()
             reception.wait_for_selector(".waiting-sent")
             assert "Cassandre MENARD" in reception.locator(".waiting-sent").inner_text()

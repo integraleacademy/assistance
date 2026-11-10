@@ -1,6 +1,6 @@
 """Plain language in the reception view originates from verified, scoped facts."""
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -35,6 +35,19 @@ def test_stage_and_financing_explain_the_actual_record():
     assert desk.desk_stage({"statut": "Converti", "archived_at": "2026-10-12"}, None)[0] == "Dossier archivé"
     facts = desk.desk_summary({"statut": "ANCIEN", "statut_secondaire": "CODE 42"}, [], None)
     assert facts["stage_label"] == "Situation à préciser" and facts["statut_secondaire"] == "CODE 42"
+
+
+def test_spoken_appointment_uses_the_calendar_host_and_the_paris_day():
+    start = desk.PARIS.localize(datetime(2026, 11, 10, 9, 30))
+    host = {"first_name": "Cassandre", "name": "Cassandre MENARD"}
+    for day, expected in [(10, "aujourd’hui"), (9, "demain"), (8, "mardi 10 novembre 2026")]:
+        now = desk.PARIS.localize(datetime(2026, 11, day, 7))
+        appointment = desk.desk_appointment(start, {}, host, now, "mardi 10 novembre 2026")
+        facts = desk.desk_summary({"statut": "En cours", "commercial": "Clément"}, [], appointment)
+        assert facts["phone_wording"] == f"Vous avez déjà un rendez-vous téléphonique avec Cassandre {expected} à 9 h 30."
+        assert facts["next_appointment"]["when"] == f"{expected.capitalize()} à 9 h 30"
+    unknown = desk.desk_appointment(start, {}, None, now, "mardi 10 novembre 2026")
+    assert "avec" not in unknown["wording"] and not unknown["host_name"]
 
 
 @pytest.mark.parametrize(("title", "meaning", "state", "expiry", "expected"), [

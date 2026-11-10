@@ -27,7 +27,7 @@
   const sending = new Set(), confirmed = new Map();
   const actionFeedback = document.getElementById('agendaActionFeedback');
 
-  function waitingControl(meeting, details) {
+  function waitingControl(meeting, ownerRow, item) {
     const action = meeting.waiting;
     if (!action) return;
     const sent = action.state === 'sent' ? action : confirmed.get(action.key);
@@ -35,7 +35,7 @@
       const note = document.getElementById('agendaSentTemplate').content.firstElementChild.cloneNode(true);
       note.querySelector('span').textContent = 'Attente signalée à ' + sent.recipient +
         (sent.when ? ' le ' + sent.when : '') + (sent.progress ? ' · ' + sent.progress : '');
-      details.append(note);
+      item.append(note);
       return;
     }
     let picker;
@@ -46,7 +46,7 @@
       for (const option of document.getElementById('callbackRecipient').options) {
         if (option.value) picker.append(new Option(option.text, option.value));
       }
-      details.append(picker);
+      ownerRow.before(picker);
     }
     const button = document.getElementById('agendaWaitingTemplate').content.firstElementChild.cloneNode(true);
     button.title = 'Prévenir ' + (action.recipient || 'le conseiller choisi') + ' que la personne attend son appel';
@@ -89,7 +89,7 @@
         }
       }
     };
-    details.append(button);
+    ownerRow.append(button);
   }
 
   function displayDay() {
@@ -99,7 +99,11 @@
   }
   function render() {
     const term = normalizedSearch(search.value).replace(/(\d)\s*h\s*(\d{2})/g, '$1:$2');
-    const visible = meetings.filter(m => normalizedSearch([m.person, m.time, m.host, m.subject].join(' ')).includes(term));
+    const words = term.split(/[\s’'-]+/).filter(Boolean);
+    const visible = meetings.filter(m => {
+      const text = normalizedSearch([m.person, m.time, m.host, m.subject].join(' ')).replace(/[’'-]+/g, ' ');
+      return words.every(word => text.includes(word));
+    });
     list.replaceChildren();
     for (const meeting of visible) {
       const item = document.createElement('li'), time = document.createElement('time');
@@ -108,22 +112,22 @@
       time.textContent = meeting.time;
       person.textContent = meeting.person;
       subject.textContent = meeting.subject;
-      const meta = document.createElement('div');
-      meta.className = 'meeting-meta';
-      meta.append(subject);
+      const ownerRow = document.createElement('div');
+      ownerRow.className = 'meeting-owner';
       const host = document.getElementById('agendaHostTemplate').content.firstElementChild.cloneNode(true);
       host.querySelector('.meeting-host-name').textContent = meeting.host || 'Conseiller à préciser';
       if (meeting.host_avatar) host.querySelector('.team-portrait').dataset.advisor = meeting.host_avatar;
-      meta.append(host);
+      ownerRow.append(host);
       result.className = 'meeting-state';
       result.dataset.state = meeting.state;
       result.textContent = states[meeting.state] || 'Résultat non renseigné';
       const heading = document.createElement('div');
       heading.className = 'meeting-heading';
       heading.append(person, result);
-      details.append(heading, meta);
-      waitingControl(meeting, details);
-      item.append(time, details);
+      details.className = 'meeting-copy';
+      details.append(heading, subject);
+      item.append(time, details, ownerRow);
+      waitingControl(meeting, ownerRow, item);
       list.append(item);
     }
     status.textContent = !meetings.length ? 'Aucun rendez-vous ce jour-là.'

@@ -4040,27 +4040,116 @@ def _secretariat_existing_crm_contact(data, payload):
     return candidates[0] if len(candidates) == 1 else None
 
 
+def _secretariat_contact_fields(contact):
+    return {key: str(contact.get(stored) or "") for key, stored in (
+        ("prenom", "prenom"), ("nom", "nom"), ("telephone", "telephone"), ("email", "mail"))}
+
+
+def _secretariat_name_search(data, payload, role):
+    """Only internal staff can see or select candidate identities before verification."""
+    first = secretariat_calls.name_key(payload.get("prenom"))
+    last = secretariat_calls.name_key(payload.get("nom"))
+    if len(first) + len(last) < 2:
+        return {"contact_id": None}
+    max_choices = 6
+    full_name = bool(first and last)
+    matches, exact = [], []
+    for contact in data.get("crm_contacts", []):
+        if not contact.get("id"):
+            continue
+        given, family = secretariat_calls.name_key(contact.get("prenom")), secretariat_calls.name_key(contact.get("nom"))
+        if not (given.startswith(first) and family.startswith(last)):
+            continue
+        if len(matches) <= max_choices:
+            matches.append(contact)
+        if full_name and (given, family) == (first, last):
+            exact.append(contact)
+        if len(exact) > max_choices or (not full_name and len(matches) > max_choices):
+            break
+    matches = exact or matches
+    if not matches:
+        return {"contact_id": None, "name_result": "none"}
+    if role == "external":
+        result = {"contact_id": None, "name_result": "unique" if len(matches) == 1 else "multiple"}
+        if len(matches) == 1:
+            person = matches[0]
+            exact_input = ((not first or first == secretariat_calls.name_key(person.get("prenom")))
+                           and (not last or last == secretariat_calls.name_key(person.get("nom"))))
+            # The desk already sees the phone agenda. Do not reveal CRM details or guess from a prefix.
+            if exact_input:
+                appointment = _secretariat_desk_appointment(data, person)
+                if appointment:
+                    result["agenda_match"] = {key: appointment[key] for key in ("when", "full_date", "host_name", "avatar", "in_slot")}
+                elif full_name:
+                    result["agenda_match"] = None
+        return result
+    if len(matches) == 1:
+        return {"contact_id": matches[0]["id"], "contact": _secretariat_contact_fields(matches[0]), "name_result": "unique"}
+    result = {"contact_id": None, "name_result": "multiple"}
+    if len(matches) <= max_choices:
+        result["candidates"] = [
+            {"id": item["id"], **_secretariat_contact_fields(item)}
+            for item in sorted(matches, key=lambda item: (secretariat_calls.name_key(item.get("nom")), secretariat_calls.name_key(item.get("prenom"))))]
+    return result
+
+
+def _secretariat_dossier_contact(data, payload, role):
+    # A name selected by internal staff is scoped to consultation. Automatic links still use coordinates.
+    if role != "internal" or payload.get("selected_by_name") is not True:
+        return _secretariat_existing_crm_contact(data, payload)
+    chosen = next((item for item in data.get("crm_contacts", [])
+                   if item.get("id") and item["id"] == payload.get("confirmed_contact_id")), None)
+    if not chosen or not (payload.get("prenom") or payload.get("nom")):
+        return None
+    if any(secretariat_calls.name_key(chosen.get(key)) != secretariat_calls.name_key(payload.get(key)) for key in ("prenom", "nom")):
+        return None
+    for key, stored, normalize in (("email", "mail", _crm_normalize_email), ("telephone", "telephone", _crm_normalize_phone)):
+        if payload.get(key) and chosen.get(stored) and normalize(payload[key]) != normalize(chosen[stored]):
+            return None
+    return chosen
+
+
+def _secretariat_desk_appointment(data, contact):
+    email, phone = _crm_normalize_email(contact.get("mail")), _crm_normalize_phone(contact.get("telephone"))
+
+    def belongs_to_caller(meeting):
+        if meeting.get("contact_id"):
+            return meeting["contact_id"] == contact["id"]
+        guest = {"email": meeting.get("invitee_email"), "telephone": meeting.get("invitee_phone")}
+        if not ((email and email == _crm_normalize_email(guest["email"])) or
+                (phone and phone == _crm_normalize_phone(guest["telephone"]))):
+            return False
+        # A family phone number or a conflicting email cannot identify an unlinked calendar slot.
+        return _secretariat_existing_crm_contact(data, guest) is contact
+
+    appointments = (item for item in data.get("crm_calendly_appointments", [])
+                    if item.get("response_status") not in {"answered", "no_answer"} and belongs_to_caller(item))
+    now = datetime.datetime.now(secretariat_calls.PARIS)
+    booked = _crm_next_phone_appointment(data, {}, contact, now=now, appointments=appointments, include_current=True)
+    if not booked:
+        return None
+    start, meeting = booked
+    host = secretariat_messages.meeting_host(meeting, USERS)
+    return secretariat_calls.desk_appointment(start, meeting, host, now, _format_hebergement_date_fr(start))
+
+
 @app.route("/api/secretariat/crm-contact", methods=["POST"])
 def api_secretariat_crm_contact():
     """Find an existing CRM record without exposing the contact list."""
     payload = request.get_json(silent=True) or {}
     data = _load_data_snapshot()
-    contact = _secretariat_existing_crm_contact(data, payload)
-    result = {"contact_id": contact.get("id") if contact else None}
     role = _secretariat_role()
+    if role and not payload.get("verify_identity") and not (payload.get("telephone") or payload.get("email") or payload.get("mail")):
+        return _secretariat_private(jsonify(_secretariat_name_search(data, payload, role)))
+    contact = _secretariat_dossier_contact(data, payload, role)
+    result = {"contact_id": contact.get("id") if contact else None}
     if contact and role == "internal":
-        result["contact"] = {
-            "prenom": str(contact.get("prenom") or ""), "nom": str(contact.get("nom") or ""),
-            "telephone": str(contact.get("telephone") or ""), "email": str(contact.get("mail") or ""),
-        }
+        result["contact"] = _secretariat_contact_fields(contact)
     if contact and role == "external":
         result = {"contact_id": None, "verify_identity": True}
     if _secretariat_identity_confirmed(role, contact, payload):
-        appointments = (a for a in data.get("crm_calendly_appointments", [])
-                        if not a.get("contact_id") or a.get("contact_id") == contact["id"])
-        appointment = _crm_next_phone_appointment(data, {}, contact, appointments=appointments)
         summary = secretariat_calls.desk_summary(
-            contact, data.get("secretariat_demandes", []), appointment[1] if appointment else None,
+            contact, data.get("secretariat_demandes", []), _secretariat_desk_appointment(data, contact),
             staff=role == "internal",
         )
         code = _crm_formation_code(contact)
@@ -4087,8 +4176,8 @@ def _secretariat_identity_confirmed(role, contact, payload):
     if role != "external" or payload.get("verify_identity") is not True:
         return False
     for field in ("prenom", "nom"):
-        entered = secretariat_calls.folded(payload.get(field))
-        if not entered or entered != secretariat_calls.folded(contact.get(field)):
+        entered = secretariat_calls.name_key(payload.get(field))
+        if not entered or entered != secretariat_calls.name_key(contact.get(field)):
             return False
     for entered, stored, normalize in (("email", "mail", _crm_normalize_email), ("telephone", "telephone", _crm_normalize_phone)):
         if payload.get(entered) and contact.get(stored) and normalize(payload[entered]) != normalize(contact[stored]):
@@ -4121,7 +4210,7 @@ def secretariat_message_supplement(request_id):
     crm_external_access._require_csrf()
     payload = request.get_json(silent=True) or {}
     data = load_data()
-    contact = _secretariat_existing_crm_contact(data, payload)
+    contact = _secretariat_dossier_contact(data, payload, role)
     if not _secretariat_identity_confirmed(role, contact, payload) or payload.get("confirmed_contact_id") != contact["id"]:
         return _secretariat_private(jsonify(error="Confirmez l’identité de l’appelant."), 403)
     entry = next((row for row in data.get("secretariat_demandes", [])
@@ -4198,7 +4287,7 @@ def secretariat_suivi_cnaps():
         return _secretariat_private(jsonify(error="Connexion au secrétariat requise."), 401)
     payload = request.get_json(silent=True) or {}
     data = _load_data_snapshot()
-    contact = _secretariat_existing_crm_contact(data, payload)
+    contact = _secretariat_dossier_contact(data, payload, role)
     if not _secretariat_identity_confirmed(role, contact, payload) or payload.get("confirmed_contact_id") != contact["id"]:
         return _secretariat_private(jsonify(error="Confirmez l’identité de l’appelant."), 403)
     code = secretariat_calls.desk_course_code(_crm_formation_code(contact), SECRETARIAT_FORMATIONS)
@@ -12487,7 +12576,7 @@ def _secretariat_information_template(data, kind, formation_code):
                  if normalise(template.get("nom")) == name), None)
 
 
-def _crm_next_phone_appointment(data, entry, contact=None, now=None, *, appointments=None):
+def _crm_next_phone_appointment(data, entry, contact=None, now=None, *, appointments=None, include_current=False):
     """Return the next cached phone appointment matching a secretariat call."""
     contact = contact or {}
     contact_id = str(contact.get("id") or "").strip()
@@ -12529,7 +12618,14 @@ def _crm_next_phone_appointment(data, entry, contact=None, now=None, *, appointm
         except (TypeError, ValueError):
             continue
         if start <= now:
-            continue
+            if not include_current:
+                continue
+            try:
+                end = datetime.datetime.fromisoformat(str(appointment.get("end_time") or "").replace("Z", "+00:00"))
+                if (end if end.tzinfo else pytz.UTC.localize(end)) <= now:
+                    continue
+            except ValueError:
+                continue
         matches.append((start, appointment))
 
     if not matches:

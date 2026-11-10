@@ -51,14 +51,14 @@ DESK_COURSES = {
 
 # CRM stages describe the school's follow-up. Only a booked time establishes an appointment.
 DESK_STAGES = {
-    "nouveaux": ("Nouvelle demande", "Votre demande est enregistrée auprès de l’école."),
-    "blocage": ("Un point bloque le dossier", "Un point doit être vérifié pour que votre dossier avance. Je peux transmettre votre question à votre conseiller."),
-    "en cours": ("Demande en cours de suivi", "L’équipe suit actuellement votre demande."),
-    "a relancer": ("Reprise de contact prévue", "Le dossier indique que l’équipe doit reprendre contact avec vous."),
-    "rdv programme": ("Rendez-vous à vérifier", "Le dossier mentionne un rendez-vous. Je peux vérifier le créneau avec vous dans l’agenda."),
-    "rdv programme sans rendez vous": ("Créneau à confirmer", "Je peux vérifier avec l’équipe si une date a été fixée."),
-    "converti": ("Suivi de l’inscription", "Votre demande est passée au suivi des inscriptions. Si vous attendez votre convocation, je peux demander à votre conseiller de vérifier."),
-    "disqualifie": ("Demande clôturée", "L’école a arrêté le suivi de cette demande. Si votre projet a changé, je peux le signaler à votre conseiller."),
+    "nouveaux": ("Nouvelle demande", "Nous avons bien reçu votre demande de formation. Que souhaitez-vous savoir ?"),
+    "blocage": ("Un point bloque le dossier", "Votre dossier est en attente d’une vérification. Je peux demander à votre conseiller de faire le point avec vous."),
+    "en cours": ("Demande en cours de suivi", "Votre conseiller suit votre demande. Que souhaitez-vous savoir sur la suite ?"),
+    "a relancer": ("Reprise de contact prévue", "Votre conseiller doit reprendre contact avec vous. Souhaitez-vous lui laisser une précision ?"),
+    "rdv programme": ("Rendez-vous à vérifier", "Je ne vois pas de créneau confirmé pour votre appel. Voulez-vous que nous vérifiions la date ensemble ?"),
+    "rdv programme sans rendez vous": ("Créneau à confirmer", "Je ne vois pas encore de date confirmée. Souhaitez-vous que nous regardions les créneaux ensemble ?"),
+    "converti": ("Suivi de l’inscription", "Le service des inscriptions suit maintenant votre dossier. Que souhaitez-vous vérifier concernant votre inscription ?"),
+    "disqualifie": ("Demande clôturée", "Votre demande a été clôturée. Si vous souhaitez reprendre votre projet, je peux en informer votre conseiller."),
 }
 
 DESK_SECONDARY_STAGES = {
@@ -77,6 +77,10 @@ DESK_SECONDARY_STAGES = {
 def folded(value):
     text = unicodedata.normalize("NFKD", str(value or "").casefold())
     return " ".join(re.findall(r"[^\W_]+", "".join(c for c in text if not unicodedata.combining(c))))
+
+
+def name_key(value):
+    return folded(value).replace(" ", "").replace("œ", "oe").replace("æ", "ae")
 
 
 def desk_course_code(code, catalogue):
@@ -102,13 +106,31 @@ def desk_course(code, catalogue, original):
     return config["label"], config["purpose"]
 
 
+def desk_appointment(start, meeting, host, now, full_date):
+    relative = {0: "aujourd’hui", 1: "demain"}.get((start.date() - now.date()).days)
+    when = f"{relative or full_date} à {start.hour} h" + (f" {start.minute:02d}" if start.minute else "")
+    name = host["name"] if host else str(meeting.get("host_name") or "").strip()
+    spoken_name = host["first_name"] if host else name
+    with_host = f" avec {spoken_name}" if spoken_name else ""
+    return {
+        "start_time": start.isoformat(), "in_slot": start <= now, "when": when[0].upper() + when[1:],
+        "full_date": full_date if relative else "", "host_name": name,
+        "avatar": folded(host["first_name"]) if host else "",
+        "wording": f"Vous avez déjà un rendez-vous téléphonique{with_host} {when}.",
+    }
+
+
 def desk_stage(contact, appointment):
     status = folded(contact.get("statut"))
     if contact.get("archived_at"):
-        return "Dossier archivé", "Votre dossier est conservé dans les archives de l’école. Je peux transmettre votre question à l’équipe."
-    if appointment and status in {"rdv programme", "rdv programme sans rendez vous"}:
-        return "Rendez-vous prévu", "Un rendez-vous figure dans l’agenda de l’école."
-    return DESK_STAGES.get(status, ("Situation à préciser", "Je peux demander au conseiller de vérifier où en est votre dossier."))
+        label, wording = "Dossier archivé", "Je retrouve votre ancien dossier. Souhaitez-vous reprendre votre projet de formation ?"
+    else:
+        label, wording = DESK_STAGES.get(status, ("Situation à préciser", "Je vais demander à votre conseiller de vérifier où en est votre demande."))
+    if appointment:
+        if not contact.get("archived_at") and status in {"rdv programme", "rdv programme sans rendez vous"}:
+            label = "Rendez-vous prévu"
+        wording = appointment.get("wording") or f"Vous avez déjà un rendez-vous téléphonique le {date_label(appointment['start_time'])}."
+    return label, wording
 
 
 def is_phone_appointment(appointment):
@@ -353,6 +375,7 @@ def desk_summary(contact, callbacks, appointment, *, staff=True):
         "financement": " · ".join(financing),
         "prochaine_action": contact.get("prochaine_action_manuelle") if staff else "",
         "dernier_echange": " · ".join(filter(None, [date_label(last.get("date")), last.get("title")])),
+        "next_appointment": appointment,
         "rdv": " · ".join(filter(None, [date_label(appointment.get("start_time")), appointment.get("host_name")])) if appointment else "",
         "rappel": callback,
         "relance": date_label(min(reminders)) if reminders else "",

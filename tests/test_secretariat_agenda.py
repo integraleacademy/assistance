@@ -1,6 +1,7 @@
 """Reception desk views use shared CRM records and scoped, verified identities."""
 
 import copy
+import datetime
 from html.parser import HTMLParser
 
 import pytest
@@ -186,6 +187,48 @@ def test_confirmed_dossier_and_live_cnaps_are_separate_from_declared_card(desk, 
     assert client.post("/api/secretariat/suivi-cnaps", json=lookup).status_code == 400
 
 
+def test_name_lookup_finds_and_disambiguates_without_attaching_a_shared_phone(desk):
+    client, data = desk
+    url = "/api/secretariat/crm-contact"
+    original = data["crm_contacts"][0]
+    other = {"id": "other", "prenom": "Chloé", "nom": "Dupond", "telephone": original["telephone"]}
+    data["crm_contacts"].append(other)
+    assert client.post(url, json={"prenom": "chlo"}).json == {"contact_id": None}
+    sign_in(client)
+    assert {item["id"] for item in client.post(url, json={"prenom": "chlo"}).json["candidates"]} == {"test", "other"}
+    assert client.post(url, json={"nom": "du-pr"}).json["contact_id"] == "test"
+    assert client.post(url, json={"prenom": "Chloe", "nom": "Du Pré"}).json["contact_id"] == "test"
+    assert client.post(url, json={"nom": "zzz"}).json["name_result"] == "none"
+    assert client.post(url, json={"nom": "d"}).json == {"contact_id": None}
+    data["crm_contacts"].extend(dict(other, id=f"other-{i}") for i in range(8))
+    assert client.post(url, json={"prenom": "Chloe"}).json == {"contact_id": None, "name_result": "multiple"}
+    assert client.post(url, json={"telephone": original["telephone"]}).json == {"contact_id": None}
+
+    identity = {"confirmed_contact_id": "test", "selected_by_name": True, "verify_identity": True,
+                "nom": "Du-Pré", "prenom": "Chloé", "telephone": original["telephone"]}
+    now = datetime.datetime.now(datetime.timezone.utc)
+    def slot(minutes, **fields):
+        return {"name": "RDV téléphonique", "start_time": (now + datetime.timedelta(minutes=minutes)).isoformat(),
+                "end_time": (now + datetime.timedelta(minutes=minutes + 15)).isoformat(), **fields}
+    data["crm_calendly_appointments"] = [
+        slot(-40, contact_id="test"), slot(-6, contact_id="test", response_status="answered"),
+        slot(3, contact_id="other", invitee_email=original["mail"]), slot(4, invitee_phone=original["telephone"]),
+        slot(5, contact_id="test", status="canceled"), slot(6, contact_id="test", location={"type":"zoom"}),
+        slot(12, invitee_email=original["mail"], host_email="cassandre@integraleacademy.com"),
+        slot(60, contact_id="test", host_name="Clément"),
+    ]
+    facts = client.post(url, json=identity).json["summary"]
+    assert facts["next_appointment"]["host_name"] == "Cassandre MENARD"
+    assert facts["next_appointment"]["avatar"] == "cassandre" and not facts["next_appointment"]["in_slot"]
+    assert "rendez-vous téléphonique avec Cassandre" in facts["phone_wording"]
+    assert "summary" not in client.post(url, json={**identity, "nom": "Dupond"}).json
+    data["crm_calendly_appointments"].append(slot(-3, contact_id="test", host_name="Aurélie"))
+    current = client.post(url, json=identity).json["summary"]["next_appointment"]
+    assert current["in_slot"] and current["avatar"] == "aurelie"
+    data["crm_calendly_appointments"] = [slot(4, invitee_phone=original["telephone"])]
+    assert client.post(url, json=identity).json["summary"]["next_appointment"] is None
+
+
 def test_alternance_uses_read_only_cnaps_lookup_and_handles_missing_file(desk, monkeypatch):
     client, data = desk
     data["crm_contacts"][0]["formation"] = "Parcours sécurité en alternance"
@@ -219,8 +262,27 @@ def test_external_operator_requires_desk_permission_and_verified_identity(desk):
         scoped = {"X-CSRF-Token": s["external_access_csrf"]}
     assert operator.get("/api/secretariat/agenda").status_code == 200
     assert operator.get("/api/crm/calendly/appointments").status_code == 403
+    portraits = operator.get("/static/secretariat-team.svg")
+    assert portraits.status_code == 200 and portraits.mimetype == "image/svg+xml"
     url = "/api/secretariat/crm-contact"
     known = {"telephone": "0600000000", "nom": "Du Pré", "prenom": "Chloe", "verify_identity": True}
+    start = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+    data["crm_calendly_appointments"] = [{"name": "RDV téléphonique", "contact_id": "test", "start_time": start.isoformat(),
+                                           "host_email": "cassandre@integraleacademy.com"}]
+    for partial in ({"prenom": "Chlo"}, {"nom": "dupr"}):
+        assert operator.post(url, json=partial, headers=scoped).json == {"contact_id": None, "name_result": "unique"}
+    for exact_part in ({"prenom": "Chloe"}, {"nom": "Dupre"}):
+        found = operator.post(url, json=exact_part, headers=scoped).json
+        assert found["agenda_match"]["host_name"] == "Cassandre MENARD" and "summary" not in found
+    names = {"prenom": "Chloe", "nom": "Du Pré"}
+    preview = operator.post(url, json=names, headers=scoped).json
+    assert set(preview) == {"contact_id", "name_result", "agenda_match"} and preview["contact_id"] is None
+    assert preview["agenda_match"]["host_name"] == "Cassandre MENARD"
+    assert operator.post(url, json={**names, "selected_by_name": True, "verify_identity": True,
+                                    "confirmed_contact_id": "test"}, headers=scoped).status_code == 404
+    data["crm_contacts"].append({**data["crm_contacts"][0], "id": "homonyme"})
+    assert operator.post(url, json=names, headers=scoped).json == {"contact_id": None, "name_result": "multiple"}
+    data["crm_contacts"].pop()
     assert operator.post(url, json=known).status_code == 403
     assert operator.post(url, json={"telephone": known["telephone"]}, headers=scoped).json == {"contact_id": None, "verify_identity": True}
     assert operator.post(url, json={**known, "nom": "Autre"}, headers=scoped).status_code == 404
@@ -242,6 +304,9 @@ def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossi
     playwright = pytest.importorskip("playwright.sync_api")
     admin, data = desk
     data["crm_contacts"][0].update(statut="Converti", carte_pro="NON")
+    start = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+    data["crm_calendly_appointments"] = [{"name": "Appel téléphonique", "contact_id": "test",
+                                          "start_time": start.isoformat(), "host_name": "Cassandre MENARD"}]
     sign_in(admin)
     admin.get("/crm/acces-secretariat")
     with admin.session_transaction() as session:
@@ -273,6 +338,12 @@ def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossi
             page.route("**/*", serve)
             page.goto("https://desk.test/secretariat")
             page.click('[data-request="suivi"]')
+            page.fill("#prenom", "Chloé")
+            page.fill("#nom", "Du-Pré")
+            page.wait_for_selector("#callerAgendaSlot #dossierNext.is-booked")
+            assert "Demain" in page.locator("#nextCallWhen").inner_text()
+            assert "Cassandre" in page.locator("#nextCallHost").inner_text()
+            assert not page.locator("#verifiedDossier").is_visible()
             page.fill("#telephone", "0600000000")
             page.wait_for_selector("#useCallerMatch")
             assert not page.locator("#verifiedDossier").is_visible()
@@ -286,7 +357,7 @@ def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossi
             page.click("#cnapsDesk summary")
             page.wait_for_selector(".dossier-documents li")
             assert page.locator("#dossierCourse").inner_text() == "Agent de prévention et de sécurité (APS)"
-            assert "suivi des inscriptions" in page.locator("#dossierWording").inner_text()
+            assert "rendez-vous téléphonique avec Cassandre demain à" in page.locator("#dossierWording").inner_text()
             assert "Autorisation d’entrer en formation" in page.locator(".dossier-documents").inner_text()
             assert "20/11/2090" in page.locator(".dossier-documents").inner_text()
             assert not page.locator("#cnapsOriginal").is_visible()
@@ -296,10 +367,10 @@ def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossi
             page.wait_for_function("document.querySelector('.dossier-documents').textContent.includes('Carte professionnelle')")
             assert "protection rapprochée" in page.locator(".dossier-documents").inner_text()
             assert "AP SH" not in page.locator("#cnapsOriginal").inner_text()
-            page.locator("#requestPanel summary").click()
-            assert "Paris" in page.locator("#dossierFacts").inner_text()
-            page.locator("#exchangePanel summary").click()
+            assert page.locator("#dossierEssentials").is_visible()
+            assert "Paris" in page.locator("#dossierExchanges").inner_text()
             assert "Conseiller Test" in page.locator("#dossierExchanges").inner_text()
+            assert page.locator("#dossierAgendaSlot #nextCallWhen").is_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
             page.click("#callerSubmit")
             assert page.locator("#followupDossierSlot #dossierCourse").is_visible()
@@ -309,6 +380,43 @@ def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossi
             page.fill("#telephone", "06")
             assert not page.locator("#verifiedDossier").is_visible()
             assert not page.locator("#callerIdentity").is_visible()
+        finally:
+            browser.close()
+
+
+def test_internal_operator_selects_a_name_without_entering_a_phone_number(desk, monkeypatch):
+    from urllib.parse import urlsplit
+
+    playwright = pytest.importorskip("playwright.sync_api")
+    client, data = desk
+    sign_in(client)
+    monkeypatch.setattr(app, "_crm_read_reglementaire", lambda *a, **kw: app.jsonify(cnaps={}))
+    data["crm_contacts"].append({"id": "another", "prenom": "Chloé", "nom": "Maret"})
+    with playwright.sync_playwright() as engine:
+        try:
+            browser = engine.chromium.launch()
+        except playwright.Error as error:
+            pytest.skip(f"Chromium indisponible : {error}")
+        try:
+            page = browser.new_page()
+            def serve(route):
+                req, url = route.request, urlsplit(route.request.url)
+                if url.netloc != "desk.test":
+                    return route.abort()
+                response = client.open(url.path, query_string=url.query, method=req.method,
+                                       json=req.post_data_json if req.method == "POST" else None)
+                route.fulfill(status=response.status_code, body=response.data, content_type=response.content_type)
+            page.route("**/*", serve)
+            page.goto("https://desk.test/secretariat")
+            page.click('[data-request="suivi"]')
+            page.fill("#prenom", "chlo")
+            page.locator("#callerCandidates button").filter(has_text="Du-Pré").click()
+            assert not page.locator("#verifiedDossier").is_visible()
+            page.click("#useCallerMatch")
+            page.wait_for_selector("#dossierAgendaSlot #dossierNext")
+            assert page.locator("#identityName").inner_text() == "Chloé Du-Pré"
+            assert page.locator("#nextCallWhen").inner_text() == "Aucun créneau confirmé"
+            assert "Faire le point en janvier" in page.locator("#dossierEssentials").inner_text()
         finally:
             browser.close()
 
@@ -359,6 +467,9 @@ def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
                 "avatars => avatars.map(el => el.dataset.advisor)"
             )) == {"aurelie", "cassandre", "clement"}
             assert page.locator("#agendaList .meeting-host:has-text('Conseiller test') [data-advisor]").count() == 0
+            row = page.locator("#agendaList .meeting-owner:has(.waiting-action)").first
+            face, button = (row.locator(s).bounding_box() for s in (".team-portrait", ".waiting-action"))
+            assert abs((face["y"] + face["height"]/2) - (button["y"] + button["height"]/2)) <= 1
             assert page.locator('#deskAgenda a[href^="/crm"]').count() == 0
             crm = context.new_page()
             crm.goto(f"https://desk.test/crm/calendrier?date={day}")
@@ -394,7 +505,7 @@ def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
             page.locator("#agendaToggle").click()
             page.wait_for_selector("#agendaList li")
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-            page.locator("#agendaSearch").fill("Invité 23")
+            page.locator("#agendaSearch").fill("23 invité")
             assert page.locator("#agendaList li").count() == 1
         finally:
             browser.close()
