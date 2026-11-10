@@ -32,10 +32,9 @@
     if (!action) return;
     const sent = action.state === 'sent' ? action : confirmed.get(action.key);
     if (sent) {
-      const note = document.createElement('small');
-      note.className = 'waiting-sent';
-      note.textContent = 'Attente signalée à ' + sent.recipient + (sent.when ? ' le ' + sent.when : '');
-      if (sent.progress) note.textContent += ' · ' + sent.progress;
+      const note = document.getElementById('agendaSentTemplate').content.firstElementChild.cloneNode(true);
+      note.querySelector('span').textContent = 'Attente signalée à ' + sent.recipient +
+        (sent.when ? ' le ' + sent.when : '') + (sent.progress ? ' · ' + sent.progress : '');
       details.append(note);
       return;
     }
@@ -49,12 +48,11 @@
       }
       details.append(picker);
     }
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'waiting-action';
-    button.textContent = 'La personne attend son appel';
-    button.title = action.recipient ? 'Prévenir ' + action.recipient : 'Prévenir le conseiller choisi';
+    const button = document.getElementById('agendaWaitingTemplate').content.firstElementChild.cloneNode(true);
+    button.title = 'Prévenir ' + (action.recipient || 'le conseiller choisi') + ' que la personne attend son appel';
+    button.setAttribute('aria-label', 'Signaler l’attente de ' + meeting.person + (action.recipient ? ' à ' + action.recipient : ''));
     button.disabled = sending.has(action.key);
+    button.querySelector('span').textContent = button.disabled ? 'Envoi en cours…' : 'Signaler l’attente';
     button.onclick = async () => {
       const day = input.value;
       actionFeedback.classList.remove('sr-only');
@@ -66,6 +64,7 @@
       if (sending.has(action.key)) return;
       sending.add(action.key);
       button.disabled = true;
+      button.querySelector('span').textContent = 'Envoi en cours…';
       if (picker) picker.disabled = true;
       actionFeedback.textContent = 'Transmission du signalement…';
       try {
@@ -74,14 +73,20 @@
         if (input.value === day) {
           actionFeedback.classList.add('sr-only');
           actionFeedback.textContent = 'Notification transmise à ' + result.recipient + ' pour ' + meeting.person + ' à ' + meeting.time + '.';
-          render();
         }
       } catch (error) {
         if (input.value === day) actionFeedback.textContent = error.message;
       } finally {
         sending.delete(action.key);
-        button.disabled = false;
-        if (picker) picker.disabled = false;
+        if (input.value === day) {
+          if (confirmed.has(action.key) || !button.isConnected) {
+            render();
+          } else {
+            button.disabled = false;
+            button.querySelector('span').textContent = 'Signaler l’attente';
+            if (picker) picker.disabled = false;
+          }
+        }
       }
     };
     details.append(button);
@@ -106,12 +111,10 @@
       const meta = document.createElement('div');
       meta.className = 'meeting-meta';
       meta.append(subject);
-      if (meeting.host) {
-        const host = document.createElement('span');
-        host.className = 'meeting-host';
-        host.textContent = meeting.host;
-        meta.append(host);
-      }
+      const host = document.getElementById('agendaHostTemplate').content.firstElementChild.cloneNode(true);
+      host.querySelector('.meeting-host-name').textContent = meeting.host || 'Conseiller à préciser';
+      if (meeting.host_avatar) host.querySelector('.team-portrait').dataset.advisor = meeting.host_avatar;
+      meta.append(host);
       result.className = 'meeting-state';
       result.dataset.state = meeting.state;
       result.textContent = states[meeting.state] || 'Résultat non renseigné';

@@ -199,9 +199,11 @@ def test_secretary_and_adviser_complete_the_same_call_in_their_own_screens(desk)
             reception.goto("https://desk.test/secretariat")
             reception.click("#agendaToggle")
             reception.fill("#agendaDay", day)
-            reception.get_by_role("button", name="La personne attend son appel").click()
+            reception.locator('#agendaList .meeting-host [data-advisor="cassandre"]').wait_for()
+            reception.get_by_role("button", name="Signaler l’attente de Camille", exact=False).click()
             reception.wait_for_selector(".waiting-sent")
             assert "Cassandre MENARD" in reception.locator(".waiting-sent").inner_text()
+            assert reception.locator("#agendaList .waiting-action").count() == 0
             assert reception.evaluate("document.documentElement.scrollWidth<=window.innerWidth")
             reception.click("#agendaToggle")
 

@@ -130,6 +130,29 @@ def test_day_matches_the_crm_active_slots_across_types_reschedules_midnight_and_
     assert client.get("/api/secretariat/agenda?date=2026-02-30").status_code == 400
 
 
+def test_agenda_uses_the_assigned_adviser_for_all_portraits_including_future_calls(desk):
+    client, data = desk
+    sign_in(client)
+    day = "2090-11-20"
+    hosts = [
+        {"host_email": "aurelie@integraleacademy.com"},
+        {"host_name": "Cassandre Ménard"},
+        {"host_name": "CLEMENT"},
+        {"host_name": "Intervenant extérieur"},
+        {},
+    ]
+    data["crm_calendly_appointments"] = [
+        {"id": str(i), "start_time": f"{day}T{10 + i}:00:00Z", "name": "Appel téléphonique",
+         "invitee_name": "Clément", **host} for i, host in enumerate(hosts)
+    ]
+    rows = client.get("/api/secretariat/agenda", query_string={"date": day}).json["appointments"]
+    assert [(row["host"], row.get("host_avatar")) for row in rows] == [
+        ("Aurélie CHAUSSEZ", "aurelie"), ("Cassandre MENARD", "cassandre"), ("Clément VAILLANT", "clement"),
+        ("Intervenant extérieur", None), ("", None),
+    ]
+    assert all("host_email" not in row and "waiting" not in row for row in rows)
+
+
 def test_confirmed_dossier_and_live_cnaps_are_separate_from_declared_card(desk, monkeypatch):
     client, data = desk
     person = data["crm_contacts"][0]
@@ -256,6 +279,11 @@ def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossi
             page.fill("#prenom", "Chloé")
             page.fill("#nom", "Du-Pré")
             page.click("#useCallerMatch")
+            page.wait_for_selector('#callerLookupStatus[data-tone="confirmed"]')
+            assert page.locator("#identityName").inner_text() == "Chloé Du-Pré"
+            assert not page.locator("#callerFields").is_visible()
+            assert not page.locator("#cnapsDesk").evaluate("el => el.open")
+            page.click("#cnapsDesk summary")
             page.wait_for_selector(".dossier-documents li")
             assert page.locator("#dossierCourse").inner_text() == "Agent de prévention et de sécurité (APS)"
             assert "suivi des inscriptions" in page.locator("#dossierWording").inner_text()
@@ -268,9 +296,19 @@ def test_operator_reads_the_formation_and_document_then_refreshes_the_same_dossi
             page.wait_for_function("document.querySelector('.dossier-documents').textContent.includes('Carte professionnelle')")
             assert "protection rapprochée" in page.locator(".dossier-documents").inner_text()
             assert "AP SH" not in page.locator("#cnapsOriginal").inner_text()
+            page.locator("#requestPanel summary").click()
+            assert "Paris" in page.locator("#dossierFacts").inner_text()
+            page.locator("#exchangePanel summary").click()
+            assert "Conseiller Test" in page.locator("#dossierExchanges").inner_text()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
             page.click("#callerSubmit")
             assert page.locator("#followupDossierSlot #dossierCourse").is_visible()
+            page.locator('[data-step="7"] [data-back]').click()
+            page.get_by_role("button", name="Modifier les coordonnées").click()
+            assert page.locator("#telephone").input_value() == "0600000000"
+            page.fill("#telephone", "06")
+            assert not page.locator("#verifiedDossier").is_visible()
+            assert not page.locator("#callerIdentity").is_visible()
         finally:
             browser.close()
 
@@ -289,7 +327,8 @@ def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
             "id": f"meeting-{sequence}", "start_time": f"{day}T{hour:02}:{minute:02}:00Z",
             "status": "canceled" if sequence in (2, 4) else "active",
             "rescheduled": sequence in (2, 3), "name": "Entretien admissions" if sequence % 2 else "RDV téléphonique APS",
-            "invitee_name": f"Invité {sequence}", "host_name": "Conseiller test",
+            "invitee_name": f"Invité {sequence}",
+            "host_name": ["Aurélie", "Cassandre", "Clément", "Conseiller test"][sequence % 4],
             "contact_id": "test" if sequence == 0 else "", "response_status": "answered" if sequence == 1 else "",
         })
     data["crm_calendly_appointments"] = records
@@ -316,6 +355,10 @@ def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
                 el.querySelector('time').textContent, el.querySelector('strong').textContent, el.querySelector('small').textContent])""")
             assert desk_rows[0][:2] == ["09:00", "Chloé DU-PRÉ"]
             assert not any(row[1] in {"Invité 2", "Invité 4"} for row in desk_rows)
+            assert set(page.locator("#agendaList [data-advisor]").evaluate_all(
+                "avatars => avatars.map(el => el.dataset.advisor)"
+            )) == {"aurelie", "cassandre", "clement"}
+            assert page.locator("#agendaList .meeting-host:has-text('Conseiller test') [data-advisor]").count() == 0
             assert page.locator('#deskAgenda a[href^="/crm"]').count() == 0
             crm = context.new_page()
             crm.goto(f"https://desk.test/crm/calendrier?date={day}")

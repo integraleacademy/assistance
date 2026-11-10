@@ -24,6 +24,7 @@ function renderDossierMessages(messages, bookingUrl) {
   messageFeedback.textContent = '';
   if (bookingUrl) messageAppointment.href = bookingUrl;
   messageAppointment.hidden = !messages.some(message => message.status === 'processed');
+  document.getElementById('messageCount').textContent = messages.length ? messages.length + (messages.length === 1 ? ' message' : ' messages') : 'Aucun message';
   if (!messages.length) {
     messageList.textContent = 'Aucun message transmis pour ce dossier.';
     return;
@@ -36,20 +37,24 @@ function renderDossierMessages(messages, bookingUrl) {
     card.className = 'desk-message';
     title.textContent = message.subject;
     const recipient = document.createElement('p');
+    recipient.className = 'message-meta';
     recipient.textContent = 'Transmis à ' + message.recipient + (message.sent ? ' le ' + message.sent : '');
     card.append(title, recipient);
     if (message.due) {
       const due = document.createElement('p');
+      due.className = 'message-due';
       due.textContent = 'Rappel demandé avant le ' + message.due;
       card.append(due);
     }
     if (message.note) {
       const note = document.createElement('p');
+      note.className = 'message-note';
       note.textContent = message.note;
       card.append(note);
     }
     if (message.events.length) {
       const history = document.createElement('ol');
+      history.className = 'message-history';
       for (const event of message.events) {
         const line = document.createElement('li');
         line.textContent = [event.label, event.by, event.when].filter(Boolean).join(' · ');

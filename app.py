@@ -4004,6 +4004,7 @@ def secretariat_agenda():
         date=value, today=now.date().isoformat(),
         last_sync=secretariat_calls.date_label(sync.get("last_sync_at") or sync.get("last_full_sync_at")),
         appointments=secretariat_calls.day_appointments(calendar["appointments"], value, now,
+            resolve_host=lambda meeting: secretariat_messages.meeting_host(meeting, USERS),
             waiting_action=lambda meeting: secretariat_messages.waiting_action(meeting, slots, reports, USERS, now)),
     ))
 

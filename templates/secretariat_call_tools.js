@@ -43,20 +43,18 @@ function deskJsonHeaders() {
   return headers;
 }
 
-function dossierGroup(parent, title, facts) {
+function dossierGroup(parent, facts) {
   const entries = facts.filter(([, value]) => typeof value === 'string' && value.trim());
   if (!entries.length) return;
-  if (title) {
-    const heading = document.createElement('h4');
-    heading.textContent = title;
-    parent.append(heading);
-  }
   const list = document.createElement('dl');
+  list.className = 'dossier-rows';
   for (const [label, value] of entries) {
+    const row = document.createElement('div');
     const term = document.createElement('dt'), detail = document.createElement('dd');
     term.textContent = label;
     detail.textContent = value;
-    list.append(term, detail);
+    row.append(term, detail);
+    list.append(row);
   }
   parent.append(list);
 }
@@ -67,7 +65,9 @@ function renderDeskCnaps(facts) {
   const original = document.getElementById('cnapsOriginal');
   original.replaceChildren();
   if (!facts) return;
-  dossierGroup(cnapsResult, '', [
+  const documentCount = facts.documents?.length || 0;
+  document.getElementById('cnapsPreview').textContent = documentCount ? documentCount + (documentCount === 1 ? ' document' : ' documents') : '';
+  dossierGroup(cnapsResult, [
     ['Demande auprès du CNAPS', facts.request_wording], ['Dernière consultation', facts.checked],
   ]);
   if (facts.documents?.length) {
@@ -83,14 +83,14 @@ function renderDeskCnaps(facts) {
     }
     cnapsResult.append(list);
   }
-  dossierGroup(cnapsResult, '', [
+  dossierGroup(cnapsResult, [
     ['Vérification des documents', facts.document_note], ['Documents consultés le', facts.card_checked !== facts.checked ? facts.card_checked : ''],
     ['Ce que l’appelant a déclaré', [
       facts.account === 'Créé' ? 'Compte en ligne du CNAPS créé.' : (facts.account === 'Non créé' ? 'Compte en ligne du CNAPS non créé.' : ''),
       facts.card === 'Oui' ? 'Dit détenir une carte professionnelle.' : (facts.card === 'Non' ? 'Dit ne pas détenir de carte professionnelle.' : ''),
     ].filter(Boolean).join(' ')],
   ]);
-  dossierGroup(original, '', [
+  dossierGroup(original, [
     ['Suivi CNAPS', facts.status], ['Références des documents', (facts.titles || []).join(' • ')],
   ]);
   refreshDeskCnaps.hidden = !facts.can_check;
@@ -98,6 +98,11 @@ function renderDeskCnaps(facts) {
 
 function showDossier(summary) {
   dossierFacts.replaceChildren();
+  const exchanges = document.getElementById('dossierExchanges');
+  exchanges.replaceChildren();
+  document.getElementById('requestPreview').textContent = summary.centre || '';
+  document.getElementById('exchangePreview').textContent = summary.conseiller || '';
+  for (const panel of verifiedDossier.querySelectorAll('details')) panel.open = false;
   dossierStatus.textContent = summary.stage_label || 'Situation à préciser';
   dossierStatus.dataset.tone = (summary.archive || summary.statut === 'Disqualifié') ? 'closed' : (summary.statut === 'Converti' ? 'success' : 'active');
   document.getElementById('dossierCourse').textContent = summary.course_label || 'Formation à préciser avec l’école';
@@ -105,24 +110,25 @@ function showDossier(summary) {
   purpose.textContent = summary.course_purpose || '';
   purpose.hidden = !summary.course_purpose;
   document.getElementById('dossierWording').textContent = summary.phone_wording || 'Je peux demander à votre conseiller de vérifier.';
-  dossierGroup(dossierFacts, 'Détails de la demande', [
+  dossierGroup(dossierFacts, [
     ['Démarche en cours', summary.secondary_label], ['Situation mise à jour le', summary.statut_depuis],
     ['Raison de la clôture', summary.motif_disqualification], ['Reprise du suivi prévue le', summary.reactivation],
     ['Centre de formation', summary.centre], ['Dates de formation', summary.session], ['Financement évoqué', summary.financement],
   ]);
-  dossierGroup(dossierFacts, 'Contacts et prochains échanges', [
+  document.getElementById('requestPanel').hidden = !dossierFacts.childElementCount;
+  dossierGroup(exchanges, [
     ['Conseiller qui suit le dossier', summary.conseiller || 'Non renseigné'],
     ['Dernier échange', summary.dernier_echange || 'Aucun échange consigné'],
     ['Prochain rendez-vous', summary.rdv || 'Aucun rendez-vous confirmé'],
     ['Relance prévue', summary.relance], ['Prochaine action', summary.prochaine_action],
   ]);
   renderDossierMessages(summary.messages || [], summary.phone_booking_url);
+  document.getElementById('messagePanel').open = Boolean(summary.messages?.some(message => message.status !== 'processed'));
   const original = document.getElementById('dossierOriginal');
   original.replaceChildren();
-  dossierGroup(original, '', [
+  dossierGroup(original, [
     ['Formation', summary.formation], ['Statut du dossier', summary.statut], ['Étape complémentaire', summary.statut_secondaire],
   ]);
-  document.getElementById('dossierReferences').open = false;
   document.getElementById('dossierReferences').hidden = !original.childElementCount && !summary.cnaps;
   cnapsFeedback.textContent = '';
   renderDeskCnaps(summary.cnaps);
@@ -131,7 +137,8 @@ function showDossier(summary) {
     const heading = verifiedDossier.querySelector('h3');
     heading.tabIndex = -1;
     heading.focus({preventScroll: true});
-    verifiedDossier.scrollIntoView?.({block: 'start'});
+    const top = document.getElementById('callerIdentity').hidden ? verifiedDossier : document.getElementById('callerResult');
+    top.scrollIntoView?.({block: 'start'});
   }
   if (summary.cnaps?.can_check) loadDeskCnaps(false);
 }

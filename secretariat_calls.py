@@ -124,7 +124,7 @@ def is_phone_appointment(appointment):
     return bool(re.search(phone, folded(appointment.get("name"))))
 
 
-def day_appointments(appointments, day, now, *, waiting_action=None):
+def day_appointments(appointments, day, now, *, resolve_host=None, waiting_action=None):
     """Keep only the reception fields of the same active slots used by /crm/calendrier."""
     rows = []
     current = now.timestamp()
@@ -135,11 +135,15 @@ def day_appointments(appointments, day, now, *, waiting_action=None):
         response = str(meeting.get("response_status") or "").lower()
         result = {"answered": "repondu", "no_answer": "sans_reponse"}.get(
             response, "a_venir" if slot["start"] > current else "sans_resultat")
+        host = resolve_host(meeting) if resolve_host else None
         row = {
             "time": slot["time"], "person": slot["person"],
-            "host": meeting.get("host_name") or "", "subject": meeting.get("name") or "Rendez-vous Calendly",
+            "host": host["name"] if host else meeting.get("host_name") or "",
+            "subject": meeting.get("name") or "Rendez-vous Calendly",
             "state": result,
         }
+        if host and folded(host["first_name"]) in {"aurelie", "cassandre", "clement"}:
+            row["host_avatar"] = folded(host["first_name"])
         action = waiting_action(meeting) if waiting_action else None
         if action:
             row["waiting"] = action
