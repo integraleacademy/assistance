@@ -9542,6 +9542,13 @@ _META_LEAD_FIELDS = (
 _META_DEFAULT_FORMATION = "A3P"
 _META_DEFAULT_LOCATION = "Côte d’Azur"
 
+# Formulaires vérifiés dans Meta. Les anciens formulaires conservent leur
+# affectation A3P historique, même si leurs libellés sont incomplets.
+_META_FORM_PROFILES = {
+    "2007914916834027": ("DESP", ""),
+    "2748123228939966": ("APS", _META_DEFAULT_LOCATION),
+}
+
 _META_ANSWER_CONTAINERS = {
     "fielddata", "fields", "answers", "questionsandanswers", "questionanswers",
 }
@@ -9671,13 +9678,16 @@ def _crm_is_meta_contact(contact):
 
 
 def _crm_enforce_meta_defaults(contact):
-    """Conserve la provenance et le lieu communs aux pistes META."""
+    """Conserve la provenance META sans écraser le lieu d'un formulaire DESP."""
     if not _crm_is_meta_contact(contact):
         return False
-    expected = {
-        "origine": "META",
-        "lieu": _META_DEFAULT_LOCATION,
-    }
+    expected = {"origine": "META"}
+    source = contact.get("meta_source")
+    if not isinstance(source, dict):
+        source = {}
+    form_profile = _META_FORM_PROFILES.get(str(source.get("form_id") or "").strip())
+    if not form_profile or form_profile[1]:
+        expected["lieu"] = form_profile[1] if form_profile else _META_DEFAULT_LOCATION
     changed = False
     for field, value in expected.items():
         if contact.get(field) != value:
@@ -10015,6 +10025,12 @@ def _meta_crm_payload(fields, custom_answers):
             if "france travail" in answer or "pole emploi" in answer:
                 crm.setdefault("financement_ft", "OUI")
 
+    form_profile = _META_FORM_PROFILES.get(str(fields.get("form_id") or "").strip())
+    if form_profile:
+        crm["formation"] = form_profile[0]
+        if form_profile[1]:
+            crm["lieu"] = form_profile[1]
+
     if not crm.get("formation"):
         for key in ("form_name", "campaign_name", "adset_name", "ad_name"):
             formation, desp_type = _meta_formation(fields.get(key))
@@ -10028,11 +10044,11 @@ def _meta_crm_payload(fields, custom_answers):
             if place := _meta_place(fields.get(key)):
                 crm["lieu"] = place
                 break
-    # Le formulaire instantané META actuellement utilisé est exclusivement
-    # consacré à l'A3P sur la Côte d'Azur. Ces valeurs fiables priment sur les
-    # libellés variables (ou absents) transmis par Meta/Zapier.
-    crm["formation"] = _META_DEFAULT_FORMATION
-    crm["lieu"] = _META_DEFAULT_LOCATION
+    # Préserve le routage historique des formulaires A3P. Les nouveaux
+    # formulaires DESP et APS sont reconnus par leur identifiant stable.
+    if not form_profile:
+        crm["formation"] = _META_DEFAULT_FORMATION
+        crm["lieu"] = _META_DEFAULT_LOCATION
     return crm, answer_rows
 
 
@@ -10081,6 +10097,7 @@ def _meta_source_details(fields, received_at=""):
         return {}
     return {
         key: value for key, value in {
+            "form_id": fields.get("form_id", ""),
             "form_name": fields.get("form_name", ""),
             "campaign_name": fields.get("campaign_name", ""),
             "ad_name": fields.get("ad_name", ""),
@@ -20163,3 +20180,4 @@ _start_wedof_background_sync()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
