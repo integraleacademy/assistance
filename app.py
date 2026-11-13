@@ -9547,6 +9547,8 @@ _META_DEFAULT_LOCATION = "Côte d’Azur"
 _META_FORM_PROFILES = {
     "2007914916834027": ("DESP", ""),
     "2748123228939966": ("APS", _META_DEFAULT_LOCATION),
+    "1124725393644713": ("DESP", ""),
+    "1665286434987197": ("APS", _META_DEFAULT_LOCATION),
 }
 
 _META_ANSWER_CONTAINERS = {
@@ -9936,6 +9938,17 @@ def _meta_answer_rows(fields, custom_answers):
         answer = _meta_scalar(value)
         if not answer:
             return
+        # Le nouveau formulaire APS réutilise l'ancienne clé technique de
+        # l'aide à l'identité numérique pour la consultation du compte CPF.
+        # Le payload original reste conservé dans la soumission.
+        if str(fields.get("form_id") or "") == "1665286434987197":
+            question_key = str(question)
+            if question_key.casefold().startswith("raw_"):
+                question_key = question_key[4:]
+            if _meta_key(question_key) == _meta_key(
+                "Pour le CPF, souhaitez-vous de l’aide pour créer votre identité numérique ?"
+            ):
+                question = "Avez-vous déjà consulté votre Compte Personnel de Formation (CPF) ?"
         marker = (_meta_key(question), answer.casefold())
         if marker in seen:
             return
@@ -9965,19 +9978,21 @@ def _meta_crm_payload(fields, custom_answers):
     form_id = str(fields.get("form_id") or "").strip()
     form_profile = _META_FORM_PROFILES.get(form_id)
     form_questions = {}
-    if form_id == "2007914916834027":
+    if form_id in {"2007914916834027", "1124725393644713"}:
         form_questions = {
             "Quel parcours souhaitez-vous étudier ?": "desp_type",
             "Où pourriez-vous suivre les deux semaines en présentiel ?": "lieu",
+            "Où souhaiteriez-vous suivre votre formation ?": "lieu",
             "Comment envisagez-vous de financer votre parcours ?": "funding_plan",
             "Si la prise en charge est partielle ou refusée, que souhaitez-vous faire ?": "personal_funding",
         }
-    elif form_id == "2748123228939966":
+    elif form_id in {"2748123228939966", "1665286434987197"}:
         form_questions = {
             "Quelle solution de financement envisagez-vous en priorité ?": "funding_plan",
             "Pour le CPF, souhaitez-vous de l’aide pour créer votre identité numérique ?": "identity_help",
             "Si France Travail refuse votre demande, pourriez-vous régler la part restant à votre charge ?": "refus_ft_perso",
             "Si votre financement ne couvre pas toute la formation, pourriez-vous régler la différence ?": "reste_a_charge_perso",
+            "Si votre financement ne couvre pas toute la formation, pourriez-vous régler personnellement la différence ?": "reste_a_charge_perso",
         }
     form_questions = {_meta_key(question): field for question, field in form_questions.items()}
 
