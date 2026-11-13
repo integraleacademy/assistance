@@ -10,6 +10,9 @@ from test_meta_zapier_webhook import lead, post, setup_client
         ("2748123228939966", "APS_HOOK1_COTE_AZUR", "APS", "", "", "Côte d’Azur"),
         ("2007914916834027", "DESP_VIDEO_INITIALE_VAE", "DESP", "Formation initiale", "Paris", "Paris"),
         ("2007914916834027", "DESP_VIDEO_INITIALE_VAE", "DESP", "VAE", "Côte d’Azur", "Côte d’Azur"),
+        ("1665286434987197", "APS_HOOK1_COTE_AZUR", "APS", "", "", "Côte d’Azur"),
+        ("1124725393644713", "DESP_VIDEO_INITIALE_VAE", "DESP", "Formation initiale", "Paris", "Paris"),
+        ("1124725393644713", "DESP_VIDEO_INITIALE_VAE", "DESP", "VAE", "Côte d’Azur", "Côte d’Azur"),
     ],
 )
 def test_known_forms_keep_training_answers_and_do_not_send_a3p_messages(
@@ -58,9 +61,10 @@ def test_known_forms_keep_training_answers_and_do_not_send_a3p_messages(
         assert salesforce[0]["formation"] == "APS"
 
 
-def test_shared_desp_form_does_not_guess_vae_or_a_location():
+@pytest.mark.parametrize("form_id", ["2007914916834027", "1124725393644713"])
+def test_shared_desp_form_does_not_guess_vae_or_a_location(form_id):
     fields, answers = application._parse_meta_lead_payload({
-        "form_id": "2007914916834027",
+        "form_id": form_id,
         "form_name": "DESP_VIDEO_INITIALE_VAE",
     })
     crm, _ = application._meta_crm_payload(fields, answers)
@@ -198,3 +202,88 @@ def test_aps_partial_or_refused_funding_answers_map_to_personal_capacity(answer,
     crm, _ = application._meta_crm_payload(fields, answers)
     for field in ("refus_ft_perso", "reste_a_charge_perso", "financement_perso_possible"):
         assert crm.get(field, "") == expected
+
+
+@pytest.mark.parametrize("prefix", ["", "raw_"])
+def test_new_aps_reused_technical_key_means_cpf_consulted_not_identity_created(prefix):
+    fields, answers = application._parse_meta_lead_payload({
+        "form_id": "1665286434987197",
+        prefix + "pour_le_cpf,_souhaitez-vous_de_l’aide_pour_créer_votre_identité_numérique ?": "Oui",
+    })
+    crm, rows = application._meta_crm_payload(fields, answers)
+    assert crm["cpf"] == "OUI"
+    assert not crm.get("identite_creation") and not crm.get("identite_ok")
+    assert rows == [{
+        "question": "Avez-vous déjà consulté votre Compte Personnel de Formation (CPF) ?",
+        "answer": "Oui",
+    }]
+
+
+@pytest.mark.parametrize("form_id,answers,expected", [
+    ("1665286434987197", {
+        "quelle_solution_de_financement_envisagez-vous_en_priorité ?": "France Travail",
+        "pour_le_cpf,_souhaitez-vous_de_l’aide_pour_créer_votre_identité_numérique ?": "Oui",
+        "savez-vous_de_quel_montant_vous_disposez_sur_votre_compte_cpf_?": "1 200 €",
+        "avez-vous_déjà_créé_votre_identité_numérique_la_poste_?": "Non",
+        "si_france_travail_refuse_votre_demande,_pourriez-vous_régler_la_part_restant_à_votre_charge ?": "Non",
+        "si_votre_financement_ne_couvre_pas_toute_la_formation,_pourriez-vous_régler_la_différence ?": "Non",
+        "pouvez-vous_suivre_les_3_semaines_en_présentiel_à_puget-sur-argens_et_y_passer_l’examen ?": "Oui",
+    }, {
+        "formation": "APS", "lieu": "Côte d’Azur", "cpf": "OUI", "cpf_montant": "1200.00",
+        "identite_creation": "NON", "financement_ft": "OUI",
+        "refus_ft_perso": "NON", "reste_a_charge_perso": "NON", "financement_perso_possible": "NON",
+    }),
+    ("1124725393644713", {
+        "quel_parcours_souhaitez-vous_étudier_?": "Formation initiale",
+        "où_souhaiteriez-vous_suivre_votre_formation_?": "Paris",
+        "comment_envisagez-vous_de_financer_votre_parcours_?": "CPF",
+        "si_la_prise_en_charge_est_partielle_ou_refusée,_que_souhaitez-vous_faire_?": "Je peux financer personnellement la différence",
+        "avez-vous_déjà_consulté_votre_compte_personnel_de_formation_(cpf)_?": "Oui",
+        "de_quel_montant_disposez-vous_sur_votre_compte_personnel_de_formation_(cpf)_?": "2 350 €",
+        "avez-vous_déjà_créé_votre_identité_numérique_la_poste_?": "Non",
+        "quelles_responsabilités_avez-vous_personnellement_exercées_?": "Encadrement d’équipe",
+        "pourriez-vous_illustrer_ces_responsabilités_avec_des_justificatifs_?": "Oui",
+    }, {
+        "formation": "DESP", "desp_type": "INITIAL", "lieu": "Paris", "cpf": "OUI",
+        "cpf_montant": "2350.00", "identite_creation": "NON", "financement_perso_possible": "OUI",
+    }),
+])
+def test_new_form_webhooks_persist_business_fields_and_every_answer(tmp_path, monkeypatch, form_id, answers, expected):
+    client = setup_client(tmp_path, monkeypatch)
+    for function in ("send_email_html", "send_sms"):
+        monkeypatch.setattr(application, function, lambda *args: pytest.fail("Unexpected A3P delivery"))
+    payload = {
+        "id": "new-form-" + form_id, "form_id": form_id,
+        "nom_complet": "Lina Martin", "e-mail": "lina@example.fr",
+        "numéro_de_téléphone": "+33612345678", **answers,
+        **{"raw_" + key: value for key, value in answers.items()},
+    }
+    response = post(client, payload)
+    assert response.status_code == 201
+    assert post(client, payload).get_json()["result"] == "already_processed"
+    data = application.load_data()
+    assert len(data["crm_contacts"]) == 1
+    contact = data["crm_contacts"][0]
+    for field, value in expected.items():
+        assert contact.get(field) == value, field
+    assert contact["telephone"] == "+33612345678"
+    assert not contact.get("dates_formation") and not contact.get("identite_ok")
+    stored = data["crm_meta_lead_submissions"][0]
+    assert stored["raw_payload"] == payload
+    assert stored["custom_answers"].items() >= answers.items()
+    assert set(answers.values()) <= {row["answer"] for row in contact["meta_answers"]}
+    assert application._crm_backfill_meta_submissions(data) is False
+
+
+@pytest.mark.parametrize("amount,expected_amount,expected_tier", [
+    ("Entre 1 000 et 2 000 €", "", "Entre 1 000 et 2 000 €"),
+    ("Je ne sais pas", "", ""),
+    ("Oui", "", ""),
+    ("0 €", "0.00", ""),
+])
+def test_new_cpf_question_preserves_ranges_and_unknown_amounts(amount, expected_amount, expected_tier):
+    crm, _ = application._meta_crm_payload({"form_id": "1665286434987197"}, {
+        "Savez-vous de quel montant vous disposez sur votre compte CPF ?": amount,
+    })
+    assert crm.get("cpf_montant", "") == expected_amount
+    assert crm.get("cpf_palier", "") == expected_tier
