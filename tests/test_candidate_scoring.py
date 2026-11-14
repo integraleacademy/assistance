@@ -58,7 +58,7 @@ def test_candidate_score_styles_are_bundled():
     assert ".integration-score-card.incomplete" in css
 
 
-def test_v9_uses_80_percent_financial_and_20_percent_regulatory():
+def test_v10_uses_80_percent_financial_and_20_percent_regulatory():
     declared = calculate_candidate_integration_score(
         financial_contact(carte_pro="OUI")
     )
@@ -67,7 +67,7 @@ def test_v9_uses_80_percent_financial_and_20_percent_regulatory():
         {"has_active_professional_title": True},
     )
 
-    assert CANDIDATE_SCORING_VERSION == declared["version"] == 9
+    assert CANDIDATE_SCORING_VERSION == declared["version"] == 10
     assert declared["financial_score"] == 100
     assert declared["regulatory_score"] == 100
     assert declared["score"] == 100

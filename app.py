@@ -10083,6 +10083,9 @@ def _meta_crm_payload(fields, custom_answers):
                 term in answer for term in ("ne pas", "ne peux pas", "ne pourrai pas", "pas de financement")
             )
             if specific_field in {"funding_plan", "personal_funding"}:
+                if (specific_field == "funding_plan" and form_profile[0] == "DESP"
+                        and answer in {"je prevois un financement personnel", "financement personnel"}):
+                    crm["financement_perso_integral_prevu"] = True
                 if not uncertain and not negative:
                     if specific_field == "funding_plan" and any(
                         term in answer for term in ("france travail", "pole emploi")
@@ -10190,10 +10193,10 @@ def _meta_resolve_session(data, crm_payload):
     return crm_payload
 
 
-def _meta_source_details(fields, received_at=""):
+def _meta_source_details(fields, received_at="", *, full_personal_payment=False):
     if not fields:
         return {}
-    return {
+    source = {
         key: value for key, value in {
             "form_id": fields.get("form_id", ""),
             "form_name": fields.get("form_name", ""),
@@ -10202,6 +10205,9 @@ def _meta_source_details(fields, received_at=""):
             "received_at": received_at,
         }.items() if value
     }
+    if full_personal_payment:
+        source["financement_perso_integral_prevu"] = True
+    return source
 
 
 def _meta_apply_contact_answers(contact, crm_payload, answer_rows, *, fields=None, received_at=""):
@@ -10243,7 +10249,10 @@ def _meta_apply_contact_answers(contact, crm_payload, answer_rows, *, fields=Non
         contact["meta_answers"] = normalized_rows
         changed = True
 
-    source = _meta_source_details(fields or {}, received_at)
+    source = _meta_source_details(
+        fields, received_at,
+        full_personal_payment=crm_payload.get("financement_perso_integral_prevu"),
+    )
     if source and contact.get("meta_source") != source:
         contact["meta_source"] = source
         changed = True
@@ -10660,6 +10669,7 @@ def meta_zapier_leads():
                 # Use this submission's coordinates, course and answers for the reply.
                 recipient = contact if created else {
                     **crm_payload, "id": contact["id"],
+                    "meta_source": contact["meta_source"],
                     "prenom": _crm_format_first_name(crm_payload.get("prenom")),
                 }
             elif created and formation == "A3P":

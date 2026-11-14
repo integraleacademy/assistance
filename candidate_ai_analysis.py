@@ -183,6 +183,19 @@ def build_funding_analysis(funding, formation=None):
     elif wants_ft is None:
         ft_parts.append("Le souhait de solliciter un financement France Travail n’est pas renseigné.")
 
+    if funding.get("funding_solution_status") == "full_personal_payment_planned":
+        plan = "Le candidat prévoit de payer personnellement la totalité de la formation."
+        if price is not None:
+            plan = f"Le candidat prévoit de payer personnellement la totalité des {_money(price)} de la formation."
+        action = "Confirmer le paiement personnel intégral lors de l’inscription."
+        return {
+            "status": status, "cpf_amount_eur": cpf, "training_price_eur": price,
+            "remaining_to_finance_eur": 0, "summary": plan,
+            "cpf_identity": "Le financement prévu repose entièrement sur le paiement personnel.",
+            "france_travail": " ".join(ft_parts), "additional_funding": plan,
+            "strengths": [plan], "vigilance_points": [], "recommended_actions": [action],
+            "conclusion": action,
+        }
     additional_parts = []
     if fallback is not None or wants_ft is True:
         if wants_ft is True:

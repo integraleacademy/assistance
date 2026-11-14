@@ -120,6 +120,12 @@ def test_actual_french_zapier_shape_fills_phone_name_and_personal_funding(tmp_pa
     assert contact["telephone"] == "+33612345678"
     assert contact["prenom"] == "Lina" and contact["nom"] == "MARTIN"
     assert contact["financement_perso_possible"] == "OUI"
+    score = application.calculate_candidate_integration_score(contact)
+    assert score["funding_solution_status"] == "full_personal_payment_planned"
+    assert score["financial_breakdown"][0]["points"] == 80
+    assert score["cpf_amount_eur"] is None
+    context = application._build_candidate_ai_context(contact, data, score)
+    assert "totalité des 4 300 €" in context["authoritative_facts"]["financing"]["fact"]
     for field in ("desp_type", "lieu", "cpf", "cpf_montant", "financement_ft", "dates_formation"):
         assert not contact.get(field), field
     assert data["crm_meta_lead_submissions"][0]["raw_payload"] == payload
@@ -145,12 +151,52 @@ def test_backfill_recovers_missing_phone_and_funding_without_changing_manual_dat
     assert contact["mail"] == "manual@example.fr"
     assert contact["desp_type"] == "INITIAL" and contact["lieu"] == "Paris"
     assert contact["activities"] == []
+    assert application.calculate_candidate_integration_score(contact)["financial_breakdown"][0]["points"] == 80
     assert application._crm_backfill_meta_submissions(data) is False
     contact["telephone"] = "+33698765432"
     contact["financement_perso_possible"] = "NON"
     assert application._crm_backfill_meta_submissions(data) is False
     assert contact["telephone"] == "+33698765432"
     assert contact["financement_perso_possible"] == "NON"
+    assert application.calculate_candidate_integration_score(contact)["financial_breakdown"][0]["points"] == 0
+
+
+@pytest.mark.parametrize("form_id", ["2007914916834027", "1124725393644713"])
+def test_only_primary_desp_personal_plan_covers_the_entire_price(form_id):
+    question = "comment_envisagez-vous_de_financer_votre_parcours_?"
+    fallback = "si_la_prise_en_charge_est_partielle_ou_refusée,_que_souhaitez-vous_faire_?"
+    for key, value, full in [
+        (question, "Je prévois un financement personnel.", True),
+        ("raw_" + question, "je_prévois_un_financement_personnel.", True),
+        (fallback, "Je prévois un financement personnel.", False),
+        (question, "Je prévois un financement personnel partiel.", False),
+        (question, "Je ne prévois pas de financement personnel.", False),
+        (question, "CPF et financement personnel", False),
+    ]:
+        fields, answers = application._parse_meta_lead_payload({"form_id": form_id, key: value})
+        mapped, rows = application._meta_crm_payload(fields, answers)
+        contact = {"formation": "DESP", "desp_type": "VAE"}
+        application._meta_apply_contact_answers(contact, mapped, rows, fields=fields)
+        score = application.calculate_candidate_integration_score(contact)
+        assert (score["funding_solution_status"] == "full_personal_payment_planned") is full
+        assert score["training_price_eur"] == 3800
+        assert score["financial_breakdown"][0]["points"] == (80 if full else 0)
+
+
+def test_later_funding_plan_supersedes_the_older_full_price_declaration():
+    question = "Comment envisagez-vous de financer votre parcours ?"
+    submissions = [
+        {"contact_id": "existing", "received_at": date,
+         "raw_payload": {"form_id": "1124725393644713", question: answer}}
+        for date, answer in [("2026-11-14", "France Travail"), ("2026-11-13", "Je prévois un financement personnel.")]
+    ]
+    contact = {"id": "existing", "formation": "DESP"}
+    data = {"crm_contacts": [contact], "crm_meta_lead_submissions": submissions}
+    assert application._crm_backfill_meta_submissions(data)
+    score = application.calculate_candidate_integration_score(contact)
+    assert score["financial_breakdown"][0]["points"] == 0
+    assert not contact["meta_source"].get("financement_perso_integral_prevu")
+    assert not application._crm_backfill_meta_submissions(data)
 
 
 @pytest.mark.parametrize("payload,expected", [

@@ -183,6 +183,28 @@ def test_personal_credit_is_not_added_again_to_a_stronger_financial_score():
     assert result["score_complete"] is False
 
 
+def test_desp_meta_full_payment_is_estimated_without_confirming_payment_or_cpf():
+    contact = {
+        "formation": "DESP", "cpf": "NON", "financement_ft": "NON",
+        "financement_perso_possible": "OUI",
+        "meta_source": {"financement_perso_integral_prevu": True},
+    }
+    score = calculate_candidate_integration_score(contact)
+    assert score["score"] == 92
+    assert score["financial_adjustments"] == []
+    assert score["score_estimated"] and not score["score_complete"]
+    assert score["cpf_amount_eur"] is None
+    assert score["personal_remainder_status"] == "not_applicable"
+    assert score["next_actions"] == ["Confirmer le paiement personnel intégral lors de l’inscription"]
+    for change in (
+        {"formation": "APS"}, {"financement_ft": "OUI"},
+        {"financement_perso_possible": "NON"}, {"reste_a_charge_perso": "NON"},
+    ):
+        updated = calculate_candidate_integration_score({**contact, **change})
+        assert updated["financial_breakdown"][0]["points"] == 0
+        assert updated["funding_solution_status"] != "full_personal_payment_planned"
+
+
 def test_score_card_renders_backend_weights_and_unknown_cnaps():
     source = Path("static/crm.js").read_text(encoding="utf-8")
     renderer = "function renderIntegrationScore(c)" + source.split(
@@ -191,8 +213,8 @@ def test_score_card_renders_backend_weights_and_unknown_cnaps():
     score = calculate_candidate_integration_score({**BASE_CONTACT, "cpf_palier": "3000 à 4000 euros"})
     script = """
 const assert=require('node:assert/strict');
-const card={};
-const document={querySelector:selector=>selector==='#integrationScoreCard'?card:null};
+const card={},personalDescription={};
+const document={querySelector:selector=>({'#integrationScoreCard':card,'#personalPaymentDescription':personalDescription}[selector]||null)};
 const renderContactHeaderScore=()=>{};
 const hasIntegrationScore=()=>true;
 const esc=value=>String(value);
@@ -220,6 +242,17 @@ assert.match(card.innerHTML,/Contribution : 40 \/ 80/);
 assert.match(card.innerHTML,/PROVISOIRE/);
 assert.doesNotMatch(card.innerHTML,/CPF<b>0/);
 """
+    desp = calculate_candidate_integration_score({
+        "formation": "DESP", "cpf": "NON", "financement_ft": "NON",
+        "financement_perso_possible": "OUI", "meta_source": {"financement_perso_integral_prevu": True},
+    })
+    script += "\nrenderIntegrationScore({integration_score:" + json.dumps(desp) + "});\n" + r"""
+assert.match(card.innerHTML,/Paiement personnel intégral/);
+assert.match(card.innerHTML,/80 \/ 80/);
+assert.match(card.innerHTML,/Montant prévu<b>4300/);
+assert.match(personalDescription.textContent,/totalité de la formation \(4300\)/);
+assert.doesNotMatch(card.innerHTML,/montant que le candidat peut financer|Reste après CPF|\+38 points/);
+"""
     subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
     template = Path("templates/crm.html").read_text(encoding="utf-8")
-    assert "scoring_version='20260909-personal-capacity-9'" in template
+    assert "scoring_version='20261114-desp-personal-10'" in template
