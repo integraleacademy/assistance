@@ -120,7 +120,7 @@ def test_endpoint_defaults_validation_past_dates_and_read_failure(tmp_path, monk
     monkeypatch.setattr(application, 'DATA_FILE', str(tmp_path / 'calendar.json'))
     monkeypatch.setattr(application, '_CASSANDRE_CALENDAR', calendar.CassandreCalendar())
     monkeypatch.setenv('CALENDLY_ACCESS_TOKEN', 'test')
-    monkeypatch.setattr(application, '_calendly_event_types_for_context', lambda data: [event('personal')])
+    monkeypatch.setattr(application, '_calendly_event_types_for_context', lambda data: [event('aps', scheduling_url=application.FORMATION_BOOKING_URLS['APS'])])
     monkeypatch.setattr(application, '_calendly_request', lambda method, path, **kw: {
         'collection': [{'member': CASSANDRE}] if path == '/event_type_memberships' else []})
     client = application.app.test_client()
@@ -140,56 +140,60 @@ def test_endpoint_defaults_validation_past_dates_and_read_failure(tmp_path, monk
     assert error.status_code == 503 and 'days' not in error.json
 
 
-def test_remaining_places_include_only_cassandres_booked_meetings(monkeypatch):
+def test_calendar_counts_exact_candidate_slots_in_overview_and_day_view(monkeypatch):
     first = datetime.now(calendar.PARIS).date()
-    dates = [(first + n * calendar.DAY).isoformat() for n in range(5)]
-    openings = dict(zip(dates, [0, 1, 12, 14, 17]))
-    appointments = []
+    dates = [first + days * calendar.DAY for days in range(5)]
+    monday, wednesday, outside = dates[2], dates[4], first + 8 * calendar.DAY
 
-    def book(day, hour, minute=0, **fields):
-        row = dict(host_email=calendar.HOST_EMAIL, start_time=f'{day}T{hour:02}:{minute:02}:00',
-                   event_uri=f'events/{len(appointments)}', status='active')
-        row.update(fields)
-        appointments.append(row)
-        return row
+    def starts(day, count, hour=9):
+        start = datetime.combine(day, datetime.min.time(), calendar.PARIS).replace(hour=hour)
+        return [slot(calendar.stamp(start + timedelta(minutes=15 * i))) for i in range(count)]
 
-    for day, number in zip(dates, [1, 4, 10, 12, 13]):
-        for i in range(number):
-            book(day, 8 + i // 4, (i % 4) * 15)
-    first_booking = next(row for row in appointments if row['start_time'].startswith(dates[2]))
-    first_booking.update(host_email='', host_name='Cassandre Ménard', response_status='answered')
-    appointments.append(dict(first_booking, invitee_uri='invitees/second'))
-    book(dates[2], 15, status='cancelled')
-    book(dates[2], 16, host_email='aurelie@integraleacademy.com')
-    book(dates[2], 17, new_invitee='invitees/replacement')
+    catalog = [
+        event('aps', scheduling_url='https://calendly.com/integraleacademy/aps/'),
+        event('desp', scheduling_url='https://calendly.com/integraleacademy/dirigeant'),
+        event('personal', scheduling_url='https://calendly.com/cassandre-integraleacademy/15min'),
+        event('other_account', scheduling_url='https://calendly.com/integralesecuriteformations/apr'),
+        event('apprenticeship', scheduling_url='https://calendly.com/integraleacademy/parcourssecurite'),
+    ]
+    public_slots = starts(wednesday, 3) + starts(outside, 15)
+    private_slots = starts(monday, 12)
+    available = {
+        'aps': public_slots, 'desp': public_slots[1:],
+        'personal': private_slots, 'other_account': private_slots, 'apprenticeship': private_slots,
+    }
+    queried_types = set()
 
-    # Two historical invitee rows without an event URI at the same instant.
-    # Local midnight in Paris falls on the previous UTC date.
-    midnight = datetime.fromisoformat(dates[2]).replace(tzinfo=calendar.PARIS)
-    legacy = next(row for row in appointments if row['start_time'].startswith(dates[2]) and row is not first_booking)
-    legacy.update(event_uri='', start_time=midnight.astimezone(UTC).isoformat(), host_email='',
-                  host_name='Cassandre')
-    appointments.append(dict(legacy, start_time=midnight.replace(tzinfo=None).isoformat()))
+    def provider(method, path, *, params):
+        event_uri = params['event_type']
+        queried_types.add(event_uri)
+        if path == '/event_type_memberships':
+            return {'collection': [{'member': CASSANDRE}]}
+        assert path == '/event_type_available_times'
+        return {'collection': available[event_uri]}
 
-    def provider(day, length, *args, **kwargs):
-        return {str(day + n * calendar.DAY): openings[str(day + n * calendar.DAY)] for n in range(length)}
-
-    monkeypatch.setattr(application, '_load_data_snapshot', lambda: {'crm_calendly_appointments': appointments})
-    monkeypatch.setattr(application._CASSANDRE_CALENDAR, 'counts', provider)
+    bookings = [dict(host_email=calendar.HOST_EMAIL, status='active', start_time=row['start_time'])
+                for row in starts(monday, 10) + starts(wednesday, 12, hour=13)]
+    monkeypatch.setattr(application, '_load_data_snapshot', lambda: {'crm_calendly_appointments': bookings})
+    monkeypatch.setattr(application, '_CASSANDRE_CALENDAR', calendar.CassandreCalendar())
+    monkeypatch.setattr(application, '_calendly_event_types_for_context', lambda data: catalog)
+    monkeypatch.setattr(application, '_calendly_request', provider)
     monkeypatch.setenv('CALENDLY_ACCESS_TOKEN', 'test')
     client = application.app.test_client()
     with client.session_transaction() as session:
         session['user_email'] = calendar.HOST_EMAIL
     path = '/api/crm/calendly/cassandre-availability'
-    assert client.get(path).get_json()['days'] == dict(zip(dates, [0, 1, 2, 0, 0]))
-    selected = {'date': dates[2]}
-    assert client.get(path, query_string=selected).get_json()['days'] == {dates[2]: 2}
-    booking = next(row for row in appointments if row['start_time'] == f'{dates[2]}T08:30:00')
-    booking['status'] = 'canceled'
-    assert client.get(path, query_string=selected).get_json()['days'] == {dates[2]: 3}
-    outside = str(first + 8 * calendar.DAY)
-    openings[outside] = 28
-    assert client.get(path, query_string={'date': outside}).get_json()['days'] == {outside: 12}
+    expected = dict(zip(map(str, dates), [0, 0, 0, 0, 3]))
+    assert client.get(path).get_json()['days'] == expected
+    for day, count in [(monday, 0), (wednesday, 3), (outside, 15)]:
+        assert client.get(path, query_string={'date': str(day)}).get_json()['days'] == {str(day): count}
+    assert queried_types == {'aps', 'desp'}
+
+    # A newly released slot must appear exactly once, on both views, on refresh.
+    for event_uri in ('aps', 'desp'):
+        available[event_uri] = available[event_uri] + starts(monday, 1)
+    assert client.get(path, query_string={'refresh': '1'}).get_json()['days'][str(monday)] == 1
+    assert client.get(path, query_string={'date': str(monday), 'refresh': '1'}).get_json()['days'] == {str(monday): 1}
 
 
 def test_calendar_tiles_selected_day_refresh_and_failure_in_browser(tmp_path, monkeypatch):
@@ -201,7 +205,7 @@ def test_calendar_tiles_selected_day_refresh_and_failure_in_browser(tmp_path, mo
         session['user_email'] = calendar.HOST_EMAIL
     calls = []
     failed = False
-    counts = {str(TODAY + n * calendar.DAY): count for n, count in enumerate([0, 0, 2, 0, 2])}
+    counts = {str(TODAY + n * calendar.DAY): count for n, count in enumerate([0, 0, 0, 0, 3])}
 
     def serve(route):
         url = urlsplit(route.request.url)
@@ -233,15 +237,15 @@ def test_calendar_tiles_selected_day_refresh_and_failure_in_browser(tmp_path, mo
             tiles = page.locator('.cassandre-day')
             total = page.locator('.cassandre-total strong')
             playwright.expect(tiles).to_have_count(5)
-            playwright.expect(total).to_have_text('4')
+            playwright.expect(total).to_have_text('3')
             playwright.expect(badge).to_have_text('0 place restante avec Cassandre')
             tiles.nth(2).click()
-            playwright.expect(badge).to_have_text('2 places restantes avec Cassandre')
+            playwright.expect(badge).to_have_text('0 place restante avec Cassandre')
             playwright.expect(tiles.nth(2)).to_have_attribute('aria-pressed', 'true')
             assert len(calls) == 1
             page.locator('#calendarDate').fill('2026-11-25')
             playwright.expect(badge).to_have_text('4 places restantes avec Cassandre')
-            playwright.expect(total).to_have_text('4')
+            playwright.expect(total).to_have_text('3')
             assert calls[-1] == {'date': ['2026-11-25']}
             failed = True
             tiles.first.click()
@@ -249,9 +253,9 @@ def test_calendar_tiles_selected_day_refresh_and_failure_in_browser(tmp_path, mo
             playwright.expect(total).to_have_text('—')
             playwright.expect(badge).to_contain_text('inconnue')
             failed = False
-            counts['2026-11-16'] = 1
+            counts['2026-11-18'] = 4
             page.locator('.cassandre-notice button').click()
-            playwright.expect(total).to_have_text('3')
+            playwright.expect(total).to_have_text('4')
             playwright.expect(page.locator('.cassandre-notice')).to_be_hidden()
             assert page.locator('.cassandre-panel').evaluate('el => el.scrollWidth <= el.clientWidth')
         finally:

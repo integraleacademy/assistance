@@ -940,7 +940,7 @@ function calendarPage(){
     <section id="cassandreAvailability" class="cassandre-panel" aria-labelledby="cassandreTitle">
       <div class="cassandre-heading">
         <span class="cassandre-portrait" aria-hidden="true"></span>
-        <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Les 5 prochains jours <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p></div>
+        <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Rendez-vous formation sur Calendly <span aria-hidden="true">·</span> Les 5 prochains jours <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p></div>
       </div>
       <div class="cassandre-grid">
         <div class="cassandre-total" aria-live="polite"><span>Places restantes</span><strong>—</strong><small>au total</small></div>
