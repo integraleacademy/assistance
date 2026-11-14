@@ -9103,7 +9103,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261107-integrale-edof-details"
+CRM_ASSET_VERSION = "20261114-meta-formation-messages"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -10375,53 +10375,124 @@ def _meta_phone_booking_allowed(contact, data_store=None):
     return isinstance(score, (int, float)) and META_PHONE_BOOKING_MIN_SCORE <= score <= 100
 
 
-def _send_meta_a3p_information(contact, data_store=None):
-    """Send both messages to every new META lead; gate only the booking CTA."""
-    include_phone_booking = _meta_phone_booking_allowed(contact, data_store)
-    centre_code = _normalize_centre_code(contact.get("lieu"))
-    subject, plain, html = _a3p_information_email_content(
-        contact.get("prenom", ""), contact.get("dates_formation", ""), centre_code, "",
-        data_store, include_phone_booking=include_phone_booking,
-        prominent_phone_booking=True,
-    )
+_META_INFORMATION_COPY = {
+    "APS": (
+        "Agent de prévention et de sécurité (APS)",
+        "La formation associe des cours à distance et des mises en situation à Puget-sur-Argens. "
+        "Notre équipe peut vous guider sur les prochaines sessions, les démarches auprès du "
+        "Ministère de l’intérieur (CNAPS) et les possibilités de financement.",
+    ),
+    "DESP": (
+        "Dirigeant d’entreprise de sécurité privée (DESP)",
+        "Vous envisagez de créer ou de diriger une entreprise de sécurité privée. "
+        "Notre équipe peut vous aider à choisir entre la formation initiale et la validation "
+        "des acquis de l’expérience (VAE), selon votre parcours.",
+    ),
+}
+
+
+def _meta_information_template(data, formation, kind):
+    """Resolve the same editable model for the library and the webhook."""
+    template_id = f"automatic-meta-{formation.lower()}-{kind}"
+    saved = next((row for row in data.get(f"crm_{kind}_templates", [])
+                  if row.get("id") == template_id), None)
+    if saved:
+        return saved
+    label, description = _META_INFORMATION_COPY[formation]
+    name = f"{formation} META"
+    subject = f"Votre demande d’informations sur la formation {formation}"
+    if kind == "email":
+        body = render_template(
+            "emails/meta_information.html", prenom="{{ prenom }}", formation=formation,
+            email_header_title=label, email_header_subtitle="Votre demande d’informations",
+            description=description,
+        )
+    else:
+        body = (
+            f"Intégrale Academy – Merci pour votre demande sur la formation {formation}. "
+            "Notre équipe est joignable au 04 22 47 07 68. {{ invitation_rdv }}"
+        )
+    return {
+        "id": template_id, "nom": name, "formation": formation, "type": kind,
+        "categorie": "META", "sujet": subject if kind == "email" else "",
+        "contenu": body, "usage_count": 0, "versions": [], "meta_information": True,
+    }
+
+
+def _meta_booking_content(contact, *, html):
+    url = _crm_calendly_url(contact)
+    if html:
+        return (
+            '<p style="margin:24px 0"><a style="display:inline-block;background:#102c5c;'
+            'color:white;padding:13px 20px;border-radius:8px;text-decoration:none" '
+            f'href="{html_module.escape(url, quote=True)}">Réserver mon rendez-vous téléphonique</a></p>'
+        )
+    return f"Réservez votre rendez-vous téléphonique sur {url}"
+
+
+def _send_meta_information(recipient, data_store):
+    """Send the requested course and return the journal entries for this delivery."""
+    journal = {"activities": []}
+    formation = recipient.get("formation") or "A3P"
+    include_booking = _meta_phone_booking_allowed(recipient, data_store)
+    editable = formation in _META_INFORMATION_COPY
     delivery = {"email": False, "sms": False}
-    if contact.get("mail"):
+    if recipient.get("mail"):
+        subject, html = f"{formation} META", ""
         try:
-            delivery["email"] = bool(send_email_html(contact["mail"], subject, plain, html))
+            if editable:
+                template = _meta_information_template(data_store, formation, "email")
+                subject = _crm_resolve_message_variables(
+                    template["sujet"] or template["nom"], recipient, data_store=data_store,
+                )
+                body = _crm_resolve_message_variables(
+                    template["contenu"], recipient, html=True, data_store=data_store,
+                    meta_booking=include_booking,
+                )
+                html = _crm_email_html(body, recipient, saved=True)
+                # Include link destinations in the plain-text alternative as well.
+                plain_body = re.sub(r'<a\b[^>]*\bhref="(https?://[^"]+)"[^>]*>(.*?)</a>',
+                                    r'\2 (\1)', html, flags=re.I | re.S)
+                parser = _SecretariatWebsiteTextParser()
+                parser.feed(plain_body)
+                plain = "\n".join(parser.parts)
+                delivery["email"] = bool(_crm_send_email_html(
+                    recipient["mail"], subject, plain, html, template=template,
+                ))
+            else:
+                subject, plain, html = _a3p_information_email_content(
+                    recipient.get("prenom", ""), recipient.get("dates_formation", ""),
+                    _normalize_centre_code(recipient.get("lieu")), "", data_store,
+                    include_phone_booking=include_booking, prominent_phone_booking=True,
+                )
+                delivery["email"] = bool(send_email_html(recipient["mail"], subject, plain, html))
         except Exception:
-            app.logger.exception("Échec de l'e-mail automatique A3P pour une piste META")
+            app.logger.exception("Échec de l’e-mail automatique META %s", formation)
         _crm_activity(
-            contact, "email" if delivery["email"] else "erreur",
+            journal, "email" if delivery["email"] else "erreur",
             "E-mail automatique envoyé" if delivery["email"] else "Échec de l’e-mail automatique",
             subject, html,
         )
-    if contact.get("telephone"):
-        sms_body = build_training_information_sms_text(
-            "A3P", include_phone_booking=include_phone_booking,
-        )
+    if recipient.get("telephone"):
+        sms_body = f"{formation} META"
         try:
-            delivery["sms"] = bool(send_sms(contact["telephone"], sms_body))
+            if editable:
+                template = _meta_information_template(data_store, formation, "sms")
+                sms_body = _crm_resolve_message_variables(
+                    template["contenu"], recipient, data_store=data_store,
+                    meta_booking=include_booking,
+                ).strip()
+            else:
+                sms_body = build_training_information_sms_text("A3P", include_phone_booking=include_booking)
+            delivery["sms"] = bool(send_sms(recipient["telephone"], sms_body))
         except Exception:
-            app.logger.exception("Échec du SMS automatique A3P pour une piste META")
+            app.logger.exception("Échec du SMS automatique META %s", formation)
         _crm_activity(
-            contact, "sms" if delivery["sms"] else "erreur",
+            journal, "sms" if delivery["sms"] else "erreur",
             "SMS automatique envoyé" if delivery["sms"] else "Échec du SMS automatique",
             sms_body,
         )
-    contact["updated_at"] = _crm_now()
-    return delivery
-
-
-def _meta_requires_a3p_information(contact):
-    """Keep the A3P follow-up when META omits the training answer.
-
-    The current A3P instant form can reach the webhook without a usable
-    formation label.  An explicitly mapped different course must still be
-    respected, but a missing value must not silently skip the requested A3P
-    e-mail and SMS.
-    """
-    formation = str(contact.get("formation") or "").strip()
-    return not formation or formation == "A3P"
+    return delivery, journal["activities"]
 
 
 @app.post("/api/integrations/meta/zapier-leads")
@@ -10508,8 +10579,6 @@ def meta_zapier_leads():
             submissions.insert(0, submission)
             inbound["custom_answers"] = copy.deepcopy(custom_answers)
             inbound["mapped_fields"] = copy.deepcopy(submission["mapped_fields"])
-            if created and _meta_requires_a3p_information(contact):
-                submission["automatic_delivery"] = _send_meta_a3p_information(contact, data)
             if created:
                 data.setdefault("crm_notifications", []).insert(0, {
                     "id": str(uuid.uuid4()), "date": received_at, "kind": "meta_lead",
@@ -10517,6 +10586,32 @@ def meta_zapier_leads():
                     "contact_name": f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip(),
                 })
             save_data(data)
+            # Persist the lead ID before contacting either provider. A Zapier
+            # replay must never repeat a send, even if saving its journal failed.
+            formation = crm_payload.get("formation") or _META_DEFAULT_FORMATION
+            recipient = None
+            if formation in _META_INFORMATION_COPY:
+                # A new form can belong to an existing contact for another course.
+                # Use this submission's coordinates, course and answers for the reply.
+                recipient = contact if created else {
+                    **crm_payload, "id": contact["id"],
+                    "prenom": _crm_format_first_name(crm_payload.get("prenom")),
+                }
+            elif created and formation == "A3P":
+                recipient = contact
+            if recipient is not None:
+                delivery, activities = _send_meta_information(recipient, data)
+                # Providers can take several seconds. Preserve intervening
+                # writes when recording the two outcomes against the receipt.
+                data = load_data()
+                submission = next(row for row in data["crm_meta_lead_submissions"]
+                                  if row["meta_lead_id"] == str(meta_lead_id))
+                submission["automatic_delivery"] = delivery
+                stored_contact = _crm_contact(data, contact["id"])
+                if stored_contact:
+                    stored_contact.setdefault("activities", [])[:0] = activities
+                    stored_contact["updated_at"] = _crm_now()
+                save_data(data)
         if salesforce_payload:
             # La soumission META est enregistrée avant l'appel externe : un retry
             # Zapier avec le même leadgen_id ne peut donc pas créer deux pistes.
@@ -19016,12 +19111,15 @@ def _crm_templates_payload(data):
             "contenu": build_training_information_sms_text("A3P"),
         },
     ]
+    for formation in _META_INFORMATION_COPY:
+        for kind in ("email", "sms"):
+            automatic_meta.append(_meta_information_template(data, formation, kind))
     return {
         "email": [
             {**template, "contenu": _crm_refresh_email_signature(template.get("contenu"), saved=True)}
-            for template in data["crm_email_templates"]
+            for template in data["crm_email_templates"] if not template.get("meta_information")
         ],
-        "sms": data["crm_sms_templates"],
+        "sms": [template for template in data["crm_sms_templates"] if not template.get("meta_information")],
         "automatic_email": automatic_email,
         "automatic_meta": automatic_meta,
         "email_starter": email_starter,
@@ -19651,6 +19749,13 @@ def crm_template(template_id):
     for kind in ("email", "sms"):
         items = data[f"crm_{kind}_templates"]
         item = next((candidate for candidate in items if candidate.get("id") == template_id), None)
+        if item is None and request.method == "PATCH":
+            for formation in _META_INFORMATION_COPY:
+                if template_id == f"automatic-meta-{formation.lower()}-{kind}":
+                    item = _meta_information_template(data, formation, kind)
+                    item["created_at"] = _crm_now()
+                    items.append(item)
+                    break
         if not item:
             continue
         if request.method == "DELETE":
@@ -19798,11 +19903,15 @@ def _crm_today_appointment_variables(contact, data_store=None, now=None):
     }
 
 
-def _crm_resolve_message_variables(content, contact, html=False, data_store=None):
+def _crm_resolve_message_variables(content, contact, html=False, data_store=None, *, meta_booking=None):
     """Resolve CRM template variables at preview/send time, never when saving."""
     resolved = re.sub(r"\{\{\s*prochaines_dates\s*\}\}",
                       lambda _: _crm_upcoming_dates(contact, html=html, data_store=data_store),
                       str(content or ""))
+    if re.search(r"\{\{\s*invitation_rdv\s*\}\}", resolved):
+        allowed = _meta_phone_booking_allowed(contact, data_store) if meta_booking is None else meta_booking
+        invitation = _meta_booking_content(contact, html=html) if allowed else ""
+        resolved = re.sub(r"\{\{\s*invitation_rdv\s*\}\}", lambda _: invitation, resolved)
     variables = {
         "prenom": contact.get("prenom"), "nom": contact.get("nom"),
         "email": contact.get("mail"), "mail": contact.get("mail"),
@@ -19836,6 +19945,27 @@ def crm_saved_email_preview(template_id):
         body = re.sub(r"\{\{\s*prochaines_dates\s*\}\}",
                       lambda _: _crm_upcoming_dates({"formation": formation}, html=True, data_store=data), body)
     return jsonify({"html": _crm_email_html(body, {"prenom": "{{ prenom }}", "formation": "{{ formation }}"}, saved=True)})
+
+
+@app.get("/api/crm/templates/<template_id>/meta-preview")
+@login_required
+def crm_meta_template_preview(template_id):
+    data = load_data()
+    for formation in _META_INFORMATION_COPY:
+        for kind in ("email", "sms"):
+            if template_id != f"automatic-meta-{formation.lower()}-{kind}":
+                continue
+            template = _meta_information_template(data, formation, kind)
+            contact = {"formation": formation, "prenom": "Camille"}
+            body = _crm_resolve_message_variables(
+                template["contenu"], contact, html=kind == "email", data_store=data,
+                meta_booking=True,
+            )
+            subject = _crm_resolve_message_variables(template["sujet"], contact, data_store=data)
+            if kind == "email":
+                body = _crm_email_html(body, contact, saved=True)
+            return jsonify({"sujet": subject, "contenu": body})
+    return jsonify({"error": "Modèle META introuvable."}), 404
 
 
 def _crm_refresh_email_signature(body, *, saved=False):
