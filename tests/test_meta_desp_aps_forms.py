@@ -20,6 +20,7 @@ from test_meta_zapier_webhook import lead, post, setup_client
         ("2051871915516458", "DESP_VIDEO_INITIALE_VAE (v4)", "DESP", "VAE", "Paris", "Paris"),
         ("1313564204218877", "APS_HOOK1_COTE_AZUR (v3)", "APS", "", "", "Côte d’Azur"),
         ("3605918179579680", "DESP_VIDEO_INITIALE_VAE", "DESP", "Formation initiale", "Paris", "Paris"),
+        ("2316311965770128", "DESP_VIDEO_INITIALE_VAE", "DESP", "VAE", "Paris", "Paris"),
         ("1124945893774109", "APS_HOOK1_COTE_AZUR", "APS", "", "", "Côte d’Azur"),
     ],
 )
@@ -506,6 +507,33 @@ def test_explicit_undecided_answers_take_precedence_over_funding_plan(reverse):
     assert not crm.get("cpf") and not crm.get("financement_ft") and not crm.get("financement_perso_possible")
     assert crm["meta_field_answers"]["financement_ft"] == "Je dois me renseigner."
     assert crm["meta_field_answers"]["financement_perso_possible"] == "Selon le devis."
+
+
+@pytest.mark.parametrize("answer,plan,expected", [
+    ("Oui, je n’ai pas assez de CPF.", "Mon CPF", "OUI"),
+    ("Non", "France Travail en complément du CPF", "NON"),
+    ("Je ne sais pas encore", "France Travail", ""),
+    ("", "France Travail", ""),
+])
+def test_desp_france_travail_answer_reaches_contact_sheet(tmp_path, monkeypatch, answer, plan, expected):
+    client = setup_client(tmp_path, monkeypatch)
+    answers = {FUNDING_PLAN: plan, PERSONAL_BALANCE: "Oui, en partie."}
+    if answer:
+        answers["raw_" + FT_REQUEST] = answer.replace(" ", "_")
+    payload = lead(form_id="2316311965770128", **answers)
+    result = post(client, payload)
+    assert result.status_code == 201
+    assert post(client, payload).json["result"] == "already_processed"
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+    sheet = client.get("/api/crm/contacts/" + result.json["contact_id"]).get_json()
+    assert sheet["formation"] == "DESP"
+    assert sheet["meta_source"]["form_id"] == "2316311965770128"
+    assert sheet["meta_source"]["field_answers"]["financement_ft"] == answer
+    assert (sheet.get("financement_ft") or "") == expected
+    assert sheet["financement_perso_possible"] == "OUI"
+    assert not any(sheet.get(key) for key in ("inscrit_ft", "statut_demande_financement_ft", "montant_accorde_ft"))
+    assert application.load_data()["crm_meta_lead_submissions"][0]["raw_payload"] == payload
 
 
 @pytest.mark.parametrize("answer,amount,tier", [

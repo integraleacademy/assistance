@@ -9666,6 +9666,7 @@ _META_LEAD_FIELDS = (
 
 _META_DEFAULT_FORMATION = "A3P"
 _META_DEFAULT_LOCATION = "Côte d’Azur"
+_META_DESP_EXPLICIT_FT_FORM_ID = "2316311965770128"
 
 # Formulaires vérifiés dans Meta. Les anciens formulaires conservent leur
 # affectation A3P historique, même si leurs libellés sont incomplets.
@@ -9678,6 +9679,7 @@ _META_FORM_PROFILES = {
     "1313564204218877": ("APS", _META_DEFAULT_LOCATION),
     "3605918179579680": ("DESP", ""),
     "1124945893774109": ("APS", _META_DEFAULT_LOCATION),
+    _META_DESP_EXPLICIT_FT_FORM_ID: ("DESP", ""),
 }
 
 _META_ANSWER_CONTAINERS = {
@@ -10159,6 +10161,7 @@ def _meta_crm_payload(fields, custom_answers):
             "Où pourriez-vous suivre les deux semaines en présentiel ?": "lieu",
             "Où souhaiteriez-vous suivre votre formation ?": "lieu",
             "Comment envisagez-vous de financer votre parcours ?": "funding_plan",
+            "Souhaitez-vous demander un financement à France Travail pour cette formation ?": "financement_ft",
             "Si la prise en charge est partielle ou refusée, que souhaitez-vous faire ?": "personal_funding",
         }
     elif form_profile and form_profile[0] == "APS":
@@ -10311,9 +10314,22 @@ def _meta_crm_payload(fields, custom_answers):
                 crm.setdefault("financement_ft", "OUI")
 
     if form_profile:
+        # Cette version demande l'intention FT séparément, même si le CPF ou
+        # France Travail a déjà été choisi comme financement principal.
+        if form_id == _META_DESP_EXPLICIT_FT_FORM_ID and "financement_ft" not in explicit_funding:
+            field_answers["financement_ft"] = ""
+            crm.pop("financement_ft", None)
         for field, (_, answer) in explicit_funding.items():
             field_answers[field] = answer
-            normalized = _meta_personal_capacity(answer) if field == "financement_perso_possible" else _meta_yes_no(answer)
+            if field == "financement_perso_possible":
+                normalized = _meta_personal_capacity(answer)
+            elif form_id == _META_DESP_EXPLICIT_FT_FORM_ID:
+                # « Oui, je n'ai pas assez de CPF » est bien un oui à la demande.
+                first_word = _meta_words(answer).partition(" ")[0]
+                normalized = {"oui": "OUI", "non": "NON", "yes": "OUI", "no": "NON",
+                              "true": "OUI", "false": "NON", "1": "OUI", "0": "NON"}.get(first_word, "")
+            else:
+                normalized = _meta_yes_no(answer)
             if normalized:
                 crm[field] = normalized
             else:
