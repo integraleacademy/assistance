@@ -855,7 +855,7 @@ function createCalendarAvailability(panel) {
     if (!panel.isConnected) return;
     const overview = cache.get('overview');
     const days = overview?.days;
-    const appointmentsLabel = count => count > 1 ? 'créneaux libres' : 'créneau libre';
+    const appointmentsLabel = count => count > 1 ? 'places restantes' : 'place restante';
     total.textContent = days ? Object.values(days).reduce((sum,count)=>sum+count,0) : '—';
     summary.querySelectorAll('button').forEach(tile=>{
       const date = tile.dataset.date, count = days?.[date];
@@ -943,8 +943,8 @@ function calendarPage(){
         <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Les 5 prochains jours <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p></div>
       </div>
       <div class="cassandre-grid">
-        <div class="cassandre-total" aria-live="polite"><span>Créneaux libres</span><strong>—</strong><small>au total</small></div>
-        <div class="cassandre-days" role="group" aria-label="Créneaux libres par jour"></div>
+        <div class="cassandre-total" aria-live="polite"><span>Places restantes</span><strong>—</strong><small>au total</small></div>
+        <div class="cassandre-days" role="group" aria-label="Places restantes par jour"></div>
       </div>
       <div class="cassandre-notice" role="status" hidden><span></span><button type="button">Réessayer</button></div>
     </section>
