@@ -80,6 +80,8 @@ const document = {
 const context = {
   document, console, Event: class { constructor(type) { this.type = type; } },
   C: {section: 'pistes'}, S: ['Nouveaux', 'A relancer'], statusFilter: '', leadScoreSort: '',
+  CPF_PENDING_PIPELINE_STATUS: 'CPF à traiter',
+  contactFormationOptions: ['APS','A3P'],
   selectedLeadIds: new Set(), visibleLeadIds: [], page: new Element({id:'page'}),
   rows: [], drilldown: null, CRM_CONFIG: {section: 'pistes'},
   esc: s => String(s ?? ''), header: () => '', crmIcon: () => '',

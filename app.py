@@ -59,7 +59,7 @@ from crm_exports import (
     crm_export_filename,
 )
 import fcntl
-from integrale_edof_client import EdofAPIError as WedofAPIError, read as _wedof_request, token as _edof_token
+from integrale_edof_client import EdofAPIError as WedofAPIError, gestion_origin, read as _wedof_request, token as _edof_token
 from yousign_service import (
     YousignClient,
     YousignError,
@@ -9114,7 +9114,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261114-meta-programmes"
+CRM_ASSET_VERSION = "20261114-cpf-dossiers"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -15198,9 +15198,20 @@ def _edof_sync_requests():
     # Import newly filed requests between full reconciliations, including when
     # the CRM was offline during their arrival. Never start a portal session.
     page = 1
+    folder_ids = set()
+    expected_total = None
+    started = time.time()
     while True:
         payload, headers = _wedof_request("/dossiers", params={"scope": "requests", "page": page})
         items = _wedof_items(payload)
+        total = int(headers["X-Total-Count"])
+        page_ids = {str(item.get("externalId", "")) for item in items}
+        if (len(page_ids) != len(items) or folder_ids.intersection(page_ids)
+                or any(not re.fullmatch(r"[0-9]{6,20}", ident) for ident in page_ids)
+                or (expected_total is not None and expected_total != total)):
+            raise WedofAPIError("La liste des demandes EDOF a changé pendant sa lecture.")
+        expected_total = total
+        folder_ids.update(page_ids)
         # A fresh portal observation can contain exactly the same requests.
         # Only write a page again when its business data (including contacts) changed.
         key = f"integrale-edof-requests-page-{page}"
@@ -15213,9 +15224,54 @@ def _edof_sync_requests():
                 _wedof_store_page(items, None, page, update_sync_state=False)
             with _wedof_connect() as db:
                 db.execute("INSERT OR REPLACE INTO wedof_sync_state VALUES (?, ?, ?)", (key, signature, _wedof_now()))
-        if len(items) < 100 or page * 100 >= int(headers["X-Total-Count"]):
-            return
+        if len(items) < 100 or len(folder_ids) >= total:
+            if len(folder_ids) != total:
+                raise WedofAPIError("Liste des demandes EDOF incomplète.")
+            break
         page += 1
+    # Publish only complete snapshots, including a genuine empty queue. An
+    # overlapping, slower sync must not restore a previous membership.
+    with _wedof_connect() as db:
+        db.execute("""
+            INSERT INTO wedof_sync_state(sync_key,value_json,updated_at)
+            VALUES ('integrale-edof-pending-folders', ?, ?)
+            ON CONFLICT(sync_key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at
+            WHERE CAST(wedof_sync_state.updated_at AS REAL) <= CAST(excluded.updated_at AS REAL)
+        """, (json.dumps(sorted(folder_ids)), str(started)))
+
+
+def _edof_pending_folders(data):
+    """One pipeline row per EDOF request, independently of the lead's stage."""
+    if not os.path.exists(_wedof_db_path()):
+        return None
+    with _wedof_connect() as db:
+        # Keep unlinked folders. Joining on the actual resource type also
+        # prevents historical WEDOF copies from multiplying the EDOF count.
+        rows = db.execute("""
+            SELECT ids.value AS folder_id, r.payload_json, l.contact_id
+            FROM wedof_sync_state AS queue
+            LEFT JOIN json_each(queue.value_json) AS ids ON TRUE
+            LEFT JOIN wedof_resources AS r ON r.resource_type='registrationFolder' AND r.stable_id=ids.value
+            LEFT JOIN wedof_contact_links AS l ON l.resource_type=r.resource_type AND l.resource_id=r.stable_id
+            WHERE queue.sync_key='integrale-edof-pending-folders'
+        """).fetchall()
+    if not rows:
+        return None
+    dashboard = gestion_origin() + "/admin/integrale-edof?section=state&group=requests&tab=request&folder="
+    result = []
+    for row in rows:
+        if row["folder_id"] is None:
+            continue
+        folder = json.loads(row["payload_json"] or "{}")
+        fields = _wedof_contact_payload(folder, data)
+        result.append({
+            "folder_id": row["folder_id"], "contact_id": row["contact_id"],
+            "edof_url": dashboard + quote(row["folder_id"], safe=""),
+            "prenom": fields["prenom"], "nom": fields["nom"], "formation": fields["formation"],
+            "lieu": fields["lieu"], "dates_formation": fields["dates_formation"],
+            "filed_at": folder.get("edofFiledAt") or folder.get("createdAt") or "",
+        })
+    return sorted(result, key=lambda item: (item["filed_at"], item["folder_id"]), reverse=True)
 
 
 def _wedof_background_sync_loop():
@@ -17192,6 +17248,8 @@ def crm_contact_updates():
         "appointments": appointments,
         "callback_pending_count": _crm_callback_pending_count(data),
     }
+    if section == "pistes":
+        payload["cpf_pending_folders"] = _edof_pending_folders(data)
     if section == "demandes-rappel":
         payload["callback_requests"] = _crm_callback_requests_payload(data)
     if request.args.get("delta") == "1":
@@ -19573,6 +19631,7 @@ def crm_bootstrap():
     appointments = _crm_calendly_appointments_payload(data)
     response = jsonify({
         "contacts": contacts,
+        **({"cpf_pending_folders": _edof_pending_folders(data)} if section == "pistes" else {}),
         "templates": _crm_templates_payload(data),
         "formation_sessions": get_upcoming_formation_sessions(data),
         "notifications": _crm_notifications_payload(

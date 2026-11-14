@@ -18,12 +18,16 @@ def token():
     return os.getenv("GESTION_STAGIAIRES_API_TOKEN", "").strip()
 
 
+def gestion_origin():
+    base = urlsplit(gestion_stagiaires_api_url() or "https://gestionstagiaires-r5no.onrender.com")
+    return urlunsplit((base.scheme, base.netloc, "", "", ""))
+
+
 def read(path, *, params=None, operation=None, retry_budget=None):
     secret = token()
     if not secret:
         raise EdofAPIError("La connexion du CRM à Gestion Stagiaires n’est pas configurée.")
-    base = urlsplit(gestion_stagiaires_api_url() or "https://gestionstagiaires-r5no.onrender.com")
-    url = urlunsplit((base.scheme, base.netloc, "/api/integrations/crm/integrale-edof" + path, "", ""))
+    url = gestion_origin() + "/api/integrations/crm/integrale-edof" + path
     retries = 1 if retry_budget is None else retry_budget
     for attempt in range(retries + 1):
         try:

@@ -21,9 +21,11 @@ def browser_helpers(*, refresh=False):
     helpers = [
         "const parisDateKey=()=> '2026-09-21';",
         "const canonicalCrmOrigin=()=> 'Autre';",
+        "const contactExcludesFranceTravail=()=>false;",
         section("const isActiveLead=", "const manualNextActionValue="),
         section("function relanceStatusDetails(", "function contactRelanceStatusMarkup("),
         section("const pipelineOverviewStatuses=", "const timelineButtons="),
+        section("function pipelineStatusCount(", "function cpfFolderTable("),
     ]
     if refresh:
         helpers.append(section("function refreshPipelineQueues()",
