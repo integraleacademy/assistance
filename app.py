@@ -9114,7 +9114,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261114-cpf-dossiers"
+CRM_ASSET_VERSION = "20261114-cpf-tableau-pistes"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -15268,6 +15268,7 @@ def _edof_pending_folders(data):
             "folder_id": row["folder_id"], "contact_id": row["contact_id"],
             "edof_url": dashboard + quote(row["folder_id"], safe=""),
             "prenom": fields["prenom"], "nom": fields["nom"], "formation": fields["formation"],
+            "desp_type": fields["desp_type"],
             "lieu": fields["lieu"], "dates_formation": fields["dates_formation"],
             "filed_at": folder.get("edofFiledAt") or folder.get("createdAt") or "",
         })

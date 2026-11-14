@@ -113,14 +113,14 @@ def test_pipeline_snapshots_follow_complete_request_list(cpf_client, monkeypatch
     data["crm_contacts"][0]["statut"] = "Disqualifié"
     application.save_data(data)
 
-    def request_row(ident, attendee):
+    def request_row(ident, attendee, title="Formation VTC"):
         return {"externalId": ident, "provider": "integrale_edof", "type": "cpf",
                 "state": "notProcessed", "createdAt": "2026-11-11", "attendee": attendee,
-                "trainingActionInfo": {"title": "Formation VTC"}}
+                "trainingActionInfo": {"title": title}}
 
     same_person = {"firstName": "Alice", "lastName": "Exemple"}
     items = [request_row("100001", same_person), request_row("100002", same_person),
-             request_row("100003", {})]
+             request_row("100003", {}, "DESP VAE")]
     total = 3
 
     def source(path, *, params):
@@ -138,7 +138,9 @@ def test_pipeline_snapshots_follow_complete_request_list(cpf_client, monkeypatch
     queue = result.json["cpf_pending_folders"]
     assert {r["folder_id"]: r["contact_id"] for r in queue} == {
         "100001": contact["id"], "100002": contact["id"], "100003": None}
-    assert all(r["formation"] == "Chauffeur VTC" and r["edof_url"].endswith(r["folder_id"]) for r in queue)
+    assert {r["folder_id"]: (r["formation"], r["desp_type"]) for r in queue} == {
+        "100001": ("Chauffeur VTC", ""), "100002": ("Chauffeur VTC", ""), "100003": ("DESP", "VAE")}
+    assert all(r["edof_url"].endswith(r["folder_id"]) for r in queue)
     assert result.json["contacts"][0]["statut"] == "Disqualifié"
     assert "cpf_pending_folders" not in cpf_client.get("/api/crm/bootstrap?section=contacts").json
     initial = cpf_client.get(updates).json
@@ -170,24 +172,32 @@ def test_pipeline_counts_folders_and_refreshes_even_when_no_contact_changes():
 
     production = "\n".join([
         section("const isActiveLead=", "const manualNextActionValue="),
+        section("const badge=", "const vaeEligibilityQuestions="),
+        section("function listOriginTone(", "const dashboardPeriods="),
         section("function listContactsForType(", "function listPage("),
         section("function refreshPipelineQueues()", "document.addEventListener('visibilitychange'"),
     ])
     script = r"""
 const assert=require('node:assert/strict'),C={section:'pistes'},location={search:''};
-const contacts=[{id:'one',statut:'Disqualifié',prenom:'Alice',nom:'Exemple'},
+const contacts=[{id:'one',statut:'Disqualifié',prenom:'Alice',nom:'Exemple',formation:'DESP',desp_type:'INITIAL',
+ mail:'alice@example.test',activity_counts:{emails:2},_summary:true,
+ integration_score:{score:72,level:'high'},origine:'Site internet'},
  {id:'two',statut:'Converti',archived_at:'2026-07-01'},{id:'three',statut:'En cours'}];
 const initial=JSON.stringify(contacts),dash=()=>null,dashboardDrilldownState=dash;
 let statusFilter='CPF à traiter',crmUpdateCursor='',crmRefreshInFlight=false,lastCrmRefreshAt=0;
 const active=()=>contacts.filter(c=>!c.archived_at),crmActiveContacts=active;
-const contactInStore=id=>contacts.find(c=>c.id===id),canonicalCrmOrigin=()=> 'Autre';
+const contactInStore=id=>contacts.find(c=>c.id===id),canonicalCrmOrigin=c=>c.origine||'Autre';
 const displayName=c=>[c.prenom,c.nom].filter(Boolean).join(' '),esc=s=>String(s??'');
 const contactSheetUrl=id=>'/crm/contacts?fiche='+id;
+const initials=()=> 'AE',contactCoordinateSummary=c=>c.mail||'',fmt=v=>v||'—';
+const contactPipelineStatusMarkup=c=>badge(c.statut),crmAppointments=[],leadScoreSort='',shortScoreLabel={high:'Élevé'};
+const window={CRMWorkspace:{contactCompleteness:c=>c===contacts[0]?83:0}};
 const selectedLeadIds=new Set();
 const scheduleCrmRefresh=()=>{},updateLeadCount=()=>{},updateVisibleAppointmentData=()=>{};
 const folder=(id,contact_id)=>({folder_id:id,contact_id,edof_url:'https://example.test/?folder='+id,
-    prenom:'Alice',nom:'Exemple',formation:'APS',filed_at:'2026-11-10'});
+    prenom:'Alice',nom:'Exemple',formation:'APS',dates_formation:'Du 2 au 5 novembre',filed_at:'2026-11-10'});
 let batch=[folder('100001','one'),folder('100002','one'),folder('100003','two'),folder('100004',null)];
+Object.assign(batch[1],{formation:'DESP',desp_type:'VAE'});
 const count={},input={value:'10000',dispatchEvent(){this.rows=listContactsForType('pistes')
     .filter(c=>contactHasPipelineStatus(c,statusFilter)&&c.cpf_folder_id.includes(this.value))}};
 const document={hidden:false,querySelector(q){
@@ -200,8 +210,20 @@ const api=async url=>{assert.ok(url.includes('section=pistes'));return {delta:tr
  await refreshCrmSnapshot();
  assert.equal(count.textContent,4);
  assert.deepEqual(input.rows.map(r=>r.id),['one','one','two',undefined]);
- const html=cpfFolderTable(input.rows);
- assert.equal((html.match(/fiche=one/g)||[]).length,2);
+ const options={selectable:true,scoreSortable:true,showCompleteness:true,showDespJourney:true};
+ const render=rows=>table(rows,{...options,cpfView:true});
+ const html=render(input.rows);
+ const headings=markup=>markup.match(/<thead>([\s\S]*?)<\/thead>/)[1];
+ assert.equal(headings(html),headings(table([contacts[0]],options)));
+ assert.match(html,/class="crm-activity-table"/);
+ assert.equal((html.match(/class="crm-row-link crm-row-link-primary" href="\/crm\/contacts\?fiche=one"/g)||[]).length,2);
+ assert.match(html,/class="avatar"/);
+ for(const value of ['alice@example.test','Site internet','2</strong> mails','72 — Élevé','83 %','APS','Du 2 au 5 novembre','10/11/2026','crm-desp-journey">VAE']){
+   assert.ok(html.includes(value),value);
+ }
+ assert.equal((html.match(/data-cpf-folder=/g)||[]).length,4);
+ assert.equal((html.match(/class="crm-cpf-reference"/g)||[]).length,4);
+ assert.doesNotMatch(html,/href="[^"]*undefined|data-id="undefined"|<a\b[^>]*>[^<]*<a\b/);
  assert.equal((html.match(/Sans fiche CRM/g)||[]).length,1);
  assert.equal((html.match(/data-lead-select="one"/g)||[]).length,2);
  assert.ok(!html.includes('data-lead-select="undefined"'));
@@ -209,7 +231,7 @@ const api=async url=>{assert.ok(url.includes('section=pistes'));return {delta:tr
  batch=batch.slice(1);await refreshCrmSnapshot();
  assert.equal(count.textContent,3);assert.equal(input.rows.length,3);assert.equal(input.value,'10000');
  batch=[];await refreshCrmSnapshot();assert.equal(count.textContent,0);
- assert.ok(cpfFolderTable(input.rows).includes('Aucun dossier CPF'));
+ assert.ok(render(input.rows).includes('Aucun dossier CPF'));
  statusFilter='';assert.deepEqual(listContactsForType('pistes').map(c=>c.id),['three']);
  assert.equal(JSON.stringify(contacts),initial);
 })().catch(error=>{console.error(error);process.exitCode=1});
