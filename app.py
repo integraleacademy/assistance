@@ -10492,6 +10492,25 @@ def _crm_backfill_meta_submissions(data):
         contact_id = str(contact.get("id") or "")
         source_fields = fields if contact_id not in source_contacts else None
         source_contacts.add(contact_id)
+        # L'ancien import lisait « CPF » et « France Travail » dans les
+        # libellés que le générateur de tests Meta répète comme réponses.
+        sample_id = submission.get("meta_lead_id")
+        if (source_fields and sample_id and contact.get("meta_sample_funding_repair_id") != sample_id
+                and _crm_is_meta_contact(contact)
+                and _meta_test_answer(f"{contact.get('prenom', '')} {contact.get('nom', '')}")
+                and crm_payload["formation"] in {"DESP", "APS"} and answer_rows
+                and all(_meta_test_answer(row["answer"]) for row in answer_rows)
+                and all(isinstance(row, dict) and _meta_test_answer(row.get("answer"))
+                        for row in contact.get("meta_answers") or [])):
+            previous = submission.get("mapped_fields") or {}
+            misread = [field for field in ("cpf", "identite_creation", "financement_ft")
+                       if previous.get(field) == "OUI" and not crm_payload.get(field)]
+            if misread:
+                for field in misread:
+                    if contact.get(field) == "OUI":
+                        contact[field] = ""
+                contact["meta_sample_funding_repair_id"] = sample_id
+                changed = True
         applied, _ = _meta_apply_contact_answers(
             contact, crm_payload, answer_rows, fields=source_fields,
             received_at=str(submission.get("received_at") or ""),

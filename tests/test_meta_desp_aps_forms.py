@@ -561,6 +561,29 @@ def test_meta_generated_sample_questions_are_never_financial_answers():
     assert not any(crm["meta_field_answers"].values())
 
 
+@pytest.mark.parametrize("real_name,real_answer", [(False, False), (True, False), (False, True)])
+def test_backfill_removes_legacy_funding_flags_only_from_meta_dummy_records(real_name, real_answer):
+    name = "CANDIDAT" if real_name else "LEAD: DUMMY DATA FOR NOM COMPLET"
+    answer = "Non" if real_answer else "<test lead: dummy data for financement>"
+    contact = {"id": "example-test", "origine": "META", "prenom": "Test", "nom": name,
+               "cpf": "OUI", "financement_ft": "OUI", "identite_creation": "NON"}
+    submission = {"meta_lead_id": "meta-test-id", "contact_id": contact["id"],
+                  "mapped_fields": dict.fromkeys(("cpf", "financement_ft", "identite_creation"), "OUI"),
+                  "raw_payload": {"form_id": "3605918179579680", FT_REQUEST: answer}}
+    data = {"crm_contacts": [contact], "crm_meta_lead_submissions": [submission]}
+    assert application._crm_backfill_meta_submissions(data)
+    if real_name or real_answer:
+        assert contact["cpf"] == contact["financement_ft"] == "OUI"
+        assert "meta_sample_funding_repair_id" not in contact
+    else:
+        assert contact["cpf"] == contact["financement_ft"] == ""
+        assert contact["meta_sample_funding_repair_id"] == submission["meta_lead_id"]
+        contact["financement_ft"] = "OUI"
+    assert contact["identite_creation"] == "NON"
+    assert not application._crm_backfill_meta_submissions(data)
+    assert contact["financement_ft"] == "OUI"
+
+
 @pytest.mark.parametrize("formation,form_id,slug", [
     ("APS", "1665286434987197", "aps"), ("DESP", "1124725393644713", "dirigeant"),
 ])
