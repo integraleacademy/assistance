@@ -1,0 +1,10 @@
+{% set contenu %}
+<!-- EMAIL_CONTENT_START -->
+<p>Merci de votre demande de renseignements sur la formation <strong>{{ email_header_title }}</strong> d’Intégrale Academy.</p>
+<p>{{ description }}</p>
+<p>Vous pouvez répondre à cet e-mail pour nous préciser votre projet ou nous poser vos questions.</p>
+<!-- EMAIL_CONTENT_END -->
+<p><a href="https://www.integraleacademy.com/dossiersfc">Consulter le dossier de présentation de la formation</a></p>
+{{ '{{ invitation_rdv }}' }}
+{% endset %}
+{% include 'crm_email_wrapper.html' %}

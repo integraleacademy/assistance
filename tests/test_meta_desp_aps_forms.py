@@ -50,8 +50,13 @@ def test_known_forms_keep_training_answers_and_do_not_send_a3p_messages(
     assert submission["mapped_fields"]["formation"] == expected_formation
     assert submission["raw_payload"] == payload
     assert submission["custom_answers"]["Question complémentaire"] == "Réponse conservée"
-    assert "automatic_delivery" not in submission
-    assert emails == [] and sms == []
+    assert submission["automatic_delivery"] == {"email": True, "sms": True}
+    assert len(emails) == len(sms) == 1
+    assert emails[0][0] == payload["Email"] and sms[0][0] == payload["Phone Number"]
+    assert expected_formation in emails[0][1]
+    for message in (*emails[0][2:], sms[0][1]):
+        assert expected_formation in message and "A3P" not in message
+        assert "{{" not in message
     assert len(salesforce) == 1
     if expected_formation == "DESP":
         expected_type = "VAE" if parcours == "VAE" else "INITIAL"
@@ -250,8 +255,6 @@ def test_new_aps_reused_technical_key_means_cpf_consulted_not_identity_created(p
 ])
 def test_new_form_webhooks_persist_business_fields_and_every_answer(tmp_path, monkeypatch, form_id, answers, expected):
     client = setup_client(tmp_path, monkeypatch)
-    for function in ("send_email_html", "send_sms"):
-        monkeypatch.setattr(application, function, lambda *args: pytest.fail("Unexpected A3P delivery"))
     payload = {
         "id": "new-form-" + form_id, "form_id": form_id,
         "nom_complet": "Lina Martin", "e-mail": "lina@example.fr",
@@ -269,6 +272,7 @@ def test_new_form_webhooks_persist_business_fields_and_every_answer(tmp_path, mo
     assert contact["telephone"] == "+33612345678"
     assert not contact.get("dates_formation") and not contact.get("identite_ok")
     stored = data["crm_meta_lead_submissions"][0]
+    assert stored["automatic_delivery"] == {"email": True, "sms": True}
     assert stored["raw_payload"] == payload
     assert stored["custom_answers"].items() >= answers.items()
     assert set(answers.values()) <= {row["answer"] for row in contact["meta_answers"]}
@@ -287,3 +291,104 @@ def test_new_cpf_question_preserves_ranges_and_unknown_amounts(amount, expected_
     })
     assert crm.get("cpf_montant", "") == expected_amount
     assert crm.get("cpf_palier", "") == expected_tier
+
+
+def test_france_travail_branch_does_not_invent_a_cpf_balance():
+    crm, _ = application._meta_crm_payload({"form_id": "1665286434987197"}, {
+        "quelle_solution_de_financement_envisagez-vous_en_priorité ?": "france travail, seul ou en complément du cpf.",
+        "si_france_travail_refuse_votre_demande,_pourriez-vous_régler_la_part_restant_à_votre_charge ?": "oui, je pourrais la régler.",
+    })
+    assert crm["financement_ft"] == crm["financement_perso_possible"] == "OUI"
+    assert not crm.get("cpf") and not crm.get("cpf_montant") and not crm.get("inscrit_ft")
+
+
+@pytest.mark.parametrize("formation,form_id,slug", [
+    ("APS", "1665286434987197", "aps"), ("DESP", "1124725393644713", "dirigeant"),
+])
+@pytest.mark.parametrize("score", [29, 30])
+def test_automatic_messages_use_the_visible_models_and_course_booking(
+        tmp_path, monkeypatch, formation, form_id, slug, score):
+    client = setup_client(tmp_path, monkeypatch)
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+    monkeypatch.setattr(application, "calculate_candidate_integration_score", lambda *args: {"score": score})
+    emails, sms = [], []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
+    models = client.get("/api/crm/templates").get_json()
+    editable = {t["id"]: t for t in models["automatic_meta"] if t.get("meta_information")}
+    assert len(editable) == 4
+    email_id = f"automatic-meta-{formation.lower()}-email"
+    sms_id = f"automatic-meta-{formation.lower()}-sms"
+    assert editable[email_id]["nom"] == editable[sms_id]["nom"] == f"{formation} META"
+    url = "https://calendly.com/integraleacademy/" + slug
+    for template_id in (email_id, sms_id):
+        preview = client.get(f"/api/crm/templates/{template_id}/meta-preview").get_json()["contenu"]
+        assert url in preview and "{{" not in preview
+    assert client.patch(f"/api/crm/templates/{email_id}", json={
+        "nom": "Modèle personnalisé", "sujet": "Infos {{ prenom }}",
+        "contenu": "<p>Dossier {{ prenom }}</p>{{ invitation_rdv }}",
+    }).status_code == 200
+    assert client.patch(f"/api/crm/templates/{sms_id}", json={
+        "contenu": "Projet {{ prenom }}. {{ invitation_rdv }}",
+    }).status_code == 200
+    models = client.get("/api/crm/templates").get_json()
+    assert sum(t["id"] == email_id for t in models["automatic_meta"] + models["email"]) == 1
+    assert post(client, lead(form_id=form_id)).status_code == 201
+    assert len(emails) == len(sms) == 1
+    assert emails[0][1] == "Infos Lina"
+    assert "Dossier Lina" in emails[0][2] and "Dossier Lina" in emails[0][3]
+    assert "Cassandre MENARD" in emails[0][3] and sms[0][1].startswith("Projet Lina.")
+    for message in (*emails[0][2:], sms[0][1]):
+        assert (url in message) == (score >= 30)
+        assert "{{" not in message
+
+
+def test_distinct_form_attached_to_contact_uses_only_its_own_coordinates_and_course(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    emails, sms = [], []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
+    monkeypatch.setattr(application, "send_sms", lambda *args: sms.append(args) or True)
+    assert post(client, lead(form_id="1665286434987197")).status_code == 201
+    another = lead(form_id="1124725393644713", leadgen_id="second-submission")
+    another.pop("Phone Number")
+    assert post(client, another).get_json()["result"] == "attached"
+    assert post(client, another).get_json()["result"] == "already_processed"
+    assert "APS" in emails[0][1] and "DESP" in emails[1][1]
+    assert len(emails) == 2 and len(sms) == 1
+    data = application.load_data()
+    assert data["crm_contacts"][0]["formation"] == "APS"
+    assert data["crm_meta_lead_submissions"][0]["automatic_delivery"] == {"email": True, "sms": False}
+
+
+def test_email_failure_leaves_sms_delivery_independent_and_logged(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    def failed_email(*args):
+        raise RuntimeError("messagerie indisponible")
+    monkeypatch.setattr(application, "send_email_html", failed_email)
+    assert post(client, lead(form_id="1665286434987197")).status_code == 201
+    data = application.load_data()
+    assert data["crm_meta_lead_submissions"][0]["automatic_delivery"] == {"email": False, "sms": True}
+    titles = {row["title"] for row in data["crm_contacts"][0]["activities"]}
+    assert {"Échec de l’e-mail automatique", "SMS automatique envoyé"} <= titles
+
+
+def test_receipt_survives_retry_and_preserves_a_write_during_delivery(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    payload = lead(form_id="1665286434987197")
+    calls = []
+
+    def deliver(*args):
+        calls.append(args)
+        assert post(client, payload).get_json()["result"] == "already_processed"
+        data = application.load_data()
+        data["crm_contacts"][0]["commentaires"] = "Note saisie pendant l’envoi"
+        application.save_data(data)
+        return True
+
+    monkeypatch.setattr(application, "send_email_html", deliver)
+    assert post(client, payload).status_code == 201
+    data = application.load_data()
+    assert len(calls) == 1
+    assert data["crm_contacts"][0]["commentaires"] == "Note saisie pendant l’envoi"
+    assert data["crm_meta_lead_submissions"][0]["automatic_delivery"] == {"email": True, "sms": True}
