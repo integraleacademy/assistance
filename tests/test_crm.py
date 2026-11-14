@@ -2046,6 +2046,7 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
         assert "Commencer mon Livret 1" in body
     quote_url, = set(re.findall(r'href="(http[^"]+/plan/[^"]+)"', body))
     assert subject == preview["sujet"]
+    assert "Bonjour {{ prenom }}," in preview["contenu"] and "Bonjour Anne &amp; Léa," in body
     assert body == preview["contenu"].replace("{{ prenom }}", "Anne &amp; Léa").replace("{{ lien_devis }}", quote_url)
     assert body.count(application.TRAINING_GOOGLE_REVIEWS_URL) == 1
     assert reviewer in body and "Lire les avis sur Google" in body
@@ -2082,7 +2083,7 @@ def test_crm_templates_include_meta_email_and_sms_for_each_formation(tmp_path, m
     ]
     email, sms = automatic_meta[:2]
     assert email["sujet"] == "Formation A3P à Puget-sur-Argens — vos prochaines sessions"
-    assert "{{ prenom }}" in email["contenu"]
+    assert "Bonjour {{ prenom }}," in email["contenu"]
     assert "Télécharger mon devis détaillé" not in email["contenu"]
     assert email["contenu"].index("Réserver un rendez-vous téléphonique") < email["contenu"].index("Cette formation permet")
     assert email["contenu"].count("https://calendly.com/integraleacademy/apr") == 1
