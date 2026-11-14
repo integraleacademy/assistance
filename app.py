@@ -20315,7 +20315,8 @@ def crm_meta_template_preview(template_id):
             if template_id != f"automatic-meta-{formation.lower()}-{kind}":
                 continue
             template = _meta_information_template(data, formation, kind)
-            contact = {"formation": formation, "prenom": "Camille"}
+            # No recipient is selected in the library. Keep the variable in the preview and copied HTML.
+            contact = {"formation": formation, "prenom": "{{ prenom }}"}
             body = _crm_resolve_message_variables(
                 template["contenu"], contact, html=kind == "email", data_store=data,
                 meta_booking=True,

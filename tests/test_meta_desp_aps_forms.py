@@ -373,7 +373,9 @@ def test_automatic_messages_use_the_visible_models_and_course_booking(
     url = "https://calendly.com/integraleacademy/" + slug
     for template_id in (email_id, sms_id):
         preview = client.get(f"/api/crm/templates/{template_id}/meta-preview").get_json()["contenu"]
-        assert url in preview and "{{" not in preview
+        assert url in preview and "{{" not in preview.replace("{{ prenom }}", "")
+        if template_id == email_id:
+            assert "Bonjour {{ prenom }}," in preview
     assert client.patch(f"/api/crm/templates/{email_id}", json={
         "nom": "Modèle personnalisé", "sujet": "Infos {{ prenom }}",
         "contenu": "<p>Dossier {{ prenom }}</p>{{ invitation_rdv }}",
@@ -466,7 +468,7 @@ def test_full_course_email_and_a3p_booking_panel_use_the_answers_for_this_submis
     course = "APS" if form_id == "1665286434987197" else "DESP"
     booking = "https://calendly.com/integraleacademy/" + ("aps" if course == "APS" else "dirigeant")
     for text in (plain, body):
-        assert "Lina" in text and "Cassandre MENARD" in text
+        assert "Bonjour Lina," in text and "Cassandre MENARD" in text
         assert all(value in text for value in contents)
         assert absent not in text
         assert "https://www.integraleacademy.com/dossiersfc" in text
@@ -504,13 +506,16 @@ def test_saved_legacy_meta_email_uses_the_new_layout_without_losing_edits(tmp_pa
         )
     data["crm_email_templates"] = [{
         **application._meta_information_template(data, "APS", "email"),
-        "contenu": legacy, "sujet": "Nos informations", "versions": [{"contenu": legacy}],
+        "contenu": legacy, "sujet": "Nos informations pour {{ prenom }}", "versions": [{"contenu": legacy}],
     }]
     application.save_data(data)
     with client.session_transaction() as session:
         session["user_email"] = "clement@integraleacademy.com"
-    preview = client.get("/api/crm/templates/automatic-meta-aps-email/meta-preview").get_json()["contenu"]
-    assert "<p>Projet de Camille.</p>" in preview and 'href="https://exemple.fr/brochure"' in preview
+    model = client.get("/api/crm/templates/automatic-meta-aps-email/meta-preview").get_json()
+    assert model["sujet"] == "Nos informations pour {{ prenom }}"
+    preview = model["contenu"]
+    assert "Bonjour {{ prenom }}," in preview and "<p>Projet de {{ prenom }}.</p>" in preview
+    assert 'href="https://exemple.fr/brochure"' in preview
     assert preview.count("<!doctype html>") == preview.count('class="academy-wordmark"') == 1
     assert preview.count("https://calendly.com/integraleacademy/aps") == 1
     assert preview.count("Memoji de Cassandre MENARD") == 1 and "/static/logo.png" not in preview
@@ -532,7 +537,8 @@ def test_meta_desp_preview_matches_delivery_and_keeps_individual_centres(tmp_pat
     monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
     preview = client.get("/api/crm/templates/automatic-meta-desp-email/meta-preview").get_json()["contenu"]
     assert post(client, lead(form_id="1124725393644713")).status_code == 201
-    assert emails[0][3] == preview.replace("Camille", "Lina")
+    assert "Bonjour {{ prenom }}," in preview
+    assert emails[0][3] == preview.replace("{{ prenom }}", "Lina")
     document = html5lib.parse(preview, namespaceHTMLElements=False)
     summary = document.find('.//table[@class="session-summary"]')
     places = summary.findall('.//table[@class="session-place"]')
