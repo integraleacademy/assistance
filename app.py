@@ -17,6 +17,7 @@ from secretariat_catalogue import (
     PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
 )
 import crm_public_sessions
+from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS
 import secretariat_calls
 import secretariat_messages
 from crm_read_cache import LastProjection, UpdateSnapshots
@@ -9373,16 +9374,21 @@ def _calendly_request(method, path, *, params=None, json_body=None, timeout=25):
         raise RuntimeError("Calendly a renvoyé une réponse illisible.") from exc
 
 
-def _calendly_paginated_collection(path, params=None, max_pages=100):
+def _calendly_paginated_collection(path, params=None, max_pages=100, *, strict=False):
     params = dict(params or {})
     collection = []
     for _ in range(max_pages):
         page = _calendly_request("GET", path, params=params)
+        if strict and (not isinstance(page, dict) or not isinstance(page.get("collection"), list)):
+            raise RuntimeError("Calendly a renvoyé des disponibilités incomplètes.")
         collection.extend(page.get("collection") or [])
         token = (page.get("pagination") or {}).get("next_page_token")
         if not token:
             break
         params["page_token"] = token
+    else:
+        if strict:
+            raise RuntimeError("La liste des disponibilités Calendly est incomplète.")
     return collection
 
 
@@ -16281,6 +16287,42 @@ def _crm_calendly_appointments_payload(data):
 def crm_calendly_appointments():
     """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
     return jsonify(_crm_calendly_appointments_payload(_crm_prepared_read_model()))
+
+
+_CASSANDRE_CALENDAR = CassandreCalendar()
+
+
+@app.get("/api/crm/calendly/cassandre-availability")
+@login_required
+def crm_cassandre_availability():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    today = now.astimezone(CALENDAR_PARIS).date()
+    selected = request.args.get("date")
+    try:
+        first = datetime.date.fromisoformat(selected) if selected is not None else today
+        if (selected is not None and first.isoformat() != selected) or first.year >= 9999:
+            raise ValueError
+    except ValueError:
+        return jsonify(error="Choisissez une date valide."), 400
+    length = 1 if selected is not None else 5
+    try:
+        data = _load_data_snapshot()
+        state = data.get("crm_calendly") or {}
+        account = (state.get("organization"), state.get("user"), state.get("configured_at"))
+        if first >= today and not _calendly_token():
+            raise RuntimeError("La connexion Calendly n’est pas configurée.")
+        days = _CASSANDRE_CALENDAR.counts(
+            first, length, now, account, lambda: _calendly_event_types_for_context(data),
+            lambda path, params: _calendly_paginated_collection(path, params, strict=True),
+            refresh=request.args.get("refresh") == "1",
+        )
+    except RuntimeError as exc:
+        return _calendly_route_error(exc)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return jsonify(error="Calendly a renvoyé des disponibilités incomplètes pour Cassandre."), 502
+    response = jsonify(days=days)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
