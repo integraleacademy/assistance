@@ -1,14 +1,18 @@
 {% extends "emails/training/layout.html" %}
-{% from "emails/training/components.html" import button, fact, google_review, notice, section %}
-
 {% set document_title = "Formation Dirigeant d’Entreprise de Sécurité Privée - Intégrale Academy" %}
 {% set course_label = "Formation DESP — Dirigeant Sécurité Privée" %}
-{% set headline = "Créez et dirigez votre entreprise de sécurité privée" %}
+{% set title_lead = "Créez et dirigez" %}
+{% set title_italic = "votre entreprise de sécurité privée" %}
 {% set subtitle = "Formation reconnue par l’État — RNCP40385, niveau 5, équivalent Bac+2" %}
-{% set scene = "/images/desp/manuel/direction.webp" %}
+{% set scene = "/images/desp/manuel/pilotage.webp" %}
+{% set focal = 35 %}
+{% set accent = "#ac4b23" %}
+{% set pale = "#ffd0ad" %}
+{% set tint = "#faebdf" %}
+{% from "emails/training/components.html" import button, fact, google_review, notice, section, price with context %}
 
 {% block introduction %}
-  <p style="margin:0 0 12px;color:#23282a;font:700 19px/25px Arial,Helvetica,sans-serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
   <p style="margin:0 0 12px;">Cette formation vous permet d’acquérir les compétences indispensables pour <strong>créer, diriger et gérer une entreprise de sécurité privée</strong>. Elle vous permet également de demander votre <strong>agrément dirigeant</strong> auprès du <strong>CNAPS</strong>, conformément à la réglementation.</p>
   <p style="margin:0 0 12px;">Elle s’adresse aux personnes qui souhaitent structurer un projet sérieux : création d’entreprise, reprise d’activité, développement d’une société de sécurité ou mise en conformité réglementaire.</p>
@@ -23,25 +27,25 @@
 {% endblock %}
 
 {% block details %}
-{% call section("📄 Dossier de présentation") %}
+{% call section("📄 Dossier de présentation", "dossier", lead="📄 Dossier") %}
   <p style="margin:0 0 12px;">Vous pouvez consulter le dossier complet de présentation de la formation DESP.</p>
-  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc") }}
+  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}
 {% endcall %}
 
-{% call section("🎓 Durée et organisation") %}
+{% call section("🎓 Durée et organisation", lead="🎓 Durée et") %}
   <p style="margin:0 0 12px;">La formation complète se déroule sur <strong>245 heures</strong>, réparties ainsi :</p>
   <ul style="margin:0 0 14px;padding-left:22px;"><li>175 heures de e-learning à distance</li> <li>70 heures de présentiel, soit 2 semaines</li> </ul>
   <p style="margin:0;">Le e-learning est accessible 24h/24 depuis un ordinateur, une tablette ou un smartphone, avec accompagnement pédagogique tout au long du parcours.</p>
 {% endcall %}
 
-{% call section("🏫 Prochaines formations") %}
+{% call section("🏫 Prochaines formations", lead="🏫 Prochaines") %}
   {{ session_html|safe }}
   <p style="margin:0 0 12px;">Retrouvez les dates de toutes nos formations en cliquant <a href="https://www.integraleacademy.com/planning" style="color:#795415;font-weight:bold;text-decoration:underline;">ici</a>.</p>
   <p style="margin:0;">Centre de formation : <strong>{{ centre_display }}</strong></p>
 {% endcall %}
 
-{% call section("💶 Tarif et financement", "finance") %}
-  <p style="margin:0 0 12px;color:#ffffff;font:700 31px/35px Arial,Helvetica,sans-serif;">{{ tuition }}</p>
+{% call section("💶 Tarif et financement", "finance", lead="💶 Tarif et") %}
+  {{ price(tuition) }}
   <p style="margin:0 0 12px;">Le tarif de la formation est de <strong>{{ tuition }}</strong>.<br> Elle est finançable via votre <strong>Compte Personnel de Formation (CPF)</strong>.</p>
   <p style="margin:0 0 12px;">Pour utiliser votre Compte Personnel de Formation (CPF) ou faire une demande de financement à France Travail, vous devez créer et activer votre <strong>Identité Numérique La Poste</strong>.</p>
   {% if devis_url %}
@@ -49,25 +53,24 @@
   {% endif %}
 {% endcall %}
 
-{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION") %}
+{{ google_review("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP", google_reviews_url, google_rating) }}
+
+{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION", lead="🔐 Identité Numérique") %}
   <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
   <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
   {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
 {% endcall %}
 
-{{ google_review("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP", google_reviews_url, google_rating) }}
-
-{% call section("📞 Prochaine étape", "action") %}
+{% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Pour démarrer votre projet, découvrir les possibilités de financement ou réserver votre place, vous pouvez planifier un rendez-vous téléphonique avec notre équipe.</p>
   {{ button("Réserver un rendez-vous", "https://calendly.com/integraleacademy/dirigeant", primary=true) }}
 {% endcall %}
 
-{% call section("🤖 Une question immédiate ?", "help") %}
+{% call section("🤖 Une question immédiate ?", "help", lead="🤖 Une question") %}
   <p style="margin:0 0 12px;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br> pour obtenir des réponses immédiates sur la formation, le CPF, le financement, l’agrément CNAPS ou votre projet de création d’entreprise.</p>
   <p style="margin:0 0 12px;">💬 Réponse immédiate, même le soir ou le week-end.</p>
   {{ button("🚀 Poser une question à l’IA Intégrale Academy", "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy") }}
 {% endcall %}
-
 {% endblock %}
 
 {% block closing %}

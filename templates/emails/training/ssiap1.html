@@ -1,14 +1,18 @@
 {% extends "emails/training/layout.html" %}
-{% from "emails/training/components.html" import button, fact, google_review, notice, section %}
-
 {% set document_title = "Formation SSIAP 1 - Intégrale Academy" %}
 {% set course_label = "Formation SSIAP 1 — Sécurité incendie" %}
-{% set headline = "Devenez Agent de Sécurité Incendie SSIAP 1" %}
+{% set title_lead = "Devenez Agent de" %}
+{% set title_italic = "Sécurité Incendie SSIAP 1" %}
 {% set subtitle = "Formation officielle pour exercer comme agent de sécurité incendie en ERP et IGH" %}
-{% set scene = "/images/formation-scenes-manuel/ssiap-1-galerie-ssi.webp" %}
+{% set scene = "/images/ssiap-1/manuel/prevention.webp" %}
+{% set focal = 39 %}
+{% set accent = "#b6383d" %}
+{% set pale = "#ffc0b6" %}
+{% set tint = "#fae8e6" %}
+{% from "emails/training/components.html" import button, fact, google_review, notice, section, price with context %}
 
 {% block introduction %}
-  <p style="margin:0 0 12px;color:#23282a;font:700 19px/25px Arial,Helvetica,sans-serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>SSIAP 1 – Agent de Service de Sécurité Incendie et d’Assistance à Personnes</strong>.</p>
   <p style="margin:0 0 12px;">Cette formation vous permet d’acquérir les compétences nécessaires pour prévenir les risques d’incendie, intervenir face à un début de sinistre et porter assistance aux personnes.</p>
   <p style="margin:0 0 12px;">À l’issue de la formation et après réussite à l’examen, vous obtenez le <strong>diplôme SSIAP 1</strong>, permettant d’exercer dans les établissements recevant du public (ERP) et les immeubles de grande hauteur (IGH).</p>
@@ -23,25 +27,25 @@
 {% endblock %}
 
 {% block details %}
-{% call section("📄 Dossier de présentation") %}
+{% call section("📄 Dossier de présentation", "dossier", lead="📄 Dossier") %}
   <p style="margin:0 0 12px;">Vous pouvez consulter le dossier complet de présentation de la formation SSIAP 1.</p>
-  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc") }}
+  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}
 {% endcall %}
 
-{% call section("📅 Prochaines sessions") %}
+{% call section("📅 Prochaines sessions", lead="📅 Prochaines") %}
   {{ session_html|safe }}
 {% endcall %}
 
-{% call section("🎓 Durée et organisation") %}
+{% call section("🎓 Durée et organisation", lead="🎓 Durée et") %}
   <p style="margin:0;"><strong>67 heures de formation</strong> hors examen<br> Formation en <strong>présentiel</strong><br> Durée : <strong>environ 2 semaines</strong></p>
 {% endcall %}
 
-{% call section("📍 Lieu de formation") %}
+{% call section("📍 Lieu de formation", lead="📍 Lieu de") %}
   <p style="margin:0;"><strong>{{ centre_label }}</strong><br> <strong>{{ centre_address }}</strong></p>
 {% endcall %}
 
-{% call section("💶 Tarif et financement", "finance") %}
-  <p style="margin:0 0 12px;color:#ffffff;font:700 31px/35px Arial,Helvetica,sans-serif;">{{ tarif_display }}</p>
+{% call section("💶 Tarif et financement", "finance", lead="💶 Tarif et") %}
+  {{ price(tarif_display) }}
   <p style="margin:0 0 12px;">{{ secourisme_info }}</p>
   <p style="margin:0 0 12px;">Financements possibles :</p>
   <ul style="margin:0 0 14px;padding-left:22px;"><li><strong>Compte Personnel de Formation (CPF)</strong></li> <li><strong>Demande de financement</strong> auprès de <strong>France Travail</strong></li> <li><strong>Financement personnel</strong> : acompte de 30 % + paiement en plusieurs fois</li> </ul>
@@ -49,33 +53,32 @@
   {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
 {% endcall %}
 
-{% call section("✅ Prérequis obligatoires") %}
+{{ google_review("didier", "Bonne expérience des formations SSIAP et TFP ADS. Merci aux formateurs.", "SSIAP 1", google_reviews_url, google_rating) }}
+
+{% call section("✅ Prérequis obligatoires", lead="✅ Prérequis") %}
   <ul style="margin:0 0 14px;padding-left:22px;"><li>SST en cours de validité, PSC1 de moins de 2 ans, PSE1 ou équivalent</li> <li>Certificat médical d’aptitude physique de moins de 3 mois</li> <li>Capacité suffisante à lire, écrire et comprendre le français</li> </ul>
 {% endcall %}
 
-{% call section("🔥 Objectifs de la formation") %}
+{% call section("🔥 Objectifs de la formation", lead="🔥 Objectifs de") %}
   <p style="margin:0;">✅ Prévenir les risques d’incendie<br> ✅ Sensibiliser les occupants aux consignes de sécurité<br> ✅ Intervenir face à un début d’incendie<br> ✅ Assurer l’alerte et l’accueil des secours<br> ✅ Participer à l’évacuation et porter assistance aux personnes</p>
 {% endcall %}
 
-{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION") %}
+{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION", lead="🔐 Identité Numérique") %}
   <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
   <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
   {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
 {% endcall %}
 
-{{ google_review("didier", "Bonne expérience des formations SSIAP et TFP ADS. Merci aux formateurs.", "SSIAP 1", google_reviews_url, google_rating) }}
-
-{% call section("📞 Prochaine étape", "action") %}
+{% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place, vous pouvez planifier un rendez-vous téléphonique avec notre équipe.</p>
   {{ button("Réserver un rendez-vous", "https://calendly.com/integraleacademy/ssiap1", primary=true) }}
 {% endcall %}
 
-{% call section("🤖 Une question immédiate ?", "help") %}
+{% call section("🤖 Une question immédiate ?", "help", lead="🤖 Une question") %}
   <p style="margin:0 0 12px;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br> pour obtenir des réponses immédiates sur la formation SSIAP 1, les prérequis, le CPF, France Travail ou votre projet professionnel.</p>
   <p style="margin:0 0 12px;">💬 Réponse immédiate, même le soir ou le week-end.</p>
   {{ button("🚀 Poser une question à l’IA Intégrale Academy", "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy") }}
 {% endcall %}
-
 {% endblock %}
 
 {% block closing %}

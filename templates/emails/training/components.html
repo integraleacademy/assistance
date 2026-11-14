@@ -1,57 +1,75 @@
 {% macro fact(icon, title, detail, divider=false) -%}
-<td class="fact-cell" width="33%" valign="top" style="width:33%;padding:14px 12px;text-align:left;{% if divider %}border-left:1px solid #e2ded5;{% endif %}font-family:Arial,Helvetica,sans-serif;">
-  <div style="margin:0 0 5px;font-size:17px;line-height:21px;">{{ icon }}</div>
-  <strong style="display:block;color:#22282a;font-size:15px;line-height:20px;">{{ title }}</strong>
-  <span style="display:block;margin-top:3px;color:#535957;font-size:13px;line-height:18px;">{{ detail }}</span>
+<td class="fact" valign="top" width="33%" style="width:33%;padding:2px {{ '12px' if divider else '12px 2px 0' }};{% if divider %}border-left:1px solid #d6dfe5;{% endif %}font-family:Arial,Helvetica,sans-serif;">
+  <span style="display:block;margin-bottom:4px;font-size:15px;line-height:18px;">{{ icon }}</span>
+  <strong class="fact-title" style="display:block;color:{{ accent }};font-size:15px;line-height:18px;">{{ title }}</strong>
+  <span class="fact-text" style="display:block;margin-top:4px;color:#4a5863;font:13px/17px Arial,Helvetica,sans-serif;">{{ detail }}</span>
 </td>
 {%- endmacro %}
 
 {% macro button(label, url, primary=false) -%}
-{% set background = '#f6cb68' if primary else '#ffffff' %}
-{% set border = '#f6cb68' if primary else '#b4b6ae' %}
-<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width:100%;margin:4px 0 8px;">
-  <tr><td bgcolor="{{ background }}" style="border:1px solid {{ border }};border-radius:8px;mso-padding-alt:12px 16px;">
-    <a href="{{ url }}" style="display:block;padding:12px 16px;color:#202626;font:700 15px/20px Arial,Helvetica,sans-serif;text-decoration:none;mso-padding-alt:0;">{{ label }}</a>
-  </td></tr>
-</table>
+{% if primary %}
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width:100%;margin:9px 0 0;"><tr>
+  <td bgcolor="{{ accent }}" style="border:1px solid {{ accent }};border-radius:25px;mso-padding-alt:11px 19px;">
+    <a href="{{ url }}" style="display:block;padding:11px 19px;color:#ffffff;font:700 15px/20px Arial,Helvetica,sans-serif;text-decoration:none;mso-padding-alt:0;">{{ label }}</a>
+  </td>
+</tr></table>
+{% else %}
+<p style="margin:7px 0 2px;"><a href="{{ url }}" style="color:{{ accent }};font:700 15px/22px Arial,Helvetica,sans-serif;text-decoration:underline;">{{ label }}</a></p>
+{% endif %}
 {%- endmacro %}
 
 {% macro notice(message) -%}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-  <tr><td bgcolor="#fbf5e5" style="padding:12px 15px;border-left:3px solid #c79b42;color:#58431b;font:700 15px/22px Arial,Helvetica,sans-serif;">{{ message }}</td></tr>
-</table>
+<p style="margin:9px 0 0;border-left:3px solid {{ accent }};padding:3px 0 3px 11px;color:#334450;font:italic 17px/23px Georgia,'Times New Roman',serif;">{{ message }}</p>
 {%- endmacro %}
 
-{% macro section(title, tone='standard', eyebrow='') -%}
-{% set featured = tone in ('finance', 'action') %}
-{% set bg = '#242b2c' if featured else ('#faf6eb' if tone == 'notice' else ('#f3f5f3' if tone == 'help' else '#ffffff')) %}
-<tr><td class="gutter" style="padding:0 30px {{ '0' if tone == 'standard' else '16' }}px;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-    <tr><td bgcolor="{{ bg }}" {% if tone != 'standard' %}class="inner-pad"{% endif %} style="padding:{{ '22px 0' if tone == 'standard' else '24px' }};{% if tone == 'standard' %}border-top:1px solid #dedfd8;{% else %}border-radius:10px;{% endif %}color:{{ '#f7f6f1' if featured else '#313638' }};font:16px/25px Arial,Helvetica,sans-serif;">
-      {% if eyebrow %}<p style="margin:0 0 7px;color:#74541b;font:700 12px/17px Arial,Helvetica,sans-serif;letter-spacing:.7px;">{{ eyebrow }}</p>{% endif %}
-      <h2 style="margin:0 0 10px;color:{{ '#f6cf76' if featured else '#252a2b' }};font:700 22px/27px Arial,Helvetica,sans-serif;letter-spacing:-.4px;">{{ title }}</h2>
+{% macro price(amount) -%}
+<p style="margin:0 0 14px;color:#ffffff;font:italic 38px/42px Georgia,'Times New Roman',serif;letter-spacing:-.8px;">{{ amount }}</p>
+{%- endmacro %}
+
+{% macro heading(title, lead, color, large=false) -%}
+<h2 class="{{ 'feature-title' if large else 'spread-heading' }}" aria-label="{{ title }}" style="margin:0;color:{{ color }};font:700 {{ '33px/36px' if large else '21px/25px' }} Arial,Helvetica,sans-serif;letter-spacing:-.6px;">{{ lead }} <em style="font-family:Georgia,'Times New Roman',serif;font-weight:400;font-style:italic;">{{ title[lead|length:]|trim }}</em></h2>
+{%- endmacro %}
+
+{% macro section(title, tone='standard', eyebrow='', lead='') -%}
+{% if tone == 'standard' %}
+<tr><td class="inset" style="padding:0 30px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-top:1px solid #ced9df;"><tr>
+    <td class="spread-title" valign="top" width="185" style="width:185px;padding:19px 18px 18px 0;">
+      {{ heading(title, lead, '#192b39') }}
+    </td>
+    <td class="spread-copy" valign="top" style="padding:19px 0 18px;color:#293844;font:15px/23px Arial,Helvetica,sans-serif;">
       {{ caller() }}
-    </td></tr>
-  </table>
+    </td>
+  </tr></table>
 </td></tr>
+{% elif tone == 'dossier' %}
+<tr><td class="inset" bgcolor="{{ tint }}" style="padding:16px 30px;background-color:{{ tint }};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
+    <td class="spread-title" valign="middle" width="185" style="width:185px;padding:0 18px 0 0;">{{ heading(title, lead, '#192b39') }}</td>
+    <td class="spread-copy" valign="middle" style="color:#293844;font:15px/22px Arial,Helvetica,sans-serif;">{{ caller() }}</td>
+  </tr></table>
+</td></tr>
+{% else %}
+{% set dark = tone == 'finance' %}
+{% set panel = '#152634' if dark else (tint if tone == 'action' else ('#f6f4ed' if tone == 'notice' else '#f0f3f5')) %}
+<tr><td bgcolor="{{ panel }}" class="inset" style="padding:21px 30px;background-color:{{ panel }};border-top:{{ '4px solid ' ~ accent if tone in ('finance','action') else '1px solid #d6dfe1' }};color:{{ '#f5f7f9' if dark else '#293844' }};font:15px/23px Arial,Helvetica,sans-serif;">
+  {% if eyebrow %}<p style="margin:0 0 7px;color:#705721;font:700 10px/15px Arial,Helvetica,sans-serif;letter-spacing:1.4px;">{{ eyebrow }}</p>{% endif %}
+  {{ heading(title, lead, pale if dark else '#162b3b', tone in ('finance','action')) }}
+  <div style="margin-top:10px;">{{ caller() }}</div>
+</td></tr>
+{% endif %}
 {%- endmacro %}
 
-{# The rating and the course excerpts correspond to /#avis-google on the official website. #}
+{# The overall rating and the attributed excerpts match the official site's /#avis-google section. #}
 {% macro google_review(author, excerpt, course, maps_url, rating) -%}
-<tr><td class="gutter" style="padding:10px 30px 18px;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f7f3e9" style="width:100%;border:1px solid #dfd8c6;border-radius:10px;">
+<tr><td class="inset" bgcolor="#ffffff" style="padding:23px 30px;background-color:#ffffff;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-top:2px solid #1e3243;border-bottom:1px solid #bccad2;">
     <tr>
-      <td class="rating-cell" width="128" valign="middle" style="width:128px;padding:18px 16px;border-right:1px solid #d9d1bd;font-family:Arial,Helvetica,sans-serif;text-align:left;">
-        <p style="margin:0 0 6px;color:#423f35;font-size:14px;line-height:18px;font-weight:bold;">Avis Google</p>
-        <p style="margin:0;color:#252927;font-size:31px;line-height:34px;font-weight:bold;">{{ rating }}<span style="font-size:16px;">/5</span></p>
-        <p aria-hidden="true" style="margin:4px 0 0;color:#916100;font-size:15px;line-height:18px;letter-spacing:1px;">★★★★★</p>
-      </td>
-      <td class="quote-cell" valign="middle" style="padding:18px;color:#292d2d;">
-        <p style="margin:0 0 8px;font:italic 20px/26px Georgia,'Times New Roman',serif;">« {{ excerpt }} »</p>
-        <p style="margin:0 0 8px;color:#51534d;font:700 13px/18px Arial,Helvetica,sans-serif;">{{ author }} · {{ course }}</p>
-        <a href="{{ maps_url }}" style="color:#49380f;font:700 13px/20px Arial,Helvetica,sans-serif;text-decoration:underline;">Lire les avis sur Google</a>
-      </td>
+      <td style="padding:11px 0 9px;color:#1a3042;font:700 13px/18px Arial,Helvetica,sans-serif;">Avis Google</td>
+      <td align="right" style="padding:11px 0 9px;color:#1a3042;font:700 14px/18px Arial,Helvetica,sans-serif;"><span aria-hidden="true" style="color:#906510;letter-spacing:1px;">★★★★★</span> &nbsp;{{ rating }}/5</td>
     </tr>
+    <tr><td colspan="2" class="quote" style="padding:0;color:#1a3042;font:italic 29px/34px Georgia,'Times New Roman',serif;"><blockquote style="margin:0;">« {{ excerpt }} »</blockquote></td></tr>
+    <tr><td colspan="2" style="padding:11px 0 13px;color:#3c505c;font:13px/19px Arial,Helvetica,sans-serif;"><b>{{ author }}</b> · {{ course }} &nbsp; <a href="{{ maps_url }}" style="display:inline-block;color:{{ accent }};font-weight:bold;text-decoration:underline;">Lire les avis sur Google</a></td></tr>
   </table>
 </td></tr>
 {%- endmacro %}

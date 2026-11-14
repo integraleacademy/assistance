@@ -2020,6 +2020,9 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
     assert body == preview["contenu"].replace("{{ prenom }}", "Anne &amp; Léa").replace("{{ lien_devis }}", quote_url)
     assert body.count(application.TRAINING_GOOGLE_REVIEWS_URL) == 1
     assert reviewer in body and "Lire les avis sur Google" in body
+    cover = re.search(r'<h1\b[^>]*>(.*?)</h1>', body, re.S)
+    assert cover and re.search(r'<em\b[^>]*>[^<]+</em>', cover[1])
+    assert body.count('class="cover-art"') == 1
     assert "4,8/5" in plain and application.TRAINING_GOOGLE_REVIEWS_URL in plain
 
 
