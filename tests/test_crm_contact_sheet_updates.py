@@ -223,7 +223,8 @@ def test_tracking_and_activity_panels_use_the_requested_default_layout():
 def test_training_place_dates_and_cpf_tier_offer_explicit_choices():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
-    assert 'form.lieu.innerHTML=`<option value="À déterminer">À déterminer</option>' in javascript
+    assert "emptyLocation=metaLocation?'':'À déterminer'" in javascript
+    assert "esc(metaLocation||'À déterminer')" in javascript
     assert (
         'form.dates_formation.innerHTML=`<option value="À déterminer">'
         'À déterminer</option>'
@@ -237,6 +238,32 @@ def test_training_place_dates_and_cpf_tier_offer_explicit_choices():
         "Plus de 4 000 €",
     ):
         assert tier in javascript
+
+
+def test_meta_answers_are_visible_and_distinct_from_financial_confirmations():
+    source = CRM_JS.read_text(encoding="utf-8")
+    helpers = source[source.index("function metaFieldPlaceholder("):source.index("function selectField(")]
+    escape = next(line for line in source.splitlines() if line.startswith("const esc="))
+    script = escape + helpers + r"""
+const assert=require('node:assert/strict');
+global.window=global;
+require('./static/crm_workspace.js');
+const answers={lieu:'',desp_type:'je souhaite être conseillé.',financement_ft:'faire le point.',financement_perso_possible:'examiner le <devis>.'};
+const c={formation:'DESP',lieu:'À déterminer',cpf:'NON',meta_source:{formation:'DESP',field_answers:answers}};
+assert.equal(metaFieldPlaceholder(c,'lieu'),'Aucun lieu communiqué dans Meta');
+assert.equal(metaFieldPlaceholder(c,'desp_type'),'Meta · Je souhaite être conseillé.');
+assert.equal(metaFieldPlaceholder(c,'desp_type','APS'),'');
+const html=selectHtml('financement_perso_possible','Paiement personnel',c);
+assert.match(html,/Meta · Examiner le &lt;devis&gt;\./);
+assert(!html.includes('checked'));
+assert(selectHtml('financement_ft','France Travail',{...c,financement_ft:'NON'}).includes('value="NON" checked'));
+const fields=Object.fromEntries(CRMWorkspace.contactCompletenessDetails(c).requirements.map(item=>[item.key,item.complete]));
+assert.equal(fields.lieu,false);
+for(const key of ['desp_type','financement_ft','financement_perso_possible'])assert.equal(fields[key],true);
+assert(!('statut_demande_financement_ft' in fields));
+assert.equal(metaFieldPlaceholder({formation:'DESP'},'lieu'),'');
+"""
+    subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)
 
 
 def test_personal_funding_question_is_hidden_when_cpf_covers_training():
