@@ -1,6 +1,6 @@
 {% extends "emails/training/layout.html" %}
 {% set document_title = "Formation Dirigeant d’Entreprise de Sécurité Privée - Intégrale Academy" %}
-{% set course_label = "Formation DESP — Dirigeant Sécurité Privée" %}
+{% set course_label = "Formation DESP — " ~ centres[0].city if centres|length == 1 else "Formation DESP — Dirigeant Sécurité Privée" %}
 {% set title_lead = "Créez et dirigez" %}
 {% set title_italic = "votre entreprise de sécurité privée" %}
 {% set subtitle = "Formation reconnue par l’État — RNCP40385, niveau 5, équivalent Bac+2" %}
@@ -39,11 +39,7 @@
   <p style="margin:0;">Le e-learning est accessible 24h/24 depuis un ordinateur, une tablette ou un smartphone, avec accompagnement pédagogique tout au long du parcours.</p>
 {% endcall %}
 
-{% call section("🏫 Prochaines formations", lead="🏫 Prochaines") %}
-  {{ session_html|safe }}
-  <p style="margin:0 0 12px;">Retrouvez les dates de toutes nos formations en cliquant <a href="https://www.integraleacademy.com/planning" style="color:#795415;font-weight:bold;text-decoration:underline;">ici</a>.</p>
-  <p style="margin:0;">Centre de formation : <strong>{{ centre_display }}</strong></p>
-{% endcall %}
+{% include "emails/training/desp_sessions.html" %}
 
 {% call section("💶 Tarif et financement", "finance", lead="💶 Tarif et") %}
   {{ price(tuition) }}

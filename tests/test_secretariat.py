@@ -753,6 +753,23 @@ def test_secretariat_summary_reuses_existing_contact_link_for_cached_appointment
     assert data["crm_contacts"][0]["formulaire"] == {}
 
 
+def test_desp_call_summary_names_the_paris_teaching_venue_in_html_and_text(client, monkeypatch):
+    monkeypatch.setattr(application, "_crm_ai", lambda *args, **kwargs: "{}")
+    monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda *_: {
+        "paris": {"DESP_INIT": [{"label": "Session de mars"}]},
+        "cote_azur": {"DESP_INIT": [{"label": "Session de mai"}]},
+    })
+    with application.app.test_request_context():
+        _, plain, body = application._build_secretariat_followup_email(
+            {"formation": "DESP_INIT", "formation_date_souhaitee": "Paris — Session de mars"},
+            {"prenom": "Camille"},
+        )
+    for text in (plain, body):
+        assert "Intégrale Academy, 34 rue Poissonnière, 75002 Paris" in text and "Rivoli" not in text
+        assert "54 chemin du Carreou, 83480 Puget-sur-Argens" in text
+        assert "Session de mars" in text and "Session de mai" in text
+
+
 def test_secretariat_finds_booking_by_phone_when_calendly_email_differs(client, monkeypatch):
     data = dict(application.DEFAULT_DATA)
     data["crm_calendly_appointments"] = []

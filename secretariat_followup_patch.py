@@ -289,7 +289,12 @@ def register_secretariat_followup_patch(app_module):
         for centre_code, centre_label in app_module.FORMATION_CENTRES.items():
             rows = [row for row in sessions.get(centre_code, {}).get(code, []) if _text(row.get("label"))]
             if rows:
-                result.append({"centre_label": centre_label, "sessions": rows})
+                group = {"centre_label": centre_label, "sessions": rows}
+                if code == "DESP_INIT":
+                    venue = app_module.DESP_VENUES.get(centre_code)
+                    if venue:
+                        group.update(centre_label=venue["city"], address=venue["address"], code=centre_code)
+                result.append(group)
         return result
 
     def quote_url(token):
@@ -422,8 +427,16 @@ def register_secretariat_followup_patch(app_module):
                     f'<td valign="top" style="padding:0 0 7px;font-size:14px;line-height:21px;color:#33435c;">{label}{badge_html}</td></tr>'
                 )
             separator = ' style="margin-top:18px;padding-top:17px;border-top:1px solid #e1e8f2;"' if index else ""
+            label = html.escape(_text(centre.get("centre_label")))
+            header = f'<div style="font-size:14px;line-height:21px;font-weight:700;color:#102c5c;">{label}</div>'
+            if centre.get("address"):
+                ink = {"cote_azur": "#285e50", "paris": "#253d59", "auvergne": "#684128"}[centre["code"]]
+                address = html.escape(centre["address"])
+                header = (f'<div style="padding:10px 14px;background-color:{ink};color:white;">'
+                          f'<strong style="font:italic 24px/29px Georgia,serif;">{label}</strong></div>'
+                          f'<p style="margin:8px 0;color:#33435c;font:14px/20px Arial,sans-serif;">{address}</p>')
             centres.append(
-                f'<div{separator}><div style="font-size:14px;line-height:21px;font-weight:700;color:#102c5c;">{html.escape(_text(centre.get("centre_label")))}</div>'
+                f'<div{separator}>{header}'
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:7px;">'
                 + "".join(rows) + "</table></div>"
             )
@@ -470,6 +483,8 @@ def register_secretariat_followup_patch(app_module):
             lines.append("Nos prochaines dates")
             for centre in groups:
                 lines.append(_text(centre.get("centre_label")))
+                if centre.get("address"):
+                    lines.append(centre["address"])
                 lines.extend(f"- {_text(session.get('label'))}" for session in centre.get("sessions", []))
             lines.append("")
         if appointment:
@@ -506,7 +521,12 @@ def register_secretariat_followup_patch(app_module):
         config = app_module._secretariat_formation_config(code)
         displayed_first_name = first_name(contact.get("prenom") or _text(entry.get("nom")).split(" ")[0])
         backup = fallback(entry)
-        _, centre, city, session = split_session(entry.get("formation_date_souhaitee"))
+        centre_code, centre, city, session = split_session(entry.get("formation_date_souhaitee"))
+        if code == "DESP_INIT":
+            centre_code = centre_code or entry.get("formation_centre")
+            venue = app_module.DESP_VENUES.get(centre_code)
+            if venue:
+                config = {**config, "location": venue["address"]}
         facts = {
             "code_formation": code, "intitule_formation": config.get("label"), "session_choisie": session,
             "centre": centre, "ville": city, "objectif": objective(code, config), "tarif_ttc": training_price(code, entry),
@@ -540,6 +560,8 @@ def register_secretariat_followup_patch(app_module):
                 content = backup
         content["next_steps"] = project_steps(code)
         rows = project_rows(entry, config)
+        if code == "DESP_INIT" and config.get("location"):
+            rows.append(("Lieu du présentiel", config["location"]))
         appointment = app_module._secretariat_rdv(entry)
         groups = upcoming_sessions(code)
         public_url = _text(entry.get("devis_url"))
@@ -547,6 +569,7 @@ def register_secretariat_followup_patch(app_module):
             "prenom": displayed_first_name, "formation": config, "entry": entry, "content": content,
             "project_rows": rows, "appointment": appointment, "logo_src": logo_src,
             "show_cpf_badge": code in app_module.ABANDONED_TRAINING_EMAIL_CONFIG,
+            "desp_paris_address": app_module.DESP_VENUES["paris"]["address"] if code == "DESP_INIT" else "",
         }
         subject = f"Votre projet {config.get('short') or config.get('label')} – le résumé de notre échange"
         rendered = app_module.render_template("emails/email_resume_echange_integrale.html", **context)

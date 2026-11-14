@@ -27,13 +27,14 @@
 {% block details %}
 {% call section("🎓 Formation initiale", lead="🎓 Formation") %}
   <p style="margin:0 0 12px;">Pour acquérir les compétences de direction, de gestion et d’exploitation d’une entreprise de sécurité privée. Le parcours comprend <strong>175 heures à distance et 70 heures en présentiel</strong>, soit 245 heures.</p>
-  <h3 style="margin:0 0 7px;color:#192b39;font:bold 15px/21px Arial,Helvetica,sans-serif;">Prochaines sessions de formation initiale</h3>
-  {{ session_html|safe }}
-  {{ button("Consulter le planning des formations", "https://www.integraleacademy.com/planning") }}
 {% endcall %}
 
+{% include "emails/training/desp_sessions.html" %}
+
 {% call section("🧭 Validation des acquis de l’expérience (VAE)", lead="🧭 Validation") %}
-  <p style="margin:0 0 12px;">Vous avez déjà exercé des responsabilités dans la sécurité privée ? Le <strong>Livret 1</strong> permet d’étudier votre expérience. Après recevabilité, vous préparez le <strong>Livret 2</strong> avec votre accompagnateur, puis vous présentez votre dossier au jury.</p>
+  <p style="margin:0 0 12px;">{{ vae_experience }}</p>
+  <p style="margin:0 0 12px;">{{ vae_livret_1 }}</p>
+  <p style="margin:0 0 12px;">Après recevabilité, vous préparez le <strong>Livret 2</strong> avec votre accompagnateur, puis vous présentez votre dossier au jury.</p>
   {{ button("Consulter la plateforme VAE et commencer le Livret 1", "https://gestionstagiaires-r5no.onrender.com/vae-desp") }}
 {% endcall %}
 

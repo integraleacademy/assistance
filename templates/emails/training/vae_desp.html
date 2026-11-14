@@ -16,15 +16,15 @@
   <p style="margin:0 0 12px;">Je fais suite à votre demande concernant la <strong>VAE Dirigeant d’Entreprise de Sécurité Privée</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
   {{ meta_introduction() }}
   <p style="margin:0 0 12px;">La VAE permet d’obtenir cette certification sur la base de votre expérience professionnelle, sans suivre obligatoirement l’intégralité d’un parcours de formation classique.</p>
-  <p style="margin:0 0 12px;">Elle s’adresse aux personnes ayant une expérience significative dans la sécurité privée, notamment sur des fonctions de direction, de gestion, d’encadrement, d’exploitation, de management ou de responsabilité opérationnelle.</p>
-  <p style="margin:0 0 12px;">Vous pouvez commencer immédiatement votre démarche en ligne avec le Livret 1. Cela permet de vérifier si votre expérience correspond bien au référentiel du titre.</p>
+  <p style="margin:0 0 12px;">{{ vae_experience }}</p>
+  <p style="margin:0 0 12px;">{{ vae_livret_1 }}</p>
   {{ notice("⚠️ Vous pouvez démarrer votre VAE dès maintenant en totale autonomie.") }}
 {% endblock %}
 
 {% block facts %}
   {{ fact("🚀", "Démarrage immédiat", "Livret 1 en ligne") }}
   {{ fact("✅", "Titre reconnu par l’État", "RNCP40385 — niveau 5", divider=true) }}
-  {{ fact("👮", "Projet sécurité privée", "Direction, gestion, exploitation", divider=true) }}
+  {{ fact("💼", "Expérience professionnelle", "Direction, gestion ou encadrement", divider=true) }}
 {% endblock %}
 
 {% block details %}

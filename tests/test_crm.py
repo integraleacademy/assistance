@@ -1985,8 +1985,8 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
         ("automatic-desp-initial", "DESP initial – Côte d’Azur"),
         ("automatic-desp-initial-paris", "DESP initial – Paris"),
     ]
-    assert "Centre de formation : <strong>Côte d’Azur</strong>" in desp_initial[0]["contenu"]
-    assert "Centre de formation : <strong>Paris</strong>" in desp_initial[1]["contenu"]
+    assert "Formation DESP — Puget-sur-Argens" in desp_initial[0]["contenu"]
+    assert "Formation DESP — Paris" in desp_initial[1]["contenu"]
 
 
 @pytest.mark.parametrize("model_id, formation, centre, reviewer", [
@@ -2016,6 +2016,16 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
     assert response.status_code == 302
     message, = [call.args for call in send.call_args_list if call.args[0] == recipient]
     _, subject, plain, body = message
+    if formation == "DESP_INIT":
+        venue = ("Intégrale Academy, 34 rue Poissonnière, 75002 Paris" if centre == "paris"
+                 else "Intégrale Academy, 54 chemin du Carreou, 83480 Puget-sur-Argens")
+        assert venue in body and venue in plain
+        assert "Rivoli" not in plain + body and "XXXX" not in plain
+        assert ("Poissonnière" in body) == (centre == "paris")
+    if formation == "DESP_VAE":
+        for text in (plain, body):
+            assert "dans un autre secteur" in text and "gérant ou gérante" in text and "encadré une équipe" in text
+            assert "recevabilité de votre demande" in text and "Poissonnière" not in text
     quote_url, = set(re.findall(r'href="(http[^"]+/plan/[^"]+)"', body))
     assert subject == preview["sujet"]
     assert body == preview["contenu"].replace("{{ prenom }}", "Anne &amp; Léa").replace("{{ lien_devis }}", quote_url)

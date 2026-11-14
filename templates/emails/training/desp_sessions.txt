@@ -1,0 +1,12 @@
+{% for centre in centres -%}
+{{ centre.city }} · {{ centre.region }}
+Lieu du présentiel : {{ centre.address }}
+{% if centre.unlisted -%}
+Session demandée : {{ centre.unlisted }}
+{% endif -%}
+{% for session in centre.sessions -%}
+• {{ session.label }}{% if session.exam %} — Examen le {{ session.exam }}{% endif %}{% if session.label == centre.selected %} (session demandée){% endif %}
+{% else -%}
+Dates à venir prochainement.
+{% endfor %}
+{% endfor -%}

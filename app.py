@@ -2081,6 +2081,25 @@ def _training_quote_button(url):
 
 TRAINING_GOOGLE_REVIEWS_URL = "https://www.google.com/maps?cid=14373460169956988061"
 TRAINING_GOOGLE_RATING = "4,8"
+DESP_VAE_EXPERIENCE = (
+    "Vous avez exercé des responsabilités dans la sécurité privée ? "
+    "Vous avez été gérant ou gérante d’entreprise, dirigé une agence ou encadré une équipe dans un autre secteur ? "
+    "Ces expériences peuvent aussi être prises en compte pour la VAE DESP."
+)
+DESP_VAE_LIVRET_1 = (
+    "Dans le Livret 1, décrivez les missions que vous avez réellement exercées. "
+    "Le certificateur examine leur lien avec les compétences du titre DESP pour se prononcer sur la recevabilité de votre demande."
+)
+
+# Training venues for DESP sessions; the company's registered address is separate.
+DESP_VENUES = {
+    "cote_azur": {"city": "Puget-sur-Argens", "region": "Côte d’Azur",
+                  "address": "Intégrale Academy, 54 chemin du Carreou, 83480 Puget-sur-Argens"},
+    "paris": {"city": "Paris", "region": "Île-de-France",
+              "address": "Intégrale Academy, 34 rue Poissonnière, 75002 Paris"},
+    "auvergne": {"city": "Arpajon-sur-Cère", "region": "Terres d’Auvergne",
+                 "address": "Intégrale Academy, 650 route d’Aumont, 15130 Arpajon-sur-Cère"},
+}
 
 
 def _render_training_email(template_name: str, **context) -> str:
@@ -2094,6 +2113,7 @@ def build_vae_desp_email_html(prenom, devis_url, *, tuition=3800, abandoned=Fals
     deposit = round(tuition * 0.30)
     context = dict(
         prenom=prenom, tuition=_eur_display(tuition),
+        vae_experience=DESP_VAE_EXPERIENCE, vae_livret_1=DESP_VAE_LIVRET_1,
         deposit=f"{deposit:,} €".replace(",", " "), balance=f"{tuition - deposit:,} €".replace(",", " "),
     )
     if abandoned:
@@ -2105,6 +2125,7 @@ def build_vae_desp_email_plain(prenom, devis_url):
     return (
         f"Bonjour {prenom},\n\n"
         "Je fais suite à votre demande de renseignements concernant notre VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
+        f"{DESP_VAE_EXPERIENCE} {DESP_VAE_LIVRET_1}\n\n"
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
         f"Télécharger votre devis détaillé : {devis_url}\n"
         "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
@@ -2618,15 +2639,6 @@ def _format_selected_session_date(dates_txt: str) -> str:
         return ""
     return dates_txt.strip().replace(" - examen le ", " — examen le ")
 
-def _extract_exam_label_from_dates_txt(dates_txt: str) -> str:
-    if not dates_txt:
-        return ""
-    match = re.search(r"examen le\s+(.+)$", dates_txt.strip(), re.IGNORECASE)
-    if not match:
-        return ""
-    return match.group(1).strip(" .)")
-
-
 def _upcoming_session_labels(centre_code, formation_code, data_store=None, today=None):
     sessions = get_upcoming_formation_sessions(data_store, today=today)
     centre = _normalize_centre_code(centre_code)
@@ -2642,17 +2654,22 @@ def _upcoming_session_labels(centre_code, formation_code, data_store=None, today
     return labels
 
 
-def _format_upcoming_sessions_for_email(
-    centre_code: str, formation_code: str, data_store=None, today=None, *, selected="",
-) -> str:
-    labels = _upcoming_session_labels(centre_code, formation_code, data_store, today)
+def _match_requested_session(labels, selected):
     chosen = _format_selected_session_date(selected)
-    selected_note = ""
     if chosen and chosen not in labels:
         period = _session_date_range(chosen)
         matches = [label for label in labels if period[0] and _session_date_range(label) == period]
         if len(matches) == 1:
-            chosen = matches[0]
+            return matches[0]
+    return chosen
+
+
+def _format_upcoming_sessions_for_email(
+    centre_code: str, formation_code: str, data_store=None, today=None, *, selected="",
+) -> str:
+    labels = _upcoming_session_labels(centre_code, formation_code, data_store, today)
+    chosen = _match_requested_session(labels, selected)
+    selected_note = ""
     if chosen and chosen not in labels:
         selected_note = f"<p>Session demandée : <strong>{html_module.escape(chosen)}</strong></p>"
     if not labels:
@@ -2861,17 +2878,51 @@ def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
 
 
 
+def _desp_email_centres(codes, data_store=None, selected=""):
+    """Keep each requested centre, its venue and its current sessions together."""
+    calendar = get_upcoming_formation_sessions(data_store)
+    centres = []
+    for code in codes:
+        rows = calendar.get(code, {}).get("DESP_INIT", [])
+        sessions = []
+        for row in rows:
+            label = _format_selected_session_date(row.get("label"))
+            if not label:
+                continue
+            # Keep any unstructured date label intact. Move a recognisable
+            # parenthetical detail to its own line without changing its contents.
+            period, _, detail = label.partition(" (")
+            exam = str(row.get("date_examen") or "").strip()
+            if exam and "examen" not in label.casefold():
+                try:
+                    exam = datetime.date.fromisoformat(exam).strftime("%d/%m/%Y")
+                except ValueError:
+                    pass
+            else:
+                exam = ""
+            if detail.endswith(")"):
+                detail = detail[:-1]
+                detail = detail[:1].upper() + detail[1:]
+            elif detail:
+                detail = "(" + detail
+            sessions.append({"label": label, "period": period, "detail": detail, "exam": exam})
+        labels = [session["label"] for session in sessions]
+        # A date on an undecided lead does not identify the training venue.
+        chosen = _match_requested_session(labels, selected) if len(codes) == 1 else ""
+        centres.append({
+            **DESP_VENUES[code], "code": code, "sessions": sessions, "selected": chosen,
+            "unlisted": chosen if chosen and chosen not in labels else "",
+        })
+    return centres
+
+
 def build_desp_init_email_html(
     prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None, *, tuition=4300,
 ):
-    centre_label, _ = _centre_label_and_address(centre_code)
-    centre_display = centre_label.replace("Intégrale Academy ", "")
-    session_html = _format_upcoming_sessions_for_email(
-        centre_code, "DESP_INIT", data_store,
+    centres = _desp_email_centres([_normalize_centre_code(centre_code)], data_store, dates_txt)
+    return _render_training_email(
+        "training/desp_init.html", prenom=prenom, tuition=_eur_display(tuition), centres=centres, devis_url=devis_url,
     )
-    return _render_training_email("training/desp_init.html", prenom=prenom, tuition=_eur_display(tuition), centre_display=centre_display,
-                                  session_html=session_html, devis_url=devis_url)
-
 
 
 
@@ -5015,16 +5066,7 @@ def demande_informations_formations():
         save_data(data_store)
 
         if form_data.get("formation") == "DESP_VAE":
-            plain = (
-                f"Bonjour {prenom},\n\n"
-                "Je fais suite à votre demande de renseignements concernant notre VAE Dirigeant d’Entreprise de Sécurité Privée (RNCP40385).\n"
-                "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
-                f"Télécharger votre devis détaillé : {devis_url}\n"
-                "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
-                "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/dirigeant\n\n"
-                "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
-                f"{CASSANDRE_SIGNATURE_TEXT}"
-            )
+            plain = build_vae_desp_email_plain(prenom, devis_url)
             html = build_vae_desp_email_html(prenom, devis_url)
             email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
         elif form_data.get("formation") == "A3P":
@@ -5102,9 +5144,10 @@ def demande_informations_formations():
             html = build_vtc_email_html(prenom, form_data.get("centre", ""), devis_url)
             email_subject = "🚗 Formation Chauffeur VTC"
         elif form_data.get("formation") == "DESP_INIT":
-            session_date = _format_selected_session_date(form_data.get("dates", ""))
-            exam_label = _extract_exam_label_from_dates_txt(form_data.get("dates", ""))
-            centre_label, _ = _centre_label_and_address(form_data.get("centre", ""))
+            centres = _desp_email_centres(
+                [_normalize_centre_code(form_data.get("centre"))], data_store, form_data.get("dates", ""),
+            )
+            programme = render_template("emails/training/desp_sessions.txt", centres=centres).strip()
             plain = (
                 f"Bonjour {prenom},\n\n"
                 "Je fais suite à votre demande de renseignements concernant notre formation Dirigeant d’Entreprise de Sécurité Privée (DESP), titre reconnu par l’État (RNCP40385 – niveau 5, équivalent Bac+2).\n"
@@ -5112,10 +5155,7 @@ def demande_informations_formations():
                 "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n\n"
                 "Durée et organisation : 245 heures (175 heures de e-learning à distance + 70 heures de présentiel sur 2 semaines).\n"
                 "Le e-learning est accessible 24h/24 sur ordinateur, tablette ou smartphone.\n\n"
-                "Prochaines formations :\n"
-                + (f"- {session_date}\n" if session_date else "- XXXX\n")
-                + f"Examen : {exam_label or 'XXXXX'}\n"
-                + f"Centre : {centre_label}\n\n"
+                f"Prochaines formations :\n{programme}\n\n"
                 "Tarif : 4 300 € TTC (finançable via CPF).\n"
                 "Identité Numérique La Poste (obligatoire CPF) : https://lidentitenumerique.laposte.fr/\n"
                 f"Devis détaillé : {devis_url}\n\n"
@@ -5124,7 +5164,7 @@ def demande_informations_formations():
                 "Je vous souhaite une excellente journée.\n\n"
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
-            html = build_desp_init_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url)
+            html = build_desp_init_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url, data_store)
             email_subject = "Votre demande de renseignements – Formation DESP initial"
         else:
             plain = (
@@ -9883,6 +9923,12 @@ def _meta_place(value):
     return ""
 
 
+def _meta_training_places(value):
+    # A shared form or an older CRM record may name both cities in one answer.
+    parts = re.split(r"\bou\b|\bet\b|[,/]", str(value or "").casefold())
+    return {_meta_place(part) for part in parts} - {""}
+
+
 def _meta_funding_status(value):
     normalized = _meta_words(value)
     if not normalized:
@@ -10135,7 +10181,7 @@ def _meta_crm_payload(fields, custom_answers):
                     set_yes_no("financement_perso_possible", row["answer"])
             elif specific_field == "lieu":
                 # Une réponse « Paris ou Puget » ne choisit pas un centre.
-                places = {_meta_place(part) for part in re.split(r"\bou\b|\bet\b|[,/]", answer)} - {""}
+                places = _meta_training_places(answer)
                 if not uncertain and len(places) == 1:
                     apply("lieu", next(iter(places)))
             elif specific_field != "identity_help":
@@ -10511,19 +10557,6 @@ def _meta_tuition(code, contact):
     return _eur_display(amount) if amount is not None else "Tarif à confirmer"
 
 
-def _meta_desp_initial_sessions(contact, data_store):
-    centre = contact.get("lieu")
-    if centre:
-        return _format_upcoming_sessions_for_email(
-            _normalize_centre_code(centre), "DESP_INIT", data_store, selected=contact.get("dates_formation"),
-        )
-    # The shared form also accepts candidates who have not chosen a centre.
-    return "".join(
-        f'<p><strong>{label}</strong></p>' + _format_upcoming_sessions_for_email(code, "DESP_INIT", data_store)
-        for code, label in (("cote_azur", "Puget-sur-Argens"), ("paris", "Paris"))
-    )
-
-
 def _meta_course_email(contact, data_store, introduction, include_booking):
     formation = contact.get("formation")
     code = _crm_formation_code(contact)
@@ -10545,18 +10578,25 @@ def _meta_course_email(contact, data_store, introduction, include_booking):
         amount = _meta_tuition_amount(code, contact)
         deposit = round(amount * 0.30) if amount is not None else None
         return _render_training_email(
-            "training/vae_desp.html", **common, tuition=_eur_display(amount) if amount is not None else "Tarif à confirmer",
+            "training/vae_desp.html", **common, vae_experience=DESP_VAE_EXPERIENCE, vae_livret_1=DESP_VAE_LIVRET_1,
+            tuition=_eur_display(amount) if amount is not None else "Tarif à confirmer",
             deposit=f"{deposit:,} €".replace(",", " ") if deposit is not None else "à confirmer",
             balance=f"{amount - deposit:,} €".replace(",", " ") if amount is not None else "à confirmer",
         )
-    sessions = _meta_desp_initial_sessions(contact, data_store)
+    place = str(contact.get("lieu") or "").strip()
+    places = _meta_training_places(place)
+    if len(places) == 1 or place.casefold() in {"cote_azur", "idf", "nice", "clermont", "clermont-ferrand"}:
+        codes = [_normalize_centre_code(next(iter(places), place))]
+    else:
+        codes = ["cote_azur", "paris"]
+    centres = _desp_email_centres(codes, data_store, contact.get("dates_formation", ""))
     if str(contact.get("desp_type") or "").strip().upper() == "INITIAL":
         return _render_training_email(
             "training/desp_init.html", **common, tuition=_meta_tuition("DESP_INIT", contact),
-            session_html=sessions, centre_display=contact.get("lieu") or "Puget-sur-Argens ou Paris",
+            centres=centres,
         )
     return _render_training_email(
-        "meta_information.html", **common, session_html=sessions,
+        "meta_information.html", **common, centres=centres, vae_experience=DESP_VAE_EXPERIENCE, vae_livret_1=DESP_VAE_LIVRET_1,
         initial_fee=_meta_tuition("DESP_INIT", contact), vae_fee=_meta_tuition("DESP_VAE", contact),
     )
 
