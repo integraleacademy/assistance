@@ -9114,7 +9114,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261114-cpf-tableau-pistes"
+CRM_ASSET_VERSION = "20261114-cpf-dossiers-masques"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -14033,6 +14033,9 @@ def _wedof_connect():
                 value_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS crm_hidden_cpf_folders (
+                folder_id TEXT NOT NULL PRIMARY KEY
+            );
             CREATE TABLE IF NOT EXISTS wedof_webhook_deliveries (
                 delivery_id TEXT PRIMARY KEY,
                 processed_at TEXT NOT NULL
@@ -15240,31 +15243,35 @@ def _edof_sync_requests():
         """, (json.dumps(sorted(folder_ids)), str(started)))
 
 
-def _edof_pending_folders(data):
-    """One pipeline row per EDOF request, independently of the lead's stage."""
+def _crm_cpf_folder_lists(data):
+    """Split the current EDOF queue by the team's local visibility setting."""
+    unavailable = {"cpf_pending_folders": None, "cpf_hidden_folders": []}
     if not os.path.exists(_wedof_db_path()):
-        return None
+        return unavailable
     with _wedof_connect() as db:
         # Keep unlinked folders. Joining on the actual resource type also
         # prevents historical WEDOF copies from multiplying the EDOF count.
         rows = db.execute("""
-            SELECT ids.value AS folder_id, r.payload_json, l.contact_id
+            SELECT ids.value AS folder_id, r.payload_json, l.contact_id,
+                   hidden.folder_id IS NOT NULL AS is_hidden
             FROM wedof_sync_state AS queue
             LEFT JOIN json_each(queue.value_json) AS ids ON TRUE
             LEFT JOIN wedof_resources AS r ON r.resource_type='registrationFolder' AND r.stable_id=ids.value
             LEFT JOIN wedof_contact_links AS l ON l.resource_type=r.resource_type AND l.resource_id=r.stable_id
+            LEFT JOIN crm_hidden_cpf_folders AS hidden ON hidden.folder_id=ids.value
             WHERE queue.sync_key='integrale-edof-pending-folders'
         """).fetchall()
     if not rows:
-        return None
+        return unavailable
     dashboard = gestion_origin() + "/admin/integrale-edof?section=state&group=requests&tab=request&folder="
-    result = []
+    result = {"cpf_pending_folders": [], "cpf_hidden_folders": []}
     for row in rows:
         if row["folder_id"] is None:
             continue
         folder = json.loads(row["payload_json"] or "{}")
         fields = _wedof_contact_payload(folder, data)
-        result.append({
+        group = "cpf_hidden_folders" if row["is_hidden"] else "cpf_pending_folders"
+        result[group].append({
             "folder_id": row["folder_id"], "contact_id": row["contact_id"],
             "edof_url": dashboard + quote(row["folder_id"], safe=""),
             "prenom": fields["prenom"], "nom": fields["nom"], "formation": fields["formation"],
@@ -15272,7 +15279,36 @@ def _edof_pending_folders(data):
             "lieu": fields["lieu"], "dates_formation": fields["dates_formation"],
             "filed_at": folder.get("edofFiledAt") or folder.get("createdAt") or "",
         })
-    return sorted(result, key=lambda item: (item["filed_at"], item["folder_id"]), reverse=True)
+    for folders in result.values():
+        folders.sort(key=lambda item: (item["filed_at"], item["folder_id"]), reverse=True)
+    return result
+
+
+@app.put("/api/crm/cpf-dossiers/<folder_id>/visibilite")
+@login_required
+def crm_set_cpf_folder_visibility(folder_id):
+    if (current_user() or {}).get("role") not in {"admin", "user"}:
+        return jsonify(error="Cette action est réservée à l’équipe du CRM."), 403
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("hidden"), bool):
+        return jsonify(error="Précisez si le dossier doit être masqué dans le CRM."), 400
+    if not re.fullmatch(r"[0-9]{6,20}", folder_id):
+        return jsonify(error="Numéro de dossier EDOF invalide."), 400
+
+    with _wedof_connect() as db:
+        # A request can leave the official queue during a team's click.
+        db.execute("BEGIN IMMEDIATE")
+        pending = db.execute("""
+            SELECT 1 FROM wedof_sync_state AS queue, json_each(queue.value_json) AS ids
+            WHERE queue.sync_key='integrale-edof-pending-folders' AND ids.value=?
+        """, (folder_id,)).fetchone()
+        if not pending:
+            return jsonify(error="Ce dossier ne figure plus dans les demandes CPF à traiter."), 409
+        if body["hidden"]:
+            db.execute("INSERT OR IGNORE INTO crm_hidden_cpf_folders(folder_id) VALUES (?)", (folder_id,))
+        else:
+            db.execute("DELETE FROM crm_hidden_cpf_folders WHERE folder_id=?", (folder_id,))
+    return jsonify(_crm_cpf_folder_lists(_crm_prepared_read_model()))
 
 
 def _wedof_background_sync_loop():
@@ -17250,7 +17286,7 @@ def crm_contact_updates():
         "callback_pending_count": _crm_callback_pending_count(data),
     }
     if section == "pistes":
-        payload["cpf_pending_folders"] = _edof_pending_folders(data)
+        payload.update(_crm_cpf_folder_lists(data))
     if section == "demandes-rappel":
         payload["callback_requests"] = _crm_callback_requests_payload(data)
     if request.args.get("delta") == "1":
@@ -19632,7 +19668,7 @@ def crm_bootstrap():
     appointments = _crm_calendly_appointments_payload(data)
     response = jsonify({
         "contacts": contacts,
-        **({"cpf_pending_folders": _edof_pending_folders(data)} if section == "pistes" else {}),
+        **(_crm_cpf_folder_lists(data) if section == "pistes" else {}),
         "templates": _crm_templates_payload(data),
         "formation_sessions": get_upcoming_formation_sessions(data),
         "notifications": _crm_notifications_payload(

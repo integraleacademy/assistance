@@ -754,6 +754,14 @@ body.sidebar-collapsed main{margin-left:80px}
 .crm-row-link-cell>.crm-cpf-reference{margin:0 16px 10px}
 .crm-cpf-reference a{color:var(--blue);font-weight:600;text-decoration:none}
 .crm-cpf-reference a:hover,.crm-cpf-reference a:focus-visible{text-decoration:underline}
+.crm-cpf-hide{display:inline-block;margin:2px 0 0 7px;padding:3px 5px;border:0;border-radius:4px;background:transparent;color:#51627d;font:inherit;font-weight:600;cursor:pointer}
+.crm-cpf-hide:hover,.crm-cpf-hide:focus-visible{background:#edf2ff;color:#244fa9}
+.crm-cpf-hide:disabled{cursor:wait;opacity:.6}
+.crm-cpf-hidden{margin-bottom:12px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.crm-cpf-hidden summary{width:fit-content;cursor:pointer;color:var(--navy);font-size:13px;font-weight:700}
+.crm-cpf-hidden ul{margin:8px 0 0;padding:0;list-style:none}
+.crm-cpf-hidden li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line)}
+.crm-cpf-hidden li small{display:block;color:var(--muted)}
 .crm-cpf-session{display:block;margin-top:3px;color:var(--muted);font-size:10px;white-space:normal}
 
 /* Pistes : filtre d'origine, sélection multiple et envois groupés. */
