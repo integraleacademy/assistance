@@ -9680,6 +9680,10 @@ _META_FORM_PROFILES = {
     "2748123228939966": ("APS", _META_DEFAULT_LOCATION),
     "1124725393644713": ("DESP", ""),
     "1665286434987197": ("APS", _META_DEFAULT_LOCATION),
+    "2051871915516458": ("DESP", ""),
+    "1313564204218877": ("APS", _META_DEFAULT_LOCATION),
+    "3605918179579680": ("DESP", ""),
+    "1124945893774109": ("APS", _META_DEFAULT_LOCATION),
 }
 
 _META_ANSWER_CONTAINERS = {
@@ -9780,7 +9784,13 @@ def _meta_scalar(value):
         return ""
     if isinstance(value, tuple):
         return ""
-    return str(value or "").strip()
+    return "" if value is None else str(value).strip()
+
+
+def _meta_test_answer(value):
+    # Le générateur de prospects de test de Meta peut répéter la question
+    # dans sa réponse (tarif, villes et mots-clés de financement compris).
+    return _meta_words(value).startswith("test lead dummy data for ")
 
 
 def _meta_words(value):
@@ -9811,17 +9821,20 @@ def _crm_is_meta_contact(contact):
     )
 
 
+def _meta_fixed_location(contact):
+    source = contact.get("meta_source")
+    form_id = str(source.get("form_id") or "").strip() if isinstance(source, dict) else ""
+    profile = _META_FORM_PROFILES.get(form_id)
+    return profile[1] if profile else _META_DEFAULT_LOCATION
+
+
 def _crm_enforce_meta_defaults(contact):
     """Conserve la provenance META sans écraser le lieu d'un formulaire DESP."""
     if not _crm_is_meta_contact(contact):
         return False
     expected = {"origine": "META"}
-    source = contact.get("meta_source")
-    if not isinstance(source, dict):
-        source = {}
-    form_profile = _META_FORM_PROFILES.get(str(source.get("form_id") or "").strip())
-    if not form_profile or form_profile[1]:
-        expected["lieu"] = form_profile[1] if form_profile else _META_DEFAULT_LOCATION
+    if fixed_location := _meta_fixed_location(contact):
+        expected["lieu"] = fixed_location
     changed = False
     for field, value in expected.items():
         if contact.get(field) != value:
@@ -9852,7 +9865,7 @@ def _parse_meta_lead_payload(payload):
             canonical = aliases.get(_meta_key(str(name)[4:]))
         scalar = _meta_scalar(value)
         if canonical:
-            if scalar and not fields.get(canonical):
+            if scalar and not _meta_test_answer(scalar) and not fields.get(canonical):
                 fields[canonical] = scalar
         elif _meta_key(name) not in _META_ANSWER_CONTAINERS | _META_PAYLOAD_WRAPPERS:
             custom[str(name)] = copy.deepcopy(value)
@@ -9931,6 +9944,19 @@ def _meta_yes_no(value):
         ))
     )
     return "OUI" if positive else ""
+
+
+def _meta_personal_capacity(value):
+    explicit = _meta_yes_no(value)
+    if explicit:
+        return explicit
+    answer = _meta_words(value)
+    if answer.startswith(("je peux financer personnellement", "je peux regler", "je pourrais regler",
+                          "je peux payer", "je pourrais payer", "poursuivre mon projet et regler la part restante")):
+        return "OUI"
+    if answer.startswith(("je ne peux pas", "je ne pourrai pas", "je ne pourrais pas")):
+        return "NON"
+    return ""
 
 
 def _meta_formation(value):
@@ -10023,7 +10049,7 @@ def _meta_crm_question_field(question):
     direct = _META_DIRECT_CRM_QUESTION_ALIASES.get(key)
     if direct:
         return direct
-    if "montant" in key and "cpf" in key:
+    if "cpf" in key and ("montant" in key or "somme" in key or ("solde" in key and "consulte" not in key)):
         return "cpf_montant"
     if "identitenumerique" in key or "franceconnect" in key:
         return "identite_ok" if any(term in key for term in ("fonction", "active", "valide")) else "identite_creation"
@@ -10035,7 +10061,7 @@ def _meta_crm_question_field(question):
         return "statut_demande_financement_ft"
     if "montant" in key and ("accord" in key or "accepte" in key) and "francetravail" in key:
         return "montant_accorde_ft"
-    if any(term in key for term in ("payerpersonnellement", "financerpersonnellement", "financementpersonnel")):
+    if any(term in key for term in ("payerpersonnellement", "reglerpersonnellement", "financerpersonnellement", "financementpersonnel")):
         return "financement_perso_possible"
     if "refus" in key and ("francetravail" in key or "ft" in key) and "financ" in key:
         return "refus_ft_perso"
@@ -10078,7 +10104,7 @@ def _meta_answer_rows(fields, custom_answers):
         # Le nouveau formulaire APS réutilise l'ancienne clé technique de
         # l'aide à l'identité numérique pour la consultation du compte CPF.
         # Le payload original reste conservé dans la soumission.
-        if str(fields.get("form_id") or "") == "1665286434987197":
+        if str(fields.get("form_id") or "") in {"1665286434987197", "1124945893774109"}:
             question_key = str(question)
             if question_key.casefold().startswith("raw_"):
                 question_key = question_key[4:]
@@ -10092,7 +10118,20 @@ def _meta_answer_rows(fields, custom_answers):
         seen.add(marker)
         rows.append({"question": str(question).strip(), "answer": answer})
 
+    known_form = str(fields.get("form_id") or "").strip() in _META_FORM_PROFILES
+    readable_questions = {
+        _meta_key(question) for question, value in custom_answers.items()
+        if not str(question).casefold().startswith("raw_") and _meta_scalar(value)
+    } if known_form else set()
     for question, value in custom_answers.items():
+        if known_form and str(question).casefold().startswith("raw_"):
+            question = str(question)[4:]
+            if _meta_key(question) in readable_questions:
+                continue
+            if isinstance(value, str):
+                value = value.replace("_", " ")
+        if known_form:
+            question = str(question).replace("_", " ")
         add(question, value)
     for field, label in (
         ("formation", "Formation souhaitée"), ("centre", "Centre souhaité"),
@@ -10115,7 +10154,12 @@ def _meta_crm_payload(fields, custom_answers):
     form_id = str(fields.get("form_id") or "").strip()
     form_profile = _META_FORM_PROFILES.get(form_id)
     form_questions = {}
-    if form_id in {"2007914916834027", "1124725393644713"}:
+    # Le dernier formulaire conserve aussi les intentions non binaires pour
+    # les champs de la fiche. Une clé vide signifie « aucune réponse reçue ».
+    field_answers = dict.fromkeys(("financement_ft", "financement_perso_possible"), "")
+    if form_profile and form_profile[0] == "DESP":
+        field_answers.update(lieu="", desp_type="")
+    if form_profile and form_profile[0] == "DESP":
         form_questions = {
             "Quel parcours souhaitez-vous étudier ?": "desp_type",
             "Où pourriez-vous suivre les deux semaines en présentiel ?": "lieu",
@@ -10123,14 +10167,19 @@ def _meta_crm_payload(fields, custom_answers):
             "Comment envisagez-vous de financer votre parcours ?": "funding_plan",
             "Si la prise en charge est partielle ou refusée, que souhaitez-vous faire ?": "personal_funding",
         }
-    elif form_id in {"2748123228939966", "1665286434987197"}:
+    elif form_profile and form_profile[0] == "APS":
         form_questions = {
-            "Quelle solution de financement envisagez-vous en priorité ?": "funding_plan",
             "Pour le CPF, souhaitez-vous de l’aide pour créer votre identité numérique ?": "identity_help",
             "Si France Travail refuse votre demande, pourriez-vous régler la part restant à votre charge ?": "refus_ft_perso",
             "Si votre financement ne couvre pas toute la formation, pourriez-vous régler la différence ?": "reste_a_charge_perso",
-            "Si votre financement ne couvre pas toute la formation, pourriez-vous régler personnellement la différence ?": "reste_a_charge_perso",
         }
+    if form_profile:
+        form_questions.update({
+            "Quelle solution de financement envisagez-vous en priorité ?": "funding_plan",
+            "Si votre financement ne couvre pas toute la formation, pourriez-vous régler personnellement la différence ?": "reste_a_charge_perso",
+            ("Si votre financement ne couvre pas toute la formation, par exemple si votre CPF est insuffisant "
+             "ou si France Travail refuse votre demande, pourriez-vous régler personnellement la différence ?"): "reste_a_charge_perso",
+        })
     form_questions = {_meta_key(question): field for question, field in form_questions.items()}
 
     def set_yes_no(field, value):
@@ -10195,11 +10244,33 @@ def _meta_crm_payload(fields, custom_answers):
     for direct_field in ("formation", "centre", "lieu", "dates", "dates_formation"):
         if fields.get(direct_field):
             apply({"centre": "lieu", "dates": "dates_formation"}.get(direct_field, direct_field), fields[direct_field])
+    display_fields = {
+        "funding_plan": "financement_ft",
+        "personal_funding": "financement_perso_possible",
+        "reste_a_charge_perso": "financement_perso_possible",
+        "refus_ft_perso": "financement_perso_possible",
+    }
+    # Les questions dédiées du nouveau formulaire priment sur les déductions
+    # tirées du mode de financement principal, quel que soit l'ordre du JSON.
+    explicit_funding = {}
     for row in answer_rows:
         question_name = row["question"]
+        if _meta_test_answer(row["answer"]):
+            continue
         if question_name.casefold().startswith("raw_"):
             question_name = question_name[4:]
         specific_field = form_questions.get(_meta_key(question_name))
+        if not specific_field and _meta_question_excluded_from_scoring(question_name):
+            continue
+        mapped_field = specific_field or _meta_crm_question_field(question_name)
+        text_field = display_fields.get(mapped_field, mapped_field)
+        if (form_profile and text_field in {"financement_ft", "financement_perso_possible"}
+                and mapped_field != "funding_plan"):
+            priority = 2 if mapped_field == text_field else 1
+            if text_field not in explicit_funding or priority > explicit_funding[text_field][0]:
+                explicit_funding[text_field] = (priority, row["answer"].replace("_", " ").strip())
+        if text_field in field_answers and not field_answers[text_field]:
+            field_answers[text_field] = row["answer"].replace("_", " ").strip()
         if specific_field:
             answer = _meta_words(row["answer"])
             uncertain = any(term in answer for term in (
@@ -10208,12 +10279,12 @@ def _meta_crm_payload(fields, custom_answers):
             negative = _meta_yes_no(row["answer"]) == "NON" or any(
                 term in answer for term in ("ne pas", "ne peux pas", "ne pourrai pas", "pas de financement")
             )
-            if specific_field in {"funding_plan", "personal_funding"}:
-                if (specific_field == "funding_plan" and form_profile[0] == "DESP"
+            if specific_field == "funding_plan":
+                if (form_profile[0] == "DESP"
                         and answer in {"je prevois un financement personnel", "financement personnel"}):
                     crm["financement_perso_integral_prevu"] = True
                 if not uncertain and not negative:
-                    if specific_field == "funding_plan" and any(
+                    if any(
                         term in answer for term in ("france travail", "pole emploi")
                     ) and "sans france travail" not in answer:
                         crm.setdefault("financement_ft", "OUI")
@@ -10222,38 +10293,39 @@ def _meta_crm_payload(fields, custom_answers):
                         "regler personnellement", "financer personnellement", "mes fonds personnels",
                     )):
                         crm.setdefault("financement_perso_possible", "OUI")
-                    elif specific_field == "personal_funding":
-                        set_yes_no("financement_perso_possible", row["answer"])
-                elif specific_field == "personal_funding" and not uncertain:
-                    set_yes_no("financement_perso_possible", row["answer"])
             elif specific_field in {"refus_ft_perso", "reste_a_charge_perso"}:
                 if not uncertain:
                     set_yes_no(specific_field, row["answer"])
-                    set_yes_no("financement_perso_possible", row["answer"])
             elif specific_field == "lieu":
                 # Une réponse « Paris ou Puget » ne choisit pas un centre.
                 places = _meta_training_places(answer)
                 if not uncertain and len(places) == 1:
                     apply("lieu", next(iter(places)))
-            elif specific_field != "identity_help":
+            elif specific_field not in {"identity_help", "personal_funding"}:
                 apply(specific_field, row["answer"])
             # Un projet CPF ne prouve pas que le compte a été consulté ; une
             # demande d'aide ne prouve pas que l'identité numérique est créée.
             continue
-        if _meta_question_excluded_from_scoring(row["question"]):
-            continue
-        mapped_field = _meta_crm_question_field(row["question"])
         if mapped_field == "cpf_montant" and _meta_is_cpf_tier(row["answer"]):
             mapped_field = "cpf_palier"
         apply(mapped_field, row["answer"])
         question, answer = _meta_words(row["question"]), _meta_words(row["answer"])
-        if "financ" in question or "prise en charge" in question:
+        if not form_profile and ("financ" in question or "prise en charge" in question):
             if "cpf" in answer:
                 crm.setdefault("cpf", "OUI")
             if "france travail" in answer or "pole emploi" in answer:
                 crm.setdefault("financement_ft", "OUI")
 
     if form_profile:
+        for field, (_, answer) in explicit_funding.items():
+            field_answers[field] = answer
+            normalized = _meta_personal_capacity(answer) if field == "financement_perso_possible" else _meta_yes_no(answer)
+            if normalized:
+                crm[field] = normalized
+            else:
+                crm.pop(field, None)
+            if field == "financement_perso_possible" and crm.get(field) != "OUI":
+                crm.pop("financement_perso_integral_prevu", None)
         crm["formation"] = form_profile[0]
         if form_profile[1]:
             crm["lieu"] = form_profile[1]
@@ -10266,16 +10338,15 @@ def _meta_crm_payload(fields, custom_answers):
                 if desp_type:
                     crm["desp_type"] = desp_type
                 break
-    if not crm.get("lieu"):
-        for key in ("form_name", "campaign_name", "adset_name", "ad_name"):
-            if place := _meta_place(fields.get(key)):
-                crm["lieu"] = place
-                break
     # Préserve le routage historique des formulaires A3P. Les nouveaux
     # formulaires DESP et APS sont reconnus par leur identifiant stable.
     if not form_profile:
         crm["formation"] = _META_DEFAULT_FORMATION
         crm["lieu"] = _META_DEFAULT_LOCATION
+    for field in field_answers:
+        if not field_answers[field] and crm.get(field):
+            field_answers[field] = crm[field]
+    crm["meta_field_answers"] = field_answers
     return crm, answer_rows
 
 
@@ -10341,7 +10412,9 @@ def _meta_apply_contact_answers(contact, crm_payload, answer_rows, *, fields=Non
     changed, completed = False, []
     for field in _META_CRM_COMPLETION_FIELDS:
         incoming = crm_payload.get(field)
-        if _crm_is_empty(incoming) or not _crm_is_empty(contact.get(field)):
+        current = contact.get(field)
+        unspecified_place = field == "lieu" and _meta_words(current) == "a determiner"
+        if _crm_is_empty(incoming) or not (_crm_is_empty(current) or unspecified_place):
             continue
         if field == "prenom":
             incoming = _crm_format_first_name(incoming)
@@ -10379,6 +10452,9 @@ def _meta_apply_contact_answers(contact, crm_payload, answer_rows, *, fields=Non
         fields, received_at,
         full_personal_payment=crm_payload.get("financement_perso_integral_prevu"),
     )
+    if source and crm_payload.get("meta_field_answers"):
+        source["formation"] = crm_payload["formation"]
+        source["field_answers"] = crm_payload["meta_field_answers"]
     if source and contact.get("meta_source") != source:
         contact["meta_source"] = source
         changed = True
@@ -18337,14 +18413,13 @@ def _crm_patch_contact_locked(data, contact, contact_id):
     # l'équipe corrige manuellement la formation ou un autre champ.
     if contact.get("source") == "wedof_cpf":
         payload["origine"] = "Mon Compte Formation"
-    # L'ancien sélecteur ne proposait pas META et envoyait une valeur vide lors
-    # de chaque sauvegarde automatique. La provenance et le lieu de campagne
-    # restent protégés, mais la formation peut être corrigée par l'équipe.
+    # Seuls les formulaires dédiés à un centre imposent un lieu.
     if _crm_is_meta_contact(contact):
-        payload.update({
-            "origine": "META",
-            "lieu": _META_DEFAULT_LOCATION,
-        })
+        payload["origine"] = "META"
+        if fixed_location := _meta_fixed_location(contact):
+            payload["lieu"] = fixed_location
+        elif payload.get("lieu") == "À déterminer":
+            payload["lieu"] = ""
     _crm_ensure_relances(contact)
     relance_date_supplied = "relance_date" in payload
     requested_relance_date = payload.get("relance_date")

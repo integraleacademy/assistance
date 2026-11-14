@@ -13,15 +13,18 @@ const isYes=value=>normalize(value)==='oui';
 function contactCompletenessDetails(contact){
  const requirements=[];
  const require=(key,label,complete=hasValue(contact[key]))=>requirements.push({key,label,complete:Boolean(complete)});
+ const metaAnswers=contact.meta_source?.formation===contact.formation?contact.meta_source?.field_answers:null;
+ // Une réponse peut documenter une hésitation sans confirmer un centre ou un financement.
+ const answered=key=>hasValue(metaAnswers?.[key]);
  require('prenom','Prénom');
  require('nom','Nom');
  require('telephone','Téléphone');
  require('mail','E-mail');
  require('formation','Formation souhaitée');
- require('lieu','Lieu');
+ require('lieu','Lieu',answered('lieu')||(hasValue(contact.lieu)&&normalize(contact.lieu)!=='a determiner'));
  require('dates_formation','Dates souhaitées');
  require('origine','Origine');
- if(normalize(contact.formation)==='desp')require('desp_type','Parcours DESP');
+ if(normalize(contact.formation)==='desp')require('desp_type','Parcours DESP',hasValue(contact.desp_type)||answered('desp_type'));
  require('cpf','Compte CPF');
  const cpfDeclared=hasValue(contact.cpf_montant)||hasValue(contact.cpf_palier);
  if(isYes(contact.cpf))require('cpf_montant','Montant ou palier CPF',cpfDeclared);
@@ -29,7 +32,7 @@ function contactCompletenessDetails(contact){
  const cpfRoute=(isYes(contact.cpf)||cpfDeclared)&&(cpfExact>0||hasValue(contact.cpf_palier));
  if(cpfRoute)require('identite_creation','Création de l’identité numérique');
  if(cpfRoute&&isYes(contact.identite_creation))require('identite_ok','Identité numérique fonctionnelle');
- require('financement_ft','Projet de financement France Travail');
+ require('financement_ft','Projet de financement France Travail',hasValue(contact.financement_ft)||answered('financement_ft'));
  const rawFtStatus=normalize(contact.statut_demande_financement_ft).replace(/\s+/g,'_');
  const ftStatus=rawFtStatus==='non_demandee'?'aucune_demande':rawFtStatus;
  const ftRelevant=isYes(contact.financement_ft);
@@ -40,7 +43,7 @@ function contactCompletenessDetails(contact){
  const personalRequired=unsecured!=null
   ? Number(unsecured)>0
   : normalize(contact.cpf)==='non';
- if(personalRequired)require('financement_perso_possible','Capacité de financement personnel',hasValue(contact.financement_perso_possible)||hasValue(contact.refus_ft_perso));
+ if(personalRequired)require('financement_perso_possible','Capacité de financement personnel',hasValue(contact.financement_perso_possible)||hasValue(contact.refus_ft_perso)||answered('financement_perso_possible'));
  if(contact.integration_score?.personal_remainder_applicable===true)require('reste_a_charge_perso','Financement personnel du reste à charge');
  if(['aps','a3p'].includes(normalize(contact.formation))){
   require('carte_pro','Carte professionnelle');
