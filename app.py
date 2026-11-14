@@ -2084,7 +2084,7 @@ TRAINING_GOOGLE_RATING = "4,8"
 
 
 def _render_training_email(template_name: str, **context) -> str:
-    return app.jinja_env.get_template(f"emails/training/{template_name}").render(
+    return app.jinja_env.get_template(f"emails/{template_name}").render(
         google_reviews_url=TRAINING_GOOGLE_REVIEWS_URL,
         google_rating=TRAINING_GOOGLE_RATING, **context,
     )
@@ -2098,7 +2098,7 @@ def build_vae_desp_email_html(prenom, devis_url, *, tuition=3800, abandoned=Fals
     )
     if abandoned:
         return _render_email_template("vae_desp.html", **context, devis_button_html=_training_quote_button(devis_url))
-    return _render_training_email("vae_desp.html", **context, devis_url=devis_url)
+    return _render_training_email("training/vae_desp.html", **context, devis_url=devis_url)
 
 
 def build_vae_desp_email_plain(prenom, devis_url):
@@ -2747,13 +2747,13 @@ def build_a3p_email_html(
         prenom=prenom, centre_display=centre_display, tuition=_eur_display(tuition),
         lodging=_eur_display(lodging), session_html=session_html,
     )
-    if not prominent_phone_booking:
-        return _render_training_email("a3p.html", **context, devis_url=devis_url, include_phone_booking=include_phone_booking)
-
-    # The META message has a separate design and a score-dependent appointment callout.
-    return _render_email_template(
-        "a3p.html", **context, devis_button_html=_training_quote_button(devis_url), phone_booking_html="",
-        prominent_phone_booking_html=_meta_booking_content({"formation": "A3P"}, html=True) if include_phone_booking else "",
+    return _render_training_email(
+        "training/a3p.html", **context, devis_url=devis_url,
+        include_phone_booking=include_phone_booking and not prominent_phone_booking,
+        prominent_phone_booking_html=(
+            _meta_booking_content({"formation": "A3P"}, html=True)
+            if prominent_phone_booking and include_phone_booking else ""
+        ),
     )
 
 
@@ -2790,6 +2790,8 @@ def _a3p_information_email_content(
         + "Je reste à votre disposition pour toute information complémentaire.\n\n"
         f"{CASSANDRE_SIGNATURE_TEXT}"
     )
+    if prominent_phone_booking:
+        plain += f"\n\nAvis Google · {TRAINING_GOOGLE_RATING}/5 — Lire les avis sur Google : {TRAINING_GOOGLE_REVIEWS_URL}"
     return (
         "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
         plain,
@@ -2808,7 +2810,7 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
     centre_label, centre_address = _centre_label_and_address(centre_code)
     session_html = _format_upcoming_sessions_for_email(centre_code, "APS", data_store, selected=dates_txt)
     return _render_training_email(
-        "aps.html",
+        "training/aps.html",
         prenom=prenom, tuition=_eur_display(tuition),
         session_html=session_html,
         centre_label=centre_label,
@@ -2840,7 +2842,7 @@ def build_ssiap1_email_html(
         else "Tarif applicable avec un certificat SST valide ou un PSC1 de moins de 2 ans."
     )
     return _render_training_email(
-        "ssiap1.html",
+        "training/ssiap1.html",
         prenom=prenom or "",
         session_html=session_html,
         centre_label=centre_label,
@@ -2853,7 +2855,7 @@ def build_ssiap1_email_html(
 
 
 def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
-    return _render_training_email("vtc.html", prenom=prenom, devis_url=devis_url)
+    return _render_training_email("training/vtc.html", prenom=prenom, devis_url=devis_url)
 
 
 
@@ -2867,7 +2869,7 @@ def build_desp_init_email_html(
     session_html = _format_upcoming_sessions_for_email(
         centre_code, "DESP_INIT", data_store,
     )
-    return _render_training_email("desp_init.html", prenom=prenom, tuition=_eur_display(tuition), centre_display=centre_display,
+    return _render_training_email("training/desp_init.html", prenom=prenom, tuition=_eur_display(tuition), centre_display=centre_display,
                                   session_html=session_html, devis_url=devis_url)
 
 
@@ -10424,6 +10426,34 @@ def _meta_phone_booking_allowed(contact, data_store=None):
 
 _META_INFORMATION_COURSES = ("APS", "DESP")
 
+_META_COURSE_TOKEN = "{{ presentation_formation_meta }}"
+
+
+def _meta_email_programme_body(content):
+    """Keep the editable copy of older META models inside the current course layout."""
+    content = str(content or "")
+    if _META_COURSE_TOKEN in content:
+        return content
+
+    body = re.search(r"<body\b[^>]*>(.*?)</body\s*>", content, re.I | re.S)
+    if body:
+        content = body[1]
+        # The original CRM editor saved its header, programme link and signature
+        # around the editable paragraphs. Only replace this known frame.
+        old_main = re.search(
+            r"<!-- EMAIL_GREETING_END -->\s*</p>(.*?)"
+            r'<div style="height:1px;background:#e6ebf2;',
+            content, re.S,
+        )
+        if old_main:
+            content = old_main[1]
+        else:
+            content = re.sub(r"<!-- EMAIL_SIGNATURE_START -->.*?<!-- EMAIL_SIGNATURE_END -->",
+                             "", content, flags=re.S)
+    if "<!-- EMAIL_CONTENT_START -->" not in content:
+        content = f"<!-- EMAIL_CONTENT_START -->{content}<!-- EMAIL_CONTENT_END -->"
+    return content + _META_COURSE_TOKEN
+
 
 def _meta_information_template(data, formation, kind):
     """Use the same editable content for automatic delivery and CRM previews."""
@@ -10431,6 +10461,8 @@ def _meta_information_template(data, formation, kind):
     saved = next((row for row in data.get(f"crm_{kind}_templates", [])
                   if row.get("id") == template_id), None)
     if saved:
+        if kind == "email":
+            return {**saved, "contenu": _meta_email_programme_body(saved.get("contenu"))}
         return saved
     if kind == "email":
         # Keep a single editable DESP model for both routes. Resolve the full
@@ -10438,7 +10470,7 @@ def _meta_information_template(data, formation, kind):
         body = (
             "<!-- EMAIL_CONTENT_START --><p>Vous pouvez répondre à cet e-mail pour "
             "nous préciser votre projet ou nous poser vos questions.</p><!-- EMAIL_CONTENT_END -->"
-            "{{ presentation_formation_meta }}"
+            + _META_COURSE_TOKEN
         )
     else:
         body = (
@@ -10455,10 +10487,8 @@ def _meta_information_template(data, formation, kind):
 def _meta_booking_content(contact, *, html):
     url = _crm_calendly_url(contact)
     if html:
-        return _render_email_template(
-            "a3p_meta_phone_booking.html",
-            formation=html_module.escape(str(contact.get("formation") or "A3P")),
-            booking_url=html_module.escape(url, quote=True),
+        return app.jinja_env.get_template("emails/a3p_meta_phone_booking.html").render(
+            formation=contact.get("formation") or "A3P", booking_url=url,
         )
     return f"Réservez votre rendez-vous téléphonique sur {url}"
 
@@ -10498,15 +10528,15 @@ def _meta_course_email(contact, data_store, introduction, include_booking):
     formation = contact.get("formation")
     code = _crm_formation_code(contact)
     common = {
-        "meta_lead": True, "prenom": "{{ prenom }}", "devis_button_html": "",
+        "prenom": "{{ prenom }}", "include_phone_booking": False,
         "meta_introduction_html": introduction,
         "prominent_phone_booking_html": _meta_booking_content(contact, html=True) if include_booking else "",
     }
     if formation == "APS":
         centre = _normalize_centre_code(contact.get("lieu"))
         label, address = _centre_label_and_address(centre)
-        return _render_email_template(
-            "aps.html", **common, centre_label=label, centre_address=address, tuition=_meta_tuition("APS", contact),
+        return _render_training_email(
+            "training/aps.html", **common, centre_label=label, centre_address=address, tuition=_meta_tuition("APS", contact),
             session_html=_format_upcoming_sessions_for_email(
                 centre, "APS", data_store, selected=contact.get("dates_formation"),
             ),
@@ -10514,21 +10544,44 @@ def _meta_course_email(contact, data_store, introduction, include_booking):
     if code == "DESP_VAE":
         amount = _meta_tuition_amount(code, contact)
         deposit = round(amount * 0.30) if amount is not None else None
-        return _render_email_template(
-            "vae_desp.html", **common, tuition=_eur_display(amount) if amount is not None else "Tarif à confirmer",
+        return _render_training_email(
+            "training/vae_desp.html", **common, tuition=_eur_display(amount) if amount is not None else "Tarif à confirmer",
             deposit=f"{deposit:,} €".replace(",", " ") if deposit is not None else "à confirmer",
             balance=f"{amount - deposit:,} €".replace(",", " ") if amount is not None else "à confirmer",
         )
     sessions = _meta_desp_initial_sessions(contact, data_store)
     if str(contact.get("desp_type") or "").strip().upper() == "INITIAL":
-        return _render_email_template(
-            "desp_init.html", **common, tuition=_meta_tuition("DESP_INIT", contact),
-            session_html=sessions, centre_display=html_module.escape(contact.get("lieu") or "Puget-sur-Argens ou Paris"),
+        return _render_training_email(
+            "training/desp_init.html", **common, tuition=_meta_tuition("DESP_INIT", contact),
+            session_html=sessions, centre_display=contact.get("lieu") or "Puget-sur-Argens ou Paris",
         )
-    return _render_email_template(
+    return _render_training_email(
         "meta_information.html", **common, session_html=sessions,
         initial_fee=_meta_tuition("DESP_INIT", contact), vae_fee=_meta_tuition("DESP_VAE", contact),
     )
+
+
+class _MetaEmailTextParser(_SecretariatWebsiteTextParser):
+    """Keep inline emphasis within sentences and separate the email's paragraphs."""
+
+    _ignored_tags = _SecretariatWebsiteTextParser._ignored_tags | {"head"}
+
+    def handle_data(self, data):
+        if not self._ignored_depth:
+            self.parts.append(re.sub(r"\s+", " ", data))
+
+    def handle_starttag(self, tag, attrs):
+        super().handle_starttag(tag, attrs)
+        if tag == "br":
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        super().handle_endtag(tag)
+        if tag in {"h1", "h2", "h3", "p", "div", "blockquote", "li", "td"}:
+            self.parts.append("\n")
+
+    def text(self):
+        return "\n".join(line.strip() for line in "".join(self.parts).splitlines() if line.strip())
 
 
 def _send_meta_information(recipient, data_store):
@@ -10554,9 +10607,9 @@ def _send_meta_information(recipient, data_store):
                 # Include link destinations in the plain-text alternative as well.
                 plain_body = re.sub(r'<a\b[^>]*\bhref="(https?://[^"]+)"[^>]*>(.*?)</a>',
                                     r'\2 (\1)', html, flags=re.I | re.S)
-                parser = _SecretariatWebsiteTextParser()
+                parser = _MetaEmailTextParser()
                 parser.feed(plain_body)
-                plain = "\n".join(parser.parts)
+                plain = parser.text()
                 delivery["email"] = bool(_crm_send_email_html(
                     recipient["mail"], subject, plain, html, template=template,
                 ))
@@ -20009,13 +20062,16 @@ def _crm_today_appointment_variables(contact, data_store=None, now=None):
 def _crm_resolve_message_variables(content, contact, html=False, data_store=None, *, meta_booking=None):
     """Resolve CRM template variables at preview/send time, never when saving."""
     content = str(content or "")
-    course_token = "{{ presentation_formation_meta }}"
-    if html and course_token in content and contact.get("formation") in _META_INFORMATION_COURSES:
+    if html and _META_COURSE_TOKEN in content and contact.get("formation") in _META_INFORMATION_COURSES:
         if meta_booking is None:
             meta_booking = _meta_phone_booking_allowed(contact, data_store)
         # Generated HTML is trusted application markup. Contact fields are
         # substituted with escaping below, just like any other saved model.
-        content = _meta_course_email(contact, data_store, content.replace(course_token, ""), meta_booking)
+        introduction = content.replace(_META_COURSE_TOKEN, "")
+        # Older and hand-edited models can already contain the appointment token.
+        # The course layout places the single scored invitation just after the introduction.
+        introduction = re.sub(r"\{\{\s*invitation_rdv\s*\}\}", "", introduction)
+        content = _meta_course_email(contact, data_store, introduction, meta_booking)
     resolved = re.sub(r"\{\{\s*prochaines_dates\s*\}\}",
                       lambda _: _crm_upcoming_dates(contact, html=html, data_store=data_store),
                       content)

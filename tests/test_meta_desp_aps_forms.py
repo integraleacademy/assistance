@@ -386,6 +386,7 @@ def test_automatic_messages_use_the_visible_models_and_course_booking(
     assert len(emails) == len(sms) == 1
     assert emails[0][1] == "Infos Lina"
     assert "Dossier Lina" in emails[0][2] and "Dossier Lina" in emails[0][3]
+    assert 'class="cover-art"' in emails[0][3] and emails[0][3].count(url) == int(score >= 30)
     assert "Cassandre MENARD" in emails[0][3] and sms[0][1].startswith("Projet Lina.")
     for message in (*emails[0][2:], sms[0][1]):
         assert (url in message) == (score >= 30)
@@ -473,13 +474,46 @@ def test_full_course_email_and_a3p_booking_panel_use_the_answers_for_this_submis
         assert "📞 Prochaine étape" not in text and "calendly.com/integraleacademy/apr" not in text
         assert not re.search(r"\{\{.*?\}\}|\{[a-z_]+\}", text)
     assert body.count("Memoji de Cassandre MENARD") == 1
-    assert 'background:#0f1f33' in body and 'href=""' not in body
+    assert 'href=""' not in body
+    assert body.count('class="cover-art"') == body.count('class="academy-wordmark"') == 1
+    assert "<img" not in body.split("<h1", 1)[0]
+    assert re.search(r'<h1\b[^>]*>.*?<em\b', body, re.S)
+    assert body.count('class="fact" align="center"') == 3
+    assert body.count('alt="L’Identité Numérique La Poste"') == 1
+    assert body.count('alt="Mon Compte Formation"') == 1
+    assert "4,8/5" in plain and body.count(application.TRAINING_GOOGLE_REVIEWS_URL) == 1
+    assert "IA Intégrale Academy" not in body and "chatgpt.com/g/" not in body
     if score >= 30:
         with application.app.app_context():
             panel = application._meta_booking_content({"formation": course}, html=True)
         assert panel in body and body.index(panel) < body.index("Dossier de présentation")
+        assert '<table role="presentation" align="center"' in panel
         assert all(topic in panel for topic in ("La formation", "Les dates", "Les tarifs", "Le financement"))
     assert application.load_data().get("demandes", []) == []
+
+
+def test_saved_legacy_meta_email_uses_the_new_layout_without_losing_edits(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    with application.app.test_request_context():
+        legacy = application.render_template(
+            "crm_email_wrapper.html", prenom="{{ prenom }}", formation="APS",
+            contenu="<!-- EMAIL_CONTENT_START --><p>Projet de {{ prenom }}.</p><!-- EMAIL_CONTENT_END -->"
+                    '<p><a href="https://exemple.fr/brochure">Ma brochure</a></p>{{ invitation_rdv }}',
+        )
+    data["crm_email_templates"] = [{
+        **application._meta_information_template(data, "APS", "email"),
+        "contenu": legacy, "sujet": "Nos informations", "versions": [{"contenu": legacy}],
+    }]
+    application.save_data(data)
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+    preview = client.get("/api/crm/templates/automatic-meta-aps-email/meta-preview").get_json()["contenu"]
+    assert "<p>Projet de Camille.</p>" in preview and 'href="https://exemple.fr/brochure"' in preview
+    assert preview.count("<!doctype html>") == preview.count('class="academy-wordmark"') == 1
+    assert preview.count("https://calendly.com/integraleacademy/aps") == 1
+    assert preview.count("Memoji de Cassandre MENARD") == 1 and "/static/logo.png" not in preview
+    assert application.load_data()["crm_email_templates"] == data["crm_email_templates"]
 
 
 def test_meta_desp_preview_matches_delivery_and_keeps_individual_centres(tmp_path, monkeypatch):

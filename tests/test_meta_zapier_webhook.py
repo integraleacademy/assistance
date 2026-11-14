@@ -234,6 +234,10 @@ def test_every_meta_lead_gets_both_messages_but_booking_starts_at_30(
     assert "Dossier de présentation" in emails[0][2]
     assert "4200" in emails[0][2]
     assert "formation" in sms[0][1]
+    assert 'class="cover-art"' in emails[0][3]
+    assert emails[0][3].count('class="fact" align="center"') == 3
+    assert emails[0][3].count(application.TRAINING_GOOGLE_REVIEWS_URL) == 1
+    assert application.TRAINING_GOOGLE_REVIEWS_URL in emails[0][2]
     assert "{phone_booking_html}" not in emails[0][3]
     assert "{prominent_phone_booking_html}" not in emails[0][3]
     for content in (emails[0][2], emails[0][3]):

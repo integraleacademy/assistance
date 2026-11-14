@@ -2044,15 +2044,16 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
     assert "4,8/5" in plain and application.TRAINING_GOOGLE_REVIEWS_URL in plain
 
 
-def test_crm_templates_include_meta_a3p_email_and_sms(tmp_path, monkeypatch):
+def test_crm_templates_include_meta_email_and_sms_for_each_formation(tmp_path, monkeypatch):
     response = client(tmp_path, monkeypatch).get("/api/crm/templates")
 
     assert response.status_code == 200
     automatic_meta = response.get_json()["automatic_meta"]
     assert [(template["type"], template["formation"]) for template in automatic_meta] == [
-        ("email", "A3P"), ("sms", "A3P"),
+        ("email", "A3P"), ("sms", "A3P"), ("email", "APS"), ("sms", "APS"),
+        ("email", "DESP"), ("sms", "DESP"),
     ]
-    email, sms = automatic_meta
+    email, sms = automatic_meta[:2]
     assert email["sujet"] == "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
     assert "{{ prenom }}" in email["contenu"]
     assert "Télécharger mon devis détaillé" not in email["contenu"]
@@ -2074,14 +2075,14 @@ def test_crm_templates_page_displays_automatic_emails_as_read_only():
     assert "templates.automatic_email||[]" in crm_js
 
 
-def test_crm_templates_page_displays_meta_a3p_messages_as_read_only():
+def test_crm_templates_page_displays_preview_for_all_meta_messages():
     crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
 
-    assert "Messages automatiques META A3P" in crm_js
+    assert "Messages automatiques META</h2>" in crm_js
     assert "templates.automatic_meta||[]" in crm_js
     assert "data-preview-automatic-meta" in crm_js
     assert "t.type==='email'?'E-mail':'SMS'" in crm_js
-    assert "automatique · META · A3P" in crm_js
+    assert "automatique · META · ${esc(t.formation)}" in crm_js
 
 
 def test_admin_can_reset_only_crm_prospect_data(tmp_path, monkeypatch):

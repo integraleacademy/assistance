@@ -9,11 +9,12 @@
 {% set accent = "#17694f" %}
 {% set pale = "#afe4cb" %}
 {% set tint = "#e5f3eb" %}
-{% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
+{% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
   <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Agent de Protection Physique des Personnes (A3P – Bodyguard)</strong>, titre reconnu par l’État (<strong>RNCP38002 – niveau 4</strong>).</p>
+  {{ meta_introduction() }}
   <p style="margin:0 0 12px;">Cette formation permet d’acquérir les compétences nécessaires pour intervenir en tant que <strong>garde du corps</strong>, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle <strong>Agent de protection physique des personnes</strong> délivrée par le <strong>CNAPS</strong> (Ministère de l’Intérieur).</p>
   <p style="margin:0 0 12px;">Elle vous permet d’accéder à des missions en protection rapprochée : événementiel, accompagnement de personnalités, sécurité privée haut de gamme, missions sensibles ou protection de dirigeants.</p>
   <p style="margin:0 0 12px;">Si vous êtes réellement motivé pour intégrer ce secteur, je vous conseille de réserver rapidement votre place.</p>

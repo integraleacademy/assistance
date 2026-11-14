@@ -1,54 +1,60 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Dirigeant d’entreprise de sécurité privée – Intégrale Academy</title>
-</head>
-<body style="margin:0;background:#eef1f5;color:#1f2937;font-family:Arial,Helvetica,sans-serif">
-  <div style="max-width:680px;margin:auto;padding:24px 12px">
-    <div style="background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 12px 35px rgba(15,31,51,.14)">
-      <div style="background:#0f1f33;padding:30px 24px;text-align:center;color:#fff">
-        <div style="margin:0 auto 16px;text-align:center;">{academy_wordmark}</div>
-        <div style="display:inline-block;background:#302f32;border:1px solid #a98b45;color:#f4c45a;padding:7px 14px;border-radius:20px;font-size:13px;font-weight:bold">Formation DESP — Dirigeant Sécurité Privée</div>
-        <h1 style="margin:16px 0 10px;font-size:28px;line-height:1.25">Devenez dirigeant d’entreprise de sécurité privée</h1>
-        <p style="margin:0;color:#dbeafe">Formation initiale ou validation des acquis de l’expérience</p>
-      </div>
-      <div style="padding:26px 28px 10px;font-size:15.5px;line-height:1.7">
-        <p style="margin:0 0 14px">Bonjour {prenom},</p>
-        <p>Merci pour votre demande concernant le titre de <strong>Dirigeant d’entreprise de sécurité privée (DESP)</strong>, enregistré au niveau 5 sous le numéro RNCP40385.</p>
-        {meta_introduction_html}
-        {prominent_phone_booking_html}
-        <p>Le choix du parcours dépend de votre expérience. Voici le déroulement et le tarif de chaque voie pour vous aider à vous situer.</p>
-      </div>
-      <div style="padding:0 28px 14px">
-        <div style="border:1px solid #e2e8f0;border-radius:18px;padding:20px;margin-bottom:14px">
-          <h2 style="font-size:18px;margin:0 0 12px;color:#0f1f33">🎓 Formation initiale</h2>
-          <p style="line-height:1.7">Pour acquérir les compétences de direction, de gestion et d’exploitation d’une entreprise de sécurité privée. Le parcours comprend <strong>175 heures à distance et 70 heures en présentiel</strong>, soit 245 heures.</p>
-          <h3 style="font-size:15px;color:#0f1f33">Prochaines sessions de formation initiale</h3>
-          {session_html}
-          <p><a href="https://www.integraleacademy.com/planning" style="color:#10243a">Consulter le planning des formations</a></p>
-        </div>
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:20px;margin-bottom:14px">
-          <h2 style="font-size:18px;margin:0 0 12px;color:#0f1f33">🧭 Validation des acquis de l’expérience (VAE)</h2>
-          <p style="line-height:1.7">Vous avez déjà exercé des responsabilités dans la sécurité privée ? Le <strong>Livret 1</strong> permet d’étudier votre expérience. Après recevabilité, vous préparez le <strong>Livret 2</strong> avec votre accompagnateur, puis vous présentez votre dossier au jury.</p>
-          <p><a href="https://gestionstagiaires-r5no.onrender.com/vae-desp" style="color:#10243a">Consulter la plateforme VAE et commencer le Livret 1</a></p>
-        </div>
-        <div style="background:#0f1f33;color:#fff;border-radius:18px;padding:22px;margin-bottom:14px">
-          <h2 style="font-size:18px;color:#f4c45a;margin:0 0 12px">💶 Tarifs et financement</h2>
-          <p>Formation initiale <strong>· {initial_fee}</strong><br>Parcours VAE <strong>· {vae_fee}</strong></p>
-          <p style="line-height:1.7">Nous pouvons faire le point avec vous sur vos droits CPF, une demande auprès de France Travail ou un financement personnel.</p>
-        </div>
-        <div style="text-align:center;border:1px solid #e2e8f0;border-radius:18px;padding:20px;margin-bottom:18px">
-          <h2 style="font-size:18px;margin:0 0 12px;color:#0f1f33">📄 Dossier de présentation</h2>
-          <a href="https://www.integraleacademy.com/dossiersfc" style="display:inline-block;padding:13px 20px;border-radius:10px;background:#0f1f33;color:white;font-weight:bold;text-decoration:none">Télécharger le dossier de présentation</a>
-        </div>
-        <p style="line-height:1.7">Vous pouvez me répondre en quelques mots sur les fonctions que vous avez déjà exercées. Je pourrai vous orienter vers le parcours qui vous correspond.</p>
-        <p>Je vous souhaite une excellente journée,</p>
-        {cassandre_signature}
-      </div>
-      <div style="background:#f8fafc;border-top:1px solid #e5e7eb;padding:20px;text-align:center;color:#64748b;font-size:12px">© Intégrale Academy — Merci de votre confiance 💛</div>
-    </div>
-  </div>
-</body>
-</html>
+{% extends "emails/training/layout.html" %}
+{% set document_title = "Dirigeant d’entreprise de sécurité privée – Intégrale Academy" %}
+{% set course_label = "Formation DESP — Dirigeant Sécurité Privée" %}
+{% set title_lead = "Devenez dirigeant" %}
+{% set title_italic = "d’entreprise de sécurité privée" %}
+{% set subtitle = "Formation initiale ou validation des acquis de l’expérience" %}
+{% set scene = "/images/desp/manuel/pilotage.webp" %}
+{% set focal = 35 %}
+{% set accent = "#ac4b23" %}
+{% set pale = "#ffd0ad" %}
+{% set tint = "#faebdf" %}
+{% from "emails/training/components.html" import button, fact, google_review, meta_introduction, price, section with context %}
+
+{% block facts %}
+  {{ fact("🎓", "Formation initiale", "245 heures") }}
+  {{ fact("🧭", "Validation des acquis de l’expérience", "Livret 1 et Livret 2", divider=true) }}
+  {{ fact("✅", "RNCP40385", "Niveau 5", divider=true) }}
+{% endblock %}
+
+{% block introduction %}
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;">Merci pour votre demande concernant le titre de <strong>Dirigeant d’entreprise de sécurité privée (DESP)</strong>, enregistré au niveau 5 sous le numéro RNCP40385.</p>
+  {{ meta_introduction() }}
+  <p style="margin:0;">Le choix du parcours dépend de votre expérience. Voici le déroulement et le tarif de chaque voie pour vous aider à vous situer.</p>
+{% endblock %}
+
+{% block details %}
+{% call section("🎓 Formation initiale", lead="🎓 Formation") %}
+  <p style="margin:0 0 12px;">Pour acquérir les compétences de direction, de gestion et d’exploitation d’une entreprise de sécurité privée. Le parcours comprend <strong>175 heures à distance et 70 heures en présentiel</strong>, soit 245 heures.</p>
+  <h3 style="margin:0 0 7px;color:#192b39;font:bold 15px/21px Arial,Helvetica,sans-serif;">Prochaines sessions de formation initiale</h3>
+  {{ session_html|safe }}
+  {{ button("Consulter le planning des formations", "https://www.integraleacademy.com/planning") }}
+{% endcall %}
+
+{% call section("🧭 Validation des acquis de l’expérience (VAE)", lead="🧭 Validation") %}
+  <p style="margin:0 0 12px;">Vous avez déjà exercé des responsabilités dans la sécurité privée ? Le <strong>Livret 1</strong> permet d’étudier votre expérience. Après recevabilité, vous préparez le <strong>Livret 2</strong> avec votre accompagnateur, puis vous présentez votre dossier au jury.</p>
+  {{ button("Consulter la plateforme VAE et commencer le Livret 1", "https://gestionstagiaires-r5no.onrender.com/vae-desp") }}
+{% endcall %}
+
+{% call section("💶 Tarifs et financement", "finance", lead="💶 Tarifs et") %}
+  <p style="margin:0;">Formation initiale</p>
+  {{ price(initial_fee) }}
+  <p style="margin:0;">Parcours VAE</p>
+  {{ price(vae_fee) }}
+  <p style="margin:0;">Nous pouvons faire le point avec vous sur vos droits CPF, une demande auprès de France Travail ou un financement personnel.</p>
+  {% include "emails/_identity_logos.html" %}
+{% endcall %}
+{{ google_review("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP", google_reviews_url, google_rating) }}
+
+{% call section("📄 Dossier de présentation", "dossier", lead="📄 Dossier") %}
+  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}
+{% endcall %}
+{% endblock %}
+
+{% block closing %}
+  <p style="margin:0 0 12px;">Vous pouvez me répondre en quelques mots sur les fonctions que vous avez déjà exercées. Je pourrai vous orienter vers le parcours qui vous correspond.</p>
+  <p style="margin:0 0 12px;">Je vous souhaite une excellente journée,</p>
+{% endblock %}
+
+{% block footer %}© Intégrale Academy — Merci de votre confiance 💛{% endblock %}

@@ -9,11 +9,12 @@
 {% set accent = "#ac4b23" %}
 {% set pale = "#ffd0ad" %}
 {% set tint = "#faebdf" %}
-{% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
+{% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
   <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande concernant la <strong>VAE Dirigeant d’Entreprise de Sécurité Privée</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
+  {{ meta_introduction() }}
   <p style="margin:0 0 12px;">La VAE permet d’obtenir cette certification sur la base de votre expérience professionnelle, sans suivre obligatoirement l’intégralité d’un parcours de formation classique.</p>
   <p style="margin:0 0 12px;">Elle s’adresse aux personnes ayant une expérience significative dans la sécurité privée, notamment sur des fonctions de direction, de gestion, d’encadrement, d’exploitation, de management ou de responsabilité opérationnelle.</p>
   <p style="margin:0 0 12px;">Vous pouvez commencer immédiatement votre démarche en ligne avec le Livret 1. Cela permet de vérifier si votre expérience correspond bien au référentiel du titre.</p>
@@ -61,10 +62,12 @@
 
 {{ digital_identity() }}
 
+{% if include_phone_booking|default(true) %}
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Vous souhaitez échanger avec notre équipe ? Faire un point sur votre expérience et votre financement ? Réservez un rendez-vous téléphonique.</p>
   {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/dirigeant", primary=true, centered=true) }}
 {% endcall %}
+{% endif %}
 {% endblock %}
 
 {% block closing %}

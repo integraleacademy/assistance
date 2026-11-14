@@ -9,11 +9,12 @@
 {% set accent = "#285e99" %}
 {% set pale = "#b5d8ff" %}
 {% set tint = "#e5effa" %}
-{% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
+{% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
   <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Agent de Prévention et de Sécurité (APS)</strong>.</p>
+  {{ meta_introduction() }}
   <p style="margin:0 0 12px;">Cette formation vous permet d’acquérir les compétences nécessaires pour exercer en tant qu’agent de sécurité privée, dans le respect de la réglementation française.</p>
   <p style="margin:0 0 12px;">Elle prépare à l’obtention du titre permettant ensuite de demander votre carte professionnelle auprès du <strong>CNAPS</strong>, indispensable pour travailler dans la sécurité privée.</p>
   <p style="margin:0 0 12px;">Si vous souhaitez intégrer rapidement le secteur de la sécurité privée, je vous conseille de réserver votre place dès que possible.</p>
@@ -58,10 +59,12 @@
 
 {{ digital_identity() }}
 
+{% if include_phone_booking|default(true) %}
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place, vous pouvez réserver un rendez-vous téléphonique avec notre équipe.</p>
   {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/aps", primary=true, centered=true) }}
 {% endcall %}
+{% endif %}
 {% endblock %}
 
 {% block closing %}

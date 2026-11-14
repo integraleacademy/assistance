@@ -9,11 +9,12 @@
 {% set accent = "#ac4b23" %}
 {% set pale = "#ffd0ad" %}
 {% set tint = "#faebdf" %}
-{% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
+{% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
   <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
+  {{ meta_introduction() }}
   <p style="margin:0 0 12px;">Cette formation vous permet d’acquérir les compétences indispensables pour <strong>créer, diriger et gérer une entreprise de sécurité privée</strong>. Elle vous permet également de demander votre <strong>agrément dirigeant</strong> auprès du <strong>CNAPS</strong>, conformément à la réglementation.</p>
   <p style="margin:0 0 12px;">Elle s’adresse aux personnes qui souhaitent structurer un projet sérieux : création d’entreprise, reprise d’activité, développement d’une société de sécurité ou mise en conformité réglementaire.</p>
   <p style="margin:0 0 12px;">Si votre objectif est de lancer ou développer une activité dans la sécurité privée, je vous conseille de réserver rapidement votre place afin de sécuriser votre entrée en formation.</p>
@@ -57,10 +58,12 @@
 
 {{ digital_identity() }}
 
+{% if include_phone_booking|default(true) %}
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Pour démarrer votre projet, découvrir les possibilités de financement ou réserver votre place, vous pouvez réserver un rendez-vous téléphonique avec notre équipe.</p>
   {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/dirigeant", primary=true, centered=true) }}
 {% endcall %}
+{% endif %}
 {% endblock %}
 
 {% block closing %}
