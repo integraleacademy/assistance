@@ -160,7 +160,7 @@ def test_new_a3p_meta_lead_receives_public_form_email_and_sms_without_quote(tmp_
     assert emails[0][0] == "LINA@Example.FR"
     expected = application._a3p_information_email_content(
         "Lina", contact["dates_formation"], "cote_azur", "",
-        include_phone_booking=False,
+        include_phone_booking=False, prominent_phone_booking=True,
     )
     assert emails[0][1:] == expected
     assert "Télécharger mon devis détaillé" not in emails[0][3]

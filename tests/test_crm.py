@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import gzip
 import json
+import re
 import subprocess
 import threading
 import time
@@ -1985,6 +1986,41 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
     ]
     assert "Centre de formation : <strong>Côte d’Azur</strong>" in desp_initial[0]["contenu"]
     assert "Centre de formation : <strong>Paris</strong>" in desp_initial[1]["contenu"]
+
+
+@pytest.mark.parametrize("model_id, formation, centre, reviewer", [
+    ("automatic-desp-vae", "DESP_VAE", "cote_azur", "Anthony LAURENT"),
+    ("automatic-a3p", "A3P", "cote_azur", "Charlize Farrugia"),
+    ("automatic-aps", "APS", "cote_azur", "Mathys Cathenoz"),
+    ("automatic-ssiap1", "SSIAP", "cote_azur", "didier"),
+    ("automatic-vtc", "VTC", "cote_azur", "Amélie M."),
+    ("automatic-desp-initial", "DESP_INIT", "cote_azur", "Nelson D."),
+    ("automatic-desp-initial-paris", "DESP_INIT", "paris", "Nelson D."),
+])
+def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model_id, formation, centre, reviewer):
+    crm = client(tmp_path, monkeypatch)
+    models = crm.get("/api/crm/templates").get_json()["automatic_email"]
+    preview = next(model for model in models if model["id"] == model_id)
+    recipient = "test@example.org"
+    with (
+        patch.object(application, "creer_piste_salesforce"),
+        patch.object(application, "send_email_html", return_value=True) as send,
+        patch.object(application, "envoyer_sms_demande_infos_formation", return_value=True),
+    ):
+        response = crm.post("/demande-informations-formations", data={
+            "prenom": "Anne & Léa", "nom": "Martin", "mail": recipient, "formation": formation,
+            "centre": centre, "ssiap_secourisme_valide": "OUI", "souhaite_devis": "OUI",
+        })
+
+    assert response.status_code == 302
+    message, = [call.args for call in send.call_args_list if call.args[0] == recipient]
+    _, subject, plain, body = message
+    quote_url, = set(re.findall(r'href="(http[^"]+/plan/[^"]+)"', body))
+    assert subject == preview["sujet"]
+    assert body == preview["contenu"].replace("{{ prenom }}", "Anne &amp; Léa").replace("{{ lien_devis }}", quote_url)
+    assert body.count(application.TRAINING_GOOGLE_REVIEWS_URL) == 1
+    assert reviewer in body and "Lire les avis sur Google" in body
+    assert "4,8/5" in plain and application.TRAINING_GOOGLE_REVIEWS_URL in plain
 
 
 def test_crm_templates_include_meta_a3p_email_and_sms(tmp_path, monkeypatch):

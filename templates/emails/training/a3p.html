@@ -1,0 +1,87 @@
+{% extends "emails/training/layout.html" %}
+{% from "emails/training/components.html" import button, fact, google_review, notice, section %}
+
+{% set document_title = "Formation A3P Bodyguard - Intégrale Academy" %}
+{% set course_label = "Formation A3P — Bodyguard" %}
+{% set headline = "Devenez Agent de Protection Physique des Personnes" %}
+{% set subtitle = "Titre reconnu par l’État — RNCP38002, niveau 4" %}
+{% set scene = "/images/a3p/manuel/protection.webp" %}
+
+{% block introduction %}
+  <p style="margin:0 0 12px;color:#23282a;font:700 19px/25px Arial,Helvetica,sans-serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Agent de Protection Physique des Personnes (A3P – Bodyguard)</strong>, titre reconnu par l’État (<strong>RNCP38002 – niveau 4</strong>).</p>
+  <p style="margin:0 0 12px;">Cette formation permet d’acquérir les compétences nécessaires pour intervenir en tant que <strong>garde du corps</strong>, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle <strong>Agent de protection physique des personnes</strong> délivrée par le <strong>CNAPS</strong> (Ministère de l’Intérieur).</p>
+  <p style="margin:0 0 12px;">Elle vous permet d’accéder à des missions en protection rapprochée : événementiel, accompagnement de personnalités, sécurité privée haut de gamme, missions sensibles ou protection de dirigeants.</p>
+  <p style="margin:0 0 12px;">Si vous êtes réellement motivé pour intégrer ce secteur, je vous conseille de réserver rapidement votre place.</p>
+  {{ notice("⚠️ Les places sont limitées : 12 places par formation.") }}
+{% endblock %}
+
+{% block facts %}
+  {{ fact("✅", "Titre reconnu par l’État", "RNCP38002 — niveau 4") }}
+  {{ fact("👮", "Carte professionnelle CNAPS", "Protection Physique des Personnes", divider=true) }}
+  {{ fact("🏨", "Hébergement sur place possible", lodging ~ " pour la totalité de la formation", divider=true) }}
+{% endblock %}
+
+{% block details %}
+{% call section("📄 Dossier de présentation") %}
+  <p style="margin:0 0 12px;">Vous pouvez consulter le dossier complet de présentation de la formation A3P.</p>
+  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc") }}
+{% endcall %}
+
+{% call section("🎓 Durée et organisation") %}
+  <p style="margin:0;"><strong>328 heures de formation</strong>, conformément à la réglementation.</p>
+{% endcall %}
+
+{% call section("🏫 Prochaines formations") %}
+  {{ session_html|safe }}
+  <p style="margin:0;">Centre de formation : <strong>{{ centre_display }}</strong></p>
+{% endcall %}
+
+{% call section("💶 Tarif & financement", "finance") %}
+  <p style="margin:0 0 12px;color:#ffffff;font:700 31px/35px Arial,Helvetica,sans-serif;">{{ tuition }}</p>
+  <p style="margin:0 0 12px;">Tarif : <strong>{{ tuition }}</strong><br> Formation finançable via votre <strong>Compte Personnel de Formation (CPF)</strong>.</p>
+  <p style="margin:0;">👉 Vous devez créer et activer votre <strong>Identité Numérique La Poste</strong> pour utiliser votre compte CPF ou faire une demande de financement à France Travail.</p>
+  {% if devis_url %}
+    {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
+  {% endif %}
+{% endcall %}
+
+{% call section("🛏️ Hébergement") %}
+  <p style="margin:0 0 12px;">Nous proposons une solution d’hébergement au sein du centre de formation au tarif de :<br> <strong>{{ lodging }} pour la durée totale de la formation.</strong></p>
+  <p style="margin:0;">Dortoir collectif, salle de bain, douche, cuisine équipée, machine à laver et sèche-linge. 👉 Paiement sur place par chèque ou espèces. La réservation est à effectuer lors de votre inscription.</p>
+{% endcall %}
+
+{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION") %}
+  <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
+  <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
+  {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
+{% endcall %}
+
+{{ google_review("Charlize Farrugia", "Centre de formation sérieux et professionnel, offrant un encadrement de qualité par des formateurs compétents.", "A3P", google_reviews_url, google_rating) }}
+
+{% if include_phone_booking %}
+{% call section("📞 Prochaine étape", "action") %}
+  <p style="margin:0 0 12px;">Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place, vous pouvez planifier un rendez-vous téléphonique avec notre équipe.</p>
+  {{ button("Réserver un rendez-vous", "https://calendly.com/integraleacademy/apr", primary=true) }}
+{% endcall %}
+{% endif %}
+
+{% call section("🤖 Une question immédiate ?", "help") %}
+  <p style="margin:0 0 12px;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br> pour obtenir des réponses immédiates sur la formation, les financements, le CPF, l’hébergement ou votre projet professionnel.</p>
+  <p style="margin:0 0 12px;">💬 Réponse immédiate, même le soir ou le week-end.</p>
+  {{ button("🚀 Poser une question à l’IA Intégrale Academy", "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy") }}
+{% endcall %}
+
+{% endblock %}
+
+{% block closing %}
+  <p style="margin:0 0 12px;">Je reste à votre disposition pour tous renseignements complémentaires.<br> Je vous souhaite une excellente journée,</p>
+{% endblock %}
+
+{% block footer %}
+  © Intégrale Academy — Merci de votre confiance 💛<br>
+  SIREN 840 899 884 - NDA 93830600283<br>
+  Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br>
+  UAI Côte d’Azur 0831774C - UAI Paris 0756548K<br>
+  integraleacademy.com
+{% endblock %}

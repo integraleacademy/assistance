@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{{ document_title }}</title>
+  <style>
+    body { margin:0; padding:0; }
+    table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+    @media only screen and (max-width:600px) {
+      .page-pad { padding:0 !important; }
+      .gutter { padding-left:20px !important; padding-right:20px !important; }
+      .masthead { padding-top:18px !important; padding-bottom:16px !important; }
+      .hero-copy, .hero-art { display:block !important; width:auto !important; }
+      .hero-art { padding:16px 0 0 !important; }
+      .hero-art img { width:100% !important; max-width:100% !important; height:142px !important; object-fit:cover; object-position:center 40%; }
+      .hero-title { font-size:30px !important; line-height:34px !important; }
+      .fact-cell { display:block !important; width:auto !important; border-left:0 !important; border-bottom:1px solid #e2ded5; }
+      .fact-cell:last-child { border-bottom:0; }
+      .inner-pad { padding:20px !important; }
+    }
+    @media only screen and (max-width:420px) {
+      .rating-cell, .quote-cell { display:block !important; width:auto !important; }
+      .rating-cell { border-right:0 !important; border-bottom:1px solid #d9d1bd; }
+    }
+  </style>
+</head>
+<body bgcolor="#f0eee8" style="margin:0;padding:0;background-color:#f0eee8;color:#282c2d;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f0eee8">
+    <tr><td align="center" class="page-pad" style="padding:24px 10px 36px;">
+      <!--[if mso]><table role="presentation" width="660" align="center" border="0" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" align="center" bgcolor="#ffffff" style="width:100%;max-width:660px;background-color:#ffffff;border-collapse:separate;border-spacing:0;">
+        <tr>
+          <td bgcolor="#1c2123" class="gutter masthead" style="padding:24px 30px 18px;border-top:5px solid #f4c65c;border-bottom:1px solid #3a4040;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
+              <td width="42" valign="middle"><img src="{{ logo_url }}" width="40" height="40" alt="" style="display:block;border:0;border-radius:50%;"></td>
+              <td valign="middle" style="padding-left:11px;color:#ffffff;font:700 17px/21px Arial,Helvetica,sans-serif;letter-spacing:.4px;">INTÉGRALE <span style="color:#f4c65c;">ACADEMY</span></td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td class="gutter" bgcolor="#1c2123" style="padding:26px 30px 30px;background-color:#1c2123;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
+              <td class="hero-copy" valign="middle" style="text-align:left;">
+                <p style="margin:0 0 10px;color:#f4c65c;font:700 12px/17px Arial,Helvetica,sans-serif;letter-spacing:.8px;text-transform:uppercase;">{{ course_label }}</p>
+                <h1 class="hero-title" style="margin:0;color:#ffffff;font:700 34px/38px Arial,Helvetica,sans-serif;letter-spacing:-1px;">{{ headline }}</h1>
+                <p style="margin:12px 0 0;color:#dddcd6;font:15px/22px Arial,Helvetica,sans-serif;">{{ subtitle }}</p>
+              </td>
+              <td class="hero-art" width="208" valign="middle" style="width:208px;padding-left:24px;">
+                <img src="https://integraleacademyofficiel-1.onrender.com/_next/image?url={{ scene|urlencode }}&amp;w=640&amp;q=75" alt="" width="208" style="display:block;width:100%;max-width:208px;height:auto;border:0;border-radius:8px;">
+              </td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr><td class="gutter" style="padding:26px 30px 0;color:#282c2d;font:16px/25px Arial,Helvetica,sans-serif;">
+          {% block introduction %}{% endblock %}
+        </td></tr>
+        <tr><td class="gutter" style="padding:18px 30px 8px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f6f5f0" style="width:100%;border:1px solid #e2ded5;border-radius:10px;table-layout:fixed;">
+            <tr>{% block facts %}{% endblock %}</tr>
+          </table>
+        </td></tr>
+        {% block details %}{% endblock %}
+        <tr><td class="gutter" style="padding:14px 30px 24px;color:#313536;font:16px/25px Arial,Helvetica,sans-serif;overflow-wrap:anywhere;">
+          {% block closing %}{% endblock %}
+          {% include "emails/_cassandre_signature.html" %}
+        </td></tr>
+        <tr><td class="gutter" bgcolor="#262b2d" style="padding:20px 30px;color:#e3e0d8;font:12px/19px Arial,Helvetica,sans-serif;text-align:left;">
+          {% block footer %}{% endblock %}
+        </td></tr>
+      </table>
+      <!--[if mso]></td></tr></table><![endif]-->
+    </td></tr>
+  </table>
+</body>
+</html>

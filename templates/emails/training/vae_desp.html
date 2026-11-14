@@ -1,0 +1,87 @@
+{% extends "emails/training/layout.html" %}
+{% from "emails/training/components.html" import button, fact, google_review, notice, section %}
+
+{% set document_title = "VAE Dirigeant d’Entreprise de Sécurité Privée - Intégrale Academy" %}
+{% set course_label = "VAE Dirigeant Sécurité Privée" %}
+{% set headline = "Obtenez le titre de dirigeant grâce à votre expérience" %}
+{% set subtitle = "RNCP40385 — niveau 5, équivalent Bac+2" %}
+{% set scene = "/images/formation-scenes-manuel/desp-vae-accompagnement.webp" %}
+
+{% block introduction %}
+  <p style="margin:0 0 12px;color:#23282a;font:700 19px/25px Arial,Helvetica,sans-serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;">Je fais suite à votre demande concernant la <strong>VAE Dirigeant d’Entreprise de Sécurité Privée</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
+  <p style="margin:0 0 12px;">La VAE permet d’obtenir cette certification sur la base de votre expérience professionnelle, sans suivre obligatoirement l’intégralité d’un parcours de formation classique.</p>
+  <p style="margin:0 0 12px;">Elle s’adresse aux personnes ayant une expérience significative dans la sécurité privée, notamment sur des fonctions de direction, de gestion, d’encadrement, d’exploitation, de management ou de responsabilité opérationnelle.</p>
+  <p style="margin:0 0 12px;">Vous pouvez commencer immédiatement votre démarche en ligne avec le Livret 1. Cela permet de vérifier si votre expérience correspond bien au référentiel du titre.</p>
+  {{ notice("⚠️ Vous pouvez démarrer votre VAE dès maintenant en totale autonomie.") }}
+{% endblock %}
+
+{% block facts %}
+  {{ fact("🚀", "Démarrage immédiat", "Livret 1 en ligne") }}
+  {{ fact("✅", "Titre reconnu par l’État", "RNCP40385 — niveau 5", divider=true) }}
+  {{ fact("👮", "Projet sécurité privée", "Direction, gestion, exploitation", divider=true) }}
+{% endblock %}
+
+{% block details %}
+{% call section("🚀 Démarrer votre VAE", "action") %}
+  <p style="margin:0 0 12px;">Commencez votre VAE en totale autonomie grâce à notre Plateforme en ligne VAE DESP en cliquant sur le bouton ci-dessous.</p>
+  {{ button("Démarrer ma VAE maintenant", "https://gestionstagiaires-r5no.onrender.com/vae-desp", primary=true) }}
+{% endcall %}
+
+{% call section("📄 Dossier de présentation") %}
+  <p style="margin:0 0 12px;">Vous pouvez également consulter le dossier complet de présentation.</p>
+  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc") }}
+{% endcall %}
+
+{% call section("🧭 Les étapes de votre parcours VAE") %}
+  <p style="margin:0 0 12px;"><strong>1️⃣ Livret 1 : dossier de faisabilité</strong><br> Vous complétez votre dossier en ligne afin de présenter votre parcours, vos fonctions exercées et vos responsabilités.</p>
+  <p style="margin:0 0 12px;"><strong>2️⃣ Étude du Livret 1</strong><br> La commission pédagogique analyse votre dossier. Si votre expérience est suffisante, une attestation de recevabilité peut être délivrée.</p>
+  <p style="margin:0 0 12px;"><strong>3️⃣ Convention et acompte</strong><br> Après recevabilité, nous mettons en place la convention de VAE et l’acompte de 30 %, soit <strong>{{ deposit }}</strong>.</p>
+  <p style="margin:0 0 12px;"><strong>4️⃣ Livret 2</strong><br> Vous détaillez vos activités professionnelles, vos missions de direction, vos responsabilités managériales, réglementaires et opérationnelles.</p>
+  <p style="margin:0 0 12px;"><strong>5️⃣ Étude du Livret 2 et jury</strong><br> Après analyse du dossier, une date de passage devant le jury est programmée. Le solde de <strong>{{ balance }}</strong> est à régler avant le jury.</p>
+  <p style="margin:0;"><strong>6️⃣ Certification</strong><br> Après validation par le jury, vous obtenez officiellement le titre <strong>RNCP40385 – Dirigeant d’Entreprise de Sécurité Privée</strong>.</p>
+{% endcall %}
+
+{% call section("💶 Tarif et financement", "finance") %}
+  <p style="margin:0 0 12px;color:#ffffff;font:700 31px/35px Arial,Helvetica,sans-serif;">{{ tuition }}</p>
+  <p style="margin:0 0 12px;">Tarif global : <strong>{{ tuition }}</strong><br> Financement possible via votre <strong>Compte Personnel de Formation (CPF)</strong>.</p>
+  <p style="margin:0 0 12px;">Ce tarif comprend :</p>
+  <ul style="margin:0 0 14px;padding-left:22px;"><li>L’étude de recevabilité</li> <li>L’accompagnement méthodologique au Livret 2</li> <li>La préparation au jury</li> <li>Les frais de certification</li> </ul>
+  <p style="margin:0 0 12px;">Pour utiliser votre Compte Personnel de Formation (CPF) ou demander un financement France Travail, vous devez créer et activer votre <strong>Identité Numérique La Poste</strong>.</p>
+  {% if devis_url %}
+    {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
+  {% endif %}
+{% endcall %}
+
+{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION") %}
+  <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
+  <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
+  {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
+{% endcall %}
+
+{{ google_review("Anthony LAURENT", "Je recommande vivement Intégrale Academy pour la qualité de son accompagnement et le dévouement du personnel.", "VAE DESP", google_reviews_url, google_rating) }}
+
+{% call section("📞 Prochaine étape", "action") %}
+  <p style="margin:0 0 12px;">Vous souhaitez échanger avec notre équipe ? Faire un point sur votre expérience et votre financement ? Réservez un RDV téléphonique.</p>
+  {{ button("Réserver un rendez-vous", "https://calendly.com/integraleacademy/dirigeant", primary=true) }}
+{% endcall %}
+
+{% call section("🤖 Une question immédiate ?", "help") %}
+  <p style="margin:0 0 12px;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br> pour obtenir des réponses immédiates sur la VAE, le CPF, le financement, le Livret 1, le Livret 2 ou votre projet professionnel.</p>
+  <p style="margin:0 0 12px;">💬 Réponse immédiate, même le soir ou le week-end.</p>
+  {{ button("🚀 Poser une question à l’IA Intégrale Academy", "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy") }}
+{% endcall %}
+
+{% endblock %}
+
+{% block closing %}
+  <p style="margin:0 0 12px;">Je reste à votre disposition pour tout renseignement complémentaire.<br> Je vous souhaite une excellente journée,</p>
+{% endblock %}
+
+{% block footer %}
+  © Intégrale Academy — Merci de votre confiance 💛<br>
+  SIREN 840 899 884 - NDA 93830600283<br>
+  Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br>
+  UAI Côte d’Azur 0831774C - UAI Paris 0756548K<br>
+  integraleacademy.com
+{% endblock %}

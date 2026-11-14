@@ -2073,12 +2073,26 @@ def _training_quote_button(url):
     )
 
 
-def build_vae_desp_email_html(prenom, devis_url, *, tuition=3800):
+TRAINING_GOOGLE_REVIEWS_URL = "https://www.google.com/maps?cid=14373460169956988061"
+TRAINING_GOOGLE_RATING = "4,8"
+
+
+def _render_training_email(template_name: str, **context) -> str:
+    return app.jinja_env.get_template(f"emails/training/{template_name}").render(
+        logo_url=HEBERGEMENT_MAIL_LOGO, google_reviews_url=TRAINING_GOOGLE_REVIEWS_URL,
+        google_rating=TRAINING_GOOGLE_RATING, **context,
+    )
+
+
+def build_vae_desp_email_html(prenom, devis_url, *, tuition=3800, abandoned=False):
     deposit = round(tuition * 0.30)
-    return _render_email_template(
-        "vae_desp.html", prenom=prenom, devis_button_html=_training_quote_button(devis_url), tuition=_eur_display(tuition),
+    context = dict(
+        prenom=prenom, tuition=_eur_display(tuition),
         deposit=f"{deposit:,} €".replace(",", " "), balance=f"{tuition - deposit:,} €".replace(",", " "),
     )
+    if abandoned:
+        return _render_email_template("vae_desp.html", **context, devis_button_html=_training_quote_button(devis_url))
+    return _render_training_email("vae_desp.html", **context, devis_url=devis_url)
 
 
 def build_vae_desp_email_plain(prenom, devis_url):
@@ -2325,7 +2339,7 @@ def _abandoned_training_email_content(prenom: str, formation_code: str, devis_ur
         return (
             "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)",
             build_vae_desp_email_plain(prenom, devis_url),
-            build_vae_desp_email_html(prenom, devis_url),
+            build_vae_desp_email_html(prenom, devis_url, abandoned=True),
         )
 
     config = _abandoned_training_config(formation_code)
@@ -2722,15 +2736,17 @@ def build_a3p_email_html(
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
     session_html = _format_upcoming_sessions_for_email(centre_code, "A3P", data_store)
+    context = dict(
+        prenom=prenom, centre_display=centre_display, tuition=_eur_display(tuition),
+        lodging=_eur_display(lodging), session_html=session_html,
+    )
+    if not prominent_phone_booking:
+        return _render_training_email("a3p.html", **context, devis_url=devis_url, include_phone_booking=include_phone_booking)
+
+    # The META message has a separate design and a score-dependent appointment callout.
     return _render_email_template(
-        "a3p.html", prenom=prenom, centre_display=centre_display, tuition=_eur_display(tuition), lodging=_eur_display(lodging),
-        session_html=session_html, devis_button_html=_training_quote_button(devis_url),
-        phone_booking_html=(_render_email_template("a3p_phone_booking.html")
-                            if include_phone_booking and not prominent_phone_booking else ""),
-        prominent_phone_booking_html=(
-            _meta_booking_content({"formation": "A3P"}, html=True)
-            if include_phone_booking and prominent_phone_booking else ""
-        ),
+        "a3p.html", **context, devis_button_html=_training_quote_button(devis_url), phone_booking_html="",
+        prominent_phone_booking_html=_meta_booking_content({"formation": "A3P"}, html=True) if include_phone_booking else "",
     )
 
 
@@ -2784,13 +2800,13 @@ def _a3p_information_email_content(
 def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None, *, tuition=1650):
     centre_label, centre_address = _centre_label_and_address(centre_code)
     session_html = _format_upcoming_sessions_for_email(centre_code, "APS", data_store, selected=dates_txt)
-    return _render_email_template(
+    return _render_training_email(
         "aps.html",
         prenom=prenom, tuition=_eur_display(tuition),
         session_html=session_html,
         centre_label=centre_label,
         centre_address=centre_address,
-        devis_button_html=_training_quote_button(devis_url),
+        devis_url=devis_url,
     )
 
 
@@ -2816,21 +2832,21 @@ def build_ssiap1_email_html(
         if ssiap_secourisme_valide == "NON"
         else "Tarif applicable avec un certificat SST valide ou un PSC1 de moins de 2 ans."
     )
-    return _render_email_template(
+    return _render_training_email(
         "ssiap1.html",
-        prenom=html_module.escape(prenom or ""),
+        prenom=prenom or "",
         session_html=session_html,
-        centre_label=html_module.escape(centre_label),
-        centre_address=html_module.escape(centre_address),
+        centre_label=centre_label,
+        centre_address=centre_address,
         tarif_display=_eur_display(tarif),
         secourisme_info=secourisme_info,
-        devis_url=html_module.escape(devis_url, quote=True),
+        devis_url=devis_url,
     )
 
 
 
 def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
-    return _render_email_template("vtc.html", prenom=prenom, devis_url=devis_url)
+    return _render_training_email("vtc.html", prenom=prenom, devis_url=devis_url)
 
 
 
@@ -2844,8 +2860,8 @@ def build_desp_init_email_html(
     session_html = _format_upcoming_sessions_for_email(
         centre_code, "DESP_INIT", data_store,
     )
-    return _render_email_template("desp_init.html", prenom=prenom, tuition=_eur_display(tuition), centre_display=centre_display,
-                                  session_html=session_html, devis_button_html=_training_quote_button(devis_url))
+    return _render_training_email("desp_init.html", prenom=prenom, tuition=_eur_display(tuition), centre_display=centre_display,
+                                  session_html=session_html, devis_url=devis_url)
 
 
 
@@ -5126,6 +5142,9 @@ def demande_informations_formations():
                 """
             )
             email_subject = "Votre demande de renseignements – Intégrale Academy"
+
+        if form_data.get("formation") in {"A3P", "APS", "DESP_INIT", "DESP_VAE", "SSIAP", "VTC"}:
+            plain += f"\n\nAvis Google · {TRAINING_GOOGLE_RATING}/5 — Lire les avis sur Google : {TRAINING_GOOGLE_REVIEWS_URL}"
 
         demande_entry["mail_contenu"] = plain
         demande_entry["mail_html"] = html
