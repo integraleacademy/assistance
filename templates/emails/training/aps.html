@@ -5,13 +5,13 @@
 {% set title_italic = "Prévention et de Sécurité" %}
 {% set subtitle = "Formation complète pour intégrer rapidement le secteur de la sécurité privée" %}
 {% set review = ("Mathys Cathenoz", "La formation est complète, bien organisée, avec un bon équilibre entre théorie et pratique.", "APS") %}
-{% set preheader = "Retrouvez les dates, le tarif et votre devis personnalisé." if devis_url else "Retrouvez les prochaines dates, le lieu et les possibilités de financement." %}
+{% set preheader = "Prochaine session APS à " ~ summary_place ~ " : les dates, le tarif et " ~ ("votre devis personnalisé." if devis_url else "les possibilités de financement.") %}
 {% set scene = "/images/aps/manuel/equipe.webp" %}
 {% set focal = 34 %}
 {% set accent = "#285e99" %}
 {% set pale = "#b5d8ff" %}
 {% set tint = "#e5effa" %}
-{% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
+{% from "emails/training/components.html" import button, date_label, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
   <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
@@ -35,8 +35,13 @@
   {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}
 {% endcall %}
 
-{% call section("📅 Prochaines sessions", lead="📅 Prochaines") %}
-  {{ session_html|safe }}
+{% call section("📅 Prochaine session", lead="📅 Prochaine") %}
+  <p style="margin:0;color:#20394a;font:700 16px/23px Arial,Helvetica,sans-serif;">{{ date_label(aps_sessions.next) }}</p>
+  {% if aps_sessions.requested and aps_sessions.requested != aps_sessions.next and aps_sessions.requested not in aps_sessions.others %}<p style="margin:8px 0 0;">Date demandée&nbsp;: <strong>{{ date_label(aps_sessions.requested) }}</strong></p>{% endif %}
+  {% if aps_sessions.others %}
+    <p style="margin:12px 0 3px;color:#445966;font-size:13px;font-weight:bold;">Autres dates</p>
+    <ul style="margin:0;padding-left:18px;">{% for other in aps_sessions.others %}<li style="margin:0 0 4px;">{{ date_label(other) }}{% if other == aps_sessions.requested %} <em>(date demandée)</em>{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
 {% endcall %}
 
 {% call section("🎓 Durée et organisation", lead="🎓 Durée et") %}

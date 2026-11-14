@@ -445,7 +445,7 @@ def test_receipt_survives_retry_and_preserves_a_write_during_delivery(tmp_path, 
 
 
 @pytest.mark.parametrize("form_id,route,location,contents,absent", [
-    ("1665286434987197", "", "", ["175 heures de formation", "Prochaines sessions", "1 700 € TTC", "PUGET"], "Livret 1"),
+    ("1665286434987197", "", "", ["175 heures de formation", "Prochaine session", "1 700 € TTC", "PUGET"], "Livret 1"),
     ("1124725393644713", "Formation initiale", "Paris",
      ["245 heures", "175 heures de e-learning", "Paris", "4 350 € TTC"], "Livret 1"),
     ("1124725393644713", "VAE", "", ["Livret 1", "Livret 2", "3 850 € TTC", "1 155 €", "2 695 €"], "245 heures"),
@@ -534,6 +534,14 @@ def test_meta_desp_preview_matches_delivery_and_keeps_individual_centres(tmp_pat
     assert post(client, lead(form_id="1124725393644713")).status_code == 201
     assert emails[0][3] == preview.replace("Camille", "Lina")
     document = html5lib.parse(preview, namespaceHTMLElements=False)
+    summary = document.find('.//table[@class="session-summary"]')
+    places = summary.findall('.//table[@class="session-place"]')
+    assert [place.find('.//h3').text for place in places] == ["Puget-sur-Argens", "Paris"]
+    assert "mai 2099" in places[0].find('.//p').text
+    assert "mars 2099" in places[1].find('.//p').text
+    assert [price.find('strong').text for price in summary.findall('.//p[@class="session-price"]')] == [
+        "4 350 € TTC", "3 850 € TTC",
+    ]
     cards = document.findall('.//table[@class="desp-venue"]')
     assert [card.find(".//h3").text for card in cards] == ["Puget-sur-Argens", "Paris"]
     puget, paris = [" ".join(" ".join(card.itertext()).split()) for card in cards]
@@ -600,3 +608,25 @@ def test_course_summary_uses_requested_or_earliest_session_and_handles_empty_dat
     assert application._next_email_session(labels, labels[0]) == labels[0]
     assert application._next_email_session([], "À convenir") == "À convenir"
     assert application._next_email_session([]) == "Dates à venir prochainement"
+
+
+def test_aps_form_and_meta_name_the_actual_next_session_and_keep_the_requested_date(monkeypatch):
+    first, second = "Du 5 au 9 janvier 2099", "Du 14 au 18 mai 2099"
+    monkeypatch.setattr(application, "_upcoming_session_labels", lambda *args: [second, first, second])
+    saved = {"crm_email_templates": [{"id": "automatic-meta-aps-email", "sujet":
+             "Formation APS — vos prochaines sessions et votre financement", "contenu": "Bonjour"}]}
+    with application.app.test_request_context():
+        messages = [
+            application.build_aps_email_html("Camille", second, "cote_azur", "", {}),
+            application._meta_course_email({"formation": "APS", "dates_formation": second}, {}, "", False),
+        ]
+        assert application._meta_information_template(saved, "APS", "email")["sujet"] == "Formation APS — prochaine session et financement"
+        saved["crm_email_templates"][0]["sujet"] = "Objet personnalisé"
+        assert application._meta_information_template(saved, "APS", "email")["sujet"] == "Objet personnalisé"
+    for html in messages:
+        document = html5lib.parse(html, namespaceHTMLElements=False)
+        assert document.find('.//table[@class="session-summary"]//p[@class="session-date"]').text == first
+        assert document.find('.//div[@class="preheader"]').text.startswith("Prochaine session APS")
+        assert document.find('.//h2[@aria-label="📅 Prochaine session"]') is not None
+        assert second in html and "(date demandée)" in html and "Autres dates" in html
+        assert "votre session" not in html.casefold() and "prochaines sessions" not in html.casefold()

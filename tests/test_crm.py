@@ -1972,7 +1972,7 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
         "DESP_VAE", "A3P", "APS", "SSIAP", "VTC", "DESP_INIT", "DESP_INIT",
     ]
     aps = next(template for template in automatic if template["formation"] == "APS")
-    assert aps["sujet"] == "Formation APS à Puget-sur-Argens — vos prochaines sessions"
+    assert aps["sujet"] == "Formation APS à Puget-sur-Argens — prochaine session"
     assert "{{ prenom }}" in aps["contenu"]
     assert "1 650" in aps["contenu"]
     a3p = next(template for template in automatic if template["formation"] == "A3P")
@@ -2028,8 +2028,15 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
             assert "recevabilité de votre demande" in text and "Poissonnière" not in text
     document = html5lib.parse(body, namespaceHTMLElements=False)
     assert document.find('.//div[@class="preheader"]').text.strip()
-    summary = document.findall('.//td[@class="session-cell"]')
-    assert len(summary) == 3 and all(''.join(cell.itertext()).strip() for cell in summary)
+    summary = document.find('.//table[@class="session-summary"]')
+    assert summary.find('.//h2').text == ("Démarrage" if formation in ("DESP_VAE", "VTC") else "Prochaine session")
+    place = summary.find('.//table[@class="session-place"]')
+    assert place.find('.//p[@class="session-date"]').text.strip()
+    assert place.find('.//p[@class="session-city"]').text.strip()
+    assert summary.find('.//p[@class="session-price"]/strong').text.strip()
+    if formation == "APS":
+        assert all("prochaine session" in value.casefold() for value in (subject, plain, body))
+        assert "prochaines sessions" not in (subject + plain + body).casefold()
     assert 'href="https://www.integraleacademy.com/dossiersfc"' in body
     if formation == "VTC":
         assert body.count("Télécharger mon devis détaillé") == 1

@@ -9,6 +9,10 @@
 {% endif %}
 {%- endmacro %}
 
+{% macro date_label(value) -%}
+{{ value|replace("Du 1 ", "Du 1er ")|replace("du 1 ", "du 1er ")|replace("au 1 ", "au 1er ") }}
+{%- endmacro %}
+
 {% macro fact(icon, title, detail, divider=false) -%}
 <td class="fact" align="center" valign="top" width="33%" style="width:33%;padding:2px 12px;text-align:center;overflow-wrap:anywhere;{% if divider %}border-left:1px solid #d6dfe5;{% endif %}font-family:Arial,Helvetica,sans-serif;">
   <span style="display:block;margin-bottom:4px;font-size:15px;line-height:18px;">{{ icon }}</span>
