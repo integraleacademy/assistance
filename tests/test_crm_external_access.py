@@ -166,6 +166,7 @@ def test_scope_matches_new_meta_and_response_does_not_leak_secrets(clients):
     ("get", "/api/crm/settings"), ("patch", "/api/crm/contacts/bulk"),
     ("post", "/api/crm/contacts/merge"), ("get", "/api/crm/calendly/appointments"),
     ("get", "/api/crm/calendly/event-types"), ("get", "/api/crm/calendly/availability"),
+    ("get", "/api/crm/calendly/cassandre-availability"),
     ("post", "/api/crm/contacts/new-meta/calendly/appointments"),
     ("get", "/api/crm/notifications"), ("get", "/api/crm/exports/contacts"),
     ("post", "/api/crm/wedof/sync"), ("post", "/api/crm/test-email"),
