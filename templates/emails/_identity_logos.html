@@ -1,0 +1,16 @@
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:550px;table-layout:fixed;background-color:#ffffff;border:1px solid #dce2e6;margin:12px auto 15px;">
+  <tr>
+    <td align="center" valign="middle" style="padding:10px 12px;color:#102c5c;font:700 13px/18px Arial,Helvetica,sans-serif;">
+      <a href="https://lidentitenumerique.laposte.fr" style="display:block;color:#102c5c;text-decoration:none;">
+        <img src="https://media.stonly.com/media/images/4ea9d0ff-de54-4fd4-8c47-c11171d6c49f.png?s=9bb96d2c147bee9f381a69af81b20eb143e291f8337fc8ced7918d8606d748b2bd3d4fa82a7b64f46bd33d4325158870dbb070f5a4c2d39cbb352e251d3a8f7e0d36470d46236d3fcbbc2c1c10d297376fe0830fa29d058ae2e1fe20abe5eeb10ef2a41d8f9bee6d1497ebc3a761e9ea" alt="L’Identité Numérique La Poste" width="202" style="display:block;width:100%;max-width:202px;height:auto;margin:0 auto;border:0;color:#102c5c;">
+      </a>
+    </td>
+    {% if show_cpf_badge|default(true) %}
+    <td width="43%" align="center" valign="middle" style="width:43%;padding:4px 7px;border-left:1px solid #e2e7ea;color:#164194;font:700 13px/18px Arial,Helvetica,sans-serif;">
+      <a href="https://www.moncompteformation.gouv.fr/" style="display:block;color:#164194;text-decoration:none;">
+        <img src="https://i-fle.univ-nantes.fr/medias/photo/logo-cpf-sans-fond_1728979585890-jpg" alt="Mon Compte Formation" width="145" style="display:block;width:100%;max-width:145px;height:auto;margin:0 auto;border:0;color:#164194;">
+      </a>
+    </td>
+    {% endif %}
+  </tr>
+</table>

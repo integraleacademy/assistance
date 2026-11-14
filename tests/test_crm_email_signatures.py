@@ -134,7 +134,7 @@ def test_library_training_dates_and_branding(tmp_path, monkeypatch):
         body = template['contenu']
         assert body.count('Memoji de Cassandre MENARD') == 1
         assert 'Clément VAILLANT' not in body and 'force.com' not in body
-        assert application.HEBERGEMENT_MAIL_LOGO in body
+        assert 'class="academy-wordmark"' in body and application.HEBERGEMENT_MAIL_LOGO not in body
         if template['formation'] in ('APS', 'SSIAP'):
             assert 'Du 1 au' not in body
             for day in [2, 3]:

@@ -30,7 +30,7 @@
           <!-- En-tête -->
           <tr>
             <td align="center" class="mobile-pad" style="padding:28px 44px 30px; background:#102c5c; background-image:linear-gradient(135deg,#102c5c 0%,#3269da 100%); color:#ffffff;">
-              <img src="https://assistance-alw9.onrender.com/static/logo.png" width="148" alt="Intégrale Academy" style="display:block; width:148px; max-width:100%; height:auto; margin:0 auto 20px; border:0; outline:none; text-decoration:none;">
+              <div style="margin:0 auto 20px;text-align:center;">{% include "emails/_academy_wordmark.html" %}</div>
               <div style="font-size:12px; line-height:16px; font-weight:700; letter-spacing:2.1px; text-transform:uppercase; opacity:.88;">Intégrale Academy</div>
               <h1 class="hero-title" style="margin:9px 0 8px; font-size:32px; line-height:38px; font-weight:750; letter-spacing:-.6px; color:#ffffff;">Le résumé de notre échange</h1>
               <div style="font-size:15px; line-height:22px; color:#e9f0ff;">Votre projet&nbsp;: <strong>Formation {{ formation.get('label') }}</strong></div>
@@ -48,7 +48,7 @@
                 Merci pour le temps accordé lors de notre échange au sujet de la formation <strong style="color:#172033;">{{ formation.get('label') }}</strong>. Voici la synthèse personnalisée de votre projet et les prochaines étapes utiles.
               </p>
 
-              <!-- Résumé narratif produit par l'IA : texte uniquement, sans Bonjour, sans signature, sans HTML -->
+              <!-- Résumé de l’échange -->
               <div style="font-size:15px; line-height:25px; color:#25344d;">
                 {% for paragraph in content.get('summary_paragraphs', []) %}
                 <p style="margin:0 0 14px;">{{ paragraph }}</p>
@@ -155,7 +155,7 @@
               {% if not appointment %}
               <div style="margin:28px 0 0; padding:20px; border:1px solid #cddbf3; background:#f7faff; border-radius:13px; text-align:center;">
                 <div style="font-size:15px; line-height:24px; color:#25344d;">Vous n'avez pas encore planifié de rendez-vous téléphonique avec notre équipe.</div>
-                <a href="{{ formation.get('calendly') }}" target="_blank" style="display:inline-block; margin-top:13px; padding:12px 20px; color:#ffffff; background:#3269da; border-radius:9px; text-decoration:none; font-size:14px; font-weight:700;">Prendre un RDV téléphonique</a>
+                <a href="{{ formation.get('calendly') }}" target="_blank" style="display:inline-block; margin-top:13px; padding:12px 20px; color:#ffffff; background:#3269da; border-radius:9px; text-decoration:none; font-size:14px; font-weight:700;">Réserver un rendez-vous téléphonique</a>
               </div>
               {% endif %}
 
@@ -207,17 +207,13 @@
               </div>
 
               {% if entry.get('cpf_consulte', '')|upper == 'OUI' or entry.get('cpf_montant') %}
+              {% include 'emails/_identity_logos.html' %}
               <p style="margin:18px 0 0; font-size:13px; line-height:21px; color:#637188; text-align:center;">
                 Pour mobiliser votre CPF, votre Identité Numérique La Poste doit être créée et fonctionnelle.<br>
                 <a href="https://lidentitenumerique.laposte.fr" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Créer ou vérifier votre Identité Numérique La Poste</a>
               </p>
               {% endif %}
 
-              {% if ai_url %}
-              <p style="margin:17px 0 0; font-size:13px; line-height:21px; color:#637188; text-align:center;">
-                Une question après notre échange&nbsp;? <a href="{{ ai_url }}" target="_blank" style="color:#102c5c; font-weight:700; text-decoration:underline;">Interroger l’IA Intégrale Academy</a>
-              </p>
-              {% endif %}
 
               <!-- Signature -->
               <div style="height:1px; background:#e6ebf2; margin:30px 0 24px;"></div>

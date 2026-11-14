@@ -1,0 +1,97 @@
+{% extends "emails/training/layout.html" %}
+{% set document_title = "Formation Chauffeur VTC - Intégrale Academy" %}
+{% set course_label = "Formation Chauffeur VTC" %}
+{% set title_lead = "Préparez votre examen VTC" %}
+{% set title_italic = "avec une formule tout inclus" %}
+{% set subtitle = "Théorie en ligne, pratique, frais d’examen et véhicule le jour de l’épreuve pratique." %}
+{% set scene = "/images/vtc/manuel/accueil.webp" %}
+{% set focal = 36 %}
+{% set accent = "#6f3ca1" %}
+{% set pale = "#d4b2fa" %}
+{% set tint = "#f1eafa" %}
+{% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
+
+{% block introduction %}
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Chauffeur VTC</strong>.</p>
+  <p style="margin:0 0 12px;">Cette formation vous permet de vous préparer efficacement à l’examen VTC, avec une partie théorique en ligne et une préparation pratique avec véhicule avant l’examen.</p>
+  <p style="margin:0 0 12px;">Notre formule est <strong>tout inclus</strong> : formation théorique complète, formation pratique, frais d’examen et mise à disposition du véhicule le jour de l’examen pratique.</p>
+  <p style="margin:0 0 12px;">Vous pouvez démarrer la partie théorique dès validation de votre inscription.</p>
+  {{ notice("⚠️ Les inscriptions doivent être anticipées afin de respecter les délais d’examen de la Chambre des Métiers.") }}
+{% endblock %}
+
+{% block facts %}
+  {{ fact("💻", "Formation théorique 100% en ligne à distance", "Accessible 7j/7") }}
+  {{ fact("🚗", "Formation pratique incluse", "À Puget-sur-Argens", divider=true) }}
+  {{ fact("✅", "Tout inclus", "Formation théorique + Formation pratique + Frais d'examen + Prêt du véhicule doubles commandes le jour de l'examen", divider=true) }}
+{% endblock %}
+
+{% block details %}
+{% call section("📄 Dossier de présentation", "dossier", lead="📄 Dossier") %}
+  <p style="margin:0 0 12px;">Vous pouvez consulter l’intégralité du contenu de la formation : programme, organisation, financement et modalités d’examen.</p>
+  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}
+{% endcall %}
+
+<tr><td class="gutter" style="padding:10px 30px 16px;">
+  {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
+</td></tr>
+
+{% call section("📅 Organisation de la formation", lead="📅 Organisation de") %}
+  <p style="margin:0 0 12px;"><strong>Formation théorique :</strong><br> • 100 % en ligne à distance<br> • Accessible 7j/7<br> • Démarrage possible après validation de votre inscription</p>
+  <p style="margin:0;"><strong>Formation pratique :</strong><br> • 1/2 journée de mise en situation professionnelle<br> • Réalisée dans nos locaux à Puget-sur-Argens (83)<br> • Préparation spécifique à l’examen pratique VTC</p>
+{% endcall %}
+
+{% call section("🧭 Déroulement du parcours", lead="🧭 Déroulement du") %}
+  <p style="margin:0 0 12px;"><strong>1️⃣ Inscription validée</strong><br>Nous vous communiquons vos identifiants pour accéder à votre espace de formation théorique en ligne.</p>
+  <p style="margin:0 0 12px;"><strong>2️⃣ Formation théorique</strong><br>Vous préparez l’examen à distance, à votre rythme, depuis un ordinateur, une tablette ou un smartphone.</p>
+  <p style="margin:0 0 12px;"><strong>3️⃣ Examen théorique</strong><br>L’examen est organisé par la Chambre des Métiers pour les candidats de la région PACA.</p>
+  <p style="margin:0 0 12px;"><strong>4️⃣ Formation pratique</strong><br>Après réussite de la théorie, nous organisons votre préparation pratique dans nos locaux à Puget-sur-Argens.</p>
+  <p style="margin:0;"><strong>5️⃣ Examen pratique</strong><br>Vous passez l’examen pratique avec le véhicule mis à disposition.</p>
+{% endcall %}
+
+{% call section("🗓️ Dates des examens", lead="🗓️ Dates des") %}
+  <p style="margin:0 0 12px;">Les examens théoriques sont organisés par la Chambre des Métiers pour les candidats de la région PACA.</p>
+  {{ button("Consulter les dates d’examen", "https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf") }}
+{% endcall %}
+
+{% call section("📋 Prérequis", lead="📋") %}
+  <p style="margin:0;">• Permis B depuis plus de 3 ans<br> • Casier judiciaire compatible avec l’activité VTC</p>
+{% endcall %}
+
+{% call section("💶 Tarif et financement", "finance", lead="💶 Tarif et") %}
+  {{ price("1 650 € TTC") }}
+  <p style="margin:0 0 12px;">Formule tout inclus :</p>
+  <p style="margin:0 0 12px;">✅ Formation théorique complète<br> ✅ Formation pratique d’1/2 journée<br> ✅ Frais d’examen inclus<br> ✅ Prêt du véhicule le jour de l’examen pratique</p>
+  <p style="margin:0 0 12px;">Financements possibles :</p>
+  <p style="margin:0 0 12px;">• Compte Personnel de Formation <strong>CPF</strong><br> • Demande de financement auprès de <strong>France Travail</strong><br> • Financement personnel</p>
+  <p style="margin:0 0 12px;">Pour utiliser votre Compte Personnel de Formation (CPF) ou demander un financement France Travail, vous devez créer et activer votre <strong>Identité Numérique La Poste.</strong></p>
+  {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
+{% endcall %}
+
+{{ google_review("Amélie M.", "Les cours sont très complets pour la formation VTC. Le personnel est disponible et très agréable.", "VTC", google_reviews_url, google_rating) }}
+
+{% call section("📚 Programme et agrément VTC", lead="📚 Programme et") %}
+  {{ button("Télécharger le programme de formation", "https://www.integraleacademy.com/dossiersfc") }}
+  {{ button("Télécharger notre agrément VTC", "https://www.integraleacademy.com/_files/ugd/008e7b_63440ab423cb458ab34a269f1a0af118.pdf") }}
+{% endcall %}
+
+{{ digital_identity() }}
+
+{% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
+  <p style="margin:0 0 12px;">Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place, vous pouvez réserver un rendez-vous téléphonique avec notre équipe.</p>
+  {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/chauffeurvtc", primary=true, centered=true) }}
+{% endcall %}
+{% endblock %}
+
+{% block closing %}
+  <p style="margin:0 0 12px;">Je reste à votre disposition pour tout renseignement complémentaire.<br> Je vous souhaite une excellente journée,</p>
+{% endblock %}
+
+{% block footer %}
+  © Intégrale Academy — Merci de votre confiance 💛<br>
+  54 chemin du Carreou 83480 Puget-sur-Argens / 142 rue de Rivoli 75001 Paris<br>
+  SIREN 840 899 884 - NDA 93830600283<br>
+  Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br>
+  UAI Côte d’Azur 0831774C - UAI Paris 0756548K<br>
+  integraleacademy.com
+{% endblock %}
