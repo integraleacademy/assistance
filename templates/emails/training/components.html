@@ -1,15 +1,15 @@
 {% macro fact(icon, title, detail, divider=false) -%}
-<td class="fact" valign="top" width="33%" style="width:33%;padding:2px {{ '12px' if divider else '12px 2px 0' }};{% if divider %}border-left:1px solid #d6dfe5;{% endif %}font-family:Arial,Helvetica,sans-serif;">
+<td class="fact" align="center" valign="top" width="33%" style="width:33%;padding:2px 12px;text-align:center;overflow-wrap:anywhere;{% if divider %}border-left:1px solid #d6dfe5;{% endif %}font-family:Arial,Helvetica,sans-serif;">
   <span style="display:block;margin-bottom:4px;font-size:15px;line-height:18px;">{{ icon }}</span>
   <strong class="fact-title" style="display:block;color:{{ accent }};font-size:15px;line-height:18px;">{{ title }}</strong>
   <span class="fact-text" style="display:block;margin-top:4px;color:#4a5863;font:13px/17px Arial,Helvetica,sans-serif;">{{ detail }}</span>
 </td>
 {%- endmacro %}
 
-{% macro button(label, url, primary=false) -%}
+{% macro button(label, url, primary=false, centered=false) -%}
 {% if primary %}
-<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width:100%;margin:9px 0 0;"><tr>
-  <td bgcolor="{{ accent }}" style="border:1px solid {{ accent }};border-radius:25px;mso-padding-alt:11px 19px;">
+<table role="presentation" {% if centered %}align="center" {% endif %}cellspacing="0" cellpadding="0" border="0" style="max-width:100%;margin:9px {{ 'auto' if centered else '0' }} 0;"><tr>
+  <td {% if centered %}align="center" {% endif %}bgcolor="{{ accent }}" style="{% if centered %}text-align:center;{% endif %}border:1px solid {{ accent }};border-radius:25px;mso-padding-alt:11px 19px;">
     <a href="{{ url }}" style="display:block;padding:11px 19px;color:#ffffff;font:700 15px/20px Arial,Helvetica,sans-serif;text-decoration:none;mso-padding-alt:0;">{{ label }}</a>
   </td>
 </tr></table>

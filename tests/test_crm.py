@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 
+import html5lib
 import pytest
 
 import app as application
@@ -2023,6 +2024,16 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
     cover = re.search(r'<h1\b[^>]*>(.*?)</h1>', body, re.S)
     assert cover and re.search(r'<em\b[^>]*>[^<]+</em>', cover[1])
     assert body.count('class="cover-art"') == 1
+    document = html5lib.parse(body, namespaceHTMLElements=False)
+    facts = document.findall('.//td[@class="fact"]')
+    assert len(facts) == 3 and all(cell.get("align") == "center" for cell in facts)
+    booking_table, = [
+        table for table in document.iter("table")
+        if any(link.get("href", "").startswith("https://calendly.com/")
+               for link in table.findall("./tbody/tr/td/a"))
+    ]
+    assert booking_table.get("align") == "center"
+    assert booking_table.find("./tbody/tr/td").get("align") == "center"
     masthead = body.split('<h1', 1)[0]
     assert 'class="academy-wordmark"' in masthead and '<img' not in masthead
     for logo in ("L’Identité Numérique La Poste", "Mon Compte Formation"):
