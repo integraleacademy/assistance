@@ -3,10 +3,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import gzip
 import json
+import re
 import subprocess
 import threading
 import time
 
+import html5lib
 import pytest
 
 import app as application
@@ -1987,19 +1989,75 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
     assert "Centre de formation : <strong>Paris</strong>" in desp_initial[1]["contenu"]
 
 
-def test_crm_templates_include_meta_a3p_email_and_sms(tmp_path, monkeypatch):
+@pytest.mark.parametrize("model_id, formation, centre, reviewer", [
+    ("automatic-desp-vae", "DESP_VAE", "cote_azur", "Anthony LAURENT"),
+    ("automatic-a3p", "A3P", "cote_azur", "Charlize Farrugia"),
+    ("automatic-aps", "APS", "cote_azur", "Mathys Cathenoz"),
+    ("automatic-ssiap1", "SSIAP", "cote_azur", "didier"),
+    ("automatic-vtc", "VTC", "cote_azur", "Amélie M."),
+    ("automatic-desp-initial", "DESP_INIT", "cote_azur", "Nelson D."),
+    ("automatic-desp-initial-paris", "DESP_INIT", "paris", "Nelson D."),
+])
+def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model_id, formation, centre, reviewer):
+    crm = client(tmp_path, monkeypatch)
+    models = crm.get("/api/crm/templates").get_json()["automatic_email"]
+    preview = next(model for model in models if model["id"] == model_id)
+    recipient = "test@example.org"
+    with (
+        patch.object(application, "creer_piste_salesforce"),
+        patch.object(application, "send_email_html", return_value=True) as send,
+        patch.object(application, "envoyer_sms_demande_infos_formation", return_value=True),
+    ):
+        response = crm.post("/demande-informations-formations", data={
+            "prenom": "Anne & Léa", "nom": "Martin", "mail": recipient, "formation": formation,
+            "centre": centre, "ssiap_secourisme_valide": "OUI", "souhaite_devis": "OUI",
+        })
+
+    assert response.status_code == 302
+    message, = [call.args for call in send.call_args_list if call.args[0] == recipient]
+    _, subject, plain, body = message
+    quote_url, = set(re.findall(r'href="(http[^"]+/plan/[^"]+)"', body))
+    assert subject == preview["sujet"]
+    assert body == preview["contenu"].replace("{{ prenom }}", "Anne &amp; Léa").replace("{{ lien_devis }}", quote_url)
+    assert body.count(application.TRAINING_GOOGLE_REVIEWS_URL) == 1
+    assert reviewer in body and "Lire les avis sur Google" in body
+    cover = re.search(r'<h1\b[^>]*>(.*?)</h1>', body, re.S)
+    assert cover and re.search(r'<em\b[^>]*>[^<]+</em>', cover[1])
+    assert body.count('class="cover-art"') == 1
+    document = html5lib.parse(body, namespaceHTMLElements=False)
+    facts = document.findall('.//td[@class="fact"]')
+    assert len(facts) == 3 and all(cell.get("align") == "center" for cell in facts)
+    booking_table, = [
+        table for table in document.iter("table")
+        if any(link.get("href", "").startswith("https://calendly.com/")
+               for link in table.findall("./tbody/tr/td/a"))
+    ]
+    assert booking_table.get("align") == "center"
+    assert booking_table.find("./tbody/tr/td").get("align") == "center"
+    masthead = body.split('<h1', 1)[0]
+    assert 'class="academy-wordmark"' in masthead and '<img' not in masthead
+    for logo in ("L’Identité Numérique La Poste", "Mon Compte Formation"):
+        assert body.count(f'alt="{logo}"') == 1
+    assert 'href="https://www.moncompteformation.gouv.fr/"' in body
+    assert "Réserver un rendez-vous téléphonique" in body and "Réserver un rendez-vous téléphonique" in plain
+    assert "IA Intégrale Academy" not in body and "chatgpt.com/g/" not in body + plain
+    assert "4,8/5" in plain and application.TRAINING_GOOGLE_REVIEWS_URL in plain
+
+
+def test_crm_templates_include_meta_email_and_sms_for_each_formation(tmp_path, monkeypatch):
     response = client(tmp_path, monkeypatch).get("/api/crm/templates")
 
     assert response.status_code == 200
     automatic_meta = response.get_json()["automatic_meta"]
     assert [(template["type"], template["formation"]) for template in automatic_meta] == [
-        ("email", "A3P"), ("sms", "A3P"),
+        ("email", "A3P"), ("sms", "A3P"), ("email", "APS"), ("sms", "APS"),
+        ("email", "DESP"), ("sms", "DESP"),
     ]
-    email, sms = automatic_meta
+    email, sms = automatic_meta[:2]
     assert email["sujet"] == "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
     assert "{{ prenom }}" in email["contenu"]
     assert "Télécharger mon devis détaillé" not in email["contenu"]
-    assert email["contenu"].index("Réserver mon rendez-vous téléphonique") < email["contenu"].index("Cette formation permet")
+    assert email["contenu"].index("Réserver un rendez-vous téléphonique") < email["contenu"].index("Cette formation permet")
     assert email["contenu"].count("https://calendly.com/integraleacademy/apr") == 1
     assert sms["contenu"] == application.build_training_information_sms_text("A3P")
     assert "https://calendly.com/integraleacademy/apr" in sms["contenu"]
@@ -2017,14 +2075,14 @@ def test_crm_templates_page_displays_automatic_emails_as_read_only():
     assert "templates.automatic_email||[]" in crm_js
 
 
-def test_crm_templates_page_displays_meta_a3p_messages_as_read_only():
+def test_crm_templates_page_displays_preview_for_all_meta_messages():
     crm_js = open(application.app.root_path + "/static/crm.js", encoding="utf-8").read()
 
-    assert "Messages automatiques META A3P" in crm_js
+    assert "Messages automatiques META</h2>" in crm_js
     assert "templates.automatic_meta||[]" in crm_js
     assert "data-preview-automatic-meta" in crm_js
     assert "t.type==='email'?'E-mail':'SMS'" in crm_js
-    assert "automatique · META · A3P" in crm_js
+    assert "automatique · META · ${esc(t.formation)}" in crm_js
 
 
 def test_admin_can_reset_only_crm_prospect_data(tmp_path, monkeypatch):

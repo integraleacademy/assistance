@@ -1,0 +1,90 @@
+{# Both fragments come from the CRM template editor or our shared booking template. #}
+{% macro meta_introduction() -%}
+{{ meta_introduction_html|default('')|safe }}
+{{ prominent_phone_booking_html|default('')|safe }}
+{%- endmacro %}
+
+{% macro fact(icon, title, detail, divider=false) -%}
+<td class="fact" align="center" valign="top" width="33%" style="width:33%;padding:2px 12px;text-align:center;overflow-wrap:anywhere;{% if divider %}border-left:1px solid #d6dfe5;{% endif %}font-family:Arial,Helvetica,sans-serif;">
+  <span style="display:block;margin-bottom:4px;font-size:15px;line-height:18px;">{{ icon }}</span>
+  <strong class="fact-title" style="display:block;color:{{ accent }};font-size:15px;line-height:18px;">{{ title }}</strong>
+  <span class="fact-text" style="display:block;margin-top:4px;color:#4a5863;font:13px/17px Arial,Helvetica,sans-serif;">{{ detail }}</span>
+</td>
+{%- endmacro %}
+
+{% macro button(label, url, primary=false, centered=false) -%}
+{% if primary %}
+<table role="presentation" {% if centered %}align="center" {% endif %}cellspacing="0" cellpadding="0" border="0" style="max-width:100%;margin:9px {{ 'auto' if centered else '0' }} 0;"><tr>
+  <td {% if centered %}align="center" {% endif %}bgcolor="{{ accent }}" style="{% if centered %}text-align:center;{% endif %}border:1px solid {{ accent }};border-radius:25px;mso-padding-alt:11px 19px;">
+    <a href="{{ url }}" style="display:block;padding:11px 19px;color:#ffffff;font:700 15px/20px Arial,Helvetica,sans-serif;text-decoration:none;mso-padding-alt:0;">{{ label }}</a>
+  </td>
+</tr></table>
+{% else %}
+<p style="margin:7px 0 2px;"><a href="{{ url }}" style="color:{{ accent }};font:700 15px/22px Arial,Helvetica,sans-serif;text-decoration:underline;">{{ label }}</a></p>
+{% endif %}
+{%- endmacro %}
+
+{% macro notice(message) -%}
+<p style="margin:9px 0 0;border-left:3px solid {{ accent }};padding:3px 0 3px 11px;color:#334450;font:italic 17px/23px Georgia,'Times New Roman',serif;">{{ message }}</p>
+{%- endmacro %}
+
+{% macro price(amount) -%}
+<p style="margin:0 0 14px;color:#ffffff;font:italic 38px/42px Georgia,'Times New Roman',serif;letter-spacing:-.8px;">{{ amount }}</p>
+{%- endmacro %}
+
+{% macro heading(title, lead, color, large=false) -%}
+<h2 class="{{ 'feature-title' if large else 'spread-heading' }}" aria-label="{{ title }}" style="margin:0;color:{{ color }};font:700 {{ '33px/36px' if large else '21px/25px' }} Arial,Helvetica,sans-serif;letter-spacing:-.6px;">{{ lead }} <em style="font-family:Georgia,'Times New Roman',serif;font-weight:400;font-style:italic;">{{ title[lead|length:]|trim }}</em></h2>
+{%- endmacro %}
+
+{% macro section(title, tone='standard', eyebrow='', lead='') -%}
+{% if tone == 'standard' %}
+<tr><td class="inset" style="padding:0 30px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-top:1px solid #ced9df;"><tr>
+    <td class="spread-title" valign="top" width="185" style="width:185px;padding:19px 18px 18px 0;">
+      {{ heading(title, lead, '#192b39') }}
+    </td>
+    <td class="spread-copy" valign="top" style="padding:19px 0 18px;color:#293844;font:15px/23px Arial,Helvetica,sans-serif;">
+      {{ caller() }}
+    </td>
+  </tr></table>
+</td></tr>
+{% elif tone == 'dossier' %}
+<tr><td class="inset" bgcolor="{{ tint }}" style="padding:16px 30px;background-color:{{ tint }};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
+    <td class="spread-title" valign="middle" width="185" style="width:185px;padding:0 18px 0 0;">{{ heading(title, lead, '#192b39') }}</td>
+    <td class="spread-copy" valign="middle" style="color:#293844;font:15px/22px Arial,Helvetica,sans-serif;">{{ caller() }}</td>
+  </tr></table>
+</td></tr>
+{% else %}
+{% set dark = tone == 'finance' %}
+{% set panel = '#152634' if dark else (tint if tone == 'action' else '#f6f4ed') %}
+<tr><td bgcolor="{{ panel }}" class="inset" style="padding:21px 30px;background-color:{{ panel }};border-top:{{ '4px solid ' ~ accent if tone in ('finance','action') else '1px solid #d6dfe1' }};color:{{ '#f5f7f9' if dark else '#293844' }};font:15px/23px Arial,Helvetica,sans-serif;">
+  {% if eyebrow %}<p style="margin:0 0 7px;color:#705721;font:700 10px/15px Arial,Helvetica,sans-serif;letter-spacing:1.4px;">{{ eyebrow }}</p>{% endif %}
+  {{ heading(title, lead, pale if dark else '#162b3b', tone in ('finance','action')) }}
+  <div style="margin-top:10px;">{{ caller() }}</div>
+</td></tr>
+{% endif %}
+{%- endmacro %}
+
+{% macro digital_identity() -%}
+{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION", lead="🔐 Identité Numérique") %}
+  {% include "emails/_identity_logos.html" %}
+  <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
+  <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
+  {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
+{% endcall %}
+{%- endmacro %}
+
+{# The overall rating and the attributed excerpts match the official site's /#avis-google section. #}
+{% macro google_review(author, excerpt, course, maps_url, rating) -%}
+<tr><td class="inset" bgcolor="#ffffff" style="padding:23px 30px;background-color:#ffffff;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-top:2px solid #1e3243;border-bottom:1px solid #bccad2;">
+    <tr>
+      <td style="padding:11px 0 9px;color:#1a3042;font:700 13px/18px Arial,Helvetica,sans-serif;">Avis Google</td>
+      <td align="right" style="padding:11px 0 9px;color:#1a3042;font:700 14px/18px Arial,Helvetica,sans-serif;"><span aria-hidden="true" style="color:#906510;letter-spacing:1px;">★★★★★</span> &nbsp;{{ rating }}/5</td>
+    </tr>
+    <tr><td colspan="2" class="quote" style="padding:0;color:#1a3042;font:italic 29px/34px Georgia,'Times New Roman',serif;"><blockquote style="margin:0;">« {{ excerpt }} »</blockquote></td></tr>
+    <tr><td colspan="2" style="padding:11px 0 13px;color:#3c505c;font:13px/19px Arial,Helvetica,sans-serif;"><b>{{ author }}</b> · {{ course }} &nbsp; <a href="{{ maps_url }}" style="display:inline-block;color:{{ accent }};font-weight:bold;text-decoration:underline;">Lire les avis sur Google</a></td></tr>
+  </table>
+</td></tr>
+{%- endmacro %}

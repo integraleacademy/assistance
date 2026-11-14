@@ -84,7 +84,9 @@ def brand_saved_template(body, logo_url, signature, avatar, *, saved):
         body = _DIRECTOR_SIGNATURE.sub(lambda _: signature, body)
     body = with_cassandre_memoji(body, avatar)
     if saved and re.search(r"<(?:!doctype|html)\b", body, re.I):
-        if not any(logo_url in image.group() for image in _IMAGE.finditer(body)):
+        if 'class="academy-wordmark"' not in body and not any(
+            logo_url in image.group() for image in _IMAGE.finditer(body)
+        ):
             logo = f'<div style="text-align:center;padding:16px"><img src="{logo_url}" width="105" alt="Intégrale Academy"></div>'
             opening = re.search(r"<body\b[^>]*>", body, re.I) or re.search(r"</head>|<html\b[^>]*>", body, re.I)
             at = opening.end() if opening else 0
