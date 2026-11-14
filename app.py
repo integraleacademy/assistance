@@ -17,6 +17,7 @@ from secretariat_catalogue import (
     PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
 )
 import crm_public_sessions
+from crm_calendar_availability import CassandreCalendar, HOST_EMAIL as CASSANDRE_EMAIL, PARIS as CALENDAR_PARIS
 import secretariat_calls
 import secretariat_messages
 from crm_read_cache import LastProjection, UpdateSnapshots
@@ -9373,16 +9374,21 @@ def _calendly_request(method, path, *, params=None, json_body=None, timeout=25):
         raise RuntimeError("Calendly a renvoyé une réponse illisible.") from exc
 
 
-def _calendly_paginated_collection(path, params=None, max_pages=100):
+def _calendly_paginated_collection(path, params=None, max_pages=100, *, strict=False):
     params = dict(params or {})
     collection = []
     for _ in range(max_pages):
         page = _calendly_request("GET", path, params=params)
+        if strict and (not isinstance(page, dict) or not isinstance(page.get("collection"), list)):
+            raise RuntimeError("Calendly a renvoyé des disponibilités incomplètes.")
         collection.extend(page.get("collection") or [])
         token = (page.get("pagination") or {}).get("next_page_token")
         if not token:
             break
         params["page_token"] = token
+    else:
+        if strict:
+            raise RuntimeError("La liste des disponibilités Calendly est incomplète.")
     return collection
 
 
@@ -9674,6 +9680,10 @@ _META_FORM_PROFILES = {
     "2748123228939966": ("APS", _META_DEFAULT_LOCATION),
     "1124725393644713": ("DESP", ""),
     "1665286434987197": ("APS", _META_DEFAULT_LOCATION),
+    "2051871915516458": ("DESP", ""),
+    "1313564204218877": ("APS", _META_DEFAULT_LOCATION),
+    "3605918179579680": ("DESP", ""),
+    "1124945893774109": ("APS", _META_DEFAULT_LOCATION),
 }
 
 _META_ANSWER_CONTAINERS = {
@@ -9774,7 +9784,13 @@ def _meta_scalar(value):
         return ""
     if isinstance(value, tuple):
         return ""
-    return str(value or "").strip()
+    return "" if value is None else str(value).strip()
+
+
+def _meta_test_answer(value):
+    # Le générateur de prospects de test de Meta peut répéter la question
+    # dans sa réponse (tarif, villes et mots-clés de financement compris).
+    return _meta_words(value).startswith("test lead dummy data for ")
 
 
 def _meta_words(value):
@@ -9849,7 +9865,7 @@ def _parse_meta_lead_payload(payload):
             canonical = aliases.get(_meta_key(str(name)[4:]))
         scalar = _meta_scalar(value)
         if canonical:
-            if scalar and not fields.get(canonical):
+            if scalar and not _meta_test_answer(scalar) and not fields.get(canonical):
                 fields[canonical] = scalar
         elif _meta_key(name) not in _META_ANSWER_CONTAINERS | _META_PAYLOAD_WRAPPERS:
             custom[str(name)] = copy.deepcopy(value)
@@ -9928,6 +9944,19 @@ def _meta_yes_no(value):
         ))
     )
     return "OUI" if positive else ""
+
+
+def _meta_personal_capacity(value):
+    explicit = _meta_yes_no(value)
+    if explicit:
+        return explicit
+    answer = _meta_words(value)
+    if answer.startswith(("je peux financer personnellement", "je peux regler", "je pourrais regler",
+                          "je peux payer", "je pourrais payer", "poursuivre mon projet et regler la part restante")):
+        return "OUI"
+    if answer.startswith(("je ne peux pas", "je ne pourrai pas", "je ne pourrais pas")):
+        return "NON"
+    return ""
 
 
 def _meta_formation(value):
@@ -10020,7 +10049,7 @@ def _meta_crm_question_field(question):
     direct = _META_DIRECT_CRM_QUESTION_ALIASES.get(key)
     if direct:
         return direct
-    if "montant" in key and "cpf" in key:
+    if "cpf" in key and ("montant" in key or "somme" in key or ("solde" in key and "consulte" not in key)):
         return "cpf_montant"
     if "identitenumerique" in key or "franceconnect" in key:
         return "identite_ok" if any(term in key for term in ("fonction", "active", "valide")) else "identite_creation"
@@ -10032,7 +10061,7 @@ def _meta_crm_question_field(question):
         return "statut_demande_financement_ft"
     if "montant" in key and ("accord" in key or "accepte" in key) and "francetravail" in key:
         return "montant_accorde_ft"
-    if any(term in key for term in ("payerpersonnellement", "financerpersonnellement", "financementpersonnel")):
+    if any(term in key for term in ("payerpersonnellement", "reglerpersonnellement", "financerpersonnellement", "financementpersonnel")):
         return "financement_perso_possible"
     if "refus" in key and ("francetravail" in key or "ft" in key) and "financ" in key:
         return "refus_ft_perso"
@@ -10075,7 +10104,7 @@ def _meta_answer_rows(fields, custom_answers):
         # Le nouveau formulaire APS réutilise l'ancienne clé technique de
         # l'aide à l'identité numérique pour la consultation du compte CPF.
         # Le payload original reste conservé dans la soumission.
-        if str(fields.get("form_id") or "") == "1665286434987197":
+        if str(fields.get("form_id") or "") in {"1665286434987197", "1124945893774109"}:
             question_key = str(question)
             if question_key.casefold().startswith("raw_"):
                 question_key = question_key[4:]
@@ -10089,7 +10118,20 @@ def _meta_answer_rows(fields, custom_answers):
         seen.add(marker)
         rows.append({"question": str(question).strip(), "answer": answer})
 
+    known_form = str(fields.get("form_id") or "").strip() in _META_FORM_PROFILES
+    readable_questions = {
+        _meta_key(question) for question, value in custom_answers.items()
+        if not str(question).casefold().startswith("raw_") and _meta_scalar(value)
+    } if known_form else set()
     for question, value in custom_answers.items():
+        if known_form and str(question).casefold().startswith("raw_"):
+            question = str(question)[4:]
+            if _meta_key(question) in readable_questions:
+                continue
+            if isinstance(value, str):
+                value = value.replace("_", " ")
+        if known_form:
+            question = str(question).replace("_", " ")
         add(question, value)
     for field, label in (
         ("formation", "Formation souhaitée"), ("centre", "Centre souhaité"),
@@ -10117,7 +10159,7 @@ def _meta_crm_payload(fields, custom_answers):
     field_answers = dict.fromkeys(("financement_ft", "financement_perso_possible"), "")
     if form_profile and form_profile[0] == "DESP":
         field_answers.update(lieu="", desp_type="")
-    if form_id in {"2007914916834027", "1124725393644713"}:
+    if form_profile and form_profile[0] == "DESP":
         form_questions = {
             "Quel parcours souhaitez-vous étudier ?": "desp_type",
             "Où pourriez-vous suivre les deux semaines en présentiel ?": "lieu",
@@ -10125,14 +10167,19 @@ def _meta_crm_payload(fields, custom_answers):
             "Comment envisagez-vous de financer votre parcours ?": "funding_plan",
             "Si la prise en charge est partielle ou refusée, que souhaitez-vous faire ?": "personal_funding",
         }
-    elif form_id in {"2748123228939966", "1665286434987197"}:
+    elif form_profile and form_profile[0] == "APS":
         form_questions = {
-            "Quelle solution de financement envisagez-vous en priorité ?": "funding_plan",
             "Pour le CPF, souhaitez-vous de l’aide pour créer votre identité numérique ?": "identity_help",
             "Si France Travail refuse votre demande, pourriez-vous régler la part restant à votre charge ?": "refus_ft_perso",
             "Si votre financement ne couvre pas toute la formation, pourriez-vous régler la différence ?": "reste_a_charge_perso",
-            "Si votre financement ne couvre pas toute la formation, pourriez-vous régler personnellement la différence ?": "reste_a_charge_perso",
         }
+    if form_profile:
+        form_questions.update({
+            "Quelle solution de financement envisagez-vous en priorité ?": "funding_plan",
+            "Si votre financement ne couvre pas toute la formation, pourriez-vous régler personnellement la différence ?": "reste_a_charge_perso",
+            ("Si votre financement ne couvre pas toute la formation, par exemple si votre CPF est insuffisant "
+             "ou si France Travail refuse votre demande, pourriez-vous régler personnellement la différence ?"): "reste_a_charge_perso",
+        })
     form_questions = {_meta_key(question): field for question, field in form_questions.items()}
 
     def set_yes_no(field, value):
@@ -10203,8 +10250,13 @@ def _meta_crm_payload(fields, custom_answers):
         "reste_a_charge_perso": "financement_perso_possible",
         "refus_ft_perso": "financement_perso_possible",
     }
+    # Les questions dédiées du nouveau formulaire priment sur les déductions
+    # tirées du mode de financement principal, quel que soit l'ordre du JSON.
+    explicit_funding = {}
     for row in answer_rows:
         question_name = row["question"]
+        if _meta_test_answer(row["answer"]):
+            continue
         if question_name.casefold().startswith("raw_"):
             question_name = question_name[4:]
         specific_field = form_questions.get(_meta_key(question_name))
@@ -10212,6 +10264,11 @@ def _meta_crm_payload(fields, custom_answers):
             continue
         mapped_field = specific_field or _meta_crm_question_field(question_name)
         text_field = display_fields.get(mapped_field, mapped_field)
+        if (form_profile and text_field in {"financement_ft", "financement_perso_possible"}
+                and mapped_field != "funding_plan"):
+            priority = 2 if mapped_field == text_field else 1
+            if text_field not in explicit_funding or priority > explicit_funding[text_field][0]:
+                explicit_funding[text_field] = (priority, row["answer"].replace("_", " ").strip())
         if text_field in field_answers and not field_answers[text_field]:
             field_answers[text_field] = row["answer"].replace("_", " ").strip()
         if specific_field:
@@ -10222,12 +10279,12 @@ def _meta_crm_payload(fields, custom_answers):
             negative = _meta_yes_no(row["answer"]) == "NON" or any(
                 term in answer for term in ("ne pas", "ne peux pas", "ne pourrai pas", "pas de financement")
             )
-            if specific_field in {"funding_plan", "personal_funding"}:
-                if (specific_field == "funding_plan" and form_profile[0] == "DESP"
+            if specific_field == "funding_plan":
+                if (form_profile[0] == "DESP"
                         and answer in {"je prevois un financement personnel", "financement personnel"}):
                     crm["financement_perso_integral_prevu"] = True
                 if not uncertain and not negative:
-                    if specific_field == "funding_plan" and any(
+                    if any(
                         term in answer for term in ("france travail", "pole emploi")
                     ) and "sans france travail" not in answer:
                         crm.setdefault("financement_ft", "OUI")
@@ -10236,23 +10293,15 @@ def _meta_crm_payload(fields, custom_answers):
                         "regler personnellement", "financer personnellement", "mes fonds personnels",
                     )):
                         crm.setdefault("financement_perso_possible", "OUI")
-                    elif specific_field == "personal_funding":
-                        if answer == "poursuivre mon projet et regler la part restante":
-                            crm.setdefault("financement_perso_possible", "OUI")
-                        else:
-                            set_yes_no("financement_perso_possible", row["answer"])
-                elif specific_field == "personal_funding" and not uncertain:
-                    set_yes_no("financement_perso_possible", row["answer"])
             elif specific_field in {"refus_ft_perso", "reste_a_charge_perso"}:
                 if not uncertain:
                     set_yes_no(specific_field, row["answer"])
-                    set_yes_no("financement_perso_possible", row["answer"])
             elif specific_field == "lieu":
                 # Une réponse « Paris ou Puget » ne choisit pas un centre.
                 places = _meta_training_places(answer)
                 if not uncertain and len(places) == 1:
                     apply("lieu", next(iter(places)))
-            elif specific_field != "identity_help":
+            elif specific_field not in {"identity_help", "personal_funding"}:
                 apply(specific_field, row["answer"])
             # Un projet CPF ne prouve pas que le compte a été consulté ; une
             # demande d'aide ne prouve pas que l'identité numérique est créée.
@@ -10261,13 +10310,22 @@ def _meta_crm_payload(fields, custom_answers):
             mapped_field = "cpf_palier"
         apply(mapped_field, row["answer"])
         question, answer = _meta_words(row["question"]), _meta_words(row["answer"])
-        if "financ" in question or "prise en charge" in question:
+        if not form_profile and ("financ" in question or "prise en charge" in question):
             if "cpf" in answer:
                 crm.setdefault("cpf", "OUI")
             if "france travail" in answer or "pole emploi" in answer:
                 crm.setdefault("financement_ft", "OUI")
 
     if form_profile:
+        for field, (_, answer) in explicit_funding.items():
+            field_answers[field] = answer
+            normalized = _meta_personal_capacity(answer) if field == "financement_perso_possible" else _meta_yes_no(answer)
+            if normalized:
+                crm[field] = normalized
+            else:
+                crm.pop(field, None)
+            if field == "financement_perso_possible" and crm.get(field) != "OUI":
+                crm.pop("financement_perso_integral_prevu", None)
         crm["formation"] = form_profile[0]
         if form_profile[1]:
             crm["lieu"] = form_profile[1]
@@ -16305,6 +16363,73 @@ def _crm_calendly_appointments_payload(data):
 def crm_calendly_appointments():
     """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
     return jsonify(_crm_calendly_appointments_payload(_crm_prepared_read_model()))
+
+
+_CASSANDRE_CALENDAR = CassandreCalendar()
+CASSANDRE_DAILY_APPOINTMENT_LIMIT = 12
+
+
+def _crm_cassandre_remaining_places(openings, appointments):
+    """Combine the available start times with Cassandre's remaining daily capacity."""
+    bookings = {day: set() for day, count in openings.items() if count}
+    if not bookings:
+        return openings
+    for appointment in appointments:
+        if not isinstance(appointment, dict):
+            continue
+        day = _crm_calendly_local_day(appointment)
+        if day not in bookings:
+            continue
+        status = str(appointment.get("status") or "").strip().lower()
+        if status in CRM_CANCELLED_APPOINTMENT_STATUSES or appointment.get("new_invitee"):
+            continue
+        if secretariat_messages.meeting_host(appointment, USERS) != USERS[CASSANDRE_EMAIL]:
+            continue
+        # Calendly can send multiple invitees for one meeting. Older CRM rows
+        # without an event URI still represent a booking at their recorded time.
+        key = appointment.get("event_uri") or _crm_calendar_slot(appointment, {})["start"]
+        bookings[day].add(key)
+
+    # The provider already removes occupied times. A booking consumes one
+    # place in the daily limit, independently of how many start times remain.
+    return {
+        day: min(count, max(0, CASSANDRE_DAILY_APPOINTMENT_LIMIT - len(bookings.get(day, ()))))
+        for day, count in openings.items()
+    }
+
+
+@app.get("/api/crm/calendly/cassandre-availability")
+@login_required
+def crm_cassandre_availability():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    today = now.astimezone(CALENDAR_PARIS).date()
+    selected = request.args.get("date")
+    try:
+        first = datetime.date.fromisoformat(selected) if selected is not None else today
+        if (selected is not None and first.isoformat() != selected) or first.year >= 9999:
+            raise ValueError
+    except ValueError:
+        return jsonify(error="Choisissez une date valide."), 400
+    length = 1 if selected is not None else 5
+    try:
+        data = _load_data_snapshot()
+        state = data.get("crm_calendly") or {}
+        account = (state.get("organization"), state.get("user"), state.get("configured_at"))
+        if first >= today and not _calendly_token():
+            raise RuntimeError("La connexion Calendly n’est pas configurée.")
+        openings = _CASSANDRE_CALENDAR.counts(
+            first, length, now, account, lambda: _calendly_event_types_for_context(data),
+            lambda path, params: _calendly_paginated_collection(path, params, strict=True),
+            refresh=request.args.get("refresh") == "1",
+        )
+        days = _crm_cassandre_remaining_places(openings, data.get("crm_calendly_appointments", []))
+    except RuntimeError as exc:
+        return _calendly_route_error(exc)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return jsonify(error="Calendly a renvoyé des disponibilités incomplètes pour Cassandre."), 502
+    response = jsonify(days=days)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])

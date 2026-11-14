@@ -816,16 +816,162 @@ function calendarContactMetrics(contact){
  const metric=(label,value,suffix)=>`<span class="calendar-contact-metric ${tone(value)}"><small>${label}</small><strong>${value===null?'Indisponible':`${value}${suffix}`}</strong></span>`;
  return `<div class="calendar-contact-metrics" aria-label="Indicateurs du dossier">${metric('Score d’intégration',score,' / 100')}${metric('Complétude du dossier',completeness,' %')}</div>`;
 }
-function changeCalendarDate(days){const date=new Date(`${calendarSelectedDate}T12:00:00`);date.setDate(date.getDate()+days);calendarSelectedDate=calendarDateKey(date);calendarDate.value=calendarSelectedDate;loadCalendar()}
+let calendarAvailability;
+
+function createCalendarAvailability(panel) {
+  const summary = panel.querySelector('.cassandre-days');
+  const total = panel.querySelector('.cassandre-total strong');
+  const notice = panel.querySelector('.cassandre-notice');
+  const cache = new Map();
+  const dayLabel = new Intl.DateTimeFormat('fr-FR', {weekday:'short', day:'numeric', timeZone:'UTC'});
+  const fullDate = new Intl.DateTimeFormat('fr-FR', {dateStyle:'full', timeZone:'UTC'});
+  const rangeLabel = new Intl.DateTimeFormat('fr-FR', {day:'numeric', month:'long', timeZone:'UTC'});
+  let today, lastDay;
+
+  function updateDates() {
+    const current = window.CRMAppointmentState.parisDayKey(new Date());
+    if (today === current) return;
+    today = current;
+    cache.clear();
+    const first = new Date(today + 'T12:00:00Z');
+    const last = new Date(first);
+    summary.replaceChildren();
+    for (let index=0; index<5; index++) {
+      last.setUTCDate(first.getUTCDate() + index);
+      const date = last.toISOString().slice(0,10);
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'cassandre-day';
+      tile.dataset.date = date;
+      tile.title = fullDate.format(last);
+      tile.innerHTML = `<span class="cassandre-day-date">${dayLabel.format(last)}</span><span class="cassandre-day-value"><b>—</b><small>libres</small></span>`;
+      summary.append(tile);
+    }
+    lastDay = last.toISOString().slice(0,10);
+    panel.querySelector('.cassandre-range').textContent = rangeLabel.formatRange(first,last);
+  }
+
+  function paint() {
+    if (!panel.isConnected) return;
+    const overview = cache.get('overview');
+    const days = overview?.days;
+    const appointmentsLabel = count => count > 1 ? 'places restantes' : 'place restante';
+    total.textContent = days ? Object.values(days).reduce((sum,count)=>sum+count,0) : '—';
+    summary.querySelectorAll('button').forEach(tile=>{
+      const date = tile.dataset.date, count = days?.[date];
+      tile.setAttribute('aria-pressed', String(date === calendarSelectedDate));
+      tile.setAttribute('aria-label', `${tile.title}, ${count == null ? (overview?.error ? 'disponibilités inconnues' : 'disponibilités en attente') : `${count} ${appointmentsLabel(count)}`}`);
+      tile.querySelector('b').textContent = count ?? '—';
+      tile.querySelector('small').textContent = count == null || count > 1 ? 'libres' : 'libre';
+      tile.classList.toggle('no-slots', count === 0);
+    });
+    const inOverview = calendarSelectedDate >= today && calendarSelectedDate <= lastDay;
+    const selected = inOverview ? overview : cache.get(calendarSelectedDate);
+    const past = calendarSelectedDate < today;
+    const count = past ? 0 : selected?.days?.[calendarSelectedDate];
+    const badge = document.querySelector('#calendarDayFree');
+    if (badge) {
+      badge.dataset.state = count == null ? 'unknown' : count ? 'available' : 'empty';
+      badge.textContent = count == null ? (selected?.error ? 'Disponibilité de Cassandre inconnue' : 'Disponibilités en cours…') : `${count} ${appointmentsLabel(count)} avec Cassandre`;
+    }
+    const error = overview?.error || (!past && selected?.error);
+    notice.hidden = !error;
+    if (error) notice.querySelector('span').textContent = error;
+    panel.setAttribute('aria-busy', String(Boolean(overview?.pending)));
+  }
+
+  function fetchDays(key, dates, force) {
+    const previous = cache.get(key);
+    if (previous?.pending || (!force && previous?.until > Date.now())) return;
+    const entry = {pending:true};
+    if (cache.size >= 16) {
+      const oldest = [...cache.keys()].find(value=>value !== 'overview');
+      cache.delete(oldest);
+    }
+    cache.set(key,entry);
+    const query = new URLSearchParams();
+    if (key !== 'overview') query.set('date',key);
+    if (force) query.set('refresh','1');
+    api(`/api/crm/calendly/cassandre-availability?${query}`, {timeout:45000}).then(result=>{
+      if (!dates.every(date=>Number.isInteger(result?.days?.[date]) && result.days[date] >= 0)) throw Error('Calendly a renvoyé des disponibilités incomplètes.');
+      entry.days = Object.fromEntries(dates.map(date=>[date,result.days[date]]));
+      entry.until = Date.now() + 45000;
+    }).catch(error=>{
+      entry.error = error.message;
+      entry.until = Date.now() + 15000;
+    }).finally(()=>{ entry.pending=false; paint(); });
+  }
+
+  function load(force=false) {
+    if (!panel.isConnected) return;
+    updateDates();
+    const days = [...summary.children].map(tile=>tile.dataset.date);
+    fetchDays('overview',days,force);
+    if (calendarSelectedDate > lastDay) fetchDays(calendarSelectedDate,[calendarSelectedDate],force);
+    paint();
+  }
+  summary.onclick = event=>{
+    const tile=event.target.closest('button[data-date]');
+    if (tile) selectCalendarDate(tile.dataset.date);
+  };
+  notice.querySelector('button').onclick=()=>load(true);
+  return {load,paint};
+}
+
+function selectCalendarDate(date) {
+  calendarSelectedDate=date;
+  document.querySelector('#calendarDate').value=date;
+  loadCalendar();
+}
+function changeCalendarDate(days) {
+  const date=new Date(`${calendarSelectedDate}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate()+days);
+  selectCalendarDate(date.toISOString().slice(0,10));
+}
 function initialCalendarDay() {
  const requested = new URLSearchParams(location.search).get('date') || '';
  const date = new Date(requested + 'T12:00:00Z');
  if (/^\d{4}-\d{2}-\d{2}$/.test(requested) && Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === requested) return requested;
  return window.CRMAppointmentState.parisDayKey(new Date());
 }
-function calendarPage(){calendarSelectedDate=initialCalendarDay();page.innerHTML=header('AGENDA COMMERCIAL','Calendrier','Les rendez-vous Calendly de la journée sélectionnée.')+`<section class="calendar-shell"><div class="calendar-toolbar"><div class="calendar-date-picker"><button class="btn calendar-nav" id="calendarPrevious" aria-label="Jour précédent">‹</button><label for="calendarDate"><span>Date affichée</span><input id="calendarDate" type="date" value="${calendarSelectedDate}"></label><button class="btn calendar-nav" id="calendarNext" aria-label="Jour suivant">›</button><button class="btn" id="calendarToday">Aujourd’hui</button><span class="calendar-live"><i></i> Synchronisé avec Calendly</span></div><button class="btn blue" id="calendarRefresh">↻ Actualiser</button></div><div id="calendarContent" class="calendar-loading"><span class="sync-spinner"></span><p>Chargement de votre agenda…</p></div></section>`;calendarPrevious.onclick=()=>changeCalendarDate(-1);calendarNext.onclick=()=>changeCalendarDate(1);calendarToday.onclick=()=>{calendarSelectedDate=window.CRMAppointmentState.parisDayKey(new Date());calendarDate.value=calendarSelectedDate;loadCalendar()};calendarDate.onchange=()=>{if(calendarDate.value){calendarSelectedDate=calendarDate.value;loadCalendar()}};calendarRefresh.onclick=()=>loadCalendar(true);loadCalendar()}
-function renderCalendarAppointments(appointments){const root=document.querySelector('#calendarContent');if(!root)return;const date=new Date(`${calendarSelectedDate}T12:00:00`),items=(appointments||[]).filter(a=>a.calendar_slot?.day===calendarSelectedDate).sort((a,b)=>a.calendar_slot.start-b.calendar_slot.start);root.className='calendar-days';root.innerHTML=`<section class="calendar-day"><header><div class="calendar-date"><strong>${date.getDate()}</strong><span>${date.toLocaleDateString('fr-FR',{weekday:'long'})}<small>${date.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</small></span></div><span>${items.length} rendez-vous</span></header>${items.length?`<div class="calendar-events">${items.map(a=>{const c=a.contact||{},name=a.calendar_slot.person,treatment=calendarAppointmentTreatment(a),treatmentClass=treatment?` calendar-treated-${treatment.tone}`:'';return `<article class="calendar-event calendar-training-${calendarFormationTone(a,c)}${treatmentClass}" ${c.id?`data-id="${c.id}"`:''}><time>${esc(a.calendar_slot.time)}</time><i></i><div><b>${esc(a.name||'Rendez-vous Calendly')}</b><span>${esc(name)}${c.formation?` · ${esc(c.formation)}`:''}</span><small class="calendar-host">Interlocuteur : ${esc(a.host_name||'Non renseigné')}</small>${calendarContactMetrics(c)}</div><div class="calendar-event-side">${treatment?`<span class="calendar-treatment-badge ${treatment.tone}">✓ ${esc(treatment.label)}</span>`:''}<span class="calendar-duration">${a.end_time?Math.round((new Date(a.end_time)-new Date(a.start_time))/60000)+' min':'Calendly'}</span>${appointmentResponseControl(a)}</div></article>`}).join('')}</div>`:'<div class="calendar-empty"><b>Aucun rendez-vous ce jour-là</b><span>Choisissez une autre date pour consulter l’agenda.</span></div>'}</section>`;bindRows();bindAppointmentResponseControls(items,()=>loadCalendar())}
-async function loadCalendar(manual=false){const root=document.querySelector('#calendarContent'),button=document.querySelector('#calendarRefresh');if(!root)return;if(manual){button.disabled=true;root.className='calendar-loading';root.innerHTML='<span class="sync-spinner"></span><p>Actualisation de votre agenda…</p>'}try{const data=await api('/api/crm/calendly/appointments');crmAppointments=data.appointments||[];renderCalendarAppointments(crmAppointments)}catch(e){root.className='activity-empty error-text';root.textContent=e.message}finally{if(button){button.disabled=false;button.textContent='↻ Actualiser'}}}
+function calendarPage(){
+  calendarSelectedDate=initialCalendarDay();
+  page.innerHTML=header('AGENDA COMMERCIAL','Calendrier','Rendez-vous et disponibilités de l’équipe commerciale.')+`
+    <section id="cassandreAvailability" class="cassandre-panel" aria-labelledby="cassandreTitle">
+      <div class="cassandre-heading">
+        <span class="cassandre-portrait" aria-hidden="true"></span>
+        <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Les 5 prochains jours <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p></div>
+      </div>
+      <div class="cassandre-grid">
+        <div class="cassandre-total" aria-live="polite"><span>Places restantes</span><strong>—</strong><small>au total</small></div>
+        <div class="cassandre-days" role="group" aria-label="Places restantes par jour"></div>
+      </div>
+      <div class="cassandre-notice" role="status" hidden><span></span><button type="button">Réessayer</button></div>
+    </section>
+    <section class="calendar-shell"><div class="calendar-toolbar"><div class="calendar-date-picker"><button class="btn calendar-nav" id="calendarPrevious" aria-label="Jour précédent">‹</button><label for="calendarDate"><span>Date affichée</span><input id="calendarDate" type="date" value="${calendarSelectedDate}"></label><button class="btn calendar-nav" id="calendarNext" aria-label="Jour suivant">›</button><button class="btn" id="calendarToday">Aujourd’hui</button><span class="calendar-live"><i></i> Synchronisé avec Calendly</span></div><button class="btn blue" id="calendarRefresh">↻ Actualiser</button></div><div id="calendarContent" class="calendar-loading"><span class="sync-spinner"></span><p>Chargement de votre agenda…</p></div></section>`;
+  calendarAvailability=createCalendarAvailability(document.querySelector('#cassandreAvailability'));
+  calendarPrevious.onclick=()=>changeCalendarDate(-1);
+  calendarNext.onclick=()=>changeCalendarDate(1);
+  calendarToday.onclick=()=>selectCalendarDate(window.CRMAppointmentState.parisDayKey(new Date()));
+  calendarDate.onchange=()=>{if(calendarDate.value)selectCalendarDate(calendarDate.value)};
+  calendarRefresh.onclick=()=>loadCalendar(true);
+  loadCalendar();
+}
+function renderCalendarAppointments(appointments){const root=document.querySelector('#calendarContent');if(!root)return;const date=new Date(`${calendarSelectedDate}T12:00:00`),items=(appointments||[]).filter(a=>a.calendar_slot?.day===calendarSelectedDate).sort((a,b)=>a.calendar_slot.start-b.calendar_slot.start);root.className='calendar-days';root.innerHTML=`<section class="calendar-day"><header><div class="calendar-date"><strong>${date.getDate()}</strong><span>${date.toLocaleDateString('fr-FR',{weekday:'long'})}<small>${date.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</small></span></div><div class="calendar-day-counts"><span>${items.length} rendez-vous prévu${items.length>1?'s':''}</span><span class="calendar-free-count" id="calendarDayFree" aria-live="polite"></span></div></header>${items.length?`<div class="calendar-events">${items.map(a=>{const c=a.contact||{},name=a.calendar_slot.person,treatment=calendarAppointmentTreatment(a),treatmentClass=treatment?` calendar-treated-${treatment.tone}`:'';return `<article class="calendar-event calendar-training-${calendarFormationTone(a,c)}${treatmentClass}" ${c.id?`data-id="${c.id}"`:''}><time>${esc(a.calendar_slot.time)}</time><i></i><div><b>${esc(a.name||'Rendez-vous Calendly')}</b><span>${esc(name)}${c.formation?` · ${esc(c.formation)}`:''}</span><small class="calendar-host">Interlocuteur : ${esc(a.host_name||'Non renseigné')}</small>${calendarContactMetrics(c)}</div><div class="calendar-event-side">${treatment?`<span class="calendar-treatment-badge ${treatment.tone}">✓ ${esc(treatment.label)}</span>`:''}<span class="calendar-duration">${a.end_time?Math.round((new Date(a.end_time)-new Date(a.start_time))/60000)+' min':'Calendly'}</span>${appointmentResponseControl(a)}</div></article>`}).join('')}</div>`:'<div class="calendar-empty"><b>Aucun rendez-vous ce jour-là</b><span>Choisissez une autre date pour consulter l’agenda.</span></div>'}</section>`;calendarAvailability?.paint();bindRows();bindAppointmentResponseControls(items,()=>loadCalendar())}
+async function loadCalendar(manual=false){
+  const root=document.querySelector('#calendarContent'),button=document.querySelector('#calendarRefresh');
+  if(!root)return;
+  calendarAvailability?.load(manual);
+  if(manual){button.disabled=true;root.className='calendar-loading';root.innerHTML='<span class="sync-spinner"></span><p>Actualisation de votre agenda…</p>'}
+  else renderCalendarAppointments(crmAppointments);
+  try{
+    const data=await api('/api/crm/calendly/appointments');
+    if(!root.isConnected)return;
+    crmAppointments=data.appointments||[];
+    renderCalendarAppointments(crmAppointments);
+  }catch(e){root.className='activity-empty error-text';root.textContent=e.message}
+  finally{button.disabled=false}
+}
 function changeReminderDate(days){const date=new Date(`${reminderSelectedDate}T12:00:00`);date.setDate(date.getDate()+days);reminderSelectedDate=calendarDateKey(date);reminderDate.value=reminderSelectedDate;renderReminders()}
 function remindersPage(){reminderSelectedDate=calendarDateKey(new Date());reminderShowAll=false;page.innerHTML=header('SUIVI COMMERCIAL','Relances','Les personnes à recontacter pour la journée sélectionnée.')+`<section class="calendar-shell reminder-shell"><div class="calendar-toolbar"><div class="calendar-date-picker"><button class="btn calendar-nav" id="reminderPrevious" aria-label="Jour précédent">‹</button><label for="reminderDate"><span>Date affichée</span><input id="reminderDate" type="date" value="${reminderSelectedDate}"></label><button class="btn calendar-nav" id="reminderNext" aria-label="Jour suivant">›</button><button class="btn" id="reminderToday">Aujourd’hui</button><span class="calendar-live reminder-live"><i></i> Planning des relances</span></div><button class="btn blue" id="reminderShowAll">Voir toutes les relances</button></div><div id="reminderContent" class="calendar-days"></div></section>`;reminderPrevious.onclick=()=>changeReminderDate(-1);reminderNext.onclick=()=>changeReminderDate(1);reminderToday.onclick=()=>{reminderSelectedDate=calendarDateKey(new Date());reminderDate.value=reminderSelectedDate;reminderShowAll=false;renderReminders()};reminderDate.onchange=()=>{if(reminderDate.value){reminderSelectedDate=reminderDate.value;reminderShowAll=false;renderReminders()}};reminderShowAll.onclick=()=>{reminderShowAll=!reminderShowAll;renderReminders()};renderReminders()}
 function reminderEvent(c){return `<article class="calendar-event reminder-event" data-id="${c.id}"><span class="avatar">${initials(c)}</span><i></i><div><b>${esc(displayName(c))}</b><span>${esc(c.mail||c.telephone||'Coordonnées à compléter')}${c.lieu?` · ${esc(c.lieu)}`:''}</span></div><span class="calendar-duration">${esc(c.formation||'Formation à définir')}</span></article>`}
@@ -2513,6 +2659,7 @@ async function refreshCrmSnapshot(){
  crmRefreshInFlight=true;
  try{
   const id=new URLSearchParams(location.search).get('fiche'),section=C.section,refreshParams=new URLSearchParams({delta:'1'});
+  if(section==='calendrier'&&!id)calendarAvailability?.load();
   const visibilityAtStart=section==='pistes'?cpfVisibilityRevision:null;
   if(id)refreshParams.set('contact_id',id);
   if(['pistes','demandes-rappel'].includes(C.section))refreshParams.set('section',C.section);

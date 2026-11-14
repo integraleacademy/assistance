@@ -17,6 +17,10 @@ from test_meta_zapier_webhook import lead, post, setup_client
         ("1665286434987197", "APS_HOOK1_COTE_AZUR", "APS", "", "", "Côte d’Azur"),
         ("1124725393644713", "DESP_VIDEO_INITIALE_VAE", "DESP", "Formation initiale", "Paris", "Paris"),
         ("1124725393644713", "DESP_VIDEO_INITIALE_VAE", "DESP", "VAE", "Côte d’Azur", "Côte d’Azur"),
+        ("2051871915516458", "DESP_VIDEO_INITIALE_VAE (v4)", "DESP", "VAE", "Paris", "Paris"),
+        ("1313564204218877", "APS_HOOK1_COTE_AZUR (v3)", "APS", "", "", "Côte d’Azur"),
+        ("3605918179579680", "DESP_VIDEO_INITIALE_VAE", "DESP", "Formation initiale", "Paris", "Paris"),
+        ("1124945893774109", "APS_HOOK1_COTE_AZUR", "APS", "", "", "Côte d’Azur"),
     ],
 )
 def test_known_forms_keep_training_answers_and_do_not_send_a3p_messages(
@@ -431,6 +435,102 @@ def test_france_travail_branch_does_not_invent_a_cpf_balance():
     })
     assert crm["financement_ft"] == crm["financement_perso_possible"] == "OUI"
     assert not crm.get("cpf") and not crm.get("cpf_montant") and not crm.get("inscrit_ft")
+
+
+# Clés relevées dans les deux exemples du 14 novembre. Les réponses utilisées
+# dans les scénarios sont fictives. Les transports de setup_client sont simulés.
+PERSONAL_BALANCE = (
+    "si_votre_financement_ne_couvre_pas_toute_la_formation,_par_exemple_si_votre_cpf_est_insuffisant_"
+    "ou_si_france_travail_refuse_votre_demande,_pourriez-vous_régler_personnellement_la_différence_?"
+)
+FUNDING_PLAN = "quelle_solution_de_financement_envisagez-vous_en_priorité_?"
+FT_REQUEST = "souhaitez-vous_demander_un_financement_à_france_travail_pour_cette_formation_?"
+APS_CPF_KEY = "pour_le_cpf,_souhaitez-vous_de_l’aide_pour_créer_votre_identité_numérique_?"
+APS_AMOUNT = "de_quelle_somme_disposez-vous_sur_votre_compte_cpf_?"
+IDENTITY = "avez-vous_déjà_créé_votre_identité_numérique_la_poste_?"
+
+
+@pytest.mark.parametrize("form_id,answers,expected", [
+    ("1124945893774109", {
+        FUNDING_PLAN: "France Travail, seul ou en complément du CPF.",
+        APS_CPF_KEY: "Oui", APS_AMOUNT: "1 250 €", IDENTITY: "Non",
+        FT_REQUEST: "Non", PERSONAL_BALANCE: "Oui, je pourrais régler la différence.",
+    }, {
+        "formation": "APS", "lieu": "Côte d’Azur", "cpf": "OUI", "cpf_montant": "1250.00",
+        "identite_creation": "NON", "financement_ft": "NON", "financement_perso_possible": "OUI",
+        "reste_a_charge_perso": "OUI",
+    }),
+    ("3605918179579680", {
+        "quel_est_votre_projet_aujourd’hui_?": "Diriger mon entreprise",
+        "quel_parcours_souhaitez-vous_étudier_?": "Formation initiale",
+        "où_souhaiteriez-vous_suivre_votre_formation_?": "Paris",
+        "quelles_responsabilités_avez-vous_personnellement_exercées_?": "Management",
+        "pourriez-vous_illustrer_ces_responsabilités_avec_des_justificatifs_?": "Oui",
+        FUNDING_PLAN: "Mon CPF", "avez-vous_déjà_consulté_votre_compte_personnel_de_formation_(cpf)_?": "Oui",
+        "de_quel_montant_disposez-vous_sur_votre_compte_cpf_?": "Entre 1 000 et 2 000 €",
+        IDENTITY: "Non", PERSONAL_BALANCE: "Non, il me faudrait un financement complet.",
+    }, {
+        "formation": "DESP", "lieu": "Paris", "desp_type": "INITIAL", "cpf": "OUI",
+        "cpf_palier": "Entre 1 000 et 2 000 €", "identite_creation": "NON",
+        "financement_perso_possible": "NON", "reste_a_charge_perso": "NON",
+    }),
+])
+def test_november_forms_save_one_copy_of_each_answer_and_keep_funding_separate(
+        tmp_path, monkeypatch, form_id, answers, expected):
+    client = setup_client(tmp_path, monkeypatch)
+    raw = {"raw_" + key: value.replace(" ", "_") for key, value in answers.items()}
+    payload = lead(form_id=form_id, **raw, **answers)
+    assert post(client, payload).status_code == 201
+    assert post(client, payload).json["result"] == "already_processed"
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    assert {key: contact.get(key) for key in expected} == expected
+    assert len(contact["meta_answers"]) == len(answers)
+    assert not any(row["question"].startswith("raw_") for row in contact["meta_answers"])
+    assert not contact.get("statut_demande_financement_ft") and not contact.get("refus_ft_perso")
+    if form_id == "3605918179579680":
+        assert not contact.get("financement_ft") and not contact.get("cpf_montant")
+    else:
+        assert contact["meta_source"]["field_answers"]["financement_ft"] == "Non"
+    assert data["crm_meta_lead_submissions"][0]["raw_payload"] == payload
+    assert not application._crm_backfill_meta_submissions(data)
+
+
+@pytest.mark.parametrize("reverse", [True, False])
+def test_explicit_undecided_answers_take_precedence_over_funding_plan(reverse):
+    answers = [(FT_REQUEST, "Je dois me renseigner."), (PERSONAL_BALANCE, "Selon le devis."),
+               (FUNDING_PLAN, "France Travail, seul ou en complément du CPF.")]
+    crm, _ = application._meta_crm_payload(
+        {"form_id": "1124945893774109"}, dict(reversed(answers) if reverse else answers),
+    )
+    assert not crm.get("cpf") and not crm.get("financement_ft") and not crm.get("financement_perso_possible")
+    assert crm["meta_field_answers"]["financement_ft"] == "Je dois me renseigner."
+    assert crm["meta_field_answers"]["financement_perso_possible"] == "Selon le devis."
+
+
+@pytest.mark.parametrize("answer,amount,tier", [
+    (0, "0.00", ""), ("Je ne sais pas", "", ""), ("Plus de 1 500 €", "", "Plus de 1 500 €"),
+])
+def test_aps_amount_distinguishes_zero_unknown_and_range(answer, amount, tier):
+    crm, _ = application._meta_crm_payload({"form_id": "1124945893774109"}, {APS_AMOUNT: answer})
+    assert crm.get("cpf_montant", "") == amount and crm.get("cpf_palier", "") == tier
+    assert not crm.get("cpf")
+
+
+def test_meta_generated_sample_questions_are_never_financial_answers():
+    fields, custom = application._parse_meta_lead_payload({
+        "form_id": "1124945893774109", "nom_complet": "<test lead: dummy data for nom complet>",
+        "numéro_de_téléphone": "<test lead: dummy data for numéro de téléphone>",
+        FT_REQUEST: "<test lead: dummy data for " + FT_REQUEST + ">",
+        PERSONAL_BALANCE: "<test lead: dummy data for " + PERSONAL_BALANCE + ">",
+        APS_AMOUNT: "<test lead: dummy data for montant à 1 700 €>",
+    })
+    crm, rows = application._meta_crm_payload(fields, custom)
+    assert len(rows) == 3
+    assert not any(crm.get(key) for key in (
+        "prenom", "telephone", "cpf_montant", "financement_ft", "financement_perso_possible",
+    ))
+    assert not any(crm["meta_field_answers"].values())
 
 
 @pytest.mark.parametrize("formation,form_id,slug", [

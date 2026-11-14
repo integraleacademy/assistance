@@ -211,6 +211,75 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .contact-head{padding:18px 20px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 5px 20px #17203308}.contact-head .avatar{background:linear-gradient(145deg,#356ae6,#6c86ef);color:#fff;box-shadow:0 8px 20px #356ae62c}.contact-subnav{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:18px;border-bottom:1px solid var(--line)}.contact-subnav .wedof-tabs{margin-bottom:-1px;border-bottom:0}.funding-badges{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding-bottom:10px}.funding-badges[hidden]{display:none}.funding-badge{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;font-size:11px;font-weight:750}.funding-badge i{font-style:normal}.funding-badge.ft{background:#eaf1ff;color:#2858c7}
 @media(max-width:650px){.calendar-toolbar{align-items:flex-start;gap:10px;padding:14px;flex-wrap:wrap}.calendar-toolbar>div{gap:6px;flex-wrap:wrap}.calendar-date-picker label span,.calendar-live{display:none}.calendar-date-picker label{padding:6px 8px}.calendar-date-picker #calendarToday{order:5}.calendar-days{padding:5px 13px 22px}.calendar-events{margin-left:0;padding-left:12px}.calendar-event{grid-template-columns:48px 6px minmax(0,1fr)}.calendar-duration{display:none}.contact-subnav{align-items:flex-start;flex-direction:column}.funding-badges{justify-content:flex-start}}
 
+/* Cassandre's availability stays separate from the shared appointment list. */
+.cassandre-panel {
+  container-type: inline-size;
+  margin-bottom: 18px;
+  padding: clamp(15px, 2vw, 24px);
+  border: 1px solid #d9e4e6;
+  border-radius: 20px;
+  background: linear-gradient(112deg, #f2f9f7, #fff 52%);
+  box-shadow: 0 6px 24px #1d3a4510;
+}
+.cassandre-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.cassandre-portrait {
+  flex: 0 0 44px; height: 44px; border: 2px solid #fff; border-radius: 50%;
+  background: #e3f1ed url('secretariat-team.svg') no-repeat center / 300% 100%;
+  box-shadow: 0 0 0 1px #cbded9;
+}
+.cassandre-heading h2 { margin: 0; color: #193b46; font: 800 clamp(16px, 2vw, 21px)/1.18 Manrope, sans-serif; letter-spacing: -.035em; }
+.cassandre-heading p { margin: 4px 0 0; color: #526973; font-size: 12px; }
+.cassandre-grid { display: grid; grid-template-columns: minmax(135px, 1.3fr) minmax(0, 5fr); gap: 10px; }
+.cassandre-total {
+  display: grid; grid-template-columns: auto 1fr; align-content: center; align-items: baseline; gap: 2px 8px;
+  padding: 13px 17px; border-radius: 13px;
+  color: white; background: linear-gradient(120deg, #143f49, #14665e);
+}
+.cassandre-total > span { grid-column: 1/-1; color: #d7ede8; font-size: 12px; font-weight: 650; }
+.cassandre-total strong { font: 800 34px/1.1 Manrope, sans-serif; letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+.cassandre-total small { font-size: 11px; color: #d5e9e6; }
+.cassandre-days { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 7px; }
+.cassandre-day {
+  position: relative; display: flex; flex-flow: column; align-items: flex-start; justify-content: center; gap: 5px;
+  min-width: 0; padding: 10px clamp(8px, 1.3vw, 16px); text-align: left;
+  border: 1px solid #dce5e7; border-radius: 12px; background: #fff; color: #22565b;
+  font: inherit; cursor: pointer; transition: background .15s, border-color .15s;
+}
+.cassandre-day:hover { border-color: #79a8a0; background: #f4faf8; }
+.cassandre-day:focus-visible, .cassandre-notice button:focus-visible { outline: 3px solid #356ae6; outline-offset: 2px; }
+.cassandre-day[aria-pressed='true'] { border-color: #31877a; background: #e6f4ef; box-shadow: inset 0 0 0 1px #31877a; }
+.cassandre-day-date { font-size: 12px; font-weight: 650; color: #475f68; text-transform: capitalize; }
+.cassandre-day-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 5px; }
+.cassandre-day-value b { font: 800 24px/1.1 Manrope, sans-serif; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.cassandre-day-value small { font-size: 11px; color: #48696a; }
+.cassandre-day.no-slots { color: #62717d; }
+.cassandre-notice { display: flex; gap: 8px 14px; flex-wrap: wrap; align-items: center; margin-top: 12px; color: #755530; font-size: 12px; }
+.cassandre-notice[hidden] { display: none; }
+.cassandre-notice button { border: 0; padding: 3px 0; background: none; color: #155c68; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.calendar-day-counts { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; text-transform: none; color: #576a7f; }
+.calendar-free-count { padding: 5px 10px; border-radius: 999px; color: #176351; background: #e7f5ee; }
+.calendar-free-count:not([data-state='available']) { color: #556576; background: #f0f3f7; }
+@container (max-width: 650px) {
+  .cassandre-grid { grid-template-columns: 1fr; gap: 8px; }
+  .cassandre-total { display: flex; align-items: baseline; gap: 7px; padding: 8px 13px; }
+  .cassandre-total > span { margin-right: auto; }
+  .cassandre-total strong { font-size: 25px; }
+  .cassandre-day { align-items: center; padding: 10px 2px; }
+  .cassandre-day-value { justify-content: center; }
+}
+@container (max-width: 390px) {
+  .cassandre-heading { gap: 9px; margin-bottom: 12px; }
+  .cassandre-heading p { font-size: 11px; }
+  .cassandre-days { gap: 4px; }
+  .cassandre-day-date, .cassandre-day-value small { font-size: 10px; }
+  .cassandre-day-value { flex-direction: column; align-items: center; gap: 2px; }
+  .cassandre-day-value b { font-size: 20px; }
+}
+@media (max-width: 650px) {
+  .calendar-day:has(.calendar-day-counts) > header { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .calendar-day-counts { gap: 4px 8px; }
+}
+
 /* Calendly : tableau de rendez-vous et réservation au style SaaS. */
 .calendly-card{container-type:inline-size;margin-bottom:20px;overflow:hidden;border-color:#dce5f2;border-radius:20px;box-shadow:0 10px 34px #1720330b}
 .calendly-card-head{padding:18px 22px;background:linear-gradient(135deg,#fff 0%,#f7faff 100%)}
