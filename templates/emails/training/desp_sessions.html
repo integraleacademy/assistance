@@ -1,4 +1,4 @@
-{% from "emails/training/components.html" import heading %}
+{% from "emails/training/components.html" import date_label, heading %}
 <tr><td class="inset" style="padding:20px 30px 22px;background-color:#ffffff;">
   {{ heading("Prochaines sessions de formation initiale", "Prochaines sessions", "#192b39") }}
   <table role="presentation" class="desp-venues" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;margin-top:14px;border-spacing:0;">
@@ -29,7 +29,7 @@
               {% for session in centre.sessions %}
               <tr><td style="padding:9px 0;border-top:1px solid #cdd8db;color:#1c3040;font:700 15px/21px Arial,Helvetica,sans-serif;">
                 {% if session.label == centre.selected %}<span style="color:{{ palette[0] }};font:700 12px/17px Arial,Helvetica,sans-serif;">Session demandée</span><br>{% endif %}
-                {{ session.period }}
+                {{ date_label(session.period) }}
                 {% if session.detail %}<br><span style="color:#435863;font:14px/20px Arial,Helvetica,sans-serif;">{{ session.detail }}</span>{% endif %}
                 {% if session.exam %}<br><span style="color:#435863;font:14px/20px Arial,Helvetica,sans-serif;">Examen le {{ session.exam }}</span>{% endif %}
               </td></tr>

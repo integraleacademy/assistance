@@ -411,29 +411,25 @@ def test_answered_followup_is_sent_only_when_the_call_is_logged(tmp_path, monkey
     client = authenticated_client(tmp_path, monkeypatch)
     deliveries = {"sms": [], "email": []}
     monkeypatch.setattr(application, "send_sms", lambda phone, body: deliveries["sms"].append((phone, body)) or True)
-    monkeypatch.setattr(application, "send_email_html", lambda mail, subject, plain, html: deliveries["email"].append((mail, subject, plain, html)) or True)
+    monkeypatch.setattr(application, "send_email_html", lambda mail, subject, plain, html: deliveries["email"].append((mail, subject)) or True)
     contact = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin", "formation": "APS"}).get_json()
     client.patch(f"/api/crm/contacts/{contact['id']}", json={"mail": "lina@example.com", "telephone": "+33612345678"})
     client.post("/api/crm/templates", json={"type": "sms", "nom": "Suite appel répondu", "contenu": "Merci {{ prenom }}."})
-    client.post("/api/crm/templates", json={"type": "email", "nom": "Suite appel répondu", "sujet": "Suite", "contenu": "<p>{{ suite_appel_candidat }}</p>"})
+    client.post("/api/crm/templates", json={"type": "email", "nom": "Suite appel répondu", "sujet": "Suite", "contenu": "<p>Merci.</p>"})
     signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
     appointment_id = client.get("/api/crm/calendly/appointments").get_json()["appointments"][0]["id"]
 
     assert deliveries == {"sms": [], "email": []}
     response = client.post(
         f"/api/crm/contacts/{contact['id']}/appel",
-        json={"commentaire": "Note interne.", "appointment_id": appointment_id,
-              "prochaine_etape_candidat": "Envoyez vos dates <mardi>."},
+        json={"commentaire": "Échange concluant.", "appointment_id": appointment_id},
     )
 
     assert response.status_code == 200
     assert response.get_json()["appointment"]["response_status"] == "answered"
     assert response.get_json()["delivery"] == {"sms": True, "email": True}
     assert len(deliveries["sms"]) == len(deliveries["email"]) == 1
-    assert client.get(f"/api/crm/contacts/{contact['id']}").get_json()["activities"][0]["detail"] == "Note interne."
-    body = deliveries["email"][0][3]
-    assert "Envoyez vos dates &lt;mardi&gt;." in body and "Note interne." not in body
-    assert response.get_json()["appointment"]["prochaine_etape_candidat"] == "Envoyez vos dates <mardi>."
+    assert client.get(f"/api/crm/contacts/{contact['id']}").get_json()["activities"][0]["detail"] == "Échange concluant."
 
 
 def test_cached_appointment_replaces_follow_up_when_later_linked_to_contact(

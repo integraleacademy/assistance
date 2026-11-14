@@ -1,18 +1,61 @@
-{# The dates and places in the multi-centre preview must keep the same order. #}
-{% set multiple = centres is defined and centres|length > 1 %}
-{% set date = centres[0].next_date if centres is defined and not multiple else summary_date %}
-{% set place = summary_place if centres is undefined else centres|map(attribute='city')|join(' · ') %}
-{% set fee = tuition|default(tarif_display) %}
-{% if initial_fee is defined %}{% set fee = "Initiale · " ~ initial_fee ~ " / VAE · " ~ vae_fee %}{% endif %}
-<tr><td class="inset" bgcolor="{{ tint }}" style="padding:11px 30px 13px;background-color:{{ tint }};border-top:3px solid {{ accent }};">
-  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;">
-    <tr>{% for label, value, width in [
-      ("Prochaines sessions" if multiple else ("Démarrage" if summary_place|default('') in ("Livret 1 en ligne","En ligne et à Puget-sur-Argens") else "Votre session"), date, 43),
-      ("Lieu", place, 29), ("Tarif", fee, 28)] %}
-      <td class="session-cell" width="{{ width }}%" valign="top" style="padding:3px 10px 3px {{ '0' if loop.first else '12px' }};{% if not loop.first %}border-left:1px solid #c7cfd2;{% endif %}">
-        <strong style="display:block;margin-bottom:3px;color:#41515b;font:700 10px/15px Arial,Helvetica,sans-serif;letter-spacing:1px;text-transform:uppercase;">{{ label }}</strong>
-        <span style="color:#172934;font:700 15px/21px Arial,Helvetica,sans-serif;">{% if multiple and loop.first %}{% for centre in centres %}<span style="display:block;">{{ centre.city }} · {{ centre.next_date.split(' (')[0] }}</span>{% endfor %}{% else %}{{ value }}{% endif %}</span>
-      </td>
-    {% endfor %}</tr>
+{% from "emails/training/components.html" import date_label %}
+{% set venues = centres|default([]) %}
+{% set multiple = venues|length > 1 %}
+{% set is_flexible = flexible_start|default(false) %}
+
+{% macro venue_card(city, schedule, ink, paper) -%}
+  <table class="session-place" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="{{ paper }}" style="width:100%;background-color:{{ paper }};border-radius:6px;">
+    <tr><td style="padding:13px 15px 14px;border-left:3px solid {{ ink }};">
+      <h3 class="session-city" style="margin:0 0 5px;color:{{ ink }};font:italic 25px/29px Georgia,'Times New Roman',serif;">{{ city }}</h3>
+      <p class="session-date" style="margin:0;color:#233644;font:600 15px/21px Arial,Helvetica,sans-serif;">{{ date_label(schedule) }}</p>
+    </td></tr>
+  </table>
+{%- endmacro %}
+
+{% macro price_line(name, amount) -%}
+  <p class="session-price" style="margin:0;padding:2px 0;color:#52616c;font:14px/21px Arial,Helvetica,sans-serif;">{{ name }}&ensp;<strong style="display:inline-block;color:#172c39;font-size:17px;">{{ amount }}</strong></p>
+{%- endmacro %}
+
+<tr><td class="inset" bgcolor="#ffffff" style="padding:19px 30px 17px;background-color:#ffffff;">
+  <table class="session-summary" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;table-layout:fixed;">
+    <tr><td style="padding:0 0 9px;">
+      <h2 class="session-label" style="margin:0;color:#374e5a;font:700 13px/18px Arial,Helvetica,sans-serif;letter-spacing:.2px;">{{ "Démarrage" if is_flexible else "Prochaine session" }}</h2>
+    </td></tr>
+    <tr><td>
+      {% if multiple %}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr>
+        {% for centre in venues %}
+        {% set colors = {"paris": ("#304e70", "#edf3f8"), "cote_azur": ("#216451", "#edf6f1"), "auvergne": ("#765134", "#f7f1eb")}[centre.code] %}
+        <td class="session-column" valign="top" width="50%" style="width:50%;padding-{{ 'right' if loop.first else 'left' }}:5px;">
+          {{ venue_card(centre.city, centre.next_date.split(" (")[0], colors[0], colors[1]) }}
+        </td>
+        {% endfor %}
+      </tr></table>
+      {% else %}
+        {% set city = venues[0].city if venues else summary_place %}
+        {% set date = venues[0].next_date if venues else summary_date %}
+        {% set period, _, exam = date.partition(" — examen le ") %}
+        <table class="session-place" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="{{ tint }}" style="width:100%;background-color:{{ tint }};border-radius:6px;">
+          <tr><td style="padding:13px 16px 14px;border-left:3px solid {{ accent }};">
+            <p class="session-date" style="margin:0;color:#172c39;font:italic 24px/29px Georgia,'Times New Roman',serif;">{{ date_label(period.split(" (")[0]) }}</p>
+            <p class="session-city" style="margin:4px 0 0;color:#334e5e;font:600 14px/20px Arial,Helvetica,sans-serif;">{{ city }}</p>
+            {% if exam %}<p style="margin:3px 0 0;color:#4c5b65;font:13px/18px Arial,Helvetica,sans-serif;">Examen le {{ exam }}</p>{% endif %}
+          </td></tr>
+        </table>
+      {% endif %}
+    </td></tr>
+    <tr><td style="padding:9px 0 0;">
+      {% if initial_fee is defined %}
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-top:1px solid #dce3e6;">
+        <tr><td class="rate-heading" valign="top" style="padding:10px 18px 0 0;"><h2 style="margin:0;color:#374e5a;font:700 13px/21px Arial,Helvetica,sans-serif;">Tarifs par parcours</h2></td>
+            <td class="rate-values" valign="top" style="padding:8px 0 0;">
+              {{ price_line("Formation initiale", initial_fee) }}
+              {{ price_line("Parcours VAE", vae_fee) }}
+            </td></tr>
+      </table>
+      {% else %}
+        {{ price_line("Tarif de la formation", tuition|default(tarif_display)) }}
+      {% endif %}
+    </td></tr>
   </table>
 </td></tr>
