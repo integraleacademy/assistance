@@ -237,13 +237,14 @@ def test_every_meta_lead_gets_both_messages_but_booking_starts_at_30(
     assert "{phone_booking_html}" not in emails[0][3]
     assert "{prominent_phone_booking_html}" not in emails[0][3]
     for content in (emails[0][2], emails[0][3]):
-        assert ("Réserver mon rendez-vous téléphonique" in content) is booking_allowed
+        assert "chatgpt.com/g/" not in content and "IA Intégrale Academy" not in content
+        assert ("Réserver un rendez-vous téléphonique" in content) is booking_allowed
         if booking_allowed:
             assert content.count("https://calendly.com/integraleacademy/apr") == 1
-            assert content.index("Réserver mon rendez-vous téléphonique") < content.index("Cette formation permet")
+            assert content.index("Réserver un rendez-vous téléphonique") < content.index("Cette formation permet")
             visible_text = " ".join(re.sub(r"<[^>]+>", " ", content).split())
             assert (
-                "Nous vous invitons à prendre un rendez-vous téléphonique avec un membre de notre équipe. "
+                "Nous vous invitons à réserver un rendez-vous téléphonique avec un membre de notre équipe. "
                 "Il vous présentera en détail notre formation et répondra à toutes vos questions."
             ) in visible_text
             assert "Pour préparer votre entrée en formation" not in content
@@ -318,7 +319,8 @@ def test_public_a3p_information_keeps_booking_by_default(tmp_path, monkeypatch):
     assert "calendly.com/integraleacademy/apr" in default[1]
     assert "calendly.com/integraleacademy/apr" in default[2]
     assert default[2].index("Dossier de présentation") < default[2].index("calendly.com/integraleacademy/apr")
-    assert "Réserver mon rendez-vous téléphonique" not in default[2]
+    assert "Réserver un rendez-vous téléphonique" in default[2]
+    assert "VOTRE RENDEZ-VOUS TÉLÉPHONIQUE" not in default[2]
     assert "calendly.com/integraleacademy/apr" in application.build_training_information_sms_text("A3P")
 
 

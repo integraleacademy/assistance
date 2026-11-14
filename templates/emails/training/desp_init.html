@@ -9,7 +9,7 @@
 {% set accent = "#ac4b23" %}
 {% set pale = "#ffd0ad" %}
 {% set tint = "#faebdf" %}
-{% from "emails/training/components.html" import button, fact, google_review, notice, section, price with context %}
+{% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
 
 {% block introduction %}
   <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
@@ -55,21 +55,11 @@
 
 {{ google_review("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP", google_reviews_url, google_rating) }}
 
-{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION", lead="🔐 Identité Numérique") %}
-  <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
-  <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
-  {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
-{% endcall %}
+{{ digital_identity() }}
 
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
-  <p style="margin:0 0 12px;">Pour démarrer votre projet, découvrir les possibilités de financement ou réserver votre place, vous pouvez planifier un rendez-vous téléphonique avec notre équipe.</p>
-  {{ button("Réserver un rendez-vous", "https://calendly.com/integraleacademy/dirigeant", primary=true) }}
-{% endcall %}
-
-{% call section("🤖 Une question immédiate ?", "help", lead="🤖 Une question") %}
-  <p style="margin:0 0 12px;">Discutez directement avec notre <strong>IA Intégrale Academy</strong><br> pour obtenir des réponses immédiates sur la formation, le CPF, le financement, l’agrément CNAPS ou votre projet de création d’entreprise.</p>
-  <p style="margin:0 0 12px;">💬 Réponse immédiate, même le soir ou le week-end.</p>
-  {{ button("🚀 Poser une question à l’IA Intégrale Academy", "https://chatgpt.com/g/g-69cb47858f948191b7daabca5892786d-infos-formations-integrale-academy") }}
+  <p style="margin:0 0 12px;">Pour démarrer votre projet, découvrir les possibilités de financement ou réserver votre place, vous pouvez réserver un rendez-vous téléphonique avec notre équipe.</p>
+  {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/dirigeant", primary=true) }}
 {% endcall %}
 {% endblock %}
 

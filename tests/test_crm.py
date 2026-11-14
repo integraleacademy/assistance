@@ -2023,6 +2023,13 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
     cover = re.search(r'<h1\b[^>]*>(.*?)</h1>', body, re.S)
     assert cover and re.search(r'<em\b[^>]*>[^<]+</em>', cover[1])
     assert body.count('class="cover-art"') == 1
+    masthead = body.split('<h1', 1)[0]
+    assert 'class="academy-wordmark"' in masthead and '<img' not in masthead
+    for logo in ("L’Identité Numérique La Poste", "Mon Compte Formation"):
+        assert body.count(f'alt="{logo}"') == 1
+    assert 'href="https://www.moncompteformation.gouv.fr/"' in body
+    assert "Réserver un rendez-vous téléphonique" in body and "Réserver un rendez-vous téléphonique" in plain
+    assert "IA Intégrale Academy" not in body and "chatgpt.com/g/" not in body + plain
     assert "4,8/5" in plain and application.TRAINING_GOOGLE_REVIEWS_URL in plain
 
 
@@ -2038,7 +2045,7 @@ def test_crm_templates_include_meta_a3p_email_and_sms(tmp_path, monkeypatch):
     assert email["sujet"] == "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
     assert "{{ prenom }}" in email["contenu"]
     assert "Télécharger mon devis détaillé" not in email["contenu"]
-    assert email["contenu"].index("Réserver mon rendez-vous téléphonique") < email["contenu"].index("Cette formation permet")
+    assert email["contenu"].index("Réserver un rendez-vous téléphonique") < email["contenu"].index("Cette formation permet")
     assert email["contenu"].count("https://calendly.com/integraleacademy/apr") == 1
     assert sms["contenu"] == application.build_training_information_sms_text("A3P")
     assert "https://calendly.com/integraleacademy/apr" in sms["contenu"]

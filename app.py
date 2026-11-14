@@ -2043,7 +2043,7 @@ def _cassandre_signature():
     return app.jinja_env.get_template("emails/_cassandre_signature.html").render().strip()
 
 
-def _render_email_template(template_name: str, *, meta_lead=False, **kwargs) -> str:
+def _render_email_template(template_name: str, *, meta_lead=False, show_cpf_badge=True, **kwargs) -> str:
     template_path = os.path.join(app.root_path, "templates", "emails", template_name)
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
@@ -2054,6 +2054,12 @@ def _render_email_template(template_name: str, *, meta_lead=False, **kwargs) -> 
     if "{meta_introduction_html}" in html:
         kwargs.setdefault("meta_introduction_html", "")
         kwargs.setdefault("prominent_phone_booking_html", "")
+    if "{academy_wordmark}" in html:
+        kwargs["academy_wordmark"] = app.jinja_env.get_template("emails/_academy_wordmark.html").render()
+    if "{identity_logos}" in html:
+        kwargs["identity_logos"] = app.jinja_env.get_template("emails/_identity_logos.html").render(
+            show_cpf_badge=show_cpf_badge,
+        )
     if "{cassandre_signature}" in html:
         kwargs["cassandre_signature"] = _cassandre_signature()
     for key, value in kwargs.items():
@@ -2079,7 +2085,7 @@ TRAINING_GOOGLE_RATING = "4,8"
 
 def _render_training_email(template_name: str, **context) -> str:
     return app.jinja_env.get_template(f"emails/training/{template_name}").render(
-        logo_url=HEBERGEMENT_MAIL_LOGO, google_reviews_url=TRAINING_GOOGLE_REVIEWS_URL,
+        google_reviews_url=TRAINING_GOOGLE_REVIEWS_URL,
         google_rating=TRAINING_GOOGLE_RATING, **context,
     )
 
@@ -2102,7 +2108,7 @@ def build_vae_desp_email_plain(prenom, devis_url):
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
         f"Télécharger votre devis détaillé : {devis_url}\n"
         "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
-        "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
+        "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/dirigeant\n\n"
         "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
         f"{CASSANDRE_SIGNATURE_TEXT}"
     )
@@ -2303,6 +2309,7 @@ def build_abandoned_training_email_html(prenom: str, formation_code: str, devis_
     learning_items_html = "".join(f"<li>{html.escape(item)}</li>" for item in config["learning"])
     return _render_email_template(
         "abandoned_training.html",
+        show_cpf_badge=formation_code in ABANDONED_TRAINING_EMAIL_CONFIG,
         prenom=html.escape(prenom or ""),
         formation_short=html.escape(config["short"]),
         project_title=html.escape(config["project_title"]),
@@ -2326,7 +2333,7 @@ def build_abandoned_training_email_plain(prenom: str, formation_code: str, devis
         "Aucun souci : je vous transmets les informations principales et vous propose un échange téléphonique si vous souhaitez avancer plus facilement.\n\n"
         f"Tarif : {price}\n"
         "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
-        f"Réserver un rendez-vous : {config['calendly']}\n"
+        f"Réserver un rendez-vous téléphonique : {config['calendly']}\n"
         "Identité Numérique La Poste : https://lidentitenumerique.laposte.fr\n\n"
         "Vous pouvez répondre directement à ce mail.\n\n"
         f"{CASSANDRE_SIGNATURE_TEXT}\n"
@@ -2758,13 +2765,13 @@ def _a3p_information_email_content(
     session_date = _format_selected_session_date(dates_txt)
     centre_label, centre_address = _centre_label_and_address(centre_code)
     booking_text = (
-        "Planifier un rendez-vous : https://calendly.com/integraleacademy/apr\n\n"
+        "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/apr\n\n"
     ) if include_phone_booking else ""
     prominent_booking_text = (
         "\nVOTRE RENDEZ-VOUS TÉLÉPHONIQUE\n"
-        "Nous vous invitons à prendre un rendez-vous téléphonique avec un membre de notre équipe. "
+        "Nous vous invitons à réserver un rendez-vous téléphonique avec un membre de notre équipe. "
         "Il vous présentera en détail notre formation et répondra à toutes vos questions.\n"
-        "Réserver mon rendez-vous téléphonique : https://calendly.com/integraleacademy/apr\n"
+        "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/apr\n"
         "Choisissez le créneau qui vous convient.\n\n"
     ) if include_phone_booking and prominent_phone_booking else ""
     plain = (
@@ -5012,7 +5019,7 @@ def demande_informations_formations():
                 "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
                 f"Télécharger votre devis détaillé : {devis_url}\n"
                 "Démarrer votre VAE : https://gestionstagiaires-r5no.onrender.com/vae-desp\n"
-                "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
+                "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/dirigeant\n\n"
                 "Je reste à votre disposition pour tout renseignement complémentaire.\n\n"
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
@@ -5037,6 +5044,7 @@ def demande_informations_formations():
                 "Dossier de présentation : https://www.integraleacademy.com/dossiersfc\n"
                 f"Devis détaillé : {devis_url}\n"
                 "Identité numérique La Poste : https://lidentitenumerique.laposte.fr\n"
+                "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/aps\n"
                 "Contact : 04 22 47 07 68\n\n"
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
@@ -5059,7 +5067,7 @@ def demande_informations_formations():
                 + "Lieu : Intégrale Academy Côte d’Azur — 54 chemin du Carreou, 83480 Puget-sur-Argens.\n"
                 f"Tarif : {tarif_ssiap} € TTC. {secourisme_info}\n\n"
                 f"Devis détaillé : {devis_url}\n"
-                "Prendre rendez-vous : https://calendly.com/integraleacademy/ssiap1\n"
+                "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/ssiap1\n"
                 "Contact : 04 22 47 07 68\n\n"
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
@@ -5086,7 +5094,7 @@ def demande_informations_formations():
                 "Dates examens : https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf\n"
                 "Programme : https://www.integraleacademy.com/dossiersfc\n"
                 "Agrément VTC : https://www.integraleacademy.com/_files/ugd/008e7b_0e29b04a71dd4dcc9c0f266d28f0514b.pdf\n"
-                "Prendre rendez-vous : https://calendly.com/integraleacademy/chauffeurvtc\n\n"
+                "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/chauffeurvtc\n\n"
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_vtc_email_html(prenom, form_data.get("centre", ""), devis_url)
@@ -5109,7 +5117,7 @@ def demande_informations_formations():
                 "Tarif : 4 300 € TTC (finançable via CPF).\n"
                 "Identité Numérique La Poste (obligatoire CPF) : https://lidentitenumerique.laposte.fr/\n"
                 f"Devis détaillé : {devis_url}\n\n"
-                "Planifier un rendez-vous : https://calendly.com/integraleacademy/dirigeant\n\n"
+                "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/dirigeant\n\n"
                 "Je reste à votre disposition pour tous renseignements complémentaires.\n"
                 "Je vous souhaite une excellente journée.\n\n"
                 f"{CASSANDRE_SIGNATURE_TEXT}"
@@ -13535,7 +13543,8 @@ def _build_secretariat_followup_email(entry, contact, logo_src="cid:integrale-ac
     context = dict(prenom=first_name, formation=config, entry=entry,
                    content=content, project_rows=_secretariat_project_rows(entry, config), appointment=_secretariat_rdv(entry),
                    upcoming_sessions=_secretariat_upcoming_session_groups(formation_code, entry.get("formation_date_souhaitee", "")),
-                   quote_url=entry.get("devis_url", ""), logo_src=logo_src, ai_url=SECRETARIAT_AI_URL)
+                   quote_url=entry.get("devis_url", ""), logo_src=logo_src,
+                   show_cpf_badge=formation_code in ABANDONED_TRAINING_EMAIL_CONFIG)
     html_body = render_template(
         "emails/email_resume_echange_integrale.html",
         **context
@@ -13662,7 +13671,7 @@ def _crm_relance_email_template(data, choice):
     draft = CRM_RELANCE_EMAILS[choice]
     paragraphs = "".join("<p>" + html_module.escape(p).replace("\n", "<br>") + "</p>"
                          for p in draft["contenu"].split("\n\n"))
-    button = '<p><a href="{{ lien_rdv_calendly }}" style="display:inline-block;padding:14px 22px;background:#102c5c;color:white;border-radius:8px;text-decoration:none">Prendre un rendez-vous téléphonique</a></p>'
+    button = '<p><a href="{{ lien_rdv_calendly }}" style="display:inline-block;padding:14px 22px;background:#102c5c;color:white;border-radius:8px;text-decoration:none">Réserver un rendez-vous téléphonique</a></p>'
     return {
         **draft, "contenu": render_template(
             "crm_email_wrapper.html", prenom="{{ prenom }}", formation="{{ formation }}",

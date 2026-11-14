@@ -218,7 +218,7 @@ def register_secretariat_followup_patch(app_module):
                 "(Ministère de l'intérieur). Cette démarche est réalisée par nos soins."
             )
         return [
-            "RDV téléphonique avec notre équipe pour aborder ensemble tous les détails de votre projet de formation.",
+            "Réserver un rendez-vous téléphonique avec notre équipe pour aborder ensemble tous les détails de votre projet de formation.",
             financing,
             "Inscription en formation.",
         ]
@@ -487,7 +487,7 @@ def register_secretariat_followup_patch(app_module):
                 lines.append("Un rendez-vous vous a été proposé. Notre équipe attend votre confirmation du créneau.")
             lines.append("")
         else:
-            lines.extend(["Prendre un RDV téléphonique", f"Réserver votre rendez-vous : {config.get('calendly')}", ""])
+            lines.extend([f"Réserver un rendez-vous téléphonique : {config.get('calendly')}", ""])
         if content.get("next_steps"):
             lines.append("Un projet de formation ? Notre équipe vous accompagne dans toutes vos démarches")
             lines.extend(f"- {_text(step)}" for step in content.get("next_steps", []))
@@ -545,7 +545,8 @@ def register_secretariat_followup_patch(app_module):
         public_url = _text(entry.get("devis_url"))
         context = {
             "prenom": displayed_first_name, "formation": config, "entry": entry, "content": content,
-            "project_rows": rows, "appointment": appointment, "logo_src": logo_src, "ai_url": app_module.SECRETARIAT_AI_URL,
+            "project_rows": rows, "appointment": appointment, "logo_src": logo_src,
+            "show_cpf_badge": code in app_module.ABANDONED_TRAINING_EMAIL_CONFIG,
         }
         subject = f"Votre projet {config.get('short') or config.get('label')} – le résumé de notre échange"
         rendered = app_module.render_template("emails/email_resume_echange_integrale.html", **context)

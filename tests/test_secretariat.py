@@ -510,13 +510,14 @@ def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appoi
 
     assert subject == "Votre projet APS – le résumé de notre échange"
     assert unescape(re.sub(r"<[^>]+>", "", rendered)).count("Bonjour Clément") == 1
-    assert 'src="https://assistance-alw9.onrender.com/static/logo.png"' in rendered
+    assert 'class="academy-wordmark"' in rendered
+    assert "chatgpt.com/g/" not in rendered + plain
     assert "Faites le premier pas vers votre futur métier" in rendered
     assert "Vous souhaitez des renseignements concernant la formation" in rendered
     assert "Vous souhaitez intégrer" not in rendered
     assert "Vous souhaitez vous inscrire" not in rendered
     assert "Votre prochain rendez-vous téléphonique" not in rendered
-    assert "Prendre un RDV téléphonique" in rendered
+    assert "Réserver un rendez-vous téléphonique" in rendered
     assert "Formation Formation" not in rendered
     assert "Nos prochaines dates" in rendered
     assert "Certification et objectif" in rendered

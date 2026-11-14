@@ -51,13 +51,22 @@
 </td></tr>
 {% else %}
 {% set dark = tone == 'finance' %}
-{% set panel = '#152634' if dark else (tint if tone == 'action' else ('#f6f4ed' if tone == 'notice' else '#f0f3f5')) %}
+{% set panel = '#152634' if dark else (tint if tone == 'action' else '#f6f4ed') %}
 <tr><td bgcolor="{{ panel }}" class="inset" style="padding:21px 30px;background-color:{{ panel }};border-top:{{ '4px solid ' ~ accent if tone in ('finance','action') else '1px solid #d6dfe1' }};color:{{ '#f5f7f9' if dark else '#293844' }};font:15px/23px Arial,Helvetica,sans-serif;">
   {% if eyebrow %}<p style="margin:0 0 7px;color:#705721;font:700 10px/15px Arial,Helvetica,sans-serif;letter-spacing:1.4px;">{{ eyebrow }}</p>{% endif %}
   {{ heading(title, lead, pale if dark else '#162b3b', tone in ('finance','action')) }}
   <div style="margin-top:10px;">{{ caller() }}</div>
 </td></tr>
 {% endif %}
+{%- endmacro %}
+
+{% macro digital_identity() -%}
+{% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION", lead="🔐 Identité Numérique") %}
+  {% include "emails/_identity_logos.html" %}
+  <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
+  <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
+  {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
+{% endcall %}
 {%- endmacro %}
 
 {# The overall rating and the attributed excerpts match the official site's /#avis-google section. #}

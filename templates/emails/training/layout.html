@@ -27,7 +27,7 @@
       .cover-title, .cover-title em { font-size:32px !important; line-height:35px !important; }
       .inset { padding-left:16px !important; padding-right:16px !important; }
       .cover-art { height:138px !important; }
-      .mast-brand { font-size:12px !important; }
+      .academy-wordmark { font-size:13px !important; letter-spacing:.2px !important; }
       .mast-course { font-size:9px !important; line-height:13px !important; }
     }
   </style>
@@ -41,8 +41,7 @@
       <td bgcolor="#111c28" class="inset" style="padding:16px 30px 0;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-bottom:1px solid #40505e;">
           <tr>
-            <td width="34" valign="middle" style="padding-bottom:12px;"><img src="{{ logo_url }}" alt="" width="30" height="30" style="display:block;border:0;border-radius:50%;"></td>
-            <td class="mast-brand" valign="middle" style="padding:0 8px 12px 3px;color:#ffffff;font:700 14px/16px Arial,Helvetica,sans-serif;letter-spacing:.35px;">INTÉGRALE <span style="color:#f0c36a;">ACADEMY</span></td>
+            <td class="mast-brand" valign="middle" style="padding:0 10px 12px 0;">{% include "emails/_academy_wordmark.html" %}</td>
             <td class="mast-course" align="right" valign="middle" style="padding-bottom:12px;color:{{ pale }};font:700 10px/14px Arial,Helvetica,sans-serif;letter-spacing:1.2px;text-transform:uppercase;">{{ course_label }}</td>
           </tr>
         </table>
