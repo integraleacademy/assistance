@@ -29,6 +29,7 @@ def test_new_meta_bucket_separates_new_leads_without_mutating_them():
     )
     script = r"""
 const assert = require('node:assert/strict');
+const contactExcludesFranceTravail=()=>false;
 const S = ['Nouveaux', 'A relancer'];
 const SECONDARY_STATUSES = ['Transition pro', 'Nouveaux'];
 """ + production + r"""

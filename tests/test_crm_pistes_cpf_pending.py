@@ -1,4 +1,4 @@
-"""The CPF queue follows the latest cached WEDOF folder, not a manual stage."""
+"""The pipeline counts pending EDOF dossiers independently of CRM contact stages."""
 import copy
 import json
 from pathlib import Path
@@ -46,7 +46,7 @@ def store_folder(contact_id, identifier, state, created_at):
         )
 
 
-def test_cpf_queue_uses_latest_created_folder_and_updates_from_local_cache(
+def test_contact_status_still_uses_latest_created_folder_and_updates_from_local_cache(
         cpf_client, monkeypatch):
     contact = cpf_client.post("/api/crm/contacts", json={
         "prenom": "Lina", "nom": "Martin", "force_create": True,
@@ -76,7 +76,7 @@ def test_cpf_queue_uses_latest_created_folder_and_updates_from_local_cache(
         assert application._wedof_funding_statuses_by_contact(
             application.load_data()) == funding
 
-    # A newer accepted request removes the contact, even with old pending history.
+    # Individual contact badges still follow the newest folder.
     store_folder(contact["id"], "latest", "accepted", "2026-09-20T00:00:00Z")
     payload = cpf_client.get("/api/crm/bootstrap?section=pistes").get_json()
     assert next(c for c in payload["contacts"] if c["id"] == contact["id"])["cpf_status"] == "accepted"
@@ -105,104 +105,113 @@ def test_missing_wedof_cache_keeps_contacts_available(cpf_client):
     assert next(c for c in listed if c["id"] == contact["id"])["cpf_status"] == ""
 
 
-def test_cpf_pipeline_bucket_counts_and_filters_without_changing_stages():
+def test_pipeline_snapshots_follow_complete_request_list(cpf_client, monkeypatch):
+    contact = cpf_client.post("/api/crm/contacts", json={
+        "prenom": "Alice", "nom": "Exemple", "force_create": True,
+    }).json
+    data = application.load_data()
+    data["crm_contacts"][0]["statut"] = "Disqualifié"
+    application.save_data(data)
+
+    def request_row(ident, attendee):
+        return {"externalId": ident, "provider": "integrale_edof", "type": "cpf",
+                "state": "notProcessed", "createdAt": "2026-11-11", "attendee": attendee,
+                "trainingActionInfo": {"title": "Formation VTC"}}
+
+    same_person = {"firstName": "Alice", "lastName": "Exemple"}
+    items = [request_row("100001", same_person), request_row("100002", same_person),
+             request_row("100003", {})]
+    total = 3
+
+    def source(path, *, params):
+        assert path == "/dossiers" and params == {"scope": "requests", "page": 1}
+        return {"items": items}, {"X-Total-Count": str(total)}
+
+    monkeypatch.setattr(application, "_wedof_request", source)
+    bootstrap = "/api/crm/bootstrap?section=pistes"
+    updates = "/api/crm/contacts/updates?section=pistes&delta=1"
+    assert cpf_client.get(bootstrap).json["cpf_pending_folders"] is None
+    application._edof_sync_requests()
+    application._edof_sync_requests()
+    result = cpf_client.get(bootstrap)
+    etag = result.headers["ETag"]
+    queue = result.json["cpf_pending_folders"]
+    assert {r["folder_id"]: r["contact_id"] for r in queue} == {
+        "100001": contact["id"], "100002": contact["id"], "100003": None}
+    assert all(r["formation"] == "Chauffeur VTC" and r["edof_url"].endswith(r["folder_id"]) for r in queue)
+    assert result.json["contacts"][0]["statut"] == "Disqualifié"
+    assert "cpf_pending_folders" not in cpf_client.get("/api/crm/bootstrap?section=contacts").json
+    initial = cpf_client.get(updates).json
+    assert initial["cpf_pending_folders"] == queue
+    items[:] = items[:1]
+    with pytest.raises(application.WedofAPIError, match="incomplète"):
+        application._edof_sync_requests()
+    assert cpf_client.get(bootstrap).json["cpf_pending_folders"] == queue
+    total = 1
+    application._edof_sync_requests()
+    assert cpf_client.get(bootstrap, headers={"If-None-Match": etag}).status_code == 200
+    delta = cpf_client.get(updates + "&cursor=" + initial["cursor"]).json
+    assert [r["folder_id"] for r in delta["cpf_pending_folders"]] == ["100001"]
+    items.clear()
+    total = 0
+    application._edof_sync_requests()
+    assert cpf_client.get(bootstrap).json["cpf_pending_folders"] == []
+
+
+def test_pipeline_counts_folders_and_refreshes_even_when_no_contact_changes():
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is required for the CRM browser helpers")
     source = (ROOT / "static/crm.js").read_text(encoding="utf-8")
 
     def section(start, end):
-        start_at = source.index(start)
-        return source[start_at:source.index(end, start_at)]
+        offset = source.index(start)
+        return source[offset:source.index(end, offset)]
 
     production = "\n".join([
         section("const isActiveLead=", "const manualNextActionValue="),
-        section("const pipelineOverviewStatuses=", "const timelineButtons="),
-        section("const crmOriginFilterValues=", "const dashboardHasContact="),
-        section("const crmActiveContacts=", "const dashboardContactsIn="),
+        section("function listContactsForType(", "function listPage("),
+        section("function refreshPipelineQueues()", "document.addEventListener('visibilitychange'"),
     ])
     script = r"""
-const assert = require('node:assert/strict');
-const S = ['Nouveaux', 'A relancer', 'Disqualifié'];
-const SECONDARY_STATUSES = ['Transition pro'];
-const contacts = [
-  {id:'pending', statut:'A relancer', cpf_status:'notprocessed'},
-  {id:'meta', statut:'Nouveaux', origine:'META', cpf_status:'notprocessed'},
-  {id:'accepted', statut:'Nouveaux', cpf_status:'accepted'},
-  {id:'unknown', statut:'Nouveaux', cpf:'OUI'},
-  {id:'manual-label', statut:'CPF à traiter'},
-  {id:'converted', statut:'Converti', cpf_status:'notprocessed'},
-  {id:'disqualified', statut:'Disqualifié', cpf_status:'notprocessed'},
-  {id:'archived', statut:'Nouveaux', archived_at:'2026-09-20', cpf_status:'notprocessed'},
-];
-const before = JSON.stringify(contacts);
+const assert=require('node:assert/strict'),C={section:'pistes'},location={search:''};
+const contacts=[{id:'one',statut:'Disqualifié',prenom:'Alice',nom:'Exemple'},
+ {id:'two',statut:'Converti',archived_at:'2026-07-01'},{id:'three',statut:'En cours'}];
+const initial=JSON.stringify(contacts),dash=()=>null,dashboardDrilldownState=dash;
+let statusFilter='CPF à traiter',crmUpdateCursor='',crmRefreshInFlight=false,lastCrmRefreshAt=0;
+const active=()=>contacts.filter(c=>!c.archived_at),crmActiveContacts=active;
+const contactInStore=id=>contacts.find(c=>c.id===id),canonicalCrmOrigin=()=> 'Autre';
+const displayName=c=>[c.prenom,c.nom].filter(Boolean).join(' '),esc=s=>String(s??'');
+const contactSheetUrl=id=>'/crm/contacts?fiche='+id;
+const selectedLeadIds=new Set();
+const scheduleCrmRefresh=()=>{},updateLeadCount=()=>{},updateVisibleAppointmentData=()=>{};
+const folder=(id,contact_id)=>({folder_id:id,contact_id,edof_url:'https://example.test/?folder='+id,
+    prenom:'Alice',nom:'Exemple',formation:'APS',filed_at:'2026-11-10'});
+let batch=[folder('100001','one'),folder('100002','one'),folder('100003','two'),folder('100004',null)];
+const count={},input={value:'10000',dispatchEvent(){this.rows=listContactsForType('pistes')
+    .filter(c=>contactHasPipelineStatus(c,statusFilter)&&c.cpf_folder_id.includes(this.value))}};
+const document={hidden:false,querySelector(q){
+ return q==='#listSearch'?input:q==='[data-status="CPF à traiter"] b'?count:null;
+}};
+const api=async url=>{assert.ok(url.includes('section=pistes'));return {delta:true,cpf_pending_folders:batch}};
 """ + production + r"""
-assert.deepEqual(pipelineOverviewStatuses(),
-  ['Nouveaux','Nouveaux META','A relancer','À relancer sans relance programmée','CPF à traiter','Transition pro']);
-const rows = crmActiveContacts().filter(c=>contactHasPipelineStatus(c,'CPF à traiter'));
-assert.deepEqual(rows.map(c=>c.id), ['pending','meta']);
-assert.deepEqual(rows.filter(c=>contactHasPipelineStatus(c,'A relancer')).map(c=>c.id), ['pending']);
-assert.deepEqual(S, ['Nouveaux','A relancer','Disqualifié']);
-assert.equal(JSON.stringify(contacts), before);
-"""
-    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_cpf_poll_refreshes_queue_without_reloading_or_losing_search():
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("Node.js is required for the CRM browser helpers")
-    source = (ROOT / "static/crm.js").read_text(encoding="utf-8")
-    helpers = source[source.index("const isActiveLead="):source.index("const manualNextActionValue=")]
-    refresh = source[source.index("function refreshPipelineQueues()"):
-                     source.index("document.addEventListener('visibilitychange'")]
-    script = r"""
-const assert = require('node:assert/strict');
-const C = {section:'pistes'}, location = {search:''};
-let contacts = [{id:'one',nom:'Martin',statut:'Nouveaux',cpf_status:'notprocessed'}];
-let crmRefreshInFlight=false, crmAppointments=[], searches=0, schedules=0;
-const count={textContent:1}, input={value:'Martin',dispatchEvent(event){
-  assert.equal(event.type,'input'); searches++;
-  this.visible=contacts.filter(c=>c.nom===this.value&&contactHasPipelineStatus(c,'CPF à traiter')).map(c=>c.id);
-}};
-const document={hidden:false,querySelector(selector){
-  return selector==='#listSearch'?input:selector==='[data-status="CPF à traiter"] b'?count:null;
-}};
-const contactInStore=id=>contacts.find(c=>c.id===id);
-const mergeContactInStore=(id,update)=>Object.assign(contactInStore(id),update);
-const crmActiveContacts=()=>contacts.filter(c=>!c.archived_at);
-const canonicalCrmOrigin=()=> 'Autre';
-let crmUpdateCursor='',lastCrmRefreshAt=0;
-const updateLeadCount=()=>{},updateVisibleAppointmentData=()=>{};
-const scheduleCrmRefresh=()=>{schedules++};
-let updates=[{id:'one',cpf_status:'accepted'}], fresh=[];
-const api=async(url)=>url.startsWith('/api/crm/contacts/updates')?{contacts:updates}:fresh;
-""" + helpers + refresh + r"""
 (async()=>{
+ assert.equal(pipelineStatusCount(active(),statusFilter),'—');
  await refreshCrmSnapshot();
- assert.equal(contactInStore('one').cpf_status,'accepted');
- assert.equal(count.textContent,0);
- assert.deepEqual(input.visible,[]);
- assert.equal(input.value,'Martin');
- assert.equal(searches,1);
- assert.equal(schedules,1);
- // No queue redraw on an unchanged status.
- await refreshCrmSnapshot();
- assert.equal(searches,1);
- // New contact IDs reload summaries without overwriting the latest CPF state
- // of a contact whose detail was opened previously.
- updates=[{id:'one',cpf_status:'notprocessed'},{id:'two',cpf_status:'notprocessed'}];
- fresh=[{id:'one',nom:'Martin',statut:'Nouveaux',cpf_status:'notprocessed',_summary:true},
-        {id:'two',nom:'Martin',statut:'Nouveaux',cpf_status:'notprocessed',_summary:true}];
- await refreshCrmSnapshot();
- assert.equal(count.textContent,2);
- assert.deepEqual(input.visible,['one','two']);
- assert.equal(input.value,'Martin');
- // A contact sheet in use is not redrawn by the pipeline refresh helper.
- location.search='?fiche=one';
- refreshPipelineQueues();
- assert.equal(searches,2);
+ assert.equal(count.textContent,4);
+ assert.deepEqual(input.rows.map(r=>r.id),['one','one','two',undefined]);
+ const html=cpfFolderTable(input.rows);
+ assert.equal((html.match(/fiche=one/g)||[]).length,2);
+ assert.equal((html.match(/Sans fiche CRM/g)||[]).length,1);
+ assert.equal((html.match(/data-lead-select="one"/g)||[]).length,2);
+ assert.ok(!html.includes('data-lead-select="undefined"'));
+ assert.ok(html.includes('Dossier 100001')&&html.includes('Dossier 100002'));
+ batch=batch.slice(1);await refreshCrmSnapshot();
+ assert.equal(count.textContent,3);assert.equal(input.rows.length,3);assert.equal(input.value,'10000');
+ batch=[];await refreshCrmSnapshot();assert.equal(count.textContent,0);
+ assert.ok(cpfFolderTable(input.rows).includes('Aucun dossier CPF'));
+ statusFilter='';assert.deepEqual(listContactsForType('pistes').map(c=>c.id),['three']);
+ assert.equal(JSON.stringify(contacts),initial);
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
     result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=20)
