@@ -1,5 +1,6 @@
 import re
 
+import html5lib
 import pytest
 
 import app as application
@@ -532,7 +533,13 @@ def test_meta_desp_preview_matches_delivery_and_keeps_individual_centres(tmp_pat
     preview = client.get("/api/crm/templates/automatic-meta-desp-email/meta-preview").get_json()["contenu"]
     assert post(client, lead(form_id="1124725393644713")).status_code == 201
     assert emails[0][3] == preview.replace("Camille", "Lina")
-    assert "mai 2099" in preview and "mars 2099" in preview
+    document = html5lib.parse(preview, namespaceHTMLElements=False)
+    cards = document.findall('.//table[@class="desp-venue"]')
+    assert [card.find(".//h3").text for card in cards] == ["Puget-sur-Argens", "Paris"]
+    puget, paris = [" ".join(" ".join(card.itertext()).split()) for card in cards]
+    assert "mai 2099" in puget and "mars 2099" not in puget and "54 chemin du Carreou" in puget
+    assert "mars 2099" in paris and "mai 2099" not in paris and "34 rue Poissonnière, 75002 Paris" in paris
+    assert "dans un autre secteur" in preview and "gérant ou gérante" in preview and "encadré une équipe" in preview
     assert post(client, lead(**{
         "form_id": "1124725393644713", "leadgen_id": "initial-paris",
         "lieu": "Paris", "Quel parcours DESP souhaitez-vous ?": "Formation initiale",
@@ -540,6 +547,36 @@ def test_meta_desp_preview_matches_delivery_and_keeps_individual_centres(tmp_pat
     })).status_code == 200
     assert "4 300 € TTC" in emails[1][3] and "mars 2099" in emails[1][3]
     assert "mai 2099" not in emails[1][3] and "4 350 € TTC" not in emails[1][3]
+    assert emails[1][3].count('class="desp-venue"') == 1
+    for text in emails[1][2:]:
+        assert "34 rue Poissonnière, 75002 Paris" in text and "Rivoli" not in text
+
+
+
+def test_desp_sessions_preserve_venue_selection_exam_and_unstructured_dates():
+    period = "Du 4 janvier au 18 février 2099"
+    data = {"formation_sessions": {
+        "paris": {"DESP_INIT": [
+            {"label": period + " (présentiel du 8/02 au 18/02)", "date_examen": "2099-02-19"},
+            {"label": "Session <spéciale> & jury"},
+        ]},
+        "cote_azur": {"DESP_INIT": []},
+    }}
+    with application.app.test_request_context():
+        single = application.build_desp_init_email_html("Alice", period, "paris", "", data)
+        mixed = application._meta_course_email(
+            {"formation": "DESP", "lieu": "Paris ou Puget-sur-Argens", "dates_formation": period}, data, "", False,
+        )
+        vae = application._meta_course_email({"formation": "DESP", "desp_type": "VAE", "lieu": "Paris"}, data, "", True)
+        _, abandoned_plain, abandoned_html = application._abandoned_training_email_content("Alice", "DESP_VAE")
+    assert single.count("19/02/2099") == single.count("Session demandée") == 1
+    assert "Présentiel du 8/02 au 18/02" in single and "Session &lt;spéciale&gt; &amp; jury" in single
+    assert mixed.count('class="desp-venue"') == 2
+    assert mixed.count("Dates à venir prochainement.") == 1 and "Session demandée" not in mixed
+    for message in (vae, abandoned_plain, abandoned_html):
+        assert "gérant ou gérante" in message and "encadré une équipe dans un autre secteur" in message
+        assert "recevabilité de votre demande" in message and "34 rue Poissonnière" not in message
+        assert "expérience significative dans la sécurité privée" not in message
 
 
 @pytest.mark.parametrize("course", ["APS", "DESP_INIT", "DESP_VAE"])

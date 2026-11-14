@@ -1,0 +1,47 @@
+{% from "emails/training/components.html" import heading %}
+<tr><td class="inset" style="padding:20px 30px 22px;background-color:#ffffff;">
+  {{ heading("Prochaines sessions de formation initiale", "Prochaines sessions", "#192b39") }}
+  <table role="presentation" class="desp-venues" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;margin-top:14px;border-spacing:0;">
+    <tr>
+    {% for centre in centres %}
+      {% set palette = {
+        "cote_azur": ("#285e50", "#afdecb", "#f1f7f3"),
+        "paris": ("#253d59", "#c6dbf5", "#f0f4f9"),
+        "auvergne": ("#684128", "#f3d6b0", "#f9f3ea")
+      }[centre.code] %}
+      <td class="desp-venue-column" valign="top" width="{{ '50%' if centres|length > 1 else '100%' }}" style="{% if centres|length > 1 %}padding-{{ 'right' if loop.first else 'left' }}:6px;{% endif %}vertical-align:top;">
+        <table class="desp-venue" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{{ palette[2] }}" style="width:100%;background-color:{{ palette[2] }};border:1px solid #d2dcdf;">
+          <tr><td bgcolor="{{ palette[0] }}" style="padding:15px 16px 14px;background-color:{{ palette[0] }};border-bottom:3px solid {{ palette[1] }};">
+            <p style="margin:0 0 4px;color:{{ palette[1] }};font:700 10px/14px Arial,Helvetica,sans-serif;letter-spacing:1.2px;text-transform:uppercase;">{{ centre.region }}</p>
+            <h3 style="margin:0;color:#ffffff;font:italic 28px/32px Georgia,'Times New Roman',serif;">{{ centre.city }}</h3>
+          </td></tr>
+          <tr><td style="padding:14px 16px 8px;">
+            <p style="margin:0 0 3px;color:{{ palette[0] }};font:700 12px/17px Arial,Helvetica,sans-serif;">Lieu du présentiel</p>
+            <p style="margin:0;color:#253849;font:14px/20px Arial,Helvetica,sans-serif;">{{ centre.address }}</p>
+          </td></tr>
+          <tr><td style="padding:3px 16px 9px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+              {% if centre.unlisted %}
+              <tr><td style="padding:9px 0;border-top:1px solid #cdd8db;color:#283d46;font:14px/20px Arial,Helvetica,sans-serif;">
+                <strong>Session demandée</strong><br>{{ centre.unlisted }}
+              </td></tr>
+              {% endif %}
+              {% for session in centre.sessions %}
+              <tr><td style="padding:9px 0;border-top:1px solid #cdd8db;color:#1c3040;font:700 15px/21px Arial,Helvetica,sans-serif;">
+                {% if session.label == centre.selected %}<span style="color:{{ palette[0] }};font:700 12px/17px Arial,Helvetica,sans-serif;">Session demandée</span><br>{% endif %}
+                {{ session.period }}
+                {% if session.detail %}<br><span style="color:#435863;font:14px/20px Arial,Helvetica,sans-serif;">{{ session.detail }}</span>{% endif %}
+                {% if session.exam %}<br><span style="color:#435863;font:14px/20px Arial,Helvetica,sans-serif;">Examen le {{ session.exam }}</span>{% endif %}
+              </td></tr>
+              {% else %}
+              <tr><td style="padding:10px 0;border-top:1px solid #cdd8db;color:#435863;font:italic 16px/22px Georgia,serif;">Dates à venir prochainement.</td></tr>
+              {% endfor %}
+            </table>
+          </td></tr>
+        </table>
+      </td>
+    {% endfor %}
+    </tr>
+  </table>
+  <p style="margin:11px 0 0;"><a href="https://www.integraleacademy.com/planning" style="color:{{ accent }};font:700 14px/20px Arial,Helvetica,sans-serif;text-decoration:underline;">Consulter le planning des formations</a></p>
+</td></tr>
