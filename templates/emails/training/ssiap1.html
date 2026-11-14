@@ -4,6 +4,8 @@
 {% set title_lead = "Devenez Agent de" %}
 {% set title_italic = "Sécurité Incendie SSIAP 1" %}
 {% set subtitle = "Formation officielle pour exercer comme agent de sécurité incendie en ERP et IGH" %}
+{% set review = ("didier", "Bonne expérience des formations SSIAP et TFP ADS. Merci aux formateurs.", "SSIAP 1") %}
+{% set preheader = "Retrouvez les dates, le tarif et votre devis personnalisé." if devis_url else "Retrouvez les prochaines dates, le lieu et les possibilités de financement." %}
 {% set scene = "/images/ssiap-1/manuel/prevention.webp" %}
 {% set focal = 39 %}
 {% set accent = "#b6383d" %}
@@ -12,11 +14,11 @@
 {% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
 
 {% block introduction %}
-  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>SSIAP 1 – Agent de Service de Sécurité Incendie et d’Assistance à Personnes</strong>.</p>
   <p style="margin:0 0 12px;">Cette formation vous permet d’acquérir les compétences nécessaires pour prévenir les risques d’incendie, intervenir face à un début de sinistre et porter assistance aux personnes.</p>
   <p style="margin:0 0 12px;">À l’issue de la formation et après réussite à l’examen, vous obtenez le <strong>diplôme SSIAP 1</strong>, permettant d’exercer dans les établissements recevant du public (ERP) et les immeubles de grande hauteur (IGH).</p>
-  <p style="margin:0 0 12px;">La formation est organisée en petit groupe à <strong>Puget-sur-Argens</strong>. Je vous conseille de réserver votre place dès que possible.</p>
+  <p style="margin:0 0 12px;">La formation est organisée en petit groupe à <strong>{{ summary_place }}</strong>. Je vous conseille de réserver votre place dès que possible.</p>
   {{ notice("⚠️ Places limitées pour garantir une préparation de qualité à l’examen.") }}
 {% endblock %}
 
@@ -53,7 +55,6 @@
   {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
 {% endcall %}
 
-{{ google_review("didier", "Bonne expérience des formations SSIAP et TFP ADS. Merci aux formateurs.", "SSIAP 1", google_reviews_url, google_rating) }}
 
 {% call section("✅ Prérequis obligatoires", lead="✅ Prérequis") %}
   <ul style="margin:0 0 14px;padding-left:22px;"><li>SST en cours de validité, PSC1 de moins de 2 ans, PSE1 ou équivalent</li> <li>Certificat médical d’aptitude physique de moins de 3 mois</li> <li>Capacité suffisante à lire, écrire et comprendre le français</li> </ul>
@@ -64,6 +65,8 @@
 {% endcall %}
 
 {{ digital_identity() }}
+
+{% if not prominent_phone_booking_html %}{{ google_review(*review, maps_url=google_reviews_url, rating=google_rating) }}{% endif %}
 
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place, vous pouvez réserver un rendez-vous téléphonique avec notre équipe.</p>

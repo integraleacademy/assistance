@@ -4,6 +4,11 @@
 {% set title_lead = "Obtenez le titre de dirigeant" %}
 {% set title_italic = "grâce à votre expérience" %}
 {% set subtitle = "RNCP40385 — niveau 5, équivalent Bac+2" %}
+{% set review = ("Anthony LAURENT", "Je recommande vivement Intégrale Academy pour la qualité de son accompagnement et le dévouement du personnel.", "VAE DESP") %}
+{% set preheader = "Présentez votre expérience en ligne et commencez votre Livret 1." %}
+{% set primary_livret = true %}
+{% set summary_date = "Dès maintenant" %}
+{% set summary_place = "Livret 1 en ligne" %}
 {% set scene = "/images/desp/manuel/direction.webp" %}
 {% set focal = 36 %}
 {% set accent = "#ac4b23" %}
@@ -12,7 +17,7 @@
 {% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
-  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande concernant la <strong>VAE Dirigeant d’Entreprise de Sécurité Privée</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
   {{ meta_introduction() }}
   <p style="margin:0 0 12px;">La VAE permet d’obtenir cette certification sur la base de votre expérience professionnelle, sans suivre obligatoirement l’intégralité d’un parcours de formation classique.</p>
@@ -28,9 +33,11 @@
 {% endblock %}
 
 {% block details %}
+{{ google_review(*review, maps_url=google_reviews_url, rating=google_rating) }}
+
 {% call section("🚀 Démarrer votre VAE", "action", lead="🚀 Démarrer") %}
   <p style="margin:0 0 12px;">Commencez votre VAE en totale autonomie grâce à notre Plateforme en ligne VAE DESP en cliquant sur le bouton ci-dessous.</p>
-  {{ button("Démarrer ma VAE maintenant", "https://gestionstagiaires-r5no.onrender.com/vae-desp", primary=true) }}
+  {{ button("Commencer mon Livret 1", "https://gestionstagiaires-r5no.onrender.com/vae-desp", primary=true, centered=true) }}
 {% endcall %}
 
 {% call section("📄 Dossier de présentation", lead="📄 Dossier") %}
@@ -58,14 +65,13 @@
   {% endif %}
 {% endcall %}
 
-{{ google_review("Anthony LAURENT", "Je recommande vivement Intégrale Academy pour la qualité de son accompagnement et le dévouement du personnel.", "VAE DESP", google_reviews_url, google_rating) }}
 
 {{ digital_identity() }}
 
 {% if include_phone_booking|default(true) %}
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Vous souhaitez échanger avec notre équipe ? Faire un point sur votre expérience et votre financement ? Réservez un rendez-vous téléphonique.</p>
-  {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/dirigeant", primary=true, centered=true) }}
+  {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/dirigeant", primary=true, centered=true, secondary=true) }}
 {% endcall %}
 {% endif %}
 {% endblock %}

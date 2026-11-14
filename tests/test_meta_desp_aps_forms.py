@@ -592,3 +592,11 @@ def test_public_course_emails_keep_their_quote_and_standard_booking(course):
     assert body.count(quote) == body.count("calendly.com/") == 1
     assert "📞 Prochaine étape" in body and "VOTRE RENDEZ-VOUS TÉLÉPHONIQUE" not in body
     assert "{meta_introduction_html}" not in body and "{prominent_phone_booking_html}" not in body
+
+
+def test_course_summary_uses_requested_or_earliest_session_and_handles_empty_dates():
+    labels = ["Du 14 au 18 mai 2099", "Du 5 au 9 janvier 2099"]
+    assert application._next_email_session(labels) == labels[1]
+    assert application._next_email_session(labels, labels[0]) == labels[0]
+    assert application._next_email_session([], "À convenir") == "À convenir"
+    assert application._next_email_session([]) == "Dates à venir prochainement"

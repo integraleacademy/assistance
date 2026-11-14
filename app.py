@@ -2091,8 +2091,8 @@ DESP_VAE_LIVRET_1 = (
     "Le certificateur examine leur lien avec les compétences du titre DESP pour se prononcer sur la recevabilité de votre demande."
 )
 
-# Training venues for DESP sessions; the company's registered address is separate.
-DESP_VENUES = {
+# Physical training venues used by the course emails.
+TRAINING_VENUES = {
     "cote_azur": {"city": "Puget-sur-Argens", "region": "Côte d’Azur",
                   "address": "Intégrale Academy, 54 chemin du Carreou, 83480 Puget-sur-Argens"},
     "paris": {"city": "Paris", "region": "Île-de-France",
@@ -2100,6 +2100,25 @@ DESP_VENUES = {
     "auvergne": {"city": "Arpajon-sur-Cère", "region": "Terres d’Auvergne",
                  "address": "Intégrale Academy, 650 route d’Aumont, 15130 Arpajon-sur-Cère"},
 }
+
+
+def _training_email_subject(code, centre="cote_azur"):
+    if code == "DESP_VAE":
+        return "VAE DESP — commencez votre Livret 1"
+    if code == "VTC":
+        return "Chauffeur VTC — votre formation et les dates d’examen"
+    title = {"APS": "APS", "A3P": "A3P", "SSIAP": "SSIAP 1", "DESP_INIT": "DESP"}[code]
+    city = TRAINING_VENUES[_normalize_centre_code(centre)]["city"]
+    return f"Formation {title} à {city} — vos prochaines sessions"
+
+
+def _next_email_session(labels, selected=""):
+    chosen = _match_requested_session(labels, selected)
+    if chosen:
+        return chosen
+    # Some CRM calendars are entered by hand and are not sorted.
+    return min(labels, key=lambda label: _session_start_date(label) or datetime.date.max,
+               default="Dates à venir prochainement")
 
 
 def _render_training_email(template_name: str, **context) -> str:
@@ -2665,9 +2684,10 @@ def _match_requested_session(labels, selected):
 
 
 def _format_upcoming_sessions_for_email(
-    centre_code: str, formation_code: str, data_store=None, today=None, *, selected="",
+    centre_code: str, formation_code: str, data_store=None, today=None, *, selected="", labels=None,
 ) -> str:
-    labels = _upcoming_session_labels(centre_code, formation_code, data_store, today)
+    if labels is None:
+        labels = _upcoming_session_labels(centre_code, formation_code, data_store, today)
     chosen = _match_requested_session(labels, selected)
     selected_note = ""
     if chosen and chosen not in labels:
@@ -2713,7 +2733,7 @@ def _centre_label_and_address(centre_code: str):
         ),
         "paris": (
             "Intégrale Academy Paris",
-            "142 rue de Rivoli — 75001 PARIS",
+            "34 rue Poissonnière — 75002 Paris",
         ),
     }
     return centres.get(
@@ -2730,8 +2750,8 @@ def _centre_legal_block(centre_code: str) -> str:
     if centre_code == "paris":
         return (
             "SASU Intégrale Sécurité Formations\n"
-            "142 rue de Rivoli\n"
-            "75001 PARIS\n"
+            "34 rue Poissonnière\n"
+            "75002 Paris\n"
             "Immatriculée au Registre des commerces et des sociétés RCS 840899884\n"
             "NDA n°93830600283\n"
             "Autorisation CNAPS FOR-083-2027-02-08-20200755135\n"
@@ -2759,10 +2779,12 @@ def build_a3p_email_html(
 ):
     centre_label, _ = _centre_label_and_address(centre_code)
     centre_display = centre_label.replace("Intégrale Academy ", "")
-    session_html = _format_upcoming_sessions_for_email(centre_code, "A3P", data_store)
+    labels = _upcoming_session_labels(centre_code, "A3P", data_store)
+    session_html = _format_upcoming_sessions_for_email(centre_code, "A3P", selected=dates_txt, labels=labels)
     context = dict(
         prenom=prenom, centre_display=centre_display, tuition=_eur_display(tuition),
         lodging=_eur_display(lodging), session_html=session_html,
+        summary_date=_next_email_session(labels, dates_txt), summary_place=TRAINING_VENUES[_normalize_centre_code(centre_code)]["city"],
     )
     return _render_training_email(
         "training/a3p.html", **context, devis_url=devis_url,
@@ -2810,7 +2832,7 @@ def _a3p_information_email_content(
     if prominent_phone_booking:
         plain += f"\n\nAvis Google · {TRAINING_GOOGLE_RATING}/5 — Lire les avis sur Google : {TRAINING_GOOGLE_REVIEWS_URL}"
     return (
-        "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
+        _training_email_subject("A3P", centre_code),
         plain,
         build_a3p_email_html(
             prenom, dates_txt, centre_code, devis_url, data_store,
@@ -2825,11 +2847,13 @@ def _a3p_information_email_content(
 
 def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_url: str, data_store=None, *, tuition=1650):
     centre_label, centre_address = _centre_label_and_address(centre_code)
-    session_html = _format_upcoming_sessions_for_email(centre_code, "APS", data_store, selected=dates_txt)
+    labels = _upcoming_session_labels(centre_code, "APS", data_store)
+    session_html = _format_upcoming_sessions_for_email(centre_code, "APS", selected=dates_txt, labels=labels)
     return _render_training_email(
         "training/aps.html",
         prenom=prenom, tuition=_eur_display(tuition),
-        session_html=session_html,
+        session_html=session_html, summary_date=_next_email_session(labels, dates_txt),
+        summary_place=TRAINING_VENUES[_normalize_centre_code(centre_code)]["city"],
         centre_label=centre_label,
         centre_address=centre_address,
         devis_url=devis_url,
@@ -2852,7 +2876,8 @@ def build_ssiap1_email_html(
         "SSIAP",
         {"ssiap_secourisme_valide": ssiap_secourisme_valide},
     )
-    session_html = _format_upcoming_sessions_for_email(centre_code, "SSIAP", data_store, selected=dates_txt)
+    labels = _upcoming_session_labels(centre_code, "SSIAP", data_store)
+    session_html = _format_upcoming_sessions_for_email(centre_code, "SSIAP", selected=dates_txt, labels=labels)
     secourisme_info = (
         "Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis."
         if ssiap_secourisme_valide == "NON"
@@ -2861,7 +2886,8 @@ def build_ssiap1_email_html(
     return _render_training_email(
         "training/ssiap1.html",
         prenom=prenom or "",
-        session_html=session_html,
+        session_html=session_html, summary_date=_next_email_session(labels, dates_txt),
+        summary_place=TRAINING_VENUES[_normalize_centre_code(centre_code)]["city"],
         centre_label=centre_label,
         centre_address=centre_address,
         tarif_display=_eur_display(tarif),
@@ -2872,7 +2898,10 @@ def build_ssiap1_email_html(
 
 
 def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
-    return _render_training_email("training/vtc.html", prenom=prenom, devis_url=devis_url)
+    return _render_training_email(
+        "training/vtc.html", prenom=prenom, devis_url=devis_url,
+        planning_url=f"{PUBLIC_CATALOGUE}/planning", tuition=_eur_display(get_formation_tarif("VTC")),
+    )
 
 
 
@@ -2910,7 +2939,8 @@ def _desp_email_centres(codes, data_store=None, selected=""):
         # A date on an undecided lead does not identify the training venue.
         chosen = _match_requested_session(labels, selected) if len(codes) == 1 else ""
         centres.append({
-            **DESP_VENUES[code], "code": code, "sessions": sessions, "selected": chosen,
+            **TRAINING_VENUES[code], "code": code, "sessions": sessions, "selected": chosen,
+            "next_date": _next_email_session(labels, chosen),
             "unlisted": chosen if chosen and chosen not in labels else "",
         })
     return centres
@@ -5068,10 +5098,10 @@ def demande_informations_formations():
         if form_data.get("formation") == "DESP_VAE":
             plain = build_vae_desp_email_plain(prenom, devis_url)
             html = build_vae_desp_email_html(prenom, devis_url)
-            email_subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
+            email_subject = _training_email_subject("DESP_VAE", form_data.get("centre"))
         elif form_data.get("formation") == "A3P":
             email_subject, plain, html = _a3p_information_email_content(
-                prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url,
+                prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url, data_store,
             )
         elif form_data.get("formation") == "APS":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
@@ -5093,7 +5123,7 @@ def demande_informations_formations():
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url, data_store)
-            email_subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+            email_subject = _training_email_subject("APS", form_data.get("centre"))
         elif form_data.get("formation") == "SSIAP":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
             tarif_ssiap = get_formation_tarif("SSIAP", form_data)
@@ -5102,13 +5132,14 @@ def demande_informations_formations():
                 if form_data.get("ssiap_secourisme_valide") == "NON"
                 else "Tarif applicable avec un certificat SST ou PSC1 de moins de 2 ans."
             )
+            centre_label, centre_address = _centre_label_and_address(form_data.get("centre"))
             upcoming = _upcoming_session_labels(form_data.get("centre", ""), "SSIAP", data_store)
             plain = (
                 f"Bonjour {prenom},\n\n"
                 "Voici les informations concernant notre formation Agent de sécurité incendie SSIAP 1.\n"
                 + (f"Session demandée : {session_date}\n" if session_date else "")
                 + ("Prochaines sessions :\n" + "\n".join(upcoming) + "\n" if upcoming else "")
-                + "Lieu : Intégrale Academy Côte d’Azur — 54 chemin du Carreou, 83480 Puget-sur-Argens.\n"
+                + f"Lieu : {centre_label} — {centre_address}\n"
                 f"Tarif : {tarif_ssiap} € TTC. {secourisme_info}\n\n"
                 f"Devis détaillé : {devis_url}\n"
                 "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/ssiap1\n"
@@ -5122,7 +5153,7 @@ def demande_informations_formations():
                 devis_url,
                 form_data.get("ssiap_secourisme_valide", ""), data_store,
             )
-            email_subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
+            email_subject = _training_email_subject("SSIAP", form_data.get("centre"))
         elif form_data.get("formation") == "VTC":
             plain = (
                 f"Bonjour {prenom},\n\n"
@@ -5132,17 +5163,17 @@ def demande_informations_formations():
                 "- Pratique : 1/2 journée à Puget-sur-Argens (83).\n\n"
                 "Déroulement : accès e-learning à l'inscription, examen théorique Chambre des Métiers, puis pratique et examen pratique (La Valette-du-Var ou Nice selon résidence).\n\n"
                 "Prérequis : permis B depuis plus de 3 ans et casier judiciaire vierge.\n"
-                "Tarif : 1 650 € TTC (tout inclus).\n"
+                f"Tarif : {_eur_display(get_formation_tarif('VTC'))} (tout inclus).\n"
                 "Durée : théorie ~100h + pratique 1/2 journée.\n\n"
                 "Dossier : https://www.integraleacademy.com/dossiersfc\n"
-                "Dates examens : https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf\n"
+                f"Dates des examens VTC : {PUBLIC_CATALOGUE}/planning\n"
                 "Programme : https://www.integraleacademy.com/dossiersfc\n"
                 "Agrément VTC : https://www.integraleacademy.com/_files/ugd/008e7b_0e29b04a71dd4dcc9c0f266d28f0514b.pdf\n"
                 "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/chauffeurvtc\n\n"
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_vtc_email_html(prenom, form_data.get("centre", ""), devis_url)
-            email_subject = "🚗 Formation Chauffeur VTC"
+            email_subject = _training_email_subject("VTC", form_data.get("centre"))
         elif form_data.get("formation") == "DESP_INIT":
             centres = _desp_email_centres(
                 [_normalize_centre_code(form_data.get("centre"))], data_store, form_data.get("dates", ""),
@@ -5165,7 +5196,7 @@ def demande_informations_formations():
                 f"{CASSANDRE_SIGNATURE_TEXT}"
             )
             html = build_desp_init_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url, data_store)
-            email_subject = "Votre demande de renseignements – Formation DESP initial"
+            email_subject = _training_email_subject("DESP_INIT", form_data.get("centre"))
         else:
             plain = (
                 f"Bonjour {prenom},\n\n"
@@ -9183,7 +9214,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261114-cpf-dossiers-masques"
+CRM_ASSET_VERSION = "20261114-modeles-et-suite-appel"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -10501,6 +10532,12 @@ def _meta_email_programme_body(content):
     return content + _META_COURSE_TOKEN
 
 
+def _meta_information_subject(formation):
+    if formation == "DESP":
+        return "Formation DESP — votre parcours et les prochaines étapes"
+    return "Formation APS — vos prochaines sessions et votre financement"
+
+
 def _meta_information_template(data, formation, kind):
     """Use the same editable content for automatic delivery and CRM previews."""
     template_id = f"automatic-meta-{formation.lower()}-{kind}"
@@ -10508,7 +10545,10 @@ def _meta_information_template(data, formation, kind):
                   if row.get("id") == template_id), None)
     if saved:
         if kind == "email":
-            return {**saved, "contenu": _meta_email_programme_body(saved.get("contenu"))}
+            subject = saved.get("sujet")
+            if subject == f"Votre demande d’informations sur la formation {formation}":
+                subject = _meta_information_subject(formation)
+            return {**saved, "sujet": subject, "contenu": _meta_email_programme_body(saved.get("contenu"))}
         return saved
     if kind == "email":
         # Keep a single editable DESP model for both routes. Resolve the full
@@ -10525,7 +10565,7 @@ def _meta_information_template(data, formation, kind):
         )
     return {
         "id": template_id, "nom": f"{formation} META", "formation": formation, "type": kind,
-        "categorie": "META", "sujet": f"Votre demande d’informations sur la formation {formation}" if kind == "email" else "",
+        "categorie": "META", "sujet": _meta_information_subject(formation) if kind == "email" else "",
         "contenu": body, "usage_count": 0, "versions": [], "meta_information": True,
     }
 
@@ -10568,11 +10608,12 @@ def _meta_course_email(contact, data_store, introduction, include_booking):
     if formation == "APS":
         centre = _normalize_centre_code(contact.get("lieu"))
         label, address = _centre_label_and_address(centre)
+        labels = _upcoming_session_labels(centre, "APS", data_store)
+        selected = contact.get("dates_formation")
         return _render_training_email(
             "training/aps.html", **common, centre_label=label, centre_address=address, tuition=_meta_tuition("APS", contact),
-            session_html=_format_upcoming_sessions_for_email(
-                centre, "APS", data_store, selected=contact.get("dates_formation"),
-            ),
+            session_html=_format_upcoming_sessions_for_email(centre, "APS", selected=selected, labels=labels),
+            summary_date=_next_email_session(labels, selected), summary_place=TRAINING_VENUES[centre]["city"],
         )
     if code == "DESP_VAE":
         amount = _meta_tuition_amount(code, contact)
@@ -13134,7 +13175,7 @@ def _secretariat_automatic_information_template(data, entry, contact):
     tuition = _secretariat_call_price(entry)
     if formation_code == "DESP_VAE":
         template_id = "automatic-desp-vae"
-        subject = "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)"
+        subject = _training_email_subject("DESP_VAE", centre_code)
         body = build_vae_desp_email_html(prenom, devis_url, tuition=tuition)
     elif formation_code == "A3P":
         template_id = "automatic-a3p"
@@ -13143,22 +13184,22 @@ def _secretariat_automatic_information_template(data, entry, contact):
         )
     elif formation_code == "APS":
         template_id = "automatic-aps"
-        subject = "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+        subject = _training_email_subject("APS", centre_code)
         body = build_aps_email_html(prenom, dates, centre_code, devis_url, data, tuition=tuition)
     elif formation_code == "SSIAP":
         template_id = "automatic-ssiap1"
-        subject = "🔥 Formation Agent de sécurité incendie SSIAP 1"
+        subject = _training_email_subject("SSIAP", centre_code)
         body = build_ssiap1_email_html(
             prenom, dates, centre_code, devis_url,
             entry.get("ssiap_secourisme_valide", ""), data, tuition=tuition,
         )
     elif formation_code == "VTC":
         template_id = "automatic-vtc"
-        subject = "🚗 Formation Chauffeur VTC"
+        subject = _training_email_subject("VTC", centre_code)
         body = build_vtc_email_html(prenom, centre_code, devis_url)
     elif formation_code == "DESP_INIT":
         template_id = "automatic-desp-initial"
-        subject = "Votre demande de renseignements – Formation DESP initial"
+        subject = _training_email_subject("DESP_INIT", centre_code)
         body = build_desp_init_email_html(
             prenom, dates, centre_code, devis_url, data, tuition=tuition,
         )
@@ -13719,19 +13760,9 @@ CRM_RELANCE_EMAILS = {
         "titre": "Et votre projet de formation ?",
         "sujet": "{{ formation }} — votre projet est-il toujours d’actualité ?",
         "contenu": (
-            "Vous aviez manifesté votre intérêt pour la formation {{ formation }} chez Intégrale Academy.\n\n"
-            "Êtes-vous toujours intéressé(e) par cette formation ?\n\n"
-            "Vous pouvez simplement répondre à cet e-mail pour nous indiquer si :\n"
-            "• vous souhaitez poursuivre votre projet ;\n"
-            "• vous préférez le reporter à plus tard ;\n"
-            "• vous n’êtes plus intéressé(e).\n\n"
-            "Si votre projet est toujours d’actualité, nous pourrons faire le point ensemble sur les "
-            "prochaines sessions, les démarches d’inscription et les possibilités de financement adaptées à "
-            "votre situation.\n\n"
-            "Vous pouvez réserver un rendez-vous téléphonique avec notre équipe grâce au bouton ci-dessous, "
-            "au créneau qui vous convient.\n\n"
-            "Un simple retour de votre part nous permettra de vous accompagner au mieux.\n\n"
-            "Au plaisir d’avoir de vos nouvelles !"
+            "Êtes-vous toujours intéressé(e) par la formation {{ formation }} ?\n\n"
+            "Vous pouvez simplement me répondre pour me dire si vous souhaitez poursuivre votre projet, "
+            "le reporter ou l’arrêter. Si vous hésitez, nous pouvons en parler par téléphone."
         ),
     },
     "appointment": {
@@ -13739,13 +13770,9 @@ CRM_RELANCE_EMAILS = {
         "titre": "Faisons le point sur votre dossier",
         "sujet": "{{ formation }} — faisons le point sur votre dossier",
         "contenu": (
-            "Je me permets de revenir vers vous concernant votre formation {{ formation }} afin que nous "
-            "puissions faire le point ensemble sur votre dossier.\n\n"
-            "Vous serait-il possible de réserver un rendez-vous téléphonique au créneau qui vous convient ? "
-            "Nous pourrons répondre à vos questions et convenir ensemble de la prochaine étape.\n\n"
-            "Si vous préférez, vous pouvez aussi me répondre directement par e-mail en m’indiquant vos "
-            "disponibilités.\n\n"
-            "Bien cordialement,"
+            "Je vous propose de faire le point ensemble sur votre dossier de formation {{ formation }}. "
+            "Nous pourrons répondre à vos questions et convenir de la prochaine étape.\n\n"
+            "Choisissez un créneau pour notre appel ou répondez-moi avec vos disponibilités."
         ),
     },
 }
@@ -13764,7 +13791,11 @@ def _crm_relance_email_template(data, choice):
     draft = CRM_RELANCE_EMAILS[choice]
     paragraphs = "".join("<p>" + html_module.escape(p).replace("\n", "<br>") + "</p>"
                          for p in draft["contenu"].split("\n\n"))
-    button = '<p><a href="{{ lien_rdv_calendly }}" style="display:inline-block;padding:14px 22px;background:#102c5c;color:white;border-radius:8px;text-decoration:none">Réserver un rendez-vous téléphonique</a></p>'
+    button = (
+        '<p align="center" style="text-align:center"><a href="{{ lien_rdv_calendly }}" '
+        'style="display:inline-block;padding:14px 22px;background:#102c5c;color:white;'
+        'border-radius:8px;text-decoration:none">Réserver un rendez-vous téléphonique</a></p>'
+    )
     return {
         **draft, "contenu": render_template(
             "crm_email_wrapper.html", prenom="{{ prenom }}", formation="{{ formation }}",
@@ -13796,7 +13827,7 @@ CRM_QUICK_REMINDER_TEMPLATE = "Rappel dans 5min"
 
 
 def _crm_send_appointment_followup(
-        data, contact, template_name, *, channels=("sms", "email"), email_template=None):
+        data, contact, template_name, *, channels=("sms", "email"), email_template=None, appointment=None):
     """Send the e-mail and SMS bearing the configured appointment template name."""
     delivery = {"sms": False, "email": False}
     sms_template = _crm_named_template(data, "sms", template_name)
@@ -13820,7 +13851,7 @@ def _crm_send_appointment_followup(
             _crm_activity(contact, "sms", f"SMS « {template_name} » envoyé", sms_body, sms_body)
     if "email" in channels and email_template and contact.get("mail"):
         email_body = _crm_resolve_message_variables(
-            email_template.get("contenu"), contact, html=True, data_store=data
+            email_template.get("contenu"), contact, html=True, data_store=data, appointment=appointment
         )
         email_html = _crm_email_html(email_body, contact, saved=True)
         subject = _crm_resolve_message_variables(
@@ -16267,7 +16298,7 @@ def crm_calendly_update_appointment(appointment_id):
                 _crm_activity(contact, "statut", "Statut : A relancer", "Sans réponse au rendez-vous · relance automatique à J+7")
             contact["updated_at"] = now
             if response_status == "no_answer":
-                delivery = _crm_send_appointment_followup(data, contact, "Pas de réponse appel")
+                delivery = _crm_send_appointment_followup(data, contact, "Pas de réponse appel", appointment=appointment)
     save_data(data)
     result = dict(appointment)
     if contact:
@@ -18561,6 +18592,9 @@ def crm_log_call(contact_id):
     payload = request.get_json(silent=True) or {}
     note = str(payload.get("commentaire", "")).strip()
     if not note: return jsonify({"error": "Un commentaire est requis"}), 400
+    next_step = str(payload.get("prochaine_etape_candidat") or "").strip()
+    if len(next_step) > 400:
+        return jsonify({"error": "La prochaine étape doit tenir en 400 caractères."}), 400
     _crm_ensure_relances(contact)
     relance = None
     relance_id = str(payload.get("relance_id") or "").strip()
@@ -18606,7 +18640,8 @@ def crm_log_call(contact_id):
         if not appointment.get("answered_followup_sent_at"):
             appointment["answered_followup_sent_at"] = now
             appointment["updated_at"] = now
-            delivery = _crm_send_appointment_followup(data, contact, "Suite appel répondu")
+            appointment["prochaine_etape_candidat"] = next_step
+            delivery = _crm_send_appointment_followup(data, contact, "Suite appel répondu", appointment=appointment)
     _crm_activity(contact, "appel", "Appel consigné", note)
     save_data(data)
     if not appointment and not relance:
@@ -19328,14 +19363,14 @@ def _crm_templates_payload(data):
             "id": "automatic-desp-vae",
             "nom": "VAE DESP",
             "formation": "DESP_VAE",
-            "sujet": "📝 VAE – Dirigeant d’Entreprise de Sécurité Privée (RNCP40385)",
+            "sujet": _training_email_subject("DESP_VAE"),
             "contenu": build_vae_desp_email_html("{{ prenom }}", "{{ lien_devis }}"),
         },
         {
             "id": "automatic-a3p",
             "nom": "A3P – Bodyguard",
             "formation": "A3P",
-            "sujet": "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)",
+            "sujet": _training_email_subject("A3P"),
             "contenu": build_a3p_email_html(
                 "{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data,
             ),
@@ -19344,28 +19379,28 @@ def _crm_templates_payload(data):
             "id": "automatic-aps",
             "nom": "APS – Agent de sécurité privée",
             "formation": "APS",
-            "sujet": "👮‍♂️ Formation Agent de Sécurité Privée (APS)",
+            "sujet": _training_email_subject("APS"),
             "contenu": build_aps_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data),
         },
         {
             "id": "automatic-ssiap1",
             "nom": "SSIAP 1 – Sécurité incendie",
             "formation": "SSIAP",
-            "sujet": "🔥 Formation Agent de sécurité incendie SSIAP 1",
+            "sujet": _training_email_subject("SSIAP"),
             "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui", data),
         },
         {
             "id": "automatic-vtc",
             "nom": "Chauffeur VTC",
             "formation": "VTC",
-            "sujet": "🚗 Formation Chauffeur VTC",
+            "sujet": _training_email_subject("VTC"),
             "contenu": build_vtc_email_html("{{ prenom }}", "cote_azur", "{{ lien_devis }}"),
         },
         {
             "id": "automatic-desp-initial",
             "nom": "DESP initial – Côte d’Azur",
             "formation": "DESP_INIT",
-            "sujet": "Votre demande de renseignements – Formation DESP initial",
+            "sujet": _training_email_subject("DESP_INIT", "cote_azur"),
             "contenu": build_desp_init_email_html(
                 "{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data,
             ),
@@ -19374,7 +19409,7 @@ def _crm_templates_payload(data):
             "id": "automatic-desp-initial-paris",
             "nom": "DESP initial – Paris",
             "formation": "DESP_INIT",
-            "sujet": "Votre demande de renseignements – Formation DESP initial",
+            "sujet": _training_email_subject("DESP_INIT", "paris"),
             "contenu": build_desp_init_email_html(
                 "{{ prenom }}", "", "paris", "{{ lien_devis }}", data,
             ),
@@ -20195,7 +20230,17 @@ def _crm_today_appointment_variables(contact, data_store=None, now=None):
     }
 
 
-def _crm_resolve_message_variables(content, contact, html=False, data_store=None, *, meta_booking=None):
+def _crm_candidate_next_step(contact, data_store, appointment=None):
+    if appointment is None and contact.get("id"):
+        answered = (row for row in (data_store or {}).get("crm_calendly_appointments", [])
+                    if row.get("contact_id") == contact["id"] and row.get("response_status") == "answered"
+                    and row.get("status") not in {"canceled", "cancelled"})
+        appointment = max(answered, key=lambda row: row.get("response_status_updated_at") or row.get("start_time") or "", default=None)
+    step = str((appointment or {}).get("prochaine_etape_candidat") or "").strip()
+    return step or "Vous pouvez me répondre pour préciser la suite de votre projet ou me poser une question."
+
+
+def _crm_resolve_message_variables(content, contact, html=False, data_store=None, *, meta_booking=None, appointment=None):
     """Resolve CRM template variables at preview/send time, never when saving."""
     content = str(content or "")
     if html and _META_COURSE_TOKEN in content and contact.get("formation") in _META_INFORMATION_COURSES:
@@ -20208,6 +20253,8 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
         # The course layout places the single scored invitation just after the introduction.
         introduction = re.sub(r"\{\{\s*invitation_rdv\s*\}\}", "", introduction)
         content = _meta_course_email(contact, data_store, introduction, meta_booking)
+    if html and not str(contact.get("prenom") or "").strip():
+        content = re.sub(r"Bonjour\s*\{\{\s*prenom\s*\}\}\s*,", "Bonjour,", content)
     resolved = re.sub(r"\{\{\s*prochaines_dates\s*\}\}",
                       lambda _: _crm_upcoming_dates(contact, html=html, data_store=data_store),
                       content)
@@ -20222,8 +20269,15 @@ def _crm_resolve_message_variables(content, contact, html=False, data_store=None
         "lieu": contact.get("lieu"), "statut": contact.get("statut"),
         "dates_formation": contact.get("dates_formation"),
         "lien_rdv_calendly": _crm_calendly_url(contact),
-        **_crm_today_appointment_variables(contact, data_store=data_store),
+        **_crm_today_appointment_variables(contact, data_store=(
+            {"crm_calendly_appointments": [appointment]} if appointment is not None else data_store
+        )),
     }
+    if "suite_appel_candidat" in resolved:
+        variables["suite_appel_candidat"] = _crm_candidate_next_step(contact, data_store, appointment)
+    if "rappel_creneau" in resolved:
+        slot = variables["date_heure_rdv_du_jour"]
+        variables["rappel_creneau"] = f"Notre appel était prévu le {slot}." if slot else "Nous avions prévu d’échanger par téléphone."
     for name, value in variables.items():
         value = str(value or "")
         if html:

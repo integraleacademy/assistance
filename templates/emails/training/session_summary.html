@@ -1,0 +1,18 @@
+{# The dates and places in the multi-centre preview must keep the same order. #}
+{% set multiple = centres is defined and centres|length > 1 %}
+{% set date = centres[0].next_date if centres is defined and not multiple else summary_date %}
+{% set place = summary_place if centres is undefined else centres|map(attribute='city')|join(' · ') %}
+{% set fee = tuition|default(tarif_display) %}
+{% if initial_fee is defined %}{% set fee = "Initiale · " ~ initial_fee ~ " / VAE · " ~ vae_fee %}{% endif %}
+<tr><td class="inset" bgcolor="{{ tint }}" style="padding:11px 30px 13px;background-color:{{ tint }};border-top:3px solid {{ accent }};">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;">
+    <tr>{% for label, value, width in [
+      ("Prochaines sessions" if multiple else ("Démarrage" if summary_place|default('') in ("Livret 1 en ligne","En ligne et à Puget-sur-Argens") else "Votre session"), date, 43),
+      ("Lieu", place, 29), ("Tarif", fee, 28)] %}
+      <td class="session-cell" width="{{ width }}%" valign="top" style="padding:3px 10px 3px {{ '0' if loop.first else '12px' }};{% if not loop.first %}border-left:1px solid #c7cfd2;{% endif %}">
+        <strong style="display:block;margin-bottom:3px;color:#41515b;font:700 10px/15px Arial,Helvetica,sans-serif;letter-spacing:1px;text-transform:uppercase;">{{ label }}</strong>
+        <span style="color:#172934;font:700 15px/21px Arial,Helvetica,sans-serif;">{% if multiple and loop.first %}{% for centre in centres %}<span style="display:block;">{{ centre.city }} · {{ centre.next_date.split(' (')[0] }}</span>{% endfor %}{% else %}{{ value }}{% endif %}</span>
+      </td>
+    {% endfor %}</tr>
+  </table>
+</td></tr>

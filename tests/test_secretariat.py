@@ -490,7 +490,7 @@ def test_secretariat_uses_automatic_training_email_when_custom_template_is_missi
     assert response.status_code == 201
     assert response.get_json()["messages"]["email"] == "sent"
     assert emails[0][0] == "camille@example.com"
-    assert emails[0][1] == "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+    assert emails[0][1] == "Formation APS à Paris — vos prochaines sessions"
     assert "Intégrale Academy Paris" in emails[0][3]
     assert "Le résumé de notre échange" not in emails[0][3]
     entry = data["secretariat_demandes"][0]
@@ -688,7 +688,7 @@ def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkey
     })
 
     assert response.status_code == 201
-    assert deliveries == [("12/01/2099", "09:30", "Appel téléphonique", "👮‍♂️ Formation Agent de Sécurité Privée (APS)")]
+    assert deliveries == [("12/01/2099", "09:30", "Appel téléphonique", "Formation APS à Puget-sur-Argens — vos prochaines sessions")]
 
 
 def test_secretariat_summary_finds_and_displays_cached_phone_appointment(client, monkeypatch):
@@ -882,7 +882,7 @@ def test_secretariat_refreshes_calendly_before_building_summary_email(client, mo
     contact = data["crm_contacts"][0]
     assert data["crm_calendly_appointments"][0]["contact_id"] == contact["id"]
     assert contact["statut"] == "RDV programmé"
-    assert deliveries == [("12/01/2099", "09:30", "Appel téléphonique", "👮‍♂️ Formation Agent de Sécurité Privée (APS)")]
+    assert deliveries == [("12/01/2099", "09:30", "Appel téléphonique", "Formation APS à Puget-sur-Argens — vos prochaines sessions")]
 
 
 def test_secretariat_ignores_past_and_non_phone_calendly_appointments(monkeypatch):

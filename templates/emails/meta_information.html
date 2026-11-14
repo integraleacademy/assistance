@@ -4,6 +4,8 @@
 {% set title_lead = "Devenez dirigeant" %}
 {% set title_italic = "d’entreprise de sécurité privée" %}
 {% set subtitle = "Formation initiale ou validation des acquis de l’expérience" %}
+{% set review = ("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP") %}
+{% set preheader = "Comparez la formation initiale et la VAE selon votre expérience, votre ville et votre projet." %}
 {% set scene = "/images/desp/manuel/pilotage.webp" %}
 {% set focal = 35 %}
 {% set accent = "#ac4b23" %}
@@ -46,7 +48,8 @@
   <p style="margin:0;">Nous pouvons faire le point avec vous sur vos droits CPF, une demande auprès de France Travail ou un financement personnel.</p>
   {% include "emails/_identity_logos.html" %}
 {% endcall %}
-{{ google_review("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP", google_reviews_url, google_rating) }}
+
+{% if not prominent_phone_booking_html %}{{ google_review(*review, maps_url=google_reviews_url, rating=google_rating) }}{% endif %}
 
 {% call section("📄 Dossier de présentation", "dossier", lead="📄 Dossier") %}
   {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}

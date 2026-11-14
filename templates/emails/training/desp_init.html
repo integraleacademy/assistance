@@ -4,6 +4,8 @@
 {% set title_lead = "Créez et dirigez" %}
 {% set title_italic = "votre entreprise de sécurité privée" %}
 {% set subtitle = "Formation reconnue par l’État — RNCP40385, niveau 5, équivalent Bac+2" %}
+{% set review = ("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP") %}
+{% set preheader = "Retrouvez les dates, le tarif et votre devis personnalisé." if devis_url else "Retrouvez les prochaines dates, le lieu et les possibilités de financement." %}
 {% set scene = "/images/desp/manuel/pilotage.webp" %}
 {% set focal = 35 %}
 {% set accent = "#ac4b23" %}
@@ -12,7 +14,7 @@
 {% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
-  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Dirigeant d’Entreprise de Sécurité Privée (DESP)</strong>, titre reconnu par l’État (<strong>RNCP40385 – niveau 5, équivalent Bac+2</strong>).</p>
   {{ meta_introduction() }}
   <p style="margin:0 0 12px;">Cette formation vous permet d’acquérir les compétences indispensables pour <strong>créer, diriger et gérer une entreprise de sécurité privée</strong>. Elle vous permet également de demander votre <strong>agrément dirigeant</strong> auprès du <strong>CNAPS</strong>, conformément à la réglementation.</p>
@@ -50,9 +52,10 @@
   {% endif %}
 {% endcall %}
 
-{{ google_review("Nelson D.", "L’équipe est professionnelle, à l’écoute et très investie dans la réussite des stagiaires.", "DESP", google_reviews_url, google_rating) }}
 
 {{ digital_identity() }}
+
+{% if not prominent_phone_booking_html %}{{ google_review(*review, maps_url=google_reviews_url, rating=google_rating) }}{% endif %}
 
 {% if include_phone_booking|default(true) %}
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
