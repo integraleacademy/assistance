@@ -121,7 +121,7 @@ def test_all_266_reminders_preview_edit_send_and_retry_only_failures(crm_browser
     expect(page.frame_locator('#bulkMessagePreview iframe').locator('body')).to_contain_text('Prénom 000')
     expect(page.frame_locator('#bulkMessagePreview iframe').locator('body')).to_contain_text('Et votre projet de formation ?')
     booking = page.frame_locator('#bulkMessagePreview iframe').get_by_role(
-        'link', name='Prendre un rendez-vous téléphonique'
+        'link', name='Réserver un rendez-vous téléphonique'
     )
     expect(booking).to_have_attribute('href', 'https://calendly.com/integraleacademy/apr')
     page.locator('#bulkPreviewRecipient').select_option('overdue-264')
@@ -190,7 +190,7 @@ def test_mobile_preview_fits_the_screen_and_keeps_send_action_visible(crm_browse
     expect(page.locator('#sendBulkMessage')).to_be_enabled()
     page.locator('#bulkMessagePreview').scroll_into_view_if_needed()
     frame = page.frame_locator('#bulkMessagePreview iframe')
-    expect(frame.get_by_role('link', name='Prendre un rendez-vous téléphonique')).to_have_count(1)
+    expect(frame.get_by_role('link', name='Réserver un rendez-vous téléphonique')).to_have_count(1)
     assert frame.locator('html').evaluate('(el)=>el.scrollWidth<=window.innerWidth')
     bounds = page.locator('#sendBulkMessage').bounding_box()
     assert 0 <= bounds['y'] and bounds['y'] + bounds['height'] <= 844
@@ -296,7 +296,7 @@ def test_second_reminder_draft_is_personalized_without_sending(crm_browser):
     frame = page.frame_locator('#bulkMessagePreview iframe')
     expect(frame.locator('body')).to_contain_text('faire le point ensemble sur votre dossier')
     expect(frame.locator('body')).to_contain_text('Agent de protection physique des personnes (A3P)')
-    expect(frame.get_by_role('link', name='Prendre un rendez-vous téléphonique')).to_have_attribute(
+    expect(frame.get_by_role('link', name='Réserver un rendez-vous téléphonique')).to_have_attribute(
         'href', 'https://calendly.com/integraleacademy/apr')
     page.locator('#bulkTpl').select_option('reminder-interest')
     expect(page.locator('#sendBulkMessage')).to_be_disabled()

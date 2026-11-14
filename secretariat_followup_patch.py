@@ -291,7 +291,7 @@ def register_secretariat_followup_patch(app_module):
             if rows:
                 group = {"centre_label": centre_label, "sessions": rows}
                 if code == "DESP_INIT":
-                    venue = app_module.DESP_VENUES.get(centre_code)
+                    venue = app_module.TRAINING_VENUES.get(centre_code)
                     if venue:
                         group.update(centre_label=venue["city"], address=venue["address"], code=centre_code)
                 result.append(group)
@@ -524,7 +524,7 @@ def register_secretariat_followup_patch(app_module):
         centre_code, centre, city, session = split_session(entry.get("formation_date_souhaitee"))
         if code == "DESP_INIT":
             centre_code = centre_code or entry.get("formation_centre")
-            venue = app_module.DESP_VENUES.get(centre_code)
+            venue = app_module.TRAINING_VENUES.get(centre_code)
             if venue:
                 config = {**config, "location": venue["address"]}
         facts = {
@@ -569,7 +569,6 @@ def register_secretariat_followup_patch(app_module):
             "prenom": displayed_first_name, "formation": config, "entry": entry, "content": content,
             "project_rows": rows, "appointment": appointment, "logo_src": logo_src,
             "show_cpf_badge": code in app_module.ABANDONED_TRAINING_EMAIL_CONFIG,
-            "desp_paris_address": app_module.DESP_VENUES["paris"]["address"] if code == "DESP_INIT" else "",
         }
         subject = f"Votre projet {config.get('short') or config.get('label')} – le résumé de notre échange"
         rendered = app_module.render_template("emails/email_resume_echange_integrale.html", **context)

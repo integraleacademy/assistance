@@ -1972,7 +1972,7 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
         "DESP_VAE", "A3P", "APS", "SSIAP", "VTC", "DESP_INIT", "DESP_INIT",
     ]
     aps = next(template for template in automatic if template["formation"] == "APS")
-    assert aps["sujet"] == "👮‍♂️ Formation Agent de Sécurité Privée (APS)"
+    assert aps["sujet"] == "Formation APS à Puget-sur-Argens — vos prochaines sessions"
     assert "{{ prenom }}" in aps["contenu"]
     assert "1 650" in aps["contenu"]
     a3p = next(template for template in automatic if template["formation"] == "A3P")
@@ -2026,6 +2026,17 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
         for text in (plain, body):
             assert "dans un autre secteur" in text and "gérant ou gérante" in text and "encadré une équipe" in text
             assert "recevabilité de votre demande" in text and "Poissonnière" not in text
+    document = html5lib.parse(body, namespaceHTMLElements=False)
+    assert document.find('.//div[@class="preheader"]').text.strip()
+    summary = document.findall('.//td[@class="session-cell"]')
+    assert len(summary) == 3 and all(''.join(cell.itertext()).strip() for cell in summary)
+    assert 'href="https://www.integraleacademy.com/dossiersfc"' in body
+    if formation == "VTC":
+        assert body.count("Télécharger mon devis détaillé") == 1
+        assert 'href="' + application.PUBLIC_CATALOGUE + '/planning"' in body
+        assert application._eur_display(application.get_formation_tarif("VTC")) in body
+    if formation == "DESP_VAE":
+        assert "Commencer mon Livret 1" in body
     quote_url, = set(re.findall(r'href="(http[^"]+/plan/[^"]+)"', body))
     assert subject == preview["sujet"]
     assert body == preview["contenu"].replace("{{ prenom }}", "Anne &amp; Léa").replace("{{ lien_devis }}", quote_url)
@@ -2034,7 +2045,6 @@ def test_form_delivers_the_previewed_training_email(tmp_path, monkeypatch, model
     cover = re.search(r'<h1\b[^>]*>(.*?)</h1>', body, re.S)
     assert cover and re.search(r'<em\b[^>]*>[^<]+</em>', cover[1])
     assert body.count('class="cover-art"') == 1
-    document = html5lib.parse(body, namespaceHTMLElements=False)
     facts = document.findall('.//td[@class="fact"]')
     assert len(facts) == 3 and all(cell.get("align") == "center" for cell in facts)
     booking_table, = [
@@ -2064,7 +2074,7 @@ def test_crm_templates_include_meta_email_and_sms_for_each_formation(tmp_path, m
         ("email", "DESP"), ("sms", "DESP"),
     ]
     email, sms = automatic_meta[:2]
-    assert email["sujet"] == "👮‍♂️ Formation Agent de Protection Physique des Personnes (A3P)"
+    assert email["sujet"] == "Formation A3P à Puget-sur-Argens — vos prochaines sessions"
     assert "{{ prenom }}" in email["contenu"]
     assert "Télécharger mon devis détaillé" not in email["contenu"]
     assert email["contenu"].index("Réserver un rendez-vous téléphonique") < email["contenu"].index("Cette formation permet")

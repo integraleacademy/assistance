@@ -16,6 +16,7 @@
       .caption { font-size:17px !important; line-height:23px !important; }
       .fact-title { font-size:12px !important; line-height:16px !important; }
       .fact-text { font-size:12px !important; line-height:17px !important; }
+      .session-cell { display:block !important; width:auto !important; padding:8px 0 !important; border-left:0 !important; border-bottom:1px solid #d7dedf; }
       .fact { padding-left:8px !important; padding-right:8px !important; }
       .desp-venue-column { display:block !important; width:100% !important; padding:0 0 12px !important; }
       .spread-title, .spread-copy { display:block !important; width:auto !important; }
@@ -35,6 +36,7 @@
   </style>
 </head>
 <body bgcolor="#e9edf0" style="margin:0;padding:0;background-color:#e9edf0;color:#172634;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">
+<div class="preheader" aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;overflow:hidden;max-height:0;max-width:0;opacity:0;font-size:1px;line-height:1px;">{{ preheader }}</div>
 <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e9edf0" style="width:100%;table-layout:fixed;">
 <tr><td align="center" class="outer" style="padding:24px 10px 32px;">
   <!--[if mso]><table role="presentation" width="660" align="center" border="0" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
@@ -56,6 +58,7 @@
         </h1>
       </td>
     </tr>
+    {% include "emails/training/session_summary.html" %}
     <tr><td align="center" bgcolor="#111c28" style="padding:0;font-size:0;line-height:0;">
       <img class="cover-art" src="https://raw.githubusercontent.com/integraleacademy/integraleacademyofficiel/df275ac017f9b3fe594354f5a38e978ca212f0dd/public{{ scene }}" width="660" height="212" alt="" style="display:block;width:100%;max-width:660px;height:212px;object-fit:cover;object-position:center {{ focal }}%;border:0;">
     </td></tr>

@@ -4,6 +4,8 @@
 {% set title_lead = "Devenez Agent de" %}
 {% set title_italic = "Protection Physique des Personnes" %}
 {% set subtitle = "Titre reconnu par l’État — RNCP38002, niveau 4" %}
+{% set review = ("Charlize Farrugia", "Centre de formation sérieux et professionnel, offrant un encadrement de qualité par des formateurs compétents.", "A3P") %}
+{% set preheader = "Retrouvez les dates, le tarif et votre devis personnalisé." if devis_url else "Retrouvez les prochaines dates, le lieu et les possibilités de financement." %}
 {% set scene = "/images/a3p/manuel/protection.webp" %}
 {% set focal = 34 %}
 {% set accent = "#17694f" %}
@@ -12,7 +14,7 @@
 {% from "emails/training/components.html" import button, digital_identity, fact, google_review, meta_introduction, notice, section, price with context %}
 
 {% block introduction %}
-  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Agent de Protection Physique des Personnes (A3P – Bodyguard)</strong>, titre reconnu par l’État (<strong>RNCP38002 – niveau 4</strong>).</p>
   {{ meta_introduction() }}
   <p style="margin:0 0 12px;">Cette formation permet d’acquérir les compétences nécessaires pour intervenir en tant que <strong>garde du corps</strong>, dans le respect strict de la réglementation française. Elle prépare également à l’obtention de la carte professionnelle <strong>Agent de protection physique des personnes</strong> délivrée par le <strong>CNAPS</strong> (Ministère de l’Intérieur).</p>
@@ -51,7 +53,6 @@
   {% endif %}
 {% endcall %}
 
-{{ google_review("Charlize Farrugia", "Centre de formation sérieux et professionnel, offrant un encadrement de qualité par des formateurs compétents.", "A3P", google_reviews_url, google_rating) }}
 
 {% call section("🛏️ Hébergement", lead="🛏️") %}
   <p style="margin:0 0 12px;">Nous proposons une solution d’hébergement au sein du centre de formation au tarif de :<br> <strong>{{ lodging }} pour la durée totale de la formation.</strong></p>
@@ -59,6 +60,8 @@
 {% endcall %}
 
 {{ digital_identity() }}
+
+{% if not prominent_phone_booking_html %}{{ google_review(*review, maps_url=google_reviews_url, rating=google_rating) }}{% endif %}
 
 {% if include_phone_booking %}
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}

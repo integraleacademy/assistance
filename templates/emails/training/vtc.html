@@ -4,6 +4,10 @@
 {% set title_lead = "Préparez votre examen VTC" %}
 {% set title_italic = "avec une formule tout inclus" %}
 {% set subtitle = "Théorie en ligne, pratique, frais d’examen et véhicule le jour de l’épreuve pratique." %}
+{% set review = ("Amélie M.", "Les cours sont très complets pour la formation VTC. Le personnel est disponible et très agréable.", "VTC") %}
+{% set preheader = "Votre formation VTC, les dates d’examen et votre devis personnalisé." if devis_url else "Votre préparation en ligne, votre pratique à Puget-sur-Argens et le planning des examens." %}
+{% set summary_date = "Dès validation de l’inscription" %}
+{% set summary_place = "En ligne et à Puget-sur-Argens" %}
 {% set scene = "/images/vtc/manuel/accueil.webp" %}
 {% set focal = 36 %}
 {% set accent = "#6f3ca1" %}
@@ -12,7 +16,7 @@
 {% from "emails/training/components.html" import button, digital_identity, fact, google_review, notice, section, price with context %}
 
 {% block introduction %}
-  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour {{ prenom }},</p>
+  <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
   <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>Chauffeur VTC</strong>.</p>
   <p style="margin:0 0 12px;">Cette formation vous permet de vous préparer efficacement à l’examen VTC, avec une partie théorique en ligne et une préparation pratique avec véhicule avant l’examen.</p>
   <p style="margin:0 0 12px;">Notre formule est <strong>tout inclus</strong> : formation théorique complète, formation pratique, frais d’examen et mise à disposition du véhicule le jour de l’examen pratique.</p>
@@ -32,10 +36,6 @@
   {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}
 {% endcall %}
 
-<tr><td class="gutter" style="padding:10px 30px 16px;">
-  {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
-</td></tr>
-
 {% call section("📅 Organisation de la formation", lead="📅 Organisation de") %}
   <p style="margin:0 0 12px;"><strong>Formation théorique :</strong><br> • 100 % en ligne à distance<br> • Accessible 7j/7<br> • Démarrage possible après validation de votre inscription</p>
   <p style="margin:0;"><strong>Formation pratique :</strong><br> • 1/2 journée de mise en situation professionnelle<br> • Réalisée dans nos locaux à Puget-sur-Argens (83)<br> • Préparation spécifique à l’examen pratique VTC</p>
@@ -51,7 +51,7 @@
 
 {% call section("🗓️ Dates des examens", lead="🗓️ Dates des") %}
   <p style="margin:0 0 12px;">Les examens théoriques sont organisés par la Chambre des Métiers pour les candidats de la région PACA.</p>
-  {{ button("Consulter les dates d’examen", "https://www.cmar-paca.fr/galerie/1/f3ec5a86ea34eb95294dd770b94b8c23.pdf") }}
+  {{ button("Consulter les dates d’examen", planning_url) }}
 {% endcall %}
 
 {% call section("📋 Prérequis", lead="📋") %}
@@ -59,16 +59,15 @@
 {% endcall %}
 
 {% call section("💶 Tarif et financement", "finance", lead="💶 Tarif et") %}
-  {{ price("1 650 € TTC") }}
+  {{ price(tuition) }}
   <p style="margin:0 0 12px;">Formule tout inclus :</p>
   <p style="margin:0 0 12px;">✅ Formation théorique complète<br> ✅ Formation pratique d’1/2 journée<br> ✅ Frais d’examen inclus<br> ✅ Prêt du véhicule le jour de l’examen pratique</p>
   <p style="margin:0 0 12px;">Financements possibles :</p>
   <p style="margin:0 0 12px;">• Compte Personnel de Formation <strong>CPF</strong><br> • Demande de financement auprès de <strong>France Travail</strong><br> • Financement personnel</p>
   <p style="margin:0 0 12px;">Pour utiliser votre Compte Personnel de Formation (CPF) ou demander un financement France Travail, vous devez créer et activer votre <strong>Identité Numérique La Poste.</strong></p>
-  {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
+  {% if devis_url %}{{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}{% endif %}
 {% endcall %}
 
-{{ google_review("Amélie M.", "Les cours sont très complets pour la formation VTC. Le personnel est disponible et très agréable.", "VTC", google_reviews_url, google_rating) }}
 
 {% call section("📚 Programme et agrément VTC", lead="📚 Programme et") %}
   {{ button("Télécharger le programme de formation", "https://www.integraleacademy.com/dossiersfc") }}
@@ -76,6 +75,8 @@
 {% endcall %}
 
 {{ digital_identity() }}
+
+{% if not prominent_phone_booking_html %}{{ google_review(*review, maps_url=google_reviews_url, rating=google_rating) }}{% endif %}
 
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place, vous pouvez réserver un rendez-vous téléphonique avec notre équipe.</p>
@@ -89,7 +90,7 @@
 
 {% block footer %}
   © Intégrale Academy — Merci de votre confiance 💛<br>
-  54 chemin du Carreou 83480 Puget-sur-Argens / 142 rue de Rivoli 75001 Paris<br>
+  54 chemin du Carreou 83480 Puget-sur-Argens / 34 rue Poissonnière, 75002 Paris<br>
   SIREN 840 899 884 - NDA 93830600283<br>
   Certification Nationale QUALIOPI : n°03169 en date du 21/10/2024<br>
   UAI Côte d’Azur 0831774C - UAI Paris 0756548K<br>
