@@ -17,7 +17,7 @@ from secretariat_catalogue import (
     PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
 )
 import crm_public_sessions
-from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS
+from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS, next_five_weekdays
 import secretariat_calls
 import secretariat_messages
 from crm_read_cache import LastProjection, UpdateSnapshots
@@ -16307,18 +16307,22 @@ def crm_cassandre_availability():
             raise ValueError
     except ValueError:
         return jsonify(error="Choisissez une date valide."), 400
-    length = 1 if selected is not None else 5
+    dates = [first] if selected is not None else next_five_weekdays(today)
+    if selected is not None and first.weekday() >= 5:
+        return jsonify(days={selected: 0}), 200, {"Cache-Control": "private, no-store"}
     try:
         data = _load_data_snapshot()
         state = data.get("crm_calendly") or {}
         account = (state.get("organization"), state.get("user"), state.get("configured_at"))
-        if first >= today and not _calendly_token():
+        if dates[0] >= today and not _calendly_token():
             raise RuntimeError("La connexion Calendly n’est pas configurée.")
-        days = _CASSANDRE_CALENDAR.counts(
-            first, length, now, account, lambda: _crm_formation_booking_event_types(data),
+        span = (dates[-1] - dates[0]).days + 1
+        counts = _CASSANDRE_CALENDAR.counts(
+            dates[0], span, now, account, lambda: _crm_formation_booking_event_types(data),
             lambda path, params: _calendly_paginated_collection(path, params, strict=True),
             refresh=request.args.get("refresh") == "1",
         )
+        days = {day.isoformat(): counts[day.isoformat()] for day in dates}
     except RuntimeError as exc:
         return _calendly_route_error(exc)
     except (KeyError, TypeError, ValueError, OverflowError):
