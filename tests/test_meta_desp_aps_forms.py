@@ -4,6 +4,7 @@ import html5lib
 import pytest
 
 import app as application
+from crm_external_access import contact_payload
 from test_meta_zapier_webhook import lead, post, setup_client
 
 
@@ -197,7 +198,88 @@ def test_later_funding_plan_supersedes_the_older_full_price_declaration():
     score = application.calculate_candidate_integration_score(contact)
     assert score["financial_breakdown"][0]["points"] == 0
     assert not contact["meta_source"].get("financement_perso_integral_prevu")
+    assert contact["meta_source"]["field_answers"]["financement_ft"] == "France Travail"
     assert not application._crm_backfill_meta_submissions(data)
+
+
+def test_desp_undecided_answers_reach_the_sheet_and_existing_contacts(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    questions = {
+        "quel_parcours_souhaitez-vous_étudier_?": "J’hésite entre les deux et je souhaite être conseillé.",
+        "comment_envisagez-vous_de_financer_votre_parcours_?": "Je souhaite d’abord faire le point sur les possibilités.",
+        "si_la_prise_en_charge_est_partielle_ou_refusée,_que_souhaitez-vous_faire_?": "Examiner le devis avant de me décider.",
+    }
+    route, funding, personal = questions.values()
+    payload = lead(form_id="1124725393644713", **{"Campaign Name": "Paris", **questions})
+    result = post(client, payload)
+    assert result.status_code == 201
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+    url = "/api/crm/contacts/" + result.json["contact_id"]
+    contact = client.get(url).json
+    answers = {"lieu": "", "desp_type": route, "financement_ft": funding, "financement_perso_possible": personal}
+    assert contact["meta_source"]["field_answers"] == answers
+    assert not any(contact.get(field) for field in answers)
+    assert contact["integration_score"]["personal_funding_capacity"] is None
+    assert not contact.get("statut_demande_financement_ft") and not contact.get("reste_a_charge_perso")
+    assert contact_payload(contact)["meta_source"] == {"formation": "DESP", "field_answers": answers}
+    assert "meta_source" not in contact_payload(contact, detail=False)
+
+    data = application.load_data()
+    stored = data["crm_contacts"][0]
+    del stored["meta_source"]["field_answers"]
+    history = list(stored["activities"])
+    assert application._crm_backfill_meta_submissions(data)
+    assert stored["meta_source"]["field_answers"] == answers
+    assert stored["activities"] == history
+    assert not application._crm_backfill_meta_submissions(data)
+
+    assert not client.patch(url, json={"lieu": "À déterminer"}).json["lieu"]
+    updated = client.patch(url, json={"lieu": "Paris", "desp_type": "VAE", "financement_ft": "NON"})
+    assert updated.status_code == 200
+    assert client.patch(url, json={"commentaires": "Projet précisé."}).json["lieu"] == "Paris"
+    after = client.get(url).json
+    assert (after["lieu"], after["desp_type"], after["financement_ft"]) == ("Paris", "VAE", "NON")
+    assert after["meta_source"]["field_answers"] == answers
+
+
+@pytest.mark.parametrize("answer,capacity", [
+    ("Poursuivre mon projet et régler la part restante.", "OUI"),
+    ("Attendre d’avoir obtenu un financement complet.", ""),
+    ("Examiner le devis avant de me décider.", ""),
+])
+def test_desp_partial_payment_choices_are_distinct_from_a_confirmed_amount(answer, capacity):
+    mapped, _ = application._meta_crm_payload({"form_id": "1124725393644713"}, {
+        "où_souhaiteriez-vous_suivre_votre_formation_?": "Les deux lieux me conviennent, selon les dates.",
+        "raw_si_la_prise_en_charge_est_partielle_ou_refusée,_que_souhaitez-vous_faire_?": answer.replace(" ", "_"),
+    })
+    assert not mapped.get("lieu")
+    assert mapped["meta_field_answers"]["lieu"] == "Les deux lieux me conviennent, selon les dates."
+    assert mapped["meta_field_answers"]["financement_perso_possible"] == answer
+    assert mapped.get("financement_perso_possible", "") == capacity
+    assert not mapped.get("reste_a_charge_perso") and not mapped.get("financement_perso_integral_prevu")
+
+
+def test_desp_city_answer_replaces_a_legacy_placeholder_only():
+    fields = {"form_id": "2007914916834027"}
+    crm, rows = application._meta_crm_payload(fields, {"Où pourriez-vous suivre les deux semaines en présentiel ?": "À Paris."})
+    for original, expected in [("À déterminer", "Paris"), ("Côte d’Azur", "Côte d’Azur")]:
+        contact = {"lieu": original}
+        application._meta_apply_contact_answers(contact, crm, rows, fields=fields)
+        assert contact["lieu"] == expected
+
+
+@pytest.mark.parametrize("form_id", ["1665286434987197", "1031503583183780"])
+def test_other_meta_courses_display_their_financing_answers(form_id):
+    crm, _ = application._meta_crm_payload({"form_id": form_id}, {
+        "Souhaitez-vous un financement France Travail ?": "Je dois me renseigner.",
+        "Pourriez-vous financer personnellement le reste à charge ?": "Selon le devis.",
+    })
+    assert crm["meta_field_answers"] == {
+        "financement_ft": "Je dois me renseigner.", "financement_perso_possible": "Selon le devis.",
+    }
+    assert crm["lieu"] == "Côte d’Azur" and not crm.get("desp_type")
+    assert not crm.get("financement_ft") and not crm.get("financement_perso_possible")
 
 
 @pytest.mark.parametrize("payload,expected", [

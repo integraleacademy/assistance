@@ -21,6 +21,8 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .binary-choice label{position:relative;display:grid;place-items:center;min-height:42px;border:1px solid #dce2eb;border-radius:10px;background:#fff;color:#65738a;font-size:12px;font-weight:800;cursor:pointer;transition:.18s ease}
 .binary-choice input{position:absolute;opacity:0;pointer-events:none}
 .binary-choice label:has(input:checked){border-color:var(--blue);background:#edf3ff;color:#2459cf;box-shadow:0 0 0 2px #356ae61c}
+.meta-funding-answer{grid-column:1/-1;grid-row:1;font-size:13px;line-height:1.45;font-weight:600;color:#34435b}
+.binary-choice:has(input:checked) .meta-funding-answer,.meta-funding-answer[hidden]{display:none}
 .binary-choice label:hover{border-color:#9db5ec;transform:translateY(-1px)}
 .relaunch-modal{width:min(500px,100%);overflow:hidden;border-radius:24px;box-shadow:0 32px 90px #07142866}
 .relaunch-modal .modal-head{padding:26px 28px 12px;border:0;background:linear-gradient(145deg,#f7faff,#fff)}
