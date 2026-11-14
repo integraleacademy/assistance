@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 import app as application
@@ -392,3 +394,84 @@ def test_receipt_survives_retry_and_preserves_a_write_during_delivery(tmp_path, 
     assert len(calls) == 1
     assert data["crm_contacts"][0]["commentaires"] == "Note saisie pendant l’envoi"
     assert data["crm_meta_lead_submissions"][0]["automatic_delivery"] == {"email": True, "sms": True}
+
+
+@pytest.mark.parametrize("form_id,route,location,contents,absent", [
+    ("1665286434987197", "", "", ["175 heures de formation", "Prochaines sessions", "1 700 € TTC", "PUGET"], "Livret 1"),
+    ("1124725393644713", "Formation initiale", "Paris",
+     ["245 heures", "175 heures de e-learning", "Paris", "4 350 € TTC"], "Livret 1"),
+    ("1124725393644713", "VAE", "", ["Livret 1", "Livret 2", "3 850 € TTC", "1 155 €", "2 695 €"], "245 heures"),
+    ("1124725393644713", "", "", ["245 heures", "Livret 1", "4 350 € TTC", "3 850 € TTC", "Paris", "Puget-sur-Argens"], "Centre de formation :"),
+])
+@pytest.mark.parametrize("score", [29, 30])
+def test_full_course_email_and_a3p_booking_panel_use_the_answers_for_this_submission(
+        tmp_path, monkeypatch, form_id, route, location, contents, absent, score):
+    client = setup_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(application, "calculate_candidate_integration_score", lambda *args: {"score": score})
+    emails = []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
+    response = post(client, lead(**{
+        "form_id": form_id, "Quel parcours DESP souhaitez-vous ?": route, "lieu": location,
+    }))
+    assert response.status_code == 201 and len(emails) == 1
+    plain, body = emails[0][2:]
+    course = "APS" if form_id == "1665286434987197" else "DESP"
+    booking = "https://calendly.com/integraleacademy/" + ("aps" if course == "APS" else "dirigeant")
+    for text in (plain, body):
+        assert "Lina" in text and "Cassandre MENARD" in text
+        assert all(value in text for value in contents)
+        assert absent not in text
+        assert "https://www.integraleacademy.com/dossiersfc" in text
+        assert "Télécharger mon devis" not in text and "A3P" not in text
+        assert text.count(booking) == int(score >= 30)
+        assert "📞 Prochaine étape" not in text and "calendly.com/integraleacademy/apr" not in text
+        assert not re.search(r"\{\{.*?\}\}|\{[a-z_]+\}", text)
+    assert body.count("Memoji de Cassandre MENARD") == 1
+    assert 'background:#0f1f33' in body and 'href=""' not in body
+    if score >= 30:
+        with application.app.app_context():
+            panel = application._meta_booking_content({"formation": course}, html=True)
+        assert panel in body and body.index(panel) < body.index("Dossier de présentation")
+        assert all(topic in panel for topic in ("La formation", "Les dates", "Les tarifs", "Le financement"))
+    assert application.load_data().get("demandes", []) == []
+
+
+def test_meta_desp_preview_matches_delivery_and_keeps_individual_centres(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+    data = application.load_data()
+    data["formation_sessions"] = {
+        "paris": {"DESP_INIT": [{"label": "Du 1 au 20 mars 2099"}]},
+        "cote_azur": {"DESP_INIT": [{"label": "Du 3 au 24 mai 2099"}]},
+    }
+    application.save_data(data)
+    monkeypatch.setattr(application, "calculate_candidate_integration_score", lambda *args: {"score": 30})
+    emails = []
+    monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
+    preview = client.get("/api/crm/templates/automatic-meta-desp-email/meta-preview").get_json()["contenu"]
+    assert post(client, lead(form_id="1124725393644713")).status_code == 201
+    assert emails[0][3] == preview.replace("Camille", "Lina")
+    assert "mai 2099" in preview and "mars 2099" in preview
+    assert post(client, lead(**{
+        "form_id": "1124725393644713", "leadgen_id": "initial-paris",
+        "lieu": "Paris", "Quel parcours DESP souhaitez-vous ?": "Formation initiale",
+        "dates_formation": "Du 1 au 20 décembre 2026",
+    })).status_code == 200
+    assert "4 300 € TTC" in emails[1][3] and "mars 2099" in emails[1][3]
+    assert "mai 2099" not in emails[1][3] and "4 350 € TTC" not in emails[1][3]
+
+
+@pytest.mark.parametrize("course", ["APS", "DESP_INIT", "DESP_VAE"])
+def test_public_course_emails_keep_their_quote_and_standard_booking(course):
+    with application.app.test_request_context():
+        quote = "https://example.test/devis/123"
+        if course == "DESP_VAE":
+            body = application.build_vae_desp_email_html("Camille", quote)
+        elif course == "DESP_INIT":
+            body = application.build_desp_init_email_html("Camille", "", "paris", quote, {})
+        else:
+            body = application.build_aps_email_html("Camille", "", "cote_azur", quote, {})
+    assert body.count(quote) == body.count("calendly.com/") == 1
+    assert "📞 Prochaine étape" in body and "VOTRE RENDEZ-VOUS TÉLÉPHONIQUE" not in body
+    assert "{meta_introduction_html}" not in body and "{prominent_phone_booking_html}" not in body
