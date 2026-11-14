@@ -17,7 +17,7 @@ from secretariat_catalogue import (
     PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
 )
 import crm_public_sessions
-from crm_calendar_availability import CassandreCalendar, HOST_EMAIL as CASSANDRE_EMAIL, PARIS as CALENDAR_PARIS
+from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS
 import secretariat_calls
 import secretariat_messages
 from crm_read_cache import LastProjection, UpdateSnapshots
@@ -554,6 +554,8 @@ SECRETARIAT_FORMATIONS = {
     "BTS_PI": {"short": "BTS PI", "label": "BTS Professions Immobilières (PI)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Se préparer aux métiers de la transaction et de la gestion immobilières.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": "https://calendly.com/integraleacademy/professionsimmobilieres"},
     "BTS_CG": {"short": "BTS CG", "label": "BTS Comptabilité et gestion (CG)", "duration": "2 ans", "price": "0 € pour l’apprenti", "format": "Alternance", "purpose": "Maîtriser les opérations comptables, fiscales et sociales et contribuer au pilotage de l'organisation.", "funding": "Prise en charge par l'OPCO de l'employeur.", "calendly": SECRETARIAT_GENERIC_CALENDLY_URL},
 }
+
+FORMATION_BOOKING_URLS = {code: SECRETARIAT_FORMATIONS[code]["calendly"] for code in PLAN_FORMATIONS}
 
 SECRETARIAT_WEBSITE_URL = "https://www.integraleacademy.com/"
 SECRETARIAT_DOSSIER_URL = "https://www.integraleacademy.com/dossiersfc"
@@ -5378,15 +5380,7 @@ def autosave_demande_informations_formations():
 def confirmation_demande_infos():
     hot = request.args.get("hot") == "1"
     formation = request.args.get("formation") or ""
-    calendly_map = {
-        "DESP_INIT": "https://calendly.com/integraleacademy/dirigeant",
-        "DESP_VAE": "https://calendly.com/integraleacademy/dirigeant",
-        "A3P": "https://calendly.com/integraleacademy/apr",
-        "APS": "https://calendly.com/integraleacademy/aps",
-        "SSIAP": "https://calendly.com/integraleacademy/ssiap1",
-        "VTC": "https://calendly.com/integraleacademy/chauffeurvtc"
-    }
-    return render_template("confirmation_demande_informations.html", hot=hot, calendly_url=calendly_map.get(formation))
+    return render_template("confirmation_demande_informations.html", hot=hot, calendly_url=FORMATION_BOOKING_URLS.get(formation))
 
 
 @app.route("/api/formation-sessions")
@@ -16290,36 +16284,15 @@ def crm_calendly_appointments():
 
 
 _CASSANDRE_CALENDAR = CassandreCalendar()
-CASSANDRE_DAILY_APPOINTMENT_LIMIT = 12
 
 
-def _crm_cassandre_remaining_places(openings, appointments):
-    """Combine the available start times with Cassandre's remaining daily capacity."""
-    bookings = {day: set() for day, count in openings.items() if count}
-    if not bookings:
-        return openings
-    for appointment in appointments:
-        if not isinstance(appointment, dict):
-            continue
-        day = _crm_calendly_local_day(appointment)
-        if day not in bookings:
-            continue
-        status = str(appointment.get("status") or "").strip().lower()
-        if status in CRM_CANCELLED_APPOINTMENT_STATUSES or appointment.get("new_invitee"):
-            continue
-        if secretariat_messages.meeting_host(appointment, USERS) != USERS[CASSANDRE_EMAIL]:
-            continue
-        # Calendly can send multiple invitees for one meeting. Older CRM rows
-        # without an event URI still represent a booking at their recorded time.
-        key = appointment.get("event_uri") or _crm_calendar_slot(appointment, {})["start"]
-        bookings[day].add(key)
-
-    # The provider already removes occupied times. A booking consumes one
-    # place in the daily limit, independently of how many start times remain.
-    return {
-        day: min(count, max(0, CASSANDRE_DAILY_APPOINTMENT_LIMIT - len(bookings.get(day, ()))))
-        for day, count in openings.items()
-    }
+def _crm_formation_booking_event_types(data):
+    """Only count slots offered on the booking pages sent to formation candidates."""
+    urls = {url.rstrip("/") for url in FORMATION_BOOKING_URLS.values()}
+    return [
+        event for event in _calendly_event_types_for_context(data)
+        if str(event.get("scheduling_url") or "").rstrip("/") in urls
+    ]
 
 
 @app.get("/api/crm/calendly/cassandre-availability")
@@ -16341,12 +16314,11 @@ def crm_cassandre_availability():
         account = (state.get("organization"), state.get("user"), state.get("configured_at"))
         if first >= today and not _calendly_token():
             raise RuntimeError("La connexion Calendly n’est pas configurée.")
-        openings = _CASSANDRE_CALENDAR.counts(
-            first, length, now, account, lambda: _calendly_event_types_for_context(data),
+        days = _CASSANDRE_CALENDAR.counts(
+            first, length, now, account, lambda: _crm_formation_booking_event_types(data),
             lambda path, params: _calendly_paginated_collection(path, params, strict=True),
             refresh=request.args.get("refresh") == "1",
         )
-        days = _crm_cassandre_remaining_places(openings, data.get("crm_calendly_appointments", []))
     except RuntimeError as exc:
         return _calendly_route_error(exc)
     except (KeyError, TypeError, ValueError, OverflowError):
