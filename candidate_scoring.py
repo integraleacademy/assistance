@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
-CANDIDATE_SCORING_VERSION = 9
+CANDIDATE_SCORING_VERSION = 10
 FINANCIAL_WEIGHT = 80
 REGULATORY_WEIGHT = 20
 PERSONAL_CAPACITY_FINANCIAL_FLOOR = 50
@@ -190,6 +190,17 @@ def calculate_financial_readiness_score(contact):
     code = resolve_training_code(contact)
     price_cents = TRAINING_PRICES_CENTS.get(code)
     warnings, blockers, actions = [], [], []
+    source = contact.get("meta_source")
+    # Le plan de financement principal du DESP porte sur l'intégralité du tarif.
+    # Une réponse contraire sur la fiche prime sur la déclaration initiale.
+    personal_full_planned = (
+        code in {"DESP_INITIAL", "DESP_VAE"}
+        and isinstance(source, dict)
+        and source.get("financement_perso_integral_prevu") is True
+        and personal_capacity is not False and personal_remainder is not False
+        and wants_ft is not True
+        and ft_status not in {"a_preparer", "transmise", "en_cours_instruction", "acceptee"}
+    )
 
     exact_value = contact.get("cpf_montant")
     exact_text = "" if exact_value is None else str(exact_value).strip()
@@ -228,12 +239,13 @@ def calculate_financial_readiness_score(contact):
     else:
         useful_min_cents = useful_max_cents = 0
 
-    if cpf is True and not exact_known and not tier:
+    if cpf is True and not exact_known and not tier and not personal_full_planned:
         warnings.append("Compte CPF consulté, mais montant ou palier CPF non renseigné.")
         actions.append("Demander le montant ou le palier CPF disponible")
     if tier:
         warnings.append("Le CPF est renseigné par palier : la couverture affichée reste une estimation prudente.")
-        actions.append("Confirmer le montant CPF exact avant l’inscription")
+        if not personal_full_planned:
+            actions.append("Confirmer le montant CPF exact avant l’inscription")
     if personal_remainder is not None and not reliable_remainder:
         warnings.append("Une réponse sur le reste à charge est enregistrée sans montant exact fiable ; elle n’est pas comptée comme financement confirmé.")
         actions.append("Calculer puis confirmer le reste à charge exact")
@@ -284,17 +296,19 @@ def calculate_financial_readiness_score(contact):
         secured_cents = price_cents
     secured_cents = min(secured_cents, price_cents)
     unsecured_cents = max(price_cents - secured_cents, 0)
-    capacity_to_quantify = (personal_capacity is True
+    # Une intention couvre le tarif estimé, sans modifier les sommes sécurisées.
+    estimated_coverage = price_cents if personal_full_planned else secured_cents
+    capacity_to_quantify = (not personal_full_planned and personal_capacity is True
                             and personal_remainder is not False
                             and not personal_remainder_confirmed
                             and unsecured_cents > 0)
-    if cpf is False and unsecured_cents > 0:
+    if cpf is False and unsecured_cents > 0 and not personal_full_planned:
         warnings.append("Le compte CPF n’a pas été consulté : son solde est inconnu, pas nul.")
         actions.append("Consulter le compte CPF pour connaître le solde disponible")
     if capacity_to_quantify:
         warnings.append("La capacité de paiement personnel est déclarée, mais son montant reste à confirmer ; aucun montant personnel n’est compté comme acquis.")
         actions.append("Préciser le montant que le candidat peut financer personnellement")
-    coverage_points_raw = Decimal(secured_cents * 80) / price_cents
+    coverage_points_raw = Decimal(estimated_coverage * 80) / price_cents
     cpf_share = Decimal(useful_min_cents) / price_cents
 
     cpf_route = (cpf is True or exact_known or tier is not None) and useful_max_for_display > 0
@@ -313,6 +327,9 @@ def calculate_financial_readiness_score(contact):
     elif secured_cents >= price_cents and ft_status == "acceptee":
         progress_points = 30
         funding_status = "secured_france_travail"
+    elif personal_full_planned:
+        progress_points = 18
+        funding_status = "full_personal_payment_planned"
     elif ft_status == "acceptee":
         progress_points = 30 if ft_amount_known else 26
         funding_status = "accepted_france_travail"
@@ -347,7 +364,7 @@ def calculate_financial_readiness_score(contact):
         coverage_points_raw, progress_points_raw,
     ])
 
-    if cpf_route:
+    if cpf_route and not personal_full_planned:
         if created is None:
             actions.append("Vérifier si l’identité numérique La Poste est créée")
         elif created is False:
@@ -369,7 +386,7 @@ def calculate_financial_readiness_score(contact):
         actions.append("Confirmer le montant accordé par France Travail")
     if (ft_status in {"refusee", "annulee"} and cpf_amount_known
             and remaining_max > 0):
-        if personal_remainder_confirmed:
+        if personal_remainder_confirmed or personal_full_planned:
             pass
         elif personal_capacity is True:
             warnings.append("La solution personnelle est déclarée, mais le reste à charge exact doit être confirmé.")
@@ -378,7 +395,7 @@ def calculate_financial_readiness_score(contact):
             blockers.append("La demande France Travail n’aboutit pas et aucune solution personnelle n’est confirmée pour le reste à charge.")
             actions.append("Identifier une nouvelle solution de financement")
     elif wants_ft is False and cpf_amount_known and remaining_max > 0:
-        if personal_remainder_confirmed:
+        if personal_remainder_confirmed or personal_full_planned:
             pass
         elif personal_capacity is True:
             warnings.append("La capacité de financement personnel est déclarée, mais le reste exact doit être confirmé.")
@@ -390,11 +407,11 @@ def calculate_financial_readiness_score(contact):
             warnings.append("La capacité de financement personnel du reste à charge n’est pas renseignée.")
             actions.append("Vérifier la capacité de financement personnel")
     elif (wants_ft is None and cpf_amount_known and remaining_max > 0
-          and personal_capacity is not True):
+          and personal_capacity is not True and not personal_full_planned):
         warnings.append("La stratégie de financement du reste à charge reste à définir.")
         actions.append("Définir la solution de financement du reste à charge")
 
-    if 0 < useful_max_for_display < price_cents:
+    if 0 < useful_max_for_display < price_cents and not personal_full_planned:
         warnings.append("Le CPF ne couvre qu’une partie du prix de la formation.")
 
     personal_applicable = reliable_remainder and remaining_max > 0 and (
@@ -412,7 +429,7 @@ def calculate_financial_readiness_score(contact):
     confidence_checks = [price_cents is not None, cpf is not None, wants_ft is not None]
     if cpf is True:
         confidence_checks.append(exact_known or tier is not None)
-    elif cpf is False and unsecured_cents > 0:
+    elif cpf is False and unsecured_cents > 0 and not personal_full_planned:
         confidence_checks.append(False)
     if cpf_route:
         confidence_checks.extend((created is not None, functional is not None))
@@ -424,9 +441,11 @@ def calculate_financial_readiness_score(contact):
         confidence_checks.append(personal_capacity is not None or personal_remainder is not None)
     confidence = int((Decimal(sum(bool(item) for item in confidence_checks) * 100) / len(confidence_checks)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
+    full_payment_estimated = funding_status == "full_personal_payment_planned"
+    progress_label = "Avancement du paiement personnel" if full_payment_estimated else "Solution CPF et avancement du complément"
     breakdown = [
         ("funding_coverage", "Couverture financière sécurisée ou estimée", coverage_points, 80),
-        ("funding_progress", "Solution CPF et avancement du complément", progress_points, 20),
+        ("funding_progress", progress_label, progress_points, 20),
     ]
     # La participation personnelle déclarée est un signal commercial positif,
     # pas un montant acquis. Son plancher de potentiel reste distinct des
@@ -439,7 +458,10 @@ def calculate_financial_readiness_score(contact):
         "points": capacity_credit,
     }] if capacity_credit else [])
     score += capacity_credit
-    score_complete = confidence == 100 and tier is None and not capacity_to_quantify
+    if full_payment_estimated:
+        actions.append("Confirmer le paiement personnel intégral lors de l’inscription")
+    score_complete = (confidence == 100 and tier is None and not capacity_to_quantify
+                      and not full_payment_estimated)
     level, label, indication = _score_level(score)
     if not score_complete:
         label = "Score provisoire — informations à compléter"
