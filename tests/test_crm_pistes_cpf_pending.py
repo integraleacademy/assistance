@@ -160,6 +160,70 @@ def test_pipeline_snapshots_follow_complete_request_list(cpf_client, monkeypatch
     assert cpf_client.get(bootstrap).json["cpf_pending_folders"] == []
 
 
+def test_team_can_hide_and_restore_one_folder_across_syncs(cpf_client, monkeypatch):
+    cpf_client.post("/api/crm/contacts", json={
+        "prenom": "Marie", "nom": "Exemple", "force_create": True,
+    })
+    rows = [{"externalId": str(100001+i), "type": "cpf", "state": "notProcessed",
+             "provider": "integrale_edof", "createdAt": "2026-11-12",
+             "attendee": {"firstName": "Marie", "lastName": "Exemple"} if i < 2 else {}}
+            for i in range(3)]
+
+    def directory(path, *, params):
+        assert (path, params) == ("/dossiers", {"scope": "requests", "page": 1})
+        return {"items": rows}, {"X-Total-Count": str(len(rows))}
+
+    monkeypatch.setattr(application, "_wedof_request", directory)
+    application._edof_sync_requests()
+    data_before = copy.deepcopy(application.load_data()["crm_contacts"])
+    endpoint = "/api/crm/cpf-dossiers/100001/visibilite"
+    bootstrap = "/api/crm/bootstrap?section=pistes"
+    updates = "/api/crm/contacts/updates?section=pistes&delta=1"
+    other = application.app.test_client()
+    assert other.put(endpoint, json={"hidden": True}).status_code == 302
+    with other.session_transaction() as session:
+        session["user_email"] = "cassandre@integraleacademy.com"
+    etag = other.get(bootstrap).headers["ETag"]
+    cursor = other.get(updates).json["cursor"]
+
+    def ids(payload, key):
+        return {row["folder_id"] for row in payload[key]}
+
+    def check_split(payload):
+        assert ids(payload, "cpf_pending_folders") == {"100002", "100003"}
+        assert ids(payload, "cpf_hidden_folders") == {"100001"}
+
+    for value in ["true", 1, None]:
+        assert other.put(endpoint, json={"hidden": value}).status_code == 400
+    assert other.put(endpoint.replace("100001", "xxxxxx"), json={"hidden": True}).status_code == 400
+    assert other.put(endpoint.replace("100001", "999999"), json={"hidden": True}).status_code == 409
+    with monkeypatch.context() as local:
+        local.setattr(application, "_wedof_request", lambda *a, **k: pytest.fail("EDOF called by CRM action"))
+        check_split(other.put(endpoint, json={"hidden": True}).json)
+        check_split(cpf_client.put(endpoint, json={"hidden": True}).json)
+    delta = other.get(updates + "&cursor=" + cursor).json
+    assert delta["delta"]
+    check_split(delta)
+    fresh = other.get(bootstrap, headers={"If-None-Match": etag})
+    assert fresh.status_code == 200
+    check_split(fresh.json)
+    application._edof_sync_requests()
+    check_split(cpf_client.get(bootstrap).json)
+    assert application.load_data()["crm_contacts"] == data_before
+    for _ in range(2):
+        restored = cpf_client.put(endpoint, json={"hidden": False}).json
+        assert ids(restored, "cpf_pending_folders") == {"100001", "100002", "100003"}
+        assert restored["cpf_hidden_folders"] == []
+    lone_folder = endpoint.replace("100001", "100003")
+    assert other.put(lone_folder, json={"hidden": True}).json["cpf_hidden_folders"][0]["contact_id"] is None
+    rows.pop()
+    application._edof_sync_requests()
+    assert other.get(bootstrap).json["cpf_hidden_folders"] == []
+    assert other.put(lone_folder, json={"hidden": False}).status_code == 409
+    assert ids(other.get(bootstrap).json, "cpf_pending_folders") == {"100001", "100002"}
+    assert "cpf_hidden_folders" not in other.get("/api/crm/bootstrap?section=contacts").json
+
+
 def test_pipeline_counts_folders_and_refreshes_even_when_no_contact_changes():
     node = shutil.which("node")
     if not node:
@@ -203,7 +267,24 @@ const count={},input={value:'10000',dispatchEvent(){this.rows=listContactsForTyp
 const document={hidden:false,querySelector(q){
  return q==='#listSearch'?input:q==='[data-status="CPF à traiter"] b'?count:null;
 }};
-const api=async url=>{assert.ok(url.includes('section=pistes'));return {delta:true,cpf_pending_folders:batch}};
+let hidden=[],visibilityError=false,putCalls=0,lastToast='',interceptRead=null;
+document.querySelectorAll=()=>[];
+const toast=message=>{lastToast=message};
+const api=async(url,options)=>{
+ if(options?.method==='PUT'){
+  putCalls++;
+  assert.equal(url,'/api/crm/cpf-dossiers/100001/visibilite');
+  if(visibilityError)throw Error('Échec temporaire');
+  const makeHidden=JSON.parse(options.body).hidden;
+  const all=[...batch,...hidden],item=all.find(row=>row.folder_id==='100001');
+  batch=all.filter(row=>row!==item);hidden=makeHidden?[item]:[];
+  if(!makeHidden)batch.unshift(item);
+  return {cpf_pending_folders:batch,cpf_hidden_folders:hidden};
+ }
+ assert.ok(url.includes('section=pistes'));
+ if(interceptRead)return interceptRead;
+ return {delta:true,cpf_pending_folders:batch,cpf_hidden_folders:hidden};
+};
 """ + production + r"""
 (async()=>{
  assert.equal(pipelineStatusCount(active(),statusFilter),'—');
@@ -228,6 +309,24 @@ const api=async url=>{assert.ok(url.includes('section=pistes'));return {delta:tr
  assert.equal((html.match(/data-lead-select="one"/g)||[]).length,2);
  assert.ok(!html.includes('data-lead-select="undefined"'));
  assert.ok(html.includes('Dossier 100001')&&html.includes('Dossier 100002'));
+ assert.equal((html.match(/data-cpf-hide=/g)||[]).length,4);
+ let release;
+ interceptRead=new Promise(resolve=>{release=resolve});
+ const olderSnapshot={delta:true,cursor:'older',cpf_pending_folders:batch,cpf_hidden_folders:[]};
+ const polling=refreshCrmSnapshot();
+ const saving=changeCpfVisibility('100001',true);
+ await changeCpfVisibility('100001',true);await saving;
+ assert.equal(putCalls,1);assert.equal(count.textContent,3);
+ assert.equal(input.value,'10000');assert.equal(input.rows.filter(row=>row.id==='one').length,1);
+ assert.deepEqual(cpfHiddenFolders.map(row=>row.folder_id),['100001']);
+ release(olderSnapshot);await polling;interceptRead=null;
+ assert.equal(count.textContent,3);assert.equal(crmUpdateCursor,'');
+ visibilityError=true;
+ await changeCpfVisibility('100001',false);
+ assert.equal(lastToast,'Échec temporaire');assert.equal(count.textContent,3);
+ visibilityError=false;
+ await changeCpfVisibility('100001',false);
+ assert.equal(count.textContent,4);assert.equal(cpfHiddenFolders.length,0);
  batch=batch.slice(1);await refreshCrmSnapshot();
  assert.equal(count.textContent,3);assert.equal(input.rows.length,3);assert.equal(input.value,'10000');
  batch=[];await refreshCrmSnapshot();assert.equal(count.textContent,0);

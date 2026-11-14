@@ -162,6 +162,7 @@ def test_scope_matches_new_meta_and_response_does_not_leak_secrets(clients):
     ("get", "/api/crm/contacts"), ("post", "/api/crm/contacts"),
     ("get", "/api/crm/contacts/new-meta"), ("patch", "/api/crm/contacts/new-meta"),
     ("delete", "/api/crm/contacts/new-meta"), ("get", "/api/crm/contacts/updates"),
+    ("put", "/api/crm/cpf-dossiers/100001/visibilite"),
     ("get", "/api/crm/settings"), ("patch", "/api/crm/contacts/bulk"),
     ("post", "/api/crm/contacts/merge"), ("get", "/api/crm/calendly/appointments"),
     ("get", "/api/crm/calendly/event-types"), ("get", "/api/crm/calendly/availability"),
