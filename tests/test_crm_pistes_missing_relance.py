@@ -25,7 +25,7 @@ def browser_helpers(*, refresh=False):
         section("const isActiveLead=", "const manualNextActionValue="),
         section("function relanceStatusDetails(", "function contactRelanceStatusMarkup("),
         section("const pipelineOverviewStatuses=", "const timelineButtons="),
-        section("function pipelineStatusCount(", "function cpfFolderTable("),
+        section("function pipelineStatusCount(", "function listPage("),
     ]
     if refresh:
         helpers.append(section("function refreshPipelineQueues()",
