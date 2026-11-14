@@ -827,6 +827,12 @@ function createCalendarAvailability(panel) {
   const fullDate = new Intl.DateTimeFormat('fr-FR', {dateStyle:'full', timeZone:'UTC'});
   const rangeLabel = new Intl.DateTimeFormat('fr-FR', {day:'numeric', month:'long', timeZone:'UTC'});
   let today, lastDay;
+  const isWeekday = date => date.getUTCDay() !== 0 && date.getUTCDay() !== 6;
+
+  function isCountedDate() {
+    const date = new Date(calendarSelectedDate + 'T12:00:00Z');
+    return calendarSelectedDate >= today && isWeekday(date);
+  }
 
   function updateDates() {
     const current = window.CRMAppointmentState.parisDayKey(new Date());
@@ -834,21 +840,21 @@ function createCalendarAvailability(panel) {
     today = current;
     cache.clear();
     const first = new Date(today + 'T12:00:00Z');
-    const last = new Date(first);
+    while (!isWeekday(first)) first.setUTCDate(first.getUTCDate() + 1);
+    const date = new Date(first);
     summary.replaceChildren();
     for (let index=0; index<5; index++) {
-      last.setUTCDate(first.getUTCDate() + index);
-      const date = last.toISOString().slice(0,10);
+      if (index > 0) date.setUTCDate(date.getUTCDate() + (date.getUTCDay() === 5 ? 3 : 1));
       const tile = document.createElement('button');
       tile.type = 'button';
       tile.className = 'cassandre-day';
-      tile.dataset.date = date;
-      tile.title = fullDate.format(last);
-      tile.innerHTML = `<span class="cassandre-day-date">${dayLabel.format(last)}</span><span class="cassandre-day-value"><b>—</b><small>libres</small></span>`;
+      tile.dataset.date = date.toISOString().slice(0,10);
+      tile.title = fullDate.format(date);
+      tile.innerHTML = `<span class="cassandre-day-date">${dayLabel.format(date)}</span><span class="cassandre-day-value"><b>—</b><small>libres</small></span>`;
       summary.append(tile);
     }
-    lastDay = last.toISOString().slice(0,10);
-    panel.querySelector('.cassandre-range').textContent = rangeLabel.formatRange(first,last);
+    lastDay = date.toISOString().slice(0,10);
+    panel.querySelector('.cassandre-range').textContent = rangeLabel.formatRange(first,date);
   }
 
   function paint() {
@@ -865,16 +871,16 @@ function createCalendarAvailability(panel) {
       tile.querySelector('small').textContent = count == null || count > 1 ? 'libres' : 'libre';
       tile.classList.toggle('no-slots', count === 0);
     });
-    const inOverview = calendarSelectedDate >= today && calendarSelectedDate <= lastDay;
+    const countedDate = isCountedDate();
+    const inOverview = countedDate && calendarSelectedDate <= lastDay;
     const selected = inOverview ? overview : cache.get(calendarSelectedDate);
-    const past = calendarSelectedDate < today;
-    const count = past ? 0 : selected?.days?.[calendarSelectedDate];
+    const count = countedDate ? selected?.days?.[calendarSelectedDate] : 0;
     const badge = document.querySelector('#calendarDayFree');
     if (badge) {
       badge.dataset.state = count == null ? 'unknown' : count ? 'available' : 'empty';
       badge.textContent = count == null ? (selected?.error ? 'Disponibilité de Cassandre inconnue' : 'Disponibilités en cours…') : `${count} ${appointmentsLabel(count)} avec Cassandre`;
     }
-    const error = overview?.error || (!past && selected?.error);
+    const error = overview?.error || selected?.error;
     notice.hidden = !error;
     if (error) notice.querySelector('span').textContent = error;
     panel.setAttribute('aria-busy', String(Boolean(overview?.pending)));
@@ -907,7 +913,7 @@ function createCalendarAvailability(panel) {
     updateDates();
     const days = [...summary.children].map(tile=>tile.dataset.date);
     fetchDays('overview',days,force);
-    if (calendarSelectedDate > lastDay) fetchDays(calendarSelectedDate,[calendarSelectedDate],force);
+    if (calendarSelectedDate > lastDay && isCountedDate()) fetchDays(calendarSelectedDate,[calendarSelectedDate],force);
     paint();
   }
   summary.onclick = event=>{
@@ -940,10 +946,10 @@ function calendarPage(){
     <section id="cassandreAvailability" class="cassandre-panel" aria-labelledby="cassandreTitle">
       <div class="cassandre-heading">
         <span class="cassandre-portrait" aria-hidden="true"></span>
-        <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Rendez-vous formation sur Calendly <span aria-hidden="true">·</span> Les 5 prochains jours <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p></div>
+        <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Rendez-vous formation sur Calendly <span aria-hidden="true">·</span> Du lundi au vendredi <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p></div>
       </div>
       <div class="cassandre-grid">
-        <div class="cassandre-total" aria-live="polite"><span>Places restantes</span><strong>—</strong><small>au total</small></div>
+        <div class="cassandre-total" aria-live="polite"><span>Places restantes</span><strong>—</strong> <small>au total sur les 5 prochains jours</small></div>
         <div class="cassandre-days" role="group" aria-label="Places restantes par jour"></div>
       </div>
       <div class="cassandre-notice" role="status" hidden><span></span><button type="button">Réessayer</button></div>

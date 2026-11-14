@@ -13,6 +13,11 @@ WEEKDAYS = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 
 HOST_EMAIL = 'cassandre@integraleacademy.com'
 
 
+def next_five_weekdays(first):
+    week = (first + i * DAY for i in range(7))
+    return [day for day in week if day.weekday() < 5]
+
+
 def instant(value):
     result = datetime.fromisoformat(value)
     if result.tzinfo is None:
