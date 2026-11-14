@@ -121,6 +121,13 @@ def contact_payload(contact, *, detail=True):
     result = {key: contact.get(key, "") for key in READ_FIELDS}
     result["origine"] = "META"
     if detail:
+        source = contact.get("meta_source")
+        if isinstance(source, dict) and isinstance(source.get("field_answers"), dict):
+            result["meta_source"] = {
+                "formation": source.get("formation", ""),
+                "field_answers": {key: value for key, value in source["field_answers"].items()
+                                  if key in {"lieu", "desp_type", "financement_ft", "financement_perso_possible"}},
+            }
         result["meta_answers"] = [
             {key: item.get(key, "") for key in ("question", "answer")}
             for item in contact.get("meta_answers", []) if isinstance(item, dict)
