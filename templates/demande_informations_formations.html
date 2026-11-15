@@ -13,6 +13,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parlez-nous de votre projet de formation</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='formation_receipt.css') }}">
   <style>
     :root {
       color-scheme: light;
@@ -793,6 +794,14 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </div>
   </main>
 
+  <dialog class="sending-dialog" id="sendingDialog" aria-labelledby="sendingTitle" aria-describedby="sendingDescription">
+    {% include "_formation_envelope.html" %}
+    <h2 id="sendingTitle" tabindex="-1" autofocus>Veuillez patienter…</h2>
+    <p id="sendingDescription" aria-live="polite">Nous transmettons toutes vos informations à notre équipe.</p>
+    <div class="sending-track" aria-hidden="true"></div>
+    <button type="button" id="dismissSendingError" hidden>Revenir au formulaire</button>
+  </dialog>
+
   <div class="modal" id="modal">
     <div class="modal-box">
       <div class="modal-head">
@@ -884,6 +893,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const prevBtns = Array.from(document.querySelectorAll('[data-nav="prev"]'));
     const nextBtns = Array.from(document.querySelectorAll('[data-nav="next"]'));
     const submitBtns = Array.from(document.querySelectorAll('[data-nav="submit"]'));
+    const sendingDialog = document.getElementById('sendingDialog');
+    const sendingTitle = document.getElementById('sendingTitle');
+    const sendingDescription = document.getElementById('sendingDescription');
+    const dismissSendingError = document.getElementById('dismissSendingError');
+    const pendingTitle = sendingTitle.textContent;
+    const pendingDescription = sendingDescription.textContent;
     let currentStep = 0;
     let step5ManualIndex = null;
 
@@ -960,7 +975,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       let timer = null;
       return () => {
         window.clearTimeout(timer);
-        timer = window.setTimeout(() => sendDraft('draft'), 800);
+        timer = window.setTimeout(() => {
+          if (!hasSubmitted) sendDraft('draft');
+        }, 800);
       };
     })();
 
@@ -1675,7 +1692,26 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       chooseLocation(targetRadio);
     });
 
-    form.addEventListener('submit', (e) => {
+    function resetSendingState() {
+      hasSubmitted = false;
+      form.removeAttribute('aria-busy');
+      submitBtns.forEach((btn) => { btn.disabled = false; });
+      if (sendingDialog.open) sendingDialog.close();
+    }
+
+    sendingDialog.addEventListener('cancel', (event) => {
+      if (hasSubmitted) event.preventDefault();
+    });
+    dismissSendingError.addEventListener('click', resetSendingState);
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) resetSendingState();
+    });
+
+    form.addEventListener('submit', async (e) => {
+      if (hasSubmitted) {
+        e.preventDefault();
+        return;
+      }
       if (mail.value.trim().toLowerCase() !== mail2.value.trim().toLowerCase()) {
         e.preventDefault();
         alert('Les adresses e-mail ne correspondent pas.');
@@ -1701,8 +1737,43 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         cpfMontant.required = false;
       }
 
+      // Older browsers can still use the form's normal POST and redirect.
+      if (!window.fetch || typeof sendingDialog.showModal !== 'function') {
+        hasSubmitted = true;
+        return;
+      }
+
+      e.preventDefault();
       hasSubmitted = true;
-      sendDraft('submitted');
+      sendingTitle.textContent = pendingTitle;
+      sendingDescription.textContent = pendingDescription;
+      dismissSendingError.hidden = true;
+      sendingDialog.classList.remove('sending-error');
+      form.setAttribute('aria-busy', 'true');
+      sendingDialog.showModal();
+      submitBtns.forEach((btn) => { btn.disabled = true; });
+
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST',
+          headers: { Accept: 'application/json' },
+          body: new URLSearchParams(new FormData(form)),
+        });
+        if (!response.ok) throw new Error('Submission failed');
+        const { confirmation_url } = await response.json();
+        if (!confirmation_url) throw new Error('Missing confirmation');
+        abandonedDraftSent = true;
+        window.location.assign(confirmation_url);
+      } catch {
+        hasSubmitted = false;
+        form.removeAttribute('aria-busy');
+        submitBtns.forEach((btn) => { btn.disabled = false; });
+        sendingDialog.classList.add('sending-error');
+        sendingTitle.textContent = 'Envoi non confirmé';
+        sendingDescription.textContent = 'Nous n’avons pas pu confirmer la réception de votre demande. Vos réponses sont conservées à l’écran. En cas de doute, appelez notre équipe au 04 22 47 07 68.';
+        dismissSendingError.hidden = false;
+        sendingTitle.focus();
+      }
     });
 
     function sendAbandonedDraft() {

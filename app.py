@@ -571,6 +571,7 @@ SECRETARIAT_FORMATIONS = {
 }
 
 FORMATION_BOOKING_URLS = {code: SECRETARIAT_FORMATIONS[code]["calendly"] for code in PLAN_FORMATIONS}
+DESP_VAE_START_URL = "https://gestionstagiaires-r5no.onrender.com/vae-desp"
 
 SECRETARIAT_WEBSITE_URL = "https://www.integraleacademy.com/"
 SECRETARIAT_DOSSIER_URL = "https://www.integraleacademy.com/dossiersfc"
@@ -5312,10 +5313,14 @@ def demande_informations_formations():
             except:
                 pass
 
-        if form_data.get("formation") == "DESP_VAE":
-            return redirect("https://gestionstagiaires-r5no.onrender.com/vae-desp")
-
-        return redirect(url_for("confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=form_data.get("formation", "")))
+        formation = form_data.get("formation", "")
+        confirmation_url = url_for(
+            "confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=formation,
+            poursuivre="1" if formation == "DESP_VAE" else None,
+        )
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(confirmation_url=confirmation_url)
+        return redirect(DESP_VAE_START_URL if formation == "DESP_VAE" else confirmation_url)
 
     google_ads_attribution = _crm_google_ads_tracking_fields(request.args)
     session_id = request.args.get("session") if request.args.get("formation") == "SSIAP" else None
@@ -5413,7 +5418,15 @@ def autosave_demande_informations_formations():
 def confirmation_demande_infos():
     hot = request.args.get("hot") == "1"
     formation = request.args.get("formation") or ""
-    return render_template("confirmation_demande_informations.html", hot=hot, calendly_url=FORMATION_BOOKING_URLS.get(formation))
+    return render_template(
+        "confirmation_demande_informations.html",
+        formation_label=PLAN_FORMATIONS.get(formation),
+        calendly_url=FORMATION_BOOKING_URLS.get(formation) if hot else None,
+        vae_url=DESP_VAE_START_URL if formation == "DESP_VAE" else None,
+        continuer_vae=formation == "DESP_VAE" and request.args.get("poursuivre") == "1",
+        catalogue_url=PUBLIC_CATALOGUE,
+        dossier_url=SECRETARIAT_DOSSIER_URL,
+    )
 
 
 @app.route("/api/formation-sessions")

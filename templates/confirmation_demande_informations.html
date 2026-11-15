@@ -1,52 +1,76 @@
-<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Confirmation</title>
-<style>
-:root{--bg-start:#0f172a;--bg-end:#1d4ed8;--surface:#ffffff;--text:#0f172a;--muted:#334155;--cta-start:#06b6d4;--cta-end:#2563eb}
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;color:var(--text)}
-body{min-height:100vh;background:linear-gradient(135deg,var(--bg-start),var(--bg-end));overflow-y:auto}
-.page{position:relative;min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:28px}
-.box{position:relative;z-index:1;width:min(1100px,100%);min-height:calc(100vh - 56px);background:rgba(255,255,255,.96);backdrop-filter:blur(3px);border-radius:26px;padding:48px clamp(24px,4vw,76px);box-shadow:0 24px 80px rgba(15,23,42,.35);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;animation:enter .65s ease both}
-.logo{width:clamp(120px,14vw,180px);height:auto;display:block;margin:0 auto 14px;filter:drop-shadow(0 8px 20px rgba(15,23,42,.22));animation:fadeUp .8s ease .05s both}
-.icon{font-size:2.1rem;line-height:1;margin-bottom:12px;animation:pop .9s ease}
-.title{font-size:clamp(1.8rem,3.2vw,2.65rem);margin:0 0 14px;font-weight:900;max-width:980px;animation:fadeUp .8s ease .12s both}
-.subtitle{font-size:clamp(1rem,1.55vw,1.22rem);color:var(--muted);margin:0 0 30px;max-width:960px;line-height:1.65;animation:fadeUp .8s ease .22s both}
-.subtitle-highlight{font-size:clamp(1.1rem,1.85vw,1.4rem);font-weight:800;color:#0b2a6f;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25);padding:14px 20px;border-radius:14px;box-shadow:0 8px 22px rgba(37,99,235,.12)}
-.actions{margin:0;display:flex;justify-content:center;animation:fadeUp .8s ease .32s both}
-.presentation-link{position:relative;display:inline-flex;align-items:center;gap:10px;padding:16px 24px;border-radius:16px;background:linear-gradient(135deg,var(--cta-start),var(--cta-end));color:#fff;font-size:1.05rem;font-weight:800;text-decoration:none;box-shadow:0 14px 30px rgba(37,99,235,.35);transition:transform .25s ease,box-shadow .25s ease}
-.presentation-link:hover{transform:translateY(-3px) scale(1.01);box-shadow:0 20px 36px rgba(37,99,235,.42)}
-.presentation-link::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.32) 48%,transparent 70%);transform:translateX(-120%);animation:shine 3.2s ease-in-out infinite}
-.presentation-link .cta{font-weight:600;text-decoration:underline;text-underline-offset:3px}
-.calendly-inline-widget{width:min(100%,980px);min-width:320px;height:680px;border-radius:16px;overflow:hidden;margin:0 auto;animation:fadeUp .8s ease .35s both}
-@keyframes enter{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-@keyframes pop{0%{transform:scale(.65);opacity:.2}70%{transform:scale(1.08)}100%{transform:scale(1)}}
-@keyframes shine{0%,55%,100%{transform:translateX(-120%)}75%{transform:translateX(120%)}}
-@media (max-width: 768px){
-  .page{padding:14px}
-  .box{min-height:calc(100vh - 28px);padding:28px 18px}
-  .presentation-link{width:100%;justify-content:center;text-align:center;flex-wrap:wrap}
-  .calendly-inline-widget{height:620px}
-}
-</style></head>
-<body>
-  <div class="page">
-    <div class="box">
-      <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo Intégrale Academy" class="logo">
-      <div class="icon">✅</div>
-      <h1 class="title">Merci, nous avons bien reçu votre demande.</h1>
-      <p class="subtitle">Un conseiller formation reviendra vers vous prochainement pour échanger sur votre projet de formation.</p>
-      {% if hot and calendly_url %}
-        <p class="subtitle subtitle-highlight">Vous pouvez réserver un RDV téléphonique pour échanger avec notre équipe :</p>
-        <div class="calendly-inline-widget" data-url="{{ calendly_url }}"></div>
-        <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async></script>
-      {% else %}
-        <p class="actions">
-          <a class="presentation-link" href="https://www.integraleacademy.com/dossiersfc" target="_blank" rel="noopener noreferrer">
-            📘 Consultez le dossier de présentation
-            <span class="cta">en cliquant ici</span>
-          </a>
-        </p>
-      {% endif %}
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#19283b">
+  <title>Demande reçue · Intégrale Academy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='formation_receipt.css') }}">
+  <script src="{{ url_for('static', filename='formation_celebration.js') }}" defer></script>
+</head>
+<body class="formation-receipt">
+  <canvas id="receiptFireworks" aria-hidden="true" hidden></canvas>
+  <header class="receipt-header">
+    <div class="receipt-width receipt-brandbar">
+      <img class="receipt-logo" src="{{ catalogue_url }}/images/logo.png" width="5906" height="1772" alt="Intégrale Academy">
+      <a class="receipt-phone" href="tel:+33422470768" aria-label="Appeler Intégrale Academy au 04 22 47 07 68">
+        <svg class="phone-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 3-1 3 6-2.8 2.1c1.2 2.7 3.1 4.6 5.7 5.8l2.2-2.9 5.9 3-1 3.2c-.4 1.4-1.8 2.3-3.2 2C10 20.2 3.7 13.9 2.8 6.3 2.6 4.9 3.5 3.5 5 3Z"/></svg>04 22 47 07 68
+      </a>
     </div>
-  </div>
-</body></html>
+  </header>
+  <main>
+    <section class="receipt-hero" aria-labelledby="receipt-title">
+      <div class="receipt-width receipt-hero-inner">
+        <div class="receipt-copy">
+          <h1 id="receipt-title">Merci pour<br><em>votre demande.</em></h1>
+          <p class="receipt-lead">Notre équipe a bien reçu vos informations. Un conseiller vous recontactera pour échanger sur votre projet de formation.</p>
+          {% if formation_label %}
+            <dl class="receipt-course"><dt>Formation demandée</dt><dd>{{ formation_label }}</dd></dl>
+          {% endif %}
+        </div>
+        {% include "_formation_envelope.html" %}
+      </div>
+    </section>
+
+    <div class="receipt-width receipt-actions">
+      <section class="next-card" aria-labelledby="next-title">
+        <div class="next-card-row">
+          <div class="next-icon" aria-hidden="true">
+            {% if vae_url %}<span class="icon-folder"></span>
+            {% elif calendly_url %}<span class="icon-calendar"></span>
+            {% else %}<span class="icon-book"></span>{% endif %}
+          </div>
+          <div class="next-copy">
+            {% if vae_url %}
+              <h2 id="next-title">Votre espace VAE</h2>
+              <p>Retrouvez les premières étapes de votre VAE pour le titre de dirigeant d’entreprise de sécurité privée.</p>
+            {% elif calendly_url %}
+              <h2 id="next-title">Votre rendez-vous téléphonique</h2>
+              <p>Choisissez le créneau qui vous convient pour parler de votre projet avec un conseiller.</p>
+            {% else %}
+              <h2 id="next-title">Le dossier de présentation</h2>
+              <p>Consultez les programmes et les informations pratiques pour préparer votre formation.</p>
+            {% endif %}
+          </div>
+          {% if vae_url %}
+            <a class="receipt-button" id="vaeLink" href="{{ vae_url }}">Accéder à mon espace VAE <span class="receipt-arrow forward-arrow" aria-hidden="true"></span></a>
+          {% elif calendly_url %}
+            <a class="receipt-button" href="{{ calendly_url }}" target="_blank" rel="noopener noreferrer">Ouvrir l’agenda <span class="receipt-arrow" aria-hidden="true"></span></a>
+          {% else %}
+            <a class="receipt-button" href="{{ dossier_url }}" target="_blank" rel="noopener noreferrer">Consulter le dossier <span class="receipt-arrow" aria-hidden="true"></span></a>
+          {% endif %}
+        </div>
+        {% if continuer_vae %}
+          <div class="vae-forward" id="vaeForward" hidden>
+            <span role="status">Votre espace VAE va s’ouvrir automatiquement.</span>
+            <button type="button" id="pauseForward">Rester sur cette page</button>
+          </div>
+        {% elif calendly_url and not vae_url %}
+          <div class="receipt-calendar calendly-inline-widget" data-url="{{ calendly_url }}"></div>
+          <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
+        {% endif %}
+      </section>
+    </div>
+  </main>
+</body>
+</html>
