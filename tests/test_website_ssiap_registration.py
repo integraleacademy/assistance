@@ -49,3 +49,11 @@ def test_submitted_session_reaches_contact_quote_and_email():
         assert contact["dates_formation"] == label and contact["formulaire"]["ssiap_session_id"] == "sans"
     assert application.get_formation_tarif("SSIAP", {"ssiap_formule":"ssiap-1-sst"}) == 1230
     assert application.get_formation_tarif("SSIAP", {}) == 1230
+
+
+def test_fee_and_description_identify_sst_in_the_bundle():
+    details = {"ssiap_formule": "ssiap-1-sst"}
+    quote = application.build_devis_context("SSIAP", "SSIAP 1", "Du 11 février 2030 au 28 février 2030", formation_details=details)
+    assert quote["devis_total"] == "1230 €"
+    assert "formation SST incluse" in quote["devis_lignes"][0]["intitule"]
+    assert "inclut la formation SST" in application._ssiap_first_aid_note("NON", "ssiap-1-sst")

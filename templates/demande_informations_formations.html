@@ -1063,10 +1063,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         `;
         btn.addEventListener('click', () => {
           datesSelect.value = r.label;
-          dateExamen.value = (r.date_examen || '').trim();
-          sessionPills.querySelectorAll('.session-pill').forEach((el) => el.classList.remove('active'));
-          btn.classList.add('active');
-          updateStepReveal();
+          datesSelect.dispatchEvent(new Event('change'));
         });
         if (datesSelect.value && datesSelect.value === r.label) btn.classList.add('active');
         if (!datesSelect.value && index === 0 && datesSelect.required) {
