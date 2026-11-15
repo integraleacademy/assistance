@@ -43,8 +43,8 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         step2_end = page.index("</section>", page.index(formation_option))
         self.assertNotIn("ssiap_secourisme_valide", page[page.index(formation_option):step2_end])
 
-        location_step = page.index("Lieu de formation souhaité")
-        puget_location = page.index("Intégrale Academy Côte d’Azur (Puget-sur-Argens, Var)")
+        location_step = page.index('id="locationSection"')
+        puget_location = page.index('id="detail-cote_azur"')
         dates_step = page.index("Dates de formation souhaitées")
         question = page.index("Je possède un certificat SST ou PSC1 de moins de 2 ans")
         financing_step = page.index("Financement de votre formation")
@@ -56,7 +56,7 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         self.assertNotIn("980 € TTC", page)
         self.assertNotIn("1 200 € TTC", page)
         self.assertIn("Du 12 au 27 octobre 2026 - examen le 28 octobre 2026", page)
-        self.assertIn("['VTC', 'APS', 'SSIAP', 'DESP_VAE']", page)
+        self.assertIn('data-formations="A3P APS SSIAP DESP_INIT VTC"', page)
 
     def test_ssiap_session_is_only_available_at_cote_azur_centre(self):
         sessions = application.get_formation_sessions({})

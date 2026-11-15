@@ -135,6 +135,10 @@
       gap: 16px;
       margin-bottom: 14px;
     }
+    .center-artwork {
+      display: block; width: 100%; height: clamp(140px, 23vw, 220px);
+      margin-bottom: 16px; border-radius: 14px; object-fit: cover; object-position: center 30%;
+    }
     .center-card-intro {
       flex: 1;
       min-width: 0;
@@ -370,19 +374,13 @@
       address: "54 chemin du Carreou, 83480 Puget-sur-Argens"
     };
 
-    const CENTER_AUVERGNE = {
-      key: 'auvergne',
-      name: "Intégrale Academy Terres d'Auvergne",
-      address: "650 route d'Aumont, 15130 Arpajon-sur-Cère"
-    };
-
     const CENTER_PARIS = {
       key: 'paris',
       name: 'Intégrale Academy Paris',
-      address: 'Paris, France'
+      address: '34 rue Poissonnière, 75002 Paris'
     };
 
-    const CENTER_LIST = [CENTER_COTE_AZUR, CENTER_AUVERGNE, CENTER_PARIS];
+    const CENTER_LIST = [CENTER_PARIS, CENTER_COTE_AZUR];
 
     function getAllowedCentersFromQuery() {
       const params = new URLSearchParams(window.location.search);
@@ -406,10 +404,6 @@
       [CENTER_COTE_AZUR.key]: {
         nearestStation: 'Saint-Raphaël Valescure',
         nearestAirport: 'Nice Côte d\'Azur'
-      },
-      [CENTER_AUVERGNE.key]: {
-        nearestStation: 'Aurillac',
-        nearestAirport: 'Aurillac (en passant par Paris Orly)'
       },
       [CENTER_PARIS.key]: {
         nearestStation: 'Paris Gare de Lyon / Paris Montparnasse',
@@ -469,27 +463,12 @@
             'Accès facile aux grandes villes de la Côte d\'Azur et à leurs opportunités professionnelles.',
             'Réseau local riche pour les stages, alternances et débouchés.'
           ]
-        : center.key === CENTER_AUVERGNE.key ? [
-            'Cadre naturel exceptionnel entre volcans d’Auvergne, lacs et grands espaces préservés.',
-            'Environnement ressourçant, idéal pour se concentrer et apprendre dans de bonnes conditions.',
-            'Qualité de vie au grand air avec un quotidien souvent plus accessible.',
-            'Ambiance conviviale et proximité humaine avec un accompagnement de terrain personnalisé.'
-          ] : [
+        : [
             'Cadre grande ville, au cœur d’un bassin d’emploi très dynamique.',
             'Accès facilité en train, métro et avion depuis toute la France.',
             'Réseau professionnel dense et nombreuses opportunités de carrière.',
             'Écosystème urbain idéal pour développer rapidement son employabilité.'
           ];
-    }
-
-    function getAlternativeHeadline(center) {
-      if (center.key === CENTER_COTE_AZUR.key) {
-        return `🌊 Vous êtes plutôt Team Mer ? Choisissez <span class="ok">${center.name}</span>`;
-      }
-      if (center.key === CENTER_AUVERGNE.key) {
-        return `🏔️ Vous êtes plutôt Team Montagne ? Choisissez <span class="ok">${center.name}</span>`;
-      }
-      return `🏙️ Vous êtes plutôt Team Ville ? Choisissez <span class="ok">${center.name}</span>`;
     }
 
     function renderCenterDetails(center, cardOptions) {
@@ -507,7 +486,8 @@
         ? 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence.'
         : 'Dans tous les cas, quel que soit le centre de formation choisi : même qualité, même diplôme, même exigence. Hébergement proposé pour vous simplifier l\'organisation sur place.';
 
-      return `<div class="center-card-header"><div class="center-card-intro">${badgeHtml}<div class="center-card-title">${cardOptions.title}</div>${subtitleHtml}</div><div class="distance-pill">${distanceLabel}</div></div>${nextSessionHtml}${travelTimes ? `<div class="travel-details"><div class="travel-line">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</div><div class="travel-line">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</div><div class="travel-line">${renderTravelTime('🚆 Train :', travelTimes.train)}</div></div>` : ''}<ul class="benefits-list">${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">${commonNote}</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
+      return `<img class="center-artwork" src="{{ catalogue_url }}/images/illustrations-2026/destination-${center.key}.webp" alt="" width="1536" height="1024">
+        <div class="center-card-header"><div class="center-card-intro">${badgeHtml}<div class="center-card-title">${center.name}</div>${subtitleHtml}</div><div class="distance-pill">${distanceLabel}</div></div>${nextSessionHtml}${travelTimes ? `<div class="travel-details"><div class="travel-line">${renderTravelTime('🚗 Voiture :', travelTimes.car)}</div><div class="travel-line">${renderTravelTime('✈️ Avion :', travelTimes.plane)}</div><div class="travel-line">${renderTravelTime('🚆 Train :', travelTimes.train)}</div></div>` : ''}<ul class="benefits-list">${benefits.map((benefit) => `<li>${benefit}</li>`).join('')}</ul><div class="common-note">${commonNote}</div><button class="choose-center-btn" type="button" data-center-key="${center.key}">Choisir ce centre</button>`;
     }
 
     function sortCentersByDistance(centers) {
@@ -541,7 +521,6 @@
       if (!latestDistances || !recommendedCenter) return;
       resultBox.innerHTML = renderCenterDetails(recommendedCenter, {
         badge: currentSortMode === 'date' ? '✅ Recommandé selon la date de formation' : '✅ Recommandé selon la distance',
-        title: `<span class="ok">${recommendedCenter.name}</span>`,
       });
       resultBox.style.display = 'block';
 
@@ -550,8 +529,7 @@
         ? sortCentersByDate(alternativesBase)
         : sortCentersByDistance(alternativesBase);
       selectionBox.innerHTML = alternatives.map((alternativeCenter) => `<div class="selection">${renderCenterDetails(alternativeCenter, {
-        badge: '✨ Autre alternative proposée',
-        title: getAlternativeHeadline(alternativeCenter)
+        badge: 'Autre centre'
       })}</div>`).join('');
       selectionBox.style.display = 'block';
       selectedCenter = null;
@@ -656,7 +634,7 @@
         const centerCode = center.key === 'cote-azur' ? 'cote_azur' : center.key;
         const formations = sessions?.[centerCode] || {};
         const allDates = [];
-        const formationCodes = SELECTED_FORMATION && Array.isArray(formations?.[SELECTED_FORMATION])
+        const formationCodes = SELECTED_FORMATION
           ? [SELECTED_FORMATION]
           : Object.keys(formations);
 

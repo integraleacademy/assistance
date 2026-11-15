@@ -319,20 +319,39 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     }
     .yn-btn:hover { border-color: #b7994e; background: #fffcf3; }
     .yn-btn.active { border-color: #b28a23; background: #fcf0cb; color: #604404; box-shadow: inset 0 0 0 1px #b28a23; }
-    .location-choice { margin-top: 16px; padding: 22px; border: 1px solid #dde0d6; border-radius: 18px; background: #fdfdfb; transition: border-color .2s, background .2s; }
-    .location-choice:hover { border-color: #bd9e54; background: #fffcf4; }
-    .location-choice:has(input:checked) { border-color: #b38a23; background: #fffaec; box-shadow: inset 0 0 0 1px #b38a23; }
-    .location-choice label { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 12px; margin: 0; cursor: pointer; }
-    .location-choice input[type="radio"] { width: 20px; height: 20px; margin: 4px 0 0; accent-color: #9c7314; }
-    .location-title { display: block; font-size: 20px; line-height: 1.4; color: var(--academy-navy); letter-spacing: -.025em; margin-bottom: 12px; }
-    .new-badge { display: inline-flex; vertical-align: middle; padding: 4px 9px; margin-right: 8px; border-radius: 6px; background: #f7e6b5; color: #735104; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
-    .location-copy { margin: 0 0 12px; color: #60665d; font-size: 14px; font-weight: 400; line-height: 1.65; }
-    .location-points { margin: 0; padding-left: 17px; color: #60665d; font-size: 13px; font-weight: 400; line-height: 1.65; }
-    .location-points li { margin: 5px 0; }
-    .location-points strong { font-weight: 650; }
+    .location-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .location-grid.single-location { grid-template-columns: minmax(0, 320px); }
+    .location-choice {
+      display: flex; flex-direction: column; overflow: hidden; width: 100%; height: 100%; padding: 0;
+      text-align: left; border: 1px solid #e4dccc; border-radius: 17px; background: #fffdf8; color: #172233;
+      box-shadow: 0 4px 14px #14253706; transition: border-color .2s, box-shadow .2s;
+    }
+    .location-choice:hover, .location-choice[aria-pressed="true"] { border-color: #b68a32; box-shadow: 0 5px 18px #14253715; }
+    .location-art { display: block; position: relative; width: 100%; aspect-ratio: 1.45; overflow: hidden; background: #e8eee9; }
+    .location-art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+    .location-badge {
+      position: absolute; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 9px; border-radius: 999px; background: #fffaf1f2; color: #233b45; font-size: 11px; font-weight: 750;
+    }
+    .location-badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #537c65; }
+    .location-choice[aria-pressed="true"] .location-art::after {
+      content: "✓"; position: absolute; right: 10px; bottom: 10px; display: grid; place-items: center;
+      width: 26px; height: 26px; border-radius: 50%; background: #172638; color: #fff; font-weight: 800;
+    }
+    .location-body { display: flex; flex: 1; flex-direction: column; width: 100%; padding: 15px 14px 12px; }
+    .location-brand { color: #876124; font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .location-title { margin-top: 5px; font-size: clamp(20px, 2vw, 26px); font-weight: 850; line-height: 1.15; letter-spacing: -.045em; }
+    .location-detail { display: flex; align-items: center; gap: 5px; margin: 7px 0 16px; font-size: 12px; color: #585f5b; }
+    .location-detail svg { flex: none; width: 13px; height: 13px; color: #a58040; }
+    .location-action { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: auto; padding-top: 10px; border-top: 1px solid #e4dccc; font-size: 12px; font-weight: 800; }
+    .location-arrow { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: #172638; color: #f4d692; }
+    .location-arrow svg { width: 16px; height: 16px; }
+    .location-practical { margin-top: 18px; color: var(--academy-muted); font-size: 14px; }
+    .location-practical summary { cursor: pointer; color: var(--academy-navy); font-weight: 650; }
+    .location-practical p { margin: 12px 0 0; }
     .simu-box { padding: 22px; background: #f4f5f0; border: 1px solid #e2e5da; border-radius: 18px; text-align: center; }
     .help-copy { margin: 0; color: var(--academy-navy); font-size: 17px; font-weight: 600; line-height: 1.6; }
-    .btn-secondary { display: none; margin: 18px auto 0; background: var(--academy-navy); color: #fff; }
+    .btn-secondary { margin-top: 16px; background: var(--academy-navy); color: #fff; }
     .btn-secondary:hover { background: #40506a; transform: translateY(-1px); }
     .checkbox-row { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
     .checkbox-row input { width: 18px; height: 18px; accent-color: #9c7314; }
@@ -347,7 +366,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     .badge-danger { color: #a32a20; background: #fde9e5; border: 1px solid #f2c7be; }
     .badge-warning { color: #916207; background: #fff4d5; border: 1px solid #e9d695; }
     .badge-success { color: #2b6b48; background: #edf5eb; border: 1px solid #c8dfc4; }
-    .centre-switch-note { margin: 16px 0 0; font-size: 14px; color: var(--academy-navy); font-weight: 650; line-height: 1.65; }
+    .centre-switch-note { padding: 0; border: 0; background: none; text-decoration: underline; text-underline-offset: 3px; margin: 16px 0 0; font-size: 14px; color: var(--academy-navy); font-weight: 650; line-height: 1.65; }
     .step5-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 14px; padding-bottom: 6px; }
     .step5-card { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; padding: 22px; border: 1px solid #e5e7de; border-radius: 18px; background: #f8f9f5; }
     .step5-card label { font-size: 16px; line-height: 1.65; letter-spacing: -.01em; }
@@ -408,10 +427,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       .form-actions { padding: 18px 16px; gap: 8px; }
       .close-btn, .retry-btn, .submit { padding: 12px 16px; font-size: 12px; }
       .form-actions .retry-btn { flex: 1; }
-      .location-choice { padding: 16px; }
-      .location-choice label { gap: 10px; }
-      .location-title { font-size: 18px; }
-      .location-copy, .location-points { font-size: 13px; }
+      .location-grid { gap: 8px; }
+      .location-body { padding: 12px 10px 10px; }
+      .location-title { font-size: 19px; }
+      .location-detail, .location-action { font-size: 11px; }
       .step5-card { padding: 18px; }
       .step5-card label { font-size: 15px; }
       .btn-secondary { width: 100%; padding-inline: 15px; }
@@ -419,6 +438,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       .modal-box { padding: 10px; border-radius: 18px; }
       .modal-frame-wrap { min-height: 76vh; }
       iframe { height: 76vh; }
+    }
+    @media (max-width: 360px) {
+      .location-grid { grid-template-columns: minmax(0, 1fr); }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
@@ -520,74 +542,49 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
       </div><div class="form-step">
       <section class="section" id="locationSection" data-step="3">
-        <h2 class="step-title"><span class="step-num">3</span> Lieu de formation souhaité 📍</h2>
-
-        <div id="simuBox" class="simu-box hidden">
-          <p id="simuText" class="help-copy hidden">
-            Utilisez notre simulateur pour trouver le centre de formation qui correspond à vos attentes.
-          </p>
-          <p id="vaeRemoteText" class="help-copy hidden">
-            Tout le processus de VAE se déroule 100% en ligne à distance.
-          </p>
-          <button type="button" class="btn-secondary" id="openSimu">🚀 Choisir mon centre de formation</button>
+        <h2 class="step-title"><span class="step-num">3</span> <span id="locationHeading">Où souhaitez-vous vous former ?</span></h2>
+        <div class="location-grid" id="locationGrid" role="group" aria-labelledby="locationHeading">
+          {% for code, centre in centres.items() %}
+          <div class="location-option" data-formations="{{ centre.formations|join(' ') }}" hidden>
+            <input type="radio" name="centre" value="{{ code }}" hidden disabled>
+            <button class="location-choice" type="button" aria-pressed="false" aria-labelledby="name-{{ code }} action-{{ code }}" aria-describedby="detail-{{ code }} count-{{ code }}">
+              <span class="location-art">
+                <img src="{{ catalogue_url }}/images/illustrations-2026/destination-{{ code|replace('_', '-') }}.webp" alt="" width="1536" height="1024" loading="lazy" decoding="async">
+                <span class="location-badge" id="count-{{ code }}"></span>
+              </span>
+              <span class="location-body">
+                <span class="location-brand">Intégrale Academy</span>
+                <strong class="location-title" id="name-{{ code }}">{{ centre.name }}</strong>
+                <span class="location-detail" id="detail-{{ code }}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                  {{ centre.locality }}
+                </span>
+                <span class="location-action">
+                  <span id="action-{{ code }}">Voir les dates</span>
+                  <span class="location-arrow" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+                  </span>
+                </span>
+              </span>
+            </button>
+          </div>
+          {% endfor %}
         </div>
-
-        <article id="optParis" class="location-choice hidden">
-          <label>
-            <input type="radio" name="centre" value="paris">
-            <span>
-              <strong class="location-title"><span class="new-badge">NOUVEAU</span>Intégrale Academy Paris (Île-de-France)</strong>
-              <p class="location-copy">
-                34 rue Poissonnière, 75002 Paris.
-              </p>
-              <ul class="location-points">
-                <li><strong>Hébergement :</strong> solutions partenaires à proximité.</li>
-                <li><strong>Aéroport le plus proche :</strong> Paris-Orly / Paris-Charles-de-Gaulle.</li>
-                <li><strong>Gares les plus proches :</strong> Paris Gare de Lyon / Paris Montparnasse (selon session).</li>
-              </ul>
-            </span>
-          </label>
-        </article>
-
-        <article id="optCote" class="location-choice hidden">
-          <label>
-            <input type="radio" name="centre" value="cote_azur">
-            <span>
-              <strong class="location-title">Intégrale Academy Côte d’Azur (Puget-sur-Argens, Var)</strong>
-              <p class="location-copy">
-                🌊☀️
-              </p>
-              <p class="location-copy">
-                Formation au cœur de la Côte d’Azur, entre mer Méditerranée, climat ensoleillé et cadre attractif entre Cannes et Saint-Tropez.<br>
-              </p>
-              <ul class="location-points">
-                <li id="coteHebergementLine"><strong>Hébergement :</strong> sur place (forfait 300€).</li>
-                <li><strong>Aéroport le plus proche :</strong> Nice.</li>
-                <li><strong>Gare la plus proche :</strong> Saint-Raphaël Valescure.</li>
-              </ul>
-            </span>
-          </label>
-        </article>
-
-        <article id="optAuv" class="location-choice hidden">
-          <label>
-            <input type="radio" name="centre" value="auvergne">
-            <span>
-              <strong class="location-title"><span class="new-badge">NOUVEAU</span>Intégrale Academy Terres d’Auvergne (Centre-France, Aurillac)</strong>
-              <p class="location-copy">
-                🌿⛰️
-              </p>
-              <p class="location-copy">
-                Formation au cœur des volcans et montagnes d’Auvergne, dans un environnement naturel exceptionnel.
-              </p>
-              <ul class="location-points">
-                <li><strong>Hébergement :</strong> sur place (forfait 300€).</li>
-                <li><strong>Aéroport le plus proche :</strong> Aurillac (ligne Paris – Aurillac).</li>
-                <li><strong>Gare la plus proche :</strong> Aurillac.</li>
-              </ul>
-            </span>
-          </label>
-        </article>
+        <p id="vaeRemoteText" class="simu-box help-copy" hidden>Votre VAE se déroule entièrement à distance.</p>
+        <details id="locationPractical" class="location-practical" hidden>
+          <summary>Accès et hébergement</summary>
+          <p data-location-info="paris">
+            <strong>Paris</strong><br>34 rue Poissonnière, 75002 Paris.<br>
+            Gares de Lyon et Montparnasse. Aéroports de Paris-Orly et Paris-Charles-de-Gaulle.<br>
+            Hébergement partenaire à proximité.
+          </p>
+          <p data-location-info="cote_azur">
+            <strong>Côte d’Azur</strong><br>54 chemin du Carreou, 83480 Puget-sur-Argens.<br>
+            Gare de Saint-Raphaël Valescure. Aéroport de Nice Côte d’Azur.<br>
+            <span id="coteHebergementLine"></span>
+          </p>
+        </details>
+        <button type="button" class="btn-secondary" id="openSimu" hidden>Comparer les trajets depuis chez moi</button>
       </section>
 
       <div class="nav-actions form-actions">
@@ -598,7 +595,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
       </div><div class="form-step">
       <section class="section" id="step4" data-step="4">
-        <h2 class="step-title"><span class="step-num">4</span> Dates de formation souhaitées</h2>
+        <h2 class="step-title" id="datesHeading" tabindex="-1"><span class="step-num">4</span> Dates de formation souhaitées</h2>
         <label for="datesSelect">Session souhaitée</label>
         <div id="sessionPills" class="session-pills" aria-live="polite"></div>
         <select name="dates" id="datesSelect" required>
@@ -606,7 +603,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         </select>
         <input type="hidden" name="date_examen" id="dateExamen">
         <p class="small-note" id="datesHelp">Les dates proposées s’adaptent selon la formation et le centre choisi.</p>
-        <p class="centre-switch-note hidden" id="centreSwitchNote"></p>
+        <button type="button" class="centre-switch-note hidden" id="centreSwitchNote"></button>
       </section>
 
       <div class="nav-actions form-actions">
@@ -806,7 +803,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <p class="modal-frame-message" id="centreFrameMessage">Chargement du simulateur…</p>
           <button type="button" class="retry-btn" id="retryCentreFrame" hidden>Réessayer</button>
         </div>
-        <iframe id="centreFrame" src="{{ url_for('choisir_centre_formation') }}" title="Choisir mon centre de formation"></iframe>
+        <iframe id="centreFrame" data-src="{{ url_for('choisir_centre_formation') }}" title="Choisir mon centre de formation"></iframe>
       </div>
     </div>
   </div>
@@ -865,12 +862,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     // le nom `ssiapDetails`. Le bloc SSIAP est désormais uniquement affiché
     // dans les informations complémentaires de l'étape finale.
     const ssiapDetails = document.getElementById('ssiapDetails') || blocSsiap;
-    const optCote = document.getElementById('optCote');
-    const optAuv = document.getElementById('optAuv');
-    const optParis = document.getElementById('optParis');
-    const simuBox = document.getElementById('simuBox');
+    const locationGrid = document.getElementById('locationGrid');
+    const locationOptions = Array.from(locationGrid.querySelectorAll('.location-option'));
+    const locationPractical = document.getElementById('locationPractical');
     const openSimu = document.getElementById('openSimu');
-    const simuText = document.getElementById('simuText');
     const vaeRemoteText = document.getElementById('vaeRemoteText');
     const datesHelp = document.getElementById('datesHelp');
     const centreSwitchNote = document.getElementById('centreSwitchNote');
@@ -931,7 +926,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const chatForm = document.getElementById('chatForm');
     const chatInput = document.getElementById('chatInput');
 
-    const CENTRE_FRAME_SRC = centreFrame.getAttribute('src');
+    const CENTRE_FRAME_SRC = centreFrame.dataset.src;
     const draftFormId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `draft-${Date.now()}`;
     const draftFormIdField = document.getElementById('draftFormIdField');
     if (draftFormIdField) draftFormIdField.value = draftFormId;
@@ -1082,11 +1077,19 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         : COTE_HEBERGEMENT_DEFAULT;
     }
 
-    function getAllowedCentresForFormation(formationCode) {
-      if (formationCode === 'DESP_INIT') return ['cote_azur', 'auvergne', 'paris'];
-      if (formationCode === 'A3P') return ['cote_azur', 'auvergne'];
-      return ['cote_azur'];
+    function getAllowedCentresForFormation(code) {
+      return locationOptions.filter(option => option.dataset.formations.split(' ').includes(code))
+        .map(option => option.querySelector('input').value);
     }
+
+    function sessionRows(code, centre) {
+      const rows = sessions[centre]?.[code] || [];
+      if (websiteChoice && code === 'SSIAP' && centre === 'cote_azur') {
+        return [websiteChoice, ...rows.filter(row => row.label !== websiteChoice.label)];
+      }
+      return rows;
+    }
+
     const CENTRE_FRAME_TIMEOUT_MS = 12000;
     let centreFrameTimeout = null;
 
@@ -1259,43 +1262,55 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       clearCentreFrameTimeout();
     }
 
-    function showLocationCards(v) {
-      const radios = form.querySelectorAll('input[name="centre"]');
-      radios.forEach(r => { r.required = false; r.checked = false; });
+    function showLocationCards(code) {
+      const allowed = getAllowedCentresForFormation(code);
+      const single = allowed.length === 1;
+      locationGrid.hidden = !allowed.length;
+      locationGrid.classList.toggle('single-location', single);
+      locationPractical.hidden = !allowed.length;
+      locationPractical.open = false;
+      openSimu.hidden = allowed.length < 2;
+      vaeRemoteText.hidden = code !== 'DESP_VAE';
+      document.getElementById('locationHeading').textContent = allowed.length > 1
+        ? 'Où souhaitez-vous vous former ?' : 'Votre lieu de formation';
 
-      optCote.classList.add('hidden');
-      optAuv.classList.add('hidden');
-      optParis.classList.add('hidden');
-      simuBox.classList.add('hidden');
-      openSimu.style.display = 'none';
-      simuText.classList.add('hidden');
-      if (vaeRemoteText) vaeRemoteText.classList.add('hidden');
-
-      if (!v) return;
-
-      updateCoteHebergementLine(v);
-
-      if (['A3P', 'DESP_INIT'].includes(v)) {
-        optCote.classList.remove('hidden');
-        optAuv.classList.remove('hidden');
-        if (v === 'DESP_INIT') optParis.classList.remove('hidden');
-        radios.forEach(r => r.required = true);
-      } else if (v === 'DESP_VAE') {
-        simuBox.classList.remove('hidden');
-        if (vaeRemoteText) vaeRemoteText.classList.remove('hidden');
-      } else {
-        optCote.classList.remove('hidden');
-        const coteRadio = form.querySelector('input[name="centre"][value="cote_azur"]');
-        if (coteRadio) coteRadio.checked = true;
-      }
-
-      // Simulateur masqué pour les formations proposées dans un centre unique.
-      if (!['VTC', 'APS', 'SSIAP', 'DESP_VAE'].includes(v)) {
-        simuBox.classList.remove('hidden');
-        openSimu.style.display = 'inline-flex';
-        simuText.classList.remove('hidden');
-      }
+      locationOptions.forEach(option => {
+        const radio = option.querySelector('input');
+        const offered = allowed.includes(radio.value);
+        option.hidden = !offered;
+        radio.disabled = !offered;
+        radio.required = offered && !single;
+        radio.checked = offered && single;
+        option.querySelector('button').setAttribute('aria-pressed', String(radio.checked));
+        if (!offered) return;
+        const count = sessionRows(code, radio.value).length;
+        let badge = count ? `${count} session${count > 1 ? 's' : ''}` : 'Dates à venir';
+        let action = count ? 'Voir les dates' : 'Me renseigner';
+        if (code === 'VTC') {
+          badge = 'Entrée en continu';
+          action = count ? 'Choisir mon mois' : 'Me renseigner';
+        }
+        option.querySelector('.location-badge').textContent = badge;
+        document.getElementById('action-' + radio.value).textContent = action;
+      });
+      locationPractical.querySelectorAll('[data-location-info]').forEach(info => {
+        info.hidden = !allowed.includes(info.dataset.locationInfo);
+      });
+      updateCoteHebergementLine(code);
     }
+
+    function chooseLocation(radio) {
+      if (!radio.checked) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      goToSlide(3);
+      document.getElementById('datesHeading').focus({ preventScroll: true });
+    }
+
+    locationOptions.forEach(option => {
+      option.querySelector('button').addEventListener('click', () => chooseLocation(option.querySelector('input')));
+    });
 
     function loadDates() {
       const f = formation.value;
@@ -1316,16 +1331,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         datesHelp.textContent = 'La formation Chauffeur VTC est accessible en continue : commencez votre formation dès maintenant.';
       }
 
-      let rows = [];
-      if (centre && sessions[centre] && Array.isArray(sessions[centre][f])) {
-        rows = sessions[centre][f];
-      } else if (sessions.cote_azur && Array.isArray(sessions.cote_azur[f])) {
-        rows = sessions.cote_azur[f];
-      }
-
+      const rows = sessionRows(f, f === 'DESP_VAE' ? 'cote_azur' : centre);
       const websiteSelected = websiteChoice && f === 'SSIAP' && centre === 'cote_azur';
-      if (websiteSelected) {
-        rows = [websiteChoice, ...rows.filter(row => row.label !== websiteChoice.label)];
+      if (centre && getAllowedCentresForFormation(f).length > 1) {
+        centreSwitchNote.textContent = centre === 'paris'
+          ? 'Comparer avec la Côte d’Azur' : 'Comparer avec Paris';
+        centreSwitchNote.classList.remove('hidden');
       }
       updateWebsiteSelection();
       if (!rows.length) {
@@ -1345,17 +1356,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         sessionPills.innerHTML = `<div class="session-pill active" role="status">${o.textContent}</div>`;
         datesSelect.required = false;
         return;
-      }
-
-      if (['A3P', 'DESP_INIT'].includes(f) && centre === 'auvergne') {
-        centreSwitchNote.textContent = "ℹ️ Si les dates ne vous conviennent pas, vous pouvez choisir le centre de formation Intégrale Academy Côte d'Azur à l'étape 3.";
-        centreSwitchNote.classList.remove('hidden');
-      } else if (['A3P', 'DESP_INIT'].includes(f) && centre === 'cote_azur') {
-        centreSwitchNote.textContent = "ℹ️ Si les dates ne vous conviennent pas, vous pouvez choisir le centre de formation Intégrale Academy Terres d'Auvergne à l'étape 3.";
-        centreSwitchNote.classList.remove('hidden');
-      } else if (f === 'DESP_INIT' && centre === 'paris') {
-        centreSwitchNote.textContent = "ℹ️ Si les dates ne vous conviennent pas, vous pouvez aussi choisir Intégrale Academy Côte d'Azur ou Intégrale Academy Terres d'Auvergne à l'étape 3.";
-        centreSwitchNote.classList.remove('hidden');
       }
 
       if (f === 'DESP_VAE') {
@@ -1390,8 +1390,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     }
 
     function isStep3Complete() {
-      if (['A3P', 'DESP_INIT'].includes(formation.value)) return Boolean(selectedCentre());
-      return true;
+      return !getAllowedCentresForFormation(formation.value).length || Boolean(selectedCentre());
     }
 
     function isStep4Complete() {
@@ -1459,6 +1458,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     }
 
     function validateSlide(index) {
+      if (index === 2) return isStep3Complete();
       const fields = slides[index].querySelectorAll('input, select');
       for (const field of fields) {
         if (field.required && !field.value) return false;
@@ -1577,8 +1577,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       updateStepReveal();
     });
 
-    updateCoteHebergementLine(formation.value);
-
     formation.addEventListener('change', () => {
       step5ManualIndex = null;
       showLocationCards(formation.value);
@@ -1602,6 +1600,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
     document.addEventListener('change', (e) => {
       if (e.target.name === 'centre') {
+        locationOptions.forEach(option => {
+          option.querySelector('button').setAttribute('aria-pressed', String(option.querySelector('input').checked));
+        });
         loadDates();
         updateStepReveal();
       }
@@ -1651,6 +1652,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     });
 
     window.addEventListener('message', (event) => {
+      if (event.source !== centreFrame.contentWindow || event.origin !== window.location.origin) return;
       const data = event.data || {};
 
       if (data.type === 'centre-frame-ready') {
@@ -1668,10 +1670,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       if (!allowedCentres.includes(data.centre)) return;
 
       const targetRadio = form.querySelector(`input[name="centre"][value="${data.centre}"]`);
-      if (!targetRadio || targetRadio.closest('.hidden')) return;
-
-      targetRadio.checked = true;
-      loadDates();
+      if (!targetRadio || targetRadio.disabled) return;
+      closeCentreModal();
+      chooseLocation(targetRadio);
     });
 
     form.addEventListener('submit', (e) => {
@@ -1681,11 +1682,11 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         return;
       }
 
-      const formValue = formation.value;
-      const centreChosen = selectedCentre();
-      if (formValue && ['A3P', 'DESP_INIT'].includes(formValue) && !centreChosen) {
+      if (!isStep3Complete()) {
         e.preventDefault();
+        goToSlide(2);
         alert('Merci de sélectionner un lieu de formation souhaité.');
+        return;
       }
 
       if (blocFranceTravail.classList.contains('hidden')) {
@@ -1760,6 +1761,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     step5ManualIndex = null;
     updateStep();
 
+    centreSwitchNote.addEventListener('click', () => {
+      goToSlide(2);
+      locationGrid.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+    });
     retryCentreFrame.addEventListener('click', reloadCentreFrame);
     centreFrame.addEventListener('load', () => {
       markCentreFrameReady();

@@ -517,6 +517,17 @@ FORMATION_CENTRES = {
     "paris": "Intégrale Academy Paris",
 }
 
+INFORMATION_FORM_CENTRES = {
+    "paris": {
+        "name": "Paris", "locality": "Centre de Paris",
+        "formations": ("DESP_INIT",),
+    },
+    "cote_azur": {
+        "name": "Côte d’Azur", "locality": "Puget-sur-Argens",
+        "formations": ("A3P", "APS", "SSIAP", "DESP_INIT", "VTC"),
+    },
+}
+
 SECRETARIAT_GENERIC_CALENDLY_URL = "https://calendly.com/integraleacademy"
 SECURITY_APPRENTICESHIP_LABEL = "Parcours sécurité en alternance"
 SECURITY_APPRENTICESHIP_PAGE = "https://www.integraleconnect.com/parcoursalternance"
@@ -3803,7 +3814,7 @@ def admin():
 
 @app.route("/admin/choisir-centre-formation")
 def choisir_centre_formation():
-    return render_template("choisir_centre_formation.html")
+    return render_template("choisir_centre_formation.html", catalogue_url=PUBLIC_CATALOGUE)
 
 
 @app.route("/admin/formation-sessions", methods=["GET", "POST"])
@@ -4960,10 +4971,11 @@ def inscriptions_vtc():
 @app.route("/demande-informations-formations", methods=["GET", "POST"])
 def demande_informations_formations():
     data_store = load_data()
-    sessions = get_upcoming_formation_sessions(data_store)
 
     if request.method == "POST":
         form_data = request.form.to_dict()
+        if form_data.get("centre") and form_data["centre"] not in INFORMATION_FORM_CENTRES:
+            abort(400, description="Ce centre n’est plus proposé. Rouvrez le formulaire pour choisir votre lieu de formation.")
         creer_piste_salesforce(request.form)
         form_data.update(_crm_google_ads_tracking_fields(form_data))
 
@@ -5312,11 +5324,14 @@ def demande_informations_formations():
     if website_choice:
         fee = get_formation_tarif("SSIAP", {"ssiap_formule": website_choice["formula"]})
         website_choice["fee_label"] = _eur_display(fee)
+    sessions = get_upcoming_formation_sessions(data_store)
     return render_template(
         "demande_informations_formations.html",
         website_choice=website_choice,
         website_choice_unavailable=bool(session_id and not website_choice),
-        sessions=sessions,
+        centres=INFORMATION_FORM_CENTRES,
+        catalogue_url=PUBLIC_CATALOGUE,
+        sessions={centre: sessions.get(centre, {}) for centre in INFORMATION_FORM_CENTRES},
         formations=PLAN_FORMATIONS,
         secretariat=request.args.get("secretariat") == "1",
         **google_ads_attribution,
@@ -5365,6 +5380,10 @@ def autosave_demande_informations_formations():
             v = v.strip()
         if v not in ("", None):
             cleaned_fields[k] = v
+
+    if cleaned_fields.get("centre") and str(cleaned_fields["centre"]) not in INFORMATION_FORM_CENTRES:
+        for key in ("centre", "dates", "date_examen"):
+            cleaned_fields.pop(key, None)
 
     existing = next((e for e in entries if e.get("form_id") == form_id), None)
     now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")

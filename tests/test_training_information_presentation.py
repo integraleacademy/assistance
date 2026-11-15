@@ -2,11 +2,11 @@
 
 from html.parser import HTMLParser
 import json
-from pathlib import Path
 import re
 
 import pytest
-from jinja2 import Environment, FileSystemLoader
+
+import app as application
 
 
 class FormContract(HTMLParser):
@@ -42,18 +42,18 @@ class FormContract(HTMLParser):
 
 
 @pytest.mark.parametrize("secretariat", [False, True])
-def test_visual_layout_preserves_submission_fields_and_conditional_modes(secretariat):
-    env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / "templates"))
-    env.globals["url_for"] = lambda endpoint, **kwargs: (
-        "/static/" + kwargs["filename"] if endpoint == "static"
-        else "/choisir-centre-formation"
-    )
-    page = env.get_template("demande_informations_formations.html").render(
-        sessions={"cote_azur": {"APS": [{"label": "Session témoin", "date_examen": "2027-01-20"}]}},
-        secretariat=secretariat,
-        gclid="tracking-test",
-        utm_source="source-test",
-    )
+def test_visual_layout_preserves_submission_fields_and_conditional_modes(secretariat, monkeypatch):
+    sessions = {
+        "cote_azur": {"APS": [{"label": "Session témoin", "date_examen": "2027-01-20"}]},
+        "auvergne": {"A3P": [{"label": "Ancienne session à Aurillac"}]},
+    }
+    monkeypatch.setattr(application, "load_data", lambda: {})
+    monkeypatch.setattr(application, "get_upcoming_formation_sessions", lambda store: sessions)
+    response = application.app.test_client().get("/demande-informations-formations", query_string={
+        "secretariat": int(secretariat), "gclid": "tracking-test", "utm_source": "source-test",
+    })
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
     form = FormContract(page)
 
     assert len(form.forms) == 1
@@ -77,7 +77,10 @@ def test_visual_layout_preserves_submission_fields_and_conditional_modes(secreta
     for name in ("mail", "mail_confirm"):
         assert form.fields[name][0]["type"] == "email"
     assert form.options["formation"] == ["", "A3P", "APS", "SSIAP", "DESP_INIT", "DESP_VAE", "VTC"]
-    assert [field["value"] for field in form.fields["centre"]] == ["paris", "cote_azur", "auvergne"]
+    assert [field["value"] for field in form.fields["centre"]] == ["paris", "cote_azur"]
+    for image in ("destination-paris.webp", "destination-cote-azur.webp"):
+        assert f'{application.PUBLIC_CATALOGUE}/images/illustrations-2026/{image}' in page
+    assert not re.search(r"aurillac|auvergne|arpajon|cantal", page, re.I)
     for name in ("cpf_consulte", "france_travail", "ft_refus_ok", "financement_perso",
                  "identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour",
                  "ssiap_secourisme_valide", "souhaite_devis"):
@@ -90,3 +93,25 @@ def test_visual_layout_preserves_submission_fields_and_conditional_modes(secreta
         {"label": "Session témoin", "date_examen": "2027-01-20"}
     ]
     assert 'title="Choisir mon centre de formation"' in page
+
+
+def test_centre_simulator_only_offers_current_centres():
+    page = application.app.test_client().get("/admin/choisir-centre-formation").get_data(as_text=True)
+    assert "34 rue Poissonnière" in page and "83480 Puget-sur-Argens" in page
+    assert not re.search(r"aurillac|auvergne|arpajon|cantal", page, re.I)
+
+
+def test_old_centre_cannot_create_a_request_or_supply_dates_for_a_new_draft(monkeypatch):
+    store = {}
+    monkeypatch.setattr(application, "load_data", lambda: store)
+    monkeypatch.setattr(application, "save_data", lambda *_: None)
+    monkeypatch.setattr(application, "creer_piste_salesforce", lambda *_: pytest.fail("Unexpected lead"))
+    client = application.app.test_client()
+    fields = {"formation": "A3P", "centre": "auvergne", "dates": "Ancienne session", "date_examen": "2027-01-20"}
+    assert client.post("/demande-informations-formations", data=fields).status_code == 400
+    assert store == {}
+    response = client.post("/api/demande-informations-formations/autosave", json={
+        "form_id": "old-tab", "fields": fields,
+    })
+    assert response.status_code == 204
+    assert store["formulaires_abandonnes"][0]["fields"] == {"formation": "A3P"}
