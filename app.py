@@ -396,6 +396,8 @@ def get_formation_tarif(formation_code: str, formation_details=None) -> int:
         allowed = SST_FEES.values() if formation_code == "SSIAP" else SESSION_FEES.get(formation_code, {}).values()
         if saved_fee in allowed:
             return saved_fee
+    if formation_code == "SSIAP" and details.get("ssiap_formule") in ("ssiap-1", "ssiap-1-sst"):
+        return SST_FEES["avec" if details["ssiap_formule"] == "ssiap-1-sst" else "sans"]
     return PLAN_TARIFS.get(formation_code, 0)
 
 
@@ -5060,6 +5062,8 @@ def demande_informations_formations():
             "centre": form_data.get("centre", ""),
             "date_examen": form_data.get("date_examen", ""),
             "ssiap_secourisme_valide": form_data.get("ssiap_secourisme_valide", ""),
+            "ssiap_formule": form_data.get("ssiap_formule", ""),
+            "ssiap_session_id": form_data.get("ssiap_session_id", ""),
             "cpf_montant": form_data.get("cpf_montant", "0"),
             "france_travail": form_data.get("france_travail", "NON"),
             "identite_numerique": form_data.get("identite_numerique", "NON"),
@@ -5168,7 +5172,7 @@ def demande_informations_formations():
                 form_data.get("dates", ""),
                 form_data.get("centre", ""),
                 devis_url,
-                form_data.get("ssiap_secourisme_valide", ""), data_store,
+                form_data.get("ssiap_secourisme_valide", ""), data_store, tuition=tarif_ssiap,
             )
             email_subject = _training_email_subject("SSIAP", form_data.get("centre"))
         elif form_data.get("formation") == "VTC":
@@ -5300,8 +5304,16 @@ def demande_informations_formations():
         return redirect(url_for("confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=form_data.get("formation", "")))
 
     google_ads_attribution = _crm_google_ads_tracking_fields(request.args)
+    session_id = request.args.get("session") if request.args.get("formation") == "SSIAP" else None
+    today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
+    website_choice = crm_public_sessions.website_ssiap_selection(session_id, request.args.get("formule"), today) if session_id else None
+    if website_choice:
+        fee = get_formation_tarif("SSIAP", {"ssiap_formule": website_choice["formula"]})
+        website_choice["fee_label"] = _eur_display(fee)
     return render_template(
         "demande_informations_formations.html",
+        website_choice=website_choice,
+        website_choice_unavailable=bool(session_id and not website_choice),
         sessions=sessions,
         formations=PLAN_FORMATIONS,
         secretariat=request.args.get("secretariat") == "1",
