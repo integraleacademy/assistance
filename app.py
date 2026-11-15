@@ -9891,6 +9891,25 @@ def _crm_enforce_meta_defaults(contact):
     return changed
 
 
+def _meta_complete_name(fields):
+    words = fields.get("full_name", "").split()
+    if not words:
+        return
+    first = fields.get("first_name", "")
+    last = fields.get("last_name", "")
+    if not first and not last:
+        fields["first_name"] = words[0]
+        fields["last_name"] = " ".join(words[1:])
+    elif first and not last:
+        count = len(first.split())
+        if len(words) > count and _meta_key(" ".join(words[:count])) == _meta_key(first):
+            fields["last_name"] = " ".join(words[count:])
+    elif last and not first:
+        count = len(last.split())
+        if len(words) > count and _meta_key(" ".join(words[-count:])) == _meta_key(last):
+            fields["first_name"] = " ".join(words[:-count])
+
+
 def _parse_meta_lead_payload(payload):
     """Tolère les libellés Zapier/Meta usuels sans éliminer les questions inconnues."""
     aliases = {_meta_key(field): field for field in _META_LEAD_FIELDS}
@@ -9899,7 +9918,9 @@ def _parse_meta_lead_payload(payload):
         "firstname": "first_name", "lastname": "last_name", "mail": "email",
         "emailaddress": "email", "phone": "phone_number", "telephone": "phone_number",
         "mobile": "phone_number", "zipcode": "zip_code", "postalcode": "postal_code",
-        "nomcomplet": "full_name", "prenom": "first_name", "nom": "last_name",
+        "nomcomplet": "full_name", "prenom": "first_name", "givenname": "first_name",
+        "nom": "last_name", "nomdefamille": "last_name",
+        "familyname": "last_name", "surname": "last_name",
         "numerodetelephone": "phone_number", "numerotelephone": "phone_number",
     })
     fields, custom = {}, {}
@@ -9915,6 +9936,7 @@ def _parse_meta_lead_payload(payload):
                 fields[canonical] = scalar
         elif _meta_key(name) not in _META_ANSWER_CONTAINERS | _META_PAYLOAD_WRAPPERS:
             custom[str(name)] = copy.deepcopy(value)
+        return canonical
 
     def consume_answers(value):
         if isinstance(value, list):
@@ -9932,8 +9954,7 @@ def _parse_meta_lead_payload(payload):
                 "values",
                 value.get("value", value.get("answer", value.get("response"))),
             )
-            consume(question, answer)
-            if not aliases.get(_meta_key(question)):
+            if not consume(question, answer):
                 custom[str(question)] = copy.deepcopy(answer)
             return
         for name, answer in value.items():
@@ -9960,11 +9981,7 @@ def _parse_meta_lead_payload(payload):
                 consume(name, value)
 
     consume_mapping(payload)
-    full_name = fields.get("full_name", "")
-    if full_name and not fields.get("first_name") and not fields.get("last_name"):
-        parts = full_name.split(None, 1)
-        fields["first_name"] = parts[0]
-        fields["last_name"] = parts[1] if len(parts) > 1 else ""
+    _meta_complete_name(fields)
     return fields, custom
 
 

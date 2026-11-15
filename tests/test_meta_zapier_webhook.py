@@ -35,6 +35,60 @@ def lead(**values):
     return payload
 
 
+@pytest.mark.parametrize(("identity", "expected"), [
+    ({"Prénom": "Éloïse Marie", "Nom complet": "Eloïse Marie de la Tour"},
+     ("Éloïse Marie", "de la Tour")),
+    ({"Nom de famille": "de la Tour", "nom_complet": "Éloïse Marie DE LA TOUR"},
+     ("Éloïse Marie", "de la Tour")),
+    ({"first_name": "Camille", "last_name": "Morel", "full_name": "Autre Personne"},
+     ("Camille", "Morel")),
+    ({"prénom": "Camille", "nom_complet": "Camilla Morel"}, ("Camille", "")),
+    ({"nom_complet": "Morel"}, ("Morel", "")),
+])
+def test_meta_completes_only_names_supported_by_the_full_name(identity, expected):
+    fields, _ = application._parse_meta_lead_payload(identity)
+    assert (fields.get("first_name", ""), fields.get("last_name", "")) == expected
+
+
+def test_french_family_name_reaches_the_crm_and_salesforce(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    sent = []
+    monkeypatch.setattr(application, "creer_piste_salesforce", sent.append)
+    payload = {
+        "leadgen_id": "identity-example", "form_id": "2316311965770128",
+        "email": "camille@example.test",
+        "field_data": [
+            {"name": "prénom", "values": ["Camille"]},
+            {"name": "raw_nom_de_famille", "values": ["Morel"]},
+        ],
+    }
+    assert post(client, payload).status_code == 201
+    data = application.load_data()
+    contact = data["crm_contacts"][0]
+    assert (contact["prenom"], contact["nom"]) == ("Camille", "MOREL")
+    assert (sent[0]["prenom"], sent[0]["nom"]) == ("Camille", "Morel")
+    submission = data["crm_meta_lead_submissions"][0]
+    assert submission["raw_payload"] == payload
+    assert submission["custom_answers"] == {}
+
+
+def test_meta_backfill_recovers_only_a_missing_name_from_the_saved_form():
+    contact = {"id": "example", "origine": "META", "prenom": "Camille", "nom": ""}
+    data = {
+        "crm_contacts": [contact],
+        "crm_meta_lead_submissions": [{
+            "contact_id": "example", "received_at": "2026-11-15T10:00:00+01:00",
+            "raw_payload": {"prénom": "Camille", "nom_de_famille": "Morel"},
+        }],
+    }
+    application._crm_backfill_meta_submissions(data)
+    assert contact["nom"] == "MOREL"
+    assert application._crm_backfill_meta_submissions(data) is False
+    contact["nom"] = "NOM CORRIGÉ"
+    application._crm_backfill_meta_submissions(data)
+    assert contact["nom"] == "NOM CORRIGÉ"
+
+
 def test_secret_is_required_and_compared(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     assert post(client, lead(), secret=None).status_code == 403
