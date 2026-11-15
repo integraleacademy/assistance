@@ -43,6 +43,9 @@ def lead(**values):
     ({"first_name": "Camille", "last_name": "Morel", "full_name": "Autre Personne"},
      ("Camille", "Morel")),
     ({"prénom": "Camille", "nom_complet": "Camilla Morel"}, ("Camille", "")),
+    ({"prénom": "Li Na", "nom_complet": "Lin A Leroy"}, ("Li Na", "")),
+    ({"prénom": "-", "nom_complet": "? Leroy"}, ("-", "")),
+    ({"prénom": "Camille", "nom_complet": "Camille ?"}, ("Camille", "")),
     ({"nom_complet": "Morel"}, ("Morel", "")),
 ])
 def test_meta_completes_only_names_supported_by_the_full_name(identity, expected):
@@ -70,6 +73,32 @@ def test_french_family_name_reaches_the_crm_and_salesforce(tmp_path, monkeypatch
     submission = data["crm_meta_lead_submissions"][0]
     assert submission["raw_payload"] == payload
     assert submission["custom_answers"] == {}
+
+
+@pytest.mark.parametrize("raw_first", [True, False])
+@pytest.mark.parametrize("nested", [True, False])
+def test_readable_meta_family_name_takes_priority_across_answers(raw_first, nested):
+    raw = ("raw_nom_de_famille", "Ancien")
+    readable = ("last_name", "Corrigé")
+    first, second = (raw, readable) if raw_first else (readable, raw)
+    if nested:
+        payload = {"data": {first[0]: first[1]}, second[0]: second[1]}
+    else:
+        payload = {"field_data": [
+            {"name": key, "values": [value]} for key, value in (first, second)
+        ]}
+    fields, answers = application._parse_meta_lead_payload(payload)
+    assert fields["last_name"] == "Corrigé"
+    assert answers == {}
+
+
+def test_raw_phone_stays_in_meta_answer_history():
+    phone = "+33 6 00 00 00 00"
+    payload = {"field_data": [{"name": "raw_phone_number", "values": [phone]}]}
+    fields, answers = application._parse_meta_lead_payload(payload)
+    assert fields["phone_number"] == phone
+    assert answers == {"raw_phone_number": [phone]}
+    assert {"question": "raw_phone_number", "answer": phone} in application._meta_answer_rows(fields, answers)
 
 
 def test_meta_backfill_recovers_only_a_missing_name_from_the_saved_form():

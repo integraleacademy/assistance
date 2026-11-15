@@ -9892,22 +9892,27 @@ def _crm_enforce_meta_defaults(contact):
 
 
 def _meta_complete_name(fields):
-    words = fields.get("full_name", "").split()
-    if not words:
-        return
+    full_name = fields.get("full_name", "")
+    words = full_name.split()
     first = fields.get("first_name", "")
     last = fields.get("last_name", "")
+    if not words or (first and last):
+        return
     if not first and not last:
-        fields["first_name"] = words[0]
-        fields["last_name"] = " ".join(words[1:])
-    elif first and not last:
-        count = len(first.split())
-        if len(words) > count and _meta_key(" ".join(words[:count])) == _meta_key(first):
-            fields["last_name"] = " ".join(words[count:])
-    elif last and not first:
-        count = len(last.split())
-        if len(words) > count and _meta_key(" ".join(words[-count:])) == _meta_key(last):
-            fields["first_name"] = " ".join(words[:-count])
+        parts = full_name.split(None, 1)
+        fields["first_name"] = parts[0]
+        fields["last_name"] = parts[1] if len(parts) > 1 else ""
+        return
+
+    known_words = [_meta_key(word) for word in (first or last).split()]
+    full_words = [_meta_key(word) for word in words]
+    count = len(known_words)
+    if len(words) <= count or not all(known_words) or not all(full_words):
+        return
+    if first and full_words[:count] == known_words:
+        fields["last_name"] = " ".join(words[count:])
+    elif last and full_words[-count:] == known_words:
+        fields["first_name"] = " ".join(words[:-count])
 
 
 def _parse_meta_lead_payload(payload):
@@ -9924,16 +9929,20 @@ def _parse_meta_lead_payload(payload):
         "numerodetelephone": "phone_number", "numerotelephone": "phone_number",
     })
     fields, custom = {}, {}
+    identity_fields = {"first_name", "last_name", "full_name"}
+    raw_identity = {}
 
     def consume(name, value):
         key = _meta_key(name)
         canonical = aliases.get(key)
-        if not canonical and str(name).casefold().startswith("raw_"):
+        is_raw = str(name).casefold().startswith("raw_")
+        if not canonical and is_raw:
             canonical = aliases.get(_meta_key(str(name)[4:]))
         scalar = _meta_scalar(value)
         if canonical:
-            if scalar and not _meta_test_answer(scalar) and not fields.get(canonical):
-                fields[canonical] = scalar
+            if scalar and not _meta_test_answer(scalar):
+                target = raw_identity if is_raw and canonical in identity_fields else fields
+                target.setdefault(canonical, scalar)
         elif _meta_key(name) not in _META_ANSWER_CONTAINERS | _META_PAYLOAD_WRAPPERS:
             custom[str(name)] = copy.deepcopy(value)
         return canonical
@@ -9954,7 +9963,8 @@ def _parse_meta_lead_payload(payload):
                 "values",
                 value.get("value", value.get("answer", value.get("response"))),
             )
-            if not consume(question, answer):
+            canonical = consume(question, answer)
+            if canonical not in identity_fields and not aliases.get(_meta_key(question)):
                 custom[str(question)] = copy.deepcopy(answer)
             return
         for name, answer in value.items():
@@ -9981,6 +9991,9 @@ def _parse_meta_lead_payload(payload):
                 consume(name, value)
 
     consume_mapping(payload)
+    # Une copie brute peut précéder le champ lisible dans une autre réponse.
+    for field, value in raw_identity.items():
+        fields.setdefault(field, value)
     _meta_complete_name(fields)
     return fields, custom
 
