@@ -11,7 +11,7 @@ RECEIPT = "/confirmation-demande-informations"
 
 @pytest.mark.parametrize(("formation", "hot", "action"), [
     ("DESP_INIT", False, "Consulter le dossier"),
-    ("DESP_INIT", True, "Votre rendez-vous téléphonique"),
+    ("DESP_INIT", True, "Réserver mon rendez-vous téléphonique"),
     ("DESP_VAE", True, "Accéder à mon espace VAE"),
 ])
 def test_ajax_receipt_is_returned_after_submission(monkeypatch, formation, hot, action):
@@ -33,13 +33,16 @@ def test_ajax_receipt_is_returned_after_submission(monkeypatch, formation, hot, 
     assert urlsplit(url).path == RECEIPT
     page = client.get(url).get_data(as_text=True)
     assert application.PLAN_FORMATIONS[formation] in page and action in page
+    assert "Un membre de notre équipe va bientôt vous contacter pour vous présenter nos formations en détails." in page
     if formation == "DESP_VAE":
         assert application.DESP_VAE_START_URL in page and 'id="vaeForward"' in page
         assert client.post(FORM, data=fields).location == application.DESP_VAE_START_URL
     booking = formation != "DESP_VAE" and hot
     assert ('class="receipt-calendar calendly-inline-widget"' in page) == booking
+    assert ('href="#rendez-vous"' in page) == booking
     if booking:
-        assert application.FORMATION_BOOKING_URLS[formation] in page
+        assert 'data-resize="true"' in page
+        assert f'href="{application.FORMATION_BOOKING_URLS[formation]}"' in page
 
 
 def test_browser_waits_for_receipt_and_recovers_from_error(monkeypatch):
@@ -123,7 +126,24 @@ def test_browser_waits_for_receipt_and_recovers_from_error(monkeypatch):
         page.emulate_media(reduced_motion="reduce")
         page.goto("https://formation.test" + RECEIPT + "?hot=1&formation=DESP_INIT")
         playwright.expect(fireworks).to_be_hidden()
-        playwright.expect(page.get_by_role("link", name="Ouvrir l’agenda")).to_be_visible()
+        reserve = page.get_by_role("link", name="Réserver mon rendez-vous téléphonique")
+        widget = page.locator(".receipt-calendar")
+        for width, height in [(1360, 768), (390, 844), (320, 568)]:
+            page.set_viewport_size({"width": width, "height": height})
+            page.evaluate("window.scrollTo(0, 0)")
+            box = reserve.bounding_box()
+            assert 0 <= box["y"] < box["y"] + box["height"] <= height
+            assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
+            assert widget.bounding_box()["width"] >= 320
+            reserve.click()
+            assert page.url.endswith("#rendez-vous")
+            playwright.expect(widget).to_be_in_viewport()
+            assert page.evaluate("document.activeElement.id") == "rendez-vous"
+            # The inline widget applies the height of each booking step on this element.
+            for step_height in (1120, 670):
+                widget.evaluate("(el, h) => { el.style.height = h + 'px'; }", step_height)
+                assert widget.bounding_box()["height"] == step_height
+        playwright.expect(page.get_by_role("link", name="Ouvrir l’agenda en plein écran")).to_be_visible()
         page.clock.install()
         vae_receipt = "https://formation.test" + RECEIPT + "?formation=DESP_VAE&poursuivre=1"
         page.goto(vae_receipt)

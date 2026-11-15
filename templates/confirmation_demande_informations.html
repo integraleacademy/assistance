@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#19283b">
+  <meta name="theme-color" content="#0c1d30">
   <title>Demande reçue · Intégrale Academy</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='formation_receipt.css') }}">
-  <script src="{{ url_for('static', filename='formation_celebration.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='formation_receipt.css', v='agenda2') }}">
+  <script src="{{ url_for('static', filename='formation_celebration.js', v='agenda2') }}" defer></script>
 </head>
-<body class="formation-receipt">
+{% set booking = calendly_url and not vae_url %}
+<body class="formation-receipt{% if booking %} with-booking{% endif %}">
   <canvas id="receiptFireworks" aria-hidden="true" hidden></canvas>
   <header class="receipt-header">
     <div class="receipt-width receipt-brandbar">
@@ -20,57 +21,77 @@
   </header>
   <main>
     <section class="receipt-hero" aria-labelledby="receipt-title">
+      <div class="receipt-sky" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="receipt-width receipt-hero-inner">
-        <div class="receipt-copy">
-          <h1 id="receipt-title">Merci pour<br><em>votre demande.</em></h1>
-          <p class="receipt-lead">Notre équipe a bien reçu vos informations. Un conseiller vous recontactera pour échanger sur votre projet de formation.</p>
+        <h1 id="receipt-title">Merci pour<br><em>votre demande.</em></h1>
+        <div class="receipt-details">
+          <p class="receipt-lead">Un membre de notre équipe va bientôt vous contacter pour vous présenter nos formations en détails.</p>
+          <div class="receipt-cta">
+            {% if booking %}
+              <a class="receipt-button" href="#rendez-vous">Réserver mon rendez-vous téléphonique <span class="action-arrow arrow-down" aria-hidden="true"></span></a>
+              <svg class="booking-guide" width="76" height="48" viewBox="0 0 76 48" fill="none" aria-hidden="true">
+                <path d="M71 4c-1 11-14 21-24 17-7-3-3-10 3-8 7 4-5 23-39 20m8-8-10 8 10 7" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {% elif vae_url %}
+              <a class="receipt-button" id="vaeLink" href="{{ vae_url }}">Accéder à mon espace VAE <span class="action-arrow" aria-hidden="true"></span></a>
+            {% else %}
+              <a class="receipt-button" href="{{ dossier_url }}" target="_blank" rel="noopener noreferrer">Consulter le dossier de présentation <span class="action-arrow arrow-external" aria-hidden="true"></span></a>
+            {% endif %}
+          </div>
           {% if formation_label %}
             <dl class="receipt-course"><dt>Formation demandée</dt><dd>{{ formation_label }}</dd></dl>
           {% endif %}
+          {% if continuer_vae %}
+            <div class="vae-forward" id="vaeForward" hidden>
+              <span role="status">Votre espace VAE va s’ouvrir automatiquement.</span>
+              <button type="button" id="pauseForward">Rester sur cette page</button>
+            </div>
+          {% endif %}
         </div>
-        {% include "_formation_envelope.html" %}
+
+        <div class="receipt-art" aria-hidden="true">
+          {% if booking %}
+            <div class="appointment-art">
+              <span class="appointment-halo"></span>
+              <div class="appointment-pad">
+                <span class="calendar-rings"></span>
+                <span class="calendar-days"></span>
+                <span class="calendar-tick"></span>
+              </div>
+              <span class="appointment-coin">
+                <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                  <path d="M9 6c-1.2-1.2-3.4-.8-4.2.9-2.6 5.4 2.6 12.5 6.2 16.1s10.4 8.5 15.7 5.8c1.4-.7 2.2-2.5 1-3.9l-3.8-3.8c-.6-.6-1.6-.7-2.3-.2l-2.8 1.9c-3.8-1.5-7.8-5.9-9.1-9.5l1.6-2.5c.5-.8.4-1.6-.2-2.3Z" fill="currentColor" transform="translate(1 -1) scale(.94)"/>
+                </svg>
+              </span>
+              <span class="glint glint-one"></span><span class="glint glint-two"></span>
+            </div>
+          {% else %}
+            {% include "_formation_envelope.html" %}
+          {% endif %}
+        </div>
       </div>
     </section>
 
-    <div class="receipt-width receipt-actions">
-      <section class="next-card" aria-labelledby="next-title">
-        <div class="next-card-row">
-          <div class="next-icon" aria-hidden="true">
-            {% if vae_url %}<span class="icon-folder"></span>
-            {% elif calendly_url %}<span class="icon-calendar"></span>
-            {% else %}<span class="icon-book"></span>{% endif %}
+    {% if booking %}
+      <section class="receipt-agenda" aria-labelledby="booking-title">
+        <div class="receipt-width agenda-inner">
+          <div class="agenda-header">
+            <div class="agenda-heading">
+              <span class="agenda-marker" aria-hidden="true"><span class="action-arrow arrow-down"></span></span>
+              <div>
+                <h2 id="booking-title">Choisissez votre créneau</h2>
+                <p>Sélectionnez une date, puis l’heure de votre rendez-vous téléphonique.</p>
+              </div>
+            </div>
+            <a class="agenda-external" href="{{ calendly_url }}" target="_blank" rel="noopener noreferrer">
+              Ouvrir l’agenda en plein écran <span class="action-arrow arrow-external" aria-hidden="true"></span>
+            </a>
           </div>
-          <div class="next-copy">
-            {% if vae_url %}
-              <h2 id="next-title">Votre espace VAE</h2>
-              <p>Retrouvez les premières étapes de votre VAE pour le titre de dirigeant d’entreprise de sécurité privée.</p>
-            {% elif calendly_url %}
-              <h2 id="next-title">Votre rendez-vous téléphonique</h2>
-              <p>Choisissez le créneau qui vous convient pour parler de votre projet avec un conseiller.</p>
-            {% else %}
-              <h2 id="next-title">Le dossier de présentation</h2>
-              <p>Consultez les programmes et les informations pratiques pour préparer votre formation.</p>
-            {% endif %}
-          </div>
-          {% if vae_url %}
-            <a class="receipt-button" id="vaeLink" href="{{ vae_url }}">Accéder à mon espace VAE <span class="receipt-arrow forward-arrow" aria-hidden="true"></span></a>
-          {% elif calendly_url %}
-            <a class="receipt-button" href="{{ calendly_url }}" target="_blank" rel="noopener noreferrer">Ouvrir l’agenda <span class="receipt-arrow" aria-hidden="true"></span></a>
-          {% else %}
-            <a class="receipt-button" href="{{ dossier_url }}" target="_blank" rel="noopener noreferrer">Consulter le dossier <span class="receipt-arrow" aria-hidden="true"></span></a>
-          {% endif %}
-        </div>
-        {% if continuer_vae %}
-          <div class="vae-forward" id="vaeForward" hidden>
-            <span role="status">Votre espace VAE va s’ouvrir automatiquement.</span>
-            <button type="button" id="pauseForward">Rester sur cette page</button>
-          </div>
-        {% elif calendly_url and not vae_url %}
-          <div class="receipt-calendar calendly-inline-widget" data-url="{{ calendly_url }}"></div>
+          <div id="rendez-vous" class="receipt-calendar calendly-inline-widget" tabindex="-1" role="region" aria-labelledby="booking-title" data-url="{{ calendly_url }}{{ '&' if '?' in calendly_url else '?' }}hide_event_type_details=1&amp;primary_color=825916" data-resize="true"></div>
           <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
-        {% endif %}
+        </div>
       </section>
-    </div>
+    {% endif %}
   </main>
 </body>
 </html>
