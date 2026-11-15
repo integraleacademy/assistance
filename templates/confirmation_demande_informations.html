@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0c1d30">
   <title>Demande reçue · Intégrale Academy</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='formation_receipt.css', v='agenda2') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='formation_receipt.css', v='accueil3') }}">
   <script src="{{ url_for('static', filename='formation_celebration.js', v='agenda2') }}" defer></script>
 </head>
 {% set booking = calendly_url and not vae_url %}
@@ -21,7 +21,13 @@
   </header>
   <main>
     <section class="receipt-hero" aria-labelledby="receipt-title">
-      <div class="receipt-sky" aria-hidden="true"><i></i><i></i><i></i></div>
+      {% if booking %}
+        <div class="receipt-welcome-scene" aria-hidden="true">
+          <img src="{{ catalogue_url }}/images/illustrations-2026/campus-accompagnement.webp" alt="" width="1536" height="1024" decoding="async">
+        </div>
+      {% else %}
+        <div class="receipt-sky" aria-hidden="true"><i></i><i></i><i></i></div>
+      {% endif %}
       <div class="receipt-width receipt-hero-inner">
         <h1 id="receipt-title">Merci pour<br><em>votre demande.</em></h1>
         <div class="receipt-details">
@@ -49,26 +55,11 @@
           {% endif %}
         </div>
 
-        <div class="receipt-art" aria-hidden="true">
-          {% if booking %}
-            <div class="appointment-art">
-              <span class="appointment-halo"></span>
-              <div class="appointment-pad">
-                <span class="calendar-rings"></span>
-                <span class="calendar-days"></span>
-                <span class="calendar-tick"></span>
-              </div>
-              <span class="appointment-coin">
-                <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-                  <path d="M9 6c-1.2-1.2-3.4-.8-4.2.9-2.6 5.4 2.6 12.5 6.2 16.1s10.4 8.5 15.7 5.8c1.4-.7 2.2-2.5 1-3.9l-3.8-3.8c-.6-.6-1.6-.7-2.3-.2l-2.8 1.9c-3.8-1.5-7.8-5.9-9.1-9.5l1.6-2.5c.5-.8.4-1.6-.2-2.3Z" fill="currentColor" transform="translate(1 -1) scale(.94)"/>
-                </svg>
-              </span>
-              <span class="glint glint-one"></span><span class="glint glint-two"></span>
-            </div>
-          {% else %}
+        {% if not booking %}
+          <div class="receipt-art" aria-hidden="true">
             {% include "_formation_envelope.html" %}
-          {% endif %}
-        </div>
+          </div>
+        {% endif %}
       </div>
     </section>
 

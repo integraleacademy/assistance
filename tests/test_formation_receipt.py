@@ -40,6 +40,8 @@ def test_ajax_receipt_is_returned_after_submission(monkeypatch, formation, hot, 
     booking = formation != "DESP_VAE" and hot
     assert ('class="receipt-calendar calendly-inline-widget"' in page) == booking
     assert ('href="#rendez-vous"' in page) == booking
+    scene_url = f"{application.PUBLIC_CATALOGUE}/images/illustrations-2026/campus-accompagnement.webp"
+    assert (f'src="{scene_url}"' in page) == booking
     if booking:
         assert 'data-resize="true"' in page
         assert f'href="{application.FORMATION_BOOKING_URLS[formation]}"' in page
@@ -128,11 +130,17 @@ def test_browser_waits_for_receipt_and_recovers_from_error(monkeypatch):
         playwright.expect(fireworks).to_be_hidden()
         reserve = page.get_by_role("link", name="Réserver mon rendez-vous téléphonique")
         widget = page.locator(".receipt-calendar")
-        for width, height in [(1360, 768), (390, 844), (320, 568)]:
+        scene = page.locator(".receipt-welcome-scene")
+        for width, height in [(1360, 768), (768, 800), (390, 844), (320, 568)]:
             page.set_viewport_size({"width": width, "height": height})
             page.evaluate("window.scrollTo(0, 0)")
             box = reserve.bounding_box()
             assert 0 <= box["y"] < box["y"] + box["height"] <= height
+            illustration = scene.bounding_box()
+            assert (
+                illustration["x"] >= box["x"] + box["width"]
+                or illustration["y"] + illustration["height"] <= box["y"]
+            )
             assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
             assert widget.bounding_box()["width"] >= 320
             reserve.click()

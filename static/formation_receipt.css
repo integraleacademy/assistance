@@ -261,33 +261,14 @@ body:has(.sending-dialog[open]) { overflow: hidden; }
 .receipt-course dt { color: #d8c496; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .receipt-course dd { margin: 0; }
 .receipt-art { grid-area: art; align-self: center; justify-self: center; pointer-events: none; user-select: none; }
-.receipt-art .letter-scene, .appointment-art { font-size: clamp(16px, 1.85vw, 26px); }
-.appointment-art { position: relative; isolation: isolate; width: 17em; height: 12.2em; color: #f9d69b; }
-.appointment-halo {
-  position: absolute; inset: 9% 3% 3%; border: 1px solid rgb(250 218 160 / 43%); border-radius: 50%;
-  transform: rotate(-17deg); background: radial-gradient(ellipse, rgb(251 194 103 / 25%), transparent 66%);
+.receipt-art .letter-scene { font-size: clamp(16px, 1.85vw, 26px); }
+.with-booking .receipt-hero { background: linear-gradient(115deg, #0c1d30 10%, #183247 82%); }
+.receipt-welcome-scene {
+  position: absolute; inset: 0 0 0 51.5%;
+  background: #1a3246; pointer-events: none;
+  clip-path: polygon(7% 0, 100% 0, 100% 100%, 0 100%);
 }
-.appointment-halo::before { content: ""; position: absolute; inset: 8% -3%; border-radius: 50%; border: 1px dashed rgb(252 222 168 / 24%); transform: rotate(34deg); }
-.appointment-pad {
-  position: absolute; left: 21%; top: 13%; width: 58%; height: 68%; border-radius: .75em;
-  background: linear-gradient(125deg, #fffdf2 4%, #f8ecce 58%, #d9c293);
-  border: 1px solid #f9ebc6;
-  box-shadow: .05em .13em 0 #ac9263, .09em .21em 0 #eeddb7, .13em .29em 0 #ad9266, .17em .37em 0 #ddc599, .36em .8em 1.1em rgb(2 12 23 / 47%);
-  transform: perspective(22em) rotateY(-14deg) rotateX(13deg) rotateZ(-9deg);
-}
-.appointment-pad::before { content: ""; position: absolute; inset: 0 0 73%; border-radius: .71em .71em 0 0; background: linear-gradient(112deg, #b67932 0%, #f1c780 21%, #ffe6ad 45%, #c88e41 94%); border-bottom: .08em solid #b8833a; }
-.calendar-rings::before, .calendar-rings::after { content: ""; position: absolute; z-index: 1; top: -.49em; left: 20%; width: .45em; height: 1.16em; border-radius: 1em; border: 1px solid #9b733d; background: linear-gradient(90deg, #8b663d, #fff3bd 46%, #b38850 82%); box-shadow: .04em .1em .1em rgb(77 52 22 / 35%); }
-.calendar-rings::after { left: auto; right: 19%; }
-.calendar-days { position: absolute; inset: 34% 13% 13%; background: radial-gradient(ellipse, #bca477 22%, transparent 26%) 0 0 / 20% 33.333%; }
-.calendar-tick { position: absolute; width: 14.8%; height: 16%; left: 42.6%; top: 52.5%; border-radius: .23em; background: #34474b; box-shadow: inset 0 1px 1px #677366; }
-.calendar-tick::after { content: ""; position: absolute; width: 50%; height: 27%; left: 25%; top: 30%; border: solid #ffe8b7; border-width: 0 0 .09em .09em; transform: rotate(-45deg); }
-.appointment-coin {
-  position: absolute; display: grid; place-items: center; right: 11%; bottom: 9%; width: 4.1em; aspect-ratio: 1; border-radius: 50%;
-  color: #253640; background: linear-gradient(135deg, #fff0c2 8%, #dfb362 45%, #f5d490 70%, #bc8843);
-  border: .11em solid #ffeac0; box-shadow: inset 0 0 0 .12em #b58c4e, .09em .17em 0 #92672b, .16em .35em .46em rgb(5 16 23 / 38%);
-  transform: rotate(12deg);
-}
-.appointment-coin svg { width: 54%; height: 54%; }
+.receipt-welcome-scene img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 37%; }
 .receipt-agenda { position: relative; padding: 21px 0 clamp(36px, 5vw, 70px); background: var(--cream); color: #142839; border-top: 3px solid #e5bb78; }
 .agenda-inner { background: white; border-radius: 20px; box-shadow: 0 16px 45px -25px rgb(55 39 16 / 24%), 0 0 0 1px #e5ddcf; }
 .agenda-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: clamp(17px, 1.5vw, 23px) clamp(18px, 2.2vw, 30px); border-bottom: 1px solid #e9e3d8; }
@@ -307,24 +288,29 @@ body:has(.sending-dialog[open]) { overflow: hidden; }
 .formation-receipt :focus-visible, .sending-dialog button:focus-visible { outline: 3px solid #ce9341; outline-offset: 4px; }
 
 @media (min-width: 681px) {
-  .with-booking .receipt-hero-inner { padding-block: clamp(26px, 2.5vw, 43px) clamp(25px, 2.8vw, 46px); }
+  .with-booking .receipt-hero-inner { grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); padding-block: clamp(26px, 2.5vw, 43px) clamp(25px, 2.8vw, 46px); }
   .with-booking .receipt-hero h1 { font-size: clamp(51px, 5.2vw, 77px); }
   .with-booking .receipt-course { margin-top: 17px; }
 }
 @media (max-width: 900px) {
   .receipt-hero-inner { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
-  .booking-guide { width: 50px; }
-  .receipt-art .letter-scene, .appointment-art { font-size: clamp(12px, 1.6vw, 16px); }
+  .booking-guide { display: none; }
+  .receipt-art .letter-scene { font-size: clamp(12px, 1.6vw, 16px); }
 }
 @media (max-width: 680px) {
   .receipt-brandbar { min-height: 61px; }
   .receipt-logo { width: 135px; }
   .receipt-phone { font-size: 12px; gap: 6px; }
   .receipt-hero-inner { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title art" "details details"; column-gap: 0; padding-block: 27px 26px; }
+  .receipt-welcome-scene {
+    position: relative; inset: auto; height: clamp(112px, 30vw, 184px); clip-path: none;
+  }
+  .receipt-welcome-scene img { object-position: 50% 29%; }
+  .with-booking .receipt-hero-inner { display: block; padding-block: 20px 21px; }
   .formation-receipt:not(.with-booking) .receipt-hero-inner { min-height: 0; padding-block: clamp(36px, 9vh, 90px); }
   .receipt-hero h1 { align-self: center; font-size: clamp(34px, 8.8vw, 55px); }
   .receipt-art { justify-self: end; }
-  .receipt-art .letter-scene, .appointment-art { font-size: clamp(5.2px, 1.55vw, 9.5px); }
+  .receipt-art .letter-scene { font-size: clamp(5.2px, 1.55vw, 9.5px); }
   .receipt-lead { margin-top: 13px; font-size: 16px; }
   .receipt-cta { margin-top: 18px; }
   .receipt-button { justify-content: space-between; text-align: left; min-height: 50px; padding-left: 15px; font-size: 15px; }
