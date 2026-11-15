@@ -54,9 +54,8 @@
     const expected = canonicalLocation(contact.lieu);
     if (!expected) return;
 
-    const matchingOption = [...select.options].find(option => (
-      canonicalLocation(option.value || option.textContent) === expected
-    ));
+    // Une option vide peut citer la ville dans la réponse Meta affichée.
+    const matchingOption = [...select.options].find(option => canonicalLocation(option.value) === expected);
 
     applyingStoredLocation = true;
     try {

@@ -1127,6 +1127,10 @@ function cnapsGeneratedPassword(c){
 function metaFieldPlaceholder(contact,field,formation=contact.formation){
  const source=contact.meta_source;
  if(!source?.field_answers||source.formation!==formation||!Object.hasOwn(source.field_answers,field))return '';
+ if(field==='lieu'){
+  const location=String(contact.lieu||'').trim();
+  if(location&&location!=='À déterminer')return '';
+ }
  const answer=source.field_answers[field];
  if(answer)return `Meta · ${answer.charAt(0).toLocaleUpperCase('fr')}${answer.slice(1)}`;
  return field==='lieu'?'Aucun lieu communiqué dans Meta':'Aucune réponse transmise par Meta';
