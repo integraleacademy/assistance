@@ -9891,6 +9891,30 @@ def _crm_enforce_meta_defaults(contact):
     return changed
 
 
+def _meta_complete_name(fields):
+    full_name = fields.get("full_name", "")
+    words = full_name.split()
+    first = fields.get("first_name", "")
+    last = fields.get("last_name", "")
+    if not words or (first and last):
+        return
+    if not first and not last:
+        parts = full_name.split(None, 1)
+        fields["first_name"] = parts[0]
+        fields["last_name"] = parts[1] if len(parts) > 1 else ""
+        return
+
+    known_words = [_meta_key(word) for word in (first or last).split()]
+    full_words = [_meta_key(word) for word in words]
+    count = len(known_words)
+    if len(words) <= count or not all(known_words) or not all(full_words):
+        return
+    if first and full_words[:count] == known_words:
+        fields["last_name"] = " ".join(words[count:])
+    elif last and full_words[-count:] == known_words:
+        fields["first_name"] = " ".join(words[:-count])
+
+
 def _parse_meta_lead_payload(payload):
     """Tolère les libellés Zapier/Meta usuels sans éliminer les questions inconnues."""
     aliases = {_meta_key(field): field for field in _META_LEAD_FIELDS}
@@ -9899,22 +9923,29 @@ def _parse_meta_lead_payload(payload):
         "firstname": "first_name", "lastname": "last_name", "mail": "email",
         "emailaddress": "email", "phone": "phone_number", "telephone": "phone_number",
         "mobile": "phone_number", "zipcode": "zip_code", "postalcode": "postal_code",
-        "nomcomplet": "full_name", "prenom": "first_name", "nom": "last_name",
+        "nomcomplet": "full_name", "prenom": "first_name", "givenname": "first_name",
+        "nom": "last_name", "nomdefamille": "last_name",
+        "familyname": "last_name", "surname": "last_name",
         "numerodetelephone": "phone_number", "numerotelephone": "phone_number",
     })
     fields, custom = {}, {}
+    identity_fields = {"first_name", "last_name", "full_name"}
+    raw_identity = {}
 
     def consume(name, value):
         key = _meta_key(name)
         canonical = aliases.get(key)
-        if not canonical and str(name).casefold().startswith("raw_"):
+        is_raw = str(name).casefold().startswith("raw_")
+        if not canonical and is_raw:
             canonical = aliases.get(_meta_key(str(name)[4:]))
         scalar = _meta_scalar(value)
         if canonical:
-            if scalar and not _meta_test_answer(scalar) and not fields.get(canonical):
-                fields[canonical] = scalar
+            if scalar and not _meta_test_answer(scalar):
+                target = raw_identity if is_raw and canonical in identity_fields else fields
+                target.setdefault(canonical, scalar)
         elif _meta_key(name) not in _META_ANSWER_CONTAINERS | _META_PAYLOAD_WRAPPERS:
             custom[str(name)] = copy.deepcopy(value)
+        return canonical
 
     def consume_answers(value):
         if isinstance(value, list):
@@ -9932,8 +9963,8 @@ def _parse_meta_lead_payload(payload):
                 "values",
                 value.get("value", value.get("answer", value.get("response"))),
             )
-            consume(question, answer)
-            if not aliases.get(_meta_key(question)):
+            canonical = consume(question, answer)
+            if canonical not in identity_fields and not aliases.get(_meta_key(question)):
                 custom[str(question)] = copy.deepcopy(answer)
             return
         for name, answer in value.items():
@@ -9960,11 +9991,10 @@ def _parse_meta_lead_payload(payload):
                 consume(name, value)
 
     consume_mapping(payload)
-    full_name = fields.get("full_name", "")
-    if full_name and not fields.get("first_name") and not fields.get("last_name"):
-        parts = full_name.split(None, 1)
-        fields["first_name"] = parts[0]
-        fields["last_name"] = parts[1] if len(parts) > 1 else ""
+    # Une copie brute peut précéder le champ lisible dans une autre réponse.
+    for field, value in raw_identity.items():
+        fields.setdefault(field, value)
+    _meta_complete_name(fields)
     return fields, custom
 
 
