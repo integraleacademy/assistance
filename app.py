@@ -9505,6 +9505,38 @@ def _crm_names_compatible(contact, payload):
     return bool(compared) and all(_crm_normalize_name(a) == _crm_normalize_name(b) for a, b in compared)
 
 
+def _crm_course_root(contact):
+    return contact.get("meta_course_root_id") or contact.get("id")
+
+
+def _crm_course_key(formation):
+    course, _ = _meta_formation(formation)
+    return course if course in {"A3P", "DESP", "APS"} else _crm_normalize_name(formation)
+
+
+def _crm_same_meta_person(contact, payload):
+    email = _crm_normalize_email(payload.get("mail") or payload.get("email"))
+    phone = _crm_normalize_phone(payload.get("telephone"))
+    same_email = bool(email) and email == _crm_normalize_email(contact.get("mail"))
+    same_phone = bool(phone) and phone == _crm_normalize_phone(contact.get("telephone"))
+    if not (same_email or same_phone):
+        return False
+    if any(not _crm_is_empty(contact.get(k)) and not _crm_is_empty(payload.get(k)) for k in ("prenom", "nom")):
+        return _crm_names_compatible(contact, payload)
+    return same_email and same_phone
+
+
+def _crm_new_lead(payload, source, now):
+    return {
+        "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
+        "nom": _crm_format_last_name(payload.get("nom")),
+        "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
+        "telephone": str(payload.get("telephone") or "").strip(),
+        "formation": str(payload.get("formation") or "").strip(), "statut": "Nouveaux",
+        "origine": source, "created_at": now, "updated_at": now, "activities": [],
+    }
+
+
 _CRM_RECONCILIATION_LOCK = threading.RLock()
 
 
@@ -9521,7 +9553,7 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
                                 external_id=None, selected_contact_id=None,
                                 force_create=False, ordered_coordinates=False,
                                 record_activity=True,
-                                create_on_ambiguity=False):
+                                create_on_ambiguity=False, separate_meta_course=False):
     """Point d'entrée unique, non destructif, pour toute nouvelle sollicitation CRM.
 
     Les coordonnées normalisées ne sont utilisées que pour chercher. Une valeur
@@ -9543,6 +9575,27 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
     selected = _crm_contact(data, selected_contact_id) if selected_contact_id else None
     ambiguous_reasons = []
     contact = selected
+    related = None
+    course = _crm_course_key(payload.get("formation"))
+    if not selected and not force_create and course and (email_matches or phone_matches):
+        hits = {c["id"]: c for c in email_matches + phone_matches}
+        linked_hits = (len(hits) > 1 and len({_crm_course_root(c) for c in hits.values()}) == 1)
+        if separate_meta_course or linked_hits:
+            roots = {_crm_course_root(c) for c in hits.values() if _crm_same_meta_person(c, payload)}
+            if len(roots) == 1:
+                root = roots.pop()
+                family = [c for c in contacts if _crm_course_root(c) == root]
+                same_course = [c for c in family if _crm_course_key(c.get("formation")) == course]
+                if len(same_course) == 1:
+                    contact = same_course[0]
+                elif separate_meta_course and not same_course and all(c.get("formation") for c in family):
+                    related = _crm_contact(data, root) or family[0]
+                    force_create = True
+            elif separate_meta_course and not roots and all(
+                _crm_course_key(c.get("formation")) not in {"", course} for c in hits.values()
+            ):
+                # Une coordonnée partagée ne suffit pas à lier deux personnes.
+                force_create = True
     if not contact and not force_create:
         email_ids, phone_ids = {c.get("id") for c in email_matches}, {c.get("id") for c in phone_matches}
         if len(email_matches) > 1 or len(phone_matches) > 1:
@@ -9580,14 +9633,11 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
     }
     created = False
     if not contact and (not ambiguous_reasons or create_on_ambiguity):
-        contact = proposed_contact or {
-            "id": str(uuid.uuid4()), "prenom": _crm_format_first_name(payload.get("prenom")),
-            "nom": _crm_format_last_name(payload.get("nom")),
-            "mail": str(payload.get("mail") or payload.get("email") or "").strip(),
-            "telephone": str(payload.get("telephone") or "").strip(),
-            "formation": str(payload.get("formation") or "").strip(), "statut": "Nouveaux",
-            "origine": source, "created_at": now, "updated_at": now, "activities": [],
-        }
+        contact = proposed_contact or _crm_new_lead(payload, source, now)
+        if related:
+            contact["meta_course_root_id"] = _crm_course_root(related)
+            if related.get("commercial"):
+                contact["commercial"] = related["commercial"]
         contacts.insert(0, contact); created = True; inbound["status"] = "created"
     if contact:
         inbound["contact_id"] = contact.get("id")
@@ -10417,6 +10467,22 @@ def _meta_source_details(fields, received_at="", *, full_personal_payment=False)
     return source
 
 
+def _meta_identified_course(fields):
+    profile = _META_FORM_PROFILES.get(str(fields.get("form_id") or ""))
+    if profile:
+        return profile[0]
+    # Le webhook attribue aussi A3P par défaut aux anciens formulaires non identifiés.
+    for key in ("form_name", "ad_name", "adset_name", "formation"):
+        if _meta_formation(fields.get(key))[0] == "A3P":
+            return "A3P"
+    return ""
+
+
+def _meta_mark_new_lead(contact, received_at):
+    contact.update(statut="Nouveaux", origine="META", source="META",
+                   source_detail="Facebook / Instagram Lead Ads", received_at=received_at)
+
+
 def _meta_apply_contact_answers(contact, crm_payload, answer_rows, *, fields=None, received_at=""):
     """Complète seulement les champs vides et rattache toutes les réponses à la fiche."""
     changed, completed = False, []
@@ -10531,6 +10597,100 @@ def _meta_activity_detail(fields, answer_rows=None, completed_fields=None):
     if completed_fields:
         details.append("Champs complétés : " + ", ".join(completed_fields))
     return " · ".join(details)
+
+
+def _crm_repair_attached_meta_courses(data):
+    """Rattache les formulaires pour lesquels le CRM avait consigné un conflit de formation."""
+    inbound_by_id = {
+        str(row["external_id"]): row for row in data.get("crm_inbound_requests", [])
+        if isinstance(row, dict) and row.get("source") == "meta_zapier" and row.get("status") == "matched"
+        and "formation" in (row.get("differences") or []) and row.get("external_id")
+        and not row.get("previous_contact_id") and not row.get("resolved_by")
+    }
+    repaired = 0
+    for submission in reversed(data.get("crm_meta_lead_submissions", [])):
+        if not isinstance(submission, dict):
+            continue
+        lead_id = str(submission.get("meta_lead_id") or "")
+        inbound = inbound_by_id.get(lead_id)
+        if not inbound or inbound.get("contact_id") != submission.get("contact_id"):
+            continue
+        original = _crm_contact(data, inbound["contact_id"])
+        raw, received = submission.get("raw_payload"), submission.get("received_at")
+        if not original or not isinstance(raw, dict) or not received:
+            continue
+        fields, answers = _parse_meta_lead_payload(raw)
+        course = _meta_identified_course(fields)
+        if not course or not original.get("formation") or _crm_course_key(original["formation"]) == course:
+            continue
+        crm, rows = _meta_crm_payload(fields, {**(submission.get("custom_answers") or {}), **answers})
+        if crm["formation"] != course or not _crm_same_meta_person(original, crm):
+            continue
+        _meta_resolve_session(data, crm)
+        root = _crm_course_root(original)
+        targets = [c for c in data["crm_contacts"] if _crm_course_key(c.get("formation")) == course
+                   and (_crm_course_root(c) == root or _crm_same_meta_person(c, crm))]
+        if len(targets) > 1:
+            continue
+        if targets:
+            target = targets[0]
+            if _crm_course_root(target) != root:
+                # Une éventuelle fiche créée à la main doit pouvoir être reconnue sans réunir deux groupes.
+                try:
+                    target_date = datetime.datetime.fromisoformat(str(target.get("created_at"))).timestamp()
+                    request_date = datetime.datetime.fromisoformat(received).timestamp()
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if target_date < request_date:
+                    continue
+                if target.get("meta_course_root_id") or any(
+                    c.get("meta_course_root_id") == target["id"] for c in data["crm_contacts"]
+                ):
+                    continue
+                target["meta_course_root_id"] = root
+        else:
+            target = _crm_new_lead(crm, "META", received)
+            _meta_mark_new_lead(target, received)
+            target["meta_course_root_id"] = root
+            if original.get("commercial"):
+                target["commercial"] = original["commercial"]
+            data["crm_contacts"].insert(0, target)
+        _crm_record_origin(target, "META", source="meta_zapier", external_id=lead_id,
+                           context=_meta_source_details(fields, received), date=received)
+        _meta_apply_contact_answers(target, crm, rows, fields=fields, received_at=received)
+        answers = {(row["question"], row["answer"]) for row in rows}
+        if original.get("meta_answers"):
+            original["meta_answers"] = [row for row in original["meta_answers"]
+                if not (isinstance(row, dict) and row.get("received_at") == received
+                        and (row.get("question"), row.get("answer")) in answers)]
+        source = original.get("meta_source") or {}
+        if source.get("received_at") == received and source.get("form_id") == fields.get("form_id"):
+            original.pop("meta_source")
+        detail = _meta_activity_detail(fields, rows)
+        delivered = submission.get("automatic_delivery") or {}
+        channels = [label for key, label in (("email", "e-mail"), ("sms", "SMS")) if delivered.get(key)]
+        if channels:
+            detail += " · Envoi automatique déjà effectué : " + " et ".join(channels)
+        _crm_activity(target, "meta_lead", "Formulaire Meta reçu pour cette formation.", detail)
+        target["activities"][0].update(date=received, meta_lead_id=lead_id)
+        for row in (inbound, submission):
+            row["previous_contact_id"] = original["id"]
+            row["contact_id"] = target["id"]
+        _crm_move_course_bookings(data, target)
+        repaired += 1
+    return repaired
+
+
+def _crm_repair_meta_courses_at_startup():
+    try:
+        with _CRM_RECONCILIATION_LOCK:
+            data = load_data()
+            count = _crm_repair_attached_meta_courses(data)
+            if count:
+                save_data(data)
+                app.logger.warning("Rattachement de %s formulaire(s) Meta à leur fiche formation", count)
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        app.logger.error("Échec de la reprise des fiches par formation Meta (%s)", type(exc).__name__)
 
 
 def _meta_salesforce_payload(meta_lead_id, fields, crm_payload, answer_rows):
@@ -10902,6 +11062,7 @@ def meta_zapier_leads():
             contact, inbound, created = find_or_create_crm_contact(
                 data, crm_payload, "meta_zapier", external_id=meta_lead_id,
                 ordered_coordinates=True, record_activity=False,
+                separate_meta_course=bool(_meta_identified_course(fields)),
             )
             if contact is None:
                 return jsonify({"success": False, "error": "Rapprochement CRM ambigu."}), 400
@@ -10910,11 +11071,9 @@ def meta_zapier_leads():
                 contact, crm_payload, answer_rows, fields=fields, received_at=received_at,
             )
             if created:
-                contact["statut"] = "Nouveaux"
-                contact["origine"] = "META"
-                contact["source"] = "META"
-                contact["source_detail"] = "Facebook / Instagram Lead Ads"
-                contact["received_at"] = received_at
+                _meta_mark_new_lead(contact, received_at)
+                if contact.get("meta_course_root_id"):
+                    _crm_move_course_bookings(data, contact)
                 salesforce_payload = _meta_salesforce_payload(
                     meta_lead_id, fields, crm_payload, answer_rows,
                 )
@@ -11198,6 +11357,36 @@ def _crm_calendly_cached_payload(appointment):
     }
 
 
+def _crm_calendly_course_contact(data, contact, appointment):
+    """Un rendez-vous nommé pour une formation va sur la fiche de cette formation."""
+    if not contact:
+        return None
+    course, _ = _crm_calendly_formation(_crm_calendly_cached_payload(appointment))
+    if not course or _crm_course_key(contact.get("formation")) == _crm_course_key(course):
+        return contact
+    root = _crm_course_root(contact)
+    targets = [c for c in data.get("crm_contacts", []) if _crm_course_root(c) == root
+               and _crm_course_key(c.get("formation")) == _crm_course_key(course)]
+    return targets[0] if len(targets) == 1 else contact
+
+
+def _crm_move_course_bookings(data, target):
+    previous = {}
+    family = {c["id"]: c for c in data.get("crm_contacts", [])
+              if c["id"] != target["id"] and _crm_course_root(c) == _crm_course_root(target)}
+    for appointment in data.get("crm_calendly_appointments", []):
+        old = family.get(appointment.get("contact_id"))
+        if not old or not _crm_calendly_appointment_is_today_or_future(appointment):
+            continue
+        if _crm_calendly_course_contact(data, old, appointment) is target:
+            appointment.update(contact_id=target["id"], updated_at=_crm_now())
+            previous[old["id"]] = old
+    if previous:
+        _crm_sync_contact_calendly_status(data, target, prefer_appointment=True)
+        for old in previous.values():
+            _crm_sync_contact_calendly_status(data, old)
+
+
 def _crm_repair_cached_calendly_contacts(data):
     """Attach every active cached orphan, not only the current API page."""
     repairable = [
@@ -11221,6 +11410,7 @@ def _crm_repair_cached_calendly_contacts(data):
             contact = _crm_calendly_duplicate_booking_contact(data, appointment)
 
         payload = _crm_calendly_cached_payload(appointment)
+        contact = _crm_calendly_course_contact(data, contact, appointment)
         if not contact:
             contact = _crm_calendly_new_contact(data, payload, appointment)
         if not contact:
@@ -11278,6 +11468,7 @@ def _crm_calendly_relink_appointments(data, contact):
         if (
             (same_email or same_phone)
             and not assigned_contact
+            and _crm_calendly_course_contact(data, contact, appointment) is contact
         ):
             appointment["contact_id"] = contact.get("id")
             appointment["updated_at"] = _crm_now()
@@ -11471,6 +11662,7 @@ def _crm_upsert_calendly_appointment(
         contact = _crm_calendly_contact_by_phone(data, appointment.get("invitee_phone"))
     if not contact:
         contact = _crm_calendly_duplicate_booking_contact(data, appointment)
+    contact = _crm_calendly_course_contact(data, contact, appointment)
     contact_created = False
     if not contact and _crm_calendly_appointment_is_today_or_future(appointment):
         contact = _crm_calendly_new_contact(data, payload, appointment)

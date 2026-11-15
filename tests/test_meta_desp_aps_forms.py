@@ -629,7 +629,7 @@ def test_automatic_messages_use_the_visible_models_and_course_booking(
         assert "{{" not in message
 
 
-def test_distinct_form_attached_to_contact_uses_only_its_own_coordinates_and_course(tmp_path, monkeypatch):
+def test_new_course_lead_uses_only_its_submitted_coordinates_and_course(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     emails, sms = [], []
     monkeypatch.setattr(application, "send_email_html", lambda *args: emails.append(args) or True)
@@ -637,12 +637,14 @@ def test_distinct_form_attached_to_contact_uses_only_its_own_coordinates_and_cou
     assert post(client, lead(form_id="1665286434987197")).status_code == 201
     another = lead(form_id="1124725393644713", leadgen_id="second-submission")
     another.pop("Phone Number")
-    assert post(client, another).get_json()["result"] == "attached"
+    assert post(client, another).get_json()["result"] == "created"
     assert post(client, another).get_json()["result"] == "already_processed"
     assert "APS" in emails[0][1] and "DESP" in emails[1][1]
     assert len(emails) == 2 and len(sms) == 1
     data = application.load_data()
-    assert data["crm_contacts"][0]["formation"] == "APS"
+    desp, aps = data["crm_contacts"]
+    assert (desp["formation"], aps["formation"]) == ("DESP", "APS")
+    assert desp["meta_course_root_id"] == aps["id"] and not desp["telephone"]
     assert data["crm_meta_lead_submissions"][0]["automatic_delivery"] == {"email": True, "sms": False}
 
 
