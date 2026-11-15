@@ -59,6 +59,7 @@ class PublishedSession:
     variant: str
     periods: str
     badge: str
+    public_id: str = ""
 
     @property
     def label(self):
@@ -90,7 +91,7 @@ def _public_calendar(rows):
             badge = "Complet"
         elif row.get("showSeatsLeft") and type(seats) is int and seats > 0:
             badge = f"{seats} place disponible" if seats == 1 else f"{seats} places disponibles"
-        session = PublishedSession(start, end, _iso_day(row.get("examDate")), _sst_variant(row.get("title")), _delivery_periods(row), badge)
+        session = PublishedSession(start, end, _iso_day(row.get("examDate")), _sst_variant(row.get("title")), _delivery_periods(row), badge, str(row.get("id") or ""))
         result.setdefault((centre, code), []).append(session)
     return result
 
@@ -112,6 +113,23 @@ def _published_sessions():
                 logging.getLogger(__name__).warning("Planning public temporairement indisponible (%s)", type(exc).__name__)
                 _next_refresh = now + 60
         return _calendar
+
+
+def website_ssiap_selection(session_id, formula, today):
+    """A website handoff is a request for a published session, never a seat reservation."""
+    if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
+        return None
+    for item in _published_sessions().get(("cote_azur", "SSIAP"), []):
+        if item.public_id != session_id or item.start < today or item.badge == "Complet":
+            continue
+        variants = {"avec SST": "ssiap-1-sst", "sans SST": "ssiap-1"}
+        selected = variants.get(item.variant, formula)
+        if selected not in {"ssiap-1", "ssiap-1-sst"}:
+            return None
+        label = "SSIAP 1 + SST" if selected == "ssiap-1-sst" else "SSIAP 1 sans SST"
+        return {"id": session_id, "formula": selected, "formula_label": label,
+                "label": f"{item.label} · {label}", "date_examen": item.exam.isoformat() if item.exam else ""}
+    return None
 
 
 def email_session_labels(centre, formation, local_labels, today, date_range):

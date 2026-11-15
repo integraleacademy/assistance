@@ -396,6 +396,8 @@ def get_formation_tarif(formation_code: str, formation_details=None) -> int:
         allowed = SST_FEES.values() if formation_code == "SSIAP" else SESSION_FEES.get(formation_code, {}).values()
         if saved_fee in allowed:
             return saved_fee
+    if formation_code == "SSIAP" and details.get("ssiap_formule") in ("ssiap-1", "ssiap-1-sst"):
+        return SST_FEES["avec" if details["ssiap_formule"] == "ssiap-1-sst" else "sans"]
     return PLAN_TARIFS.get(formation_code, 0)
 
 
@@ -461,6 +463,8 @@ def build_devis_context(
     elif formation_code == "SSIAP":
         total = get_formation_tarif(formation_code, formation_details)
         intitule = "Agent de sécurité incendie SSIAP 1"
+        if isinstance(formation_details, dict) and formation_details.get("ssiap_formule") == "ssiap-1-sst":
+            intitule += " avec formation SST incluse"
         lignes = [
             {"intitule": intitule, "prix_unitaire": _eur(total), "quantite": 1, "total": _eur(total)},
             {"intitule": "Frais de dossier", "prix_unitaire": "OFFERTS", "quantite": 1, "total": _eur(0)},
@@ -2878,13 +2882,21 @@ def build_aps_email_html(prenom: str, dates_txt: str, centre_code: str, devis_ur
 
 
 
+def _ssiap_first_aid_note(certificate, formula):
+    if formula == "ssiap-1-sst":
+        return "Votre formule inclut la formation SST avant le parcours SSIAP 1."
+    if certificate == "NON":
+        return "Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis."
+    return "Tarif applicable avec un certificat SST valide ou un PSC1 de moins de 2 ans."
+
+
 def build_ssiap1_email_html(
     prenom: str,
     dates_txt: str,
     centre_code: str,
     devis_url: str,
     ssiap_secourisme_valide: str,
-    data_store=None, *, tuition=None,
+    data_store=None, *, tuition=None, formula=None,
 ):
     centre_label, centre_address = _centre_label_and_address(centre_code)
     tarif = tuition if tuition is not None else get_formation_tarif(
@@ -2893,11 +2905,7 @@ def build_ssiap1_email_html(
     )
     labels = _upcoming_session_labels(centre_code, "SSIAP", data_store)
     session_html = _format_upcoming_sessions_for_email(centre_code, "SSIAP", selected=dates_txt, labels=labels)
-    secourisme_info = (
-        "Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis."
-        if ssiap_secourisme_valide == "NON"
-        else "Tarif applicable avec un certificat SST valide ou un PSC1 de moins de 2 ans."
-    )
+    secourisme_info = _ssiap_first_aid_note(ssiap_secourisme_valide, formula)
     return _render_training_email(
         "training/ssiap1.html",
         prenom=prenom or "",
@@ -5060,6 +5068,8 @@ def demande_informations_formations():
             "centre": form_data.get("centre", ""),
             "date_examen": form_data.get("date_examen", ""),
             "ssiap_secourisme_valide": form_data.get("ssiap_secourisme_valide", ""),
+            "ssiap_formule": form_data.get("ssiap_formule", ""),
+            "ssiap_session_id": form_data.get("ssiap_session_id", ""),
             "cpf_montant": form_data.get("cpf_montant", "0"),
             "france_travail": form_data.get("france_travail", "NON"),
             "identite_numerique": form_data.get("identite_numerique", "NON"),
@@ -5144,11 +5154,7 @@ def demande_informations_formations():
         elif form_data.get("formation") == "SSIAP":
             session_date = _format_selected_session_date(form_data.get("dates", ""))
             tarif_ssiap = get_formation_tarif("SSIAP", form_data)
-            secourisme_info = (
-                "Un certificat SST valide ou un PSC1 de moins de 2 ans reste requis."
-                if form_data.get("ssiap_secourisme_valide") == "NON"
-                else "Tarif applicable avec un certificat SST ou PSC1 de moins de 2 ans."
-            )
+            secourisme_info = _ssiap_first_aid_note(form_data.get("ssiap_secourisme_valide"), form_data.get("ssiap_formule"))
             centre_label, centre_address = _centre_label_and_address(form_data.get("centre"))
             upcoming = _upcoming_session_labels(form_data.get("centre", ""), "SSIAP", data_store)
             plain = (
@@ -5168,7 +5174,7 @@ def demande_informations_formations():
                 form_data.get("dates", ""),
                 form_data.get("centre", ""),
                 devis_url,
-                form_data.get("ssiap_secourisme_valide", ""), data_store,
+                form_data.get("ssiap_secourisme_valide", ""), data_store, tuition=tarif_ssiap, formula=form_data.get("ssiap_formule"),
             )
             email_subject = _training_email_subject("SSIAP", form_data.get("centre"))
         elif form_data.get("formation") == "VTC":
@@ -5300,8 +5306,16 @@ def demande_informations_formations():
         return redirect(url_for("confirmation_demande_infos", hot="1" if prospect_chaud else "0", formation=form_data.get("formation", "")))
 
     google_ads_attribution = _crm_google_ads_tracking_fields(request.args)
+    session_id = request.args.get("session") if request.args.get("formation") == "SSIAP" else None
+    today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
+    website_choice = crm_public_sessions.website_ssiap_selection(session_id, request.args.get("formule"), today) if session_id else None
+    if website_choice:
+        fee = get_formation_tarif("SSIAP", {"ssiap_formule": website_choice["formula"]})
+        website_choice["fee_label"] = _eur_display(fee)
     return render_template(
         "demande_informations_formations.html",
+        website_choice=website_choice,
+        website_choice_unavailable=bool(session_id and not website_choice),
         sessions=sessions,
         formations=PLAN_FORMATIONS,
         secretariat=request.args.get("secretariat") == "1",

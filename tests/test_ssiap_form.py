@@ -1,3 +1,4 @@
+import datetime
 import os
 import unittest
 from unittest.mock import Mock, patch
@@ -31,7 +32,9 @@ class SsiapInformationFormTestCase(unittest.TestCase):
         self.assertIs(post.call_args.kwargs["json"]["unicodeEnabled"], False)
 
     def test_form_uses_the_same_step_order_as_aps_for_ssiap(self):
-        response = self.client.get("/demande-informations-formations")
+        sessions = application.get_upcoming_formation_sessions({}, today=datetime.date(2026, 10, 1))
+        with patch.object(application, "get_upcoming_formation_sessions", return_value=sessions):
+            response = self.client.get("/demande-informations-formations")
 
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
