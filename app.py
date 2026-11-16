@@ -6869,10 +6869,11 @@ def data_json():
     Retourne le nombre de demandes à traiter (statut 'A TRAITER' ou 'Non traité')
     """
     try:
-        data = load_data()
-        demandes = data.get("demandes", [])
-        a_traiter = [d for d in demandes if d.get("statut", "").strip().lower() in ["a traiter", "non traité"]]
-        count = len(a_traiter)
+        demandes = _load_data_snapshot().get("demandes", [])
+        count = sum(
+            1 for demande in demandes
+            if demande.get("statut", "").strip().lower() in ("a traiter", "non traité")
+        )
 
         headers = {
             "Content-Type": "application/json",
@@ -8219,11 +8220,10 @@ def admin_hebergement():
 @app.route("/hebergement_data.json")
 def hebergement_data():
     try:
-        data = load_data()
-        hebergements = data.get("hebergements", [])
+        hebergements = _load_data_snapshot().get("hebergements", [])
 
         total = len(hebergements)
-        non_payes = len([h for h in hebergements if h.get("paiement") != "Payé"])
+        non_payes = sum(1 for h in hebergements if h.get("paiement") != "Payé")
         payes = total - non_payes
 
         headers = {
@@ -8657,17 +8657,15 @@ def voir_pdf_client(devis_id):
 @app.route("/devis_data.json")
 def devis_data():
     try:
-        data = load_data()
-        demandes = data.get("demandes", [])
-
-        devis_a_envoyer = [
-            d for d in demandes
-            if d.get("motif") == "Demande de devis détaillé"
-            and d.get("statut_devis") == "A envoyer"
-        ]
+        demandes = _load_data_snapshot().get("demandes", [])
+        devis_a_envoyer = sum(
+            1 for demande in demandes
+            if demande.get("motif") == "Demande de devis détaillé"
+            and demande.get("statut_devis") == "A envoyer"
+        )
 
         return {
-            "a_envoyer": len(devis_a_envoyer)
+            "a_envoyer": devis_a_envoyer
         }, 200, {
             "Access-Control-Allow-Origin": "*"
         }
@@ -19329,7 +19327,7 @@ def crm_notifications():
                 for entry in _load_data_snapshot().get("secretariat_demandes", [])
                 if entry.get("waiting_recipient_email") == email and not entry.get("waiting_read")]
         return _secretariat_private(jsonify(sorted(rows, key=lambda row: row["date"], reverse=True)))
-    data = load_data()
+    data = load_data() if request.method == "PATCH" else _load_data_snapshot()
     items = _crm_notifications_payload(data, email)
     if request.method == "PATCH":
         notification_id = str((request.get_json(silent=True) or {}).get("id") or "")
