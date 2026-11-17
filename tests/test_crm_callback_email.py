@@ -176,8 +176,15 @@ def test_booking_options_and_matching_preview_and_delivery(callback):
     assert "Je vous invite à réserver un rendez-vous téléphonique avec notre équipe." in preview.json["html"]
     assert "ÉCHANGEONS SUR VOTRE PROJET" not in preview.json["html"]
     assert "Un moment" not in preview.json["html"]
+    illustration = "https://assistance-alw9.onrender.com/static/images/callback-phone-appointment.png"
+    assert illustration in preview.json["html"]
+    # Mail clients need a public HTTPS image, with dimensions and fallback text.
+    asset = client.get("/static/images/callback-phone-appointment.png")
+    assert asset.status_code == 200 and asset.mimetype == "image/png"
+    assert asset.data.startswith(b"\x89PNG\r\n\x1a\n")
     without = client.post(BASE + "/reply-preview", json=reply())
     assert "calendly.com" not in without.json["html"]
+    assert illustration not in without.json["html"]
     assert client.post(BASE + "/reply", json=payload).status_code == 200
     assert sent[0][3] == preview.json["html"] and vtc["url"] in sent[0][2]
     assert legacy.load_data()["secretariat_demandes"][0]["callback_email"]["replies"][0]["booking"] == vtc
@@ -206,6 +213,9 @@ def test_booking_uses_message_typography_and_an_email_safe_centered_button(callb
     # HTML alignment also works in mail clients that do not support CSS auto margins.
     assert elements["callback-booking-button"]["align"] == "center"
     assert elements["callback-booking-button"]["role"] == "presentation"
+    image = elements["callback-booking-image"]
+    assert image["width"] == image["height"] == "156"
+    assert "calendrier" in image["alt"] and "téléphone" in image["alt"]
 
 
 @pytest.mark.parametrize("closing", [
