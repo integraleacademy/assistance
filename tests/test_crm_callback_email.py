@@ -176,10 +176,10 @@ def test_booking_options_and_matching_preview_and_delivery(callback):
     assert "Je vous invite à réserver un rendez-vous téléphonique avec notre équipe." in preview.json["html"]
     assert "ÉCHANGEONS SUR VOTRE PROJET" not in preview.json["html"]
     assert "Un moment" not in preview.json["html"]
-    illustration = "https://assistance-alw9.onrender.com/static/images/callback-phone-appointment.png"
+    illustration = "https://assistance-alw9.onrender.com/static/images/callback-courses/vtc.png"
     assert illustration in preview.json["html"]
     # Mail clients need a public HTTPS image, with dimensions and fallback text.
-    asset = client.get("/static/images/callback-phone-appointment.png")
+    asset = client.get("/static/images/callback-courses/vtc.png")
     assert asset.status_code == 200 and asset.mimetype == "image/png"
     assert asset.data.startswith(b"\x89PNG\r\n\x1a\n")
     without = client.post(BASE + "/reply-preview", json=reply())
@@ -214,8 +214,27 @@ def test_booking_uses_message_typography_and_an_email_safe_centered_button(callb
     assert elements["callback-booking-button"]["align"] == "center"
     assert elements["callback-booking-button"]["role"] == "presentation"
     image = elements["callback-booking-image"]
-    assert image["width"] == image["height"] == "156"
-    assert "calendrier" in image["alt"] and "téléphone" in image["alt"]
+    assert (image["width"], image["height"]) == ("192", "128")
+    assert "formation" in image["alt"] and "VTC" in image["alt"]
+
+
+@pytest.mark.parametrize("code, artwork", [
+    ("APS", "aps"), ("A3P", "a3p"), ("SSIAP", "ssiap"),
+    ("DESP_INIT", "dirigeant"), ("DESP_VAE", "dirigeant"), ("VTC", "vtc"),
+    ("PARCOURS_SECURITE_ALTERNANCE", "aps"), ("BTS_MOS", "bts"),
+    ("BTS_MCO", "bts"), ("BTS_CI", "bts"), ("BTS_NDRC", "bts"),
+    ("BTS_PI", "bts"), ("BTS_CG", "bts"),
+])
+def test_booking_uses_the_selected_courses_website_illustration(callback, code, artwork):
+    client, sent = callback
+    html = client.post(BASE + "/reply-preview", json=reply(booking_formation=code)).json["html"]
+    image_path = f"/static/images/callback-courses/{artwork}.png"
+    assert "https://assistance-alw9.onrender.com" + image_path in html
+    assert "callback-phone-appointment.png" not in html
+    asset = client.get(image_path)
+    assert asset.status_code == 200 and asset.mimetype == "image/png"
+    assert asset.data.startswith(b"\x89PNG\r\n\x1a\n")
+    assert not sent
 
 
 @pytest.mark.parametrize("closing", [
