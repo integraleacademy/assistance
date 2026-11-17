@@ -83,6 +83,82 @@ def test_short_call_rejects_an_unknown_recipient(desk):
     assert not data["secretariat_demandes"]
 
 
+@pytest.mark.parametrize(("choice", "note", "expected"), [
+    ("auto", "Demande si possible de joindre rapidement pour le tarif, sans attendre vendredi.", True),
+    (None, "Elle souhaite être rappelée demain pour un devis.", True),
+    ("auto", "À rappeler avant midi.", True),
+    ("auto", "Demande à être rappelé pour ne pas attendre vendredi.", True),
+    ("auto", "Souhaite être rappelé car pas de créneau.", True),
+    ("auto", "Merci de me rappeler.", True),
+    ("oui", "Question sur le prix de la formation.", True),
+    ("non", "Souhaite être rappelé, mais sa question a été résolue pendant l’appel.", False),
+    ("auto", "Ne souhaite pas être rappelé. Il nous rappellera lui-même.", False),
+    ("auto", "Pas de rappel demandé. Un devis suffit.", False),
+    ("auto", "Rappel demandé. Demande annulée, ne pas rappeler.", False),
+    ("auto", "Nous n’avons pas demandé un rappel.", False),
+    ("auto", "Demande un rappel des dates de formation par mail.", False),
+    ("auto", "Souhaite connaître le prix. Pas de rendez-vous vendredi.", False),
+])
+def test_training_callback_choice_and_original_note(choice, note, expected):
+    assert application.secretariat_calls.prospect_wants_callback(choice, note) is expected
+
+
+def test_prospect_callback_stays_on_one_training_intake_through_completion(desk):
+    client, data, salesforce = desk
+    with client.session_transaction() as session:
+        session["user_email"] = "clement@integraleacademy.com"
+    payload = {
+        "type": "formation", "formation": "VTC", "nom": "Camille Martin",
+        "telephone": "0601020304", "email": "camille@example.com", "rdv": "Non souhaité",
+        "notes": "Souhaite être rappelée pour le tarif.", "call_key": "b" * 32,
+    }
+    response = client.post("/api/secretariat/demandes", json=payload)
+    assert response.status_code == 201
+    receipt = response.get_json()["demande"]
+    assert receipt["callback_requested"] is True
+    entry, = data["secretariat_demandes"]
+    prospect, = data["crm_contacts"]
+    assert entry["id"] == receipt["id"]
+    assert entry["type"] == "formation"
+    assert entry["statut"] == "Traité"
+    assert len(salesforce) == 1
+
+    row, = application._crm_callback_requests_payload(data)
+    assert row["status"] == "pending" and row["crm_contact_id"] == prospect["id"]
+    assert row["motif"] == "formation" and row["notes"] == payload["notes"]
+    assert application._crm_callback_pending_count(data) == 1
+    received = [a for a in prospect["activities"] if a.get("callback_request_id") == entry["id"]]
+    assert len(received) == 1
+
+    result = client.patch(f"/api/crm/callback-requests/{entry['id']}", json={"status": "processed"})
+    assert result.status_code == 200 and result.get_json()["callback_pending_count"] == 0
+    assert client.post("/api/secretariat/demandes", json=payload).status_code == 200
+    row, = application._crm_callback_requests_payload(data)
+    assert row["status"] == "processed"
+    assert entry["statut"] == "Traité" and len(data["secretariat_demandes"]) == 1
+    assert len(data["crm_contacts"]) == len(salesforce) == 1
+
+
+def test_stale_training_snapshot_keeps_the_finished_intake_and_its_callback():
+    initial = {"id": "intake", "type": "formation", "statut": "RDV à prendre",
+               "created_at": "2026-10-01T08:00:00+02:00"}
+    stale = {"secretariat_demandes": [initial.copy()]}
+    completed = {**initial, "statut": "Traité", "callback_requested": True, "callback_status": "processed",
+                 "callback_status_updated_at": "2026-10-01T09:00:00+02:00", "desk_completed": True,
+                 "call_key_hash": "completed-key", "information_email_status": "sent", "information_sms_status": "sent",
+                 "notes": "À rappeler", "crm_contact_id": "linked", "devis_id": "quote"}
+    persisted = {"secretariat_demandes": [completed], "crm_contacts": [{"id": "linked", "activities": []}],
+                 "demandes": [{"id": "quote", "source_secretariat_id": "intake"}],
+                 "crm_inbound_requests": [{"id": "form", "source": "assistant-secretariat", "external_id": "intake"}]}
+    application._preserve_newer_callback_lifecycle(stale, persisted)
+    saved, = stale["secretariat_demandes"]
+    assert saved == completed
+    assert all(stale[key] == persisted[key] for key in ("crm_contacts", "demandes", "crm_inbound_requests"))
+    _, linked = application._crm_prepare_callback_request(stale, saved)
+    assert linked["id"] == "linked"
+    assert application._crm_callback_pending_count(stale) == 0
+
+
 def test_phone_lookup_keeps_public_contacts_private_and_prefills_only_for_internal_staff(desk):
     client, data, _ = desk
     data["crm_contacts"] = [{**contact(), "commentaires": "Not for the intake form"}]
@@ -255,7 +331,7 @@ function setup(lookup={contact_id:null}){
     w.fetch=async(url,options={})=>{const body=JSON.parse(options.body||'{}');calls.push({url,body});let data={};
       if(url.includes('crm-contact'))data=lookup;
       else if(url.includes('prefill-schema'))data={outbound_call:true,questions:[{name:'Votre projet',type:'string',position:0},{name:'Téléphone',type:'phone_number',position:1}]};
-      else if(url.includes('/demandes'))data={ok:true};
+      else if(url.includes('/demandes'))data={ok:true,demande:{type:body.type,callback_requested:body.type==='formation'&&body.prospect_callback==='oui'}};
       return {ok:true,json:async()=>data};
     };
   }});
@@ -293,6 +369,7 @@ async function caller(t,type,mail='camille@example.com'){
   }
   for(const type of ['suivi','autre']){
     const t=setup();assert.equal(t.step(),'1');await caller(t,type,'');assert.equal(t.step(),'7');
+    assert.equal(t.$('#prospectCallbackField').hidden,true);
     assert.equal(t.$('#email').required,false);t.fill('precision','Rappeler au sujet du dossier');
     const recipient=[...t.$('#callbackRecipient').options].find(o=>o.textContent.includes('Cassandre'));assert.ok(recipient);
     t.$('#callbackRecipient').value=recipient.value;t.click('#finish');await until(()=>t.step()==='8');
@@ -330,7 +407,13 @@ async function caller(t,type,mail='camille@example.com'){
     assert.equal(t.d.activeElement,t.$('#referenceEmail'));assert.match(t.$('#callerCopyStatus').textContent,/Texte sélectionné/);
     t.click('[name="wants_rdv"][value="non"]');assert.equal(t.$('#bookingLayout').hidden,true);t.click('#reviewRequest');
     assert.equal(t.$('main').classList.contains('booking-active'),false);
-    t.fill('precision','Projet BTS en alternance');t.click('#finish');await until(()=>t.step()==='8');const saved=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;
+    assert.equal(t.$('#prospectCallbackField').hidden,false);assert.equal(t.$('#recipientField').hidden,true);
+    const callback=t.$('#prospectCallback');callback.value='oui';callback.dispatchEvent(new t.w.Event('change'));
+    assert.equal(t.$('#recipientField').hidden,false);assert.equal(t.$('#callbackDueField').hidden,false);
+    t.fill('callbackDue','2026-11-20T14:30');t.fill('precision','Projet BTS en alternance');
+    t.click('#finish');await until(()=>t.step()==='8');const saved=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;
+    assert.equal(saved.prospect_callback,'oui');assert.equal(saved.callback_due_at,'2026-11-20T14:30');
+    assert.match(t.$('#callReceipt').textContent,/Ajoutée aux demandes à traiter/);
     assert.equal(saved.formation_date_souhaitee,'');assert.equal(saved.formation_date_status,'a_definir');assert.equal(saved.rentree_souhaitee,'Septembre 2027');assert.equal(saved.cpf_consulte,undefined);t.close();
   }
   {

@@ -79,6 +79,44 @@ def folded(value):
     return " ".join(re.findall(r"[^\W_]+", "".join(c for c in text if not unicodedata.combining(c))))
 
 
+def is_callback_request(entry):
+    return isinstance(entry, dict) and (
+        entry.get("type") == "autre"
+        or (entry.get("type") == "formation" and entry.get("callback_requested") is True)
+    )
+
+
+_CALLBACK_IN_NOTE = re.compile(
+    r"^(?:a (?:rappeler|recontacter)|rappel (?:souhaite|demande)"
+    r"|merci de (?:(?:me|le|la|nous) )?(?:rappeler|recontacter)|(?:le|la) (?:rappeler|recontacter))\b"
+    r"|\b(?:demande|souhaite|voudrait|veut) (?:si possible )?(?:"
+    r"(?:a |d )?etre (?:rappele|recontacte|joint)(?:e)?"
+    r"|(?:qu on|que l on) (?:le|la) (?:rappelle|recontacte|joigne)"
+    r"|un rappel(?! (?:de|du|des|par (?:mail|sms))\b)"
+    r"|de (?:le |la )?(?:joindre|rappeler|recontacter)(?= rapidement\b| au plus vite\b|$))\b"
+)
+
+_CALLBACK_DECLINED = re.compile(
+    r"\b(?:ne (?:pas|plus)|inutile de|pas besoin de) (?:(?:me|le|la|nous) )?(?:rappeler|recontacter|joindre)\b"
+    r"|\b(?:aucun|pas de|plus de|(?:pas|plus|jamais) (?:demande|souhaite|voulu) (?:de|un)) rappel\b"
+    r"|\b(?:pas|plus) (?:a |d )?etre (?:rappele|recontacte|joint)e?\b"
+    r"|\b(?:rappel|demande(?: de rappel)?) (?:(?:est|a ete) )?(?:annulee?|retiree?)\b"
+)
+
+
+def prospect_wants_callback(choice, notes):
+    if choice in ("oui", "non"):
+        return choice == "oui"
+    requested = False
+    for clause in re.split(r"[.,;!?\n]", notes):
+        words = folded(clause)
+        if _CALLBACK_DECLINED.search(words):
+            requested = False
+        elif _CALLBACK_IN_NOTE.search(words):
+            requested = True
+    return requested
+
+
 def name_key(value):
     return folded(value).replace(" ", "").replace("œ", "oe").replace("æ", "ae")
 
@@ -341,7 +379,7 @@ def desk_summary(contact, callbacks, appointment, *, staff=True):
             return 0
 
     last = max(exchanges, key=exchange_time, default={})
-    pending = [c for c in entries if c.get("type") == "autre" and
+    pending = [c for c in entries if is_callback_request(c) and
                str(c.get("callback_status") or "").casefold() not in {"processed", "traite", "traité"}]
     first = min(pending, key=lambda c: (not c.get("callback_due_at"), c.get("callback_due_at") or c.get("created_at") or ""), default={})
     callback = ""
