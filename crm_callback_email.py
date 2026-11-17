@@ -9,6 +9,7 @@ import json
 import re
 
 from flask import g, jsonify, render_template, request
+from crm_team_contacts import reply_team_contacts
 
 
 SIGNATURE = "Cassandre MENARD\nResponsable commerciale – Intégrale Academy\n04 22 47 07 68\ncassandre@integraleacademy.com"
@@ -309,7 +310,14 @@ def register(legacy):
             "Elle ajoute aussi « Je vous souhaite une agréable journée. » puis « Bien cordialement, ». "
             "N’inclus donc ni salutation, ni introduction, ni formule de politesse dans body. "
             "N’écris jamais « Je vous remercie pour votre message » ni « Merci pour votre message ». "
-            "La signature Cassandre est ajoutée par l’application : ne signe pas et n’ajoute pas de coordonnées. "
+            "La signature Cassandre est ajoutée par l’application : ne signe pas et ne répète pas ses coordonnées par défaut. "
+            "L’annuaire_equipe contient les coordonnées professionnelles vérifiées des interlocuteurs nommés dans les consignes de l’équipe. "
+            "Si l’équipe demande au destinataire de contacter l’un de ces interlocuteurs, intègre dans la réponse ses coordonnées utiles, "
+            "même si l’équipe n’a pas dicté le numéro ou l’adresse. Pour un appel sur son portable, indique explicitement telephone_portable ; "
+            "pour sa ligne directe, telephone_direct ; pour un e-mail, email. Une invitation à appeler doit contenir le numéro, "
+            "pas seulement « sur son téléphone portable ». N’ajoute pas de coordonnées si la personne est simplement mentionnée sans demande de contact. "
+            "N’invente jamais de coordonnées et ne remplace jamais un portable manquant par une ligne fixe présentée comme un portable. "
+            "Si les coordonnées demandées ne sont pas disponibles, demande la précision nécessaire. "
             "Écris en français, avec vouvoiement, ton professionnel, chaleureux et précis, paragraphes courts, sans emoji, HTML ni Markdown. "
             "Développe une vraie réponse personnalisée, et non une simple phrase reprenant la consigne. "
             "Rédige généralement deux ou trois paragraphes utiles, environ 60 à 110 mots hors introduction et politesse, en adaptant la longueur à la demande. "
@@ -326,6 +334,7 @@ def register(legacy):
         try:
             course = legacy._secretariat_ai_context(code) if code in legacy.SECRETARIAT_FORMATIONS else None
             raw = legacy._crm_ai(system, json.dumps({"appel": facts, "informations_formation": course,
+                "annuaire_equipe": reply_team_contacts(instructions),
                 "elements_de_reponse_equipe": instructions.strip()}, ensure_ascii=False), max_tokens=1500)
             raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
             generated = json.loads(raw)

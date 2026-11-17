@@ -22,6 +22,7 @@ import secretariat_calls
 import secretariat_messages
 import sys
 import crm_callback_email
+from crm_team_contacts import TEAM_CONTACTS
 from crm_read_cache import LastProjection, UpdateSnapshots
 from crm_email_signatures import brand_saved_template
 from contextvars import ContextVar
@@ -4158,6 +4159,7 @@ def secretariat():
     page = render_template(
         "secretariat.html", formations=_secretariat_catalogue(load_data()),
         generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
+        team_contacts=TEAM_CONTACTS,
         recipients=[member["name"] for member in USERS.values()],
         desk_role=role, desk_csrf=crm_external_access.csrf_token() if role else "",
         desk_today=datetime.datetime.now(secretariat_calls.PARIS).date().isoformat(),
