@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 import pytest
+from flask import render_template
 
 import app as legacy
 import crm_callback_email as emails
@@ -69,12 +70,29 @@ def test_intake_acknowledges_once_without_closing_request(callback, training):
     assert "meilleurs délais" in plain and "Le secrétariat" in html
     assert "Le secrétariat – Intégrale Academy" in plain
     assert "Cassandre" not in plain and "Cassandre" not in html
-    assert "CALLBACK_FOOTER_START" in html and "font-style:italic" in html
+    assert "EMAIL_FOOTER_DETAILS_START" in html and "font-style:italic" in html
     assert 'align="center"' in html and "Faites le" in html
     data = legacy.load_data()
     entry = data["secretariat_demandes"][-1]
     assert entry["callback_status"] == "pending"
     assert entry["callback_email"]["ack"]["status"] == "sent"
+
+
+@pytest.mark.parametrize("acknowledgement", [False, True])
+def test_callback_uses_the_email_models_footer_and_matching_signature(callback, acknowledgement):
+    with legacy.app.test_request_context():
+        model = render_template("crm_email_wrapper.html", prenom="Camille", formation="VTC", contenu="<p>Réponse</p>")
+        html = emails.render_mail("Votre demande", "Bonjour Camille,", acknowledgement=acknowledgement)
+        footer = render_template("emails/_crm_email_footer.html").strip()
+        cassandre = render_template("emails/_cassandre_signature.html").strip()
+        secretariat = render_template("emails/_secretariat_signature.html").strip()
+    assert model.count(footer) == html.count(footer) == 1
+    assert model.count(cassandre) == 1
+    assert "Certification Qualiopi" in footer and "UAI Paris" in footer
+    if acknowledgement:
+        assert html.count(secretariat) == 1 and "Cassandre" not in html
+    else:
+        assert html.count(cassandre) == 1 and secretariat not in html
 
 
 def test_reading_historical_callbacks_never_sends_ack(callback):
@@ -152,6 +170,9 @@ def test_booking_options_and_matching_preview_and_delivery(callback):
     assert preview.status_code == 200
     assert vtc["url"] in preview.json["html"] and vtc["label"] in preview.json["html"]
     assert "Prendre un rendez-vous téléphonique" in preview.json["html"]
+    assert "Je vous invite à réserver un rendez-vous téléphonique avec notre équipe." in preview.json["html"]
+    assert "ÉCHANGEONS SUR VOTRE PROJET" not in preview.json["html"]
+    assert "Un moment" not in preview.json["html"]
     without = client.post(BASE + "/reply-preview", json=reply())
     assert "calendly.com" not in without.json["html"]
     assert client.post(BASE + "/reply", json=payload).status_code == 200
