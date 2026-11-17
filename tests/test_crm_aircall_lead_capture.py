@@ -229,6 +229,12 @@ def test_training_action_asks_for_clarification_instead_of_inventing(legacy):
 
 
 def test_sms_action_is_idempotent_and_creates_visible_pending_callback(legacy):
+    acknowledgements = []
+    def acknowledge(request_id):
+        assert not legacy._CRM_RECONCILIATION_LOCK._is_owned()
+        assert any(row["id"] == request_id for row in legacy._store["secretariat_demandes"])
+        acknowledgements.append(request_id)
+    legacy._crm_acknowledge_callback = acknowledge
     first = _send_sms(legacy)
     second = _send_sms(legacy)
 
@@ -248,6 +254,7 @@ def test_sms_action_is_idempotent_and_creates_visible_pending_callback(legacy):
     assert record["token_hash"]
     assert "token" not in record
     callback = legacy._store["secretariat_demandes"][0]
+    assert acknowledgements == [callback["id"]]
     assert callback["type"] == "autre"
     assert callback["callback_status"] == "pending"
     assert "Coordonnées attendues" in callback["notes"]

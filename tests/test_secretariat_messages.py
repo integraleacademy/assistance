@@ -22,6 +22,7 @@ def csrf(client):
 
 @pytest.fixture
 def desk(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "_crm_send_email_html", lambda *_: True)
     monkeypatch.setattr(app, "DATA_FILE", str(tmp_path / "messages.json"))
     app.app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     now = dt.datetime.now(PARIS)

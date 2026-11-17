@@ -20,6 +20,8 @@ import crm_public_sessions
 from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS, next_five_weekdays
 import secretariat_calls
 import secretariat_messages
+import sys
+import crm_callback_email
 from crm_read_cache import LastProjection, UpdateSnapshots
 from crm_email_signatures import brand_saved_template
 from contextvars import ContextVar
@@ -1435,6 +1437,7 @@ def _preserve_newer_callback_lifecycle(data, persisted):
         if isinstance(entry, dict) and entry.get("id")
     }
     protected_request_ids = set()
+    email_only_request_ids = set()
     recovered_prospect_calls = []
     for current in persisted_entries:
         request_id = str(current["id"])
@@ -1450,6 +1453,7 @@ def _preserve_newer_callback_lifecycle(data, persisted):
             outgoing_by_id[request_id] = outgoing_entries[-1]
             protected_request_ids.add(request_id)
             continue
+        email_preserved = crm_callback_email.preserve(outgoing, current)
         protected = False
         if restore_intake:
             # Preserve the idempotency key, delivery receipts and quote from the completed intake.
@@ -1485,10 +1489,12 @@ def _preserve_newer_callback_lifecycle(data, persisted):
             protected = True
         if protected:
             protected_request_ids.add(request_id)
+        elif email_preserved:
+            email_only_request_ids.add(request_id)
 
     if recovered_prospect_calls:
         _restore_prospect_callback_links(data, persisted, recovered_prospect_calls)
-    if not protected_request_ids:
+    if not protected_request_ids and not email_only_request_ids:
         return
     persisted_callback_activities = {}
     for contact in (persisted.get("crm_contacts") or []):
@@ -1499,7 +1505,8 @@ def _preserve_newer_callback_lifecycle(data, persisted):
             if not isinstance(activity, dict):
                 continue
             request_id = str(activity.get("callback_request_id") or "")
-            if request_id in protected_request_ids:
+            if (request_id in protected_request_ids or
+                    (request_id in email_only_request_ids and activity.get("kind") == "email")):
                 persisted_callback_activities.setdefault(contact_id, []).append(
                     copy.deepcopy(activity)
                 )
@@ -1512,13 +1519,14 @@ def _preserve_newer_callback_lifecycle(data, persisted):
         )
         if not authoritative:
             continue
+        authoritative_ids = {activity.get("id") for activity in authoritative}
         activities = [
             activity
             for activity in (contact.get("activities") or [])
             if not (
                 isinstance(activity, dict)
-                and str(activity.get("callback_request_id") or "")
-                in protected_request_ids
+                and (str(activity.get("callback_request_id") or "") in protected_request_ids
+                     or activity.get("id") in authoritative_ids)
             )
         ]
         contact["activities"] = sorted(
@@ -1750,7 +1758,7 @@ def _send_email_brevo(to_emails, subject, plain_text, html_body, attachments_pat
             return True
         print("❌ Erreur envoi email Brevo :", response.status_code, response.text)
     except Exception as e:
-        if _HEBERGEMENT_REMINDER_DELIVERY.get() and not isinstance(e, requests.ConnectTimeout):
+        if (_HEBERGEMENT_REMINDER_DELIVERY.get() or _CALLBACK_EMAIL_DELIVERY.get()) and not isinstance(e, requests.ConnectTimeout):
             raise hebergement_reminders.DeliveryUncertain("Réponse Brevo non reçue") from e
         print("❌ Erreur envoi email Brevo :", e)
     return False
@@ -1758,6 +1766,7 @@ def _send_email_brevo(to_emails, subject, plain_text, html_body, attachments_pat
 
 _HEBERGEMENT_REMINDER_DELIVERY = ContextVar("hebergement_reminder_delivery", default=False)
 _FT_REFUSAL_DELIVERY = ContextVar("ft_refusal_delivery", default=False)
+_CALLBACK_EMAIL_DELIVERY = ContextVar("callback_email_delivery", default=False)
 
 
 def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths=None):
@@ -1810,7 +1819,7 @@ def send_email_html(to_emails, subject, plain_text, html_body, attachments_paths
             submission_accepted = True
         return True
     except Exception as e:
-        if _HEBERGEMENT_REMINDER_DELIVERY.get() and submission_started:
+        if (_HEBERGEMENT_REMINDER_DELIVERY.get() or _CALLBACK_EMAIL_DELIVERY.get()) and submission_started:
             if submission_accepted:
                 return True
             if not isinstance(e, (smtplib.SMTPRecipientsRefused, smtplib.SMTPResponseException)):
@@ -4203,7 +4212,9 @@ def _serialize_secretariat_delivery(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
-            return view(*args, **kwargs)
+            result = view(*args, **kwargs)
+        crm_callback_email.flush_acknowledgements(sys.modules[__name__])
+        return result
     return wrapped
 
 
@@ -4464,6 +4475,7 @@ def secretariat_waiting_call():
     entries.append(entry)
     _secretariat_record_callback(data, entry, now)
     save_data(data)
+    crm_callback_email.queue_acknowledgement(entry["id"])
     return _secretariat_private(jsonify(ok=True, recipient=host["name"], when=secretariat_calls.date_label(entry["created_at"])), 201)
 
 
@@ -4685,6 +4697,7 @@ def api_secretariat_demandes():
         if call_key:
             entry["desk_completed"] = True
         save_data(data_store)
+        crm_callback_email.queue_acknowledgement(entry["id"])
         if call_key:
             return _secretariat_receipt(entry), 201
         return jsonify({
@@ -4745,6 +4758,8 @@ def api_secretariat_demandes():
     if call_key:
         entry["desk_completed"] = True
     save_data(data_store)
+    if entry.get("callback_requested"):
+        crm_callback_email.queue_acknowledgement(entry["id"])
     if creates_new_lead:
         creer_piste_salesforce(crm_payload)
     if call_key:
@@ -9308,7 +9323,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261117-rappels-prospects"
+CRM_ASSET_VERSION = "20261117-rappels-email-ia"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -20221,6 +20236,7 @@ def _crm_callback_requests_payload(data):
             "display_name": display_name or "Appelant non renseigné",
             "telephone": str(entry.get("telephone") or ""),
             "email": str(entry.get("email") or ""),
+            "email_delivery": crm_callback_email.summary(entry, contact),
             "notes": str(entry.get("notes") or ""),
             "recipient": str(entry.get("callback_recipient") or ""),
             "due_at": str(entry.get("callback_due_at") or ""),
@@ -21154,6 +21170,8 @@ def crm_send_test_sms():
 # La plateforme peut charger directement ``app:app`` sans passer par le
 # point d'entrée ``crm_app``. Enregistrer l'extension ici garantit alors que
 # l'API affichée dans le CRM est bien disponible quel que soit le démarrage.
+crm_callback_email.register(sys.modules[__name__])
+
 from crm_salesforce_import import register_salesforce_import
 
 register_salesforce_import(

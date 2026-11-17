@@ -1267,8 +1267,8 @@ def test_other_request_links_existing_lead_and_adds_activity(client, monkeypatch
     assert data["secretariat_demandes"][0]["crm_contact_id"] == "crm-existing"
     assert data["crm_inbound_requests"] == []
     assert salesforce_calls == []
-    activity = contact["activities"][0]
-    assert activity["kind"] == "demande_rappel"
+    activity = next(item for item in contact["activities"] if item["kind"] == "demande_rappel")
+    assert any(item["kind"] == "email" and "Accusé de réception" in item["title"] for item in contact["activities"])
     assert activity["title"] == "Demande de rappel reçue"
     assert activity["callback_request_id"] == data["secretariat_demandes"][0]["id"]
     assert activity["callback_status"] == "pending"

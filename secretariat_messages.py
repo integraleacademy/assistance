@@ -12,6 +12,7 @@ EVENT_LABELS = {
     "claimed": "Pris en charge", "reached": "Personne rappelée et jointe",
     "no_answer": "Appel tenté, sans réponse", "processed": "Traitement terminé",
     "reopened": "Demande rouverte", "supplement": "Complément transmis",
+    "email_sent": "Réponse envoyée par e-mail",
 }
 SUBJECTS = {"formation": "Question sur une formation", "suivi": "Suivi du dossier",
             "waiting": "La personne attend son appel"}
@@ -28,7 +29,7 @@ def events(entry):
     history = list(entry.get("callback_events") or [])
     # A historical "processed" flag is evidence of handling, not a successful call.
     if status(entry) == "processed" and entry.get("callback_processed_at") and not any(
-            e.get("kind") in {"processed", "reached"} for e in history):
+            e.get("kind") in {"processed", "reached", "email_sent"} for e in history):
         history.append({"id": "legacy-processed", "kind": "processed",
                         "at": entry["callback_processed_at"], "by": entry.get("callback_processed_by") or ""})
     return history

@@ -732,6 +732,9 @@ def register_aircall_lead_capture(legacy_app: Any) -> None:
                     prepare_callback(data, callback)
                 legacy_app.save_data(data)
 
+            acknowledge = getattr(legacy_app, "_crm_acknowledge_callback", None)
+            if callable(acknowledge):
+                acknowledge(request_id)
             form_url = f"{_public_base_url(request_obj)}/rappel-formation/{token}"
             sms_body = _sms_text(form_url)
             sms_sent = bool(legacy_app.send_sms(str(phone_raw or ""), sms_body))
