@@ -1390,6 +1390,27 @@ def _callback_comment_revision(entry):
         return 0.0
 
 
+def _restore_prospect_callback_links(data, persisted, requests):
+    """Keep records created by a finished intake with the recovered request."""
+    request_ids = {row["id"] for row in requests}
+    contact_ids = {row.get("crm_contact_id") for row in requests if row.get("crm_contact_id")}
+    quote_ids = {row.get("devis_id") for row in requests if row.get("devis_id")}
+    for collection, field, ids in (
+        ("crm_contacts", "id", contact_ids),
+        ("demandes", "id", quote_ids),
+        ("crm_inbound_requests", "external_id", request_ids),
+    ):
+        if not ids:
+            continue
+        rows = data.setdefault(collection, [])
+        existing = {row.get("id") for row in rows if isinstance(row, dict)}
+        for row in persisted.get(collection) or []:
+            if (isinstance(row, dict) and row.get("id") and row.get(field) in ids and row["id"] not in existing
+                    and (collection != "crm_inbound_requests" or row.get("source") == "assistant-secretariat")):
+                rows.append(copy.deepcopy(row))
+                existing.add(row["id"])
+
+
 def _preserve_newer_callback_lifecycle(data, persisted):
     """Protect callback status/audit data from an older concurrent snapshot."""
     if not isinstance(data, dict) or not isinstance(persisted, dict):
@@ -1397,7 +1418,7 @@ def _preserve_newer_callback_lifecycle(data, persisted):
     persisted_entries = [
         entry
         for entry in (persisted.get("secretariat_demandes") or [])
-        if isinstance(entry, dict) and entry.get("type") == "autre"
+        if secretariat_calls.is_callback_request(entry)
         and entry.get("id")
     ]
     if not persisted_entries:
@@ -1411,19 +1432,29 @@ def _preserve_newer_callback_lifecycle(data, persisted):
     outgoing_by_id = {
         str(entry.get("id") or ""): entry
         for entry in outgoing_entries
-        if isinstance(entry, dict) and entry.get("type") == "autre"
-        and entry.get("id")
+        if isinstance(entry, dict) and entry.get("id")
     }
     protected_request_ids = set()
+    recovered_prospect_calls = []
     for current in persisted_entries:
         request_id = str(current["id"])
         outgoing = outgoing_by_id.get(request_id)
+        restore_intake = current.get("callback_requested") is True and (
+            not outgoing or not outgoing.get("callback_requested")
+            or (current.get("desk_completed") and not outgoing.get("desk_completed"))
+        )
+        if restore_intake:
+            recovered_prospect_calls.append(current)
         if outgoing is None:
             outgoing_entries.append(copy.deepcopy(current))
             outgoing_by_id[request_id] = outgoing_entries[-1]
             protected_request_ids.add(request_id)
             continue
         protected = False
+        if restore_intake:
+            # Preserve the idempotency key, delivery receipts and quote from the completed intake.
+            outgoing.update(copy.deepcopy(current))
+            protected = True
         if current.get("waiting_read"):
             outgoing["waiting_read"] = True
         # Supplements are append-only and can arrive while a CRM status is being saved.
@@ -1434,9 +1465,11 @@ def _preserve_newer_callback_lifecycle(data, persisted):
         if missing:
             outgoing["callback_events"] = sorted([*outgoing_events, *copy.deepcopy(missing)],
                                                   key=lambda event: secretariat_messages.time_order(event["at"]))
-        if (_callback_lifecycle_revision(current)
+        if (protected or _callback_lifecycle_revision(current)
                 > _callback_lifecycle_revision(outgoing)):
             for field in _CALLBACK_LIFECYCLE_FIELDS:
+                if field == "statut" and current.get("type") == "formation":
+                    continue
                 if field in current:
                     outgoing[field] = copy.deepcopy(current[field])
                 else:
@@ -1453,6 +1486,8 @@ def _preserve_newer_callback_lifecycle(data, persisted):
         if protected:
             protected_request_ids.add(request_id)
 
+    if recovered_prospect_calls:
+        _restore_prospect_callback_links(data, persisted, recovered_prospect_calls)
     if not protected_request_ids:
         return
     persisted_callback_activities = {}
@@ -4341,11 +4376,11 @@ def _secretariat_message_history(data, contact, role):
     rows = []
     phone, email = _crm_normalize_phone(contact.get("telephone")), _crm_normalize_email(contact.get("mail"))
     for entry in data.get("secretariat_demandes", []):
-        if entry.get("type") != "autre":
+        if not secretariat_calls.is_callback_request(entry):
             continue
         if entry.get("crm_contact_id") == contact["id"]:
             rows.append(entry)
-        elif not entry.get("crm_contact_id") and (
+        elif entry.get("type") != "formation" and not entry.get("crm_contact_id") and (
                 (phone and phone == _crm_normalize_phone(entry.get("telephone")))
                 or (email and email == _crm_normalize_email(entry.get("email")))):
             if _secretariat_existing_crm_contact(data, entry) is contact:
@@ -4366,7 +4401,7 @@ def secretariat_message_supplement(request_id):
     if not _secretariat_identity_confirmed(role, contact, payload) or payload.get("confirmed_contact_id") != contact["id"]:
         return _secretariat_private(jsonify(error="Confirmez l’identité de l’appelant."), 403)
     entry = next((row for row in data.get("secretariat_demandes", [])
-                  if row.get("type") == "autre" and row.get("id") == request_id), None)
+                  if secretariat_calls.is_callback_request(row) and row.get("id") == request_id), None)
     if not entry or _crm_callback_request_contact(data, entry) is not contact:
         return _secretariat_private(jsonify(error="Message introuvable pour ce dossier."), 404)
     note = str(payload.get("note") or "").strip()
@@ -4508,7 +4543,7 @@ def _secretariat_call_key(payload):
 
 def _secretariat_receipt(entry):
     fields = ("id", "type", "formation", "rdv", "rdv_date", "rdv_time", "rdv_status",
-              "devis", "callback_recipient", "callback_due_at", "financement_a_confirmer")
+              "devis", "callback_requested", "callback_recipient", "callback_due_at", "financement_a_confirmer")
     details = {key: entry.get(key) for key in fields}
     details["quote_created"] = bool(entry.get("devis_id"))
     details["linked"] = bool(entry.get("crm_contact_id"))
@@ -4588,7 +4623,11 @@ def api_secretariat_demandes():
         member["name"] for member in USERS.values()
     }:
         return jsonify({"ok": False, "error": "Choisissez un destinataire proposé dans la liste."}), 400
-    if entry["type"] == "autre":
+    if entry["type"] == "formation" and secretariat_calls.prospect_wants_callback(
+        payload.get("prospect_callback"), entry["notes"]
+    ):
+        entry.update(callback_requested=True, callback_motif="formation")
+    if secretariat_calls.is_callback_request(entry):
         if call_key and _secretariat_role() and payload.get("share_with_desk") is True:
             entry["desk_shared_note"] = True
         try:
@@ -4692,6 +4731,8 @@ def api_secretariat_demandes():
     # received neither the selected campus nor the requested training dates.
     crm_payload.update({"centre": centre_code, "dates": session_label})
     crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
+    if entry.get("callback_requested"):
+        _crm_prepare_callback_request(data_store, entry)
     if crm_contact:
         _crm_ensure_secretariat_publication(crm_contact, entry)
     creates_new_lead = len(data_store.get("crm_contacts", [])) > contact_count_before
@@ -9267,7 +9308,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261114-modeles-manuels-restaures"
+CRM_ASSET_VERSION = "20261117-rappels-prospects"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -19988,6 +20029,9 @@ def _crm_legacy_callback_request_detail(entry):
 def _crm_callback_request_contact(data, entry):
     stored_contact_id = str(entry.get("crm_contact_id") or "").strip()
     contact = _crm_contact(data, stored_contact_id) if stored_contact_id else None
+    if entry.get("type") == "formation":
+        # The prospect intake already reconciled the identity or left it for review.
+        return contact
     return contact or _secretariat_existing_crm_contact(data, entry)
 
 
@@ -20110,7 +20154,7 @@ def _crm_prepare_callback_request(data, entry, appointment_index=None):
             entry["callback_status_updated_at"] = str(initial_status_date)
             changed = True
     expected_generic_status = {"processed": "Traité", "in_progress": "En cours", "pending": "À traiter"}[status]
-    if entry.get("statut") != expected_generic_status:
+    if entry.get("type") != "formation" and entry.get("statut") != expected_generic_status:
         entry["statut"] = expected_generic_status
         changed = True
 
@@ -20119,7 +20163,7 @@ def _crm_prepare_callback_request(data, entry, appointment_index=None):
     if str(entry.get("crm_contact_id") or "") != contact_id:
         entry["crm_contact_id"] = contact_id
         changed = True
-    if _crm_hydrate_callback_request_appointment(data, entry, contact, appointment_index):
+    if entry.get("type") != "formation" and _crm_hydrate_callback_request_appointment(data, entry, contact, appointment_index):
         changed = True
     if contact and _crm_ensure_callback_request_activity(contact, entry):
         changed = True
@@ -20129,7 +20173,7 @@ def _crm_prepare_callback_request(data, entry, appointment_index=None):
 def _crm_backfill_callback_requests(data):
     """Repair callback statuses/journals with one pass through the agenda."""
     entries = [entry for entry in data.get("secretariat_demandes", [])
-               if isinstance(entry, dict) and entry.get("type") == "autre"]
+               if secretariat_calls.is_callback_request(entry)]
     if not entries:
         return False
     appointment_index = {}
@@ -20149,7 +20193,7 @@ def _crm_backfill_callback_requests(data):
 
 
 def _crm_callback_requests_payload(data):
-    """Expose only secretariat « other requests » to the callback workspace."""
+    """List secretariat messages and callbacks requested during a training intake."""
     contacts_by_id = {
         str(contact.get("id") or ""): contact
         for contact in data.get("crm_contacts", [])
@@ -20157,11 +20201,11 @@ def _crm_callback_requests_payload(data):
     }
     rows = []
     for entry in data.get("secretariat_demandes", []):
-        if not isinstance(entry, dict) or entry.get("type") != "autre":
+        if not secretariat_calls.is_callback_request(entry):
             continue
         stored_contact_id = str(entry.get("crm_contact_id") or "").strip()
         contact = contacts_by_id.get(stored_contact_id)
-        if contact is None:
+        if contact is None and entry.get("type") != "formation":
             contact = _secretariat_existing_crm_contact(data, entry)
         contact_id = str(contact.get("id") or "") if contact else ""
         display_name = str(entry.get("nom") or "").strip()
@@ -20200,6 +20244,7 @@ def _crm_callback_requests_payload(data):
                 entry.get("callback_comment_updated_by") or ""
             ),
             "crm_contact_id": contact_id,
+            "prospect_callback": entry.get("type") == "formation",
             "crm_contact_name": (
                 f"{contact.get('prenom', '')} {contact.get('nom', '')}".strip()
                 if contact else ""
@@ -20222,12 +20267,11 @@ def _crm_callback_requests_payload(data):
 
 
 def _crm_callback_pending_count(data):
-    """Count only unprocessed secretariat « other requests »."""
+    """Count every open request shown in the callback workspace."""
     return sum(
         1
         for entry in data.get("secretariat_demandes", [])
-        if isinstance(entry, dict)
-        and entry.get("type") == "autre"
+        if secretariat_calls.is_callback_request(entry)
         and _crm_callback_request_status(entry) != CRM_CALLBACK_PROCESSED
     )
 
@@ -20316,8 +20360,7 @@ def crm_convert_callback_request(request_id):
     data = load_data()
     entry = next((
         item for item in data.get("secretariat_demandes", [])
-        if isinstance(item, dict)
-        and item.get("type") == "autre"
+        if secretariat_calls.is_callback_request(item)
         and str(item.get("id") or "") == str(request_id)
     ), None)
     if entry is None:
@@ -20326,6 +20369,8 @@ def crm_convert_callback_request(request_id):
     _, contact = _crm_prepare_callback_request(data, entry)
     created = False
     if contact is None:
+        if entry.get("type") == "formation":
+            return jsonify(error="Le rapprochement de cette piste doit être vérifié dans le CRM."), 409
         raw_name = str(entry.get("nom") or "").strip()
         name_parts = raw_name.split(None, 1)
         first_name = str(entry.get("prenom") or "").strip()
@@ -20384,8 +20429,7 @@ def crm_callback_request(request_id):
     data = load_data()
     entry = next((
         item for item in data.get("secretariat_demandes", [])
-        if isinstance(item, dict)
-        and item.get("type") == "autre"
+        if secretariat_calls.is_callback_request(item)
         and str(item.get("id") or "") == str(request_id)
     ), None)
     if entry is None:

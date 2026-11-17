@@ -283,7 +283,10 @@ function renderReceipt(result, payload) {
   receiptArea.replaceChildren();
   const training = (item.type || payload.type) === 'formation';
   doneSummary.textContent = training ? (selectedFormation()?.label || 'Demande de formation') : 'Demande transmise à la file de rappel du CRM.';
-  if (!training) {
+  if (training && item.callback_requested) {
+    receiptRow('Demande de rappel', 'Ajoutée aux demandes à traiter', 'sent');
+  }
+  if (!training || item.callback_requested) {
     receiptRow('À rappeler par', item.callback_recipient || payload.callback_recipient || 'Équipe');
     const due = receiptDeadline(item.callback_due_at);
     receiptRow('Échéance du rappel', due || 'Sans échéance convenue');
