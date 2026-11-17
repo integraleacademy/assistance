@@ -2,6 +2,7 @@
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ subject }}</title><style>@media(max-width:640px){.callback-shell{width:100%!important}.callback-padding,.mobile-pad{padding:26px 22px!important}}</style></head>
 <body style="margin:0;background:#edf2f8;color:#172b4d;font-family:Arial,Helvetica,sans-serif">
+{% set message_typography = 'font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:27px;font-weight:400;' %}
 <div style="display:none;max-height:0;overflow:hidden">{{ 'Votre demande est entre de bonnes mains. Notre équipe revient vers vous dans les meilleurs délais.' if acknowledgement else 'Cassandre et l’équipe Intégrale Academy vous répondent.' }}</div>
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#edf2f8"><tr><td align="center" style="padding:32px 12px">
 <table role="presentation" class="callback-shell" width="620" cellspacing="0" cellpadding="0" style="width:620px;max-width:620px;background:#fff;border-radius:22px;overflow:hidden">
@@ -11,13 +12,15 @@
 <h1 style="color:#fff;font-size:30px;line-height:37px;margin:14px 0;text-align:center">{{ 'Nous avons bien reçu' if acknowledgement else 'La réponse à' }}<br><em style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;font-size:37px;color:#f4d895">votre demande</em></h1>
 <div style="width:48px;height:3px;border-radius:3px;background:#efc363;margin:20px auto 0"></div>
 </td></tr>
-<tr><td class="callback-padding" style="padding:36px 40px;font-size:16px;line-height:27px;color:#283b55">
+<tr><td class="callback-padding callback-message-content" style="padding:36px 40px;{{ message_typography }}color:#283b55">
 {% for paragraph in paragraphs %}<p style="margin:0 0 18px;white-space:pre-line;overflow-wrap:anywhere">{{ paragraph }}</p>{% endfor %}
 {% if booking %}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:26px 0 28px;border-radius:18px;background:#102c5c;background-image:linear-gradient(135deg,#102c5c,#214b88)"><tr><td style="padding:28px;text-align:left">
-<span style="display:inline-block;margin:0 0 16px;padding:5px 11px;border:1px solid #667ba1;border-radius:6px;font-size:11px;line-height:17px;letter-spacing:0.7px;font-weight:700;color:#f4d895">{{ booking.label }}</span>
-<p style="margin:0 0 22px;font-size:19px;line-height:29px;font-weight:500;color:#fff">Je vous invite à réserver un rendez-vous téléphonique avec notre équipe.</p>
-<a href="{{ booking.url }}" target="_blank" rel="noopener" style="display:inline-block;box-sizing:border-box;max-width:100%;padding:14px 20px;border-radius:9px;background:#f4d895;color:#102c5c;text-decoration:none;font-size:14px;line-height:21px;font-weight:700;text-align:center">Prendre un rendez-vous téléphonique</a>
+<table role="presentation" class="callback-booking" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:26px 0 28px;border-radius:18px;background:#102c5c;background-image:linear-gradient(135deg,#102c5c,#214b88)"><tr><td align="center" style="padding:26px 24px;{{ message_typography }}text-align:center">
+<p class="callback-booking-invitation" style="margin:0 0 14px;{{ message_typography }}color:#fff;text-align:center">Je vous invite à réserver un rendez-vous téléphonique avec notre équipe.</p>
+<p class="callback-booking-course" style="margin:0 0 20px;{{ message_typography }}color:#f4d895;text-align:center">{{ booking.label }}</p>
+<table role="presentation" class="callback-booking-button" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;max-width:100%"><tr><td align="center" bgcolor="#f4d895" style="border-radius:9px;text-align:center">
+<a class="callback-booking-link" href="{{ booking.url }}" target="_blank" rel="noopener" style="display:inline-block;box-sizing:border-box;max-width:100%;padding:13px 22px;border-radius:9px;{{ message_typography }}font-weight:700;color:#102c5c;text-decoration:none;text-align:center">Prendre un rendez-vous téléphonique</a>
+</td></tr></table>
 </td></tr></table>
 {% endif %}
 {% for paragraph in closing_paragraphs %}<p style="margin:0 0 18px;white-space:pre-line;overflow-wrap:anywhere">{{ paragraph }}</p>{% endfor %}
