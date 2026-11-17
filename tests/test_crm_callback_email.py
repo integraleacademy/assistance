@@ -2,6 +2,7 @@ import copy
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
 import os
@@ -180,6 +181,31 @@ def test_booking_options_and_matching_preview_and_delivery(callback):
     assert client.post(BASE + "/reply", json=payload).status_code == 200
     assert sent[0][3] == preview.json["html"] and vtc["url"] in sent[0][2]
     assert legacy.load_data()["secretariat_demandes"][0]["callback_email"]["replies"][0]["booking"] == vtc
+
+
+def test_booking_uses_message_typography_and_an_email_safe_centered_button(callback):
+    class Elements(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            for name in attrs.get("class", "").split():
+                elements[name] = attrs
+
+    client, _ = callback
+    html = client.post(BASE + "/reply-preview", json=reply(booking_formation="VTC")).json["html"]
+    elements = {}
+    Elements().feed(html)
+    def style(name):
+        return dict(part.split(":", 1) for part in elements[name]["style"].split(";") if ":" in part)
+    message = style("callback-message-content")
+    for name in ("callback-booking-invitation", "callback-booking-course", "callback-booking-link"):
+        for property in ("font-family", "font-size", "line-height"):
+            assert style(name)[property] == message[property]
+        assert style(name)["text-align"] == "center"
+    assert message["font-size"] == "16px"
+    assert style("callback-booking-invitation")["font-weight"] == message["font-weight"]
+    # HTML alignment also works in mail clients that do not support CSS auto margins.
+    assert elements["callback-booking-button"]["align"] == "center"
+    assert elements["callback-booking-button"]["role"] == "presentation"
 
 
 @pytest.mark.parametrize("closing", [
