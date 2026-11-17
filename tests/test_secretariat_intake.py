@@ -22,6 +22,7 @@ def desk(monkeypatch, tmp_path):
     monkeypatch.setattr(application, "_calendly_token", lambda: "")
     monkeypatch.setattr(application, "_secretariat_refresh_calendly_appointments", lambda *_: None)
     monkeypatch.setattr(application, "_send_secretariat_information_messages", lambda *_: {})
+    monkeypatch.setattr(application, "_crm_send_email_html", lambda *_: True)
     monkeypatch.setattr(application, "_SECRETARIAT_CALENDLY_SCHEMA_CACHE", {})
     salesforce = []
     monkeypatch.setattr(application, "creer_piste_salesforce", salesforce.append)
@@ -70,7 +71,8 @@ def test_short_call_is_a_callback_without_email_qualification_or_commercial_send
     if known:
         stored = data["crm_contacts"][0]
         assert stored["statut"] == "Converti"
-        assert cassandre() in stored["activities"][0]["detail"]
+        received = next(a for a in stored["activities"] if a.get("kind") == "demande_rappel")
+        assert cassandre() in received["detail"]
         assert cassandre() in stored["publications"][0]["texte"]
 
 
@@ -127,7 +129,8 @@ def test_prospect_callback_stays_on_one_training_intake_through_completion(desk)
     assert row["status"] == "pending" and row["crm_contact_id"] == prospect["id"]
     assert row["motif"] == "formation" and row["notes"] == payload["notes"]
     assert application._crm_callback_pending_count(data) == 1
-    received = [a for a in prospect["activities"] if a.get("callback_request_id") == entry["id"]]
+    received = [a for a in prospect["activities"] if a.get("callback_request_id") == entry["id"]
+                and a.get("kind") == "demande_rappel"]
     assert len(received) == 1
 
     result = client.patch(f"/api/crm/callback-requests/{entry['id']}", json={"status": "processed"})
