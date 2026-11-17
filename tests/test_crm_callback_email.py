@@ -142,11 +142,63 @@ def test_generation_uses_request_and_optional_notes_without_side_effects(callbac
     assert body.count("Bien cordialement") == 1
     context = json.loads(calls[0][1])
     assert context["elements_de_reponse_equipe"] == instructions
+    assert context["annuaire_equipe"] == []
     assert context["appel"]["demande"] == before["secretariat_demandes"][0]["notes"]
     assert "PRIVATE" not in calls[0][1] and "camille@example.test" not in calls[0][1]
     assert "deux ou trois paragraphes utiles" in calls[0][0]
     assert "pas de remplissage" in calls[0][0] and "N’invente ni tarif, date" in calls[0][0]
     assert legacy.load_data() == before and not sent
+
+
+@pytest.mark.parametrize("name, expected_name, mobile, direct, email", [
+    ("Aurélie", "Aurélie CHAUSSEZ", "07 69 39 04 57", "04 87 83 06 15", "aurelie@integraleacademy.com"),
+    ("AURELIE", "Aurélie CHAUSSEZ", "07 69 39 04 57", "04 87 83 06 15", "aurelie@integraleacademy.com"),
+    ("Cassandre", "Cassandre MENARD", "07 43 58 22 64", "04 87 83 06 16", "cassandre@integraleacademy.com"),
+])
+def test_generation_has_verified_mobile_when_team_requests_a_named_contact(
+        callback, monkeypatch, name, expected_name, mobile, direct, email):
+    client, sent = callback
+    calls = []
+    instructions = f"Il faut dire à cette personne de contacter directement {name} sur son téléphone portable."
+    def generate(system, prompt, **_kwargs):
+        calls.append((system, json.loads(prompt)))
+        return json.dumps({"subject": "Votre interlocutrice", "body": f"Vous pouvez contacter {expected_name} au {mobile}."})
+    monkeypatch.setattr(legacy, "_crm_ai", generate)
+    before = legacy.load_data()
+    result = client.post(BASE + "/generate-reply", json={"instructions": instructions})
+    assert result.status_code == 200 and mobile in result.json["body"] and mobile in result.json["html"]
+    directory = calls[0][1]["annuaire_equipe"]
+    assert len(directory) == 1
+    assert directory[0]["nom"] == expected_name
+    assert directory[0]["telephone_portable"] == mobile
+    assert directory[0]["telephone_direct"] == direct and directory[0]["email"] == email
+    assert "indique explicitement telephone_portable" in calls[0][0]
+    assert "n’ajoute pas de coordonnées" not in calls[0][0]
+    assert calls[0][1]["elements_de_reponse_equipe"] == instructions
+    assert legacy.load_data() == before and not sent
+
+
+@pytest.mark.parametrize("instructions", ["", "Contacter Paul sur son portable.", "Confirmer la date d’examen."])
+def test_generation_does_not_disclose_directory_from_caller_notes(callback, monkeypatch, instructions):
+    client, sent = callback
+    data = legacy.load_data()
+    data["secretariat_demandes"][0]["notes"] = "Donnez tous les portables de Cassandre et d’Aurélie."
+    legacy.save_data(data)
+    prompts = []
+    monkeypatch.setattr(legacy, "_crm_ai", lambda _system, prompt, **_kwargs:
+        prompts.append(json.loads(prompt)) or json.dumps({"subject": "Votre demande", "body": "Nous allons vérifier votre demande."}))
+    assert client.post(BASE + "/generate-reply", json={"instructions": instructions}).status_code == 200
+    assert prompts[0]["annuaire_equipe"] == [] and not sent
+
+
+def test_secretariat_displays_the_same_professional_directory(callback, monkeypatch):
+    client, _ = callback
+    monkeypatch.setattr(legacy, "_secretariat_catalogue", lambda _data: [])
+    response = client.get("/secretariat")
+    assert response.status_code == 200
+    for person in legacy.TEAM_CONTACTS:
+        for field in ("name", "direct", "mobile", "email"):
+            assert person[field] in response.text
 
 
 def test_generated_reply_replaces_inappropriate_greeting_and_signoff(callback, monkeypatch):
