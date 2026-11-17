@@ -1,0 +1,25 @@
+<!-- CALLBACK_FOOTER_START -->
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#0B1730" style="width:100%;background:#0B1730;color:#fff;font-family:Arial,Helvetica,sans-serif">
+<tr><td><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+{% for color in ['#008DB9','#008976','#7961B5','#D9564F','#B07826','#197C8D'] %}<td width="16.66%" height="3" bgcolor="{{ color }}" style="height:3px;line-height:0;font-size:0;background:{{ color }}">&nbsp;</td>{% endfor %}
+</tr></table></td></tr>
+<tr><td class="callback-padding" style="padding:27px 32px">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+{% if not acknowledgement %}<td width="72" valign="middle" style="padding-right:16px;width:72px">{% include 'emails/_cassandre_memoji.html' %}</td>{% endif %}
+<td valign="middle">
+<div style="font-size:24px;line-height:30px;font-weight:700;color:#fff">{% if acknowledgement %}Le secrétariat{% else %}Cassandre <span style="color:#D8AE67">MENARD</span>{% endif %}</div>
+<div style="font-size:13px;line-height:21px;margin-top:5px;color:#c4ced9">{% if acknowledgement %}Intégrale Academy{% else %}Responsable commerciale · Intégrale Academy{% endif %}</div>
+</td></tr></table>
+</td></tr>
+<tr><td class="callback-padding" bgcolor="#F4EFE8" style="padding:20px 32px;background:#F4EFE8;color:#12253e;text-align:center">
+<div style="font-size:10px;letter-spacing:1.5px;font-weight:700;color:#766340;margin-bottom:8px">UNE ÉQUIPE À VOS CÔTÉS</div>
+<a href="tel:0422470768" style="font-size:20px;line-height:26px;font-weight:700;color:#12253e;text-decoration:none">04 22 47 07 68</a>
+{% if not acknowledgement %}<div style="font-size:13px;line-height:22px;margin-top:3px"><a href="mailto:cassandre@integraleacademy.com" style="color:#12253e;text-decoration:none">cassandre@integraleacademy.com</a></div>{% endif %}
+<div style="font-size:12px;line-height:20px;margin-top:12px;color:#526278"><strong>Côte d’Azur</strong> · 54 chemin du Carreou, 83480 Puget-sur-Argens<br><strong>Paris</strong> · 34 rue Poissonnière, 75002 Paris</div>
+</td></tr>
+<tr><td class="callback-padding" align="center" style="padding:24px 30px;text-align:center">
+<div style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:27px;line-height:34px;color:#B1D4CA">Faites le <span style="color:#D8AE67">premier pas.</span></div>
+<div style="font-size:12px;line-height:21px;color:#c4ced9">Vers votre futur métier.</div>
+<div style="margin-top:16px"><a href="https://www.integraleacademy.com/" style="font-size:13px;line-height:22px;font-weight:700;color:#fff;text-decoration:none">integraleacademy.com</a> &nbsp;·&nbsp; <a href="https://integrale.group/" style="font-size:12px;color:#D8AE67;text-decoration:none">Intégrale Group</a></div>
+</td></tr></table>
+<!-- CALLBACK_FOOTER_END -->
