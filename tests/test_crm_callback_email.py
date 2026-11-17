@@ -176,15 +176,11 @@ def test_booking_options_and_matching_preview_and_delivery(callback):
     assert "Je vous invite à réserver un rendez-vous téléphonique avec notre équipe." in preview.json["html"]
     assert "ÉCHANGEONS SUR VOTRE PROJET" not in preview.json["html"]
     assert "Un moment" not in preview.json["html"]
-    illustration = "https://assistance-alw9.onrender.com/static/images/callback-courses/vtc.png"
-    assert illustration in preview.json["html"]
-    # Mail clients need a public HTTPS image, with dimensions and fallback text.
-    asset = client.get("/static/images/callback-courses/vtc.png")
-    assert asset.status_code == 200 and asset.mimetype == "image/png"
-    assert asset.data.startswith(b"\x89PNG\r\n\x1a\n")
+    assert 'class="callback-booking-person"' in preview.json["html"]
+    assert 'class="callback-booking-phone" href="tel:0422470768"' in preview.json["html"]
     without = client.post(BASE + "/reply-preview", json=reply())
     assert "calendly.com" not in without.json["html"]
-    assert illustration not in without.json["html"]
+    assert 'class="callback-booking-person"' not in without.json["html"]
     assert client.post(BASE + "/reply", json=payload).status_code == 200
     assert sent[0][3] == preview.json["html"] and vtc["url"] in sent[0][2]
     assert legacy.load_data()["secretariat_demandes"][0]["callback_email"]["replies"][0]["booking"] == vtc
@@ -207,33 +203,30 @@ def test_booking_uses_message_typography_and_an_email_safe_centered_button(callb
     for name in ("callback-booking-invitation", "callback-booking-course", "callback-booking-link"):
         for property in ("font-family", "font-size", "line-height"):
             assert style(name)[property] == message[property]
-        assert style(name)["text-align"] == "center"
+        assert style(name)["text-align"] == ("center" if name.endswith("-link") else "left")
     assert message["font-size"] == "16px"
     assert style("callback-booking-invitation")["font-weight"] == message["font-weight"]
     # HTML alignment also works in mail clients that do not support CSS auto margins.
     assert elements["callback-booking-button"]["align"] == "center"
     assert elements["callback-booking-button"]["role"] == "presentation"
-    image = elements["callback-booking-image"]
-    assert (image["width"], image["height"]) == ("192", "128")
-    assert "formation" in image["alt"] and "VTC" in image["alt"]
+    assert elements["callback-booking-link"]["aria-label"] == "Prendre un rendez-vous téléphonique"
+    assert elements["callback-booking-phone"]["href"] == "tel:0422470768"
 
 
-@pytest.mark.parametrize("code, artwork", [
-    ("APS", "aps"), ("A3P", "a3p"), ("SSIAP", "ssiap"),
-    ("DESP_INIT", "dirigeant"), ("DESP_VAE", "dirigeant"), ("VTC", "vtc"),
-    ("PARCOURS_SECURITE_ALTERNANCE", "aps"), ("BTS_MOS", "bts"),
-    ("BTS_MCO", "bts"), ("BTS_CI", "bts"), ("BTS_NDRC", "bts"),
-    ("BTS_PI", "bts"), ("BTS_CG", "bts"),
-])
-def test_booking_uses_the_selected_courses_website_illustration(callback, code, artwork):
+@pytest.mark.parametrize("code", list(legacy.SECRETARIAT_FORMATIONS))
+def test_booking_contact_panel_keeps_each_courses_link_and_label(callback, code):
     client, sent = callback
     html = client.post(BASE + "/reply-preview", json=reply(booking_formation=code)).json["html"]
-    image_path = f"/static/images/callback-courses/{artwork}.png"
-    assert "https://assistance-alw9.onrender.com" + image_path in html
-    assert "callback-phone-appointment.png" not in html
-    asset = client.get(image_path)
-    assert asset.status_code == 200 and asset.mimetype == "image/png"
-    assert asset.data.startswith(b"\x89PNG\r\n\x1a\n")
+    course = emails.booking_selection(legacy, {"booking_formation": code})
+    assert course["url"] in html and course["label"] in html
+    assert "callback-courses/" not in html and "callback-phone-appointment.png" not in html
+    with legacy.app.app_context():
+        avatar = render_template("emails/_cassandre_memoji.html").strip()
+        signature = render_template("emails/_cassandre_signature.html").strip()
+        delivered_html = legacy._crm_refresh_email_signature(html)
+    # The contact panel and the unchanged signature share the existing portrait.
+    assert html.count(avatar) == 2 and html.count(signature) == 1
+    assert delivered_html.count(avatar) == 2 and delivered_html.count(signature) == 1
     assert not sent
 
 
