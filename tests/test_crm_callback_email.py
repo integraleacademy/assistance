@@ -486,11 +486,12 @@ const until=async fn=>{for(let i=0;i<100&&!fn();i++)await new Promise(r=>setTime
 const row={id:'request',display_name:'Camille',crm_contact_id:'contact',email_delivery:{sent_count:2},status:'processed'};
 (async()=>{
  assert.ok(w.actions(row).includes('Historique des mails (2)'));assert.equal(calls.length,0);
- const opening=w.openHistory(row);await until(()=>pending.new);
+ const opening=w.openHistory(row);await until(()=>pending.new);const initialFrame=$('callbackHistoryFrame');
  assert.equal(buttons().length,2);assert.equal(w.document.querySelector('img'),null);
  assert.equal(w.document.querySelector('a').getAttribute('href'),'/crm/contacts?fiche=contact');
  buttons()[1].click();await until(()=>pending.ack);
  pending.ack({html:'<p>Accusé archivé</p>',original:true});await until(()=>$('callbackHistoryFrame').srcdoc.includes('Accusé archivé'));
+ assert.notEqual($('callbackHistoryFrame'),initialFrame);assert.equal($('callbackHistoryFrame').hidden,false);
  pending.new({html:'<p>Réponse plus récente</p>',original:true});await opening;
  assert.ok($('callbackHistoryFrame').srcdoc.includes('Accusé archivé'));
  assert.equal(buttons()[1].getAttribute('aria-pressed'),'true');
