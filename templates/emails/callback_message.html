@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{ subject }}</title><style>@media(max-width:640px){.callback-shell{width:100%!important}.callback-padding,.mobile-pad{padding:26px 22px!important}}</style></head>
+<title>{{ subject }}</title><style>@media(max-width:640px){.callback-shell{width:100%!important}.callback-padding,.mobile-pad{padding:26px 22px!important}.callback-booking-content{padding:22px 18px!important}.callback-booking-art,.callback-booking-copy{display:block!important;width:100%!important;box-sizing:border-box!important}.callback-booking-art{padding:0 0 14px!important}.callback-booking-copy{padding:0!important}.callback-booking-image{width:144px!important;height:auto!important}}</style></head>
 <body style="margin:0;background:#edf2f8;color:#172b4d;font-family:Arial,Helvetica,sans-serif">
 {% set message_typography = 'font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:27px;font-weight:400;' %}
 <div style="display:none;max-height:0;overflow:hidden">{{ 'Votre demande est entre de bonnes mains. Notre équipe revient vers vous dans les meilleurs délais.' if acknowledgement else 'Cassandre et l’équipe Intégrale Academy vous répondent.' }}</div>
@@ -15,11 +15,19 @@
 <tr><td class="callback-padding callback-message-content" style="padding:36px 40px;{{ message_typography }}color:#283b55">
 {% for paragraph in paragraphs %}<p style="margin:0 0 18px;white-space:pre-line;overflow-wrap:anywhere">{{ paragraph }}</p>{% endfor %}
 {% if booking %}
-<table role="presentation" class="callback-booking" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:26px 0 28px;border-radius:18px;background:#102c5c;background-image:linear-gradient(135deg,#102c5c,#214b88)"><tr><td align="center" style="padding:26px 24px;{{ message_typography }}text-align:center">
-<p class="callback-booking-invitation" style="margin:0 0 14px;{{ message_typography }}color:#fff;text-align:center">Je vous invite à réserver un rendez-vous téléphonique avec notre équipe.</p>
-<p class="callback-booking-course" style="margin:0 0 20px;{{ message_typography }}color:#f4d895;text-align:center">{{ booking.label }}</p>
-<table role="presentation" class="callback-booking-button" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;max-width:100%"><tr><td align="center" bgcolor="#f4d895" style="border-radius:9px;text-align:center">
-<a class="callback-booking-link" href="{{ booking.url }}" target="_blank" rel="noopener" style="display:inline-block;box-sizing:border-box;max-width:100%;padding:13px 22px;border-radius:9px;{{ message_typography }}font-weight:700;color:#102c5c;text-decoration:none;text-align:center">Prendre un rendez-vous téléphonique</a>
+<table role="presentation" class="callback-booking" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f5f7fb" style="margin:26px 0 28px;border:1px solid #dfe6ef;border-radius:20px;background:#f5f7fb;background-image:linear-gradient(120deg,#f1f5fc,#fffbf2)"><tr><td class="callback-booking-content" align="center" style="padding:24px;{{ message_typography }}text-align:center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
+<td class="callback-booking-art" width="156" align="center" valign="middle" style="width:156px;padding:0 24px 0 0">
+<img class="callback-booking-image" src="https://assistance-alw9.onrender.com/static/images/callback-phone-appointment.png" width="156" height="156" alt="Un calendrier et un téléphone pour votre rendez-vous" style="display:block;width:156px;height:156px;max-width:100%;margin:0 auto;border:0">
+</td>
+<td class="callback-booking-copy" align="center" valign="middle" style="{{ message_typography }}text-align:center">
+<p class="callback-booking-invitation" style="margin:0 0 14px;{{ message_typography }}color:#283b55;text-align:center">Je vous invite à réserver un rendez-vous téléphonique avec notre équipe.</p>
+<p class="callback-booking-course" style="margin:0;{{ message_typography }}color:#102c5c;text-align:center"><span style="display:inline-block;padding:4px 12px;border:1px solid #e4dcc8;border-radius:8px;background:#fffdf7">{{ booking.label }}</span></p>
+</td></tr></table>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="padding:22px 0 0;text-align:center">
+<table role="presentation" class="callback-booking-button" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;max-width:100%"><tr><td align="center" bgcolor="#102c5c" style="border-radius:12px;text-align:center">
+<a class="callback-booking-link" href="{{ booking.url }}" target="_blank" rel="noopener" style="display:inline-block;box-sizing:border-box;max-width:100%;padding:14px 24px;border:1px solid #1f4375;border-radius:12px;{{ message_typography }}font-weight:700;color:#fff;text-decoration:none;text-align:center">Prendre un rendez-vous téléphonique</a>
+</td></tr></table>
 </td></tr></table>
 </td></tr></table>
 {% endif %}
