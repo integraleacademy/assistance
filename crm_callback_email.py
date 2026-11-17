@@ -12,7 +12,10 @@ from flask import g, jsonify, render_template, request
 
 
 SIGNATURE = "Cassandre MENARD\nResponsable commerciale – Intégrale Academy\n04 22 47 07 68\ncassandre@integraleacademy.com"
-ACK_SUBJECT = "Votre demande a bien été reçue – Intégrale Academy"
+SECRETARIAT_SIGNATURE = "Le secrétariat – Intégrale Academy\n04 22 47 07 68\nhttps://www.integraleacademy.com"
+ACK_SUBJECT = "Nous avons bien reçu votre demande"
+REPLY_INTRO = "Je me permets de revenir vers vous suite à votre conversation téléphonique avec notre secrétariat."
+REPLY_CLOSING = "Je vous souhaite une agréable journée.\n\nBien cordialement,"
 
 
 def valid_email(value):
@@ -45,9 +48,32 @@ def preserve(outgoing, current):
     return False
 
 
-def render_mail(subject, body, *, acknowledgement=False):
+def render_mail(subject, body, *, acknowledgement=False, booking=None):
     return render_template("emails/callback_message.html", subject=subject,
-                           paragraphs=body.split("\n\n"), acknowledgement=acknowledgement)
+                           paragraphs=body.split("\n\n"), acknowledgement=acknowledgement,
+                           booking=booking)
+
+
+def booking_selection(legacy, payload):
+    code = payload.get("booking_formation", "")
+    if code in (None, ""):
+        return None
+    if not isinstance(code, str) or code not in legacy.SECRETARIAT_FORMATIONS:
+        raise ValueError("Choisissez une formation pour le rendez-vous téléphonique.")
+    course = legacy.SECRETARIAT_FORMATIONS[code]
+    return {"code": code, "label": course.get("label") or course["short"],
+            "url": course.get("calendly") or legacy.SECRETARIAT_GENERIC_CALENDLY_URL}
+
+
+def compose_reply(name, content):
+    """Keep the agreed opening and closing deterministic on generated drafts only."""
+    content = re.sub(r"^\s*Bonjour[^\n]*[\n]+", "", content, flags=re.I).strip()
+    content = content.replace(REPLY_INTRO, "").strip()
+    content = re.sub(r"^(?:Je vous remercie|Merci) pour votre message[.!]?\s*", "", content, flags=re.I)
+    content = re.sub(r"(?:Je vous souhaite une (?:agréable|excellente|bonne) journée[.!]?\s*)?(?:Bien\s+)?[Cc]ordialement[,.!]?\s*$", "", content).strip()
+    content = content.removesuffix("Je vous souhaite une agréable journée.").strip()
+    greeting = f"Bonjour {name}," if name else "Bonjour,"
+    return "\n\n".join(part for part in (greeting, REPLY_INTRO, content, REPLY_CLOSING) if part)
 
 
 def _touch(legacy, entry):
@@ -56,11 +82,13 @@ def _touch(legacy, entry):
     return state
 
 
-def _send(legacy, address, subject, body, html):
+def _send(legacy, address, subject, body, html, *, acknowledgement=False, booking=None):
     token = legacy._CALLBACK_EMAIL_DELIVERY.set(True)
     try:
+        if booking:
+            body += f"\n\nPrendre un rendez-vous téléphonique – {booking['label']}\n{booking['url']}"
         return "sent" if legacy._crm_send_email_html(
-            address, subject, body + "\n\n" + SIGNATURE, html) else "failed"
+            address, subject, body + "\n\n" + (SECRETARIAT_SIGNATURE if acknowledgement else SIGNATURE), html) else "failed"
     except Exception:
         # No provider exception, address, or customer message in application logs.
         legacy.app.logger.warning("Callback email delivery uncertain; retry blocked")
@@ -98,23 +126,24 @@ def acknowledge(legacy, request_id):
             return
         contact = legacy._crm_callback_request_contact(data, entry)
         address = recipient(entry, contact)
-        name = str(entry.get("prenom") or (contact or {}).get("prenom") or "").strip()
+        name = legacy._crm_format_first_name(entry.get("prenom") or (contact or {}).get("prenom") or "")
         body = (f"Bonjour {name}," if name else "Bonjour,") + (
-            "\n\nNous avons bien pris en compte votre demande de rappel et l’avons transmise à notre équipe."
-            "\n\nUn membre de notre équipe reviendra vers vous dans les meilleurs délais pour répondre à votre demande et vous accompagner."
-            "\n\nMerci pour votre confiance et à très bientôt,"
+            "\n\nJe fais suite à notre conversation téléphonique."
+            "\n\nJe vous informe que je viens de transmettre votre demande à un membre de notre équipe qui reviendra vers vous dans les meilleurs délais."
+            "\n\nNous vous remercions pour votre confiance et nous vous souhaitons une excellente journée."
+            "\n\nBien cordialement,"
         )
         state = _touch(legacy, entry)
         delivery = {"status": "sending" if valid_email(address) else "missing_email",
                     "recipient": address, "subject": ACK_SUBJECT, "body": body,
-                    "created_at": state["updated_at"]}
+                    "created_at": state["updated_at"], "actor": "Le secrétariat – Intégrale Academy"}
         state["ack"] = delivery
         legacy.save_data(data)
         if delivery["status"] == "missing_email":
             return
     del data, entry, state, contact, delivery
     html = render_mail(ACK_SUBJECT, body, acknowledgement=True)
-    status = _send(legacy, address, ACK_SUBJECT, body, html)
+    status = _send(legacy, address, ACK_SUBJECT, body, html, acknowledgement=True)
     with legacy._SECRETARIAT_DELIVERY_LOCK, legacy._CRM_RECONCILIATION_LOCK:
         data = legacy.load_data()
         entry = _find(legacy, data, request_id)
@@ -157,6 +186,20 @@ def register(legacy):
         row = next(row for row in legacy._crm_callback_requests_payload(data) if row["id"] == entry["id"])
         return jsonify(request=row, callback_pending_count=legacy._crm_callback_pending_count(data))
 
+    @app.get("/api/crm/callback-requests/<request_id>/booking-options")
+    @legacy.login_required
+    def callback_booking_options(request_id):
+        if not authorized():
+            return jsonify(error="Accès réservé à l’équipe interne."), 403
+        data = legacy._load_data_snapshot()
+        entry = _find(legacy, data, request_id)
+        if not entry:
+            return jsonify(error="Demande de rappel introuvable."), 404
+        contact = legacy._crm_callback_request_contact(data, entry) or {}
+        code = entry.get("formation") or legacy._crm_formation_code(contact)
+        courses = [booking_selection(legacy, {"booking_formation": key}) for key in legacy.SECRETARIAT_FORMATIONS]
+        return jsonify(courses=courses, selected=code if code in legacy.SECRETARIAT_FORMATIONS else "")
+
     @app.post("/api/crm/callback-requests/<request_id>/generate-reply")
     @legacy.login_required
     def callback_generate_reply(request_id):
@@ -180,11 +223,17 @@ def register(legacy):
                                  (entry.get("callback_events") or [])[-10:] if e.get("kind") == "supplement"],
                  "formation": code, "session_souhaitee": entry.get("formation_date_souhaitee") or "",
                  "rendez_vous_confirme": entry.get("rdv") if entry.get("rdv_status") == "scheduled" else ""}
+        name = legacy._crm_format_first_name(facts["prenom"])
         # Do not send the complete contact record or internal team comments to the model.
         del data, contact, entry
         system = (
             "Tu aides Cassandre, responsable commerciale d’Intégrale Academy, à rédiger un e-mail de réponse à un appel. "
-            "Retourne uniquement un objet JSON avec subject (objet court) et body (texte intégral avec bonjour et formule de politesse). "
+            "Il s’agit d’un suivi après une conversation téléphonique avec notre secrétariat, pas d’un message écrit par le client. "
+            "Retourne uniquement un objet JSON avec subject (objet court) et body (les paragraphes utiles de la réponse uniquement). "
+            "L’application ajoute Bonjour, puis exactement : « " + REPLY_INTRO + " ». "
+            "Elle ajoute aussi « Je vous souhaite une agréable journée. » puis « Bien cordialement, ». "
+            "N’inclus donc ni salutation, ni introduction, ni formule de politesse dans body. "
+            "N’écris jamais « Je vous remercie pour votre message » ni « Merci pour votre message ». "
             "La signature Cassandre est ajoutée par l’application : ne signe pas et n’ajoute pas de coordonnées. "
             "Écris en français, avec vouvoiement, ton professionnel, chaleureux et précis, paragraphes courts, sans emoji, HTML ni Markdown. "
             "Réponds à la demande à partir des éléments de réponse de l’équipe et des seules informations fiables fournies. "
@@ -203,6 +252,7 @@ def register(legacy):
             if not isinstance(generated, dict):
                 raise ValueError("Invalid response")
             subject, body = _validate_message(generated)
+            body = compose_reply(name, body)
             return jsonify(subject=subject, body=body, html=render_mail(subject, body))
         except Exception:
             app.logger.warning("Callback reply generation unavailable")
@@ -216,10 +266,12 @@ def register(legacy):
         if not _find(legacy, legacy._load_data_snapshot(), request_id):
             return jsonify(error="Demande de rappel introuvable."), 404
         try:
-            subject, body = _validate_message(request.get_json(silent=True) or {})
+            payload = request.get_json(silent=True) or {}
+            subject, body = _validate_message(payload)
+            booking = booking_selection(legacy, payload)
         except (ValueError, AttributeError) as exc:
             return jsonify(error=str(exc) if isinstance(exc, ValueError) else "Requête invalide."), 400
-        return jsonify(html=render_mail(subject, body))
+        return jsonify(html=render_mail(subject, body, booking=booking))
 
     @app.post("/api/crm/callback-requests/<request_id>/reply")
     @legacy.login_required
@@ -231,6 +283,7 @@ def register(legacy):
             return jsonify(error="Requête invalide."), 400
         try:
             subject, body = _validate_message(payload)
+            booking = booking_selection(legacy, payload)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
         address = str(payload.get("recipient") or "").strip()
@@ -240,7 +293,7 @@ def register(legacy):
         if not re.fullmatch(r"[a-f0-9]{32}", operation):
             return jsonify(error="Identifiant d’envoi invalide. Rouvrez la fenêtre."), 400
         actor = legacy.current_user().get("name") or "Équipe Intégrale"
-        html = render_mail(subject, body)
+        html = render_mail(subject, body, booking=booking)
         with legacy._SECRETARIAT_DELIVERY_LOCK, legacy._CRM_RECONCILIATION_LOCK:
             data = legacy.load_data()
             entry = _find(legacy, data, request_id)
@@ -257,7 +310,7 @@ def register(legacy):
                     str(payload.get("revision") or "") != str(entry.get("callback_status_updated_at") or "")):
                 return jsonify(error="Cette demande a changé ou a déjà été traitée. Actualisez la liste avant de répondre."), 409
             delivery = {"id": operation, "status": "sending", "recipient": address,
-                        "subject": subject, "body": body, "actor": actor,
+                        "subject": subject, "body": body, "actor": actor, "booking": booking,
                         "created_at": legacy._crm_callback_status_timestamp()}
             if previous:
                 previous.update(delivery)
@@ -268,7 +321,7 @@ def register(legacy):
             legacy.save_data(data)
         # No global CRM lock or full data snapshot held during the network call.
         del data, entry, state, replies, previous, delivery
-        status = _send(legacy, address, subject, body, html)
+        status = _send(legacy, address, subject, body, html, booking=booking)
         with legacy._SECRETARIAT_DELIVERY_LOCK, legacy._CRM_RECONCILIATION_LOCK:
             data = legacy.load_data()
             entry = _find(legacy, data, request_id)

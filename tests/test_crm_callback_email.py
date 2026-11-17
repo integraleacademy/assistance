@@ -64,7 +64,13 @@ def test_intake_acknowledges_once_without_closing_request(callback, training):
     assert len(sent) == 1
     address, subject, plain, html = sent[0]
     assert address == "camille@example.test" and subject == emails.ACK_SUBJECT
-    assert "meilleurs délais" in plain and "Cassandre MENARD" in html
+    assert subject == "Nous avons bien reçu votre demande"
+    assert "Je fais suite à notre conversation téléphonique." in plain
+    assert "meilleurs délais" in plain and "Le secrétariat" in html
+    assert "Le secrétariat – Intégrale Academy" in plain
+    assert "Cassandre" not in plain and "Cassandre" not in html
+    assert "CALLBACK_FOOTER_START" in html and "font-style:italic" in html
+    assert 'align="center"' in html and "Faites le" in html
     data = legacy.load_data()
     entry = data["secretariat_demandes"][-1]
     assert entry["callback_status"] == "pending"
@@ -111,11 +117,62 @@ def test_generation_uses_request_and_optional_notes_without_side_effects(callbac
     response = client.post(BASE + "/generate-reply", json={"instructions": instructions})
     assert response.status_code == 200
     assert response.json["subject"] == "Votre demande" and "Cassandre MENARD" in response.json["html"]
+    body = response.json["body"]
+    assert body.startswith("Bonjour Camille,\n\n" + emails.REPLY_INTRO)
+    assert body.endswith(emails.REPLY_CLOSING)
+    assert body.count("Bien cordialement") == 1
     context = json.loads(calls[0][1])
     assert context["elements_de_reponse_equipe"] == instructions
     assert context["appel"]["demande"] == before["secretariat_demandes"][0]["notes"]
     assert "PRIVATE" not in calls[0][1] and "camille@example.test" not in calls[0][1]
     assert legacy.load_data() == before and not sent
+
+
+def test_generated_reply_replaces_inappropriate_greeting_and_signoff(callback, monkeypatch):
+    client, sent = callback
+    monkeypatch.setattr(legacy, "_crm_ai", lambda *_args, **_kw: json.dumps({
+        "subject": "Votre dossier", "body": "Bonjour,\n\nJe vous remercie pour votre message. Votre dossier sera étudié demain.\n\nCordialement."}))
+    result = client.post(BASE + "/generate-reply", json={})
+    assert result.status_code == 200
+    body = result.json["body"]
+    assert "remercie pour votre message" not in body
+    assert body.count("Bonjour") == 1 and body.count(emails.REPLY_INTRO) == 1
+    assert "Votre dossier sera étudié demain." in body
+    assert body.endswith(emails.REPLY_CLOSING) and not sent
+
+
+def test_booking_options_and_matching_preview_and_delivery(callback):
+    client, sent = callback
+    options = client.get(BASE + "/booking-options")
+    assert options.status_code == 200
+    vtc = next(c for c in options.json["courses"] if c["code"] == "VTC")
+    assert vtc["url"] == "https://calendly.com/integraleacademy/chauffeurvtc"
+    payload = reply(booking_formation="VTC")
+    preview = client.post(BASE + "/reply-preview", json=payload)
+    assert preview.status_code == 200
+    assert vtc["url"] in preview.json["html"] and vtc["label"] in preview.json["html"]
+    assert "Prendre un rendez-vous téléphonique" in preview.json["html"]
+    without = client.post(BASE + "/reply-preview", json=reply())
+    assert "calendly.com" not in without.json["html"]
+    assert client.post(BASE + "/reply", json=payload).status_code == 200
+    assert sent[0][3] == preview.json["html"] and vtc["url"] in sent[0][2]
+    assert legacy.load_data()["secretariat_demandes"][0]["callback_email"]["replies"][0]["booking"] == vtc
+
+
+@pytest.mark.parametrize("code", ["javascript:alert(1)", "https://example.test", "INCONNUE", ["VTC"]])
+def test_invalid_booking_selection_never_sends(callback, code):
+    client, sent = callback
+    for route in ("/reply-preview", "/reply"):
+        assert client.post(BASE + route, json=reply(booking_formation=code)).status_code == 400
+    assert not sent
+
+
+def test_booking_options_require_internal_access_and_existing_callback(callback, monkeypatch):
+    client, _ = callback
+    assert legacy.app.test_client().get(BASE + "/booking-options").status_code in (302, 401)
+    assert client.get("/api/crm/callback-requests/missing/booking-options").status_code == 404
+    monkeypatch.setattr(legacy, "current_user", lambda: {"email": "external@example.test"})
+    assert client.get(BASE + "/booking-options").status_code == 403
 
 
 @pytest.mark.parametrize("raw", ["not JSON", '{"subject":"ok","body":""}', '{"subject":"hello\\nBcc: x@y.test","body":"Hi"}', '[]'])
@@ -300,7 +357,9 @@ w.SpeechRecognition=class {
  stop(){setTimeout(()=>{const r=[{transcript:'Documents vérifiés point'}];r.isFinal=true;this.onresult({resultIndex:0,results:[r]});this.onend?.()},5)}
  abort(){this.aborted=true;this.onend?.()}
 };
-w.api=async (url,options)=>{const data=JSON.parse(options.body);calls.push({url,data});
+w.api=async (url,options)=>{const data=JSON.parse(options?.body||'{}');calls.push({url,data});
+ if(url.endsWith('/reformuler'))return {texte:data.texte};
+ if(url.endsWith('/booking-options'))return {courses:[{code:'VTC',label:'Chauffeur VTC'}],selected:'VTC'};
  if(url.endsWith('/generate-reply'))return {subject:'Votre demande',body:'Bonjour,\n\nUne réponse complète.'};
  if(url.endsWith('/reply-preview'))return {html:'<html><body>'+data.body+' Cassandre MENARD</body></html>'};
  if(failSend)throw Error('Envoi échoué, texte conservé');
@@ -318,16 +377,24 @@ const until=async fn=>{for(let i=0;i<100&&!fn();i++)await new Promise(r=>setTime
 (async()=>{
  w.openReply(row);$('dictateCallbackReply').click();$('callbackReplyGenerate').click();
  await until(()=>$('callbackReplyBody').value.includes('réponse complète'));
- assert.equal(calls[0].data.instructions,'Documents vérifiés.');assert.equal(calls.length,1);
+ assert.equal(calls.find(c=>c.url.endsWith('/generate-reply')).data.instructions,'Documents vérifiés.');assert.equal(calls.length,2);
+ $('callbackReplyBookingToggle').click();await until(()=>$('callbackReplyBookingFields').hidden===false);
+ assert.equal($('callbackReplyBookingCourse').value,'VTC');
  $('callbackReplyBody').value='Bonjour,\n\nRéponse corrigée.';$('callbackReplyBody').dispatchEvent(new w.Event('input'));
  $('callbackReplyClose').click();assert.equal($('callbackReplyBody'),null);
  w.openReply(row);assert.equal($('callbackReplyBody').value,'Bonjour,\n\nRéponse corrigée.');
  $('callbackReplyPreview').click();await until(()=>$('callbackReplyFrame').hidden===false);
  assert.ok($('callbackReplyFrame').srcdoc.includes('Réponse corrigée.'));
  assert.ok($('callbackReplyFrame').hasAttribute('sandbox'));
+ assert.equal($('callbackReplyFrame').getAttribute('sandbox'),'allow-same-origin');
+ assert.equal(calls.at(-1).data.booking_formation,'VTC');
+ $('callbackReplyBookingToggle').click();assert.equal($('callbackReplyFrame').hidden,true);
+ assert.equal($('callbackReplyBookingFields').hidden,true);
+ $('callbackReplyBookingToggle').click();await until(()=>$('callbackReplyBookingFields').hidden===false);
  $('callbackReplySend').click();$('callbackReplySend').click();
  await until(()=>$('callbackReplyFeedback').textContent.includes('Envoi échoué'));
  assert.equal(calls.filter(c=>c.url.endsWith('/reply')).length,1);
+ assert.equal(calls.at(-1).data.booking_formation,'VTC');
  assert.equal($('callbackReplyBody').value,'Bonjour,\n\nRéponse corrigée.');
  const key=calls.at(-1).data.operation_id;failSend=false;$('callbackReplySend').click();
  await until(()=>!$('callbackReplyBody'));

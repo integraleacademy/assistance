@@ -620,27 +620,57 @@ function callbackRequestActions(row){
 }
 const callbackReplyDrafts=new Map();
 function callbackReplyModal(row){
- const draft=callbackReplyDrafts.get(row.id)||{recipient:row.email_delivery?.recipient||row.email||'',subject:'Suite à votre demande – Intégrale Academy',body:'',instructions:''};
+ const draft=callbackReplyDrafts.get(row.id)||{recipient:row.email_delivery?.recipient||row.email||'',subject:'Suite à votre demande – Intégrale Academy',body:'',instructions:'',booking_enabled:false,booking_formation:'',booking_courses:[]};
+ const bookingMarkup=`<div class="callback-reply-booking"><button class="btn" id="callbackReplyBookingToggle" type="button" aria-expanded="${Boolean(draft.booking_enabled)}">${draft.booking_enabled?'Retirer le rendez-vous téléphonique':'Ajouter un rendez-vous téléphonique'}</button><div class="field" id="callbackReplyBookingFields" ${draft.booking_enabled?'':'hidden'}><label for="callbackReplyBookingCourse">Formation du rendez-vous</label><select id="callbackReplyBookingCourse"><option value="">Choisir une formation…</option>${(draft.booking_courses||[]).map(course=>`<option value="${esc(course.code)}" ${course.code===draft.booking_formation?'selected':''}>${esc(course.label)}</option>`).join('')}</select><small>Un encart avec le bouton de réservation sera ajouté au mail.</small></div></div>`;
  const operation=crypto.randomUUID().replaceAll('-',''),endpoint='/api/crm/callback-requests/'+encodeURIComponent(row.id);
  const acknowledgement={sent:'Accusé de réception envoyé',failed:'Accusé de réception : envoi échoué',missing_email:'Accusé de réception non envoyé : adresse e-mail manquante ou invalide',sending:'Accusé de réception : envoi en cours ou à vérifier',unknown:'Accusé de réception : envoi à vérifier'}[row.email_delivery?.ack_status]||'';
- modal('Répondre à la demande de rappel',`<div class="callback-reply-layout"><aside class="callback-reply-context"><span class="callback-reply-kicker">LE MESSAGE REÇU</span><h3>${esc(row.display_name)}</h3><div class="callback-reply-original">${callbackRequestBrief(row)}</div>${acknowledgement?`<p class="callback-reply-receipt">${esc(acknowledgement)}</p>`:''}<div class="field"><div class="voice-input-heading"><label for="callbackReplyInstructions">Éléments de réponse <small>(facultatif)</small></label><button class="voice-input-button" id="dictateCallbackReply" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter</span></button></div><textarea id="callbackReplyInstructions" maxlength="6000" rows="7" placeholder="Écrivez ou dictez les informations à transmettre. Vous pouvez aussi laisser ce champ vide.">${esc(draft.instructions)}</textarea><small id="dictateCallbackReplyStatus" class="voice-input-status" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small></div><button class="btn blue" id="callbackReplyGenerate" type="button">Générer la réponse avec l’IA</button><p class="callback-reply-hint">L’IA s’appuie sur la demande et vos indications. Relisez la proposition avant de l’envoyer.</p></aside><section class="callback-reply-editor"><div class="callback-reply-editor-heading"><div><span class="callback-reply-kicker">VOTRE E-MAIL</span><h3>Une réponse prête à envoyer</h3></div><button class="btn" id="callbackReplyPreview" type="button">Aperçu du mail</button></div><div class="field"><label for="callbackReplyRecipient">Destinataire</label><input id="callbackReplyRecipient" type="email" maxlength="254" required autocomplete="off" value="${esc(draft.recipient)}" placeholder="Adresse e-mail de la personne"></div><div class="field"><label for="callbackReplySubject">Objet</label><input id="callbackReplySubject" maxlength="200" required value="${esc(draft.subject)}"></div><div class="field" id="callbackReplyTextArea"><label for="callbackReplyBody">Message <small>Vous pouvez tout modifier</small></label><textarea id="callbackReplyBody" maxlength="12000" rows="15" placeholder="Votre réponse apparaîtra ici. Vous pouvez aussi la rédiger directement.">${esc(draft.body)}</textarea></div><iframe id="callbackReplyFrame" title="Aperçu de l’e-mail signé Cassandre" sandbox="" referrerpolicy="no-referrer" hidden></iframe><div class="callback-reply-signature"><strong>Cassandre MENARD</strong><span>Responsable commerciale · Intégrale Academy</span><small>La signature et la mise en page sont ajoutées automatiquement.</small></div></section></div><p id="callbackReplyFeedback" class="callback-reply-feedback" role="status" aria-live="polite">${row.status==='processed'?'Cette demande est déjà traitée. Rouvrez-la dans la liste pour envoyer une nouvelle réponse.':'Après un envoi réussi, cette demande passera automatiquement en « traité ».'}</p>`, '<button class="btn" id="callbackReplyClose" type="button">Fermer</button><button class="btn blue" id="callbackReplySend" type="button">Envoyer et marquer comme traité</button>', 'callback-reply-modal');
+ modal('Répondre à la demande de rappel',`<div class="callback-reply-layout"><aside class="callback-reply-context"><span class="callback-reply-kicker">L’APPEL AU SECRÉTARIAT</span><h3>${esc(row.display_name)}</h3><div class="callback-reply-original">${callbackRequestBrief(row)}</div>${acknowledgement?`<p class="callback-reply-receipt">${esc(acknowledgement)}</p>`:''}<div class="field"><div class="voice-input-heading"><label for="callbackReplyInstructions">Éléments de réponse <small>(facultatif)</small></label><button class="voice-input-button" id="dictateCallbackReply" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter</span></button></div><textarea id="callbackReplyInstructions" maxlength="6000" rows="7" placeholder="Écrivez ou dictez les informations à transmettre. Vous pouvez aussi laisser ce champ vide.">${esc(draft.instructions)}</textarea><small id="dictateCallbackReplyStatus" class="voice-input-status" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small></div><button class="btn blue" id="callbackReplyGenerate" type="button">Générer la réponse avec l’IA</button><p class="callback-reply-hint">L’IA s’appuie sur la demande et vos indications. Relisez la proposition avant de l’envoyer.</p></aside><section class="callback-reply-editor"><div class="callback-reply-editor-heading"><div><span class="callback-reply-kicker">VOTRE E-MAIL</span><h3>Une réponse prête à envoyer</h3></div><button class="btn" id="callbackReplyPreview" type="button">Aperçu du mail</button></div><div class="field"><label for="callbackReplyRecipient">Destinataire</label><input id="callbackReplyRecipient" type="email" maxlength="254" required autocomplete="off" value="${esc(draft.recipient)}" placeholder="Adresse e-mail de la personne"></div><div class="field"><label for="callbackReplySubject">Objet</label><input id="callbackReplySubject" maxlength="200" required value="${esc(draft.subject)}"></div>${bookingMarkup}<div class="field" id="callbackReplyTextArea"><label for="callbackReplyBody">Message <small>Vous pouvez tout modifier</small></label><textarea id="callbackReplyBody" maxlength="12000" rows="15" placeholder="Votre réponse apparaîtra ici. Vous pouvez aussi la rédiger directement.">${esc(draft.body)}</textarea></div><iframe id="callbackReplyFrame" title="Aperçu de l’e-mail signé Cassandre" sandbox="allow-same-origin" referrerpolicy="no-referrer" hidden></iframe><div class="callback-reply-signature"><strong>Cassandre MENARD</strong><span>Responsable commerciale · Intégrale Academy</span><small>La signature et la mise en page sont ajoutées automatiquement.</small></div></section></div><p id="callbackReplyFeedback" class="callback-reply-feedback" role="status" aria-live="polite">${row.status==='processed'?'Cette demande est déjà traitée. Rouvrez-la dans la liste pour envoyer une nouvelle réponse.':'Après un envoi réussi, cette demande passera automatiquement en « traité ».'}</p>`, '<button class="btn" id="callbackReplyClose" type="button">Fermer</button><button class="btn blue" id="callbackReplySend" type="button">Envoyer et marquer comme traité</button>', 'callback-reply-modal');
  const dialog=document.querySelector('.callback-reply-modal'),get=id=>dialog.querySelector('#'+id);
- const instructions=get('callbackReplyInstructions'),subject=get('callbackReplySubject'),body=get('callbackReplyBody'),recipient=get('callbackReplyRecipient'),generate=get('callbackReplyGenerate'),send=get('callbackReplySend'),preview=get('callbackReplyPreview'),frame=get('callbackReplyFrame'),textArea=get('callbackReplyTextArea'),feedback=get('callbackReplyFeedback'),voiceButton=get('dictateCallbackReply');
- const voice=bindVoiceDictation(instructions,voiceButton,get('dictateCallbackReplyStatus'),{waitForEnd:true,onComplete:async text=>text});
+ const instructions=get('callbackReplyInstructions'),subject=get('callbackReplySubject'),body=get('callbackReplyBody'),recipient=get('callbackReplyRecipient'),generate=get('callbackReplyGenerate'),send=get('callbackReplySend'),preview=get('callbackReplyPreview'),frame=get('callbackReplyFrame'),textArea=get('callbackReplyTextArea'),feedback=get('callbackReplyFeedback'),voiceButton=get('dictateCallbackReply'),bookingButton=get('callbackReplyBookingToggle'),bookingFields=get('callbackReplyBookingFields'),bookingCourse=get('callbackReplyBookingCourse');
+ const voice=bindVoiceDictation(instructions,voiceButton,get('dictateCallbackReplyStatus'),{waitForEnd:true,completeOnEnd:true,onComplete:async text=>(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:text,mode:'correction_dictee'})})).texte});
  const voiceUnavailable=voiceButton.disabled;
- let busy=false,sending=false,previewing=false;
- const remember=()=>{Object.assign(draft,{instructions:instructions.value,subject:subject.value,body:body.value,recipient:recipient.value});callbackReplyDrafts.set(row.id,draft)};
- const refresh=()=>{send.disabled=busy||row.status==='processed'||!body.value.trim()||!subject.value.trim()||!recipient.value.trim()||!recipient.checkValidity();preview.disabled=busy||!body.value.trim()||!subject.value.trim()};
- const editing=()=>{previewing=false;frame.hidden=true;textArea.hidden=false;preview.textContent='Aperçu du mail'};
- const setBusy=value=>{busy=value;generate.disabled=value;voiceButton.disabled=value||voiceUnavailable;[recipient,subject,body,instructions].forEach(field=>field.readOnly=value);get('callbackReplyClose').disabled=sending;dialog.querySelector('.close').disabled=sending;refresh()};
- const close=()=>{if(sending)return;remember();voice();closeModal()};
+ let busy=false,sending=false,previewing=false,previewObserver=null;
+ const remember=()=>{Object.assign(draft,{instructions:instructions.value,subject:subject.value,body:body.value,recipient:recipient.value,booking_formation:bookingCourse.value});callbackReplyDrafts.set(row.id,draft)};
+ const invalidBooking=()=>draft.booking_enabled&&!bookingCourse.value;
+ const refresh=()=>{send.disabled=invalidBooking()||busy||row.status==='processed'||!body.value.trim()||!subject.value.trim()||!recipient.value.trim()||!recipient.checkValidity();preview.disabled=invalidBooking()||busy||!body.value.trim()||!subject.value.trim()};
+ const editing=()=>{previewObserver?.disconnect();previewing=false;frame.hidden=true;textArea.hidden=false;preview.textContent='Aperçu du mail'};
+ const setBusy=value=>{busy=value;generate.disabled=value;bookingButton.disabled=value;bookingCourse.disabled=value;voiceButton.disabled=value||voiceUnavailable||Boolean(voice.isProcessing?.());[recipient,subject,body,instructions].forEach(field=>field.readOnly=value);get('callbackReplyClose').disabled=sending;dialog.querySelector('.close').disabled=sending;refresh()};
+ const close=()=>{if(sending)return;remember();previewObserver?.disconnect();voice();closeModal()};
+ // With scripts disabled, same-origin access only lets the parent size the preview.
+ frame.onload=()=>{
+  if(!dialog.isConnected||frame.hidden)return;
+  previewObserver?.disconnect();
+  const content=frame.contentDocument?.body;
+  if(!content)return;
+  const resize=()=>{if(dialog.isConnected&&!frame.hidden)frame.style.height=Math.ceil(content.getBoundingClientRect().height+2)+'px'};
+  content.querySelectorAll('img').forEach(img=>img.addEventListener('load',resize,{once:true}));
+  if(window.ResizeObserver){previewObserver=new ResizeObserver(resize);previewObserver.observe(content)}
+  resize();
+ };
+ bookingCourse.addEventListener('change',()=>{remember();editing();refresh()});
+ bookingButton.onclick=async()=>{
+  if(busy)return;
+  if(draft.booking_enabled){draft.booking_enabled=false;bookingFields.hidden=true;bookingButton.textContent='Ajouter un rendez-vous téléphonique';bookingButton.setAttribute('aria-expanded','false');remember();editing();refresh();return}
+  setBusy(true);
+  try{
+   if(!draft.booking_courses?.length){
+    const result=await api(endpoint+'/booking-options');
+    if(!dialog.isConnected)return;
+    draft.booking_courses=result.courses;draft.booking_formation=draft.booking_formation||result.selected;
+    bookingCourse.innerHTML='<option value="">Choisir une formation…</option>'+result.courses.map(course=>`<option value="${esc(course.code)}">${esc(course.label)}</option>`).join('');
+    bookingCourse.value=draft.booking_formation||'';
+   }
+   draft.booking_enabled=true;bookingFields.hidden=false;bookingButton.textContent='Retirer le rendez-vous téléphonique';bookingButton.setAttribute('aria-expanded','true');remember();editing();bookingCourse.focus();
+  }catch(error){if(dialog.isConnected)feedback.textContent=error.message}
+  finally{if(dialog.isConnected)setBusy(false)}
+ };
  dialog.querySelector('.close').onclick=close;get('callbackReplyClose').onclick=close;
  [recipient,subject,body,instructions].forEach(field=>field.addEventListener('input',()=>{remember();refresh();if(field===subject||field===body)editing()}));
  // Keep keyboard focus inside this large dialog; closing also stops the microphone.
  dialog.addEventListener('keydown',event=>{
   if(event.key==='Escape'){event.preventDefault();close()}
   if(event.key==='Tab'){
-   const nodes=[...dialog.querySelectorAll('button,input,textarea,iframe')].filter(node=>!node.disabled&&node.getClientRects().length);
+   const nodes=[...dialog.querySelectorAll('button,input,select,textarea,iframe')].filter(node=>!node.disabled&&node.getClientRects().length);
    const first=nodes[0],last=nodes.at(-1);
    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
@@ -663,7 +693,7 @@ function callbackReplyModal(row){
   if(previewing){editing();return}
   setBusy(true);
   try{
-   const result=await api(endpoint+'/reply-preview',{method:'POST',body:JSON.stringify({subject:subject.value,body:body.value})});
+   const result=await api(endpoint+'/reply-preview',{method:'POST',body:JSON.stringify({subject:subject.value,body:body.value,booking_formation:draft.booking_enabled?bookingCourse.value:''})});
    if(!dialog.isConnected)return;
    frame.srcdoc=result.html;frame.hidden=false;textArea.hidden=true;previewing=true;preview.textContent='Modifier le texte';
   }catch(error){if(dialog.isConnected)feedback.textContent=error.message}
@@ -674,11 +704,11 @@ function callbackReplyModal(row){
   remember();sending=true;setBusy(true);send.textContent='Envoi en cours…';feedback.textContent='Envoi de votre réponse…';
   try{
    voice.stop(true);await voice.whenSettled();setBusy(true);
-   const result=await api(endpoint+'/reply',{method:'POST',body:JSON.stringify({recipient:recipient.value,subject:subject.value,body:body.value,revision:row.revision||'',operation_id:operation})});
+   const result=await api(endpoint+'/reply',{method:'POST',body:JSON.stringify({recipient:recipient.value,subject:subject.value,body:body.value,revision:row.revision||'',operation_id:operation,booking_formation:draft.booking_enabled?bookingCourse.value:''})});
    const index=callbackRequests.findIndex(item=>String(item.id)===String(row.id));
    if(index>=0)callbackRequests[index]=result.request;
    callbackRequestPendingCount=Math.max(0,Number(result.callback_pending_count)||0);
-   callbackReplyDrafts.delete(row.id);voice();closeModal();updateCallbackRequestNavCount();drawCallbackRequests();toast('Réponse envoyée. La demande est maintenant traitée.');
+   callbackReplyDrafts.delete(row.id);previewObserver?.disconnect();voice();closeModal();updateCallbackRequestNavCount();drawCallbackRequests();toast('Réponse envoyée. La demande est maintenant traitée.');
   }catch(error){if(dialog.isConnected){feedback.textContent=error.message;remember()}}
   finally{sending=false;if(dialog.isConnected){send.textContent='Envoyer et marquer comme traité';setBusy(false)}}
  };
@@ -2151,7 +2181,7 @@ function bindVoiceDictation(field,button,status,options={}){
  recognition.interimResults=true;
  recognition.maxAlternatives=1;
  const onComplete=typeof options.onComplete==='function'?options.onComplete:null;
- let listening=false,destroyed=false,baseText='',finalText='',lastError='',sessionChanged=false,completeAfterEnd=false,completionPromise=Promise.resolve(),resolveCompletion=null;
+ let listening=false,stopping=false,correcting=false,destroyed=false,baseText='',finalText='',lastError='',sessionChanged=false,completeAfterEnd=false,completionPromise=Promise.resolve(),resolveCompletion=null,stopTimer=null;
  const combine=(first,second)=>[first,second].filter(Boolean).join(first&&second?' ':'');
  const setListening=value=>{
   listening=value;
@@ -2162,10 +2192,14 @@ function bindVoiceDictation(field,button,status,options={}){
  };
  const releaseActive=()=>{if(activeVoiceDictationStop===stopListening)activeVoiceDictationStop=null};
  const stopListening=(complete=false)=>{
-  if(!listening)return;
+  if(!listening||stopping)return;
+  stopping=true;
   completeAfterEnd=Boolean(complete&&onComplete&&(sessionChanged||options.waitForEnd));
   if(completeAfterEnd)completionPromise=new Promise(resolve=>{resolveCompletion=resolve});
+  // Some browsers never deliver onend after stop. Preserve the visible words and settle.
+  stopTimer=setTimeout(()=>{if(stopping&&!destroyed){try{recognition.abort()}catch(_){}if(stopping)recognition.onend()}},4000);
   try{recognition.stop()}catch(_){
+   clearTimeout(stopTimer);stopping=false;
    recognition.abort();
    completeAfterEnd=false;
    setListening(false);
@@ -2174,6 +2208,7 @@ function bindVoiceDictation(field,button,status,options={}){
   }
  };
  const completeDictation=()=>{
+  correcting=true;
   const resolve=resolveCompletion;
   resolveCompletion=null;
   const raw=field.value;
@@ -2193,10 +2228,11 @@ function bindVoiceDictation(field,button,status,options={}){
    field.value=value;
    field.dispatchEvent(new Event('input',{bubbles:true}));
    field.scrollTop=field.scrollHeight;
-   status.textContent='Dictée corrigée automatiquement. Relisez-la avant de consigner l’appel.'
+   status.textContent='Dictée corrigée automatiquement. Relisez-la avant de continuer.'
   }).catch(()=>{
    if(!destroyed)status.textContent='Correction automatique indisponible : la dictée brute a été conservée.'
   }).finally(()=>{
+   correcting=false;
    if(!destroyed)button.disabled=false;
    if(resolve)resolve()
   })
@@ -2216,9 +2252,12 @@ function bindVoiceDictation(field,button,status,options={}){
  }[error]||'La dictée vocale s’est interrompue. Réessayez.');
  recognition.onstart=()=>{if(!destroyed)setListening(true)};
  recognition.onresult=event=>{
-  if(destroyed)return;
+  if(destroyed||(!listening&&!stopping))return;
+  // results is the full session snapshot, not a stream of new words. Rebuild it
+  // so repeated finals and revised interim results never duplicate a sentence.
+  finalText='';
   let interim='';
-  for(let index=event.resultIndex;index<event.results.length;index++){
+  for(let index=0;index<event.results.length;index++){
    const text=String(event.results[index][0]?.transcript||'').trim();
    if(!text)continue;
    if(event.results[index].isFinal)finalText=combine(finalText,text);
@@ -2231,6 +2270,7 @@ function bindVoiceDictation(field,button,status,options={}){
   if(destroyed||event.error==='aborted')return;
   const message=errorMessage(event.error);
   completeAfterEnd=false;
+  clearTimeout(stopTimer);stopping=false;
   if(resolveCompletion){resolveCompletion();resolveCompletion=null}
   lastError=message;
   setListening(false);
@@ -2240,14 +2280,19 @@ function bindVoiceDictation(field,button,status,options={}){
  };
  recognition.onend=()=>{
   if(destroyed)return;
-  const mustComplete=completeAfterEnd;
+  const mustComplete=completeAfterEnd||Boolean(options.completeOnEnd&&sessionChanged&&onComplete&&!lastError);
+  const hasDictation=sessionChanged;sessionChanged=false;
+  clearTimeout(stopTimer);stopping=false;
+  if(mustComplete&&!resolveCompletion)completionPromise=new Promise(resolve=>{resolveCompletion=resolve});
   completeAfterEnd=false;
   setListening(false);
   releaseActive();
   if(lastError){status.textContent=lastError;lastError='';return}
-  if(mustComplete)completeDictation()
+  if(mustComplete&&hasDictation)completeDictation();
+  else if(resolveCompletion){resolveCompletion();resolveCompletion=null}
  };
  button.onclick=()=>{
+  if(stopping||correcting||button.disabled)return;
   if(listening){
    stopListening(true);
    return
@@ -2269,12 +2314,15 @@ function bindVoiceDictation(field,button,status,options={}){
  const destroy=()=>{
   if(destroyed)return;
   destroyed=true;
+  clearTimeout(stopTimer);
+  if(resolveCompletion){resolveCompletion();resolveCompletion=null}
   button.onclick=null;
   releaseActive();
   if(listening){try{recognition.abort()}catch(_){}}
   listening=false
  };
  destroy.stop=stopListening;
+ destroy.isProcessing=()=>stopping||correcting;
  destroy.whenSettled=()=>completionPromise;
  return destroy
 }

@@ -283,6 +283,16 @@ assert.strictEqual(
 assert.deepStrictEqual(field.events, ['input']);
 assert.strictEqual(field.scrollTop, 120);
 
+// A browser can re-emit a result at the same index. It must replace, not append.
+const repeatedFinal = result('il souhaite suivre la formation A3P point', true);
+currentRecognition.onresult({resultIndex: 0, results: [repeatedFinal, result('à la ligne un rendez-vous sera fixé', false)]});
+currentRecognition.onresult({resultIndex: 1, results: [repeatedFinal, result('à la ligne un rendez-vous sera confirmé', false)]});
+assert.strictEqual(field.value, 'Le candidat a appelé. Il souhaite suivre la formation A3P.\nUn rendez-vous sera confirmé');
+currentRecognition.onresult({resultIndex: 1, results: [repeatedFinal]});
+assert.strictEqual(field.value, 'Le candidat a appelé. Il souhaite suivre la formation A3P.');
+currentRecognition.onresult({resultIndex: 1, results: [repeatedFinal, result('à la ligne un rendez-vous sera fixé', true)]});
+assert.strictEqual(field.value, 'Le candidat a appelé. Il souhaite suivre la formation A3P.\nUn rendez-vous sera fixé');
+
 voice.button.onclick();
 assert.strictEqual(currentRecognition.stopped, true);
 assert.strictEqual(voice.attrs['aria-pressed'], 'false');
@@ -403,7 +413,7 @@ global.toast = () => {};
     correctedField,
     correctedVoice.button,
     correctedStatus,
-    {onComplete: async raw => {
+    {completeOnEnd: true, onComplete: async raw => {
       corrections.push(raw);
       return 'Monsieur part à la retraite le 1er octobre.';
     }}
@@ -414,6 +424,7 @@ global.toast = () => {};
     results: [result('monsieur par la retraite le 1er octobre')]
   });
   corrected.stop(true);
+  currentRecognition.onend(); // A duplicate terminal event must not start a second correction.
   await corrected.whenSettled();
   assert.deepStrictEqual(corrections, ['Monsieur par la retraite le 1er octobre']);
   assert.strictEqual(
