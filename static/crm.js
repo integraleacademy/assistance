@@ -613,10 +613,42 @@ function callbackRequestStatus(row){
 }
 function callbackRequestActions(row){
  const button=(status,label,outcome='')=>'<button type="button" class="btn callback-request-action" data-callback-status="'+status+'" data-callback-outcome="'+outcome+'">'+label+'</button>';
- const reply='<button type="button" class="btn blue callback-reply-open">Générer une réponse</button>';
+ const reply='<button type="button" class="btn blue callback-reply-open">Générer une réponse</button><button type="button" class="btn callback-history-open">Historique des mails ('+(Number(row.email_delivery?.sent_count)||0)+')</button>';
  if(row.status==='processed')return reply+button('pending','Rouvrir');
  const claim=row.status==='pending'?button('in_progress','Prendre en charge'):'';
  return reply+claim+'<details class="callback-results"><summary>Indiquer le résultat</summary>'+button('processed','Personne rappelée et jointe','reached')+button('in_progress','Appel sans réponse','no_answer')+button('processed','Marquer comme traitée')+'</details>';
+}
+async function callbackEmailHistoryModal(row){
+ const endpoint='/api/crm/callback-requests/'+encodeURIComponent(row.id)+'/emails';
+ const contactLink=row.crm_contact_id?`<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Fiche CRM complète</a>`:'';
+ modal('Historique des mails',`<p class="callback-history-intro">Les accusés de réception et les réponses envoyés pour la demande de <strong>${esc(row.display_name)}</strong>.</p><div class="callback-history-layout"><div id="callbackHistoryList" class="callback-history-list" aria-label="Mails envoyés"><p>Chargement de l’historique…</p></div><section class="callback-history-detail"><div id="callbackHistoryHeading"></div><p id="callbackHistoryFeedback" role="status" aria-live="polite">Sélectionnez un mail pour le consulter.</p><iframe id="callbackHistoryFrame" title="E-mail envoyé" sandbox referrerpolicy="no-referrer" hidden></iframe></section></div>`,`${contactLink}<button class="btn" id="callbackHistoryClose" type="button">Fermer</button>`,'callback-email-history-modal');
+ const dialog=document.querySelector('.callback-email-history-modal'),get=id=>dialog.querySelector('#'+id),list=get('callbackHistoryList'),heading=get('callbackHistoryHeading'),feedback=get('callbackHistoryFeedback'),frame=get('callbackHistoryFrame');
+ let selection=0;
+ get('callbackHistoryClose').onclick=closeModal;
+ dialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeModal()}});
+ const selectMessage=async(message,index)=>{
+  const current=++selection;
+  list.querySelectorAll('button[data-email-index]').forEach(button=>{const active=Number(button.dataset.emailIndex)===index;button.classList.toggle('is-active',active);button.setAttribute('aria-pressed',String(active))});
+  heading.innerHTML=`<h3>${esc(message.subject)}</h3><p><strong>À :</strong> ${esc(message.recipient)}</p><p>Envoyé le ${esc(fmt(message.sent_at))}${message.actor?' · '+esc(message.actor):''}</p>`;
+  frame.hidden=true;frame.srcdoc='';feedback.textContent='Chargement du mail…';
+  try{
+   const result=await api(endpoint+'/'+encodeURIComponent(message.id)+'/preview');
+   if(!dialog.isConnected||selection!==current)return;
+   frame.srcdoc=result.html;frame.hidden=false;
+   feedback.textContent=result.original?'Copie du mail envoyé.':'Texte archivé — présentation reconstituée.';
+  }catch(error){if(dialog.isConnected&&selection===current)feedback.textContent=error.message}
+ };
+ const loadHistory=async()=>{
+  try{
+   const result=await api(endpoint);
+   if(!dialog.isConnected)return;
+   if(!result.messages.length){list.innerHTML='<p>Aucun mail envoyé pour cette demande.</p>';feedback.textContent='Les mails apparaîtront ici après leur envoi.';return}
+   list.innerHTML=result.messages.map((message,index)=>`<button type="button" data-email-index="${index}" aria-pressed="false"><span class="callback-history-kind">${message.kind==='acknowledgement'?'Accusé de réception':'Réponse à la demande'}</span><strong>${esc(message.subject)}</strong><span>${esc(message.recipient)}</span><time>${esc(fmt(message.sent_at))}</time></button>`).join('');
+   list.querySelectorAll('button[data-email-index]').forEach(button=>button.onclick=()=>selectMessage(result.messages[Number(button.dataset.emailIndex)],Number(button.dataset.emailIndex)));
+   await selectMessage(result.messages[0],0);
+  }catch(error){if(dialog.isConnected){list.innerHTML='<button class="btn" type="button" id="callbackHistoryRetry">Réessayer</button>';feedback.textContent=error.message;get('callbackHistoryRetry').onclick=loadHistory}}
+ };
+ await loadHistory();
 }
 const callbackReplyDrafts=new Map();
 function callbackReplyModal(row){
@@ -740,6 +772,10 @@ function drawCallbackRequests(){
  results.querySelectorAll('.callback-reply-open').forEach(button=>button.onclick=()=>{
   const row=callbackRequests.find(item=>String(item.id)===String(button.closest('[data-callback-request]')?.dataset.callbackRequest));
   if(row)callbackReplyModal(row);
+ });
+ results.querySelectorAll('.callback-history-open').forEach(button=>button.onclick=()=>{
+  const row=callbackRequests.find(item=>String(item.id)===String(button.closest('[data-callback-request]')?.dataset.callbackRequest));
+  if(row)callbackEmailHistoryModal(row);
  });
  results.querySelectorAll('.callback-request-action').forEach(button=>button.onclick=async()=>{
   const row=button.closest('[data-callback-request]'),requestId=row?.dataset.callbackRequest,nextStatus=button.dataset.callbackStatus;
