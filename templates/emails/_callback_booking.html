@@ -1,0 +1,38 @@
+{# Same palette, header layout and artwork as the website's next-session card. #}
+{% set booking_artworks = {'APS':'aps', 'A3P':'a3p', 'SSIAP':'ssiap', 'DESP_INIT':'dirigeant', 'DESP_VAE':'dirigeant', 'VTC':'vtc', 'PARCOURS_SECURITE_ALTERNANCE':'aps'} %}
+{% set booking_titles = {'SSIAP':'SSIAP 1', 'DESP_INIT':'DESP initial', 'DESP_VAE':'DESP VAE', 'PARCOURS_SECURITE_ALTERNANCE':'Alternance sécurité'} %}
+{% set booking_code = booking.get('code', '') %}
+{% set booking_artwork = booking_artworks.get(booking_code, 'bts') %}
+{% set booking_title = booking_titles.get(booking_code, booking_code|replace('_', ' ') or 'Votre formation') %}
+<table role="presentation" class="callback-booking" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#fffefa" style="margin:26px 0 28px;border:1px solid #dcd4c6;border-radius:22px;background:#fffefa;box-shadow:0 12px 30px -20px #3a352a60;overflow:hidden">
+  <tr>
+    <td bgcolor="#f4efe3" style="background:#f4efe3;border-radius:21px 21px 0 0;border-bottom:1px solid #e7dfce">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td class="callback-booking-heading" valign="middle" style="padding:22px 10px 22px 24px;text-align:left">
+            <p class="callback-booking-eyebrow" style="margin:0;color:#77561c;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:16px;font-weight:700;letter-spacing:1.5px"><span aria-hidden="true" style="display:inline-block;width:17px;height:2px;margin-right:7px;vertical-align:middle;background:#bc8a33"></span>RENDEZ-VOUS TÉLÉPHONIQUE</p>
+            <h2 class="callback-booking-title" style="margin:7px 0 0;color:#172638;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:34px;font-weight:700;letter-spacing:-.7px">{{ booking_title }}</h2>
+          </td>
+          <td class="callback-booking-art" width="192" align="right" valign="bottom" style="width:192px;padding:0;border-radius:0 21px 0 0;overflow:hidden">
+            <img class="callback-booking-image" src="https://assistance-alw9.onrender.com/static/images/callback-courses/{{ booking_artwork }}.png" width="192" height="128" alt="Illustration de la formation {{ booking.label }}" style="display:block;width:192px;height:auto;max-width:100%;border:0;border-radius:0 21px 0 0;mask-image:linear-gradient(90deg,transparent,#000 27%);-webkit-mask-image:linear-gradient(90deg,transparent,#000 27%)">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td class="callback-booking-content" align="center" style="padding:24px;{{ message_typography }}text-align:center">
+      <p class="callback-booking-invitation" style="margin:0 0 12px;{{ message_typography }}color:#283b55;text-align:center">Je vous invite à réserver un rendez-vous téléphonique avec notre équipe.</p>
+      <p class="callback-booking-course" style="margin:0 0 22px;{{ message_typography }}color:#626962;text-align:center">{{ booking.label }}</p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr><td align="center" style="padding:20px 0 0;border-top:1px solid #e5dfd3;text-align:center">
+          <table role="presentation" class="callback-booking-button" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;max-width:100%">
+            <tr><td align="center" bgcolor="#182b40" style="border-radius:11px;text-align:center">
+              <a class="callback-booking-link" href="{{ booking.url }}" target="_blank" rel="noopener" style="display:inline-block;box-sizing:border-box;max-width:100%;padding:13px 19px;border-radius:11px;{{ message_typography }}font-weight:700;color:#fffefa;text-decoration:none;text-align:center">Prendre un rendez-vous téléphonique <span aria-hidden="true" style="margin-left:10px;color:#f5cf85">→</span></a>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
