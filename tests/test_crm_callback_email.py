@@ -143,6 +143,8 @@ def test_generation_uses_request_and_optional_notes_without_side_effects(callbac
     assert context["elements_de_reponse_equipe"] == instructions
     assert context["appel"]["demande"] == before["secretariat_demandes"][0]["notes"]
     assert "PRIVATE" not in calls[0][1] and "camille@example.test" not in calls[0][1]
+    assert "deux ou trois paragraphes utiles" in calls[0][0]
+    assert "pas de remplissage" in calls[0][0] and "N’invente ni tarif, date" in calls[0][0]
     assert legacy.load_data() == before and not sent
 
 
@@ -178,6 +180,107 @@ def test_booking_options_and_matching_preview_and_delivery(callback):
     assert client.post(BASE + "/reply", json=payload).status_code == 200
     assert sent[0][3] == preview.json["html"] and vtc["url"] in sent[0][2]
     assert legacy.load_data()["secretariat_demandes"][0]["callback_email"]["replies"][0]["booking"] == vtc
+
+
+@pytest.mark.parametrize("closing", [
+    "Je vous souhaite une agréable journée.\n\nBien cordialement,",
+    "Je vous souhaite une excellente journée.\nBien cordialement,",
+    "Bien cordialement,",
+])
+@pytest.mark.parametrize("separator", ["\n\n", "\n"])
+def test_booking_precedes_edited_closing_in_html_and_plain_text(callback, closing, separator):
+    client, sent = callback
+    body = "Bonjour Camille,\n\nVotre examen est prévu le 17 novembre à 8 h." + separator + closing
+    payload = reply(body=body, booking_formation="VTC")
+    preview = client.post(BASE + "/reply-preview", json=payload).json["html"]
+    assert preview.index("Votre examen") < preview.index("https://calendly.com/") < preview.index(closing.splitlines()[0])
+    assert client.post(BASE + "/reply", json=payload).status_code == 200
+    plain, html = sent[0][2:4]
+    assert html == preview
+    assert plain.index("Votre examen") < plain.index("https://calendly.com/") < plain.index(closing.splitlines()[0])
+    assert plain.count(closing) == 1
+    assert legacy.load_data()["secretariat_demandes"][0]["callback_email"]["replies"][0]["body"] == body
+
+
+def test_booking_preserves_a_message_without_a_closing(callback):
+    client, _ = callback
+    body = "Voici les éléments vérifiés.\n\nUne précision supplémentaire."
+    html = client.post(BASE + "/reply-preview", json=reply(body=body, booking_formation="VTC")).json["html"]
+    assert html.index("Une précision supplémentaire.") < html.index("https://calendly.com/")
+    assert "Je vous souhaite" not in html
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_history_keeps_exact_sent_emails_and_is_read_only(callback, monkeypatch, linked):
+    client, sent = callback
+    if not linked:
+        data = legacy.load_data()
+        data["crm_contacts"] = []
+        data["secretariat_demandes"][0].pop("crm_contact_id")
+        legacy.save_data(data)
+    with legacy.app.app_context():
+        emails.acknowledge(legacy, "request")
+    assert client.post(BASE + "/reply", json=reply(booking_formation="VTC")).status_code == 200
+    before = legacy.load_data()
+    monkeypatch.setattr(emails, "render_mail", lambda *_args, **_kw: pytest.fail("History must not re-render a saved mail"))
+    messages = client.get(BASE + "/emails").json["messages"]
+    assert [item["id"] for item in messages] == ["a" * 32, "ack"]
+    assert [item["kind"] for item in messages] == ["reply", "acknowledgement"]
+    assert all(item["recipient"] == "camille@example.test" and item["sent_at"] for item in messages)
+    assert all("html" not in item and "body" not in item for item in messages)
+    for key, delivery in (("ack", sent[0]), ("a" * 32, sent[1])):
+        result = client.get(BASE + "/emails/" + key + "/preview")
+        assert result.status_code == 200 and result.json == {"html": delivery[3], "original": True}
+    row = client.get("/api/crm/callback-requests").json["callback_requests"][0]
+    assert row["email_delivery"]["sent_count"] == 2
+    assert "html" not in row["email_delivery"]
+    assert legacy.load_data() == before and len(sent) == 2
+
+
+def test_history_recovers_legacy_original_from_contact_then_labels_text_fallback(callback):
+    client, sent = callback
+    assert client.post(BASE + "/reply", json=reply()).status_code == 200
+    data = legacy.load_data()
+    delivery = data["secretariat_demandes"][0]["callback_email"]["replies"][0]
+    delivery.pop("html")
+    activity = next(a for a in data["crm_contacts"][0]["activities"] if a["kind"] == "email")
+    # The original activity uses second precision; retain a deterministic historical timestamp.
+    delivery["sent_at"] = activity["date"]
+    legacy.save_data(data)
+    endpoint = BASE + "/emails/" + delivery["id"] + "/preview"
+    result = client.get(endpoint)
+    assert result.json == {"html": sent[0][3], "original": True}
+    data["crm_contacts"][0]["activities"] = []
+    legacy.save_data(data)
+    before = legacy.load_data()
+    result = client.get(endpoint)
+    assert result.status_code == 200 and result.json["original"] is False
+    assert "Voici la réponse relue." in result.json["html"]
+    assert legacy.load_data() == before and len(sent) == 1
+
+
+def test_history_never_lists_failed_pending_or_uncertain_mail(callback):
+    client, sent = callback
+    data = legacy.load_data()
+    data["secretariat_demandes"][0]["callback_email"] = {
+        "ack": {"status": "missing_email"},
+        "replies": [{"id": status, "status": status, "body": "private draft"}
+                    for status in ("sending", "failed", "unknown")]}
+    legacy.save_data(data)
+    assert client.get(BASE + "/emails").json == {"messages": []}
+    for key in ("ack", "sending", "failed", "unknown", "missing"):
+        assert client.get(BASE + "/emails/" + key + "/preview").status_code == 404
+    assert not sent
+
+
+def test_history_requires_internal_access_and_existing_callback(callback, monkeypatch):
+    client, _ = callback
+    for route in ("/emails", "/emails/ack/preview"):
+        assert legacy.app.test_client().get(BASE + route).status_code in (302, 401)
+        assert client.get("/api/crm/callback-requests/missing" + route).status_code == 404
+    monkeypatch.setattr(legacy, "current_user", lambda: {"email": "external@example.test"})
+    for route in ("/emails", "/emails/ack/preview"):
+        assert client.get(BASE + route).status_code == 403
 
 
 @pytest.mark.parametrize("code", ["javascript:alert(1)", "https://example.test", "INCONNUE", ["VTC"]])
@@ -355,6 +458,56 @@ def test_email_preservation_does_not_revert_a_newer_callback_status():
     assert outgoing["callback_status"] == "processed" and outgoing["callback_email"] == current["callback_email"]
     assert {a["id"] for a in data["crm_contacts"][0]["activities"]} == {"mail", "receipt", "handled"}
     assert next(a for a in data["crm_contacts"][0]["activities"] if a["id"] == "receipt")["callback_status"] == "processed"
+
+
+def test_history_dom_lazy_loading_selection_race_and_safe_preview():
+    if not shutil.which("node") or subprocess.run(["node", "-e", "require('jsdom')"], capture_output=True).returncode:
+        pytest.skip("Optional DOM runner requires node and jsdom")
+    source = (Path(__file__).parents[1] / "static/crm.js").read_text()
+    functions = "\n".join([
+        source[source.index("function callbackRequestActions("):source.index("const callbackReplyDrafts=")],
+        source[source.index("function modal("):source.index("\nfunction ", source.index("function modal(") + 1)],
+    ])
+    script = r"""
+const {JSDOM}=require('jsdom'), assert=require('node:assert/strict');
+const source=JSON.parse(require('fs').readFileSync(0,'utf8'));
+const dom=new JSDOM('<div id="modalRoot"></div>',{url:'https://crm.test',runScripts:'outside-only'}),w=dom.window;
+const calls=[],pending={};let failList=false;
+const messages=[{id:'new',kind:'reply',subject:'Réponse <img src=x onerror=alert(1)>',recipient:'camille@example.test',sent_at:'2026-11-17',actor:'Équipe'},
+ {id:'ack',kind:'acknowledgement',subject:'Nous avons bien reçu votre demande',recipient:'camille@example.test',sent_at:'2026-11-16'}];
+w.api=async url=>{calls.push(url);if(url.endsWith('/emails')){if(failList)throw Error('Chargement indisponible');return {messages}}
+ const id=url.split('/').at(-2);return new Promise(resolve=>pending[id]=resolve)};
+w.eval(`const esc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
+const fmt=value=>value;function stopActiveVoiceDictation(){}
+${source}
+window.openHistory=callbackEmailHistoryModal;window.actions=callbackRequestActions;`);
+const $=id=>w.document.getElementById(id),buttons=()=>w.document.querySelectorAll('[data-email-index]');
+const until=async fn=>{for(let i=0;i<100&&!fn();i++)await new Promise(r=>setTimeout(r,5));assert.ok(fn())};
+const row={id:'request',display_name:'Camille',crm_contact_id:'contact',email_delivery:{sent_count:2},status:'processed'};
+(async()=>{
+ assert.ok(w.actions(row).includes('Historique des mails (2)'));assert.equal(calls.length,0);
+ const opening=w.openHistory(row);await until(()=>pending.new);
+ assert.equal(buttons().length,2);assert.equal(w.document.querySelector('img'),null);
+ assert.equal(w.document.querySelector('a').getAttribute('href'),'/crm/contacts?fiche=contact');
+ buttons()[1].click();await until(()=>pending.ack);
+ pending.ack({html:'<p>Accusé archivé</p>',original:true});await until(()=>$('callbackHistoryFrame').srcdoc.includes('Accusé archivé'));
+ pending.new({html:'<p>Réponse plus récente</p>',original:true});await opening;
+ assert.ok($('callbackHistoryFrame').srcdoc.includes('Accusé archivé'));
+ assert.equal(buttons()[1].getAttribute('aria-pressed'),'true');
+ assert.equal($('callbackHistoryFrame').getAttribute('sandbox'),'');
+ buttons()[0].click();await until(()=>calls.length===4);
+ pending.new({html:'<p>Texte ancien</p>',original:false});await until(()=>$('callbackHistoryFeedback').textContent.includes('reconstituée'));
+ $('callbackHistoryClose').click();assert.equal($('callbackHistoryFrame'),null);
+ failList=true;await w.openHistory(row);assert.ok($('callbackHistoryRetry'));
+ failList=false;$('callbackHistoryRetry').click();await until(()=>buttons().length===2);
+ $('callbackHistoryClose').click();pending.new({html:'<p>Réponse tardive</p>',original:true});
+ await new Promise(r=>setTimeout(r,10));assert.equal($('callbackHistoryFrame'),null);
+ dom.window.close();
+})().catch(e=>{console.error(e);process.exitCode=1;dom.window.close()});
+"""
+    result = subprocess.run(["node", "-e", script], input=json.dumps(functions), text=True,
+                            capture_output=True, timeout=20)
+    assert result.returncode == 0, result.stderr
 
 
 def test_reply_dom_dictation_generation_preview_retry_and_cleanup():

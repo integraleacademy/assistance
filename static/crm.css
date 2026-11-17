@@ -1206,3 +1206,24 @@ img,svg,video,canvas,iframe{max-width:100%}
 .callback-reply-booking{border:1px solid #e5d9bd;border-radius:12px;background:#faf7ef;padding:14px;margin-bottom:18px}
 .callback-reply-booking .field{margin:14px 0 0}
 .callback-reply-booking small{font-size:12px;line-height:1.5;color:#6a7e98}
+
+.callback-history-open{width:100%;min-width:0;white-space:normal;line-height:1.4;margin-bottom:7px;font-size:11px}
+.callback-email-history-modal{width:min(1160px,96vw);max-width:1160px;max-height:94vh;display:flex;flex-direction:column}
+.callback-email-history-modal .modal-head,.callback-email-history-modal .modal-foot{flex-shrink:0}
+.callback-email-history-modal .modal-body{overflow:auto;padding:0}
+.callback-history-intro{margin:0;padding:20px 26px;color:#526783;font-size:13px;line-height:1.6;border-bottom:1px solid #e0e7f1}
+.callback-history-layout{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:400px}
+.callback-history-list{padding:16px;background:#f4f7fc;border-right:1px solid #e0e7f1;max-height:65vh;overflow:auto}
+.callback-history-list>p{font-size:13px;color:#526783;line-height:1.6}
+.callback-history-list button[data-email-index]{display:flex;flex-direction:column;gap:7px;width:100%;margin:0 0 10px;padding:16px;text-align:left;background:#fff;border:1px solid #e0e7f1;border-radius:12px;color:#183252;cursor:pointer;overflow-wrap:anywhere;font:inherit}
+.callback-history-list button[data-email-index]:hover{border-color:#99b4e8}
+.callback-history-list button.is-active{background:#eaf1ff;border-color:#3565c4;box-shadow:0 0 0 1px #3565c4}
+.callback-history-list button strong{font-size:13px;line-height:1.45}
+.callback-history-list button span,.callback-history-list button time{font-size:11px;line-height:1.5;color:#627590}
+.callback-history-list button .callback-history-kind{color:#315c9e;font-size:10px;font-weight:700;letter-spacing:.04em}
+.callback-history-detail{min-width:0;padding:22px}
+.callback-history-detail h3{margin:0 0 10px;font-size:18px;color:#183252;overflow-wrap:anywhere}
+.callback-history-detail p{font-size:12px;color:#627590;margin:6px 0;line-height:1.6;overflow-wrap:anywhere}
+.callback-history-detail iframe{display:block;width:100%;height:55vh;margin-top:14px;border:1px solid #dce5f1;border-radius:10px;box-sizing:border-box;background:#edf2f8}
+.callback-email-history-modal [hidden]{display:none!important}
+@media(max-width:800px){.callback-history-layout{grid-template-columns:1fr}.callback-history-list{max-height:210px;border-right:0;border-bottom:1px solid #e0e7f1}.callback-history-detail{padding:18px}.callback-history-detail iframe{height:60vh}.callback-history-intro{padding:18px}}
