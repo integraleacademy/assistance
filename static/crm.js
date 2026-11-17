@@ -622,19 +622,21 @@ async function callbackEmailHistoryModal(row){
  const endpoint='/api/crm/callback-requests/'+encodeURIComponent(row.id)+'/emails';
  const contactLink=row.crm_contact_id?`<a class="btn" href="/crm/contacts?fiche=${encodeURIComponent(row.crm_contact_id)}">Fiche CRM complète</a>`:'';
  modal('Historique des mails',`<p class="callback-history-intro">Les accusés de réception et les réponses envoyés pour la demande de <strong>${esc(row.display_name)}</strong>.</p><div class="callback-history-layout"><div id="callbackHistoryList" class="callback-history-list" aria-label="Mails envoyés"><p>Chargement de l’historique…</p></div><section class="callback-history-detail"><div id="callbackHistoryHeading"></div><p id="callbackHistoryFeedback" role="status" aria-live="polite">Sélectionnez un mail pour le consulter.</p><iframe id="callbackHistoryFrame" title="E-mail envoyé" sandbox referrerpolicy="no-referrer" hidden></iframe></section></div>`,`${contactLink}<button class="btn" id="callbackHistoryClose" type="button">Fermer</button>`,'callback-email-history-modal');
- const dialog=document.querySelector('.callback-email-history-modal'),get=id=>dialog.querySelector('#'+id),list=get('callbackHistoryList'),heading=get('callbackHistoryHeading'),feedback=get('callbackHistoryFeedback'),frame=get('callbackHistoryFrame');
- let selection=0;
+ const dialog=document.querySelector('.callback-email-history-modal'),get=id=>dialog.querySelector('#'+id),list=get('callbackHistoryList'),heading=get('callbackHistoryHeading'),feedback=get('callbackHistoryFeedback');
+ let frame=get('callbackHistoryFrame'),selection=0;
  get('callbackHistoryClose').onclick=closeModal;
  dialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeModal()}});
  const selectMessage=async(message,index)=>{
   const current=++selection;
   list.querySelectorAll('button[data-email-index]').forEach(button=>{const active=Number(button.dataset.emailIndex)===index;button.classList.toggle('is-active',active);button.setAttribute('aria-pressed',String(active))});
   heading.innerHTML=`<h3>${esc(message.subject)}</h3><p><strong>À :</strong> ${esc(message.recipient)}</p><p>Envoyé le ${esc(fmt(message.sent_at))}${message.actor?' · '+esc(message.actor):''}</p>`;
-  frame.hidden=true;frame.srcdoc='';feedback.textContent='Chargement du mail…';
+  frame.hidden=true;feedback.textContent='Chargement du mail…';
   try{
    const result=await api(endpoint+'/'+encodeURIComponent(message.id)+'/preview');
    if(!dialog.isConnected||selection!==current)return;
-   frame.srcdoc=result.html;frame.hidden=false;
+   // Mount a populated, visible frame to avoid a blank layout after hidden navigation.
+   const next=frame.cloneNode(false);next.hidden=false;next.srcdoc=result.html;
+   frame.replaceWith(next);frame=next;
    feedback.textContent=result.original?'Copie du mail envoyé.':'Texte archivé — présentation reconstituée.';
   }catch(error){if(dialog.isConnected&&selection===current)feedback.textContent=error.message}
  };
