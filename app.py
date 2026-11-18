@@ -17,6 +17,7 @@ from secretariat_catalogue import (
     PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
 )
 import crm_public_sessions
+import crm_call_conversion
 from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS, next_five_weekdays
 import secretariat_calls
 import secretariat_messages
@@ -11806,6 +11807,7 @@ def _crm_upsert_calendly_appointment(
         contact["formation"] = inferred_formation
         if inferred_desp_type:
             contact["desp_type"] = inferred_desp_type
+    crm_call_conversion.remember_booking_facts(appointment, contact, now)
 
     if not existing:
         appointments.append(appointment)
@@ -16693,7 +16695,7 @@ def _crm_appointment_list(data):
     ), key=lambda item: item.get("start_time") or "")
 
 
-def _crm_calendly_appointments_payload(data, day=None):
+def _crm_calendly_appointments_payload(data, day=None, *, with_forecasts=False):
     """Cache the agenda independently of histories, templates and settings."""
     raw = data.get("crm_calendly_appointments", [])
     if day is not None:
@@ -16723,12 +16725,30 @@ def _crm_calendly_appointments_payload(data, day=None):
         for item in raw:
             contact = projected.get(item.get("contact_id"), missing)
             fields = item if day is None else {
-                key: item[key] for key in (*CRM_APPOINTMENT_LIST_FIELDS, "host_name") if key in item
+                key: item[key] for key in (*CRM_APPOINTMENT_LIST_FIELDS, "host_name", "enrollment_outcome") if key in item
             }
-            rows.append({**fields, "contact": contact, "calendar_slot": _crm_calendar_slot(item, contact)})
+            row = {**fields, "contact": contact, "calendar_slot": _crm_calendar_slot(item, contact)}
+            row.pop("conversion_context", None)
+            rows.append(row)
         return sorted(rows, key=lambda item: item.get("start_time") or "")
 
     appointments = _CRM_PROJECTIONS.get("calendar" if day is None else "calendar_day", dependencies, build)
+    if with_forecasts and appointments:
+        # A separate calendar-only projection avoids rescanning histories per card,
+        # on unrelated CRM pages, or on a second request for the same revision.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if "_crm_read_revision" in data:
+            revision = data["_crm_read_revision"]
+            predictions = _CRM_PROJECTIONS.get(
+                "call_conversion", revision, lambda: crm_call_conversion.forecasts(data, now),
+                immutable=True,
+            )
+        else:
+            predictions = crm_call_conversion.forecasts(data, now)
+        appointments = [
+            dict(row, conversion_forecast=predictions[row["id"]])
+            if row.get("id") in predictions else row for row in appointments
+        ]
     return {
         "appointments": appointments,
         "integration": _crm_calendly_status_payload(data),
@@ -16749,7 +16769,7 @@ def crm_calendly_appointments():
     except ValueError:
         return jsonify(error="Choisissez une date valide."), 400
     data = _crm_prepared_read_model()
-    payload = _crm_calendly_appointments_payload(data, day)
+    payload = _crm_calendly_appointments_payload(data, day, with_forecasts=day >= datetime.datetime.now(secretariat_calls.PARIS).date())
     now = datetime.datetime.now(datetime.timezone.utc)
     overview = next_five_weekdays(now.astimezone(CALENDAR_PARIS).date())
     saved = _CASSANDRE_CALENDAR.last_known(
@@ -16826,9 +16846,12 @@ def crm_cassandre_availability():
 
 @app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
 @login_required
+@_crm_serialized
 def crm_calendly_update_appointment(appointment_id):
     """Enregistre le résultat de la prise de contact associée à un rendez-vous."""
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict) or not ({"response_status", "enrollment_outcome"} & payload.keys()):
+        return jsonify({"error": "Aucun résultat renseigné."}), 400
     response_status = str(payload.get("response_status") or "").strip()
     if response_status not in {"", "answered", "no_answer"}:
         return jsonify({"error": "Résultat du rendez-vous invalide."}), 400
@@ -16844,6 +16867,21 @@ def crm_calendly_update_appointment(appointment_id):
 
     previous_status = appointment.get("response_status") or ""
     now = _crm_now()
+    if "enrollment_outcome" in payload:
+        if "response_status" not in payload:
+            response_status = previous_status
+        outcome = payload["enrollment_outcome"]
+        error = crm_call_conversion.validate_outcome(appointment, outcome, response_status, now)
+        if error:
+            return jsonify(error=error), 400
+        if "response_status" not in payload and appointment.get("enrollment_outcome", "") == outcome:
+            return jsonify(appointment)
+        crm_call_conversion.record_outcome(appointment, outcome, now)
+        if "response_status" not in payload:
+            save_data(data)
+            return jsonify(appointment)
+    elif response_status != "answered" and appointment.get("enrollment_outcome"):
+        crm_call_conversion.record_outcome(appointment, "", now)
     appointment["response_status"] = response_status
     appointment["response_status_updated_at"] = now
     appointment["updated_at"] = now
@@ -19090,6 +19128,10 @@ def _crm_patch_contact_locked(data, contact, contact_id):
         elif old_score.get("operational_status") == "blocked" and new_score.get("operational_status") == "ready":
             _crm_activity(contact, "score", "Le blocage de financement a été levé")
     contact["updated_at"] = _crm_now()
+    if crm_call_conversion.PROJECT_FIELDS.intersection(payload):
+        for appointment in data.get("crm_calendly_appointments", []):
+            if appointment.get("contact_id") == contact_id:
+                crm_call_conversion.remember_booking_facts(appointment, contact, contact["updated_at"])
     save_data(data)
     return jsonify(_crm_contact_detail_response(contact, data))
 
@@ -19201,6 +19243,14 @@ def crm_log_call(contact_id):
         if not appointment:
             return jsonify({"error": "Rendez-vous introuvable pour ce contact"}), 404
     now = _crm_now()
+    if "enrollment_outcome" in payload:
+        if not appointment:
+            return jsonify(error="Un rendez-vous est requis pour enregistrer sa décision."), 400
+        outcome = payload["enrollment_outcome"]
+        error = crm_call_conversion.validate_outcome(appointment, outcome, "answered", now)
+        if error:
+            return jsonify(error=error), 400
+        crm_call_conversion.record_outcome(appointment, outcome, now)
     contact["updated_at"] = now
     delivery = None
     if relance:
