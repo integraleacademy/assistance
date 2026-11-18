@@ -955,6 +955,18 @@ function calendarContactMetrics(contact){
  const metric=(label,value,suffix)=>`<span class="calendar-contact-metric ${tone(value)}"><small>${label}</small><strong>${value===null?'Indisponible':`${value}${suffix}`}</strong></span>`;
  return `<div class="calendar-contact-metrics" aria-label="Indicateurs du dossier">${metric('Score d’intégration',score,' / 100')}${metric('Complétude du dossier',completeness,' %')}</div>`;
 }
+function calendarConversion(appointment){
+ const forecast=appointment.conversion_forecast;
+ if(!forecast||appointment.response_status||Date.parse(appointment.start_time)<=Date.now())return '';
+ if(forecast.mode==='insufficient'){
+  return '<span class="call-forecast-empty">Conversion · historique insuffisant</span>';
+ }
+ const direct=forecast.mode==='during_call';
+ const title=direct?'Inscription pendant l’appel':'Conversion à 7 jours';
+ const evidence=direct?'inscriptions confirmées pendant l’appel':'passages au statut « Converti » dans les 7 jours du dernier appel décroché';
+ const explanation=direct?'Estimation comparée aux résultats d’une période plus récente.':'Repère historique en attendant assez de décisions consignées pendant les appels.';
+ return `<details class="call-forecast" onclick="event.stopPropagation()"><summary>${title} <strong>≈ ${esc(forecast.percent)} %</strong></summary><div>${esc(forecast.positive)} ${evidence} sur ${esc(forecast.observed)} rendez-vous renseignés (${esc(forecast.contacts)} autres dossiers). ${esc(forecast.basis)}. ${explanation}</div></details>`;
+}
 let calendarAvailability;
 let lastCalendarOverview, calendarDayRequest, displayedCalendarDate, displayedCalendarRows;
 
@@ -1130,7 +1142,7 @@ function calendarPage(){
   calendarRefresh.onclick=()=>loadCalendar(true);
   loadCalendar();
 }
-function renderCalendarAppointments(appointments){const root=document.querySelector('#calendarContent');if(!root)return;const date=new Date(`${calendarSelectedDate}T12:00:00`),items=(appointments||[]).filter(a=>a.calendar_slot?.day===calendarSelectedDate).sort((a,b)=>a.calendar_slot.start-b.calendar_slot.start);root.className='calendar-days';root.innerHTML=`<section class="calendar-day"><header><div class="calendar-date"><strong>${date.getDate()}</strong><span>${date.toLocaleDateString('fr-FR',{weekday:'long'})}<small>${date.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</small></span></div><div class="calendar-day-counts"><span>${items.length} rendez-vous prévu${items.length>1?'s':''}</span><span class="calendar-free-count" id="calendarDayFree" aria-live="polite"></span></div></header>${items.length?`<div class="calendar-events">${items.map(a=>{const c=a.contact||{},name=a.calendar_slot.person,treatment=calendarAppointmentTreatment(a),treatmentClass=treatment?` calendar-treated-${treatment.tone}`:'';return `<article class="calendar-event calendar-training-${calendarFormationTone(a,c)}${treatmentClass}" ${c.id?`data-id="${c.id}"`:''}><time>${esc(a.calendar_slot.time)}</time><i></i><div><b>${esc(a.name||'Rendez-vous Calendly')}</b><span>${esc(name)}${c.formation?` · ${esc(c.formation)}`:''}</span><small class="calendar-host">Interlocuteur : ${esc(a.host_name||'Non renseigné')}</small>${calendarContactMetrics(c)}</div><div class="calendar-event-side">${treatment?`<span class="calendar-treatment-badge ${treatment.tone}">✓ ${esc(treatment.label)}</span>`:''}<span class="calendar-duration">${a.end_time?Math.round((new Date(a.end_time)-new Date(a.start_time))/60000)+' min':'Calendly'}</span>${appointmentResponseControl(a)}</div></article>`}).join('')}</div>`:'<div class="calendar-empty"><b>Aucun rendez-vous ce jour-là</b><span>Choisissez une autre date pour consulter l’agenda.</span></div>'}</section>`;calendarAvailability?.paint();bindRows();bindAppointmentResponseControls(items,()=>loadCalendar())}
+function renderCalendarAppointments(appointments){const root=document.querySelector('#calendarContent');if(!root)return;const date=new Date(`${calendarSelectedDate}T12:00:00`),items=(appointments||[]).filter(a=>a.calendar_slot?.day===calendarSelectedDate).sort((a,b)=>a.calendar_slot.start-b.calendar_slot.start);root.className='calendar-days';root.innerHTML=`<section class="calendar-day"><header><div class="calendar-date"><strong>${date.getDate()}</strong><span>${date.toLocaleDateString('fr-FR',{weekday:'long'})}<small>${date.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</small></span></div><div class="calendar-day-counts"><span>${items.length} rendez-vous prévu${items.length>1?'s':''}</span><span class="calendar-free-count" id="calendarDayFree" aria-live="polite"></span></div></header>${items.length?`<div class="calendar-events">${items.map(a=>{const c=a.contact||{},name=a.calendar_slot.person,treatment=calendarAppointmentTreatment(a),treatmentClass=treatment?` calendar-treated-${treatment.tone}`:'';return `<article class="calendar-event calendar-training-${calendarFormationTone(a,c)}${treatmentClass}" ${c.id?`data-id="${c.id}"`:''}><time>${esc(a.calendar_slot.time)}</time><i></i><div><b>${esc(a.name||'Rendez-vous Calendly')}</b><span>${esc(name)}${c.formation?` · ${esc(c.formation)}`:''}</span><small class="calendar-host">Interlocuteur : ${esc(a.host_name||'Non renseigné')}</small>${calendarContactMetrics(c)}${calendarConversion(a)}</div><div class="calendar-event-side">${treatment?`<span class="calendar-treatment-badge ${treatment.tone}">✓ ${esc(treatment.label)}</span>`:''}<span class="calendar-duration">${a.end_time?Math.round((new Date(a.end_time)-new Date(a.start_time))/60000)+' min':'Calendly'}</span>${appointmentResponseControl(a)}</div></article>`}).join('')}</div>`:'<div class="calendar-empty"><b>Aucun rendez-vous ce jour-là</b><span>Choisissez une autre date pour consulter l’agenda.</span></div>'}</section>`;calendarAvailability?.paint();bindRows();bindAppointmentResponseControls(items,()=>loadCalendar())}
 async function loadCalendar(manual=false){
   const root=document.querySelector('#calendarContent'),button=document.querySelector('#calendarRefresh');
   if(!root)return;
@@ -2026,10 +2038,45 @@ function calendlyMeta(a){
   const location=calendlyLocationLabel(a.location);
   return `<div class="calendly-meta">${a.host_name?`<span><i aria-hidden="true">●</i> Avec ${esc(a.host_name)}</span>`:''}${location?`<span><i aria-hidden="true">⌖</i> ${esc(location)}</span>`:''}</div>`;
 }
+const enrollmentOutcomes=[
+ ['confirmed','Inscription confirmée pendant l’appel'],
+ ['pending','Décision en attente'],
+ ['declined','Refus pendant l’appel'],
+];
+function canRecordEnrollment(a){
+ const kind=String(a?.location?.kind||a?.location?.type||a?.location||'').toLowerCase().replace(/[_-]/g,' ');
+ if(['zoom','google conference','google meet','microsoft teams conference','physical','in person'].includes(kind))return false;
+ return Boolean(a?.id&&a.contact_id&&!C.external_meta&&isTelephoneAppointment(a)
+  &&!['canceled','cancelled'].includes(a.status)&&Date.parse(a.start_time)<=Date.now());
+}
+function enrollmentOptions(value=''){
+ return '<option value="">À renseigner</option>'+enrollmentOutcomes.map(([key,label])=>
+  `<option value="${key}" ${key===value?'selected':''}>${label}</option>`).join('');
+}
+function appointmentEnrollmentControl(a){
+ if(a.response_status!=='answered'||!canRecordEnrollment(a))return '';
+ return `<label class="appointment-response" onclick="event.stopPropagation()"><span>Issue de l’appel</span><select data-appointment-enrollment="${esc(a.id)}">${enrollmentOptions(a.enrollment_outcome)}</select></label>`;
+}
 function appointmentResponseControl(a,label='Réponse'){
-  return `<label class="appointment-response" onclick="event.stopPropagation()"><span>${esc(label)}</span><select data-appointment-response="${esc(a.id)}"><option value="" ${!a.response_status?'selected':''}>À renseigner</option><option value="answered" ${a.response_status==='answered'?'selected':''}>A répondu</option><option value="no_answer" ${a.response_status==='no_answer'?'selected':''}>Sans réponse</option></select></label>`;
+  return `<label class="appointment-response" onclick="event.stopPropagation()"><span>${esc(label)}</span><select data-appointment-response="${esc(a.id)}"><option value="" ${!a.response_status?'selected':''}>À renseigner</option><option value="answered" ${a.response_status==='answered'?'selected':''}>A répondu</option><option value="no_answer" ${a.response_status==='no_answer'?'selected':''}>Sans réponse</option></select></label>${appointmentEnrollmentControl(a)}`;
 }
 function bindAppointmentResponseControls(items,onSaved){
+  document.querySelectorAll('[data-appointment-enrollment]').forEach(select=>select.onchange=async event=>{
+    event.stopPropagation();
+    const appointment=items.find(item=>item.id===select.dataset.appointmentEnrollment);
+    if(!appointment)return;
+    const previous=appointment.enrollment_outcome||'';
+    select.disabled=true;
+    try{
+      const updated=await api(`/api/crm/calendly/appointments/${encodeURIComponent(appointment.id)}`,{
+        method:'PATCH',body:JSON.stringify({enrollment_outcome:select.value})
+      });
+      Object.assign(appointment,updated);
+      if(onSaved)onSaved();
+      toast('Issue de l’appel enregistrée');
+    }catch(error){select.value=previous;toast(error.message,true)}
+    finally{select.disabled=false}
+  });
   document.querySelectorAll('[data-appointment-response]').forEach(select=>select.onchange=async event=>{
     event.stopPropagation();
     const appointment=items.find(item=>item.id===select.dataset.appointmentResponse),previous=appointment?.response_status||'';
@@ -2430,9 +2477,9 @@ function readCallDraft(key){
  }catch(_){/* Le brouillon mémoire reste disponible si le stockage local est indisponible. */}
  return draft&&typeof draft.text==='string'?draft:null
 }
-function saveCallDraft(key,text){
- const draft={text:String(text??''),updated_at:new Date().toISOString()};
- if(!draft.text){
+function saveCallDraft(key,text,outcome=''){
+ const draft={text:String(text??''),outcome,updated_at:new Date().toISOString()};
+ if(!draft.text&&!outcome){
   callDraftMemory.delete(key);
   try{localStorage.removeItem(key);return{...draft,persisted:true}}catch(_){return{...draft,persisted:false}}
  }
@@ -2449,11 +2496,14 @@ function callModal(c,options={}){
  if(activeCallComposerClose)activeCallComposerClose();
  stopActiveVoiceDictation();
  const restoredDraft=readCallDraft(draftKey),title=options.relance?'Consigner l’appel de relance':'Consigner un appel';
- callComposerRoot.innerHTML=`<div class="modal-bg call-composer-bg"><div class="modal call-modal" role="dialog" aria-modal="true" aria-labelledby="callComposerTitle" data-call-draft-key="${esc(draftKey)}"><div class="modal-head"><div class="call-composer-heading"><h2 id="callComposerTitle">${title}</h2><small><span>${esc(displayName(c))}</span><span aria-hidden="true">•</span><span id="callDraftMiniStatus">Brouillon auto-enregistré</span></small></div><button class="call-modal-minimize" id="minimizeCall" type="button" aria-expanded="true"><span class="call-modal-minimize-icon" aria-hidden="true">—</span><span data-call-minimize-label>Réduire</span></button><button class="close" type="button" aria-label="Fermer la consignation — le brouillon sera conservé" title="Fermer (brouillon conservé)">×</button></div><div class="modal-body"><div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}<div class="field call-note-field"><div class="field-label-row call-note-heading"><label for="callNote">Compte-rendu</label><button class="voice-input-button" id="dictateCall" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le résumé</span></button></div><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…">${esc(restoredDraft?.text||'')}</textarea><small class="voice-input-status" id="dictateCallStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small><small class="call-draft-status" id="callDraftStatus" aria-live="polite">${restoredDraft?'Brouillon précédent restauré.':'Votre brouillon est enregistré automatiquement pendant la saisie.'}</small></div>${crmPresetMarkup('call_note_presets')}</div><div class="modal-foot"><button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button></div></div></div>`;
+ const outcomeField=canRecordEnrollment(options.appointment)
+  ?`<label class="field">Issue de l’appel<select id="callEnrollment">${enrollmentOptions(restoredDraft?.outcome??options.appointment.enrollment_outcome)}</select></label>`:'';
+ callComposerRoot.innerHTML=`<div class="modal-bg call-composer-bg"><div class="modal call-modal" role="dialog" aria-modal="true" aria-labelledby="callComposerTitle" data-call-draft-key="${esc(draftKey)}"><div class="modal-head"><div class="call-composer-heading"><h2 id="callComposerTitle">${title}</h2><small><span>${esc(displayName(c))}</span><span aria-hidden="true">•</span><span id="callDraftMiniStatus">Brouillon auto-enregistré</span></small></div><button class="call-modal-minimize" id="minimizeCall" type="button" aria-expanded="true"><span class="call-modal-minimize-icon" aria-hidden="true">—</span><span data-call-minimize-label>Réduire</span></button><button class="close" type="button" aria-label="Fermer la consignation — le brouillon sera conservé" title="Fermer (brouillon conservé)">×</button></div><div class="modal-body"><div class="field"><label>Date de l’appel</label><input value="${new Date().toLocaleString('fr-FR')}" disabled></div>${options.relance?'<div class="relance-call-context"><span>✓</span><p>Après validation, cette relance sera classée dans « A répondu ».</p></div>':''}${outcomeField}<div class="field call-note-field"><div class="field-label-row call-note-heading"><label for="callNote">Compte-rendu</label><button class="voice-input-button" id="dictateCall" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le résumé</span></button></div><textarea id="callNote" placeholder="Résumez votre échange, les besoins et les prochaines étapes…">${esc(restoredDraft?.text||'')}</textarea><small class="voice-input-status" id="dictateCallStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small><small class="call-draft-status" id="callDraftStatus" aria-live="polite">${restoredDraft?'Brouillon précédent restauré.':'Votre brouillon est enregistré automatiquement pendant la saisie.'}</small></div>${crmPresetMarkup('call_note_presets')}</div><div class="modal-foot"><button class="btn" id="aiBtn">✦ Reformuler avec l’IA</button><button class="btn blue" id="logCall">Consigner l’appel</button></div></div></div>`;
  const background=callComposerRoot.querySelector('.call-composer-bg'),dialog=callComposerRoot.querySelector('.call-modal'),body=dialog.querySelector('.modal-body'),foot=dialog.querySelector('.modal-foot'),heading=dialog.querySelector('.modal-head'),callNote=dialog.querySelector('#callNote'),voiceButton=dialog.querySelector('#dictateCall'),voiceStatus=dialog.querySelector('#dictateCallStatus'),draftStatus=dialog.querySelector('#callDraftStatus'),miniStatus=dialog.querySelector('#callDraftMiniStatus'),minimizeButton=dialog.querySelector('#minimizeCall'),minimizeLabel=minimizeButton.querySelector('[data-call-minimize-label]'),minimizeIcon=minimizeButton.querySelector('.call-modal-minimize-icon'),closeButton=dialog.querySelector('.close'),aiButton=dialog.querySelector('#aiBtn'),logButton=dialog.querySelector('#logCall');
  const stopVoiceDictation=bindVoiceDictation(callNote,voiceButton,voiceStatus,{onComplete:C.external_meta?null:async text=>(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:text,mode:'correction_dictee'})})).texte});
+ const outcomeInput=dialog.querySelector('#callEnrollment');
  const persistDraft=()=>{
-  const saved=saveCallDraft(draftKey,callNote.value),time=new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit'}).format(new Date(saved.updated_at));
+  const saved=saveCallDraft(draftKey,callNote.value,outcomeInput?.value||''),time=new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit'}).format(new Date(saved.updated_at));
   draftStatus.textContent=saved.persisted?`Brouillon enregistré automatiquement à ${time}.`:'Brouillon conservé dans cet onglet ; le stockage de ce navigateur est indisponible.';
   miniStatus.textContent=saved.persisted?`Enregistré à ${time}`:'Conservé dans cet onglet'
  };
@@ -2479,12 +2529,13 @@ function callModal(c,options={}){
  };
  activeCallComposerKey=draftKey;activeCallComposerClose=dismiss;activeCallComposerExpand=()=>setMinimized(false);
  callNote.addEventListener('input',persistDraft);
+ outcomeInput?.addEventListener('change',persistDraft);
  bindCrmPresetGroup('call_note_presets',callNote);
  minimizeButton.onclick=()=>setMinimized(!dialog.classList.contains('is-minimized'));
  heading.onclick=event=>{if(dialog.classList.contains('is-minimized')&&!event.target.closest('button'))setMinimized(false)};
  closeButton.onclick=()=>dismiss();
  aiButton.onclick=async()=>{if(voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(false);await stopVoiceDictation.whenSettled();if(!callNote.value.trim())return toast('Saisissez d’abord une note',true);aiButton.disabled=true;aiButton.textContent='Reformulation…';try{callNote.value=(await api('/api/crm/reformuler',{method:'POST',body:JSON.stringify({texte:callNote.value})})).texte;callNote.dispatchEvent(new Event('input',{bubbles:true}))}catch(e){toast(e.message,true)}finally{aiButton.disabled=false;aiButton.textContent='✦ Reformuler avec l’IA'}};
- logButton.onclick=async()=>{logButton.disabled=true;if(voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(true);await stopVoiceDictation.whenSettled();if(!callNote.value.trim()){logButton.disabled=false;return toast('Saisissez un compte-rendu',true)}try{const result=await api(`/api/crm/contacts/${c.id}/appel`,{method:'POST',body:JSON.stringify({commentaire:callNote.value,appointment_id:options.appointment?.id,relance_id:options.relance?.id})});Object.assign(c,result.contact||result);mergeContactInStore(c.id,result.contact||result);clearCallDraft(draftKey);dismiss({cancelled:false,preserveDraft:false});if(options.onSaved)options.onSaved(result);showContact(c.id,options.returnTab||'contactInfoTab');const sent=result.delivery?.sms&&result.delivery?.email;toast(options.appointment?(sent?'Appel consigné ; e-mail et SMS envoyés':'Appel consigné ; vérifiez les coordonnées ou la configuration des envois'):options.relance?'Appel consigné · relance classée « A répondu »':'Appel consigné',!!options.appointment&&!sent)}catch(e){logButton.disabled=false;persistDraft();toast(e.message,true)}};
+ logButton.onclick=async()=>{logButton.disabled=true;if(voiceButton.getAttribute('aria-pressed')==='true')stopVoiceDictation.stop(true);await stopVoiceDictation.whenSettled();const outcome=outcomeInput?.value;const note=callNote.value.trim()||enrollmentOutcomes.find(([value])=>value===outcome)?.[1];if(!note){logButton.disabled=false;return toast('Saisissez un compte-rendu ou choisissez une issue',true)}try{const result=await api(`/api/crm/contacts/${c.id}/appel`,{method:'POST',body:JSON.stringify({commentaire:note,appointment_id:options.appointment?.id,relance_id:options.relance?.id,...(outcomeInput&&outcome!==(options.appointment.enrollment_outcome||'')?{enrollment_outcome:outcome}:{})})});Object.assign(c,result.contact||result);mergeContactInStore(c.id,result.contact||result);clearCallDraft(draftKey);dismiss({cancelled:false,preserveDraft:false});if(options.onSaved)options.onSaved(result);showContact(c.id,options.returnTab||'contactInfoTab');const sent=result.delivery?.sms&&result.delivery?.email;toast(options.appointment?(sent?'Appel consigné ; e-mail et SMS envoyés':'Appel consigné ; vérifiez les coordonnées ou la configuration des envois'):options.relance?'Appel consigné · relance classée « A répondu »':'Appel consigné',!!options.appointment&&!sent)}catch(e){logButton.disabled=false;persistDraft();toast(e.message,true)}};
  if(restoredDraft)callNote.setSelectionRange(callNote.value.length,callNote.value.length);
 }
 function metaTemplatesForContact(contact,type){

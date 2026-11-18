@@ -599,6 +599,12 @@ body.sidebar-collapsed .toast{left:100px;width:min(420px,calc(100vw - 124px))}
 .calendar-event .calendar-treatment-badge.no-answer{background:#ffe9bf;color:#8b5b10}
 .calendar-contact-metrics{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.calendar-event .calendar-contact-metrics>span{display:flex;align-items:center;gap:6px;margin:0;padding:5px 8px;border-radius:9px;background:#edf8f4;color:#137258;font-size:10px}.calendar-event .calendar-contact-metrics>span.watch{background:#fff5df;color:#916017}.calendar-event .calendar-contact-metrics>span.low{background:#fff0ef;color:#a13b35}.calendar-event .calendar-contact-metrics>span.unavailable{background:#f1f4f8;color:#718096}.calendar-contact-metric small{font-size:9px;font-weight:700}.calendar-contact-metric strong{font:800 10px Manrope;white-space:nowrap}
 @media(max-width:650px){.calendar-contact-metrics{align-items:stretch;flex-direction:column}.calendar-event .calendar-contact-metrics>span{justify-content:space-between;max-width:230px}}
+.calendar-event .call-forecast { margin-top: 8px; color: #233b63; font-size: 13px; }
+.call-forecast summary { width: fit-content; cursor: pointer; }
+.call-forecast summary strong { margin-left: 3px; font-variant-numeric: tabular-nums; }
+.call-forecast[open] div { max-width: 53ch; margin-top: 5px; line-height: 1.45; }
+.calendar-event .call-forecast-empty { display: block; margin-top: 8px; color: #5c6571; font-size: 12px; }
+.appointment-response select[data-appointment-enrollment] { max-width: min(220px, 100%); }
 .actions-menu .delete-action{margin-top:5px;border-top:1px solid #f2d7da;color:#c43e4d}
 .actions-menu .delete-action:hover{background:#fff1f2;color:#ad2635}
 .side-user form{margin:0}.side-user button{display:grid;place-items:center;width:34px;height:34px;border:1px solid #ffffff24;border-radius:8px;background:#ffffff0c;color:#d6e2f5;font-size:18px;cursor:pointer}.side-user button:hover,.side-user button:focus-visible{background:#ffffff20;color:#fff;outline:2px solid #8bb8ff;outline-offset:2px}
