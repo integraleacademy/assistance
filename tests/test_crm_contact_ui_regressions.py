@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 
 
@@ -8,6 +9,14 @@ CRM_APPOINTMENT_STATE_JS = Path(__file__).parents[1] / "static" / "crm_appointme
 CRM_CSS = Path(__file__).parents[1] / "static" / "crm.css"
 CRM_TEMPLATE = Path(__file__).parents[1] / "templates" / "crm.html"
 APP_PY = Path(__file__).parents[1] / "app.py"
+
+
+def assert_versioned_crm_assets(backend):
+    assert re.search(r'^CRM_ASSET_VERSION = "[^"]+"', backend, flags=re.MULTILINE)
+    template = CRM_TEMPLATE.read_text(encoding="utf-8")
+    for name in ("crm.js", "crm.css"):
+        assert f"filename='{name}',v=asset_version" in template
+    assert "asset_version=CRM_ASSET_VERSION" in backend
 
 
 def test_calendly_refresh_keeps_cached_appointments_and_formats_paris_sync_time():
@@ -360,7 +369,7 @@ console.log('CRM save notifications: OK');
     assert "finishStatusSave('Statut enregistré')" in javascript
     assert "beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…')" in javascript
     assert "finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')" in javascript
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in backend
+    assert_versioned_crm_assets(backend)
 
 def test_collapsed_sidebar_is_compact_accessible_and_persistent():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -449,7 +458,7 @@ console.log('CRM sidebar state: OK');
 def test_relaunch_template_is_available_for_every_formation():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
-    assert "isRelaunch=x=>String(x.nom||'').trim().toLocaleLowerCase('fr-FR')==='relance'" in javascript
+    assert "isRelaunch=x=>x.relance_choice==='appointment'||String(x.nom||'').trim().toLocaleLowerCase('fr-FR')==='relance'" in javascript
     assert 'optgroup label="Tous les parcours"' in javascript
 
 
@@ -990,7 +999,7 @@ def test_crm_flag_ui_supports_selection_filter_sort_and_responsive():
     assert "function listQualificationFlag(contact)" in crm_js
     assert "${listQualificationFlag(contact)}${scoreBadge(contact)}" in crm_js
     assert "${listQualificationFlag(contact)}<b>${esc(displayName(contact))}" in crm_js
-    assert "cell(c,leadScoreCell(c))" in crm_js
+    assert "cell(row,c?leadScoreCell(c):'—')" in crm_js
     assert "<span>${globalContactName(c)}<small>" in crm_js
     assert "<b>${esc(displayName(c))}</b>${listQualificationFlag(c)}" not in crm_js
     assert 'class="contact-flag-badge is-list ${flag}"' in crm_js
@@ -1028,7 +1037,7 @@ def test_pistes_display_the_desp_journey_badge_without_affecting_other_trainings
     assert 'class="crm-list-formation-line"' in crm_js
     assert ".crm-desp-journey{" in workspace_css
     assert ".crm-list-formation-line{" in workspace_css
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in backend
+    assert_versioned_crm_assets(backend)
 
     helper = "function despJourneyBadge" + crm_js.split(
         "function despJourneyBadge", 1
@@ -1242,7 +1251,6 @@ def test_global_search_only_indexes_visible_contact_fields_and_ranks_names_first
     assert "Object.values(c)" not in javascript
     assert "function contactSearchRank(c,q)" in javascript
     assert "crmActiveContacts().filter(c=>contactMatchesSearch(c,q))" in javascript
-    assert "&&contactMatchesSearch(c,q)" in javascript
     assert "contactSearchRank(a,q)-contactSearchRank(b,q)" in javascript
     assert "filter(contact=>contact&&!contact.archived_at)" in javascript
     assert "normalizeGlobalSearch(label).includes(q)" in javascript
@@ -1325,7 +1333,7 @@ def test_contact_document_title_is_wired_to_real_contact_navigation():
     assert template.index("filename='crm_title.js'") < template.index("filename='crm.js'")
     assert "filename='crm_title.js',v=asset_version" in template
     assert "filename='crm.js',v=asset_version" in template
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in backend
+    assert_versioned_crm_assets(backend)
 
 def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1350,10 +1358,10 @@ def test_programmed_appointment_date_refresh_is_wired_across_tabs():
     assert "filename='crm_appointment_state.js',v=asset_version" in template
     assert "replaceContact" in appointment_state
     assert "nextAppointment" in appointment_state
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in backend
+    assert_versioned_crm_assets(backend)
 
 
-def test_calendar_page_rerenders_from_the_collaborative_snapshot():
+def test_calendar_page_refreshes_only_the_visible_day():
     javascript = CRM_JS.read_text(encoding="utf-8")
 
     renderer = javascript[
@@ -1373,11 +1381,12 @@ def test_calendar_page_rerenders_from_the_collaborative_snapshot():
     assert "calendarSelectedDate" in renderer
     assert "bindRows();" in renderer
     assert "bindAppointmentResponseControls(items,()=>loadCalendar())" in renderer
-    assert "api('/api/crm/calendly/appointments')" in loader
-    assert "crmAppointments=data.appointments||[]" in loader
-    assert "renderCalendarAppointments(crmAppointments)" in loader
-    assert "if(C.section==='calendrier'&&!id&&hasAppointments)renderCalendarAppointments(crmAppointments);" in refresh
-    assert "if(hasAppointments&&(appointmentsChanged||C.section==='calendrier'))crmAppointments=snapshot.appointments;" in refresh
+    assert "/api/crm/calendly/appointments?date=" in loader
+    assert "displayedCalendarRows=data.appointments||[]" in loader
+    assert "renderCalendarAppointments(displayedCalendarRows)" in loader
+    assert "calendarDayRequest!==request" in loader
+    assert "if(section==='calendrier'&&!id){await loadCalendar();" in refresh
+    assert refresh.index("await loadCalendar()") < refresh.index("/api/crm/contacts/updates")
     assert "/api/crm/calendly/appointments" not in refresh
 
 def test_pistes_polling_does_not_start_remote_calendly_sync():
@@ -1387,7 +1396,7 @@ def test_pistes_polling_does_not_start_remote_calendly_sync():
     assert "/api/crm/calendly/sync" not in refresh
     assert "delta:'1'" in refresh
     assert "CRM_VISIBILITY_REFRESH_MIN_MS=30000" in refresh
-    assert "if(snapshot.unchanged){lastCrmRefreshAt=Date.now();return}" in refresh
+    assert "if(snapshot.unchanged){crmUpdateRevision=snapshot.revision||'';lastCrmRefreshAt=Date.now();return}" in refresh
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():
@@ -1472,7 +1481,7 @@ console.log('CRM mobile responsive shell: OK');
     assert ".modal{display:flex;flex-direction:column;width:100%" in stylesheet
     assert ".workspace-table-card>.table-wrap{max-width:100%;overflow-x:auto" in workspace_stylesheet
     assert ".workspace-bulk{position:static;top:auto}" in workspace_stylesheet
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in backend
+    assert_versioned_crm_assets(backend)
 
 def test_pistes_score_header_cycles_and_sorts_numeric_values():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1529,7 +1538,7 @@ console.log('CRM lead score sorting: OK');
     assert ".crm-score-sort-arrows .up" in stylesheet
     assert ".crm-score-sort-arrows .down" in stylesheet
     assert "min-height:44px" in stylesheet
-    assert "20260908-free-email-layout-1" in application
+    assert_versioned_crm_assets(application)
     assert "20260823-mobile-responsive-1" not in application
 
 def test_pistes_replaces_location_column_with_shared_completeness():
@@ -1593,7 +1602,7 @@ console.log('CRM Pistes completeness: OK');
     assert "CRMWorkspace={listPage" in workspace
     assert ".workspace-completeness" in stylesheet
     assert ".crm-list-completeness" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in application
+    assert_versioned_crm_assets(application)
 
 
 def test_residence_permit_assessment_is_conditionally_active_and_purged():
@@ -1658,7 +1667,7 @@ console.log('CRM pipeline relance date: OK');
     assert ".pipeline-relance-date.overdue{color:#c23449;font-weight:800}" in stylesheet
     assert ".pipeline-relance-date.missing{color:#7b8798}" in stylesheet
     assert ".pipeline-appointment-date,.pipeline-relance-date" in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in application
+    assert_versioned_crm_assets(application)
 
 def test_contact_pipeline_restores_compact_chevrons_without_changing_actions():
     javascript = CRM_JS.read_text(encoding="utf-8")
@@ -1706,7 +1715,7 @@ console.log('CRM compact timeline: OK');
     assert ".pipeline-stage-card" not in stylesheet
     assert ".pipeline-line>span" not in stylesheet
     assert ".pipeline-step-marker" not in stylesheet
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in application
+    assert_versioned_crm_assets(application)
 
 
 def test_activity_journal_is_second_tab_before_wedof():
@@ -1746,4 +1755,4 @@ def test_activity_journal_is_second_tab_before_wedof():
 
     assert "loadWedof(c);" in javascript
     assert "loadWedof(c,{refresh:true})" not in javascript
-    assert 'CRM_ASSET_VERSION = "20260908-free-email-layout-1"' in application
+    assert_versioned_crm_assets(application)

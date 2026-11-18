@@ -148,6 +148,18 @@ class CassandreCalendar:
         self.catalog_until = 0
         self.windows = {}
 
+    def last_known(self, first, length, now, account):
+        # Readers can display the previous successful result while the provider
+        # is busy. Writers replace the entire tuple and never mutate its starts.
+        cached = self.windows.get((account, first, length))
+        if not cached or cached[2].astimezone(PARIS).date() != now.astimezone(PARIS).date():
+            return None
+        days = {(first + i * DAY).isoformat(): 0 for i in range(length)}
+        for opening in cached[1]:
+            if opening > now:
+                days[opening.astimezone(PARIS).date().isoformat()] += 1
+        return {"days": days, "checked_at": stamp(cached[2])}
+
     def counts(self, first, length, now, account, list_types, collection, refresh=False):
         days = {(first + i * DAY).isoformat(): 0 for i in range(length)}
         end = datetime.combine(first + length * DAY, time.min, PARIS).astimezone(UTC)
@@ -165,16 +177,12 @@ class CassandreCalendar:
                     raise RuntimeError('Aucun agenda actif pour Cassandre n’a été identifié dans Calendly.')
                 self.events = events
                 self.catalog_key, self.catalog_until = account, monotonic() + 300
-                self.windows.clear()
-            key = (first, length)
+                refresh = True
+            key = (account, first, length)
             cached = self.windows.get(key)
-            if refresh or cached is None or monotonic() >= cached[0]:
-                self.windows.pop(key, None)
+            if refresh or cached is None or monotonic() >= cached[0] or cached[2].astimezone(PARIS).date() != now.astimezone(PARIS).date():
                 starts = _available_starts(self.events, start, end, now, collection)
                 if len(self.windows) >= 32 and key not in self.windows:
                     self.windows.pop(next(iter(self.windows)))
-                self.windows[key] = (monotonic() + 45, starts)
-            for opening in self.windows[key][1]:
-                if opening > now:
-                    days[opening.astimezone(PARIS).date().isoformat()] += 1
-        return days
+                self.windows[key] = (monotonic() + 45, frozenset(starts), now)
+            return self.last_known(first, length, now, account)["days"]
