@@ -9325,7 +9325,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261117-rappels-email-v4"
+CRM_ASSET_VERSION = "20261118-crm-chargement-v1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -16655,28 +16655,49 @@ def _crm_calendar_contact_payload(data, contact):
     return payload
 
 
-def _crm_calendar_slot(appointment, contact):
-    """Shared by the CRM day view and the restricted call-desk projection."""
+def _crm_calendar_start(appointment):
     if str(appointment.get("status") or "").strip().lower() in CRM_CANCELLED_APPOINTMENT_STATUSES:
         return None
     try:
         start = datetime.datetime.fromisoformat(str(appointment.get("start_time") or "").replace("Z", "+00:00"))
         paris = secretariat_calls.PARIS
-        local = paris.localize(start) if start.tzinfo is None else start.astimezone(paris)
-        timestamp = local.timestamp()
+        return paris.localize(start) if start.tzinfo is None else start.astimezone(paris)
     except (ValueError, OverflowError, OSError):
+        return None
+
+
+def _crm_calendar_slot(appointment, contact):
+    """Shared by the CRM day view and the restricted call-desk projection."""
+    local = _crm_calendar_start(appointment)
+    if local is None:
         return None
     first = _crm_format_first_name(" ".join(str(contact.get("prenom") or "").split()))
     last = _crm_format_last_name(" ".join(str(contact.get("nom") or "").split()))
     return {
-        "day": local.date().isoformat(), "time": local.strftime("%H:%M"), "start": timestamp,
+        "day": local.date().isoformat(), "time": local.strftime("%H:%M"), "start": local.timestamp(),
         "person": " ".join(filter(None, [first, last])) or appointment.get("invitee_name") or "Invité Calendly",
     }
 
 
-def _crm_calendly_appointments_payload(data):
+CRM_APPOINTMENT_LIST_FIELDS = (
+    "id", "contact_id", "name", "event_type_name", "status", "start_time", "end_time",
+    "location", "location_kind", "response_status", "response_status_updated_at", "updated_at",
+)
+
+
+def _crm_appointment_list(data):
+    """The CRM lists and dashboard only need dates, linkage and outcomes."""
+    return sorted((
+        {key: item[key] for key in CRM_APPOINTMENT_LIST_FIELDS if key in item}
+        for item in data.get("crm_calendly_appointments", [])
+    ), key=lambda item: item.get("start_time") or "")
+
+
+def _crm_calendly_appointments_payload(data, day=None):
     """Cache the agenda independently of histories, templates and settings."""
     raw = data.get("crm_calendly_appointments", [])
+    if day is not None:
+        raw = [item for item in raw if (start := _crm_calendar_start(item)) and start.date() == day]
     linked_ids = {item.get("contact_id") for item in raw}
     contacts = {
         item.get("id"): {
@@ -16701,10 +16722,13 @@ def _crm_calendly_appointments_payload(data):
         rows = []
         for item in raw:
             contact = projected.get(item.get("contact_id"), missing)
-            rows.append({**item, "contact": contact, "calendar_slot": _crm_calendar_slot(item, contact)})
+            fields = item if day is None else {
+                key: item[key] for key in (*CRM_APPOINTMENT_LIST_FIELDS, "host_name") if key in item
+            }
+            rows.append({**fields, "contact": contact, "calendar_slot": _crm_calendar_slot(item, contact)})
         return sorted(rows, key=lambda item: item.get("start_time") or "")
 
-    appointments = _CRM_PROJECTIONS.get("calendar", dependencies, build)
+    appointments = _CRM_PROJECTIONS.get("calendar" if day is None else "calendar_day", dependencies, build)
     return {
         "appointments": appointments,
         "integration": _crm_calendly_status_payload(data),
@@ -16715,10 +16739,43 @@ def _crm_calendly_appointments_payload(data):
 @login_required
 def crm_calendly_appointments():
     """Retourne l'agenda partagé, enrichi avec la fiche CRM associée."""
-    return jsonify(_crm_calendly_appointments_payload(_crm_prepared_read_model()))
+    selected = request.args.get("date")
+    if selected is None:
+        return jsonify(_crm_calendly_appointments_payload(_crm_prepared_read_model()))
+    try:
+        day = datetime.date.fromisoformat(selected)
+        if day.isoformat() != selected:
+            raise ValueError
+    except ValueError:
+        return jsonify(error="Choisissez une date valide."), 400
+    data = _crm_prepared_read_model()
+    payload = _crm_calendly_appointments_payload(data, day)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    overview = next_five_weekdays(now.astimezone(CALENDAR_PARIS).date())
+    saved = _CASSANDRE_CALENDAR.last_known(
+        overview[0], (overview[-1] - overview[0]).days + 1, now, _crm_calendar_account(data),
+    )
+    if saved:
+        payload["availability"] = {
+            "checked_at": saved["checked_at"],
+            "days": {d.isoformat(): saved["days"][d.isoformat()] for d in overview},
+        }
+    if request.args.get("navigation") == "1":
+        payload["navigation"] = {
+            "new_leads": sum(c.get("statut") == "Nouveaux" for c in data["crm_contacts"]),
+            "callback_pending_count": _crm_callback_pending_count(data),
+            "notifications": _crm_notifications_payload(data, (current_user() or {}).get("email", "")),
+            "settings": _crm_settings_payload(data),
+        }
+    return jsonify(payload)
 
 
 _CASSANDRE_CALENDAR = CassandreCalendar()
+
+
+def _crm_calendar_account(data):
+    state = data.get("crm_calendly") or {}
+    return state.get("organization"), state.get("user"), state.get("configured_at")
 
 
 def _crm_formation_booking_event_types(data):
@@ -16747,8 +16804,7 @@ def crm_cassandre_availability():
         return jsonify(days={selected: 0}), 200, {"Cache-Control": "private, no-store"}
     try:
         data = _load_data_snapshot()
-        state = data.get("crm_calendly") or {}
-        account = (state.get("organization"), state.get("user"), state.get("configured_at"))
+        account = _crm_calendar_account(data)
         if dates[0] >= today and not _calendly_token():
             raise RuntimeError("La connexion Calendly n’est pas configurée.")
         span = (dates[-1] - dates[0]).days + 1
@@ -16762,7 +16818,8 @@ def crm_cassandre_availability():
         return _calendly_route_error(exc)
     except (KeyError, TypeError, ValueError, OverflowError):
         return jsonify(error="Calendly a renvoyé des disponibilités incomplètes pour Cassandre."), 502
-    response = jsonify(days=days)
+    saved = _CASSANDRE_CALENDAR.last_known(dates[0], span, now, account)
+    response = jsonify(days=days, checked_at=saved["checked_at"]) if saved else jsonify(days=days)
     response.headers["Cache-Control"] = "private, no-store"
     return response
 
@@ -17540,10 +17597,12 @@ def _crm_prepare_read_snapshot(snapshot, key):
             from crm_pipeline_status_consistency import normalize_crm_pipeline_statuses
             normalize_crm_pipeline_statuses(prepared)
         _crm_prepare_contacts(prepared)
-        _crm_backfill_callback_requests(prepared)
-        return {field: prepared[field] for field in ("crm_contacts", "secretariat_demandes")}
+        repairs = _crm_backfill_callback_requests(prepared)
+        return {"crm_contacts": prepared["crm_contacts"], "secretariat_demandes": prepared["secretariat_demandes"],
+                "_crm_callback_repairs": repairs}
 
     data = dict(snapshot)
+    data["_crm_read_revision"] = key
     data.update(_CRM_PROJECTIONS.get("contacts", dependencies, build, immutable=True))
     # Settings normalization adds defaults; never let it mutate the disk cache.
     data["crm_settings"] = copy.deepcopy(snapshot.get("crm_settings", {}))
@@ -17837,6 +17896,16 @@ def _crm_contacts_payload(data):
     return contacts, changed
 
 
+def _crm_workspace_contacts(data, section):
+    # The prepared revision includes disk, EDOF and time-based changes. Cache
+    # just two lists, since only the activity views require a different shape.
+    section = str(section or "").strip().lower()
+    return _CRM_PROJECTIONS.get(
+        ("workspace_contacts", section in CRM_ACTIVITY_SECTIONS), data["_crm_read_revision"],
+        lambda: _crm_contact_summaries_payload(data, section, prepared=True)[0], immutable=True,
+    )
+
+
 @app.route("/api/crm/contacts", methods=["GET", "POST"])
 @login_required
 def crm_contacts():
@@ -17844,9 +17913,7 @@ def crm_contacts():
         section = request.args.get("section", "")
         if section or request.args.get("compact") == "1":
             data = _crm_prepared_read_model()
-            contacts, _ = _crm_contact_summaries_payload(
-                data, section, prepared=True,
-            )
+            contacts = _crm_workspace_contacts(data, section)
         else:
             data = load_data()
             contacts, changed = _crm_contacts_payload(data)
@@ -17901,18 +17968,25 @@ def _crm_create_contact_locked():
 def crm_contact_updates():
     """Retourne uniquement les données utiles au rafraîchissement collaboratif."""
     section = request.args.get("section", "")
+    workspace = request.args.get("view") == "workspace"
+    delta = request.args.get("delta") == "1"
+    scope = ((current_user() or {}).get("email", ""), section, request.args.get("contact_id", ""))
+    if workspace:
+        scope += ("workspace",)
+    revision_key = _crm_read_model_key() if workspace and delta else None
+    revision = _crm_updates_revision(revision_key, scope) if revision_key else None
+    if revision and request.args.get("revision") == revision:
+        return jsonify(unchanged=True, cursor=request.args.get("cursor", ""), revision=revision)
     if section == "demandes-rappel":
         # Calendly peut recevoir une réservation après l'appel du secrétariat.
         # Réconcilier la demande avant chaque rafraîchissement de cette page
         # évite de conserver un libellé ou une date de rendez-vous obsolète.
-        with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
-            stored_data = load_data()
-            if _crm_backfill_callback_requests(stored_data):
-                save_data(stored_data)
+        _crm_reconcile_callback_reads()
     data = _crm_prepared_read_model()
     wedof_cpf_states = _wedof_cpf_states_by_contact(data)
     appointment_counts = _crm_appointment_counts_by_contact(data)
-    appointments = _crm_calendly_appointments_payload(data)["appointments"]
+    appointments = (_crm_appointment_list(data) if workspace
+                    else _crm_calendly_appointments_payload(data)["appointments"])
 
     summaries = [
         {
@@ -17950,12 +18024,12 @@ def crm_contact_updates():
         payload.update(_crm_cpf_folder_lists(data))
     if section == "demandes-rappel":
         payload["callback_requests"] = _crm_callback_requests_payload(data)
-    if request.args.get("delta") == "1":
-        user = current_user() or {}
+    if delta:
         payload = _CRM_UPDATE_SNAPSHOTS.response(
-            payload, request.args.get("cursor", ""),
-            (str(user.get("email") or ""), section, request.args.get("contact_id", "")),
+            payload, request.args.get("cursor", ""), scope,
         )
+        if revision and data.get("_crm_read_revision") == revision_key == _crm_read_model_key():
+            payload["revision"] = revision
     return jsonify(payload)
 
 
@@ -19377,29 +19451,34 @@ def _crm_notifications_payload(data, email):
 
 @app.route("/api/crm/notifications", methods=["GET", "PATCH"])
 @login_required
-@_crm_serialized
 def crm_notifications():
     email = (current_user() or {}).get("email", "")
-    if request.method == "GET" and request.args.get("kind") == "waiting_call":
+    if request.method == "PATCH":
+        return _crm_mark_notifications_read(email)
+    if request.args.get("kind") == "waiting_call":
         rows = [secretariat_messages.waiting_notification(entry)
                 for entry in _load_data_snapshot().get("secretariat_demandes", [])
                 if entry.get("waiting_recipient_email") == email and not entry.get("waiting_read")]
         return _secretariat_private(jsonify(sorted(rows, key=lambda row: row["date"], reverse=True)))
-    data = load_data() if request.method == "PATCH" else _load_data_snapshot()
+    return jsonify(_crm_notifications_payload(_load_data_snapshot(), email))
+
+
+@_crm_serialized
+def _crm_mark_notifications_read(email):
+    data = load_data()
     items = _crm_notifications_payload(data, email)
-    if request.method == "PATCH":
-        notification_id = str((request.get_json(silent=True) or {}).get("id") or "")
-        waiting_ids = set()
-        for item in items:
-            if not notification_id or item.get("id") == notification_id:
-                item["read"] = True
-                if item.get("kind") == "waiting_call":
-                    waiting_ids.add(item["callback_request_id"])
-        if waiting_ids:
-            for entry in data.get("secretariat_demandes", []):
-                if entry.get("id") in waiting_ids:
-                    entry["waiting_read"] = True
-        save_data(data)
+    notification_id = str((request.get_json(silent=True) or {}).get("id") or "")
+    waiting_ids = set()
+    for item in items:
+        if not notification_id or item.get("id") == notification_id:
+            item["read"] = True
+            if item.get("kind") == "waiting_call":
+                waiting_ids.add(item["callback_request_id"])
+    if waiting_ids:
+        for entry in data.get("secretariat_demandes", []):
+            if entry.get("id") in waiting_ids:
+                entry["waiting_read"] = True
+    save_data(data)
     return jsonify(items)
 
 
@@ -19975,11 +20054,15 @@ def _crm_attachment_error_response(exc):
 
 @app.route("/api/crm/templates", methods=["GET", "POST"])
 @login_required
-@_crm_serialized
 def crm_templates():
-    data = load_data()
     if request.method == "GET":
-        return jsonify(_crm_templates_payload(data))
+        return jsonify(_crm_templates_payload(_load_data_snapshot()))
+    return _crm_create_template()
+
+
+@_crm_serialized
+def _crm_create_template():
+    data = load_data()
     payload = _crm_request_payload(); kind = payload.get("type")
     if kind not in {"email", "sms"}: return jsonify({"error": "Type invalide"}), 400
     uploaded = request.files.get("attachment")
@@ -20050,6 +20133,33 @@ def _crm_callback_request_contact(data, entry):
         # The prospect intake already reconciled the identity or left it for review.
         return contact
     return contact or _secretariat_existing_crm_contact(data, entry)
+
+
+def _crm_callback_contact_lookup(data, *, display_ids=False):
+    """Index one snapshot, preserving the callback rule of a unique email OR phone match."""
+    contacts = data.get("crm_contacts", [])
+    by_id, by_coordinate = {}, {}
+    for index, contact in enumerate(contacts):
+        if contact.get("id"):
+            if display_ids:
+                by_id[str(contact["id"])] = contact
+            else:
+                by_id.setdefault(contact["id"], contact)
+        for kind, value in (("email", _crm_normalize_email(contact.get("mail"))),
+                            ("phone", _crm_normalize_phone(contact.get("telephone")))):
+            if value:
+                by_coordinate.setdefault((kind, value), set()).add(index)
+
+    def lookup(entry):
+        stored = by_id.get(str(entry.get("crm_contact_id") or "").strip())
+        if stored is not None or entry.get("type") == "formation":
+            return stored
+        email = _crm_normalize_email(entry.get("email") or entry.get("mail"))
+        phone = _crm_normalize_phone(entry.get("telephone"))
+        matches = by_coordinate.get(("email", email), set()) | by_coordinate.get(("phone", phone), set())
+        return contacts[next(iter(matches))] if len(matches) == 1 else None
+
+    return lookup
 
 
 def _crm_hydrate_callback_request_appointment(data, entry, contact, appointment_index=None):
@@ -20153,7 +20263,7 @@ def _crm_ensure_callback_request_activity(contact, entry):
     return changed
 
 
-def _crm_prepare_callback_request(data, entry, appointment_index=None):
+def _crm_prepare_callback_request(data, entry, appointment_index=None, contact_lookup=None):
     """Normalize one request, preserve its lead link and repair its journal."""
     changed = False
     if not str(entry.get("id") or "").strip():
@@ -20175,7 +20285,7 @@ def _crm_prepare_callback_request(data, entry, appointment_index=None):
         entry["statut"] = expected_generic_status
         changed = True
 
-    contact = _crm_callback_request_contact(data, entry)
+    contact = contact_lookup(entry) if contact_lookup else _crm_callback_request_contact(data, entry)
     contact_id = str(contact.get("id") or "") if contact else ""
     if str(entry.get("crm_contact_id") or "") != contact_id:
         entry["crm_contact_id"] = contact_id
@@ -20203,27 +20313,21 @@ def _crm_backfill_callback_requests(data):
             if value:
                 appointment_index.setdefault((kind, value), []).append((index, appointment))
     changed = False
+    contact_lookup = _crm_callback_contact_lookup(data)
     for entry in entries:
-        entry_changed, _ = _crm_prepare_callback_request(data, entry, appointment_index)
+        entry_changed, _ = _crm_prepare_callback_request(data, entry, appointment_index, contact_lookup)
         changed = entry_changed or changed
     return changed
 
 
 def _crm_callback_requests_payload(data):
     """List secretariat messages and callbacks requested during a training intake."""
-    contacts_by_id = {
-        str(contact.get("id") or ""): contact
-        for contact in data.get("crm_contacts", [])
-        if contact.get("id")
-    }
+    contact_lookup = _crm_callback_contact_lookup(data, display_ids=True)
     rows = []
     for entry in data.get("secretariat_demandes", []):
         if not secretariat_calls.is_callback_request(entry):
             continue
-        stored_contact_id = str(entry.get("crm_contact_id") or "").strip()
-        contact = contacts_by_id.get(stored_contact_id)
-        if contact is None and entry.get("type") != "formation":
-            contact = _secretariat_existing_crm_contact(data, entry)
+        contact = contact_lookup(entry)
         contact_id = str(contact.get("id") or "") if contact else ""
         display_name = str(entry.get("nom") or "").strip()
         if not display_name:
@@ -20294,6 +20398,31 @@ def _crm_callback_pending_count(data):
     )
 
 
+_CRM_CALLBACK_READ_REVISION = None
+
+
+def _crm_reconcile_callback_reads():
+    """Persist legacy repairs once per revision while keeping writes serialized."""
+    global _CRM_CALLBACK_READ_REVISION
+    if _crm_read_model_key() == _CRM_CALLBACK_READ_REVISION:
+        return
+    snapshot = _crm_prepared_read_model()
+    if not snapshot["_crm_callback_repairs"]:
+        _CRM_CALLBACK_READ_REVISION = snapshot["_crm_read_revision"]
+        return
+    with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
+        key = _crm_read_model_key()
+        if key != _CRM_CALLBACK_READ_REVISION:
+            stored = load_data()
+            if _crm_backfill_callback_requests(stored):
+                save_data(stored)
+            _CRM_CALLBACK_READ_REVISION = key
+
+
+def _crm_updates_revision(key, scope):
+    return hashlib.sha256(repr((CRM_ASSET_VERSION, key, scope)).encode()).hexdigest()
+
+
 @app.get("/api/crm/bootstrap")
 @login_required
 def crm_bootstrap():
@@ -20303,19 +20432,18 @@ def crm_bootstrap():
     reparsait le même fichier complet, ce qui multipliait le pic mémoire.
     """
     section = request.args.get("section", "")
+    workspace = request.args.get("view") == "workspace"
     user_email = (current_user() or {}).get("email", "")
     if section == "demandes-rappel":
         # One non-destructive pass repairs existing requests and makes their
         # journal entry visible before the callback workspace is returned.
-        with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
-            stored_data = load_data()
-            if _crm_backfill_callback_requests(stored_data):
-                save_data(stored_data)
+        _crm_reconcile_callback_reads()
     read_model_key = _crm_read_model_key()
     bootstrap_etag = hashlib.sha256(repr((
         CRM_ASSET_VERSION,
         int(time.time()) // crm_public_sessions.REFRESH_SECONDS,
         section,
+        workspace,
         user_email,
         read_model_key,
     )).encode("utf-8")).hexdigest()
@@ -20325,28 +20453,32 @@ def crm_bootstrap():
         response.headers["Cache-Control"] = "private, no-cache"
         return response
     data = _crm_prepared_read_model()
-    contacts, _ = _crm_contact_summaries_payload(
-        data, section=section, prepared=True,
-    )
+    contacts = _crm_workspace_contacts(data, section)
     settings = _crm_settings_payload(data)
-    appointments = _crm_calendly_appointments_payload(data)
-    response = jsonify({
+    appointments = (_crm_appointment_list(data) if workspace
+                    else _crm_calendly_appointments_payload(data)["appointments"])
+    payload = {
         "contacts": contacts,
         **(_crm_cpf_folder_lists(data) if section == "pistes" else {}),
-        "templates": _crm_templates_payload(data),
         "formation_sessions": get_upcoming_formation_sessions(data),
         "notifications": _crm_notifications_payload(
             data, user_email,
         ),
-        "appointments": appointments["appointments"],
-        "calendly_integration": appointments["integration"],
+        "appointments": appointments,
+        "calendly_integration": _crm_calendly_status_payload(data),
         "settings": settings,
         "callback_pending_count": _crm_callback_pending_count(data),
         "callback_requests": (
             _crm_callback_requests_payload(data)
             if section == "demandes-rappel" else []
         ),
-    })
+    }
+    if not workspace or section == "modeles":
+        payload["templates"] = _crm_templates_payload(data)
+    if workspace and data.get("_crm_read_revision") == read_model_key:
+        updates_section = section if section in {"pistes", "demandes-rappel"} else ""
+        payload["revision"] = _crm_updates_revision(read_model_key, (user_email, updates_section, "", "workspace"))
+    response = jsonify(payload)
     # A response built during a write must not claim the newer revision.
     if _crm_read_model_key() == read_model_key:
         response.set_etag(bootstrap_etag)
@@ -20358,10 +20490,7 @@ def crm_bootstrap():
 @login_required
 def crm_callback_requests():
     """Recharge uniquement l'espace des demandes de rappel."""
-    with _SECRETARIAT_DELIVERY_LOCK, _CRM_RECONCILIATION_LOCK:
-        stored_data = load_data()
-        if _crm_backfill_callback_requests(stored_data):
-            save_data(stored_data)
+    _crm_reconcile_callback_reads()
     data = _crm_prepared_read_model()
     return jsonify({
         "callback_requests": _crm_callback_requests_payload(data),

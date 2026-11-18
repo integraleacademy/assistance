@@ -26,8 +26,22 @@ const parisDayKey=value=>{
  );
  return `${parts.year}-${parts.month}-${parts.day}`;
 };
-const contactAppointments=(contactId,appointments)=>(appointments||[])
- .filter(item=>belongsToContact(item,contactId)&&hasUsableDate(item));
+const appointmentGroups=new WeakMap();
+function rowsForContact(contactId,appointments){
+ if(!Array.isArray(appointments))return [];
+ let groups=appointmentGroups.get(appointments);
+ if(!groups){
+  groups=new Map();
+  for(const row of appointments){
+   const key=contactKey(row?.contact_id);
+   if(!groups.has(key))groups.set(key,[]);
+   groups.get(key).push(row);
+  }
+  appointmentGroups.set(appointments,groups);
+ }
+ return groups.get(contactKey(contactId))||[];
+}
+const contactAppointments=(contactId,appointments)=>rowsForContact(contactId,appointments).filter(hasUsableDate);
 const nextAppointment=(contactId,appointments,now=Date.now())=>{
  const today=parisDayKey(now);
  const ordered=contactAppointments(contactId,appointments)
@@ -77,6 +91,7 @@ const signature=appointments=>(appointments||[])
 root.CRMAppointmentState={
  CANCELLED_STATUSES,
  belongsToContact,
+ rowsForContact,
  hasUsableDate,
  parisDayKey,
  contactAppointments,

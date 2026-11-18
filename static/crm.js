@@ -82,7 +82,7 @@ const relativeSync=value=>{if(!value)return'pas encore synchronisé';const date=
 const contactContactActivityKinds=new Set(['appel','email','sms','demande_rappel']);
 const contactLastContact=c=>{
  const activityContacts=(c.activities||[]).filter(a=>contactContactActivityKinds.has(a.kind)&&a.date).map(a=>({date:a.date}));
- const answeredAppointments=crmAppointments.filter(a=>a.contact_id===c.id&&a.response_status==='answered').map(a=>({date:a.response_status_updated_at||a.start_time})).filter(a=>a.date);
+ const answeredAppointments=window.CRMAppointmentState.rowsForContact(c.id,crmAppointments).filter(a=>a.response_status==='answered').map(a=>({date:a.response_status_updated_at||a.start_time})).filter(a=>a.date);
  return [...activityContacts,...answeredAppointments].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
 };
 const contactJourney=c=>c.formation==='DESP'&&c.desp_type?`${c.formation} · Parcours ${c.desp_type}`:(c.formation||'Formation à définir');
@@ -140,7 +140,7 @@ function isTelephoneAppointment(appointment){
  return ['outbound_call','inbound_call','phone','telephone'].includes(kind)||/(telephoni|appel|phone|call)/.test(text);
 }
 function nextTelephoneAppointment(c,now=Date.now()){
- const appointments=crmAppointments.filter(appointment=>{const start=Date.parse(appointment?.start_time||''),status=String(appointment?.status||'active').toLowerCase();return isTelephoneAppointment(appointment)&&!['canceled','cancelled'].includes(status)&&!calendlyAppointmentHasResult(appointment)&&Number.isFinite(start)&&start>now});
+ const appointments=window.CRMAppointmentState.rowsForContact(c.id,crmAppointments).filter(appointment=>{const start=Date.parse(appointment?.start_time||''),status=String(appointment?.status||'active').toLowerCase();return isTelephoneAppointment(appointment)&&!['canceled','cancelled'].includes(status)&&!calendlyAppointmentHasResult(appointment)&&Number.isFinite(start)&&start>now});
  return window.CRMAppointmentState.nextAppointment(c.id,appointments,now);
 }
 function telephoneAppointmentLabel(c,now=Date.now()){
@@ -258,7 +258,7 @@ const vaeEligibilityQuestions=['Possède une carte professionnelle CNAPS','Expé
 function vaeEligibilityCard(c){const test=c.vae_eligibility;if(!test)return'';const answers=test.reponses||{},score=Math.max(0,Math.min(100,Number(test.score)||0)),tone=score>=70?'success':score>=40?'warning':'danger';return `<section class="card vae-eligibility-card ${tone}"><div class="vae-eligibility-head"><span class="vae-eligibility-icon" aria-hidden="true">${crmIcon('shield')}</span><div><span class="vae-eligibility-kicker">SIMULATEUR VAE</span><h2>Test d’éligibilité VAE DESP</h2><small>Complété le ${esc(fmt(test.completed_at))}</small></div><div class="vae-eligibility-score"><strong>${score}</strong><span>/ 100</span></div></div><div class="vae-eligibility-main"><div class="vae-eligibility-result"><span class="vae-result-dot" aria-hidden="true"></span>${esc(test.resultat||'Résultat non renseigné')}</div><div class="vae-eligibility-progress" role="progressbar" aria-label="Score d’éligibilité VAE" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${score}"><i style="width:${score}%"></i></div></div><details><summary><span>Voir le détail des réponses</span><span class="vae-details-chevron" aria-hidden="true">⌄</span></summary><dl>${vaeEligibilityQuestions.map((label,index)=>{const yes=answers[`q${index+1}`]==='oui';return `<div><dt>${esc(label)}</dt><dd class="${yes?'yes':'no'}"><span aria-hidden="true">${yes?'✓':'×'}</span>${yes?'Oui':'Non'}</dd></div>`}).join('')}</dl></details></section>`}
 function listOriginTone(label){const normalized=label.toLowerCase();return label==='META'?'meta':normalized==='google ads'?'google-ads':normalized==='site internet'?'site':normalized.includes('compte formation')?'cpf':'other'}
 function listOriginBadge(contact){const label=canonicalCrmOrigin(contact);return`<span class="workspace-origin-group" aria-label="Origine principale de la piste"><span class="workspace-origin-badge ${listOriginTone(label)} primary"><small>Principale</small>${esc(label)}</span></span>`}
-function listActivityCounts(contact){const stored=contact.activity_counts||{},full=!contact._summary,activities=Array.isArray(contact.activities)?contact.activities:[],relances=Array.isArray(contact.relances)?contact.relances:[],count=value=>{const number=Number(value);return Number.isFinite(number)?Math.max(0,Math.trunc(number)):0},dynamicAppointments=crmAppointments.filter(item=>String(item.contact_id)===String(contact.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase())).length,countedRelances=new Set(['scheduled','answered','no_answer']);return{appointments:Math.max(count(stored.appointments),dynamicAppointments),relances:full?relances.filter(item=>item&&item.scheduled_date&&countedRelances.has(String(item.status||'scheduled').toLowerCase())).length:count(stored.relances),emails:full?activities.filter(item=>String(item?.kind||'').toLowerCase()==='email').length:count(stored.emails),sms:full?activities.filter(item=>String(item?.kind||'').toLowerCase()==='sms').length:count(stored.sms)}}
+function listActivityCounts(contact){const stored=contact.activity_counts||{},full=!contact._summary,activities=Array.isArray(contact.activities)?contact.activities:[],relances=Array.isArray(contact.relances)?contact.relances:[],count=value=>{const number=Number(value);return Number.isFinite(number)?Math.max(0,Math.trunc(number)):0},dynamicAppointments=window.CRMAppointmentState.rowsForContact(contact.id,crmAppointments).filter(item=>item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase())).length,countedRelances=new Set(['scheduled','answered','no_answer']);return{appointments:Math.max(count(stored.appointments),dynamicAppointments),relances:full?relances.filter(item=>item&&item.scheduled_date&&countedRelances.has(String(item.status||'scheduled').toLowerCase())).length:count(stored.relances),emails:full?activities.filter(item=>String(item?.kind||'').toLowerCase()==='email').length:count(stored.emails),sms:full?activities.filter(item=>String(item?.kind||'').toLowerCase()==='sms').length:count(stored.sms)}}
 function listActivityBadges(contact){const counts=listActivityCounts(contact),badges=[['appointments','rdv','RDV téléphonique'],['relances','relance','relance'],['emails','mail','mail'],['sms','sms','SMS']].filter(([key])=>counts[key]>0);if(!badges.length)return'<span class="workspace-activity-empty">Aucune activité</span>';return`<div class="workspace-activity-tags">${badges.map(([key,tone,label])=>`<span class="workspace-activity-tag ${tone}"><strong>${counts[key]}</strong> ${label}${counts[key]>1&&key!=='sms'?'s':''}</span>`).join('')}</div>`}
 function contactHeaderActivitySummary(contact){
  const counts=listActivityCounts(contact);
@@ -377,8 +377,8 @@ function crmOriginLabels(contact){
 function canonicalCrmOrigin(contact){return crmOriginLabels(contact)[0]}
 function dashboardOrigin(contact){return canonicalCrmOrigin(contact)}
 function leadOriginFilterOptions(){return[...crmLeadOriginFilterValues]}
-const dashboardHasContact=contact=>(contact.activities||[]).some(activity=>contactContactActivityKinds.has(activity.kind))||crmAppointments.some(appointment=>String(appointment.contact_id)===String(contact.id)&&appointment.response_status==='answered');
-const dashboardHasAppointment=contact=>crmAppointments.some(appointment=>String(appointment.contact_id)===String(contact.id)&&appointment.status!=='canceled');
+const dashboardHasContact=contact=>(contact.activities||[]).some(activity=>contactContactActivityKinds.has(activity.kind))||window.CRMAppointmentState.rowsForContact(contact.id,crmAppointments).some(appointment=>appointment.response_status==='answered');
+const dashboardHasAppointment=contact=>window.CRMAppointmentState.rowsForContact(contact.id,crmAppointments).some(appointment=>appointment.status!=='canceled');
 const dashboardIsMetaLead=contact=>dashboardOrigin(contact)==='META';
 const dashboardIsOtherLead=contact=>!['META','Google Ads'].includes(dashboardOrigin(contact));
 const dashboardHasOverdueCallback=contact=>isActiveLead(contact)&&Boolean(contact.relance_date)&&new Date(`${contact.relance_date}T00:00:00`)<=new Date();
@@ -884,7 +884,7 @@ async function changeCpfVisibility(folderId,hidden){
   cpfVisibilitySaving=false;
   cpfVisibilityRevision++;
   controls().forEach(button=>{button.disabled=false});
-  crmUpdateCursor='';
+  crmUpdateCursor='';crmUpdateRevision='';
   scheduleCrmRefresh(1000);
  }
 }
@@ -956,11 +956,14 @@ function calendarContactMetrics(contact){
  return `<div class="calendar-contact-metrics" aria-label="Indicateurs du dossier">${metric('Score d’intégration',score,' / 100')}${metric('Complétude du dossier',completeness,' %')}</div>`;
 }
 let calendarAvailability;
+let lastCalendarOverview, calendarDayRequest, displayedCalendarDate, displayedCalendarRows;
 
 function createCalendarAvailability(panel) {
   const summary = panel.querySelector('.cassandre-days');
   const total = panel.querySelector('.cassandre-total strong');
   const notice = panel.querySelector('.cassandre-notice');
+  const updated = panel.querySelector('.cassandre-updated');
+  const clock = new Intl.DateTimeFormat('fr-FR', {timeZone:'Europe/Paris', hour:'2-digit', minute:'2-digit'});
   const cache = new Map();
   const dayLabel = new Intl.DateTimeFormat('fr-FR', {weekday:'short', day:'numeric', timeZone:'UTC'});
   const fullDate = new Intl.DateTimeFormat('fr-FR', {dateStyle:'full', timeZone:'UTC'});
@@ -1020,16 +1023,35 @@ function createCalendarAvailability(panel) {
       badge.textContent = count == null ? (selected?.error ? 'Disponibilité de Cassandre inconnue' : 'Disponibilités en cours…') : `${count} ${appointmentsLabel(count)} avec Cassandre`;
     }
     const error = overview?.error || selected?.error;
+    updated.textContent = overview?.checkedAt
+      ? `Mis à jour à ${clock.format(overview.checkedAt)}${overview.pending ? ' · Actualisation en cours…' : ''}`
+      : overview?.error ? 'Disponibilités inconnues' : 'Recherche des disponibilités…';
+    if (badge && selected?.checkedAt) badge.title = `Disponibilités vérifiées à ${clock.format(selected.checkedAt)}`;
     notice.hidden = !error;
     if (error) notice.querySelector('span').textContent = error;
     panel.setAttribute('aria-busy', String(Boolean(overview?.pending)));
   }
 
+  function seed(result) {
+    const dates = [...summary.children].map(tile=>tile.dataset.date);
+    const checkedAt = Date.parse(result?.checked_at);
+    if (!dates.length || !Number.isFinite(checkedAt) || window.CRMAppointmentState.parisDayKey(checkedAt)!==today
+        || !dates.every(date=>Number.isInteger(result?.days?.[date]) && result.days[date]>=0)) return;
+    const entry = cache.get('overview') || {};
+    if (entry.checkedAt >= checkedAt) return;
+    Object.assign(entry, {days:result.days, checkedAt, until:checkedAt+45000});
+    cache.set('overview',entry);
+    lastCalendarOverview = result;
+    paint();
+  }
+
   function fetchDays(key, dates, force) {
     const previous = cache.get(key);
     if (previous?.pending || (!force && previous?.until > Date.now())) return;
-    const entry = {pending:true};
-    if (cache.size >= 16) {
+    const entry = previous || {};
+    entry.pending = true;
+    delete entry.error;
+    if (!previous && cache.size >= 16) {
       const oldest = [...cache.keys()].find(value=>value !== 'overview');
       cache.delete(oldest);
     }
@@ -1039,8 +1061,13 @@ function createCalendarAvailability(panel) {
     if (force) query.set('refresh','1');
     api(`/api/crm/calendly/cassandre-availability?${query}`, {timeout:45000}).then(result=>{
       if (!dates.every(date=>Number.isInteger(result?.days?.[date]) && result.days[date] >= 0)) throw Error('Calendly a renvoyé des disponibilités incomplètes.');
+      if (cache.get(key)!==entry) return;
+      const checkedAt = Date.parse(result.checked_at) || Date.now();
+      if (entry.checkedAt > checkedAt) return;
       entry.days = Object.fromEntries(dates.map(date=>[date,result.days[date]]));
-      entry.until = Date.now() + 45000;
+      entry.checkedAt = checkedAt;
+      entry.until = checkedAt + 45000;
+      if (key==='overview') lastCalendarOverview = {days:entry.days, checked_at:new Date(checkedAt).toISOString()};
     }).catch(error=>{
       entry.error = error.message;
       entry.until = Date.now() + 15000;
@@ -1050,6 +1077,7 @@ function createCalendarAvailability(panel) {
   function load(force=false) {
     if (!panel.isConnected) return;
     updateDates();
+    seed(lastCalendarOverview);
     const days = [...summary.children].map(tile=>tile.dataset.date);
     fetchDays('overview',days,force);
     if (calendarSelectedDate > lastDay && isCountedDate()) fetchDays(calendarSelectedDate,[calendarSelectedDate],force);
@@ -1060,7 +1088,7 @@ function createCalendarAvailability(panel) {
     if (tile) selectCalendarDate(tile.dataset.date);
   };
   notice.querySelector('button').onclick=()=>load(true);
-  return {load,paint};
+  return {load,paint,seed};
 }
 
 function selectCalendarDate(date) {
@@ -1085,7 +1113,7 @@ function calendarPage(){
     <section id="cassandreAvailability" class="cassandre-panel" aria-labelledby="cassandreTitle">
       <div class="cassandre-heading">
         <span class="cassandre-portrait" aria-hidden="true"></span>
-        <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Rendez-vous formation sur Calendly <span aria-hidden="true">·</span> Du lundi au vendredi <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p></div>
+        <div><h2 id="cassandreTitle">Disponibilités de Cassandre</h2><p>Rendez-vous formation sur Calendly <span aria-hidden="true">·</span> Du lundi au vendredi <span aria-hidden="true">·</span> <span class="cassandre-range"></span></p><small class="cassandre-updated" aria-live="polite"></small></div>
       </div>
       <div class="cassandre-grid">
         <div class="cassandre-total" aria-live="polite"><span>Places restantes</span><strong>—</strong> <small>au total sur les 5 prochains jours</small></div>
@@ -1106,16 +1134,33 @@ function renderCalendarAppointments(appointments){const root=document.querySelec
 async function loadCalendar(manual=false){
   const root=document.querySelector('#calendarContent'),button=document.querySelector('#calendarRefresh');
   if(!root)return;
+  const date=calendarSelectedDate;
   calendarAvailability?.load(manual);
-  if(manual){button.disabled=true;root.className='calendar-loading';root.innerHTML='<span class="sync-spinner"></span><p>Actualisation de votre agenda…</p>'}
-  else renderCalendarAppointments(crmAppointments);
+  if(calendarDayRequest?.root===root && calendarDayRequest.date===date && !manual)return;
+  const request={root,date};
+  calendarDayRequest=request;
+  button.disabled=manual;
+  if(displayedCalendarDate===date)renderCalendarAppointments(displayedCalendarRows);
+  else {root.className='calendar-loading';root.innerHTML='<span class="sync-spinner"></span><p>Chargement des rendez-vous…</p>'}
   try{
-    const data=await api('/api/crm/calendly/appointments');
-    if(!root.isConnected)return;
-    crmAppointments=data.appointments||[];
-    renderCalendarAppointments(crmAppointments);
-  }catch(e){root.className='activity-empty error-text';root.textContent=e.message}
-  finally{button.disabled=false}
+    const data=await api(`/api/crm/calendly/appointments?date=${encodeURIComponent(date)}&navigation=1`);
+    if(!root.isConnected || calendarDayRequest!==request)return;
+    displayedCalendarDate=date;
+    displayedCalendarRows=data.appointments||[];
+    if(data.navigation){
+      crmSettings=data.navigation.settings;
+      notifications=data.navigation.notifications;
+      callbackRequestPendingCount=data.navigation.callback_pending_count;
+      if(leadCount)leadCount.textContent=data.navigation.new_leads;
+      updateNotificationCount();updateCallbackRequestNavCount();showWaitingCallNotice(notifications);
+    }
+    calendarAvailability?.seed(data.availability);
+    renderCalendarAppointments(displayedCalendarRows);
+  }catch(e){
+    if(!root.isConnected || calendarDayRequest!==request)return;
+    if(displayedCalendarDate===date)toast(e.message,true);
+    else {root.className='activity-empty error-text';root.textContent=e.message}
+  }finally{if(calendarDayRequest===request){calendarDayRequest=null;button.disabled=false}}
 }
 function changeReminderDate(days){const date=new Date(`${reminderSelectedDate}T12:00:00`);date.setDate(date.getDate()+days);reminderSelectedDate=calendarDateKey(date);reminderDate.value=reminderSelectedDate;renderReminders()}
 function remindersPage(){reminderSelectedDate=calendarDateKey(new Date());reminderShowAll=false;page.innerHTML=header('SUIVI COMMERCIAL','Relances','Les personnes à recontacter pour la journée sélectionnée.')+`<section class="calendar-shell reminder-shell"><div class="calendar-toolbar"><div class="calendar-date-picker"><button class="btn calendar-nav" id="reminderPrevious" aria-label="Jour précédent">‹</button><label for="reminderDate"><span>Date affichée</span><input id="reminderDate" type="date" value="${reminderSelectedDate}"></label><button class="btn calendar-nav" id="reminderNext" aria-label="Jour suivant">›</button><button class="btn" id="reminderToday">Aujourd’hui</button><span class="calendar-live reminder-live"><i></i> Planning des relances</span></div><button class="btn blue" id="reminderShowAll">Voir toutes les relances</button></div><div id="reminderContent" class="calendar-days"></div></section>`;reminderPrevious.onclick=()=>changeReminderDate(-1);reminderNext.onclick=()=>changeReminderDate(1);reminderToday.onclick=()=>{reminderSelectedDate=calendarDateKey(new Date());reminderDate.value=reminderSelectedDate;reminderShowAll=false;renderReminders()};reminderDate.onchange=()=>{if(reminderDate.value){reminderSelectedDate=reminderDate.value;reminderShowAll=false;renderReminders()}};reminderShowAll.onclick=()=>{reminderShowAll=!reminderShowAll;renderReminders()};renderReminders()}
@@ -1178,6 +1223,12 @@ async function showContact(id,initialTab='contactInfoTab'){
   stopActiveVoiceDictation();
   activeWedofContactId=String(id);
   const returnSection=contactReturnSection();
+  if(!crmWorkspaceLoaded){
+    page.innerHTML='<div class="empty">Chargement de la fiche…</div>';
+    try{await ensureCrmWorkspace()}
+    catch(error){page.innerHTML=`${contactBackLink(returnSection)}<div class="empty">Impossible de charger la fiche.<br>${esc(error.message)}</div>`;return}
+    if(activeWedofContactId!==String(id))return;
+  }
   let c=contacts.find(x=>x.id===id);
   if(!c){window.CRMDocumentTitle.applySection(C.section,C.page_label);page.innerHTML='<div class="empty">Cette fiche n’existe plus ou n’est plus accessible.</div>';return}
   window.CRMDocumentTitle.applyContact(c,C.section,C.page_label);
@@ -1319,7 +1370,7 @@ function calendlyActivityDetail(appointment){
 function activityAppointment(c,activity){
   const kind=String(activity?.kind||'').trim().toLowerCase();
   if(!['calendly','rdv','appointment'].includes(kind))return null;
-  const appointments=crmAppointments.filter(item=>String(item.contact_id||'')===String(c?.id||''));
+  const appointments=window.CRMAppointmentState.rowsForContact(c?.id,crmAppointments);
   const appointmentId=String(activity?.appointment_id||'');
   if(appointmentId){const exact=appointments.find(item=>String(item.id||'')===appointmentId);if(exact)return exact}
   const detail=String(activity?.detail||'').trim();
@@ -1983,7 +2034,7 @@ function bindAppointmentResponseControls(items,onSaved){
     event.stopPropagation();
     const appointment=items.find(item=>item.id===select.dataset.appointmentResponse),previous=appointment?.response_status||'';
     if(select.value==='answered'){
-      const contact=contacts.find(c=>c.id===appointment?.contact_id);
+      const contact=contacts.find(c=>c.id===appointment?.contact_id) || (appointment?.contact?.id ? appointment.contact : null);
       if(!contact){select.value=previous;return toast('Contact associé introuvable',true)}
       select.disabled=true;
       callModal(contact,{appointment,onSaved:updated=>{
@@ -2156,7 +2207,7 @@ async function calendlyModal(c){
         const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments`,{method:'POST',timeout:110000,body:JSON.stringify({event_type:selectedType.uri,start_time:selectedStart,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',location,answers})});
         calendlyBookingsInFlight.delete(String(c.id));
         if(C.external_meta&&window.CRMExternalMeta.finishBooking(result))return;
-        Object.assign(c,result.contact||{});if(result.appointment){const index=crmAppointments.findIndex(item=>String(item.id)===String(result.appointment.id)),appointment={...result.appointment,contact:{id:c.id,prenom:c.prenom,nom:c.nom,formation:c.formation,telephone:c.telephone,mail:c.mail}};if(index>=0)crmAppointments[index]=appointment;else crmAppointments.push(appointment);c.activity_counts={...(c.activity_counts||{}),appointments:crmAppointments.filter(item=>String(item.contact_id)===String(c.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase())).length}}closeModal();showContact(c.id);toast('Rendez-vous Calendly planifié');
+        Object.assign(c,result.contact||{});if(result.appointment){const index=crmAppointments.findIndex(item=>String(item.id)===String(result.appointment.id)),appointment={...result.appointment,contact:{id:c.id,prenom:c.prenom,nom:c.nom,formation:c.formation,telephone:c.telephone,mail:c.mail}};crmAppointments=index>=0?crmAppointments.map((row,i)=>i===index?appointment:row):[...crmAppointments,appointment];c.activity_counts={...(c.activity_counts||{}),appointments:crmAppointments.filter(item=>String(item.contact_id)===String(c.id)&&item.start_time&&!['canceled','cancelled'].includes(String(item.status||'active').toLowerCase())).length}}closeModal();showContact(c.id);toast('Rendez-vous Calendly planifié');
       }catch(e){
         const uncertain=e.reason==='booking_unconfirmed'||(!['calendly_rejected','calendly_unavailable'].includes(e.reason)&&(!e.status||e.status>=500));
         if(!uncertain)calendlyBookingsInFlight.delete(String(c.id));
@@ -2483,7 +2534,15 @@ function buildFreeEmailHtml(starter,content,values){
  const body=/<\/?[a-z][^>]*>/i.test(content)?content:emailContentToHtml(content);
  return html.replace(emailContentPattern,()=>`<!-- EMAIL_CONTENT_START -->${body}<!-- EMAIL_CONTENT_END -->`)
 }
+function withMessageTemplates(open){
+ const url=location.href;
+ if(!templatesRequest){
+  templatesRequest=api('/api/crm/templates').then(rows=>{templates=rows;templatesLoaded=true}).finally(()=>{templatesRequest=null});
+ }
+ templatesRequest.then(()=>{if(location.href===url)open()}).catch(error=>toast(error.message,true));
+}
 function messageModal(c,type,draft={}){
+ if(!templatesLoaded)return withMessageTemplates(()=>messageModal(c,type,draft));
  const isMail=type==='email',initialDraft={contenu:String(draft.contenu??''),sujet:String(draft.sujet??'Intégrale Academy — Votre formation'),template_id:String(draft.template_id??'')},automaticMeta=metaTemplatesForContact(c,type),modelPool=[...(isMail?templates.automatic_email||[]:[]),...automaticMeta,...templates[type]],list=[...new Map(modelPool.map(template=>[String(template.id),template])).values()];
  let manualAttachments=Array.isArray(draft.attachments)?draft.attachments.filter(file=>file&&typeof file.name==='string'):(draft.attachment&&typeof draft.attachment.name==='string'?[draft.attachment]:[]),includeTemplateAttachment=draft.include_template_attachment!==false;
  modal(isMail?'Envoyer un e-mail':'Envoyer un SMS',`<div class="field"><label>Destinataire</label><input value="${esc(isMail?c.mail:c.telephone)}" disabled></div><div class="field"><label>Utiliser un modèle</label><select id="tpl">${messageTemplateOptions(list,c.formation)}</select></div>${isMail?`<div class="field"><label>Objet</label><input id="subject" value="${esc(initialDraft.sujet)}"></div>`:''}<div class="field message-body-field"><div class="field-label-row voice-input-heading"><label for="msg">Message ${isMail?'(HTML accepté)':''}</label><button class="voice-input-button" id="dictateMessage" type="button" aria-pressed="false"><span class="voice-input-icon" aria-hidden="true"></span><span data-voice-label>Dicter le message</span></button></div><textarea id="msg" placeholder="Votre message…">${esc(initialDraft.contenu)}</textarea><small class="voice-input-status" id="dictateMessageStatus" aria-live="polite">Dites « point », « virgule » ou « à la ligne » pour ponctuer.</small></div>${isMail?`<div class="field email-attachment-field"><label for="messageAttachment">Pièces jointes</label><input id="messageAttachment" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg,.gif,.webp,.heic"><small class="field-help">Plusieurs fichiers acceptés, jusqu’à 20 Mo au total. Les fichiers ajoutés ici remplacent celui du modèle pour cet envoi.</small><div class="email-attachment-state" id="messageAttachmentState" aria-live="polite"></div></div>`:''}`,`<button class="btn ai-button" id="generateMessage">✦ Générer avec l’IA</button><button class="btn" id="messagePreview">Prévisualiser</button><button class="btn blue" id="sendMessage">Envoyer</button>`,'message-modal');
@@ -2539,6 +2598,7 @@ function reminderInterestHtml(starter,content,title){
  return html.includes('<!-- EMAIL_CONTENT_END -->')?html.replace('<!-- EMAIL_CONTENT_END -->',()=>booking+'<!-- EMAIL_CONTENT_END -->'):html+booking;
 }
 function bulkMessageModal(type,options={}){
+ if(!templatesLoaded)return withMessageTemplates(()=>bulkMessageModal(type,options));
  const isMail=type==='email',isReminder=Boolean(options.reminder),selection=options.selected||contacts.filter(contact=>selectedLeadIds.has(String(contact.id))),selected=[...new Map(selection.filter(contact=>isActiveLead(contact)&&!contact.archived_at).map(contact=>[String(contact.id),contact])).values()],{eligible,missing,duplicates}=bulkMessageRecipients(type,selected,isReminder);
  if(!selected.length)return toast('Sélectionnez au moins une piste',true);
  if(!eligible.length)return toast(`Aucune piste sélectionnée ne possède ${isMail?'d’adresse e-mail valide':'de numéro de téléphone'}.`,true);
@@ -2630,6 +2690,10 @@ const crmTemplateVariables=[['{{ prenom }}','Prénom'],['{{ nom }}','Nom'],['{{ 
 function templateVariablesHtml(){return `<section class="card template-variables"><div class="card-head"><div><h2>Variables disponibles</h2><small>Copiez une variable dans l’objet ou le contenu d’un e-mail ou d’un SMS. Elle sera remplacée au moment de l’envoi.</small></div></div><div class="variable-list">${crmTemplateVariables.map(([code,label])=>`<button type="button" data-copy-variable="${esc(code)}" title="Copier ${esc(code)}"><code>${esc(code)}</code><span>${esc(label)}</span></button>`).join('')}</div></section>`};
 function templateAttachmentBadge(template){return template?.piece_jointe?`<a class="template-attachment-badge" href="/api/crm/templates/${encodeURIComponent(template.id)}/attachment" target="_blank" rel="noopener" title="Télécharger ${esc(template.piece_jointe.nom)}">📎 ${esc(template.piece_jointe.nom)}</a>`:''}
 function templatesPage(){
+ if(!templatesLoaded){
+  page.innerHTML=header('COMMUNICATION','Modèles','Modèles d’e-mails et de SMS')+'<p class="empty">Chargement des modèles…</p>';
+  return withMessageTemplates(templatesPage);
+ }
  const automatic=templates.automatic_email||[],automaticMeta=templates.automatic_meta||[];
  const automaticMetaSection=`<details class="card automatic-template-card" open><summary class="card-head"><div>
   <h2>Messages automatiques META</h2><small>Chaque nouvelle piste reçoit les messages de sa formation. L’invitation à réserver un appel s’ajoute à partir de 30/100.</small></div>
@@ -2737,7 +2801,49 @@ function render(){
  if(window.CRMWorkspace){page.innerHTML=CRMWorkspace.listPage(C.section,workspaceContext());CRMWorkspace.bindList(C.section,workspaceContext());return}
  page.innerHTML=listPage(C.section);bindList(C.section);bindRows();
 }
-async function init(){try{const snapshot=await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`);contacts=snapshot.contacts||[];cpfPendingFolders=snapshot.cpf_pending_folders??null;cpfHiddenFolders=snapshot.cpf_hidden_folders||[];templates=snapshot.templates||{email:[],sms:[]};formationSessions=snapshot.formation_sessions||{};notifications=snapshot.notifications||[];if(!C.external_meta)showWaitingCallNotice(notifications);callbackRequests=snapshot.callback_requests||[];callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);crmAppointments=snapshot.appointments||[];crmSettings=snapshot.settings||{};updateNotificationCount();updateCallbackRequestNavCount();const fiche=new URLSearchParams(location.search).get('fiche');fiche?await showContact(fiche):render();lastCrmRefreshAt=Date.now()}catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}}
+let crmWorkspaceLoaded=false, workspaceRequest=null, templatesLoaded=false, templatesRequest=null;
+async function init(){
+ const fiche=new URLSearchParams(location.search).get('fiche');
+ if(!C.external_meta && C.section==='calendrier' && !fiche){render();return}
+ try{
+  await ensureCrmWorkspace();
+  if(fiche)await showContact(fiche);
+  else if(!document.querySelector('#calendarContent'))render();
+  lastCrmRefreshAt=Date.now();
+ }catch(e){page.innerHTML=`<div class="empty">Impossible de charger le CRM.<br>${esc(e.message)}</div>`}
+}
+async function loadCrmWorkspace(){
+ const snapshot=C.external_meta
+  ? await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}`)
+  : await api(`/api/crm/bootstrap?section=${encodeURIComponent(C.section)}&view=workspace`);
+ contacts=snapshot.contacts||[];
+ cpfPendingFolders=snapshot.cpf_pending_folders??null;
+ cpfHiddenFolders=snapshot.cpf_hidden_folders||[];
+ if(snapshot.templates || C.external_meta){
+  templates=snapshot.templates||{email:[],sms:[]};
+  templatesLoaded=true;
+ }
+ formationSessions=snapshot.formation_sessions||{};
+ notifications=snapshot.notifications||[];
+ if(!C.external_meta)showWaitingCallNotice(notifications);
+ callbackRequests=snapshot.callback_requests||[];
+ callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);
+ crmAppointments=snapshot.appointments||[];
+ crmSettings=snapshot.settings||{};
+ crmUpdateRevision=snapshot.revision||'';
+ updateNotificationCount();updateCallbackRequestNavCount();
+ crmWorkspaceLoaded=true;
+}
+function ensureCrmWorkspace(){
+ if(crmWorkspaceLoaded)return Promise.resolve();
+ if(!workspaceRequest)workspaceRequest=loadCrmWorkspace().finally(()=>{workspaceRequest=null});
+ return workspaceRequest;
+}
+function withCrmWorkspace(action){
+ if(crmWorkspaceLoaded)return action();
+ const url=location.href;
+ ensureCrmWorkspace().then(()=>{if(location.href===url)action()}).catch(error=>toast(error.message,true));
+}
 function developmentSupportModal(){
  modal('Support développement',`<form id="developmentSupportForm" class="fields" enctype="multipart/form-data"><div class="field"><label for="developmentSupportPlatform">Plateforme concernée</label><select id="developmentSupportPlatform" name="platform" required><option value="CRM">CRM</option><option value="Gestion stagiaires">GESTION STAGIAIRES</option><option value="Site internet officiel">SITE OFFICIEL</option></select></div><div class="field full"><label for="developmentSupportUrl">URL de la page concernée</label><input id="developmentSupportUrl" name="page_url" type="url" value="${esc(location.href)}" maxlength="2000" required></div><div class="field full"><label for="developmentSupportActions">Actions à mener</label><textarea id="developmentSupportActions" name="actions" rows="8" minlength="20" maxlength="6000" placeholder="Décrivez précisément toutes les modifications et le résultat attendu." required></textarea><small>La demande sera reformulée par l’IA, puis le texte original sera aussi conservé dans Notion.</small></div><div class="field full"><label for="developmentSupportAttachment">Pièce jointe (facultative)</label><input id="developmentSupportAttachment" name="attachment" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.heic,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"><small>Image, PDF, document Word/Excel, CSV ou TXT · 20 Mo maximum. Les images seront affichées directement dans la page Notion.</small></div></form>`,`<button class="btn" id="developmentSupportCancel">Annuler</button><button class="btn blue" id="developmentSupportSubmit">ENVOYER</button>`,'development-support-modal');
  const form=document.querySelector('#developmentSupportForm'),cancel=document.querySelector('#developmentSupportCancel'),submit=document.querySelector('#developmentSupportSubmit');
@@ -2760,7 +2866,7 @@ function developmentSupportModal(){
 }
 const newContactButton=document.querySelector('#newContact'),menuToggleButton=document.querySelector('#menuToggle'),sidebarCollapseButton=document.querySelector('#sidebarCollapse'),adminToolsButton=document.querySelector('#adminToolsBtn'),adminToolsMenuElement=document.querySelector('#adminToolsMenu'),developmentSupportButton=document.querySelector('#developmentSupportBtn');
 async function loadBrevoSmsCredits(){const balance=document.querySelector('#brevoSmsCredits');if(!balance)return;balance.classList.remove('error');balance.removeAttribute('title');balance.textContent='Actualisation…';try{const result=await api('/api/crm/brevo/sms-credits'),smsRemaining=brevoCreditsToSms(result?.credits);if(smsRemaining===null)throw Error('Le solde SMS Brevo est invalide.');const formattedCredits=formatBrevoCredits(result.credits);balance.textContent=`${new Intl.NumberFormat('fr-FR').format(smsRemaining)} SMS restant${smsRemaining>1?'s':''}`;balance.title=`Solde Brevo : ${formattedCredits} crédit${Number(result.credits)>1?'s':''}`}catch(e){balance.textContent=e.message;balance.classList.add('error')}}
-newContactButton?.addEventListener('click',()=>window.CRMWorkspace?CRMWorkspace.createContactModal(workspaceContext()):createContact());developmentSupportButton?.addEventListener('click',()=>{adminToolsMenuElement?.classList.remove('open');adminToolsButton?.setAttribute('aria-expanded','false');developmentSupportModal()});document.querySelector('#manageStatusesTop')?.addEventListener('click',statusesModal);document.querySelector('#deleteCrmDatabase')?.addEventListener('click',deleteCrmDatabaseModal);window.CRMSidebarState?.initialize(document);adminToolsButton?.addEventListener('click',e=>{e.stopPropagation();const opening=!adminToolsMenuElement.classList.contains('open');adminToolsMenuElement.classList.toggle('open',opening);adminToolsButton.setAttribute('aria-expanded',opening);if(opening)loadBrevoSmsCredits()});const searchBox=document.querySelector('.search');searchBox.insertAdjacentHTML('beforeend','<div class="global-results" id="globalResults"></div>');
+newContactButton?.addEventListener('click',()=>withCrmWorkspace(()=>window.CRMWorkspace?CRMWorkspace.createContactModal(workspaceContext()):createContact()));developmentSupportButton?.addEventListener('click',()=>{adminToolsMenuElement?.classList.remove('open');adminToolsButton?.setAttribute('aria-expanded','false');developmentSupportModal()});document.querySelector('#manageStatusesTop')?.addEventListener('click',statusesModal);document.querySelector('#deleteCrmDatabase')?.addEventListener('click',deleteCrmDatabaseModal);window.CRMSidebarState?.initialize(document);adminToolsButton?.addEventListener('click',e=>{e.stopPropagation();const opening=!adminToolsMenuElement.classList.contains('open');adminToolsMenuElement.classList.toggle('open',opening);adminToolsButton.setAttribute('aria-expanded',opening);if(opening)loadBrevoSmsCredits()});const searchBox=document.querySelector('.search');searchBox.insertAdjacentHTML('beforeend','<div class="global-results" id="globalResults"></div>');
 const normalizeGlobalSearch=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr-FR').trim();
 const normalizePhoneSearch=value=>{let digits=String(value||'').replace(/\D/g,''),frenchPrefix=false;if(digits.startsWith('0033')){digits=digits.slice(4);frenchPrefix=true}else if(digits.startsWith('33')){digits=digits.slice(2);frenchPrefix=true}if(frenchPrefix&&digits.length===9)digits=`0${digits}`;return digits};
 const phoneSearchQuery=value=>{const raw=String(value||'').trim();if(!/^[+\d\s().\/-]+$/.test(raw))return'';const digits=normalizePhoneSearch(raw);return digits.length>=3?digits:''};
@@ -2771,6 +2877,7 @@ function contactSearchRank(c,q){const phoneQuery=phoneSearchQuery(q),phone=norma
 const prepareGlobalContactLinks=()=>document.querySelectorAll('button[data-global-id]').forEach(button=>{const link=document.createElement('a');link.dataset.globalId=button.dataset.globalId;link.href=contactSheetUrl(button.dataset.globalId);link.target='_blank';link.rel='noopener';link.innerHTML=button.innerHTML;button.replaceWith(link)});
 new MutationObserver(prepareGlobalContactLinks).observe(globalResults,{childList:true});
 async function refreshCrmSectionData(section){
+ if(section==='calendrier')return; // calendarPage already requested this day.
  try{
   if(section==='notifications'||section==='fil-actu'){
    const fresh=await api(`/api/crm/contacts?section=${encodeURIComponent(section)}`);
@@ -2787,6 +2894,7 @@ async function refreshCrmSectionData(section){
 }
 function navigateCrmSection(section,url,label){
  if(!section)return false;
+ if(!crmWorkspaceLoaded && section!=='calendrier'){location.assign(url);return true}
  C.section=section;
  C.page_label=label||section;
  history.pushState({crmSection:section},'',url);
@@ -2801,14 +2909,14 @@ document.querySelectorAll('.sidebar a[data-nav]').forEach(link=>link.addEventLis
  navigateCrmSection(link.dataset.nav,link.href,link.dataset.label);
 }));
 globalResults.addEventListener('click',event=>{const link=event.target.closest('a[data-global-id]');if(!link)return;const contact=contacts.find(item=>String(item.id)===link.dataset.globalId);if(contact)saveRecent(contact);globalSearch.value='';globalResults.classList.remove('open')});
-const searchPages=C.external_meta?[]:[['Accueil','accueil','/crm'],['Calendrier','calendrier','/crm/calendrier'],['Notifications','notifications','/crm/notifications'],['Fil actu','fil-actu','/crm/fil-actu'],['Pistes','pistes','/crm/pistes'],['Relances','relances','/crm/relances'],['Inscrits','inscrits','/crm/inscrits'],['Disqualifiés','disqualifies','/crm/disqualifies'],['Contacts','contacts','/crm/contacts'],['Modèles','modeles','/crm/modeles']];const recentSearches=()=>JSON.parse(localStorage.getItem('crm-recent-searches')||'[]');const saveRecent=c=>{const next=[c.id,...recentSearches().filter(id=>id!==c.id)].slice(0,5);localStorage.setItem('crm-recent-searches',JSON.stringify(next))};function renderGlobalSearch(){const q=normalizeGlobalSearch(globalSearch.value),recent=recentSearches().map(id=>contacts.find(c=>c.id===id)).filter(contact=>contact&&!contact.archived_at).slice(0,5),found=q?crmActiveContacts().filter(c=>contactMatchesSearch(c,q)).sort((a,b)=>contactSearchRank(a,q)-contactSearchRank(b,q)||displayName(a).localeCompare(displayName(b),'fr')).slice(0,5):recent,pageFound=q?searchPages.filter(([label])=>normalizeGlobalSearch(label).includes(q)).slice(0,5):[];globalResults.innerHTML=(found.length&&!q?'<p>5 dernières pistes consultées</p>':'')+found.map(c=>`<button data-global-id="${c.id}"><span class="avatar">${initials(c)}</span><span>${globalContactName(c)}<small>${esc(c.formation||'Dossier')} · ${esc(c.statut)} · ${esc(contactCoordinateSummary(c))}</small></span></button>`).join('')+pageFound.map(([label,section,url])=>`<button data-global-page="${section}" data-global-url="${url}"><span class="avatar page-avatar">⌁</span><span><b>${esc(label)}</b><small>Ouvrir la rubrique CRM</small></span></button>`).join('')||(q?'<p>Aucun résultat trouvé</p>':'');globalResults.classList.toggle('open',!!q||!!found.length);document.querySelectorAll('[data-global-id]').forEach(b=>b.onclick=()=>{const c=contacts.find(x=>x.id===b.dataset.globalId);if(c)saveRecent(c);globalSearch.value='';globalResults.classList.remove('open');showContact(b.dataset.globalId)});document.querySelectorAll('[data-global-page]').forEach(b=>b.onclick=()=>{globalSearch.value='';globalResults.classList.remove('open');navigateCrmSection(b.dataset.globalPage,b.dataset.globalUrl)})}globalSearch.onfocus=renderGlobalSearch;globalSearch.oninput=renderGlobalSearch;
+const searchPages=C.external_meta?[]:[['Accueil','accueil','/crm'],['Calendrier','calendrier','/crm/calendrier'],['Notifications','notifications','/crm/notifications'],['Fil actu','fil-actu','/crm/fil-actu'],['Pistes','pistes','/crm/pistes'],['Relances','relances','/crm/relances'],['Inscrits','inscrits','/crm/inscrits'],['Disqualifiés','disqualifies','/crm/disqualifies'],['Contacts','contacts','/crm/contacts'],['Modèles','modeles','/crm/modeles']];const recentSearches=()=>JSON.parse(localStorage.getItem('crm-recent-searches')||'[]');const saveRecent=c=>{const next=[c.id,...recentSearches().filter(id=>id!==c.id)].slice(0,5);localStorage.setItem('crm-recent-searches',JSON.stringify(next))};function renderGlobalSearch(){const q=normalizeGlobalSearch(globalSearch.value),recent=recentSearches().map(id=>contacts.find(c=>c.id===id)).filter(contact=>contact&&!contact.archived_at).slice(0,5),found=q?crmActiveContacts().filter(c=>contactMatchesSearch(c,q)).sort((a,b)=>contactSearchRank(a,q)-contactSearchRank(b,q)||displayName(a).localeCompare(displayName(b),'fr')).slice(0,5):recent,pageFound=q?searchPages.filter(([label])=>normalizeGlobalSearch(label).includes(q)).slice(0,5):[];globalResults.innerHTML=(found.length&&!q?'<p>5 dernières pistes consultées</p>':'')+found.map(c=>`<button data-global-id="${c.id}"><span class="avatar">${initials(c)}</span><span>${globalContactName(c)}<small>${esc(c.formation||'Dossier')} · ${esc(c.statut)} · ${esc(contactCoordinateSummary(c))}</small></span></button>`).join('')+pageFound.map(([label,section,url])=>`<button data-global-page="${section}" data-global-url="${url}"><span class="avatar page-avatar">⌁</span><span><b>${esc(label)}</b><small>Ouvrir la rubrique CRM</small></span></button>`).join('')||(q?'<p>Aucun résultat trouvé</p>':'');globalResults.classList.toggle('open',!!q||!!found.length);document.querySelectorAll('[data-global-id]').forEach(b=>b.onclick=()=>{const c=contacts.find(x=>x.id===b.dataset.globalId);if(c)saveRecent(c);globalSearch.value='';globalResults.classList.remove('open');showContact(b.dataset.globalId)});document.querySelectorAll('[data-global-page]').forEach(b=>b.onclick=()=>{globalSearch.value='';globalResults.classList.remove('open');navigateCrmSection(b.dataset.globalPage,b.dataset.globalUrl)})}globalSearch.onfocus=()=>withCrmWorkspace(renderGlobalSearch);globalSearch.oninput=globalSearch.onfocus;
 document.addEventListener('click',e=>{if(!searchBox.contains(e.target))globalResults.classList.remove('open')});
-globalSearch.onkeydown=e=>{if(e.key==='Enter'){if(C.external_meta){globalResults.querySelector('[data-global-id]')?.click();return}C.section='contacts';history.pushState({},'',`/crm/contacts`);render();const x=document.querySelector('#listSearch');if(x){x.value=globalSearch.value;x.dispatchEvent(new Event('input'))}}};window.onpopstate=()=>location.reload();init();
+globalSearch.onkeydown=async e=>{if(e.key==='Enter'){try{await ensureCrmWorkspace()}catch(error){return toast(error.message,true)}if(C.external_meta){globalResults.querySelector('[data-global-id]')?.click();return}C.section='contacts';history.pushState({},'',`/crm/contacts`);render();const x=document.querySelector('#listSearch');if(x){x.value=globalSearch.value;x.dispatchEvent(new Event('input'))}}};window.onpopstate=()=>location.reload();init();
 // Synchronisation collaborative légère : une seule requête à la fois, uniquement
 // lorsque l'onglet est visible. Un rechargement complet n'a lieu que si la liste
 // des contacts a réellement changé.
 const CRM_REFRESH_INTERVAL_MS=180000,CRM_VISIBILITY_REFRESH_MIN_MS=30000;
-let crmRefreshTimer=null,crmRefreshInFlight=false,lastCrmRefreshAt=0,crmUpdateCursor='';
+let crmRefreshTimer=null,crmRefreshInFlight=false,lastCrmRefreshAt=0,crmUpdateCursor='',crmUpdateRevision='';
 function scheduleCrmRefresh(delay=CRM_REFRESH_INTERVAL_MS){clearTimeout(crmRefreshTimer);crmRefreshTimer=setTimeout(refreshCrmSnapshot,delay)}
 function refreshPipelineQueues(){
  if(C.section!=='pistes'||new URLSearchParams(location.search).has('fiche'))return;
@@ -2825,16 +2933,18 @@ async function refreshCrmSnapshot(){
  if(document.hidden||crmRefreshInFlight){scheduleCrmRefresh();return}
  crmRefreshInFlight=true;
  try{
-  const id=new URLSearchParams(location.search).get('fiche'),section=C.section,refreshParams=new URLSearchParams({delta:'1'});
-  if(section==='calendrier'&&!id)calendarAvailability?.load();
+  const id=new URLSearchParams(location.search).get('fiche'),section=C.section,refreshParams=new URLSearchParams({delta:'1',view:'workspace'});
+  if(section==='calendrier'&&!id){await loadCalendar();lastCrmRefreshAt=Date.now();return}
+  if(!crmWorkspaceLoaded)return;
   const visibilityAtStart=section==='pistes'?cpfVisibilityRevision:null;
   if(id)refreshParams.set('contact_id',id);
   if(['pistes','demandes-rappel'].includes(C.section))refreshParams.set('section',C.section);
   if(crmUpdateCursor)refreshParams.set('cursor',crmUpdateCursor);
+  if(crmUpdateRevision)refreshParams.set('revision',crmUpdateRevision);
   const suffix=`?${refreshParams}`;
   const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
   if(section!==C.section||id!==new URLSearchParams(location.search).get('fiche'))return;
-  if(snapshot.unchanged){lastCrmRefreshAt=Date.now();return}
+  if(snapshot.unchanged){crmUpdateRevision=snapshot.revision||'';lastCrmRefreshAt=Date.now();return}
   const updates=snapshot.contacts||[];
   const pipelineContactChanged=updates.some(update=>['cpf_status','relance_date','statut','statut_secondaire'].some(field=>Object.prototype.hasOwnProperty.call(update,field)&&contactInStore(update.id)?.[field]!==update[field]));
   const hasAppointments=Array.isArray(snapshot.appointments);
@@ -2845,7 +2955,7 @@ async function refreshCrmSnapshot(){
    snapshot.appointments=[...merged.values()].sort((a,b)=>String(a.start_time||'').localeCompare(String(b.start_time||'')));
   }
   const appointmentsChanged=hasAppointments&&window.CRMAppointmentState.signature(snapshot.appointments)!==window.CRMAppointmentState.signature(crmAppointments);
-  if(hasAppointments&&(appointmentsChanged||C.section==='calendrier'))crmAppointments=snapshot.appointments;
+  if(hasAppointments&&appointmentsChanged)crmAppointments=snapshot.appointments;
   const knownIds=new Set(contacts.map(contact=>String(contact.id)));
   const membershipChanged=(!snapshot.delta&&updates.length!==contacts.length)||(snapshot.removed_contacts||[]).length>0||updates.some(contact=>!knownIds.has(String(contact.id)));
   if(membershipChanged){
@@ -2879,7 +2989,6 @@ async function refreshCrmSnapshot(){
   updateLeadCount();
   updateVisibleAppointmentData();
   if(membershipChanged||pipelineContactChanged||foldersChanged||hiddenChanged)refreshPipelineQueues();
-  if(C.section==='calendrier'&&!id&&hasAppointments)renderCalendarAppointments(crmAppointments);
   const current=id?contactInStore(id):null;
   if(current){
    renderContactNextTelephoneAppointment(current);
@@ -2888,8 +2997,9 @@ async function refreshCrmSnapshot(){
    if(pubRoot&&!filterRoot){pubRoot.innerHTML=publications(current);bindPublicationFeed(current,pubRoot,refreshActivity)}
   }
   crmUpdateCursor=staleVisibility?'':snapshot.cursor||'';
+  crmUpdateRevision=staleVisibility?'':snapshot.revision||'';
   lastCrmRefreshAt=Date.now();
- }catch(_){crmUpdateCursor='';/* Reprendre un instantané complet après une application partielle. */}
+ }catch(_){crmUpdateCursor='';crmUpdateRevision='';/* Reprendre un instantané complet après une application partielle. */}
  finally{crmRefreshInFlight=false;scheduleCrmRefresh()}
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){const remaining=CRM_VISIBILITY_REFRESH_MIN_MS-(Date.now()-lastCrmRefreshAt);if(remaining<=0){clearTimeout(crmRefreshTimer);refreshCrmSnapshot()}else scheduleCrmRefresh(remaining)}});scheduleCrmRefresh();

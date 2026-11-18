@@ -275,8 +275,10 @@ def test_calendar_tiles_selected_day_refresh_and_failure_in_browser(tmp_path, mo
             failed = True
             tiles.first.click()
             page.locator('#calendarRefresh').click()
-            playwright.expect(total).to_have_text('—')
-            playwright.expect(badge).to_contain_text('inconnue')
+            playwright.expect(page.locator('.cassandre-notice')).to_contain_text('Calendly est indisponible')
+            playwright.expect(total).to_have_text('31')
+            playwright.expect(badge).to_have_text('0 place restante avec Cassandre')
+            playwright.expect(page.locator('.cassandre-updated')).to_contain_text('Mis à jour à')
             failed = False
             counts['2026-11-18'] = 4
             page.locator('.cassandre-notice button').click()

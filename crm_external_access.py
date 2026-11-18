@@ -213,7 +213,7 @@ def install(legacy):
                 return render_template(
                     "crm.html", user=user, section="pistes", page_title="Nouveaux META",
                     statuses=treatment_statuses(legacy, data), crm_team=[],
-                    asset_version=VERSION, external_meta=True, external_csrf=csrf_token(),
+                    asset_version=f"{VERSION}-{legacy.CRM_ASSET_VERSION}", external_meta=True, external_csrf=csrf_token(),
                     external_edit_fields=sorted(EDIT_FIELDS),
                 )
             return render_template("crm_external.html", user=user, version=VERSION,

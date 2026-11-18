@@ -228,6 +228,7 @@ def test_browser_polling_merges_deltas_and_ignores_late_navigation():
 const assert=require('node:assert/strict');
 const C={section:'contacts'},document={hidden:false,querySelector:()=>null};
 const location={search:''},window={CRMAppointmentState:{signature:JSON.stringify}};
+const crmWorkspaceLoaded=true;
 let contacts=[{id:'a',statut:'Nouveaux'},{id:'b',statut:'En cours'}];
 let crmAppointments=[{id:'x',start_time:'1'},{id:'y',start_time:'2'}];
 let callbackRequests=[],callbackRequestPendingCount=3,calls=[],apiHook=null;

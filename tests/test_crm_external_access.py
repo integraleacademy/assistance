@@ -207,6 +207,7 @@ def test_only_restricted_page_and_assets_are_served(clients):
     assert '"external_meta": true' in sheet
     assert 'filename=' not in sheet
     assert 'crm_external_contact.js' in sheet
+    assert f'-{legacy.CRM_ASSET_VERSION}' in sheet
     assert 'id="adminToolsBtn"' not in sheet
     assert 'id="newContact"' not in sheet
     assert 'href="/crm/contacts"' not in sheet
