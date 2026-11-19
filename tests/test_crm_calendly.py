@@ -1804,3 +1804,38 @@ def test_historical_repair_preserves_cancellation_and_existing_contact(tmp_path,
     assert (appointment["contact_id"], appointment["id"], appointment["status"]) == (correct["id"], "original", "canceled")
     assert appointment["cancellation"] == {"reason": "Choix de la candidate"}
     assert not data["crm_contacts"][0]["relance_date"]
+
+
+def test_historical_name_disagreement_keeps_the_recorded_call_and_owner(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    owner = client.post("/api/crm/contacts", json={"prenom": "Lucie", "nom": "Morel"}).get_json()
+    client.patch(f"/api/crm/contacts/{owner['id']}", json={"mail": "lucie@example.test", "telephone": "0699887766"})
+    other = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
+    client.patch(f"/api/crm/contacts/{other['id']}", json={"mail": "lina@example.test", "telephone": "0612345678"})
+    guest = calendly_payload("lucie@example.test")
+    guest["scheduled_event"].update(start_time="2020-08-12T08:00:00Z", end_time="2020-08-12T08:30:00Z")
+    url = f"/api/crm/contacts/{other['id']}/calendly/verify-links"
+    for callback, disputed in (("0699887766", False), ("0612345678", True)):
+        guest["questions_and_answers"] = [{"question": "Téléphone", "answer": callback}]
+        data = application.load_data()
+        data["crm_calendly_appointments"] = [{
+            "id": "historical", "contact_id": None, "status": "active", "name": "Appel VTC",
+            "event_uri": guest["event"], "invitee_uri": guest["uri"], "invitee_name": guest["name"],
+            "invitee_email": guest["email"], "invitee_phone": callback, "callback_checked": True,
+            "start_time": guest["scheduled_event"]["start_time"], "response_status": "",
+            "identity_conflict": True, "identity_checked_at": "2026-01-01T10:00:00Z",
+            "identity_corrections": [{"previous_contact_id": owner["id"], "previous_response": "answered",
+                                      "response_at": "2020-08-12T08:15:00Z"}],
+        }]
+        application.save_data(data)
+        monkeypatch.setattr(application, "_calendly_request", lambda *args, **kwargs: {"resource": guest})
+        assert client.post(url, json={}).get_json()["checked"] == 1
+        row = application.load_data()["crm_calendly_appointments"][0]
+        assert row["contact_id"] == owner["id"] and row["response_status"] == "answered"
+        assert row["identity_conflict"] is disputed
+        assert row["response_status_updated_at"] == "2020-08-12T08:15:00Z"
+        signed_webhook(client, monkeypatch, "invitee.created", guest)
+        row = application.load_data()["crm_calendly_appointments"][0]
+        assert (row["contact_id"], row["response_status"], row["identity_conflict"]) == (owner["id"], "answered", disputed)
+        if disputed:
+            assert client.patch("/api/crm/calendly/appointments/historical", json={"response_status":"no_answer"}).status_code == 409
