@@ -97,7 +97,7 @@ class Legacy:
 
     def _crm_calendly_fetch_contact_appointments(self, data, contact):
         assert set(data) == {"crm_calendly"}, "lookup must not hold a full database"
-        assert set(contact) == {"id", "mail", "telephone"}
+        assert set(contact) == {"id", "mail", "telephone", "prenom", "nom"}
         assert self.loads == 0, "no mutable database copy before network I/O"
         assert self.lock_depth == 0, "never hold transaction lock during network I/O"
         self.remote_calls += 1

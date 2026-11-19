@@ -64,7 +64,7 @@ def _lookup_identity(legacy, contact_id):
     contact = legacy._crm_contact(snapshot, contact_id)
     if contact is None:
         return None, None
-    identity = {key: contact.get(key) for key in ("id", "mail", "telephone")}
+    identity = {key: contact.get(key) for key in ("id", "mail", "telephone", "prenom", "nom")}
     # The remote lookup uses only this state, not contacts/history/templates.
     context = {"crm_calendly": copy.deepcopy(snapshot.get("crm_calendly") or {})}
     return context, identity
@@ -120,13 +120,14 @@ def local_calendly_contact(legacy, contact_id, warning=""):
     for item in data.get("crm_calendly_appointments", []):
         if item.get("contact_id") == contact_id:
             appointments.append(item)
-        elif item.get("contact_id") not in known_ids and (
+        elif not item.get("identity_conflict") and item.get("contact_id") not in known_ids and (
             (email and legacy._crm_normalize_email(item.get("invitee_email")) == email)
-            or (phone and legacy._crm_normalize_phone(item.get("invitee_phone")) == phone)
+            or (item.get("callback_checked") and phone and legacy._crm_normalize_phone(item.get("invitee_phone")) == phone)
         ):
             # Preserve visibility of legacy orphans without writing during a
             # consultation. Explicit refresh persists the existing repair rules.
-            appointments.append(dict(item, contact_id=contact_id))
+            if legacy._crm_calendly_resolve_identity(data, item, contact)[0] is contact:
+                appointments.append(dict(item, contact_id=contact_id))
     appointments = sorted(
         appointments,
         key=lambda item: item.get("start_time") or "", reverse=True,

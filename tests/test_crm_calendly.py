@@ -336,7 +336,9 @@ def test_appointment_response_status_can_be_updated_from_calendar_or_contact(tmp
         f"/api/crm/contacts/{contact['id']}",
         json={"mail": "lina@example.com", "telephone": "+33612345678"},
     )
-    created = signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
+    payload = calendly_payload()
+    payload["scheduled_event"].update(start_time="2020-08-12T08:00:00Z", end_time="2020-08-12T08:30:00Z")
+    created = signed_webhook(client, monkeypatch, "invitee.created", payload)
     assert created.get_json()["contact_id"] == contact["id"]
     appointment_id = client.get(
         "/api/crm/calendly/appointments"
@@ -598,6 +600,7 @@ def test_webhook_keeps_unidentifiable_appointment_without_creating_a_lead(
     client = authenticated_client(tmp_path, monkeypatch)
     payload = calendly_payload(email="")
     payload["text_reminder_number"] = ""
+    payload["scheduled_event"]["location"] = None
 
     response = signed_webhook(
         client,
@@ -1147,6 +1150,7 @@ def test_contact_appointments_are_fetched_directly_by_email(tmp_path, monkeypatc
         if path == "/scheduled_events/EVENT1/invitees":
             assert kwargs["params"]["email"] == "tonyarribasft@icloud.com"
             invitee = calendly_payload(email="tonyarribasft@icloud.com")
+            invitee.update(name="Tony Arribas", first_name="Tony", last_name="Arribas")
             return {
                 "collection": [invitee],
                 "pagination": {"next_page_token": None},
@@ -1225,6 +1229,7 @@ def test_webhook_matches_a_contact_by_normalized_phone_question(tmp_path, monkey
         json={"telephone": "06 41 57 92 65"},
     )
     payload = calendly_payload(email="")
+    payload.update(name="Tony Arribas", first_name="Tony", last_name="Arribas")
     payload["text_reminder_number"] = ""
     payload["questions_and_answers"] = [{
         "question": "Numéro de téléphone",
@@ -1695,3 +1700,107 @@ def test_round_robin_booking_browser_sends_the_required_location():
     assert "if(!locations.length){root.innerHTML='';return}" in crm_js
     assert "selectedLocation=locations[Number(locationSelect?.value||0)]||locations[0]||null" in crm_js
     assert "selectedType.pooling_type==='round_robin'?null" not in crm_js
+
+
+def test_shared_sms_number_does_not_identify_another_invitee(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    original = client.post("/api/crm/contacts", json={"prenom": "Alex", "nom": "Robert"}).get_json()
+    client.patch(f"/api/crm/contacts/{original['id']}", json={"telephone": "0612345678", "mail": "alex@example.test"})
+    guest = calendly_payload("lina@example.test")
+    guest["scheduled_event"]["location"] = None
+    guest["questions_and_answers"] = [{"question": "Numéro de téléphone", "answer": "+33699887766"}]
+
+    first = signed_webhook(client, monkeypatch, "invitee.created", guest).get_json()
+    second = signed_webhook(client, monkeypatch, "invitee.created", guest).get_json()
+    assert first["contact_id"] == second["contact_id"] != original["id"]
+    record = client.get(f"/api/crm/contacts/{first['contact_id']}").get_json()
+    assert (record["prenom"], record["mail"], record["telephone"]) == ("Lina", guest["email"], "+33699887766")
+
+    guest.pop("questions_and_answers")
+    guest["email"] = ""
+    assert application._crm_calendly_payload_phone(guest) == ""
+    # A cache populated by the previous version cannot identify people by their SMS number.
+    legacy = {"invitee_name": "Lina Martin", "invitee_phone": "0612345678"}
+    assert application._crm_calendly_resolve_identity(application.load_data(), legacy) == (None, False)
+
+
+def test_conflicting_callback_and_email_are_held_for_review(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    for name, email, phone in (("Lina", "lina@example.test", "0611111111"), ("Alain", "alain@example.test", "0622222222")):
+        person = client.post("/api/crm/contacts", json={"prenom": name, "nom": "Martin"}).get_json()
+        client.patch(f"/api/crm/contacts/{person['id']}", json={"mail": email, "telephone": phone})
+    guest = calendly_payload("lina@example.test")
+    guest["questions_and_answers"] = [{"question": "Téléphone", "answer": "0622222222"}]
+    response = signed_webhook(client, monkeypatch, "invitee.created", guest).get_json()
+    appointment = application.load_data()["crm_calendly_appointments"][0]
+    assert response["contact_id"] is None and appointment["identity_conflict"]
+    assert len(application.load_data()["crm_contacts"]) == 2
+
+
+def test_future_absence_sends_nothing_and_preserves_followups(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    def unexpected(*args):
+        raise AssertionError("Premature follow-up")
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected)
+    signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
+    data = application.load_data()
+    row = data["crm_calendly_appointments"][0]
+    url = f"/api/crm/calendly/appointments/{row['id']}"
+    assert client.patch(url, json={"response_status": "no_answer"}).status_code == 409
+    current = application.load_data()
+    assert current["crm_calendly_appointments"] == data["crm_calendly_appointments"]
+    assert current["crm_contacts"] == data["crm_contacts"]
+
+
+def test_verify_links_restores_original_booking_and_does_not_resend(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    old = client.post("/api/crm/contacts", json={"prenom": "Alex", "nom": "Robert"}).get_json()
+    client.patch(f"/api/crm/contacts/{old['id']}", json={"mail": "alex@example.test", "telephone": "0612345678"})
+    guest = calendly_payload("lina@example.test")
+    guest["questions_and_answers"] = [{"question": "Numéro de téléphone", "answer": "+33699887766"}]
+    record = {"id": "booking-1", "contact_id": old["id"], "name": "Formation Chauffeur VTC",
+              "start_time": "2099-01-15T08:00:00Z", "invitee_uri": guest["uri"], "event_uri": guest["event"],
+              "invitee_name": guest["name"], "invitee_email": guest["email"], "invitee_phone": "+33612345678",
+              "status": "active", "response_status": "no_answer", "response_status_updated_at": "2026-01-01T10:00:00Z"}
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [record]
+    application.save_data(data)
+    calls = []
+    def provider(method, path, **kwargs):
+        calls.append((method, path))
+        return {"resource": guest}
+    monkeypatch.setattr(application, "_calendly_request", provider)
+    def unexpected(*args):
+        raise AssertionError("Historical repair must not send a follow-up")
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected)
+    url = f"/api/crm/contacts/{old['id']}/calendly/verify-links"
+    repaired = client.post(url, json={}).get_json()
+    assert (repaired["moved"], repaired["checked"], repaired["pending"]) == (1, 1, 0)
+    current = application.load_data()
+    row, = current["crm_calendly_appointments"]
+    new = application._crm_contact(current, row["contact_id"])
+    assert (new["mail"], new["telephone"], new["statut"]) == ("lina@example.test", "+33699887766", "RDV programmé")
+    assert (row["id"], row["start_time"], row["status"], row["response_status"]) == ("booking-1", record["start_time"], "active", "")
+    assert row["identity_corrections"][0]["previous_contact_id"] == old["id"]
+    assert client.post(url, json={}).get_json()["checked"] == 0
+    assert calls == [("GET", "/scheduled_events/EVENT1/invitees/INVITEE1")]
+
+
+def test_historical_repair_preserves_cancellation_and_existing_contact(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    wrong = client.post("/api/crm/contacts", json={"prenom": "Alex", "nom": "Robert"}).get_json()
+    correct = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin"}).get_json()
+    client.patch(f"/api/crm/contacts/{correct['id']}", json={"mail": "lina@example.test", "telephone": "0699887766"})
+    data = application.load_data()
+    guest = calendly_payload("lina@example.test", status="canceled")
+    guest["questions_and_answers"] = [{"question": "Téléphone", "answer": "0699887766"}]
+    appointment = {"id": "original", "invitee_name": "Lina Martin", "contact_id": wrong["id"], "status": "canceled",
+                   "start_time": "2021-01-01T08:00:00Z", "name": "Appel VTC", "cancellation": {"reason": "Choix de la candidate"}}
+    data["crm_calendly_appointments"] = [appointment]
+    with application.app.test_request_context():
+        assert application._crm_calendly_repair_invitee(data, appointment, guest)
+        assert not application._crm_calendly_repair_invitee(data, appointment, guest)
+    assert len(data["crm_contacts"]) == 2
+    assert (appointment["contact_id"], appointment["id"], appointment["status"]) == (correct["id"], "original", "canceled")
+    assert appointment["cancellation"] == {"reason": "Choix de la candidate"}
+    assert not data["crm_contacts"][0]["relance_date"]
