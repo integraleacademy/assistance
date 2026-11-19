@@ -9326,7 +9326,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261119-calendly-identite-v1"
+CRM_ASSET_VERSION = "20261119-calendly-identite-v2"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -11352,6 +11352,17 @@ def _crm_calendly_resolve_identity(data, appointment, preferred=None):
     matches = [c for c in data.get("crm_contacts", []) if
                (email and _crm_normalize_email(c.get("mail")) == email) or
                (phone and _crm_normalize_phone(c.get("telephone")) == phone)]
+    # An existing historical dossier can have an obsolete or misspelled guest name.
+    # Preserve it only when both independent coordinates agree on this one person.
+    prior = (appointment.get("identity_corrections") or [{}])[-1]
+    recorded_id = appointment.get("contact_id") or (prior.get("previous_contact_id") if appointment.get("identity_conflict") else None)
+    if preferred and preferred.get("id") == recorded_id and email and phone:
+        both = [c for c in matches if _crm_normalize_email(c.get("mail")) == email
+                and _crm_normalize_phone(c.get("telephone")) == phone]
+        start = _crm_calendar_start(appointment)
+        if (preferred in both and len({_crm_course_root(c) for c in both}) == 1
+                and start and start <= datetime.datetime.now(datetime.timezone.utc)):
+            return preferred, False
     compatible = [c for c in matches if _crm_calendly_name_match(c, appointment.get("invitee_name")) is not False]
     if not compatible:
         # Do not revive a stale link when the stored contact disagrees with the guest.
@@ -11679,6 +11690,7 @@ def _crm_calendly_set_owner(appointment, previous, contact):
     new_id = contact.get("id") if contact else None
     if previous and previous["id"] != new_id:
         appointment.pop("conversion_context", None)
+        appointment.pop("historical_identity_contact_id", None)
     if previous and previous["id"] != new_id and appointment.get("response_status"):
         appointment.setdefault("identity_corrections", []).append({
             "previous_contact_id": previous["id"], "previous_response": appointment["response_status"],
@@ -11856,11 +11868,17 @@ def _crm_upsert_calendly_appointment(
             if preferred is previous_contact or source == "crm":
                 contact = preferred
     appointment["identity_conflict"] = conflict
+    if conflict:
+        # An ambiguous import is not evidence that a recorded call belongs elsewhere.
+        if not existing:
+            appointment.update(contact_id=None)
+            appointments.append(appointment)
+        return appointment, None
     contact_created = False
     booking = appointment
     if previous_contact and _crm_calendly_name_match(previous_contact, appointment["invitee_name"]) is False:
         booking = dict(appointment, response_status="")
-    if not contact and not conflict and _crm_calendly_appointment_is_today_or_future(booking):
+    if not contact and _crm_calendly_appointment_is_today_or_future(booking):
         contact = _crm_calendly_new_contact(data, payload, appointment)
         contact_created = contact is not None
     _crm_calendly_set_owner(appointment, previous_contact, contact)
@@ -16742,6 +16760,14 @@ def _crm_calendar_start(appointment):
         return None
 
 
+def _crm_calendly_display_owner(appointment, contact):
+    if appointment.get("identity_conflict"):
+        return False
+    if contact.get("id") and contact["id"] == appointment.get("historical_identity_contact_id"):
+        return True
+    return _crm_calendly_name_match(contact, appointment.get("invitee_name")) is not False
+
+
 def _crm_calendar_slot(appointment, contact):
     """Shared by the CRM day view and the restricted call-desk projection."""
     local = _crm_calendar_start(appointment)
@@ -16751,7 +16777,7 @@ def _crm_calendar_slot(appointment, contact):
     last = _crm_format_last_name(" ".join(str(contact.get("nom") or "").split()))
     guest = appointment.get("invitee_name") or ""
     person = " ".join(filter(None, [first, last]))
-    if guest and _crm_calendly_name_match(contact, guest) is not True:
+    if guest and (not person or not _crm_calendly_display_owner(appointment, contact)):
         person = guest
     return {
         "day": local.date().isoformat(), "time": local.strftime("%H:%M"), "start": local.timestamp(),
@@ -16762,7 +16788,7 @@ def _crm_calendar_slot(appointment, contact):
 
 CRM_APPOINTMENT_LIST_FIELDS = (
     "id", "contact_id", "name", "event_type_name", "status", "start_time", "end_time",
-    "location", "location_kind", "response_status", "response_status_updated_at", "updated_at",
+    "location", "location_kind", "response_status", "response_status_updated_at", "updated_at", "identity_conflict",
 )
 
 
@@ -16803,7 +16829,7 @@ def _crm_calendly_appointments_payload(data, day=None, *, with_forecasts=False):
         rows = []
         for item in raw:
             contact = projected.get(item.get("contact_id"), missing)
-            if item.get("identity_conflict") or _crm_calendly_name_match(contact, item.get("invitee_name")) is False:
+            if not _crm_calendly_display_owner(item, contact):
                 contact = missing
             fields = item if day is None else {
                 key: item[key] for key in (*CRM_APPOINTMENT_LIST_FIELDS, "host_name", "enrollment_outcome") if key in item
@@ -16928,11 +16954,19 @@ def crm_cassandre_availability():
 def _crm_calendly_repair_invitee(data, appointment, guest):
     """Reconcile an existing invitation without booking, canceling, or sending messages."""
     old = _crm_contact(data, appointment.get("contact_id"))
+    correction = (appointment.get("identity_corrections") or [{}])[-1]
+    recorded = old
+    if not old and appointment.get("identity_conflict"):
+        recorded = _crm_contact(data, correction.get("previous_contact_id"))
     payload = dict(guest, scheduled_event={"name": appointment.get("name"), "location": appointment.get("location")})
     appointment.update(invitee_name=guest["name"], invitee_email=guest.get("email") or "",
                        invitee_phone=_crm_calendly_payload_phone(payload), callback_checked=True)
-    target, conflict = _crm_calendly_resolve_identity(data, appointment, old)
-    same_name = _crm_calendly_name_match(old or {}, guest["name"])
+    target, conflict = _crm_calendly_resolve_identity(data, appointment, recorded)
+    same_name = _crm_calendly_name_match(recorded or {}, guest["name"])
+    if conflict:
+        target = recorded
+    elif target and recorded is target and same_name is False:
+        appointment["historical_identity_contact_id"] = target["id"]
     if target is None and not conflict:
         if old and same_name is True:
             target = old
@@ -16941,7 +16975,17 @@ def _crm_calendly_repair_invitee(data, appointment, guest):
     appointment["identity_conflict"] = conflict
     _crm_calendly_set_owner(appointment, old, target)
     now = _crm_now()
-    appointment.update(identity_checked_at=now, updated_at=now)
+    appointment.update(identity_checked_at=now, updated_at=now, identity_review_version=2)
+    if not old and recorded and target is recorded and not appointment.get("response_status"):
+        # Restore the result to its original dossier, never to a different contact.
+        appointment["response_status"] = correction.get("previous_response") or ""
+        appointment["response_status_updated_at"] = correction.get("response_at") or ""
+        if correction.get("previous_outcome"):
+            appointment.update(enrollment_outcome=correction["previous_outcome"],
+                               enrollment_outcome_at=correction.get("outcome_at") or "")
+        correction["restored_at"] = now
+    if conflict:
+        return False
     if old is not target:
         when = _crm_calendly_datetime_label(appointment.get("start_time"))
         if old:
@@ -16968,11 +17012,17 @@ def crm_calendly_verify_links(contact_id):
         return jsonify(error="Paramètres de vérification invalides."), 400
     after = str(body.get("after") or "")
     phone = _crm_normalize_phone(contact.get("telephone"))
+    def scoped(row):
+        return row.get("contact_id") == contact_id or bool(
+            phone and _crm_normalize_phone(row.get("invitee_phone")) == phone)
+
+    def needs_review(row):
+        if row.get("identity_checked_at"):
+            return row.get("identity_conflict") and not row.get("identity_review_version")
+        return scoped(row)
+
     rows = sorted((a for a in snapshot.get("crm_calendly_appointments", [])
-                   if str(a.get("id") or "") > after and not a.get("identity_checked_at") and
-                   (a.get("contact_id") == contact_id or
-                    (phone and _crm_normalize_phone(a.get("invitee_phone")) == phone))),
-                  key=lambda a: a["id"])
+                   if str(a.get("id") or "") > after and needs_review(a)), key=lambda a: a["id"])
     batch = rows[:4]
     checked = []
     for row in batch:
@@ -16985,7 +17035,11 @@ def crm_calendly_verify_links(contact_id):
             guest = _calendly_request("GET", f"/{resource}/{invitee}", timeout=8).get("resource") or {}
         except (CalendlyAPIError, RuntimeError) as exc:
             return _calendly_route_error(exc)
-        if guest.get("uri") == row["invitee_uri"] and guest.get("name") and guest.get("event") == row["event_uri"]:
+        if guest.get("uri") != row["invitee_uri"] or guest.get("event") != row["event_uri"] or not guest.get("name"):
+            continue
+        # Older quarantined rows lost their original cached SMS phone. Reconfirm scope
+        # against the invitation before changing them on behalf of this contact.
+        if scoped(row) or (phone and _crm_normalize_phone(guest.get("text_reminder_number")) == phone):
             checked.append((row, guest))
 
     moved = conflicts = applied = 0
@@ -17029,12 +17083,14 @@ def crm_calendly_update_appointment(appointment_id):
         return jsonify({"error": "Rendez-vous introuvable"}), 404
 
     previous_status = appointment.get("response_status") or ""
+    if response_status and appointment.get("identity_conflict"):
+        return jsonify(error="L’identité de cet invité doit être vérifiée avant de qualifier l’appel."), 409
     if response_status == "no_answer":
         start = _crm_calendar_start(appointment)
         if start is None or start > datetime.datetime.now(datetime.timezone.utc):
             return jsonify(error="Vous pourrez indiquer « Sans réponse » à partir de l’heure du rendez-vous."), 409
         owner = _crm_contact(data, appointment.get("contact_id"))
-        if not owner or appointment.get("identity_conflict") or _crm_calendly_name_match(owner, appointment.get("invitee_name")) is False:
+        if not owner or not _crm_calendly_display_owner(appointment, owner):
             return jsonify(error="Vérifiez l’identité de l’invité avant d’envoyer une relance."), 409
     now = _crm_now()
     if "enrollment_outcome" in payload:
