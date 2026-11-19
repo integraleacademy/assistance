@@ -9326,7 +9326,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261118-crm-chargement-v1"
+CRM_ASSET_VERSION = "20261119-calendly-identite-v1"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -11284,15 +11284,13 @@ def meta_zapier_leads():
 
 
 def _crm_calendly_payload_phone(payload):
-    direct = str(payload.get("text_reminder_number") or "").strip()
-    if _crm_normalize_phone(direct):
-        return direct
+    """Only a callback answer or an outbound call location identifies a caller."""
     phone_words = ("téléphone", "telephone", "phone", "mobile", "portable")
     for answer in payload.get("questions_and_answers") or []:
         if not isinstance(answer, dict):
             continue
         question = str(answer.get("question") or "").casefold()
-        if not any(word in question for word in phone_words):
+        if "sms" in question or not any(word in question for word in phone_words):
             continue
         value = answer.get("answer")
         values = value if isinstance(value, list) else [value]
@@ -11300,6 +11298,11 @@ def _crm_calendly_payload_phone(payload):
             candidate = str(candidate or "").strip()
             if 8 <= len(_crm_normalize_phone(candidate)) <= 15:
                 return candidate
+    location = (payload.get("scheduled_event") or {}).get("location") or {}
+    if isinstance(location, dict) and (location.get("type") or location.get("kind")) == "outbound_call":
+        value = str(location.get("location") or "").strip()
+        if 8 <= len(_crm_normalize_phone(value)) <= 15:
+            return value
     return ""
 
 
@@ -11323,6 +11326,46 @@ def _crm_calendly_contact_by_phone(data, phone):
          if _crm_normalize_phone(contact.get("telephone")) == phone),
         None,
     )
+
+
+def _crm_calendly_name_match(contact, guest):
+    """None means either side lacks a name. Accept accents and last-name-first input."""
+    first, last = (str(contact.get(key) or "").strip() for key in ("prenom", "nom"))
+    name = _crm_normalize_name(guest)
+    if not name or not (first or last):
+        return None
+    if first and last:
+        return name in {_crm_normalize_name(first + last), _crm_normalize_name(last + first)}
+    return _crm_normalize_name(first or last) in {
+        name, *(_crm_normalize_name(word) for word in str(guest).split())}
+
+
+def _crm_calendly_resolve_identity(data, appointment, preferred=None):
+    """Resolve only a unique person. A legacy cached phone may have been an SMS number."""
+    email = _crm_normalize_email(appointment.get("invitee_email"))
+    phone = _crm_normalize_phone(appointment.get("invitee_phone")) if appointment.get("callback_checked") else ""
+    if not email and not phone:
+        # Partial updates may lack coordinates. Keep only a compatible existing link.
+        if preferred and _crm_calendly_name_match(preferred, appointment.get("invitee_name")) is not False:
+            return preferred, False
+        return None, False
+    matches = [c for c in data.get("crm_contacts", []) if
+               (email and _crm_normalize_email(c.get("mail")) == email) or
+               (phone and _crm_normalize_phone(c.get("telephone")) == phone)]
+    compatible = [c for c in matches if _crm_calendly_name_match(c, appointment.get("invitee_name")) is not False]
+    if not compatible:
+        # Do not revive a stale link when the stored contact disagrees with the guest.
+        return None, bool(matches)
+    roots = {_crm_course_root(c) for c in compatible}
+    if len(roots) != 1:
+        return None, True
+    if email and phone:
+        email_roots = {_crm_course_root(c) for c in matches if _crm_normalize_email(c.get("mail")) == email}
+        phone_roots = {_crm_course_root(c) for c in matches if _crm_normalize_phone(c.get("telephone")) == phone}
+        if email_roots and phone_roots and not (roots & email_roots & phone_roots):
+            return None, True
+    contact = preferred if preferred in compatible else compatible[0]
+    return _crm_calendly_course_contact(data, contact, appointment), False
 
 
 def _crm_calendly_formation(payload):
@@ -11350,7 +11393,7 @@ def _crm_calendly_formation(payload):
 def _crm_calendly_new_contact(data, payload, appointment):
     """Create the minimal CRM record required for an unmatched future booking."""
     email = str(appointment.get("invitee_email") or "").strip()
-    phone = str(appointment.get("invitee_phone") or "").strip()
+    phone = str(appointment.get("invitee_phone") or "").strip() if appointment.get("callback_checked") else ""
     normalized_phone = _crm_normalize_phone(phone)
     has_email = bool(_crm_normalize_email(email) and "@" in email)
     has_phone = 8 <= len(normalized_phone) <= 15
@@ -11476,7 +11519,8 @@ def _crm_calendly_duplicate_booking_contact(data, appointment):
             _crm_normalize_name(item.get("name")),
             _crm_calendly_local_day(item),
         ) == signature
-        and _crm_contact(data, item.get("contact_id"))
+        and (linked := _crm_contact(data, item.get("contact_id")))
+        and _crm_calendly_name_match(linked, appointment.get("invitee_name")) is True
     }
     if len(contact_ids) != 1:
         return None
@@ -11532,13 +11576,9 @@ def _crm_repair_cached_calendly_contacts(data):
         if _crm_contact(data, appointment.get("contact_id")):
             continue
 
-        contact = _crm_calendly_contact_by_email(
-            data, appointment.get("invitee_email")
-        )
-        if not contact:
-            contact = _crm_calendly_contact_by_phone(
-                data, appointment.get("invitee_phone")
-            )
+        contact, conflict = _crm_calendly_resolve_identity(data, appointment)
+        if conflict or appointment.get("identity_conflict"):
+            continue
         if not contact:
             contact = _crm_calendly_duplicate_booking_contact(data, appointment)
 
@@ -11595,13 +11635,14 @@ def _crm_calendly_relink_appointments(data, contact):
         same_email = bool(email) and (
             _crm_normalize_email(appointment.get("invitee_email")) == email
         )
-        same_phone = bool(phone) and (
+        same_phone = appointment.get("callback_checked") and bool(phone) and (
             _crm_normalize_phone(appointment.get("invitee_phone")) == phone
         )
         if (
             (same_email or same_phone)
             and not assigned_contact
-            and _crm_calendly_course_contact(data, contact, appointment) is contact
+            and not appointment.get("identity_conflict")
+            and _crm_calendly_resolve_identity(data, appointment, contact)[0] is contact
         ):
             appointment["contact_id"] = contact.get("id")
             appointment["updated_at"] = _crm_now()
@@ -11631,6 +11672,23 @@ def _crm_calendly_relink_appointments(data, contact):
             contact["updated_at"] = _crm_now()
         changed = changed or relance_changed or status_changed
     return changed
+
+
+def _crm_calendly_set_owner(appointment, previous, contact):
+    """A result entered against another person must never follow a moved appointment."""
+    new_id = contact.get("id") if contact else None
+    if previous and previous["id"] != new_id:
+        appointment.pop("conversion_context", None)
+    if previous and previous["id"] != new_id and appointment.get("response_status"):
+        appointment.setdefault("identity_corrections", []).append({
+            "previous_contact_id": previous["id"], "previous_response": appointment["response_status"],
+            "response_at": appointment.get("response_status_updated_at"),
+            "previous_outcome": appointment.get("enrollment_outcome", ""),
+            "outcome_at": appointment.get("enrollment_outcome_at"), "corrected_at": _crm_now(),
+        })
+        appointment.update(response_status="", response_status_updated_at="", enrollment_outcome="")
+        appointment.pop("enrollment_outcome_at", None)
+    appointment["contact_id"] = new_id
 
 
 def _crm_calendly_datetime_label(value):
@@ -11749,6 +11807,7 @@ def _crm_upsert_calendly_appointment(
     previous_status = existing.get("status") if existing else None
     previous_start = existing.get("start_time") if existing else None
     invitee_phone = _crm_calendly_payload_phone(payload)
+    has_phone_fields = bool(invitee_phone) or "questions_and_answers" in payload or "text_reminder_number" in payload
     status = str(payload.get("status") or scheduled_event.get("status") or "active")
     if webhook_event == "invitee.canceled" or scheduled_event.get("status") == "canceled":
         status = "canceled"
@@ -11769,7 +11828,8 @@ def _crm_upsert_calendly_appointment(
         "status": status,
         "invitee_name": payload.get("name") or appointment.get("invitee_name") or "",
         "invitee_email": email or appointment.get("invitee_email") or "",
-        "invitee_phone": invitee_phone or appointment.get("invitee_phone") or "",
+        "invitee_phone": invitee_phone if has_phone_fields else appointment.get("invitee_phone") or "",
+        "callback_checked": has_phone_fields or bool(appointment.get("callback_checked")),
         "invitee_timezone": payload.get("timezone") or appointment.get("invitee_timezone") or "",
         "host_name": host.get("user_name") or appointment.get("host_name") or "",
         "host_email": host.get("user_email") or appointment.get("host_email") or "",
@@ -11786,22 +11846,24 @@ def _crm_upsert_calendly_appointment(
         "updated_at": now,
     })
 
-    contact = _crm_contact(data, contact_id) if contact_id else None
-    if not contact and appointment.get("contact_id"):
-        contact = _crm_contact(data, appointment.get("contact_id"))
-    if not contact:
-        contact = _crm_calendly_contact_by_email(data, appointment.get("invitee_email"))
-    if not contact:
-        contact = _crm_calendly_contact_by_phone(data, appointment.get("invitee_phone"))
-    if not contact:
+    previous_contact = _crm_contact(data, appointment.get("contact_id"))
+    preferred = _crm_contact(data, contact_id) if contact_id else previous_contact
+    contact, conflict = _crm_calendly_resolve_identity(data, appointment, preferred)
+    if not contact and not conflict:
         contact = _crm_calendly_duplicate_booking_contact(data, appointment)
-    contact = _crm_calendly_course_contact(data, contact, appointment)
+        if not contact and preferred and _crm_calendly_name_match(preferred, appointment["invitee_name"]) is True:
+            # Only an existing invitation or an explicit CRM booking establishes continuity.
+            if preferred is previous_contact or source == "crm":
+                contact = preferred
+    appointment["identity_conflict"] = conflict
     contact_created = False
-    if not contact and _crm_calendly_appointment_is_today_or_future(appointment):
+    booking = appointment
+    if previous_contact and _crm_calendly_name_match(previous_contact, appointment["invitee_name"]) is False:
+        booking = dict(appointment, response_status="")
+    if not contact and not conflict and _crm_calendly_appointment_is_today_or_future(booking):
         contact = _crm_calendly_new_contact(data, payload, appointment)
         contact_created = contact is not None
-    appointment["contact_id"] = contact.get("id") if contact else None
-
+    _crm_calendly_set_owner(appointment, previous_contact, contact)
     inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
     if contact and inferred_formation and not str(contact.get("formation") or "").strip():
         contact["formation"] = inferred_formation
@@ -12010,6 +12072,14 @@ def _crm_calendly_fetch_contact_appointments(data, contact):
     if not email and not phone:
         return [], {"method": "phone_cache", "processed_events": 0}
 
+    def matches_invitee(invitee, event):
+        name_match = _crm_calendly_name_match(contact, invitee.get("name"))
+        if name_match is False:
+            return False
+        callback = _crm_calendly_payload_phone(dict(invitee, scheduled_event=event))
+        return bool((email and _crm_normalize_email(invitee.get("email")) == email)
+                    or (phone and _crm_normalize_phone(callback) == phone))
+
     context = _calendly_context_from_data(data)
     params = {
         "count": 100,
@@ -12044,9 +12114,7 @@ def _crm_calendly_fetch_contact_appointments(data, contact):
             max_pages=100,
         )
         for invitee in invitees:
-            if (email and _crm_normalize_email(invitee.get("email")) == email) or (
-                phone and _crm_normalize_phone(_crm_calendly_payload_phone(invitee)) == phone
-            ):
+            if matches_invitee(invitee, scheduled_event):
                 payloads.append({**invitee, "scheduled_event": scheduled_event})
 
     # An e-mail-filtered query cannot return a booking made with a different
@@ -12077,7 +12145,7 @@ def _crm_calendly_fetch_contact_appointments(data, contact):
                 max_pages=100,
             )
             for invitee in invitees:
-                if _crm_normalize_phone(_crm_calendly_payload_phone(invitee)) == phone:
+                if matches_invitee(invitee, scheduled_event):
                     payloads.append({**invitee, "scheduled_event": scheduled_event})
                     matched_by_phone = True
     return payloads, {
@@ -13493,7 +13561,13 @@ def _crm_next_phone_appointment(data, entry, contact=None, now=None, *, appointm
         same_contact = bool(contact_id) and str(appointment.get("contact_id") or "") == contact_id
         same_email = _crm_normalize_email(appointment.get("invitee_email")) in emails
         same_phone = _crm_normalize_phone(appointment.get("invitee_phone")) in phones
-        if not (same_contact or same_email or same_phone):
+        if appointment.get("identity_conflict") or (
+                same_contact and _crm_calendly_name_match(contact, appointment.get("invitee_name")) is False):
+            continue
+        if (contact_id and contact_id != "secretariat-calendly-preview" and not same_contact
+                and _crm_contact(data, appointment.get("contact_id"))):
+            continue
+        if not (same_contact or same_email or (appointment.get("callback_checked") and same_phone)):
             continue
         if str(appointment.get("status") or "active").casefold() in {"canceled", "cancelled"}:
             continue
@@ -16675,9 +16749,14 @@ def _crm_calendar_slot(appointment, contact):
         return None
     first = _crm_format_first_name(" ".join(str(contact.get("prenom") or "").split()))
     last = _crm_format_last_name(" ".join(str(contact.get("nom") or "").split()))
+    guest = appointment.get("invitee_name") or ""
+    person = " ".join(filter(None, [first, last]))
+    if guest and _crm_calendly_name_match(contact, guest) is not True:
+        person = guest
     return {
         "day": local.date().isoformat(), "time": local.strftime("%H:%M"), "start": local.timestamp(),
-        "person": " ".join(filter(None, [first, last])) or appointment.get("invitee_name") or "Invité Calendly",
+        "person": person or "Invité Calendly",
+        "phone": appointment.get("invitee_phone") if appointment.get("callback_checked") else "",
     }
 
 
@@ -16724,6 +16803,8 @@ def _crm_calendly_appointments_payload(data, day=None, *, with_forecasts=False):
         rows = []
         for item in raw:
             contact = projected.get(item.get("contact_id"), missing)
+            if item.get("identity_conflict") or _crm_calendly_name_match(contact, item.get("invitee_name")) is False:
+                contact = missing
             fields = item if day is None else {
                 key: item[key] for key in (*CRM_APPOINTMENT_LIST_FIELDS, "host_name", "enrollment_outcome") if key in item
             }
@@ -16844,6 +16925,88 @@ def crm_cassandre_availability():
     return response
 
 
+def _crm_calendly_repair_invitee(data, appointment, guest):
+    """Reconcile an existing invitation without booking, canceling, or sending messages."""
+    old = _crm_contact(data, appointment.get("contact_id"))
+    payload = dict(guest, scheduled_event={"name": appointment.get("name"), "location": appointment.get("location")})
+    appointment.update(invitee_name=guest["name"], invitee_email=guest.get("email") or "",
+                       invitee_phone=_crm_calendly_payload_phone(payload), callback_checked=True)
+    target, conflict = _crm_calendly_resolve_identity(data, appointment, old)
+    same_name = _crm_calendly_name_match(old or {}, guest["name"])
+    if target is None and not conflict:
+        if old and same_name is True:
+            target = old
+        elif (old and same_name is False) or _crm_calendly_appointment_is_today_or_future(appointment):
+            target = _crm_calendly_new_contact(data, payload, appointment)
+    appointment["identity_conflict"] = conflict
+    _crm_calendly_set_owner(appointment, old, target)
+    now = _crm_now()
+    appointment.update(identity_checked_at=now, updated_at=now)
+    if old is not target:
+        when = _crm_calendly_datetime_label(appointment.get("start_time"))
+        if old:
+            _crm_activity(old, "calendly", "Rattachement Calendly corrigé", f"Rendez-vous du {when} retiré de cette fiche.")
+            _crm_sync_contact_calendly_status(data, old)
+        if target:
+            _crm_activity(target, "calendly", "Rendez-vous Calendly rattaché après vérification", when)
+            crm_call_conversion.remember_booking_facts(appointment, target, now)
+            _crm_sync_contact_calendly_status(data, target)
+    return old is not target
+
+
+@app.post("/api/crm/contacts/<contact_id>/calendly/verify-links")
+@login_required
+def crm_calendly_verify_links(contact_id):
+    if (current_user() or {}).get("role") != "admin":
+        return jsonify(error="Cette vérification est réservée aux administrateurs."), 403
+    snapshot = _load_data_snapshot()
+    contact = _crm_contact(snapshot, contact_id)
+    if not contact:
+        return jsonify(error="Contact introuvable."), 404
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="Paramètres de vérification invalides."), 400
+    after = str(body.get("after") or "")
+    phone = _crm_normalize_phone(contact.get("telephone"))
+    rows = sorted((a for a in snapshot.get("crm_calendly_appointments", [])
+                   if str(a.get("id") or "") > after and not a.get("identity_checked_at") and
+                   (a.get("contact_id") == contact_id or
+                    (phone and _crm_normalize_phone(a.get("invitee_phone")) == phone))),
+                  key=lambda a: a["id"])
+    batch = rows[:4]
+    checked = []
+    for row in batch:
+        event = _calendly_resource_uuid(row.get("event_uri"), "scheduled_events")
+        resource = f"scheduled_events/{event}/invitees"
+        invitee = _calendly_resource_uuid(row.get("invitee_uri"), resource) if event else ""
+        if not invitee:
+            continue
+        try:
+            guest = _calendly_request("GET", f"/{resource}/{invitee}", timeout=8).get("resource") or {}
+        except (CalendlyAPIError, RuntimeError) as exc:
+            return _calendly_route_error(exc)
+        if guest.get("uri") == row["invitee_uri"] and guest.get("name") and guest.get("event") == row["event_uri"]:
+            checked.append((row, guest))
+
+    moved = conflicts = applied = 0
+    with _CRM_RECONCILIATION_LOCK:
+        data = load_data()
+        indexed = {a["id"]: a for a in data.get("crm_calendly_appointments", []) if a.get("id")}
+        for previous, guest in checked:
+            current = indexed.get(previous["id"])
+            if not current or any(current.get(k) != previous.get(k) for k in
+                                  ("invitee_uri", "contact_id", "status", "response_status", "response_status_updated_at",
+                                   "enrollment_outcome", "updated_at")):
+                continue
+            moved += int(_crm_calendly_repair_invitee(data, current, guest))
+            conflicts += int(current["identity_conflict"])
+            applied += 1
+        if applied:
+            save_data(data)
+    return jsonify(checked=applied, moved=moved, pending=len(batch)-applied+conflicts,
+                   after=batch[-1]["id"] if len(rows) > len(batch) else "")
+
+
 @app.route("/api/crm/calendly/appointments/<appointment_id>", methods=["PATCH"])
 @login_required
 @_crm_serialized
@@ -16866,6 +17029,13 @@ def crm_calendly_update_appointment(appointment_id):
         return jsonify({"error": "Rendez-vous introuvable"}), 404
 
     previous_status = appointment.get("response_status") or ""
+    if response_status == "no_answer":
+        start = _crm_calendar_start(appointment)
+        if start is None or start > datetime.datetime.now(datetime.timezone.utc):
+            return jsonify(error="Vous pourrez indiquer « Sans réponse » à partir de l’heure du rendez-vous."), 409
+        owner = _crm_contact(data, appointment.get("contact_id"))
+        if not owner or appointment.get("identity_conflict") or _crm_calendly_name_match(owner, appointment.get("invitee_name")) is False:
+            return jsonify(error="Vérifiez l’identité de l’invité avant d’envoyer une relance."), 409
     now = _crm_now()
     if "enrollment_outcome" in payload:
         if "response_status" not in payload:

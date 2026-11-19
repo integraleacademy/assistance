@@ -1142,7 +1142,7 @@ function calendarPage(){
   calendarRefresh.onclick=()=>loadCalendar(true);
   loadCalendar();
 }
-function renderCalendarAppointments(appointments){const root=document.querySelector('#calendarContent');if(!root)return;const date=new Date(`${calendarSelectedDate}T12:00:00`),items=(appointments||[]).filter(a=>a.calendar_slot?.day===calendarSelectedDate).sort((a,b)=>a.calendar_slot.start-b.calendar_slot.start);root.className='calendar-days';root.innerHTML=`<section class="calendar-day"><header><div class="calendar-date"><strong>${date.getDate()}</strong><span>${date.toLocaleDateString('fr-FR',{weekday:'long'})}<small>${date.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</small></span></div><div class="calendar-day-counts"><span>${items.length} rendez-vous prévu${items.length>1?'s':''}</span><span class="calendar-free-count" id="calendarDayFree" aria-live="polite"></span></div></header>${items.length?`<div class="calendar-events">${items.map(a=>{const c=a.contact||{},name=a.calendar_slot.person,treatment=calendarAppointmentTreatment(a),treatmentClass=treatment?` calendar-treated-${treatment.tone}`:'';return `<article class="calendar-event calendar-training-${calendarFormationTone(a,c)}${treatmentClass}" ${c.id?`data-id="${c.id}"`:''}><time>${esc(a.calendar_slot.time)}</time><i></i><div><b>${esc(a.name||'Rendez-vous Calendly')}</b><span>${esc(name)}${c.formation?` · ${esc(c.formation)}`:''}</span><small class="calendar-host">Interlocuteur : ${esc(a.host_name||'Non renseigné')}</small>${calendarContactMetrics(c)}${calendarConversion(a)}</div><div class="calendar-event-side">${treatment?`<span class="calendar-treatment-badge ${treatment.tone}">✓ ${esc(treatment.label)}</span>`:''}<span class="calendar-duration">${a.end_time?Math.round((new Date(a.end_time)-new Date(a.start_time))/60000)+' min':'Calendly'}</span>${appointmentResponseControl(a)}</div></article>`}).join('')}</div>`:'<div class="calendar-empty"><b>Aucun rendez-vous ce jour-là</b><span>Choisissez une autre date pour consulter l’agenda.</span></div>'}</section>`;calendarAvailability?.paint();bindRows();bindAppointmentResponseControls(items,()=>loadCalendar())}
+function renderCalendarAppointments(appointments){const root=document.querySelector('#calendarContent');if(!root)return;const date=new Date(`${calendarSelectedDate}T12:00:00`),items=(appointments||[]).filter(a=>a.calendar_slot?.day===calendarSelectedDate).sort((a,b)=>a.calendar_slot.start-b.calendar_slot.start);root.className='calendar-days';root.innerHTML=`<section class="calendar-day"><header><div class="calendar-date"><strong>${date.getDate()}</strong><span>${date.toLocaleDateString('fr-FR',{weekday:'long'})}<small>${date.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</small></span></div><div class="calendar-day-counts"><span>${items.length} rendez-vous prévu${items.length>1?'s':''}</span><span class="calendar-free-count" id="calendarDayFree" aria-live="polite"></span></div></header>${items.length?`<div class="calendar-events">${items.map(a=>{const c=a.contact||{},name=a.calendar_slot.person,treatment=calendarAppointmentTreatment(a),treatmentClass=treatment?` calendar-treated-${treatment.tone}`:'';return `<article class="calendar-event calendar-training-${calendarFormationTone(a,c)}${treatmentClass}" ${c.id?`data-id="${c.id}"`:''}><time>${esc(a.calendar_slot.time)}</time><i></i><div><b>${esc(a.name||'Rendez-vous Calendly')}</b><span>${esc(name)}${c.formation?` · ${esc(c.formation)}`:''}</span>${a.calendar_slot.phone?`<small class="calendar-phone">${esc(formatContactPhone(a.calendar_slot.phone))}</small>`:''}<small class="calendar-host">Interlocuteur : ${esc(a.host_name||'Non renseigné')}</small>${calendarContactMetrics(c)}${calendarConversion(a)}</div><div class="calendar-event-side">${treatment?`<span class="calendar-treatment-badge ${treatment.tone}">✓ ${esc(treatment.label)}</span>`:''}<span class="calendar-duration">${a.end_time?Math.round((new Date(a.end_time)-new Date(a.start_time))/60000)+' min':'Calendly'}</span>${appointmentResponseControl(a)}</div></article>`}).join('')}</div>`:'<div class="calendar-empty"><b>Aucun rendez-vous ce jour-là</b><span>Choisissez une autre date pour consulter l’agenda.</span></div>'}</section>`;calendarAvailability?.paint();bindRows();bindAppointmentResponseControls(items,()=>loadCalendar())}
 async function loadCalendar(manual=false){
   const root=document.querySelector('#calendarContent'),button=document.querySelector('#calendarRefresh');
   if(!root)return;
@@ -2058,7 +2058,9 @@ function appointmentEnrollmentControl(a){
  return `<label class="appointment-response" onclick="event.stopPropagation()"><span>Issue de l’appel</span><select data-appointment-enrollment="${esc(a.id)}">${enrollmentOptions(a.enrollment_outcome)}</select></label>`;
 }
 function appointmentResponseControl(a,label='Réponse'){
-  return `<label class="appointment-response" onclick="event.stopPropagation()"><span>${esc(label)}</span><select data-appointment-response="${esc(a.id)}"><option value="" ${!a.response_status?'selected':''}>À renseigner</option><option value="answered" ${a.response_status==='answered'?'selected':''}>A répondu</option><option value="no_answer" ${a.response_status==='no_answer'?'selected':''}>Sans réponse</option></select></label>${appointmentEnrollmentControl(a)}`;
+  const noAnswerAvailable=Number.isFinite(Date.parse(a.start_time))&&Date.parse(a.start_time)<=Date.now()&&!['canceled','cancelled'].includes(a.status);
+
+  return `<label class="appointment-response" onclick="event.stopPropagation()"><span>${esc(label)}</span><select data-appointment-response="${esc(a.id)}"><option value="" ${!a.response_status?'selected':''}>À renseigner</option><option value="answered" ${a.response_status==='answered'?'selected':''}>A répondu</option><option value="no_answer" ${noAnswerAvailable?'':'disabled'} ${a.response_status==='no_answer'?'selected':''}>Sans réponse</option></select></label>${appointmentEnrollmentControl(a)}`;
 }
 function bindAppointmentResponseControls(items,onSaved){
   document.querySelectorAll('[data-appointment-enrollment]').forEach(select=>select.onchange=async event=>{
@@ -2141,6 +2143,24 @@ function renderCalendlyAppointments(c,items,integration){
     box.innerHTML=`<div class="integration-banner success compact"><div><b>Calendly synchronisé ${relativeSync(integration.last_sync_at)}</b><span>Synchronisation automatique active</span></div></div>`;
   }
   if(integration.lookup_warning)box.insertAdjacentHTML('beforeend',`<div class="integration-banner warning"><div><b>Recherche Calendly incomplète</b><span>${esc(integration.lookup_warning)}</span></div></div>`);
+  if(C.is_admin && integration.connected && !C.external_meta){
+    box.insertAdjacentHTML('beforeend','<button type="button" class="btn" id="verifyCalendlyLinks">Vérifier les rattachements Calendly</button>');
+    const verify=box.querySelector('#verifyCalendlyLinks');
+    verify.onclick=async()=>{
+      verify.disabled=true;
+      let after='',checked=0,moved=0,pending=0;
+      try{
+        do{
+          verify.textContent=`Vérification en cours · ${checked}`;
+          const result=await api(`/api/crm/contacts/${encodeURIComponent(c.id)}/calendly/verify-links`,{method:'POST',body:JSON.stringify({after}),timeout:60000});
+          checked+=result.checked;moved+=result.moved;pending+=result.pending;after=result.after;
+        }while(after);
+        await loadCalendlyAppointments(c);
+        toast(`${checked} rendez-vous vérifiés · ${moved} rattachements corrigés${pending?' · '+pending+' à vérifier':''}`,Boolean(pending));
+      }catch(error){toast(error.message,true)}
+      finally{verify.disabled=false;verify.textContent='Vérifier les rattachements Calendly'}
+    };
+  }
   const setup=document.querySelector('#setupCalendlyBtn');
   if(setup)setup.onclick=()=>setupCalendly(c);
   const sync=document.querySelector('#syncCalendlyBtn');

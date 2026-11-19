@@ -117,7 +117,7 @@ def test_day_matches_the_crm_active_slots_across_types_reschedules_midnight_and_
     assert [(r["time"], r["state"]) for r in rows] == [
         ("00:30", "repondu"), ("12:00", "sans_reponse"), ("14:00", "sans_resultat"),
         ("16:00", "sans_resultat"), ("16:00", "sans_resultat")]
-    assert [r["person"] for r in rows] == ["Chloé DU-PRÉ"] * 3 + ["Zoé", "Alex"]
+    assert [r["person"] for r in rows] == ["Ancien nom", "Chloé DU-PRÉ", "Chloé DU-PRÉ", "Zoé", "Alex"]
     slots = sorted((a for a in reference if (a["calendar_slot"] or {}).get("day") == "2026-03-29"),
                    key=lambda a: a["calendar_slot"]["start"])
     assert [(r["time"], r["person"], r["host"], r["subject"]) for r in rows] == [
