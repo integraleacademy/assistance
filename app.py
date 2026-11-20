@@ -4516,6 +4516,44 @@ _SECRETARIAT_CALENDLY_SCHEMA_CACHE = {}
 _SECRETARIAT_CALENDLY_SCHEMA_LOCK = threading.Lock()
 
 
+def _secretariat_booking_schema(url, events):
+    def questions(event):
+        return [
+            {key: question.get(key) for key in ("name", "position", "type", "answer_choices")}
+            for question in event.get("custom_questions") or []
+            if question.get("enabled") and isinstance(question.get("position"), int)
+            and 0 <= question["position"] < 10
+        ]
+
+    url = url.rstrip("/")
+    for event in events:
+        if str(event.get("scheduling_url") or "").rstrip("/") == url:
+            return {
+                "questions": questions(event),
+                "outbound_call": any(location.get("kind") == "outbound_call"
+                                     for location in event.get("locations") or []),
+            }
+    if url != SECRETARIAT_GENERIC_CALENDLY_URL.rstrip("/"):
+        return None
+
+    # A directory forwards the same answers to whichever event the caller picks.
+    # Use a phone slot only if no listed event uses that slot for another purpose.
+    listed = [event for event in events if not event.get("secret")
+              and str(event.get("scheduling_url") or "").startswith(url + "/")]
+    if not listed:
+        return None
+    types_by_position = {}
+    for event in listed:
+        for question in questions(event):
+            types_by_position.setdefault(question["position"], set()).add(question["type"])
+    return {
+        "questions": [{"position": position, "type": "phone_number"}
+                      for position, types in sorted(types_by_position.items()) if types == {"phone_number"}],
+        "outbound_call": all([loc.get("kind") for loc in event.get("locations") or []] == ["outbound_call"]
+                             for event in listed),
+    }
+
+
 @app.get("/api/secretariat/calendly/prefill-schema")
 def secretariat_calendly_prefill_schema():
     """Read public booking fields for an allowlisted agenda, without invitee data."""
@@ -4530,27 +4568,16 @@ def secretariat_calendly_prefill_schema():
         cached_at, schema = _SECRETARIAT_CALENDLY_SCHEMA_CACHE.get(url, (0, None))
         if schema is not None and now - cached_at < 600:
             return jsonify(schema)
-        schema = {"questions": [], "outbound_call": True}
+        fallback = schema or {"questions": [], "outbound_call": False}
         if not _calendly_token():
-            return jsonify(schema)
+            return jsonify(fallback)
         try:
-            event = next((item for item in _calendly_event_types_for_context(load_data())
-                          if str(item.get("scheduling_url") or "").rstrip("/") == url.rstrip("/")), None)
-            if event:
-                schema = {
-                    "outbound_call": any(location.get("kind") == "outbound_call"
-                                         for location in event.get("locations") or []),
-                    "questions": [
-                        {key: question.get(key) for key in ("name", "position", "type", "answer_choices")}
-                        for question in event.get("custom_questions") or []
-                        if question.get("enabled")
-                        and isinstance(question.get("position"), int)
-                        and 0 <= question["position"] < 10
-                    ],
-                }
+            events = _calendly_event_types_for_context(_load_data_snapshot())
+            schema = _secretariat_booking_schema(url, events)
         except (CalendlyAPIError, RuntimeError, requests.RequestException):
-            # Booking remains available when metadata cannot be fetched.
-            return jsonify(schema)
+            return jsonify(fallback)
+        if schema is None:
+            return jsonify(fallback)
         _SECRETARIAT_CALENDLY_SCHEMA_CACHE[url] = (now, schema)
     return jsonify(schema)
 

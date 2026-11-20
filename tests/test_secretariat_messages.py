@@ -1,5 +1,6 @@
 import datetime as dt
-from urllib.parse import urlsplit
+import time
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -175,9 +176,13 @@ def test_message_can_be_claimed_supplemented_and_closed_with_an_explicit_outcome
     assert reopened["status"] == "pending" and reopened["events"][-1]["label"] == "Demande rouverte"
 
 
-def test_secretary_and_adviser_complete_the_same_call_in_their_own_screens(desk):
+def test_secretary_and_adviser_complete_the_same_call_in_their_own_screens(desk, monkeypatch):
     playwright = pytest.importorskip("playwright.sync_api")
     operator, _, owner, day = desk
+    agenda_url = app.SECRETARIAT_FORMATIONS["BTS_MOS"]["calendly"]
+    monkeypatch.setattr(app, "_SECRETARIAT_CALENDLY_SCHEMA_CACHE", {agenda_url: (time.monotonic(), {
+        "outbound_call": False, "questions": [{"position": 1, "type": "phone_number", "name": "Téléphone"}],
+    })})
     with playwright.sync_playwright() as engine:
         try:
             browser = engine.chromium.launch()
@@ -251,8 +256,11 @@ def test_secretary_and_adviser_complete_the_same_call_in_their_own_screens(desk)
             reception.wait_for_selector("#supplementAppointment")
             assert not reception.locator("#sendSupplement").is_visible()
             assert reception.locator("#supplementNote").input_value() == "Question sur la convocation."
-            agenda_url = app.SECRETARIAT_FORMATIONS["BTS_MOS"]["calendly"]
-            assert reception.locator("#supplementAppointment").get_attribute("href") == agenda_url
+            booking_url = reception.locator("#supplementAppointment").get_attribute("href")
+            assert booking_url.split("?")[0] == agenda_url
+            assert parse_qs(urlsplit(booking_url).query) == {
+                "name": ["Camille Test"], "first_name": ["Camille"], "last_name": ["Test"], "a2": ["+33600000011"],
+            }
             reception.click("#closeSupplement")
             assert "Personne rappelée et jointe" in reception.locator("#deskMessages").inner_text()
             assert reception.get_by_role("button", name="Demander un nouveau rappel").count() == 0
@@ -260,7 +268,7 @@ def test_secretary_and_adviser_complete_the_same_call_in_their_own_screens(desk)
             reception.context.route("https://calendly.com/**", lambda route: route.fulfill(body="Agenda de test"))
             with reception.expect_popup() as opened:
                 reception.get_by_role("link", name="Réserver un rendez-vous téléphonique").click()
-            opened.value.wait_for_url(agenda_url)
+            opened.value.wait_for_url(lambda actual: actual == booking_url)
             assert reception.locator("#verifiedDossier").is_visible()
             entries = app.load_data()["secretariat_demandes"]
             assert len(entries) == 1 and entries[0]["callback_status"] == "processed"
