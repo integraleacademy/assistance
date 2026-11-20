@@ -8,8 +8,12 @@ const supplementError = document.getElementById('supplementError');
 const messageAppointment = document.getElementById('messageAppointment');
 const supplementAppointment = document.getElementById('supplementAppointment');
 let supplementTarget;
+let dossierBookingBase = genericCalendly;
+let dossierBookingVersion = 0;
 
 function clearDeskMessages() {
+  dossierBookingVersion++;
+  dossierBookingBase = genericCalendly;
   messageList.replaceChildren();
   messageFeedback.textContent = '';
   messageAppointment.hidden = supplementAppointment.hidden = true;
@@ -19,11 +23,13 @@ function clearDeskMessages() {
   supplementNote.value = '';
 }
 
-function renderDossierMessages(messages, bookingUrl) {
+async function renderDossierMessages(messages, bookingUrl) {
+  const version = ++dossierBookingVersion;
+  if (bookingUrl) dossierBookingBase = formations.some(course => course.calendly === bookingUrl) ? bookingUrl : genericCalendly;
   messageList.replaceChildren();
   messageFeedback.textContent = '';
-  if (bookingUrl) messageAppointment.href = bookingUrl;
-  messageAppointment.hidden = !messages.some(message => message.status === 'processed');
+  messageAppointment.hidden = supplementAppointment.hidden = true;
+  messageAppointment.href = supplementAppointment.href = genericCalendly;
   document.getElementById('messageCount').textContent = messages.length ? messages.length + (messages.length === 1 ? ' message' : ' messages') : 'Aucun message';
   if (!messages.length) {
     messageList.textContent = 'Aucun message transmis pour ce dossier.';
@@ -92,6 +98,15 @@ function renderDossierMessages(messages, bookingUrl) {
     (index === 0 ? messageList : older).append(card);
   });
   if (messages.length > 1) messageList.append(older);
+  if (messages.some(message => message.status === 'processed')) {
+    const course = formations.find(item => item.calendly === dossierBookingBase);
+    const code = dossierBookingBase === genericCalendly ? '' : course.code;
+    const schema = await bookingSchema(code);
+    if (version !== dossierBookingVersion) return;
+    const href = callerBookingUrl(dossierBookingBase, schema, new FormData(callerForm));
+    messageAppointment.href = supplementAppointment.href = href;
+    messageAppointment.hidden = false;
+  }
 }
 
 messageRefresh.onclick = async () => {
@@ -126,11 +141,11 @@ document.getElementById('supplementForm').onsubmit = async event => {
     const result = await response.json().catch(() => ({}));
     if (target.version !== callerLookupVersion || existingCrmContactId !== target.identity.confirmed_contact_id) return;
     if (response.status === 409 && result.messages) {
-      renderDossierMessages(result.messages);
+      await renderDossierMessages(result.messages);
+      if (target.version !== callerLookupVersion || messageAppointment.hidden) return;
       target.closed = true;
       supplementSend.hidden = true;
       supplementNote.readOnly = true;
-      supplementAppointment.href = messageAppointment.href;
       supplementAppointment.hidden = false;
       supplementAppointment.focus();
     }

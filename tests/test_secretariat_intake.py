@@ -271,8 +271,26 @@ def test_booking_schema_unavailability_does_not_block_the_embed(desk, monkeypatc
     monkeypatch.setattr(application, "_calendly_event_types_for_context", unavailable)
     response = client.get("/api/secretariat/calendly/prefill-schema?formation=APS")
     assert response.status_code == 200
-    assert response.get_json() == {"questions": [], "outbound_call": True}
+    assert response.get_json() == {"questions": [], "outbound_call": False}
     assert client.get("/api/secretariat/calendly/prefill-schema?formation=unknown").status_code == 404
+
+
+def test_directory_prefills_only_phone_slots_compatible_with_all_listed_events(desk, monkeypatch):
+    client, _, _ = desk
+    directory = application.SECRETARIAT_GENERIC_CALENDLY_URL
+    def event(slug, types, hidden=False):
+        return {"scheduling_url": directory + "/" + slug, "secret": hidden,
+                "locations": [{"kind": "custom"}],
+                "custom_questions": [{"enabled": True, "position": pos, "type": kind}
+                                     for pos, kind in enumerate(types)]}
+
+    events = [event("aps", ["text", "phone_number", "phone_number"]),
+              event("vtc", ["text", "phone_number", "text"]),
+              event("sans-telephone", ["text"]), event("masque", ["text", "text"], hidden=True)]
+    monkeypatch.setattr(application, "_calendly_token", lambda: "test-only")
+    monkeypatch.setattr(application, "_calendly_event_types_for_context", lambda _: events)
+    response = client.get("/api/secretariat/calendly/prefill-schema")
+    assert response.get_json() == {"questions": [{"position": 1, "type": "phone_number"}], "outbound_call": False}
 
 
 @pytest.fixture
@@ -352,6 +370,24 @@ async function caller(t,type,mail='camille@example.com'){
 }
 (async()=>{
   {
+    const t=setup(), url='https://calendly.com/integraleacademy/btsmos';
+    const messages=[{status:'processed',events:[],subject:'Suivi du dossier',recipient:'Accueil'}];
+    t.fill('prenom','Élodie');t.fill('nom','Le Gall');t.fill('email','contact+rdv@example.com');t.fill('telephone','0033 6 00 00 00 01');
+    await t.w.renderDossierMessages(messages,url);
+    const link=new URL(t.$('#messageAppointment').href);
+    assert.equal(t.$('#messageAppointment').hidden,false);
+    assert.equal(link.searchParams.get('name'),'Élodie Le Gall');assert.equal(link.searchParams.get('email'),'contact+rdv@example.com');
+    assert.equal(link.searchParams.get('a2'),'+33600000001');assert.equal(link.searchParams.has('a1'),false);
+    assert.equal(t.$('#supplementAppointment').href,link.href);
+    assert.ok(t.calls.some(c=>c.url.endsWith('formation=BTS_MOS')));
+    // An outstanding schema request for a former caller must not restore their link.
+    let finishSchema;
+    t.w.fetch=()=>new Promise(resolve=>{finishSchema=()=>resolve({ok:true,json:async()=>({questions:[]})})});
+    const pending=t.w.renderDossierMessages(messages,'https://calendly.com/integraleacademy/aps');
+    t.w.clearDeskMessages();finishSchema();await pending;
+    assert.equal(t.$('#messageAppointment').hidden,true);assert.equal(new URL(t.$('#supplementAppointment').href).search,'');t.close();
+  }
+  {
     const t=setup();
     assert.match(t.$('[data-request="formation"]').textContent,/Nouveau prospect/);
     t.click('#browseCourses');
@@ -426,9 +462,10 @@ async function caller(t,type,mail='camille@example.com'){
     t.click('[data-undecided]');t.click('#nextDates');assert.equal(t.step(),'4');
     for(const [name,value] of Object.entries({cpf_consulte:'NON',france_travail:'NON',financement_perso:'NON',identite_numerique:'OUI',cnaps_ok:'OUI',devis:'NON'}))t.click(`[name="${name}"][value="${value}"]`);
     t.click('#nextQualification');assert.equal(t.step(),'6');t.click('[name="wants_rdv"][value="oui"]');
-    await until(()=>t.widgets.length===1);const settings=t.widgets[0];assert.equal(settings.prefill.firstName,'Camille');assert.equal(settings.prefill.lastName,'Martin');
-    assert.equal(settings.prefill.email,'camille@example.com');assert.equal(settings.prefill.customAnswers.a2,'+33601020304');assert.equal(settings.prefill.customAnswers.a1,undefined);
-    assert.equal(new URL(settings.url).searchParams.get('location'),'+33601020304');assert.equal(t.$('#reviewRequest').disabled,true);
+    await until(()=>t.widgets.length===1);const params=new URL(t.widgets[0].url).searchParams;
+    assert.equal(params.get('first_name'),'Camille');assert.equal(params.get('last_name'),'Martin');assert.equal(params.get('name'),'Camille Martin');
+    assert.equal(params.get('email'),'camille@example.com');assert.equal(params.get('a2'),'+33601020304');assert.equal(params.has('a1'),false);
+    assert.equal(params.get('location'),'+33601020304');assert.equal(t.$('#reviewRequest').disabled,true);
     t.w.dispatchEvent(new t.w.MessageEvent('message',{origin:'https://calendly.com',data:{event:'calendly.event_scheduled'}}));assert.equal(t.$('#reviewRequest').disabled,false);
     t.click('#reviewRequest');t.fill('precision','Projet APS sans date définie');t.click('#finish');await until(()=>t.step()==='8');
     const saved=t.calls.find(c=>c.url==='/api/secretariat/demandes').body;assert.equal(saved.formation_date_souhaitee,'');assert.match(saved.rdv,/réservé/);t.close();
@@ -439,7 +476,8 @@ async function caller(t,type,mail='camille@example.com'){
     assert.equal(t.$('#referencePrenom').value,'');assert.equal(t.$('[data-copy-caller="prenom"]').disabled,true);
     assert.equal(t.$('#referenceEmail').value,'');assert.equal(t.$('[data-copy-caller="email"]').disabled,true);
     t.fill('bookingEmail','camille@example.com');t.click('#confirmBookingEmail');
-    await until(()=>t.widgets.length===1);assert.equal(t.widgets[0].prefill.email,'camille@example.com');assert.equal(new URL(t.widgets[0].url).pathname,'/integraleacademy');
+    await until(()=>t.widgets.length===1);const directory=new URL(t.widgets[0].url);
+    assert.equal(directory.searchParams.get('email'),'camille@example.com');assert.equal(directory.searchParams.has('first_name'),false);assert.equal(directory.pathname,'/integraleacademy');
     assert.equal(t.$('#referenceEmail').value,'camille@example.com');assert.equal(t.$('[data-copy-caller="email"]').disabled,false);t.close();
   }
   {
@@ -456,7 +494,9 @@ async function caller(t,type,mail='camille@example.com'){
     assert.equal(t.$('#referenceTelephone').value,'+33 6 01 02 03 04');assert.equal(t.$('#referenceEmail').value,'updated@example.com');
     t.click('[data-copy-caller="email"]');await until(()=>t.copied.at(-1)==='updated@example.com');
     t.click('[data-copy-caller="telephone"]');await until(()=>t.copied.at(-1)==='+33 6 01 02 03 04');
-    assert.equal(t.widgets[1].prefill.email,'updated@example.com');t.click('#reviewRequest');assert.equal(t.step(),'6');
+    const updated=new URL(t.widgets[1].url);
+    assert.equal(updated.searchParams.get('email'),'updated@example.com');assert.equal(updated.searchParams.get('name'),"Élodie D’Angelo <test>");
+    assert.ok(updated.search.includes('D%E2%80%99Angelo%20%3Ctest%3E'));t.click('#reviewRequest');assert.equal(t.step(),'6');
     assert.equal(t.calls.filter(c=>c.url==='/api/secretariat/demandes').length,0);t.close();
   }
   {
