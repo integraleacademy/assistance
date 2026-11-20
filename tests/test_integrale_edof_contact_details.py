@@ -38,3 +38,35 @@ assert.match(detail,/3.900,50.€/); assert.doesNotMatch(detail,/crm@example.tes
 assert.equal(env.money('inconnu'),'Non renseigné');
 """
     subprocess.run(["node","-e",script],cwd=root,check=True)
+
+
+def test_contact_panel_renders_france_travail_labels_only_for_explicit_decisions():
+    root = Path(__file__).resolve().parents[1]
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync('static/crm.js', 'utf8');
+const panel = {};
+const env = {
+  URL, C: {is_admin: false}, esc: String, relativeSync: () => '',
+  document: {querySelector: selector => selector === '#contactWedofPanel' ? panel : null},
+};
+vm.runInNewContext(source.slice(source.indexOf('const wedofLabels='), source.indexOf('const wedofContactIsCurrent=')), env);
+for (const [solicitations, expected] of [
+  [[{fundingType: 9, status: 'pending'}], 'En cours d’instruction'],
+  [[{fundingType: 9, status: 'accepted'}], 'Accepté'],
+  [[{fundingType: 9, status: 'refused'}], 'Refusé'],
+  [[{fundingType: 9, status: 'cancelled'}], 'Annulé'],
+  [[{fundingType: 29, status: 'refused'}], null],
+  [[], null],
+]) {
+  const payload = {provider: 'integrale_edof', state: 'validated', trainingActionInfo: {solicitations}};
+  env.renderWedof({}, {resources: [{stable_id: '123456', payload}]});
+  assert.match(panel.innerHTML, /1 dossier lié/);
+  assert.match(panel.innerHTML, /Dossier 123456/);
+  const row = panel.innerHTML.match(/<small>Statut France Travail<\/small><strong>([^<]*)<\/strong>/);
+  assert.equal(row && row[1], expected);
+}
+"""
+    subprocess.run(["node", "-e", script], cwd=root, check=True)
