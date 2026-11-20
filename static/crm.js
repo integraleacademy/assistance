@@ -1756,6 +1756,12 @@ function wedofFtSolicitationDecisions(p){
  return decisions;
 }
 const wedofSolicitationStatusCodes=p=>wedofFtSolicitationDecisions(p).map(item=>item.status);
+const wedofFranceTravailLabels={
+ en_cours_instruction:'En cours d’instruction',
+ acceptee:'Accepté',
+ refusee:'Refusé',
+ annulee:'Annulé',
+};
 function wedofFranceTravailStatus(p){
  const decisions=wedofFtSolicitationDecisions(p).sort((a,b)=>b.submitted-a.submitted||b.returned-a.returned),latest=decisions[0];
  if(!latest||decisions.some(item=>item.status!==latest.status&&((item.submitted===latest.submitted&&item.returned===latest.returned)||(!item.submitted&&!item.returned))))return'';
