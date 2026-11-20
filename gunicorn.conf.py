@@ -43,8 +43,13 @@ def post_request(worker, req, environ, resp):
 
 
 def post_worker_init(worker):
-    from app import run_hebergement_reminders
+    from app import run_hebergement_reminders, _start_wedof_background_sync
+    from crm_memory_monitor import start_memory_monitor
 
+    # Starting a poller at import time runs it in the master when preloading,
+    # retaining another full database there and inheriting dead thread state.
+    _start_wedof_background_sync()
+    start_memory_monitor(worker.log)
     threading.Thread(
         target=run_hebergement_reminders, name="hebergement-rappels", daemon=True,
     ).start()

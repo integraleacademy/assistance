@@ -18,6 +18,9 @@ class LastProjection:
             previous = self.values.get(partition)
             if previous is not None and previous[0] == dependencies:
                 return previous[1]
+            # Release this cache's old histories before building new ones.
+            self.values.pop(partition, None)
+            del previous
             result = build()
             self.values[partition] = (
                 dependencies if immutable else copy.deepcopy(dependencies), result,

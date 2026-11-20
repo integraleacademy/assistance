@@ -25,6 +25,8 @@ import sys
 import crm_callback_email
 from crm_team_contacts import TEAM_CONTACTS
 from crm_read_cache import LastProjection, UpdateSnapshots
+from crm_storage_snapshot import storage_snapshot
+from crm_memory_monitor import memory_phase
 from crm_email_signatures import brand_saved_template
 from contextvars import ContextVar
 from crm_funding_safety import (
@@ -1581,7 +1583,9 @@ def _save_data_unlocked(data):
 
         os.replace(temp_file, DATA_FILE)
         with _DATA_CACHE_LOCK:
-            _DATA_CACHE_PAYLOAD = copy.deepcopy(data)
+            # Reuse only unchanged read-only cached subtrees. The mutable
+            # caller and older readers must remain isolated after this save.
+            _DATA_CACHE_PAYLOAD = storage_snapshot(data, _DATA_CACHE_PAYLOAD)
             _DATA_CACHE_SIGNATURE = _data_file_signature()
     finally:
         if temp_file and os.path.exists(temp_file):
@@ -16023,11 +16027,13 @@ def _wedof_background_sync_loop():
     while not _WEDOF_POLLER_STOP.is_set():
         try:
             if _edof_claim_period("integrale-edof-requests-schedule", 120):
-                _edof_sync_requests()
+                with memory_phase("edof_requests"):
+                    _edof_sync_requests()
             if _edof_claim_period("integrale-edof-global-schedule", 6 * 3600):
                 finished = False
                 try:
-                    result = _wedof_scheduled_reconciliation()
+                    with memory_phase("edof_reconciliation"):
+                        result = _wedof_scheduled_reconciliation()
                     finished = result["ok"] and not result["global"].get("in_progress")
                     app.logger.info("Intégrale EDOF CRM : réconciliation, %s dossiers lus, %s nouvelles pistes.",
                                     result["global"].get("processed", 0), result["global"].get("created_contacts", 0))
@@ -17882,6 +17888,11 @@ def _crm_prepared_read_model():
         key = _crm_read_model_key()
         if _CRM_READ_MODEL_VALUE is not None and _CRM_READ_MODEL_KEY == key:
             return _CRM_READ_MODEL_VALUE
+
+        # Do not retain an obsolete full contact projection while allocating
+        # its replacement. Existing readers keep their own reference safely.
+        _CRM_READ_MODEL_KEY = None
+        _CRM_READ_MODEL_VALUE = None
 
         for attempt in range(2):
             data = _crm_prepare_read_snapshot(_load_data_snapshot(), key)
@@ -21649,10 +21660,8 @@ def cache_versioned_static_assets(response):
 import sys
 crm_external_access.install(sys.modules[__name__])
 
-_start_wedof_background_sync()
-
-
 if __name__ == "__main__":
+    _start_wedof_background_sync()
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False)
 
