@@ -41,6 +41,12 @@
     event.preventDefault();
     if (!form.reportValidity() || submit.disabled) return;
     const payload = formPayload();
+    if (!payload.prenom || !payload.nom_famille || !payload.email || !payload.telephone ||
+        !String(form.elements.message.value || '').trim()) {
+      error.textContent = 'Renseignez toutes les coordonnées et le message à transmettre.';
+      error.hidden = false;
+      return;
+    }
     error.hidden = true;
     submit.disabled = true;
     submit.textContent = 'Transmission en cours…';
