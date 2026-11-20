@@ -1,11 +1,21 @@
 name: Notion CRM - publier les anciennes PR
 
 on:
+  pull_request_review:
+    types: [submitted]
   workflow_dispatch:
     inputs:
       pr_number:
         description: Numéro de la PR CRM historique à valider puis publier
         required: true
+        type: string
+      expected_head:
+        description: SHA exact revu pour une correction mémoire manuelle
+        required: false
+        type: string
+      review_id:
+        description: Revue indépendante du SHA exact (correction mémoire manuelle)
+        required: false
         type: string
 
 permissions: {}
@@ -17,6 +27,10 @@ concurrency:
 jobs:
   inspect:
     name: Vérifier la PR historique
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.event.pull_request.head.ref, 'fix/crm-memory-') &&
+       github.event.review.user.login == 'integraleacademy')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -26,12 +40,15 @@ jobs:
       pr_number: ${{ steps.meta.outputs.pr_number }}
       head_ref: ${{ steps.meta.outputs.head_ref }}
       head_sha: ${{ steps.meta.outputs.head_sha }}
+      manual_memory: ${{ steps.meta.outputs.manual_memory }}
     steps:
       - name: Vérifier le périmètre et l'ordre
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_PR: ${{ inputs.pr_number }}
+          REQUESTED_PR: ${{ inputs.pr_number || github.event.pull_request.number }}
+          EXPECTED_INPUT: ${{ inputs.expected_head || github.event.review.commit_id }}
+          REVIEW_ID: ${{ inputs.review_id || github.event.review.id }}
         run: |
           set -euo pipefail
 
@@ -56,6 +73,38 @@ jobs:
             echo "PR #$REQUESTED_PR hors périmètre."
             exit 0
           fi
+          # The manual memory incident follows the same test/publish path,
+          # with an explicit SHA and independently reviewed report instead of
+          # a fabricated Notion page. No other manual branches are accepted.
+          if [[ "$head_ref" == fix/crm-memory-* ]]; then
+            [[ "$GITHUB_REPOSITORY" == integraleacademy/assistance ]]
+            [[ "$EXPECTED_INPUT" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$REVIEW_ID" =~ ^[0-9]+$ ]]
+            [[ "$head_sha" == "$EXPECTED_INPUT" ]]
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+              [[ "$GITHUB_SHA" == "$EXPECTED_INPUT" ]]
+            else
+              # A review runs the PR merge revision. Its workflow definition
+              # must be byte-for-byte the definition in the reviewed commit.
+              workflow_path='.github/workflows/notion-crm-legacy-pr-publish.yml'
+              reviewed="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${workflow_path}?ref=${EXPECTED_INPUT}" --jq '.sha')"
+              executed="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${workflow_path}?ref=${GITHUB_SHA}" --jq '.sha')"
+              [[ "$reviewed" == "$executed" ]]
+            fi
+            [[ "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${REQUESTED_PR}" --jq '.head.repo.full_name')" == "$GITHUB_REPOSITORY" ]]
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${REQUESTED_PR}/reviews/${REVIEW_ID}" > /tmp/memory-review.json
+            jq -e --arg sha "$head_sha" '
+              .user.login == "integraleacademy" and .commit_id == $sha and
+              (.state == "COMMENTED" or .state == "APPROVED") and
+              (.body | contains("Independent-Review: APPROVED " + $sha))
+            ' /tmp/memory-review.json > /dev/null
+            echo "pr_number=$REQUESTED_PR" >> "$GITHUB_OUTPUT"
+            echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+            echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+            echo "manual_memory=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [[ "$head_ref" != agent/notion-crm-* ]]; then
             echo "PR #$REQUESTED_PR non historique : $head_ref"
             exit 0
@@ -119,10 +168,24 @@ jobs:
           fi
 
       - name: Figer le validateur depuis main puis tester la PR
+        if: needs.inspect.outputs.manual_memory != 'true'
         run: |
           git show origin/main:scripts/validate_notion_change.py > /tmp/validate_notion_change.py
           chmod 500 /tmp/validate_notion_change.py
           python -I /tmp/validate_notion_change.py --base origin/main
+          git diff --check origin/main...HEAD
+
+      - name: Tester la correction mémoire manuelle sur données fictives
+        if: needs.inspect.outputs.manual_memory == 'true'
+        env:
+          DATA_FILE: ${{ runner.temp }}/crm-memory-tests/data.json
+          INTEGRALE_EDOF_CRM_SYNC_ENABLED: "false"
+        run: |
+          python -m pytest -q tests/test_crm_storage_memory.py tests/test_crm_memory_runtime.py tests/test_crm_memory_optimizations.py tests/test_crm_read_model_performance.py tests/test_dashboard_polling_memory.py tests/test_crm_workspace_loading.py
+          python -m pytest -q tests/test_crm_wedof.py
+          # This existing test predates Calendly's callback_checked identity
+          # rule and also fails on main (ed007d5); it is unrelated to memory.
+          python -m pytest -q tests/test_crm_performance_fix.py -k 'not test_local_orphan_is_visible_and_manual_refresh_repairs_phone_only_contact'
           git diff --check origin/main...HEAD
 
   publish:
@@ -174,6 +237,7 @@ jobs:
           gh pr merge "$PR_NUMBER" \
             --repo "$GITHUB_REPOSITORY" \
             --merge \
+            --match-head-commit "$EXPECTED_HEAD" \
             --delete-branch
 
           echo "PR historique #$PR_NUMBER fusionnée après validation complète."
