@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_home_shows_todays_leads_first_and_opens_the_matching_records():
+def test_home_shows_daily_statistics_without_individual_leads():
     source = (ROOT / "static" / "crm.js").read_text(encoding="utf-8")
     script = """
 const assert = require('node:assert/strict');
@@ -29,7 +29,7 @@ global.Date = class extends RealDate {
     script += next(line for line in source.splitlines() if line.startswith("const contactSheetUrl=")) + "\n"
     script += source[source.index("const dashboardPeriods="):source.index("function bindDashboard()")]
     script += r"""
-const lead = (id, time) => ({id, nom: id, formation: 'APS', created_at: time});
+const lead = (id, time) => ({id, nom: 'PatronymeConfidentiel', formation: 'APS', created_at: time});
 contacts = [
   lead('yesterday', '2026-11-20T22:59:59Z'),
   lead('early', '2026-11-20T23:00:00Z'),
@@ -42,26 +42,24 @@ contacts = [
 ];
 const html = dashboard();
 assert.match(html, /data-dashboard-period="today" class="active"/);
-assert.ok(html.indexOf('Pistes du jour') < html.indexOf('class="analytics-kpis"'));
-const panel = html.match(/<section [^>]*dashboard-today-leads[\s\S]*?<\/section>/)[0];
-const links = [...panel.matchAll(/class="dashboard-today-lead" href="([^"]+)"/g)]
-  .map(([, href]) => new URL(href.replaceAll('&amp;', '&'), 'https://crm.test'));
-assert.deepEqual(links.map(url => url.searchParams.get('fiche')), ['late/id', 'legacy', 'row6', 'row5', 'row4']);
-assert.ok(links.every(url => url.pathname === '/crm/contacts' && url.searchParams.get('retour') === 'pistes'));
-assert.ok(panel.includes('&lt;TEST&gt;'));
-assert.ok(panel.includes('11:00'));
-const all = panel.match(/href="([^"]+)">Voir les 6 pistes/)[1];
-const query = new URL(all.replaceAll('&amp;', '&'), 'https://crm.test').search;
+assert.doesNotMatch(html, /Pistes du jour|dashboard-today-lead|\?fiche=|patronymeconfidentiel/i);
+const card = html.match(/<a [^>]*href="([^"]*dashboard_view=created[^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+assert.ok(card, 'The acquisition total links to the filtered lead list');
+assert.match(card[2], /<strong>6<\/strong>/);
+const query = new URL(card[1].replaceAll('&amp;', '&'), 'https://crm.test').search;
 const filtered = dashboardDrilldownContacts(crmActiveContacts(), dashboardDrilldownState(query));
 assert.deepEqual(filtered.map(c => c.id).sort(), ['early', 'late/id', 'legacy', 'row4', 'row5', 'row6']);
+assert.match(html, /data-dashboard-today-start=/);
 dashboardOffset = -1;
-assert.ok(!dashboard().includes('Pistes du jour'));
+assert.doesNotMatch(dashboard(), /data-dashboard-today-start=|patronymeconfidentiel/i);
 dashboardPeriod = 'month';
 dashboardOffset = 0;
-assert.ok(!dashboard().includes('Pistes du jour'));
+assert.doesNotMatch(dashboard(), /data-dashboard-today-start=|patronymeconfidentiel/i);
 dashboardPeriod = 'today';
 contacts = [];
-assert.ok(dashboard().includes('Aucune piste créée aujourd’hui.'));
+const empty = dashboard();
+assert.doesNotMatch(empty, /Pistes du jour|Aucune piste créée aujourd’hui/);
+assert.match(empty, /Pistes créées sur la période<\/span><strong>0<\/strong>/);
 """
     subprocess.run(
         ["node", "-e", script],
