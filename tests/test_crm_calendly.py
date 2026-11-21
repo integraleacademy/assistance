@@ -1737,19 +1737,71 @@ def test_conflicting_callback_and_email_are_held_for_review(tmp_path, monkeypatc
     assert len(application.load_data()["crm_contacts"]) == 2
 
 
-def test_future_absence_sends_nothing_and_preserves_followups(tmp_path, monkeypatch):
+def test_no_answer_selector_allows_future_appointments():
+    with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
+        crm_js = source.read()
+    helper = crm_js[
+        crm_js.index("function appointmentResponseControl(a,"):
+        crm_js.index("function bindAppointmentResponseControls(", crm_js.index("function appointmentResponseControl(a,"))
+    ]
+    script = (
+        "const assert=require('node:assert/strict');\n"
+        "const esc=value=>String(value??'');\n"
+        "const appointmentEnrollmentControl=()=>'';\n"
+        + helper
+        + r"""
+const future={id:'tomorrow',status:'active',start_time:new Date(Date.now()+86400000).toISOString()};
+const futureHtml=appointmentResponseControl(future);
+assert.match(futureHtml, /<option value="no_answer"[^>]*>Sans réponse<\/option>/);
+assert.doesNotMatch(futureHtml, /<option value="no_answer"[^>]*disabled/);
+const canceledHtml=appointmentResponseControl({...future,status:'canceled'});
+assert.match(canceledHtml, /<option value="no_answer"[^>]*disabled/);
+"""
+    )
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+
+
+def test_future_appointment_can_be_marked_no_answer_before_start(tmp_path, monkeypatch):
     client = authenticated_client(tmp_path, monkeypatch)
-    def unexpected(*args):
-        raise AssertionError("Premature follow-up")
-    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected)
+    sent = []
+    monkeypatch.setattr(
+        application, "_crm_send_appointment_followup",
+        lambda data, contact, label: sent.append(label) or {"sms": True, "email": True},
+    )
+    contact = client.post(
+        "/api/crm/contacts",
+        json={"prenom": "Lina", "nom": "Martin", "formation": "APS"},
+    ).get_json()
+    client.patch(
+        f"/api/crm/contacts/{contact['id']}",
+        json={"mail": "lina@example.com", "telephone": "+33612345678"},
+    )
     signed_webhook(client, monkeypatch, "invitee.created", calendly_payload())
-    data = application.load_data()
-    row = data["crm_calendly_appointments"][0]
-    url = f"/api/crm/calendly/appointments/{row['id']}"
-    assert client.patch(url, json={"response_status": "no_answer"}).status_code == 409
-    current = application.load_data()
-    assert current["crm_calendly_appointments"] == data["crm_calendly_appointments"]
-    assert current["crm_contacts"] == data["crm_contacts"]
+    appointment = application.load_data()["crm_calendly_appointments"][0]
+    assert appointment["start_time"].startswith("2099-")
+    url = f"/api/crm/calendly/appointments/{appointment['id']}"
+
+    response = client.patch(url, json={"response_status": "no_answer"})
+
+    assert response.status_code == 200
+    assert response.get_json()["response_status"] == "no_answer"
+    assert response.get_json()["delivery"] == {"sms": True, "email": True}
+    updated = application.load_data()
+    assert updated["crm_calendly_appointments"][0]["response_status"] == "no_answer"
+    updated_contact = next(c for c in updated["crm_contacts"] if c["id"] == contact["id"])
+    assert updated_contact["statut"] == "A relancer"
+    assert updated_contact["relance_date"] == (
+        application.datetime.datetime.now(application.pytz.timezone("Europe/Paris")).date()
+        + application.datetime.timedelta(days=7)
+    ).isoformat()
+    assert updated_contact["relances"][0]["source"] == "calendly_no_answer"
+    assert sent == ["Pas de réponse appel"]
+
+    duplicate = client.patch(url, json={"response_status": "no_answer"})
+    assert duplicate.status_code == 200
+    assert "delivery" not in duplicate.get_json()
+    assert sent == ["Pas de réponse appel"]
 
 
 def test_verify_links_restores_original_booking_and_does_not_resend(tmp_path, monkeypatch):

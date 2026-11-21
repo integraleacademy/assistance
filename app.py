@@ -17119,9 +17119,6 @@ def crm_calendly_update_appointment(appointment_id):
     if response_status and appointment.get("identity_conflict"):
         return jsonify(error="L’identité de cet invité doit être vérifiée avant de qualifier l’appel."), 409
     if response_status == "no_answer":
-        start = _crm_calendar_start(appointment)
-        if start is None or start > datetime.datetime.now(datetime.timezone.utc):
-            return jsonify(error="Vous pourrez indiquer « Sans réponse » à partir de l’heure du rendez-vous."), 409
         owner = _crm_contact(data, appointment.get("contact_id"))
         if not owner or not _crm_calendly_display_owner(appointment, owner):
             return jsonify(error="Vérifiez l’identité de l’invité avant d’envoyer une relance."), 409

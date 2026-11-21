@@ -2066,7 +2066,7 @@ function appointmentEnrollmentControl(a){
 }
 function appointmentResponseControl(a,label='Réponse'){
   if(a.identity_conflict)return '<span class="appointment-response">Identité Calendly à vérifier</span>';
-  const noAnswerAvailable=Number.isFinite(Date.parse(a.start_time))&&Date.parse(a.start_time)<=Date.now()&&!['canceled','cancelled'].includes(a.status);
+  const noAnswerAvailable=!['canceled','cancelled'].includes(String(a.status||'active').toLowerCase());
 
   return `<label class="appointment-response" onclick="event.stopPropagation()"><span>${esc(label)}</span><select data-appointment-response="${esc(a.id)}"><option value="" ${!a.response_status?'selected':''}>À renseigner</option><option value="answered" ${a.response_status==='answered'?'selected':''}>A répondu</option><option value="no_answer" ${noAnswerAvailable?'':'disabled'} ${a.response_status==='no_answer'?'selected':''}>Sans réponse</option></select></label>${appointmentEnrollmentControl(a)}`;
 }
