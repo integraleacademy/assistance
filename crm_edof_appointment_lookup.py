@@ -44,6 +44,10 @@ def appointment_for(legacy, data, folder, *, now=None):
         )
         if meeting:
             starts_at, appointment = meeting
+            # Un e-mail familial partagé ne suffit pas : l'invité Calendly
+            # doit aussi être compatible avec le nom du titulaire EDOF.
+            if legacy._crm_calendly_name_match(contact, appointment.get("invitee_name")) is False:
+                continue
             meetings.append((starts_at, str(contact.get("id") or ""), appointment))
     if not meetings:
         contact_id = str(contacts[0].get("id") or "")
