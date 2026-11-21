@@ -5,6 +5,7 @@ import crm_salesforce_migration as salesforce_migration
 import crm_salesforce_tasks_import as salesforce_tasks_import
 
 from crm_memory_optimizations import install_crm_memory_optimizations
+from crm_edof_appointment_lookup import register_edof_appointment_lookup
 from crm_aircall_ai import register_aircall_ai_crm
 from crm_aircall_call_capture_patch import install_aircall_call_capture_patch
 from crm_aircall_caller_context import register_aircall_caller_context
@@ -147,3 +148,4 @@ register_aircall_dossier_actions(legacy_app)
 register_aircall_caller_context(legacy_app)
 register_aircall_lead_capture(legacy_app)
 register_google_ads_offline_conversions(legacy_app)
+register_edof_appointment_lookup(legacy_app)
