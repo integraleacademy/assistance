@@ -73,6 +73,8 @@ def register_edof_appointment_lookup(legacy):
         if request.content_length is not None and request.content_length > 4000:
             return jsonify(error="Requête trop volumineuse"), 413
         raw = request.get_data()
+        if len(raw) > 4000:
+            return jsonify(error="Requête trop volumineuse"), 413
         expected = hmac.digest(secret.encode(), SIGNING_CONTEXT + raw, "sha256").hex()
         supplied = request.headers.get(SIGNATURE_HEADER, "")
         if not hmac.compare_digest(expected, supplied):
