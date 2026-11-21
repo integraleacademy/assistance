@@ -95,6 +95,12 @@ def fixture(tmp_path):
         _crm_normalize_email=lambda s:str(s or "").strip().lower(),
         _crm_normalize_phone=lambda s:re.sub(r"\D","",str(s or "")),
         _crm_next_phone_appointment=next_phone,
+        _crm_calendly_name_match=lambda c,guest: (
+            None if not guest else normalized(guest) in (
+                normalized(c.get("prenom","")+c.get("nom","")),
+                normalized(c.get("nom","")+c.get("prenom","")),
+            )
+        ),
     )
     register_edof_appointment_lookup(host)
     return app.test_client(), data, appointments, host
@@ -159,3 +165,11 @@ def test_phone_type_from_crm_logic_is_authoritative(tmp_path):
     assert payload["222222"]["crm_url"].endswith("fiche=second&retour=pistes")
     appointments[1]["identity_conflict"]=True
     assert signed(client,["222222"]).get_json()["appointments"]["222222"]["status"]=="none"
+
+
+def test_shared_email_with_wrong_calendly_invitee_is_not_attributed(tmp_path):
+    client,_,appointments,_=fixture(tmp_path)
+    # Lien contact connu mais nom Calendly d'une autre personne.
+    appointments[0]["invitee_name"]="Une Autre Personne"
+    result=signed(client,["111111"]).get_json()["appointments"]
+    assert result["111111"]["status"]=="none"
