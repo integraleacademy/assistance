@@ -1,0 +1,28 @@
+name: CRM - Lecture sécurisée des rendez-vous EDOF
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crm_edof_appointment_lookup.py'
+      - 'crm_app.py'
+      - 'tests/test_crm_edof_appointment_lookup.py'
+      - '.github/workflows/edof-appointments-read.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install Flask==3.0.0 pytest
+      - run: python -m py_compile crm_app.py crm_edof_appointment_lookup.py
+      - run: python -m pytest -q tests/test_crm_edof_appointment_lookup.py
