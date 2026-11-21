@@ -1,4 +1,4 @@
-const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['Prochain RDV inscription','POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Prochain RDV inscription','Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Transition pro','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],callbackRequests=[],callbackRequestPendingCount=0,crmAppointments=[],crmSettings={},statusFilter='',callbackRequestFilter='pending',callbackRequestSearch='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='month',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='',activeCalendlyContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
+const C=window.CRM_CONFIG,PRIMARY_EXCLUDED_STATUSES=new Set(['Prochain RDV inscription','POEI','Session FT','Def MOB','Financement FT en cours','Financement FT refusé']),S=C.statuses.filter(status=>!PRIMARY_EXCLUDED_STATUSES.has(status)),SECONDARY_STATUSES=['Prochain RDV inscription','Financement FT en cours','Financement FT refusé','Def MOB','POEI','C2P en cours','Transition pro','Marché FT'];let contacts=[],templates={email:[],sms:[]},formationSessions={},notifications=[],callbackRequests=[],callbackRequestPendingCount=0,crmAppointments=[],crmSettings={},statusFilter='',callbackRequestFilter='pending',callbackRequestSearch='',calendarSelectedDate,reminderSelectedDate,reminderShowAll=false,dashboardPeriod='today',dashboardOffset=0,dashboardMode='acquisition',leadScoreSort='',visibleLeadIds=[],activeWedofContactId='',activeCalendlyContactId='';const selectedLeadIds=new Set(),page=document.querySelector('#page');
 const callComposerRoot=document.querySelector('#callComposerRoot');
 const CALENDLY_AVAILABILITY_WINDOW_DAYS=7;
 const calendlyBookingsInFlight=new Set();
@@ -462,6 +462,22 @@ function dashboardKpi(label,value,suffix,previous,lastYear,accent='blue',view=''
  const content=`<span>${esc(label)}</span><strong>${value}${suffix}</strong><div>${dashboardDelta(value,previous,'période préc.')}${dashboardDelta(value,lastYear,'année préc.')}</div>${view?'<small class="analytics-kpi-link">Voir les pistes →</small>':''}`;
  return view?`<a class="analytics-kpi ${accent}" href="${esc(dashboardDrilldownUrl(view,range))}" aria-label="${esc(label)} : voir les pistes correspondantes">${content}</a>`:`<article class="analytics-kpi ${accent}">${content}</article>`;
 }
+function dashboardTodayLeads(list,range){
+ const previewSize=5;
+ const time=new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit'});
+ const recent=list.map(contact=>({contact,date:dashboardContactDate(contact)})).sort((a,b)=>b.date-a.date);
+ const rows=recent.slice(0,previewSize).map(({contact,date})=>{
+  const name=displayName(contact)||'Identité à compléter';
+  return `<li><a class="dashboard-today-lead" href="${esc(contactSheetUrl(contact.id,'pistes'))}">
+   <strong>${esc(name)}</strong><span>${esc(contact.formation||'')}</span><time datetime="${date.toISOString()}">${time.format(date)}</time>
+  </a></li>`;
+ }).join('');
+ const more=list.length>previewSize?`<a class="btn" href="${esc(dashboardDrilldownUrl('created',range))}">Voir les ${list.length} pistes</a>`:'';
+ return `<section class="card analytics-card dashboard-today-leads" aria-labelledby="dashboardTodayTitle" data-day="${range.start.getTime()}">
+  <div class="analytics-card-head"><h2 id="dashboardTodayTitle">Pistes du jour</h2>${more}</div>
+  ${rows?`<ul>${rows}</ul>`:'<p class="analytics-empty">Aucune piste créée aujourd’hui.</p>'}
+ </section>`;
+}
 function dashboard(){
  if(dashboardMode==='direction'&&window.CRMWorkspace)return CRMWorkspace.directionPage(workspaceContext());
  const ranges=dashboardRanges();
@@ -477,6 +493,7 @@ function dashboard(){
  const currentConversion=dashboardRate(converted.length,current.length),previousConversion=dashboardRate(previousConverted.length,previous.length),lastYearConversion=dashboardRate(lastYearConverted.length,lastYear.length);
  return header('TABLEAU DE BORD',`Bonjour ${esc(C.first_name)} 👋`,'Acquisition et priorités commerciales, avec comparaison dans le temps.')
   +`<section class="analytics-toolbar"><div class="analytics-period-tabs">${Object.entries(dashboardPeriods).map(([value,label])=>`<button type="button" data-dashboard-period="${value}" class="${dashboardPeriod===value?'active':''}">${label}</button>`).join('')}</div><div class="analytics-period-nav"><button type="button" data-dashboard-shift="-1" aria-label="Période précédente">‹</button><b>${esc(dashboardRangeLabel(ranges.current))}</b><button type="button" data-dashboard-shift="1" aria-label="Période suivante" ${dashboardOffset===0?'disabled':''}>›</button></div></section>`
+  +(dashboardPeriod==='today'&&dashboardOffset===0?dashboardTodayLeads(current,ranges.current):'')
   +`<div class="analytics-kpis">${dashboardKpi('Pistes créées sur la période',current.length,'',previous.length,lastYear.length,'blue','created',ranges.current)}${dashboardKpi('Pistes Google Ads',googleAdsContacts.length,'',previousGoogleAds.length,lastYearGoogleAds.length,'google','google',ranges.current)}${dashboardKpi('Pistes META',metaContacts.length,'',previousMeta.length,lastYearMeta.length,'social','meta',ranges.current)}${dashboardKpi('Autres pistes',otherContacts.length,'',previousOther.length,lastYearOther.length,'slate','other',ranges.current)}${dashboardKpi('Taux de conversion',currentConversion,' %',previousConversion,lastYearConversion,'green','converted',ranges.current)}${dashboardKpi('Pistes avec RDV',appointmentContacts.length,'',previousAppointments.length,lastYearAppointments.length,'purple','appointments',ranges.current)}${dashboardKpi('Pistes contactées',contacted.length,'',previous.filter(dashboardHasContact).length,lastYear.filter(dashboardHasContact).length,'amber','contacted',ranges.current)}<a class="analytics-kpi red" href="${esc(dashboardDrilldownUrl('overdue'))}" aria-label="Relances échues : voir les pistes correspondantes"><span>Relances échues</span><strong>${dueCallbacks.length}</strong><p>À traiter maintenant, toutes périodes</p><small class="analytics-kpi-link">Voir les pistes →</small></a></div>`
   +`<div class="analytics-grid analytics-grid-top"><section class="card analytics-card analytics-trend-card"><div class="analytics-card-head"><div><span>VOLUME D’ACQUISITION</span><h2>Évolution des pistes créées</h2></div><b>${current.length} pistes</b></div>${dashboardTrend(ranges.current,ranges.previous,current,previous)}</section><section class="card analytics-card"><div class="analytics-card-head"><div><span>PARCOURS COMMERCIAL</span><h2>Entonnoir de conversion</h2></div></div><div class="analytics-funnel"><div><strong>${current.length}</strong><span>Pistes</span><i style="width:100%"></i></div><div><strong>${contacted.length}</strong><span>Contactées · ${dashboardRate(contacted.length,current.length)} %</span><i style="width:${dashboardRate(contacted.length,current.length)}%"></i></div><div><strong>${appointmentContacts.length}</strong><span>Avec RDV · ${dashboardRate(appointmentContacts.length,current.length)} %</span><i style="width:${dashboardRate(appointmentContacts.length,current.length)}%"></i></div><div><strong>${converted.length}</strong><span>Inscrites · ${currentConversion} %</span><i style="width:${currentConversion}%"></i></div></div></section></div>`
   +`<section class="card analytics-card analytics-acquisition"><div class="analytics-card-head"><div><span>ATTRIBUTION PRINCIPALE</span><h2>Origines principales</h2><p>Une seule origine principale est utilisée pour chaque piste. Les neuf origines CRM restent visibles, même à zéro.</p></div></div>${dashboardOriginTable(primaryOrigins,current.length,ranges.current)}</section>`
@@ -3006,6 +3023,10 @@ function refreshPipelineQueues(){
  if(document.querySelector('#cpfHiddenPanel'))refreshHiddenCpfPanel();
  document.querySelector('#listSearch')?.dispatchEvent(new Event('input',{bubbles:true}));
 }
+function refreshDashboardToday(membershipChanged=false){
+ const panel=document.querySelector('.dashboard-today-leads');
+ if(panel&&(membershipChanged||Number(panel.dataset.day)!==dashboardFullRange('today').start.getTime()))render();
+}
 async function refreshCrmSnapshot(){
  if(C.external_meta){try{if(!document.hidden)await window.CRMExternalMeta.refresh()}finally{scheduleCrmRefresh()}return}
  if(document.hidden||crmRefreshInFlight){scheduleCrmRefresh();return}
@@ -3022,7 +3043,7 @@ async function refreshCrmSnapshot(){
   const suffix=`?${refreshParams}`;
   const snapshot=await api(`/api/crm/contacts/updates${suffix}`);
   if(section!==C.section||id!==new URLSearchParams(location.search).get('fiche'))return;
-  if(snapshot.unchanged){crmUpdateRevision=snapshot.revision||'';lastCrmRefreshAt=Date.now();return}
+  if(snapshot.unchanged){refreshDashboardToday();crmUpdateRevision=snapshot.revision||'';lastCrmRefreshAt=Date.now();return}
   const updates=snapshot.contacts||[];
   const pipelineContactChanged=updates.some(update=>['cpf_status','relance_date','statut','statut_secondaire'].some(field=>Object.prototype.hasOwnProperty.call(update,field)&&contactInStore(update.id)?.[field]!==update[field]));
   const hasAppointments=Array.isArray(snapshot.appointments);
@@ -3056,6 +3077,7 @@ async function refreshCrmSnapshot(){
   if(foldersChanged)cpfPendingFolders=snapshot.cpf_pending_folders;
   if(hiddenChanged)cpfHiddenFolders=snapshot.cpf_hidden_folders;
   if(snapshot.selected)mergeContactInStore(snapshot.selected.id,snapshot.selected);
+  refreshDashboardToday(membershipChanged);
   if(Object.prototype.hasOwnProperty.call(snapshot,'callback_pending_count')){
    callbackRequestPendingCount=Math.max(0,Number(snapshot.callback_pending_count)||0);
    updateCallbackRequestNavCount();
