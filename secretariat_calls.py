@@ -422,6 +422,8 @@ def desk_summary(contact, callbacks, appointment, *, staff=True):
 
 
 def delivery_state(entry, channel):
+    if entry.get(f"{channel}_summary_status") == "already_sent":
+        return "already_sent"
     if (entry.get(f"{channel}_summary_sent_at") or entry.get(f"information_{channel}_sent_at")
             or entry.get(f"information_{channel}_template_id")):
         return "sent"

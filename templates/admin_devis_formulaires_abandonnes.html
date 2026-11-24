@@ -130,11 +130,11 @@ thead{background:#f0f2f5}
             <td><strong>{{ f.prenom }} {{ f.nom }}</strong></td>
             <td>
                 {{ f.mail }}<br>{{ f.telephone or '—' }}
-                {% if f.abandoned_mail_sent_at or f.abandoned_sms_sent_at %}
+                {% if f.abandoned_mail_sent_at or f.abandoned_sms_sent_at or f.abandoned_sms_status in ("unconfirmed", "waiting_for_course") %}
                     <br><small>
                         {% if f.abandoned_mail_sent_at %}📨 Mail envoyé le {{ f.abandoned_mail_sent_at }}{% endif %}
-                        {% if f.abandoned_mail_sent_at and f.abandoned_sms_sent_at %}<br>{% endif %}
-                        {% if f.abandoned_sms_sent_at %}📱 SMS envoyé le {{ f.abandoned_sms_sent_at }}{% endif %}
+                        {% if f.abandoned_mail_sent_at and (f.abandoned_sms_sent_at or f.abandoned_sms_status in ("unconfirmed", "waiting_for_course")) %}<br>{% endif %}
+                        {% if f.abandoned_sms_status == "waiting_for_course" %}📱 SMS en attente du choix de la formation{% elif f.abandoned_sms_status == "unconfirmed" %}📱 Envoi du SMS à vérifier{% elif f.abandoned_sms_sent_at %}📱 SMS {{ "déjà envoyé" if f.abandoned_sms_status == "already_sent" else "envoyé" }} le {{ f.abandoned_sms_sent_at }}{% endif %}
                     </small>
                 {% endif %}
             </td>
