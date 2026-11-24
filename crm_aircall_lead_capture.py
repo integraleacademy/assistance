@@ -33,12 +33,12 @@ _MAX_SMS_PER_HOUR = 3
 _IDEMPOTENCY_WINDOW_SECONDS = 5 * 60
 
 _TRAINING_ORDER = (
-    "A3P", "APS", "SSIAP", "DESP_INIT", "DESP_VAE", "VTC",
+    "A3P", "APS", "SSIAP", "SSIAP3", "DESP_INIT", "DESP_VAE", "VTC",
     "BTS_MOS", "BTS_MCO", "BTS_NDRC", "BTS_CI", "BTS_PI", "BTS_CG",
 )
 _DIRECT_TRAINING_KEYS = {
     "A3P": "A3P", "APS": "APS", "SSIAP": "SSIAP",
-    "SSIAP1": "SSIAP", "SSIAP 1": "SSIAP", "VTC": "VTC",
+    "SSIAP1": "SSIAP", "SSIAP 1": "SSIAP", "SSIAP3": "SSIAP3", "SSIAP 3": "SSIAP3", "VTC": "VTC",
     "DESP": "DESP_INIT", "DESP INITIAL": "DESP_INIT",
     "DESP_INIT": "DESP_INIT", "DESP VAE": "DESP_VAE",
     "DESP_VAE": "DESP_VAE",
@@ -50,7 +50,7 @@ _DIRECT_TRAINING_KEYS = {
     "BTS CG": "BTS_CG", "BTS_CG": "BTS_CG",
 }
 _CRM_TRAINING_LABELS = {
-    "A3P": "A3P", "APS": "APS", "SSIAP": "SSIAP 1",
+    "A3P": "A3P", "APS": "APS", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3",
     "DESP_INIT": "DESP", "DESP_VAE": "DESP", "VTC": "Chauffeur VTC",
     "BTS_MOS": "BTS MOS", "BTS_MCO": "BTS MCO", "BTS_NDRC": "BTS NDRC",
     "BTS_CI": "BTS CI", "BTS_PI": "BTS PI", "BTS_CG": "BTS CG",
@@ -137,6 +137,8 @@ def _training_key(value: Any) -> str:
         return "A3P"
     if formation == "APS":
         return "APS"
+    if formation == "SSIAP 3":
+        return "SSIAP3"
     if formation == "SSIAP 1":
         return "SSIAP"
     if formation == "Chauffeur VTC":

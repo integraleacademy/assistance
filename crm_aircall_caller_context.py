@@ -264,6 +264,8 @@ def _formation_spoken(contact: Mapping[str, Any]) -> str:
         return "A trois P"
     if key == "aps":
         return "A P S"
+    if key == "ssiap3":
+        return "Siappe trois"
     if key in {"ssiap", "ssiap1"}:
         return "Siappe un"
     if key in {"chauffeurvtc", "vtc"}:

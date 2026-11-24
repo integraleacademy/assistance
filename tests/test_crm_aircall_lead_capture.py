@@ -225,7 +225,8 @@ def test_training_action_asks_for_clarification_instead_of_inventing(legacy):
     assert response.status_code == 200
     assert body["success"] is False
     assert body["requires_clarification"] is True
-    assert len(body["formations"]) == 12
+    assert len(body["formations"]) == 13
+    assert "SSIAP3" in {row["code"] for row in body["formations"]}
 
 
 def test_sms_action_is_idempotent_and_creates_visible_pending_callback(legacy):

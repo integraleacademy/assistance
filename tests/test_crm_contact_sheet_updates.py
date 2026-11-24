@@ -68,7 +68,8 @@ def test_requested_prices_are_used_by_quotes_and_secretariat_content():
     assert application.get_formation_tarif(
         "SSIAP", {"ssiap_secourisme_valide": "NON"}
     ) == 1230
-    assert application.SECRETARIAT_FORMATIONS["SSIAP"]["price"] == "1 230 € TTC"
+    assert application.SECRETARIAT_FORMATIONS["SSIAP"]["price"] == "980 € seul · 1 230 € avec SST"
+    assert application.SECRETARIAT_FORMATIONS["SSIAP3"]["price"] == "3 900 € TTC"
     assert application.SECRETARIAT_FORMATIONS["VTC"]["price"] == "1 500 € TTC"
 
 

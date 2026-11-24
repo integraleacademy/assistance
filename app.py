@@ -14,7 +14,7 @@ import hebergement_reminders
 import crm_external_access
 from secretariat_catalogue import (
     BTS_ADMISSIONS, BTS_COURSES, BTS_INTAKES, PROFESSIONAL_COURSES,
-    PUBLIC_CATALOGUE, SESSION_FEES, SST_FEES,
+    PUBLIC_CATALOGUE, SESSION_FEES, SSIAP3_BOOKING_URL, SST_FEES, is_ssiap3,
 )
 import crm_public_sessions
 import crm_call_conversion
@@ -249,6 +249,7 @@ def creer_piste_salesforce(form):
         "VTC": "CHAUFFEUR VTC",
         "BTS": "BTS",
         "SSIAP": "SSIAP",
+        "SSIAP3": "SSIAP 3",
         "POEI": "POEI",
     }
     formation_sf = formation_map.get(form.get("formation", ""), "")
@@ -395,6 +396,10 @@ def _parse_dates_range(dates_txt: str):
     d2 = parse_part(right)
     return (d1, d2)
 
+def _eur_display(amount: int) -> str:
+    return f"{amount:,.0f} € TTC".replace(",", " ")
+
+
 def get_formation_tarif(formation_code: str, formation_details=None) -> int:
     details = formation_details if isinstance(formation_details, dict) else {}
     saved_fee = details.get("secretariat_fee_euros")
@@ -466,10 +471,10 @@ def build_devis_context(
         ]
         total = 1500
 
-    elif formation_code == "SSIAP":
-        total = get_formation_tarif(formation_code, formation_details)
-        intitule = "Agent de sécurité incendie SSIAP 1"
-        if isinstance(formation_details, dict) and formation_details.get("ssiap_formule") == "ssiap-1-sst":
+    elif formation_code in {"SSIAP", "SSIAP3"}:
+        intitule = ("Chef de service de sécurité incendie SSIAP 3" if formation_code == "SSIAP3"
+                    else "Agent de sécurité incendie SSIAP 1")
+        if formation_code == "SSIAP" and isinstance(formation_details, dict) and formation_details.get("ssiap_formule") == "ssiap-1-sst":
             intitule += " avec formation SST incluse"
         lignes = [
             {"intitule": intitule, "prix_unitaire": _eur(total), "quantite": 1, "total": _eur(total)},
@@ -499,7 +504,8 @@ PLAN_FORMATIONS = {
     "VTC": "VTC – Chauffeur de transport avec chauffeur",
     "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
     "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)",
-    "SSIAP": "SSIAP 1 – Agent de sécurité incendie"
+    "SSIAP": "SSIAP 1 – Agent de sécurité incendie",
+    "SSIAP3": "SSIAP 3 – Chef de service de sécurité incendie",
 }
 
 VTC_CPF_REGISTRATION_URL = (
@@ -515,6 +521,7 @@ PLAN_TARIFS = {
     "DESP_INIT": TRAINING_PRICES_CENTS["DESP_INITIAL"] // 100,
     "DESP_VAE": TRAINING_PRICES_CENTS["DESP_VAE"] // 100,
     "SSIAP": TRAINING_PRICES_CENTS["SSIAP_1"] // 100,
+    "SSIAP3": TRAINING_PRICES_CENTS["SSIAP_3"] // 100,
 }
 
 FORMATION_CENTRES = {
@@ -530,7 +537,7 @@ INFORMATION_FORM_CENTRES = {
     },
     "cote_azur": {
         "name": "Côte d’Azur", "locality": "Puget-sur-Argens",
-        "formations": ("A3P", "APS", "SSIAP", "DESP_INIT", "VTC"),
+        "formations": ("A3P", "APS", "SSIAP", "SSIAP3", "DESP_INIT", "VTC"),
     },
 }
 
@@ -565,6 +572,13 @@ SECRETARIAT_FORMATIONS = {
     "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "purpose": "Se former à la protection rapprochée des personnes et exercer comme agent de protection physique.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/apr"},
     "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "purpose": "Obtenir les compétences nécessaires aux missions de surveillance, de prévention et de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/aps"},
     "SSIAP": {"short": "SSIAP 1", "duration": "70 h · 2 semaines", "price": "980 € seul · 1 230 € avec SST", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
+    "SSIAP3": {
+        "short": "SSIAP 3", "duration": "216 heures hors examen", "format": "Présentiel",
+        "price": _eur_display(PLAN_TARIFS["SSIAP3"]),
+        "purpose": "Préparer le diplôme de chef de service de sécurité incendie et d’assistance à personnes.",
+        "funding": "Selon le dossier, un financement par l’employeur, un organisme financeur ou un financement personnel peut être étudié.",
+        "calendly": SSIAP3_BOOKING_URL,
+    },
     "DESP_INIT": {"short": "DESP initial", "duration": "245 h", "price": "4 300 € TTC", "format": "175 h à distance + 70 h en présentiel", "purpose": "Acquérir l'aptitude professionnelle permettant de créer et diriger une entreprise de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "DESP_VAE": {"short": "VAE DESP", "duration": "Accompagnement individualisé", "price": "3 800 € TTC", "format": "100 % à distance", "purpose": "Faire reconnaître son expérience afin d'obtenir la certification de dirigeant d'entreprise de sécurité privée.", "funding": "CPF, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/dirigeant"},
     "VTC": {"short": "Chauffeur VTC", "duration": "Théorie en ligne + pratique", "price": "1 500 € TTC", "format": "Hybride", "purpose": "Préparer l'examen VTC et maîtriser les bases nécessaires à l'activité de chauffeur professionnel.", "funding": "CPF, France Travail ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/chauffeurvtc"},
@@ -593,6 +607,7 @@ _SECRETARIAT_WEBSITE_ALIASES = {
     "A3P": ("a3p", "apr", "protection", "garde du corps"),
     "APS": ("aps", "agent de prevention", "agent de sécurité"),
     "SSIAP": ("ssiap", "incendie"),
+    "SSIAP3": ("ssiap-3", "ssiap 3", "chef de service"),
     "DESP_INIT": ("desp", "dirigeant", "entreprise de sécurité"),
     "DESP_VAE": ("desp", "vae", "dirigeant"),
     "VTC": ("vtc", "chauffeur"),
@@ -789,6 +804,10 @@ DEFAULT_FORMATION_SESSIONS = {
             {"label": "Du 2 novembre au 21 décembre 2026 (présentiel du 8 au 21/12) - examen le 22 décembre 2026", "badge": ""}
         ],
         "DESP_VAE": [],
+        "SSIAP3": [
+            {"label": "Du 19 avril au 2 juin 2027 - examen le 3 juin 2027", "badge": "", "date_examen": "2027-06-03"},
+            {"label": "Du 18 octobre au 1er décembre 2027 - examen le 2 décembre 2027", "badge": "", "date_examen": "2027-12-02"},
+        ],
         "SSIAP": [
             {
                 "label": "Du 12 au 27 octobre 2026 - examen le 28 octobre 2026",
@@ -2176,7 +2195,7 @@ def _training_email_subject(code, centre="cote_azur"):
         return "VAE DESP — commencez votre Livret 1"
     if code == "VTC":
         return "Chauffeur VTC — votre formation et les dates d’examen"
-    title = {"APS": "APS", "A3P": "A3P", "SSIAP": "SSIAP 1", "DESP_INIT": "DESP"}[code]
+    title = {"APS": "APS", "A3P": "A3P", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3", "DESP_INIT": "DESP"}[code]
     city = TRAINING_VENUES[_normalize_centre_code(centre)]["city"]
     if code == "APS":
         return f"Formation APS à {city} — prochaine session"
@@ -2238,10 +2257,6 @@ def build_vae_desp_email_plain(prenom, devis_url):
 def _is_vae_desp_formation(formation_code: str) -> bool:
     return str(formation_code or "").strip() == "DESP_VAE"
 
-
-
-def _eur_display(amount: int) -> str:
-    return f"{amount:,.0f} € TTC".replace(",", " ")
 
 
 ABANDONED_TRAINING_EMAIL_CONFIG = {
@@ -2310,6 +2325,17 @@ ABANDONED_TRAINING_EMAIL_CONFIG = {
             ("📍", "Formation en présentiel", "Puget-sur-Argens"),
         ],
         "calendly": "https://calendly.com/integraleacademy/ssiap1",
+    },
+    "SSIAP3": {
+        "short": "Formation SSIAP 3", "project_title": "de formation SSIAP 3",
+        "formation_name": PLAN_FORMATIONS["SSIAP3"],
+        "about_title": "La formation SSIAP 3 en quelques mots",
+        "about_text": SECRETARIAT_FORMATIONS["SSIAP3"]["purpose"],
+        "about_extra": SECRETARIAT_FORMATIONS["SSIAP3"]["prerequisites"],
+        "learning": SECRETARIAT_FORMATIONS["SSIAP3"]["topics"],
+        "highlights": [("🎓", "Diplôme SSIAP 3", "Chef de service de sécurité incendie"),
+                       ("📍", "Puget-sur-Argens", "216 heures en présentiel hors examen")],
+        "calendly": SSIAP3_BOOKING_URL,
     },
     "VTC": {
         "short": "Formation Chauffeur VTC",
@@ -2541,7 +2567,7 @@ def _crm_create_or_match_abandoned_form_contact(data, record, fields, now_str):
     ), None)
     formation_key = str(fields.get("formation") or "").strip()
     formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3",
         "VTC": "Chauffeur VTC",
     }.get(formation_key, formation_key)
     centre_key = str(fields.get("centre") or "").strip()
@@ -2748,7 +2774,7 @@ def _upcoming_session_labels(centre_code, formation_code, data_store=None, today
         for row in rows
         if isinstance(row, dict) and (row.get("label") or "").strip()
     ]
-    if formation_code in {"APS", "SSIAP"} and app.config["CRM_USE_PUBLIC_CALENDAR"]:
+    if formation_code in {"APS", "SSIAP", "SSIAP3"} and app.config["CRM_USE_PUBLIC_CALENDAR"]:
         today = today or datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
         return crm_public_sessions.email_session_labels(centre, formation_code, labels, today, _session_date_range)
     return labels
@@ -2980,6 +3006,30 @@ def build_ssiap1_email_html(
         devis_url=devis_url,
     )
 
+
+
+def _ssiap3_information_email(prenom, dates, centre, devis_url, data_store):
+    course = SECRETARIAT_FORMATIONS["SSIAP3"]
+    centre_label, address = _centre_label_and_address(centre)
+    labels = _upcoming_session_labels(centre, "SSIAP3", data_store)
+    tariff = course["price"]
+    plain = "\n".join(filter(None, (
+        f"Bonjour {prenom},", f"Voici les informations sur la formation {course['label']}.",
+        f"{course['duration']} en présentiel. {centre_label} — {address}.",
+        f"Session demandée : {dates}" if dates else "",
+        "Prochaines sessions" if labels else "", *labels,
+        f"Tarif : {tariff}.", f"Prérequis : {course['prerequisites']}",
+        f"Programme : {course['dossier_url']}", f"Votre devis : {devis_url}" if devis_url else "",
+        f"Réserver un rendez-vous téléphonique : {course['calendly']}",
+        "Contact : 04 22 47 07 68", CASSANDRE_SIGNATURE_TEXT,
+    )))
+    body = _render_training_email(
+        "training/ssiap3.html", prenom=prenom, course=course, centre_label=centre_label,
+        centre_address=address, devis_url=devis_url, summary_date=_next_email_session(labels, dates),
+        summary_place=TRAINING_VENUES[_normalize_centre_code(centre)]["city"],
+        session_html=_format_upcoming_sessions_for_email(centre, "SSIAP3", selected=dates, labels=labels),
+    )
+    return _training_email_subject("SSIAP3", centre), plain, body
 
 
 def build_vtc_email_html(prenom: str, centre_code: str, devis_url: str):
@@ -4525,9 +4575,9 @@ def _secretariat_booking_schema(url, events):
             and 0 <= question["position"] < 10
         ]
 
-    url = url.rstrip("/")
+    url = url.partition("?")[0].rstrip("/")
     for event in events:
-        if str(event.get("scheduling_url") or "").rstrip("/") == url:
+        if str(event.get("scheduling_url") or "").partition("?")[0].rstrip("/") == url:
             return {
                 "questions": questions(event),
                 "outbound_call": any(location.get("kind") == "outbound_call"
@@ -4665,6 +4715,10 @@ def api_secretariat_demandes():
         "created_at": now.isoformat(),
         "date": now.strftime("%d/%m/%Y %H:%M"),
     }
+    if entry["type"] == "formation" and entry["formation"] == "SSIAP3":
+        centre, _ = _secretariat_session_details(entry)
+        if centre and "SSIAP3" not in INFORMATION_FORM_CENTRES.get(centre, {}).get("formations", ()):
+            return jsonify(ok=False, error="La formation SSIAP 3 est proposée à Puget-sur-Argens."), 400
     if entry["callback_recipient"] and entry["callback_recipient"] not in {
         member["name"] for member in USERS.values()
     }:
@@ -5067,6 +5121,10 @@ def demande_informations_formations():
         form_data = request.form.to_dict()
         if form_data.get("centre") and form_data["centre"] not in INFORMATION_FORM_CENTRES:
             abort(400, description="Ce centre n’est plus proposé. Rouvrez le formulaire pour choisir votre lieu de formation.")
+        if form_data.get("formation") == "SSIAP3":
+            centre = INFORMATION_FORM_CENTRES.get(form_data.get("centre"), {})
+            if "SSIAP3" not in centre.get("formations", ()):
+                abort(400, description="Sélectionnez Puget-sur-Argens pour la formation SSIAP 3.")
         creer_piste_salesforce(request.form)
         form_data.update(_crm_google_ads_tracking_fields(form_data))
 
@@ -5280,6 +5338,10 @@ def demande_informations_formations():
                 form_data.get("ssiap_secourisme_valide", ""), data_store, tuition=tarif_ssiap, formula=form_data.get("ssiap_formule"),
             )
             email_subject = _training_email_subject("SSIAP", form_data.get("centre"))
+        elif form_data.get("formation") == "SSIAP3":
+            email_subject, plain, html = _ssiap3_information_email(
+                prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url, data_store,
+            )
         elif form_data.get("formation") == "VTC":
             plain = (
                 f"Bonjour {prenom},\n\n"
@@ -5350,7 +5412,7 @@ def demande_informations_formations():
             )
             email_subject = "Votre demande de renseignements – Intégrale Academy"
 
-        if form_data.get("formation") in {"A3P", "APS", "DESP_INIT", "DESP_VAE", "SSIAP", "VTC"}:
+        if form_data.get("formation") in {"A3P", "APS", "DESP_INIT", "DESP_VAE", "SSIAP", "SSIAP3", "VTC"}:
             plain += f"\n\nAvis Google · {TRAINING_GOOGLE_RATING}/5 — Lire les avis sur Google : {TRAINING_GOOGLE_REVIEWS_URL}"
 
         demande_entry["mail_contenu"] = plain
@@ -5413,16 +5475,29 @@ def demande_informations_formations():
         return redirect(DESP_VAE_START_URL if formation == "DESP_VAE" else confirmation_url)
 
     google_ads_attribution = _crm_google_ads_tracking_fields(request.args)
-    session_id = request.args.get("session") if request.args.get("formation") == "SSIAP" else None
+    requested_formation = request.args.get("formation", "")
+    if is_ssiap3(requested_formation):
+        requested_formation = "SSIAP3"
+    session_id = request.args.get("session") if requested_formation in {"SSIAP", "SSIAP3"} else None
     today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
-    website_choice = crm_public_sessions.website_ssiap_selection(session_id, request.args.get("formule"), today) if session_id else None
-    if website_choice:
-        fee = get_formation_tarif("SSIAP", {"ssiap_formule": website_choice["formula"]})
-        website_choice["fee_label"] = _eur_display(fee)
+    website_choice = crm_public_sessions.website_ssiap_selection(
+        session_id, request.args.get("formule"), today, requested_formation,
+    ) if session_id else None
     sessions = get_upcoming_formation_sessions(data_store)
+    if website_choice:
+        fee = get_formation_tarif(requested_formation, {"ssiap_formule": website_choice.get("formula")})
+        website_choice["fee_label"] = _eur_display(fee)
+        if requested_formation == "SSIAP3":
+            # Keep the exact CRM label for a published cohort also present in the form.
+            public_range = _session_date_range(website_choice["label"])
+            for row in sessions.get("cote_azur", {}).get("SSIAP3", []):
+                if public_range[0] and _session_date_range(row["label"]) == public_range:
+                    website_choice["label"] = row["label"]
+                    break
     return render_template(
         "demande_informations_formations.html",
-        website_choice=website_choice,
+        website_choice=website_choice, preselected_formation=requested_formation,
+        ssiap3=SECRETARIAT_FORMATIONS["SSIAP3"],
         website_choice_unavailable=bool(session_id and not website_choice),
         centres=INFORMATION_FORM_CENTRES,
         catalogue_url=PUBLIC_CATALOGUE,
@@ -5515,7 +5590,7 @@ def confirmation_demande_infos():
         vae_url=DESP_VAE_START_URL if formation == "DESP_VAE" else None,
         continuer_vae=formation == "DESP_VAE" and request.args.get("poursuivre") == "1",
         catalogue_url=PUBLIC_CATALOGUE,
-        dossier_url=SECRETARIAT_DOSSIER_URL,
+        dossier_url=SECRETARIAT_FORMATIONS.get(formation, {}).get("dossier_url", SECRETARIAT_DOSSIER_URL),
     )
 
 
@@ -9357,7 +9432,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261124-calendly-rattachement"
+CRM_ASSET_VERSION = "20261124-ssiap3"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -9644,6 +9719,10 @@ def _crm_course_root(contact):
 
 
 def _crm_course_key(formation):
+    if _crm_normalize_name(formation) in {"ssiap", "ssiap1"}:
+        return "ssiap1"
+    if is_ssiap3(formation):
+        return "ssiap3"
     course, _ = _meta_formation(formation)
     return course if course in {"A3P", "DESP", "APS"} else _crm_normalize_name(formation)
 
@@ -9713,6 +9792,11 @@ def _find_or_create_crm_contact(data, payload, source, *, proposed_contact=None,
     course = _crm_course_key(payload.get("formation"))
     if not selected and not force_create and course and (email_matches or phone_matches):
         hits = {c["id"]: c for c in email_matches + phone_matches}
+        if source in {"demande_infos_formations", ABANDONED_DEMANDE_SOURCE, "assistant-secretariat"}:
+            # A new level is a separate training project for an identified returning candidate.
+            separate_meta_course = separate_meta_course or course == "ssiap3" or (
+                course == "ssiap1" and any(is_ssiap3(c.get("formation")) for c in hits.values())
+            )
         linked_hits = (len(hits) > 1 and len({_crm_course_root(c) for c in hits.values()}) == 1)
         if separate_meta_course or linked_hits:
             roots = {_crm_course_root(c) for c in hits.values() if _crm_same_meta_person(c, payload)}
@@ -10187,6 +10271,8 @@ def _meta_formation(value):
             desp_type = "VAE"
         elif "initial" in normalized:
             desp_type = "INITIAL"
+    elif is_ssiap3(normalized):
+        formation = "SSIAP 3"
     elif "ssiap" in normalized or "securite incendie" in normalized:
         formation = "SSIAP 1"
     elif "vtc" in normalized or "chauffeur" in normalized:
@@ -10583,7 +10669,7 @@ def _meta_resolve_session(data, crm_payload):
     if not raw or not formation:
         return crm_payload
     formation_code = {
-        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "Chauffeur VTC": "VTC",
+        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP 3": "SSIAP3", "Chauffeur VTC": "VTC",
         "DESP": "DESP_VAE" if crm_payload.get("desp_type") == "VAE" else "DESP_INIT",
     }.get(formation)
     if not formation_code:
@@ -10871,6 +10957,7 @@ def _meta_salesforce_payload(meta_lead_id, fields, crm_payload, answer_rows):
             "APS": "APS",
             "A3P": "A3P",
             "SSIAP 1": "SSIAP",
+            "SSIAP 3": "SSIAP3",
             "Chauffeur VTC": "VTC",
         }.get(formation, "")
 
@@ -11427,6 +11514,8 @@ def _crm_calendly_formation(payload):
     # Match the most specific courses first (notably SSIAP before APS).
     if "chauffeur" in words and "vtc" in words or "vtc" in words:
         return "Chauffeur VTC", ""
+    if is_ssiap3(compact):
+        return "SSIAP 3", ""
     if "ssiap" in words or "incendie" in words:
         return "SSIAP 1", ""
     if "dirigeant" in words or "desp" in words:
@@ -11435,6 +11524,9 @@ def _crm_calendly_formation(payload):
         return "A3P", ""
     if "aps" in words or "agent de securite" in compact or "agent de prevention" in compact:
         return "APS", ""
+    tracking = payload.get("tracking")
+    if isinstance(tracking, dict) and tracking.get("utm_campaign") == "ssiap3":
+        return "SSIAP 3", ""
     return "", ""
 
 
@@ -11579,6 +11671,7 @@ def _crm_calendly_cached_payload(appointment):
     return {
         "name": appointment.get("invitee_name") or "",
         "scheduled_event": {"name": appointment.get("name") or ""},
+        "tracking": {"utm_campaign": appointment.get("booking_course")},
     }
 
 
@@ -11853,6 +11946,7 @@ def _crm_upsert_calendly_appointment(
         )
 
     previous_status = existing.get("status") if existing else None
+    tracking = payload.get("tracking") or {}
     previous_start = existing.get("start_time") if existing else None
     invitee_phone = _crm_calendly_payload_phone(payload)
     has_phone_fields = bool(invitee_phone) or "questions_and_answers" in payload or "text_reminder_number" in payload
@@ -11866,6 +11960,8 @@ def _crm_upsert_calendly_appointment(
         "id": str(uuid.uuid4()),
         "created_at": now,
     }
+    if isinstance(tracking, dict) and tracking.get("utm_campaign") == "ssiap3":
+        appointment["booking_course"] = "ssiap3"
     appointment.update({
         "invitee_uri": invitee_uri,
         "event_uri": event_uri,
@@ -13210,7 +13306,7 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
     )
     formation_key = str(fields.get("formation") or "").strip()
     formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3",
         "VTC": "Chauffeur VTC",
     }.get(formation_key, formation_key)
     lieu = {
@@ -13360,7 +13456,7 @@ def _crm_secretariat_answer_values(entry):
     """Map actual submitted answers, shared by live submissions and recovery."""
     formation_key = str(entry.get("formation") or "").strip()
     formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1",
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3",
         "VTC": "Chauffeur VTC",
         "PARCOURS_SECURITE_ALTERNANCE": SECURITY_APPRENTICESHIP_LABEL,
     }.get(formation_key, formation_key)
@@ -13575,6 +13671,7 @@ def _secretariat_information_template(data, kind, formation_code):
     # généralement regroupés sous « Informations DESP »).
     aliases = {
         "SSIAP": ["SSIAP 1"],
+        "SSIAP3": ["SSIAP 3"],
         "DESP_INIT": ["DESP initial", "DESP"],
         "DESP_VAE": ["VAE DESP", "DESP VAE", "DESP"],
         "VTC": ["Chauffeur VTC"],
@@ -13782,6 +13879,9 @@ def _secretariat_automatic_information_template(data, entry, contact):
             prenom, dates, centre_code, devis_url,
             entry.get("ssiap_secourisme_valide", ""), data, tuition=tuition,
         )
+    elif formation_code == "SSIAP3":
+        template_id = "automatic-ssiap3"
+        subject, _, body = _ssiap3_information_email(prenom, dates, centre_code, devis_url, data)
     elif formation_code == "VTC":
         template_id = "automatic-vtc"
         subject = _training_email_subject("VTC", centre_code)
@@ -13986,6 +14086,10 @@ def _secretariat_formation_name(formation_code):
 def _build_secretariat_followup_sms(formation_code):
     config = _secretariat_formation_config(formation_code)
     formation_name = config["label"]
+    if formation_code == "SSIAP3":
+        return (f"Suite à notre échange sur la formation {formation_name}, voici le programme : "
+                f"{config['dossier_url']}\nRéserver un rendez-vous téléphonique : {config['calendly']}"
+                "\nCassandre MENARD · Intégrale Academy · 04 22 47 07 68")
     if config.get("apprenticeship"):
         return (
             f"Suite à notre échange sur le {formation_name}, vous pouvez préparer "
@@ -14316,7 +14420,7 @@ def _crm_no_answer_message(contact):
     formation = str(contact.get("formation") or "votre formation").strip()
     desp_type = str(contact.get("desp_type") or "").strip().upper()
     formation_key = {
-        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP": "SSIAP",
+        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP 3": "SSIAP3", "SSIAP": "SSIAP",
         "Chauffeur VTC": "VTC", "VTC": "VTC",
     }.get(formation)
     if formation == "DESP":
@@ -14968,7 +15072,7 @@ def _wedof_attendee_name(folder):
     return _wedof_normalize_name(first_name), _wedof_normalize_name(last_name)
 
 
-_CRM_WEDOF_FORMATIONS = {"APS", "A3P", "DESP", "SSIAP 1", "Chauffeur VTC"}
+_CRM_WEDOF_FORMATIONS = {"APS", "A3P", "DESP", "SSIAP 1", "SSIAP 3", "Chauffeur VTC"}
 _CRM_WEDOF_CENTRES = {
     "cote_azur": "Côte d’Azur",
     "auvergne": "Auvergne",
@@ -15027,6 +15131,8 @@ def _wedof_crm_training(title):
     if (re.search(r"\ba3p\b", normalized)
             or "agent de protection physique des personnes" in normalized):
         return "A3P", ""
+    if is_ssiap3(normalized) or "service de securite incendie et d assistance a personnes 3" in normalized:
+        return "SSIAP 3", ""
     if (re.search(r"\bssiap\s*1\b", normalized)
             or "service de securite incendie et d assistance a personnes 1" in normalized):
         return "SSIAP 1", ""
@@ -15096,7 +15202,7 @@ def _wedof_session_code(formation, desp_type):
     if formation == "DESP":
         return "DESP_VAE" if desp_type == "VAE" else "DESP_INIT"
     return {
-        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP",
+        "APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP 3": "SSIAP3",
         "Chauffeur VTC": "VTC",
     }.get(formation, "")
 
@@ -17428,6 +17534,12 @@ def _calendly_event_type_matches_formation(event_type, formation):
     )
     if not normalized_formation:
         return True
+    event_name = event_type.get("name") or ""
+    if is_ssiap3(normalized_formation):
+        return (is_ssiap3(event_name)
+                or str(event_type.get("scheduling_url") or "").rstrip("/") == SSIAP3_BOOKING_URL.partition("?")[0])
+    if normalized_formation == "ssiap 1" and is_ssiap3(event_name):
+        return False
     expected = CALENDLY_EVENT_TYPE_TOKENS_BY_FORMATION.get(
         normalized_formation,
         (f" {normalized_formation}",),
@@ -17853,6 +17965,7 @@ CRM_DEFAULT_SALE_PRICES = {
     "APS": 1650,
     "A3P": 4200,
     "SSIAP 1": 1230,
+    "SSIAP 3": PLAN_TARIFS["SSIAP3"],
     "CHAUFFEUR VTC": 1500,
     "DESP_INITIAL": 4300,
     "DESP_VAE": 3800,
@@ -17867,6 +17980,8 @@ def _crm_default_sale_price(contact):
         formation = f"DESP_{str(contact.get('desp_type') or 'INITIAL').strip().upper()}"
     elif formation == "VTC":
         formation = "CHAUFFEUR VTC"
+    elif is_ssiap3(formation):
+        formation = "SSIAP 3"
     elif formation.startswith("SSIAP"):
         formation = "SSIAP 1"
     return CRM_DEFAULT_SALE_PRICES.get(formation, "")
@@ -20199,7 +20314,7 @@ def _crm_france_travail_request_context(contact, payload):
     formation_code = _crm_formation_code(contact)
     formation = SECRETARIAT_FORMATIONS.get(formation_code, {})
     centre_code = _normalize_centre_code(contact.get("lieu"))
-    security_codes = {"A3P", "APS", "SSIAP", "DESP_INIT", "DESP_VAE"}
+    security_codes = {"A3P", "APS", "SSIAP", "SSIAP3", "DESP_INIT", "DESP_VAE"}
     centres = {
         "cote_azur": (
             "Intégrale Sécurité Formations à Puget-sur-Argens (Var)"
@@ -20442,6 +20557,13 @@ def _crm_templates_payload(data):
             "formation": "SSIAP",
             "sujet": _training_email_subject("SSIAP"),
             "contenu": build_ssiap1_email_html("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", "oui", data),
+        },
+        {
+            "id": "automatic-ssiap3",
+            "nom": PLAN_FORMATIONS["SSIAP3"],
+            "formation": "SSIAP3",
+            "sujet": _training_email_subject("SSIAP3"),
+            "contenu": _ssiap3_information_email("{{ prenom }}", "", "cote_azur", "{{ lien_devis }}", data)[2],
         },
         {
             "id": "automatic-vtc",
@@ -21249,6 +21371,7 @@ def _crm_formation_code(contact):
     return {
         SECURITY_APPRENTICESHIP_LABEL.lower(): "PARCOURS_SECURITE_ALTERNANCE",
         "aps": "APS", "a3p": "A3P", "ssiap": "SSIAP", "ssiap 1": "SSIAP",
+        "ssiap 3": "SSIAP3", "ssiap3": "SSIAP3",
         "chauffeur vtc": "VTC", "vtc": "VTC",
     }.get(formation, str(contact.get("formation") or "").strip().upper())
 
@@ -21280,6 +21403,7 @@ def _crm_formation_label(contact):
         "A3P": "Agent de protection physique des personnes (A3P)",
         "APS": "Agent de prévention et de sécurité (APS)",
         "SSIAP": "Agent de sécurité incendie (SSIAP 1)",
+        "SSIAP3": "Chef de service de sécurité incendie (SSIAP 3)",
         "VTC": "Chauffeur de transport avec chauffeur (VTC)",
         "DESP_INIT": "Dirigeant d’entreprise de sécurité privée (DESP – initial)",
         "DESP_VAE": "Dirigeant d’entreprise de sécurité privée (DESP – VAE)",
@@ -21385,7 +21509,7 @@ def crm_saved_email_preview(template_id):
         return jsonify({"error": "Modèle d’e-mail introuvable."}), 404
     body = str(template.get("contenu") or "")
     # A library preview has no recipient. Resolve dates only for a named training.
-    training = re.search(r"\b(SSIAP\s*1|APS|A3P)\b", template.get("nom") or "", re.I)
+    training = re.search(r"\b(SSIAP\s*[13]|APS|A3P)\b", template.get("nom") or "", re.I)
     if training:
         formation = re.sub(r"SSIAP\s*1", "SSIAP", training[0], flags=re.I)
         body = re.sub(r"\{\{\s*prochaines_dates\s*\}\}",

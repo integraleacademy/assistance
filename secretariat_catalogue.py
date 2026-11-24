@@ -1,7 +1,21 @@
 """Informations du catalogue utilisables pendant un appel au secrétariat."""
 
+import re
+import unicodedata
+
+
+def is_ssiap3(value):
+    """Recognise the level written in contact labels, imports and call transcripts."""
+    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().casefold()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return bool(re.search(r"\b(?:ssiap|ssiape|siappe?)\s*(?:3|iii|trois)\b", text)
+                or "chef de service de securite incendie" in text)
+
+
 PUBLIC_CATALOGUE = "https://integraleacademyofficiel-1.onrender.com"
 BTS_ADMISSIONS = "https://admissions.integraleconnect.com/"
+
+SSIAP3_BOOKING_URL = "https://calendly.com/cassandre-integraleacademy/15min?utm_campaign=ssiap3"
 
 SST_FEES = {"avec": 1230, "sans": 980}
 
@@ -62,6 +76,18 @@ PROFESSIONAL_COURSES = {
         "careers": "Agent de sécurité incendie dans un centre commercial, un hôpital, un site événementiel ou un immeuble de grande hauteur.",
         "funding": "Employeur, France Travail ou financement personnel. CPF pour les offres éligibles selon le dossier.",
         "extra_label": "Choix de la formule", "extra": "SSIAP 1 seul si le secourisme est valable. Choisir une session avec SST si le candidat doit aussi préparer le secourisme.",
+    },
+    "SSIAP3": {
+        "source_url": PUBLIC_CATALOGUE + "/formations-securite/ssiap-3",
+        "dossier_url": PUBLIC_CATALOGUE + "/documents/programme-ssiap-3.pdf",
+        "audience": "Professionnels souhaitant diriger un service de sécurité incendie en ERP ou en IGH.",
+        "prerequisites": "Diplôme de niveau 4 minimum, ou SSIAP 2 (ou ancien ERP 2 / IGH 2) avec trois ans d’exercice comme chef d’équipe. PSC de moins de deux ans, SST ou PSE 1 en cours de validité.",
+        "location": "Puget-sur-Argens (83)", "capacity": "10 stagiaires maximum",
+        "rhythm": "Cours en présentiel, études de cas et préparation aux épreuves.",
+        "topics": ["Réglementation incendie et étude de plans", "Gestion des risques et commissions de sécurité", "Conseil au chef d’établissement", "Management et budget du service"],
+        "certification": "Diplôme SSIAP 3 de chef de service de sécurité incendie et d’assistance à personnes.",
+        "assessment": "QCM, rédaction d’une notice technique de sécurité et entretien devant un jury.",
+        "careers": "Chef de service de sécurité incendie en établissement recevant du public ou en immeuble de grande hauteur.",
     },
     "DESP_INIT": {
         "source_url": PUBLIC_CATALOGUE + "/formations-securite/desp-initial",

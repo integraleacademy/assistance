@@ -1106,14 +1106,14 @@ def test_crm_collaborative_refresh_is_lightweight_and_never_overlaps():
 
 def test_crm_bootstrap_reads_the_shared_data_file_once(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    original_load_data = application.load_data
+    original_load_data = application._load_data_snapshot
     calls = []
 
     def counted_load_data():
         calls.append(True)
         return original_load_data()
 
-    monkeypatch.setattr(application, "load_data", counted_load_data)
+    monkeypatch.setattr(application, "_load_data_snapshot", counted_load_data)
     response = c.get("/api/crm/bootstrap")
 
     assert response.status_code == 200
@@ -1194,7 +1194,7 @@ def test_crm_bootstrap_is_compact_and_contact_details_are_loaded_on_demand(
     }]
     application.save_data(data)
 
-    compact_response = c.get("/api/crm/bootstrap?section=pistes")
+    compact_response = c.get("/api/crm/bootstrap?section=pistes&view=workspace")
     compact = compact_response.get_json()["contacts"][0]
 
     assert compact["_summary"] is True
@@ -1206,7 +1206,7 @@ def test_crm_bootstrap_is_compact_and_contact_details_are_loaded_on_demand(
     assert compact["publications"] == []
     assert len(compact_response.data) < 150_000
 
-    activity_response = c.get(f"/api/crm/bootstrap?section={activity_section}")
+    activity_response = c.get(f"/api/crm/bootstrap?section={activity_section}&view=workspace")
     activity_contact = activity_response.get_json()["contacts"][0]
     assert activity_contact["activities"][0]["title"] == "E-mail envoyé"
     assert "preview" not in activity_contact["activities"][0]
@@ -1333,7 +1333,7 @@ def test_contact_sheet_fetches_full_record_only_when_a_summary_is_opened():
     ).read()
 
     assert "async function showContact(id,initialTab='contactInfoTab')" in crm_js
-    assert "if(c._summary)" in crm_js
+    assert "if(c._summary||C.external_meta)" in crm_js
     assert "api(`/api/crm/contacts/${encodeURIComponent(id)}`,{timeout:10000})" in crm_js
     assert "delete c._summary" in crm_js
 
@@ -1763,7 +1763,7 @@ def test_ft_refusal_received_on_weekend_is_scheduled_for_monday(received_at):
     assert active == [relance]
     assert contact["activities"][0]["detail"] == (
         "Financement France Travail refusé. Relance prévue le 24/08/2026. "
-        "Dossier WEDOF : folder-weekend."
+        "Dossier Intégrale EDOF : folder-weekend."
     )
     assert len(contact["activities"]) == 1
 
@@ -1969,7 +1969,7 @@ def test_crm_templates_include_automatic_training_emails(tmp_path, monkeypatch):
     assert response.status_code == 200
     automatic = response.get_json()["automatic_email"]
     assert [template["formation"] for template in automatic] == [
-        "DESP_VAE", "A3P", "APS", "SSIAP", "VTC", "DESP_INIT", "DESP_INIT",
+        "DESP_VAE", "A3P", "APS", "SSIAP", "SSIAP3", "VTC", "DESP_INIT", "DESP_INIT",
     ]
     aps = next(template for template in automatic if template["formation"] == "APS")
     assert aps["sujet"] == "Formation APS à Puget-sur-Argens — prochaine session"
@@ -2649,12 +2649,15 @@ def test_meta_a3p_templates_are_available_in_manual_message_picker():
     message_modal = crm_js.split("function messageModal", 1)[1].split(
         "function previewModal", 1,
     )[0]
-    assert "automatic-meta-a3p-" in picker
-    assert 'optgroup label="Messages META A3P"' in picker
-    assert "templates.automatic_meta||[]" in message_modal
-    assert ".filter(t=>t.type===type)" in message_modal
-    assert "c.origine,c.source" in message_modal
-    assert "isMeta||isA3p" in message_modal
+    # The same picker now handles all Meta courses, including A3P.
+    helper = crm_js.split("function metaTemplatesForContact", 1)[1].split("function messageTemplateOptions", 1)[0]
+    assert "templates.automatic_meta||[]" in helper
+    assert "template.type===type" in helper
+    assert "template.formation===formation" in helper
+    assert "meta||formation==='A3P'" in helper
+    assert "automaticMeta=metaTemplatesForContact(c,type)" in message_modal
+    assert "startsWith('automatic-meta-')" in picker
+    assert 'optgroup label="Messages META ${esc(meta[0].formation)}"' in picker
     assert "template_id:templateSelect.value" in message_modal
 
 
@@ -3007,7 +3010,7 @@ def test_email_template_preview_does_not_render_the_subject_in_the_message_body(
     with open(application.app.root_path + "/static/crm.js", encoding="utf-8") as source:
         crm_js = source.read()
 
-    assert "previewModal(t.contenu,true,{sujet:t.sujet,contenu:t.contenu})" in crm_js
+    assert "previewModal(html,true,{sujet:t.sujet,contenu:html,template_id:t.id})" in crm_js
     assert '<h3>${esc(t.sujet)}</h3>' not in crm_js
 
 

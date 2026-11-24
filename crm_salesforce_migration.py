@@ -122,7 +122,7 @@ def _normalized_formation(value: Any) -> str:
         "apr": "A3P", "a3p": "A3P", "aps": "APS",
         "dirigeant": "DESP", "desp": "DESP", "desp initial": "DESP",
         "desp vae": "DESP", "chauffeur vtc": "Chauffeur VTC", "vtc": "Chauffeur VTC",
-        "ssiap": "SSIAP 1", "ssiap 1": "SSIAP 1", "poei": "POEI",
+        "ssiap": "SSIAP 1", "ssiap 1": "SSIAP 1", "ssiap 3": "SSIAP 3", "ssiap3": "SSIAP 3", "poei": "POEI",
         "bts": "BTS", "bts mos": "BTS MOS", "bts mco": "BTS MCO",
         "bts ndrc": "BTS NDRC", "bts ci": "BTS CI", "bts pi": "BTS PI",
         "bts cg": "BTS CG",
