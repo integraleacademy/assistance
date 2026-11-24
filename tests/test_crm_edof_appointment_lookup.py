@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import unicodedata
 
 from flask import Flask
+from app import _crm_calendly_display_owner
 
 from crm_edof_appointment_lookup import (
     SIGNATURE_HEADER, SIGNING_CONTEXT, appointment_for, register_edof_appointment_lookup,
@@ -95,12 +96,7 @@ def fixture(tmp_path):
         _crm_normalize_email=lambda s:str(s or "").strip().lower(),
         _crm_normalize_phone=lambda s:re.sub(r"\D","",str(s or "")),
         _crm_next_phone_appointment=next_phone,
-        _crm_calendly_name_match=lambda c,guest: (
-            None if not guest else normalized(guest) in (
-                normalized(c.get("prenom","")+c.get("nom","")),
-                normalized(c.get("nom","")+c.get("prenom","")),
-            )
-        ),
+        _crm_calendly_display_owner=_crm_calendly_display_owner,
     )
     register_edof_appointment_lookup(host)
     return app.test_client(), data, appointments, host
@@ -173,3 +169,15 @@ def test_shared_email_with_wrong_calendly_invitee_is_not_attributed(tmp_path):
     appointments[0]["invitee_name"]="Une Autre Personne"
     result=signed(client,["111111"]).get_json()["appointments"]
     assert result["111111"]["status"]=="none"
+
+
+def test_confirmed_callback_and_email_override_only_the_calendly_alias(tmp_path):
+    client, data, appointments, _ = fixture(tmp_path)
+    owner = data["crm_contacts"][0]
+    owner["telephone"] = "0699887766"
+    appointments[0].update(invitee_name="Autre Nom", callback_checked=True,
+                           historical_identity_contact_id=owner["id"], invitee_phone="+33699887766",
+                           invitee_email=owner["mail"])
+    assert signed(client, ["111111"]).get_json()["appointments"]["111111"]["status"] == "scheduled"
+    owner["nom"] = "Nouveau"
+    assert signed(client, ["111111"]).get_json()["appointments"]["111111"]["status"] == "unmatched"
