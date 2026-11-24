@@ -162,10 +162,11 @@ def test_memory_phase_logs_even_on_failure(caplog):
 def test_worker_hook_starts_poller_and_monitor_after_fork(monkeypatch):
     started = []
     fake_app = SimpleNamespace(_start_wedof_background_sync=lambda: started.append("edof"),
+                               _start_calendly_link_review=lambda: started.append("calendly"),
                                run_hebergement_reminders=lambda: None)
     monkeypatch.setitem(sys.modules, "app", fake_app)
     monkeypatch.setattr(monitor, "start_memory_monitor", lambda logger: started.append("memory"))
     monkeypatch.setattr(threading.Thread, "start", lambda self: started.append(self.name))
     config = runpy.run_path(str(Path(__file__).resolve().parents[1] / "gunicorn.conf.py"))
     config["post_worker_init"](SimpleNamespace(log=None))
-    assert started == ["edof", "memory", "hebergement-rappels"]
+    assert started == ["edof", "calendly", "memory", "hebergement-rappels"]

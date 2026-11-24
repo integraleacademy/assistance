@@ -1396,7 +1396,10 @@ def test_pistes_polling_does_not_start_remote_calendly_sync():
     assert "/api/crm/calendly/sync" not in refresh
     assert "delta:'1'" in refresh
     assert "CRM_VISIBILITY_REFRESH_MIN_MS=30000" in refresh
-    assert "if(snapshot.unchanged){crmUpdateRevision=snapshot.revision||'';lastCrmRefreshAt=Date.now();return}" in refresh
+    unchanged = refresh.split("if(snapshot.unchanged){", 1)[1].split("}", 1)[0]
+    assert "crmUpdateRevision=snapshot.revision||'';lastCrmRefreshAt=Date.now();return" in unchanged
+    assert "loadCalendlyAppointments" not in unchanged
+    assert "if(selectedAppointmentsChanged&&document.querySelector('#appointmentList'))" in refresh
 
 
 def test_mobile_responsive_shell_is_operable_and_keeps_wide_views_accessible():

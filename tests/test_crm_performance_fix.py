@@ -34,7 +34,7 @@ def test_local_orphan_is_visible_and_manual_refresh_repairs_phone_only_contact(t
     contact = client.post("/api/crm/contacts", json={"prenom": "Test", "telephone": "0600000000"}).get_json()
     data = application.load_data()
     data["crm_calendly_appointments"] = [{
-        "id": "legacy", "contact_id": "deleted", "invitee_phone": "+33600000000",
+        "id": "legacy", "contact_id": "deleted", "invitee_phone": "+33600000000", "callback_checked": True,
         "start_time": "2099-01-01T10:00:00Z", "status": "active",
     }]
     application.save_data(data)

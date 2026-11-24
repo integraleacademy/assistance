@@ -178,11 +178,26 @@ function relanceStatusDetails(c,today=parisDateKey(new Date())){
  return{tone:'missing',label:'Aucune relance prévue'};
 }
 function contactRelanceStatusMarkup(c){const details=relanceStatusDetails(c);return details?`<small class="pipeline-relance-date ${details.tone==='scheduled'?'':details.tone}">${esc(details.label)}</small>`:''}
+function renderContactPrimaryStatus(c){
+ document.querySelectorAll('[data-primary-step]').forEach((step,i)=>{
+  step.classList.toggle('current',step.dataset.primaryStep===c.statut);
+  step.classList.toggle('done',i<S.indexOf(c.statut));
+ });
+ const statusBadge=document.querySelector('.contact-header-statuses .badge');
+ if(statusBadge)statusBadge.outerHTML=badge(c.statut);
+}
+function renderContactAppointmentSummary(c){
+ if(new URLSearchParams(location.search).get('fiche')!==String(c.id))return;
+ renderContactPrimaryStatus(c);
+ const counts=document.querySelector('.contact-activity-summary');
+ if(counts)counts.outerHTML=contactHeaderActivitySummary(c);
+ renderContactNextTelephoneAppointment(c);
+}
 function replaceContactAppointments(contactId,appointments){
  crmAppointments=window.CRMAppointmentState.replaceContact(crmAppointments,contactId,appointments);
  const contact=contactInStore(contactId);
  if(contact)contact.activity_counts={...(contact.activity_counts||{}),appointments:window.CRMAppointmentState.contactAppointments(contactId,crmAppointments).length};
- if(contact)renderContactNextTelephoneAppointment(contact);
+ if(contact)renderContactAppointmentSummary(contact);
  document.querySelector('#activityFilters')?.dispatchEvent(new Event('crm:refresh'));
 }
 function sortVisibleAppointmentRows(rows,appointments,status=statusFilter){
@@ -1650,7 +1665,7 @@ function bindContact(c,initialTab='contactInfoTab'){
   form.oninput=handleContactInput;
   if(headerContactEditor)headerContactEditor.oninput=handleContactInput;
   autofillCnapsUsername();
-  document.querySelectorAll('[data-primary-step]').forEach(b=>b.onclick=async()=>{if(b.dataset.primaryStep==='A relancer')return relaunchModal(c);if(b.dataset.primaryStep==='Converti')return convertContact(c);const next=b.dataset.primaryStep;if(next===c.statut)return;statusSaveControls().forEach(step=>step.disabled=true);beginStatusSave('Enregistrement du statut…');try{const updated=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut:next})});Object.assign(c,updated);mergeContactInStore(c.id,updated);renderActivityFeed();document.querySelectorAll('[data-primary-step]').forEach((step,i)=>{step.classList.toggle('current',step.dataset.primaryStep===c.statut);step.classList.toggle('done',i<S.indexOf(c.statut))});const statusBadge=document.querySelector('.contact-header-statuses .badge');if(statusBadge)statusBadge.outerHTML=badge(c.statut);finishStatusSave('Statut enregistré')}catch(e){finishStatusSave(e.message,true)}finally{statusSaveControls().forEach(step=>step.disabled=false)}});
+  document.querySelectorAll('[data-primary-step]').forEach(b=>b.onclick=async()=>{if(b.dataset.primaryStep==='A relancer')return relaunchModal(c);if(b.dataset.primaryStep==='Converti')return convertContact(c);const next=b.dataset.primaryStep;if(next===c.statut)return;statusSaveControls().forEach(step=>step.disabled=true);beginStatusSave('Enregistrement du statut…');try{const updated=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut:next})});Object.assign(c,updated);mergeContactInStore(c.id,updated);renderActivityFeed();renderContactPrimaryStatus(c);finishStatusSave('Statut enregistré')}catch(e){finishStatusSave(e.message,true)}finally{statusSaveControls().forEach(step=>step.disabled=false)}});
   const saveSecondaryStatus=async next=>{statusSaveControls().forEach(button=>button.disabled=true);beginStatusSave(next?'Enregistrement du deuxième statut…':'Suppression de la deuxième timeline…');try{const updated=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify({statut_secondaire:next})});Object.assign(c,updated);mergeContactInStore(c.id,updated);showContact(c.id);finishStatusSave(next?'Deuxième statut enregistré':'Deuxième timeline retirée')}catch(e){statusSaveControls().forEach(button=>button.disabled=false);finishStatusSave(e.message,true)}};
   const bindSecondaryTimeline=()=>{document.querySelectorAll('[data-secondary-step]').forEach(button=>button.onclick=()=>saveSecondaryStatus(button.dataset.secondaryStep));const removeSecondary=document.querySelector('#removeSecondaryTimeline');if(removeSecondary)removeSecondary.onclick=()=>c.statut_secondaire?saveSecondaryStatus(''):showContact(c.id)};
   bindSecondaryTimeline();
@@ -2104,11 +2119,11 @@ function bindAppointmentResponseControls(items,onSaved){
     }
     select.disabled=true;
     try{
-      const updated=await api(`/api/crm/calendly/appointments/${select.dataset.appointmentResponse}`,{method:'PATCH',body:JSON.stringify({response_status:select.value})});
+      const updated=await api(`/api/crm/calendly/appointments/${select.dataset.appointmentResponse}`,{method:'PATCH',body:JSON.stringify({response_status:select.value,contact_id:appointment?.contact_id})});
       if(appointment)Object.assign(appointment,updated);
       const contact=contacts.find(c=>c.id===appointment?.contact_id);
       if(contact&&updated.contact)Object.assign(contact,updated.contact);
-      if(contact)renderContactNextTelephoneAppointment(contact);
+      if(contact)renderContactAppointmentSummary(contact);
       document.querySelector('#activityFilters')?.dispatchEvent(new Event('crm:refresh'));
       const sent=updated.delivery&&updated.delivery.sms&&updated.delivery.email;
       toast(select.value==='no_answer'?(sent?'Sans réponse : relance à J+7 et messages envoyés':'Relance à J+7 créée ; vérifiez les coordonnées ou la configuration des envois'):'Résultat du rendez-vous enregistré',select.value==='no_answer'&&!sent);
@@ -2177,19 +2192,28 @@ function renderCalendlyAppointments(c,items,integration){
   if(emptyBook)emptyBook.onclick=event=>{event.preventDefault();event.stopPropagation();calendlyModal(c)};
   bindAppointmentResponseControls(ordered,()=>renderCalendlyAppointments(c,ordered,integration));
 }
+let calendlyLookupRevision=0;
 async function loadCalendlyAppointments(c,manual=false){
   if(C.external_meta){renderCalendlyAppointments(c,c.appointments||[],{configured:true,connected:true,signing_key_configured:true});document.querySelector('#calendlySyncStatus').textContent='Rendez-vous enregistrés';return}
+  if(new URLSearchParams(location.search).get('fiche')!==String(c.id))return;
+  const revision=++calendlyLookupRevision;
   activeCalendlyContactId=String(c.id);
+  const initialStatus=c.statut;
   const button=document.querySelector('#syncCalendlyBtn'),list=document.querySelector('#appointmentList');
   if(button&&manual){button.disabled=true;button.textContent='Recherche…'}
   try{
     const result=await api(`/api/crm/contacts/${c.id}/calendly/appointments${manual?'?refresh=1':''}`,manual?{timeout:60000}:{});
-    if(activeCalendlyContactId!==String(c.id))return;
+    if(revision!==calendlyLookupRevision||activeCalendlyContactId!==String(c.id)||new URLSearchParams(location.search).get('fiche')!==String(c.id))return;
+    if(result.contact_status&&c.statut===initialStatus){
+      c.statut=result.contact_status;
+      mergeContactInStore(c.id,{statut:c.statut});
+    }
     const appointments=result.appointments||[];
     replaceContactAppointments(c.id,appointments);
     updateVisibleAppointmentData();
     renderCalendlyAppointments(c,appointments,result.integration||{});
   }catch(e){
+    if(revision!==calendlyLookupRevision||new URLSearchParams(location.search).get('fiche')!==String(c.id))return;
     if(manual){
       const box=document.querySelector('#calendlyIntegration');
       if(box){box.querySelector('.calendly-lookup-warning')?.remove();box.insertAdjacentHTML('beforeend',`<div class="integration-banner warning calendly-lookup-warning"><div><b>Actualisation Calendly impossible</b><span>${esc(e.message)} Les rendez-vous déjà enregistrés restent affichés.</span></div><button class="btn" id="retryCalendlyLookup" type="button">Réessayer</button></div>`);document.querySelector('#retryCalendlyLookup').onclick=()=>loadCalendlyAppointments(c,true)}
@@ -3038,6 +3062,9 @@ async function refreshCrmSnapshot(){
    snapshot.appointments=[...merged.values()].sort((a,b)=>String(a.start_time||'').localeCompare(String(b.start_time||'')));
   }
   const appointmentsChanged=hasAppointments&&window.CRMAppointmentState.signature(snapshot.appointments)!==window.CRMAppointmentState.signature(crmAppointments);
+  const appointmentState=window.CRMAppointmentState;
+  const selectedAppointmentsChanged=id&&appointmentsChanged&&
+   appointmentState.signature(appointmentState.rowsForContact(id,crmAppointments))!==appointmentState.signature(appointmentState.rowsForContact(id,snapshot.appointments));
   if(hasAppointments&&appointmentsChanged)crmAppointments=snapshot.appointments;
   const knownIds=new Set(contacts.map(contact=>String(contact.id)));
   const membershipChanged=(!snapshot.delta&&updates.length!==contacts.length)||(snapshot.removed_contacts||[]).length>0||updates.some(contact=>!knownIds.has(String(contact.id)));
@@ -3075,7 +3102,8 @@ async function refreshCrmSnapshot(){
   if(membershipChanged||pipelineContactChanged||foldersChanged||hiddenChanged)refreshPipelineQueues();
   const current=id?contactInStore(id):null;
   if(current){
-   renderContactNextTelephoneAppointment(current);
+   renderContactAppointmentSummary(current);
+   if(selectedAppointmentsChanged&&document.querySelector('#appointmentList'))void loadCalendlyAppointments(current);
    const feedRoot=document.querySelector('#activityFeed'),filterRoot=document.querySelector('#activityFilters'),pubRoot=document.querySelector('#publicationFeed'),refreshActivity=()=>filterRoot?.dispatchEvent(new Event('crm:refresh'));
    if(filterRoot)refreshActivity();else if(feedRoot)feedRoot.innerHTML=feed(current);
    if(pubRoot&&!filterRoot){pubRoot.innerHTML=publications(current);bindPublicationFeed(current,pubRoot,refreshActivity)}

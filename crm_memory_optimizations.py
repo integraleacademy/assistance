@@ -104,6 +104,7 @@ def _finish_calendly_lookup(legacy, contact_id, fetched, lookup, succeeded, warn
         lookup = dict(lookup, matched_appointments=len(appointments))
         # These small response fields do not retain the full database object.
         return {"appointments": appointments, "integration": integration,
+                "contact_status": contact.get("statut"),
                 "lookup": lookup}, 200
 
 
@@ -135,7 +136,10 @@ def local_calendly_contact(legacy, contact_id, warning=""):
     integration = legacy._crm_calendly_status_payload(data)
     if warning:
         integration["lookup_warning"] = warning
+    projected = dict(contact)
+    legacy._crm_sync_contact_calendly_status({"crm_calendly_appointments": appointments}, projected)
     return {"appointments": appointments, "integration": integration,
+            "contact_status": projected.get("statut"),
             "lookup": {"method": "local", "processed_events": 0,
                        "matched_appointments": len(appointments)}}, 200
 
