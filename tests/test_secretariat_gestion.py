@@ -251,10 +251,16 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
                 fields = parse_qs(url.query)
                 assert url.netloc == "calendly.com" and url.path == "/integraleacademy/apr"
                 assert (fields["first_name"], fields["email"], fields["a2"]) == (["Chloé"], [MAIL], ["+33639980042"])
+                confirm = page.frame_locator("#calendlyInline iframe").get_by_role("button", name="Confirmer", include_hidden=True)
                 if booking_mode == "calendly":
                     assert "/api/secretariat/calendly/creneaux" not in requested_paths
-                page.frame_locator("#calendlyInline iframe").get_by_role("button", name="Confirmer").click()
+                    # Calendly can confirm after the operator has already collapsed its iframe.
+                    page.check('[name="wants_rdv"][value="non"]')
+                    confirm.evaluate("button => button.click()")
+                else:
+                    confirm.click()
                 page.get_by_text("Rendez-vous réservé. Vous pouvez continuer.", exact=True).wait_for()
+                assert page.locator('[name="wants_rdv"][value="oui"]').is_checked()
                 assert calls == []
             assert page.locator('[name="wants_rdv"][value="oui"]').is_disabled()
             page.click("#openCallNotes")
