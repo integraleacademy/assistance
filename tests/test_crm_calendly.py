@@ -5,6 +5,8 @@ import json
 import subprocess
 import time
 
+import pytest
+
 import app as application
 
 
@@ -848,11 +850,12 @@ def test_booking_from_contact_uses_location_questions_and_saves_appointment(tmp_
     assert response.get_json()["appointment"]["contact_id"] == contact["id"]
 
 
-def test_booking_normalizes_calendly_phone_question_for_text_reminders(tmp_path, monkeypatch):
+@pytest.mark.parametrize("level", ["SSIAP 1", "SSIAP 3"])
+def test_booking_normalizes_calendly_phone_question_for_text_reminders(tmp_path, monkeypatch, level):
     client = authenticated_client(tmp_path, monkeypatch)
     contact = client.post(
         "/api/crm/contacts",
-        json={"prenom": "Yanis", "nom": "Exemple", "formation": "SSIAP 1"},
+        json={"prenom": "Yanis", "nom": "Exemple", "formation": level},
     ).get_json()
     client.patch(
         f"/api/crm/contacts/{contact['id']}",
@@ -865,6 +868,7 @@ def test_booking_normalizes_calendly_phone_question_for_text_reminders(tmp_path,
             return {"resource": {
                 "uri": "https://api.calendly.com/event_types/TYPE1",
                 "name": "RDV téléphonique formation SSIAP 1 incendie",
+                "scheduling_url": "https://calendly.com/integraleacademy/ssiap1",
                 "active": True,
                 "duration": 15,
                 "is_paid": False,
@@ -922,7 +926,11 @@ def test_booking_normalizes_calendly_phone_question_for_text_reminders(tmp_path,
         "kind": "custom",
         "location": "Appel téléphonique",
     }
-    assert "tracking" not in captured
+    if level == "SSIAP 3":
+        assert captured["tracking"] == {"utm_campaign": "ssiap3"}
+        assert response.get_json()["appointment"]["booking_course"] == "ssiap3"
+    else:
+        assert "tracking" not in captured
     assert captured["invitee"] == {
         "name": "Yanis EXEMPLE",
         "first_name": "Yanis",

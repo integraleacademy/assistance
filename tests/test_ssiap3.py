@@ -149,3 +149,32 @@ def test_crm_preview_uses_same_sections_as_level_one_and_shows_price_in_header(i
     assert app.build_training_information_sms_text("SSIAP3") == app.build_training_information_sms_text("SSIAP").replace(
         app._formation_sms_context("SSIAP")["formation_name"], app._formation_sms_context("SSIAP3")["formation_name"]
     ).replace(SSIAP_BOOKING_URL, SSIAP3_BOOKING_URL)
+
+
+def test_untagged_rescheduling_keeps_the_project_only_for_the_same_invitee(intake):
+    data = app.load_data()
+    base = {"id": "one", "formation": "SSIAP 1", "prenom": "Camille", "nom": "Exemple",
+            "telephone": "0600000000", "mail": "test@example.invalid", "statut": "Nouveaux"}
+    level3 = dict(base, id="three", formation="SSIAP 3", meta_course_root_id="one")
+    data["crm_contacts"] = [base, level3]
+
+    def invitation(key):
+        uri = "https://api.calendly.com/scheduled_events/" + key
+        return {"uri": uri + "/invitees/guest", "event": uri, "email": base["mail"],
+                "name": "Camille Exemple", "questions_and_answers": [
+                    {"question": "Votre numéro de téléphone", "answer": base["telephone"]}],
+                "scheduled_event": {"name": "RDV téléphonique formation SSIAP 1 incendie",
+                                    "start_time": "2099-10-15T10:00:00Z",
+                                    "end_time": "2099-10-15T10:15:00Z"}}
+
+    initial = dict(invitation("first"), tracking={"utm_campaign": "ssiap3"})
+    app._crm_upsert_calendly_appointment(data, initial)
+    moved = dict(invitation("second"), old_invitee=initial["uri"])
+    appointment, contact = app._crm_upsert_calendly_appointment(data, moved)
+    assert appointment["booking_course"] == "ssiap3" and contact["id"] == "three"
+    replay, contact = app._crm_upsert_calendly_appointment(data, invitation("second"))
+    assert replay["id"] == appointment["id"] and contact["id"] == "three"
+    unrelated = dict(invitation("another"), old_invitee=initial["uri"], email="other@example.invalid",
+                     name="Autre Personne", questions_and_answers=[])
+    other, _ = app._crm_upsert_calendly_appointment(data, unrelated)
+    assert not other.get("booking_course") and other.get("contact_id") != "three"

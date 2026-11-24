@@ -11584,7 +11584,7 @@ def _crm_calendly_new_contact(data, payload, appointment):
         first_name = first_name or parts[0]
         last_name = last_name or (parts[1] if len(parts) > 1 else "")
 
-    formation, desp_type = _crm_calendly_formation(payload)
+    formation, desp_type = _crm_calendly_formation(_crm_calendly_cached_payload(appointment))
     now = _crm_now()
     contact = {
         "id": str(uuid.uuid4()),
@@ -11960,6 +11960,17 @@ def _crm_calendly_booking_supersedes_active_relance(contact, appointment):
     return False
 
 
+def _crm_calendly_same_invitee(previous, current):
+    """Verify the identity before carrying a course over to a rescheduled invitation."""
+    old_email = _crm_normalize_email(previous.get("invitee_email"))
+    new_email = _crm_normalize_email(current.get("invitee_email"))
+    if old_email and new_email:
+        return old_email == new_email
+    old_phone = _crm_normalize_phone(previous.get("invitee_phone"))
+    return bool(old_phone and previous.get("callback_checked") and current.get("callback_checked")
+                and old_phone == _crm_normalize_phone(current.get("invitee_phone")))
+
+
 def _crm_upsert_calendly_appointment(
     data,
     payload,
@@ -12033,7 +12044,7 @@ def _crm_upsert_calendly_appointment(
         "cancel_url": payload.get("cancel_url") or appointment.get("cancel_url") or "",
         "reschedule_url": payload.get("reschedule_url") or appointment.get("reschedule_url") or "",
         "rescheduled": bool(payload.get("rescheduled")),
-        "old_invitee": payload.get("old_invitee"),
+        "old_invitee": payload.get("old_invitee") or appointment.get("old_invitee"),
         "new_invitee": payload.get("new_invitee"),
         "cancellation": payload.get("cancellation"),
         "calendly_created_at": payload.get("created_at") or appointment.get("calendly_created_at") or "",
@@ -12041,6 +12052,14 @@ def _crm_upsert_calendly_appointment(
         "source": source,
         "updated_at": now,
     })
+
+    if not appointment.get("booking_course") and appointment["old_invitee"]:
+        previous_invitation = next((row for row in appointments
+                                    if row.get("invitee_uri") == appointment["old_invitee"]), None)
+        if (previous_invitation and previous_invitation.get("booking_course") == "ssiap3"
+                and not previous_invitation.get("identity_conflict")
+                and _crm_calendly_same_invitee(previous_invitation, appointment)):
+            appointment["booking_course"] = "ssiap3"
 
     previous_contact = _crm_contact(data, appointment.get("contact_id"))
     preferred = _crm_contact(data, contact_id) if contact_id else previous_contact
@@ -12071,7 +12090,7 @@ def _crm_upsert_calendly_appointment(
     _crm_calendly_set_owner(appointment, previous_contact, contact)
     if previous_contact and previous_contact is not contact:
         _crm_sync_contact_calendly_status(data, previous_contact)
-    inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
+    inferred_formation, inferred_desp_type = _crm_calendly_formation(_crm_calendly_cached_payload(appointment))
     if contact and inferred_formation and not str(contact.get("formation") or "").strip():
         contact["formation"] = inferred_formation
         if inferred_desp_type:
@@ -17865,6 +17884,8 @@ def crm_contact_calendly_appointments(contact_id, *, _scope_guard=None):
             "start_time": start_time,
             "invitee": invitee,
         }
+        if is_ssiap3(contact_formation):
+            booking_body["tracking"] = {"utm_campaign": "ssiap3"}
         if booking_location:
             booking_body["location"] = booking_location
         if answers:
@@ -17903,9 +17924,9 @@ def crm_contact_calendly_appointments(contact_id, *, _scope_guard=None):
                 "event_memberships": [],
             }
         appointment_payload = {**invitee_resource, "scheduled_event": scheduled_event}
-        if is_ssiap3(contact_formation):
-            # The shared Calendly event is named SSIAP 1 even when booked from a level 3 file.
-            appointment_payload["tracking"] = {"utm_campaign": "ssiap3"}
+        if "tracking" in booking_body:
+            # Some Calendly creation responses omit the tracking sent in the request.
+            appointment_payload["tracking"] = booking_body["tracking"]
         with _CRM_RECONCILIATION_LOCK:
             latest_data = load_data()
             latest_contact = _crm_contact(latest_data, contact_id)
