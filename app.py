@@ -1998,6 +1998,8 @@ def _crm_send_email_html(to_emails, subject, plain_text, html_body,
 # SMS helper
 # -------------------------------------------------------------------
 def _formation_sms_context(formation_code: str) -> dict:
+    if is_ssiap3(formation_code):
+        formation_code = "SSIAP3"
     config = _abandoned_training_config(formation_code)
     return {
         "formation_name": config.get("formation_name") or PLAN_FORMATIONS.get(formation_code, formation_code or "Formation"),

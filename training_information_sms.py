@@ -14,7 +14,10 @@ import re
 import sqlite3
 import time
 
+from secretariat_catalogue import is_ssiap3
 
+
+SCHEMA_VERSION = 2
 WINDOW_SECONDS = 24 * 60 * 60
 PARIS = ZoneInfo("Europe/Paris")
 
@@ -28,13 +31,17 @@ class Receipt(NamedTuple):
         return datetime.fromtimestamp(self.timestamp, PARIS)
 
 
+def _digest(phone, code):
+    return sha256(f"{phone}:{code}".encode()).hexdigest()
+
+
 def _key(phone, course):
     code = str(course or "").strip().upper()
     if code == "SSIAP" or re.fullmatch(r"SSIAP[ _-]?1", code):
         code = "SSIAP1"
-    elif re.fullmatch(r"SSIAP[ _-]?3", code):
+    elif is_ssiap3(code):
         code = "SSIAP3"
-    return sha256(f"{phone}:{code}".encode()).hexdigest()
+    return _digest(phone, code)
 
 
 def _timestamp(value):
@@ -55,16 +62,18 @@ def _historical_rows(data):
         if not isinstance(row, dict):
             continue
         stamp = row.get("sms_summary_sent_at") or row.get("information_sms_sent_at")
-        if stamp:
+        if stamp or row.get("sms_summary_status") == "sending":
             yield row, stamp
     for row in data.get("formulaires_abandonnes", []):
-        if isinstance(row, dict) and isinstance(row.get("fields"), dict) and row.get("abandoned_sms_sent_at"):
-            yield row["fields"], row["abandoned_sms_sent_at"]
+        if isinstance(row, dict) and isinstance(row.get("fields"), dict):
+            stamp = row.get("abandoned_sms_sent_at")
+            if stamp or row.get("abandoned_sms_status") == "unconfirmed":
+                yield row["fields"], stamp
     for row in chain(data.get("demandes", []), data.get("archives", [])):
         if not isinstance(row, dict):
             continue
         stamp = row.get("sms_sent_at") or row.get("abandoned_sms_sent_at")
-        if stamp:
+        if stamp or "unconfirmed" in (row.get("sms_status"), row.get("abandoned_sms_status")):
             fields = row.get("details") or {}
             if isinstance(fields, str):
                 try:
@@ -82,28 +91,43 @@ def _journal_path(data_file):
 
 
 def _initialize(db, now, load_history, normalize):
-    if db.execute("PRAGMA user_version").fetchone()[0]:
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if version >= SCHEMA_VERSION:
         return
-    db.execute("CREATE TABLE receipt (key TEXT PRIMARY KEY, state TEXT NOT NULL, stamp REAL NOT NULL)")
-    # Seed the rolling window with confirmed messages sent by the previous version.
+    db.execute("CREATE TABLE IF NOT EXISTS receipt (key TEXT PRIMARY KEY, state TEXT NOT NULL, stamp REAL NOT NULL)")
+    cutoff = now - WINDOW_SECONDS
     for fields, value in _historical_rows(load_history()):
-        stamp = _timestamp(value)
-        if now - WINDOW_SECONDS < stamp <= now:
+        course = str(fields.get("formation") or "").strip().upper()
+        if version == 1:
+            # Version 1 already grouped short SSIAP 3 codes, but hashed full labels verbatim.
+            if not is_ssiap3(course) or re.fullmatch(r"SSIAP[ _-]?3", course):
+                continue
             phone = normalize(fields.get("telephone"))
             if phone:
-                db.execute("""INSERT INTO receipt VALUES (?, 'sent', ?)
-                              ON CONFLICT(key) DO UPDATE SET stamp = max(stamp, excluded.stamp)""",
-                           (_key(phone, fields.get("formation")), stamp))
-    db.execute("PRAGMA user_version = 1")
+                db.execute("""INSERT INTO receipt (key, state, stamp)
+                              SELECT ?, state, stamp FROM receipt WHERE key = ? AND stamp > ?
+                              ON CONFLICT(key) DO UPDATE SET state = excluded.state, stamp = excluded.stamp
+                              WHERE excluded.stamp > receipt.stamp""",
+                           (_key(phone, "SSIAP3"), _digest(phone, course), cutoff))
+        else:
+            # Seed a new journal from recent, confirmed CRM sends.
+            stamp = _timestamp(value)
+            if cutoff < stamp <= now:
+                phone = normalize(fields.get("telephone"))
+                if phone:
+                    db.execute("""INSERT INTO receipt VALUES (?, 'sent', ?)
+                                  ON CONFLICT(key) DO UPDATE SET stamp = max(stamp, excluded.stamp)""",
+                               (_key(phone, course), stamp))
+    db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 def preserve_history_before_cleanup(data_file, data, normalize):
     # A submitted form can remove its old draft before its first SMS check on upgrade.
-    if not any(isinstance(draft, dict) and draft.get("abandoned_sms_sent_at") and not draft.get("abandoned_sms_status")
+    if not any(isinstance(draft, dict) and (draft.get("abandoned_sms_sent_at") or draft.get("abandoned_sms_status") == "unconfirmed")
                for draft in data.get("formulaires_abandonnes", [])):
         return
     with closing(sqlite3.connect(_journal_path(data_file), timeout=15)) as db, db:
-        if not db.execute("PRAGMA user_version").fetchone()[0]:
+        if db.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
             db.execute("BEGIN IMMEDIATE")
             _initialize(db, time.time(), lambda: data, normalize)
 

@@ -1,6 +1,8 @@
 import json
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from hashlib import sha256
 from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -28,7 +30,8 @@ def intake(tmp_path, monkeypatch):
     ("abandoned", "desk", "submitted"),
     ("submitted", "desk", "abandoned"),
 ])
-def test_only_first_information_channel_sends(intake, channels):
+@pytest.mark.parametrize("desk_course", ["SSIAP3", "chef de service de sécurité incendie"])
+def test_only_first_information_channel_sends(intake, channels, desk_course):
     client, send = intake
     fields = {"prenom": "Camille", "nom": "Exemple", "mail": "form@example.invalid",
               "telephone": "+33 6 00 00 00 00", "formation": "SSIAP3",
@@ -39,7 +42,7 @@ def test_only_first_information_channel_sends(intake, channels):
             result = client.post("/api/secretariat/demandes", json={
                 "type": "formation", "prenom": "Camille", "nom": "Camille Exemple",
                 "nom_famille": "Exemple", "email": "desk@example.invalid" if i == 0 else fields["mail"],
-                "telephone": "06 00 00 00 00", "formation": "SSIAP3",
+                "telephone": "06 00 00 00 00", "formation": desk_course,
                 "formation_centre": "cote_azur", "call_key": "1" * 32,
             })
             assert result.status_code == 201
@@ -180,3 +183,24 @@ def test_abandonment_before_course_selection_waits_for_the_course(intake):
     }).status_code == 302
     send.assert_called_once()
     assert "SSIAP 3" in send.call_args.args[1]
+
+
+@pytest.mark.parametrize(("state", "expected"), [("sent", "already_sent"), ("unconfirmed", "unconfirmed")])
+def test_v1_receipt_for_full_ssiap3_label_survives_draft_cleanup(tmp_path, state, expected):
+    path = tmp_path / "data.json"
+    phone = "33600000000"
+    label = "Chef de service de sécurité incendie"
+    now = datetime.now(sms.PARIS)
+    old_key = sha256(f"{phone}:{label.upper()}".encode()).hexdigest()
+    with sqlite3.connect(str(path) + ".formation-sms.sqlite3") as db:
+        db.execute("CREATE TABLE receipt (key TEXT PRIMARY KEY, state TEXT NOT NULL, stamp REAL NOT NULL)")
+        db.execute("PRAGMA user_version = 1")
+        db.execute("INSERT INTO receipt VALUES (?, ?, ?)", (old_key, state, now.timestamp()))
+    draft = {"fields": {"telephone": phone, "formation": label}, "abandoned_sms_status": state}
+    if state == "sent":
+        draft["abandoned_sms_sent_at"] = now.strftime("%d/%m/%Y %H:%M")
+    sms.preserve_history_before_cleanup(path, {"formulaires_abandonnes": [draft]}, app._normaliser_telephone_sms)
+    send = Mock()
+    receipt = deliver(path, "0600000000", "SSIAP3", send)
+    assert receipt.status == expected and receipt.timestamp == now.timestamp()
+    send.assert_not_called()

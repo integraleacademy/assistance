@@ -109,7 +109,8 @@ def test_session_handoff_respects_course_and_availability(monkeypatch, intake):
 
 @pytest.mark.parametrize("label", ["SSIAP3", "SSIAP 3", "SSIAP-3", "chef de service de sécurité incendie"])
 def test_inbound_channels_keep_level_three(label):
-    assert app._build_secretariat_followup_sms(label) == app.build_training_information_sms_text("SSIAP3")
+    expected_sms = app.build_training_information_sms_text("SSIAP3")
+    assert app._build_secretariat_followup_sms(label) == app.build_training_information_sms_text(label) == expected_sms
     assert normalize_training(label) == app._wedof_crm_training(label) == app._meta_formation(label) == ("SSIAP 3", "")
     assert app._crm_calendly_formation({"scheduled_event": {"name": label}}) == ("SSIAP 3", "")
 
