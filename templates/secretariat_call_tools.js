@@ -306,7 +306,8 @@ function renderReceipt(result, payload) {
     const sent = ['sent', 'already_sent'].includes(state);
     const failed = ['failed', 'recipient_missing', 'template_missing'].includes(state);
     const recipient = payload[channel === 'sms' ? 'telephone' : 'email'] || '';
-    const row = receiptRow(label, sent ? 'Envoyé · ' + recipient : failed ? 'Échec de l’envoi' : (state === 'sending' ? 'Envoi à vérifier' : 'Envoi non effectué'), sent ? 'sent' : 'failed');
+    const sentLabel = state === 'already_sent' ? 'Déjà envoyé · ' : 'Envoyé · ';
+    const row = receiptRow(label, sent ? sentLabel + recipient : failed ? 'Échec de l’envoi' : (state === 'sending' ? 'Envoi à vérifier' : 'Envoi non effectué'), sent ? 'sent' : 'failed');
     if (failed && item.id) addRetryForm(row, channel, label, item.id, recipient, payload);
   }
 }

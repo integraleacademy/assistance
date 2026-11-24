@@ -21,6 +21,7 @@ import crm_call_conversion
 from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS, next_five_weekdays
 import secretariat_calls
 import secretariat_messages
+import training_information_sms
 import sys
 import crm_callback_email
 from crm_team_contacts import TEAM_CONTACTS
@@ -2053,7 +2054,8 @@ def _sms_requires_unicode(body: str) -> bool:
     return any(character not in gsm_characters for character in str(body or ""))
 
 
-def send_sms(to_phone: str, body: str) -> bool:
+def send_sms(to_phone: str, body: str) -> bool | None:
+    """True means accepted, False a definite rejection, None an unconfirmed delivery."""
     recipient = _normaliser_telephone_sms(to_phone)
     if not recipient:
         print("❌ Erreur envoi SMS Brevo : numéro invalide")
@@ -2091,37 +2093,48 @@ def send_sms(to_phone: str, body: str) -> bool:
         )
         print("BREVO SMS STATUS:", response.status_code)
         print("BREVO SMS RESPONSE:", response.text)
+        if response.status_code >= 500 or response.status_code == 408:
+            return None
         return 200 <= response.status_code < 300
+    except requests.exceptions.ConnectTimeout:
+        return False
     except Exception as e:
         print("❌ Erreur envoi SMS Brevo :", e)
-        return False
+        return None
+
+
+def _deliver_training_information_sms(phone, formation, body):
+    return training_information_sms.deliver(
+        DATA_FILE, phone, formation, lambda: send_sms(phone, body),
+        _load_data_snapshot, _normaliser_telephone_sms,
+    )
+
+
+def _send_training_form_sms(record, fields, prefix):
+    course = fields.get("formation", "")
+    body = build_training_information_sms_text(course)
+    receipt = _deliver_training_information_sms(fields.get("telephone", ""), course, body)
+    record[prefix + "sms_status"] = receipt.status
+    stamp = receipt.date.strftime("%d/%m/%Y %H:%M")
+    if receipt.status in {"sent", "already_sent"}:
+        record[prefix + "sms_sent_at"] = stamp
+        if receipt.status == "sent":
+            record[prefix + "sms_body"] = body
+        record.pop(prefix + "sms_error", None)
+        return True
+    record[prefix + "sms_error"] = stamp
+    return False
 
 
 def envoyer_sms_demande_infos_formation(record: dict, fields: dict) -> bool:
-    body = build_training_information_sms_text(fields.get("formation", ""))
-    ok = send_sms(fields.get("telephone", ""), body)
-    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
-    if ok:
-        record["sms_sent_at"] = now_str
-        record["sms_body"] = body
-    else:
-        record["sms_error"] = now_str
-    return ok
+    return _send_training_form_sms(record, fields, "")
 
 
 def envoyer_sms_formulaire_formation_abandonne(draft_entry: dict, fields: dict) -> bool:
-    body = build_training_information_sms_text(fields.get("formation", ""))
-    ok = send_sms(fields.get("telephone", ""), body)
-    now_str = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
-    if ok:
-        draft_entry["abandoned_sms_sent_at"] = now_str
-        draft_entry["abandoned_sms_body"] = body
-    else:
-        draft_entry["abandoned_sms_error"] = now_str
-    return ok
-
-
-
+    if not str(fields.get("formation") or "").strip():
+        draft_entry["abandoned_sms_status"] = "waiting_for_course"
+        return False
+    return _send_training_form_sms(draft_entry, fields, "abandoned_")
 
 
 CASSANDRE_SIGNATURE_TEXT = "Cassandre MENARD\nResponsable commerciale – Intégrale Academy\n04 22 47 07 68 · cassandre@integraleacademy.com"
@@ -2688,7 +2701,7 @@ def _declencher_relance_formulaire_abandonne(
         except Exception as exc:
             record["abandoned_mail_error"] = f"{now_str} · {exc}"
 
-    if not record.get("abandoned_sms_sent_at"):
+    if not record.get("abandoned_sms_sent_at") and record.get("abandoned_sms_status") != "unconfirmed":
         try:
             result["sms"] = envoyer_sms_formulaire_formation_abandonne(record, fields)
         except Exception as exc:
@@ -2725,7 +2738,8 @@ def _formulaire_abandonne_doit_declencher_relance(record: dict, now_dt=None) -> 
         (record.get("crm_abandoned_contact_id") or record.get("crm_abandoned_review_id"))
         and record.get("salesforce_abandoned_sent_at")
         and record.get("abandoned_mail_sent_at")
-        and record.get("abandoned_sms_sent_at")
+        and (record.get("abandoned_sms_sent_at") or record.get("abandoned_sms_status") == "unconfirmed"
+             or (record.get("abandoned_sms_status") == "waiting_for_course" and not fields.get("formation")))
     ):
         return False
 
@@ -4135,6 +4149,7 @@ def _nettoyer_formulaires_abandonnes_soumis(data):
     if len(abandons_filtres) == len(abandons):
         return False
 
+    training_information_sms.preserve_history_before_cleanup(DATA_FILE, data, _normaliser_telephone_sms)
     data["formulaires_abandonnes"] = abandons_filtres
     return True
 
@@ -4164,6 +4179,7 @@ def _supprimer_brouillon_formulaire_soumis(data, form_data):
     if len(abandons_filtres) == len(abandons):
         return False
 
+    training_information_sms.preserve_history_before_cleanup(DATA_FILE, data, _normaliser_telephone_sms)
     data["formulaires_abandonnes"] = abandons_filtres
     return True
 
@@ -5441,12 +5457,15 @@ def demande_informations_formations():
 
         try:
             sms_sent = envoyer_sms_demande_infos_formation(demande_entry, form_data)
-            _crm_activity(
-                crm_contact,
-                "sms" if sms_sent else "erreur",
-                "SMS automatique envoyé" if sms_sent else "Échec du SMS automatique",
-                build_training_information_sms_text(form_data.get("formation")),
-            )
+            if demande_entry.get("sms_status") == "unconfirmed":
+                _crm_activity(crm_contact, "erreur", "Envoi du SMS à vérifier", "Le fournisseur n’a pas confirmé la livraison.")
+            elif demande_entry.get("sms_status") != "already_sent":
+                _crm_activity(
+                    crm_contact,
+                    "sms" if sms_sent else "erreur",
+                    "SMS automatique envoyé" if sms_sent else "Échec du SMS automatique",
+                    build_training_information_sms_text(form_data.get("formation")),
+                )
         except Exception as e:
             print("❌ Erreur envoi SMS demande informations formations :", e)
             demande_entry["sms_error"] = datetime.datetime.now(pytz.timezone("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
@@ -5526,17 +5545,7 @@ def autosave_demande_informations_formations():
         if not isinstance(fields, dict):
             fields = {}
 
-        submitted_email = _normaliser_email_formulaire(fields.get("mail"))
-        submitted_phone = _normaliser_telephone_formulaire(fields.get("telephone"))
-
-        data["formulaires_abandonnes"] = [
-            e for e in entries
-            if not (
-                e.get("form_id") == form_id
-                or (submitted_email and _normaliser_email_formulaire((e.get("fields") or {}).get("mail")) == submitted_email)
-                or (len(submitted_phone) >= 6 and _normaliser_telephone_formulaire((e.get("fields") or {}).get("telephone")) == submitted_phone)
-            )
-        ]
+        _supprimer_brouillon_formulaire_soumis(data, {**fields, "draft_form_id": form_id})
         save_data(data)
         return ("", 204)
 
@@ -6121,6 +6130,7 @@ def admin_devis_formulaires_abandonnes():
             "manual_abandoned_sent_at": meta.get("manual_abandoned_sent_at", ""),
             "abandoned_mail_sent_at": meta.get("abandoned_mail_sent_at", ""),
             "abandoned_sms_sent_at": meta.get("abandoned_sms_sent_at", ""),
+            "abandoned_sms_status": meta.get("abandoned_sms_status", ""),
         })
 
     for draft in data.get("formulaires_abandonnes", []):
@@ -6210,12 +6220,22 @@ def relancer_formulaire_abandonne_admin_devis(formulaire_id):
         demande["salesforce_abandoned_status"] = ABANDONED_FORM_LABEL
         demande["manual_abandoned_sent_at"] = now_str
         mail_ok = bool(demande.get("abandoned_mail_sent_at")) or _envoyer_mail_formulaire_abandonne_depuis_demande(demande, fields)
-        sms_ok = bool(demande.get("abandoned_sms_sent_at")) or envoyer_sms_formulaire_formation_abandonne(demande, fields)
+        sms_ok = bool(demande.get("abandoned_sms_sent_at"))
+        if not sms_ok and demande.get("abandoned_sms_status") != "unconfirmed":
+            sms_ok = envoyer_sms_formulaire_formation_abandonne(demande, fields)
 
     save_data(data)
 
     nom_affiche = f"{fields.get('prenom', '')} {fields.get('nom', '')}".strip() or "ce contact"
-    if mail_ok and sms_ok:
+    sms_state = (draft or demande).get("abandoned_sms_status")
+    if sms_state == "already_sent":
+        mail_status = "E-mail envoyé" if mail_ok else "Échec de l’e-mail"
+        flash(f"{mail_status} pour {nom_affiche}. Le SMS d’information a déjà été envoyé à ce numéro.", "success" if mail_ok else "error")
+    elif sms_state == "waiting_for_course":
+        flash(f"Le SMS à {nom_affiche} attend le choix de la formation.", "info")
+    elif sms_state == "unconfirmed":
+        flash(f"La livraison du SMS à {nom_affiche} reste à vérifier auprès du fournisseur.", "error")
+    elif mail_ok and sms_ok:
         flash(f"Mail et SMS formulaire abandonné envoyés, piste Salesforce créée pour {nom_affiche}.", "success")
     elif mail_ok:
         flash(f"Mail formulaire abandonné envoyé et piste Salesforce créée pour {nom_affiche}, mais l'envoi du SMS a échoué.", "error")
@@ -14105,7 +14125,18 @@ def _send_secretariat_information_messages(data, entry, contact, *, only=None):
                 preview, detail, title = branded, subject, "E-mail d’information envoyé"
             else:
                 body = _build_secretariat_followup_sms(entry.get("formation"))
-                ok = send_sms(recipient, body)
+                receipt = _deliver_training_information_sms(recipient, entry.get("formation"), body)
+                if receipt.status == "already_sent":
+                    entry[status_key] = results[kind] = "already_sent"
+                    entry[sent_key] = receipt.date.isoformat(timespec="seconds")
+                    save_data(data)
+                    continue
+                if receipt.status == "unconfirmed":
+                    entry[status_key] = results[kind] = "sending"
+                    entry[error_key] = "Le fournisseur n’a pas confirmé la livraison."
+                    save_data(data)
+                    continue
+                ok = receipt.status == "sent"
                 preview, detail, title = body, body, "SMS envoyé"
         except Exception as exc:
             ok = False
@@ -14611,7 +14642,7 @@ def _crm_send_appointment_followup(
         sms_body = _crm_resolve_message_variables(
             sms_template.get("contenu"), contact, data_store=data
         )
-        delivery["sms"] = send_sms(contact.get("telephone"), sms_body)
+        delivery["sms"] = bool(send_sms(contact.get("telephone"), sms_body))
         if delivery["sms"]:
             _crm_activity(contact, "sms", f"SMS « {template_name} » envoyé", sms_body, sms_body)
     if "email" in channels and email_template and contact.get("mail"):
