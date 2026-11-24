@@ -78,10 +78,7 @@ def test_secretariat_separates_levels_for_same_person(intake):
     assert entry["crm_contact_id"] == by_level["SSIAP 3"]["id"]
     assert by_level["SSIAP 3"]["dates_formation"] == chosen
     assert entry["information_email_template_id"] == "automatic-ssiap3"
-    sms = app._build_secretariat_followup_sms("SSIAP").replace(
-        app.SECRETARIAT_FORMATIONS["SSIAP"]["label"], app.SECRETARIAT_FORMATIONS["SSIAP3"]["label"]
-    ).replace(app.SECRETARIAT_DOSSIER_URL, app.SECRETARIAT_FORMATIONS["SSIAP3"]["dossier_url"])
-    assert entry["information_sms_content"] == sms
+    assert entry["information_sms_content"] == app.build_training_information_sms_text("SSIAP3")
 
 
 def test_unavailable_centre_is_rejected_before_contact_or_message(intake, monkeypatch):
@@ -112,6 +109,7 @@ def test_session_handoff_respects_course_and_availability(monkeypatch, intake):
 
 @pytest.mark.parametrize("label", ["SSIAP3", "SSIAP 3", "SSIAP-3", "chef de service de sécurité incendie"])
 def test_inbound_channels_keep_level_three(label):
+    assert app._build_secretariat_followup_sms(label) == app.build_training_information_sms_text("SSIAP3")
     assert normalize_training(label) == app._wedof_crm_training(label) == app._meta_formation(label) == ("SSIAP 3", "")
     assert app._crm_calendly_formation({"scheduled_event": {"name": label}}) == ("SSIAP 3", "")
 

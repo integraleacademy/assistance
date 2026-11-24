@@ -9,6 +9,7 @@ import pytest
 
 from crm_app import legacy_app as app
 import training_information_sms as sms
+from secretariat_catalogue import SSIAP3_BOOKING_URL
 
 
 @pytest.fixture
@@ -66,11 +67,9 @@ def test_only_first_information_channel_sends(intake, channels):
             assert any(event["title"] == "SMS automatique envoyé" for event in events) == (i == 0)
         assert send.call_count == 1
     body = send.call_args.args[1]
-    assert "SSIAP 3" in body
-    if channels[0] == "desk":
-        assert "Cassandre MENARD" in body and "programme-ssiap-3.pdf" in body
-    else:
-        assert "https://calendly.com/integraleacademy/ssiap1" in body
+    assert body == app.build_training_information_sms_text("SSIAP3")
+    assert "SSIAP 3" in body and SSIAP3_BOOKING_URL in body
+    assert body.endswith("Clément VAILLANT - Directeur Intégrale Academy")
 
 
 def deliver(path, phone, course, send, history=dict):

@@ -14181,6 +14181,8 @@ def _secretariat_formation_name(formation_code):
 
 
 def _build_secretariat_followup_sms(formation_code):
+    if is_ssiap3(formation_code):
+        return build_training_information_sms_text("SSIAP3")
     config = _secretariat_formation_config(formation_code)
     formation_name = config["label"]
     if config.get("apprenticeship"):
