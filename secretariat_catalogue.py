@@ -15,7 +15,8 @@ def is_ssiap3(value):
 PUBLIC_CATALOGUE = "https://integraleacademyofficiel-1.onrender.com"
 BTS_ADMISSIONS = "https://admissions.integraleconnect.com/"
 
-SSIAP3_BOOKING_URL = "https://calendly.com/cassandre-integraleacademy/15min?utm_campaign=ssiap3"
+SSIAP_BOOKING_URL = "https://calendly.com/integraleacademy/ssiap1"
+SSIAP3_BOOKING_URL = SSIAP_BOOKING_URL + "?utm_campaign=ssiap3"
 
 SST_FEES = {"avec": 1230, "sans": 980}
 
