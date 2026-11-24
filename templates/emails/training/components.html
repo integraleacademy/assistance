@@ -75,11 +75,15 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro digital_identity() -%}
+{% macro digital_identity(cpf_only=false) -%}
 {% call section("🔐 Identité Numérique La Poste", "notice", "⚠️ ATTENTION", lead="🔐 Identité Numérique") %}
   {% include "emails/_identity_logos.html" %}
+  {% if cpf_only %}
+  <p style="margin:0 0 12px;">Si vous mobilisez votre <strong>Compte Personnel de Formation (CPF)</strong>, l’Identité Numérique La Poste vous permet de vous connecter à Mon Compte Formation avec FranceConnect+.</p>
+  {% else %}
   <p style="margin:0 0 12px;">Pour utiliser votre <strong>Compte Personnel de Formation (CPF)</strong> ou déposer une demande de financement auprès de <strong>France Travail</strong>, vous devez obligatoirement créer votre Identité Numérique La Poste.</p>
   <p style="margin:0 0 14px;color:#74541b;font-weight:bold;">Etape obligatoire.</p>
+  {% endif %}
   {{ button("Activer mon Identité Numérique", "https://lidentitenumerique.laposte.fr") }}
 {% endcall %}
 {%- endmacro %}

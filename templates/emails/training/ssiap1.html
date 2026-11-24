@@ -1,13 +1,16 @@
 {% extends "emails/training/layout.html" %}
-{% set document_title = "Formation SSIAP 1 - Intégrale Academy" %}
-{% set course_label = "Formation SSIAP 1 — Sécurité incendie" %}
-{% set title_lead = "Devenez Agent de" %}
-{% set title_italic = "Sécurité Incendie SSIAP 1" %}
-{% set subtitle = "Formation officielle pour exercer comme agent de sécurité incendie en ERP et IGH" %}
-{% set review = ("didier", "Bonne expérience des formations SSIAP et TFP ADS. Merci aux formateurs.", "SSIAP 1") %}
+{% set level_three = course is defined %}
+{% set level = "SSIAP 3" if level_three else "SSIAP 1" %}
+{% set document_title = "Formation " ~ level ~ " - Intégrale Academy" %}
+{% set course_label = "Formation " ~ level ~ " — Sécurité incendie" %}
+{% set title_lead = "Devenez chef de service" if level_three else "Devenez Agent de" %}
+{% set title_italic = "de sécurité incendie SSIAP 3" if level_three else "Sécurité Incendie SSIAP 1" %}
+{% set subtitle = "Préparation au diplôme de chef de service de sécurité incendie en ERP et IGH" if level_three else "Formation officielle pour exercer comme agent de sécurité incendie en ERP et IGH" %}
+{% set review = ("So Gaming Harder", "Merci au centre de formation Intégrale Academy vraiment au top.", "Intégrale Academy") if level_three else ("didier", "Bonne expérience des formations SSIAP et TFP ADS. Merci aux formateurs.", "SSIAP 1") %}
 {% set preheader = "Retrouvez les dates, le tarif et votre devis personnalisé." if devis_url else "Retrouvez les prochaines dates, le lieu et les possibilités de financement." %}
 {% set scene = "/images/ssiap-1/manuel/prevention.webp" %}
-{% set focal = 39 %}
+{% set scene_url = "https://integraleacademyofficiel-1.onrender.com/images/ssiap-3/chef-service.webp" if level_three else none %}
+{% set focal = 45 if level_three else 39 %}
 {% set accent = "#b6383d" %}
 {% set pale = "#ffc0b6" %}
 {% set tint = "#fae8e6" %}
@@ -15,23 +18,28 @@
 
 {% block introduction %}
   <p style="margin:0 0 12px;color:#172c3a;font:italic 26px/30px Georgia,serif;">Bonjour{% if prenom %} {{ prenom }}{% endif %},</p>
-  <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>SSIAP 1 – Agent de Service de Sécurité Incendie et d’Assistance à Personnes</strong>.</p>
+  <p style="margin:0 0 12px;">Je fais suite à votre demande de renseignements concernant notre formation <strong>{{ course.label if level_three else "SSIAP 1 – Agent de Service de Sécurité Incendie et d’Assistance à Personnes" }}</strong>.</p>
+  {% if level_three %}
+  <p style="margin:0 0 12px;">Vous apprendrez à encadrer une équipe de sécurité incendie, à conseiller le chef d’établissement et à préparer les commissions de sécurité.</p>
+  <p style="margin:0 0 12px;">Après réussite à l’examen, le <strong>diplôme SSIAP 3</strong> vous permet d’exercer comme chef de service de sécurité incendie en établissement recevant du public (ERP) ou en immeuble de grande hauteur (IGH).</p>
+  {% else %}
   <p style="margin:0 0 12px;">Cette formation vous permet d’acquérir les compétences nécessaires pour prévenir les risques d’incendie, intervenir face à un début de sinistre et porter assistance aux personnes.</p>
   <p style="margin:0 0 12px;">À l’issue de la formation et après réussite à l’examen, vous obtenez le <strong>diplôme SSIAP 1</strong>, permettant d’exercer dans les établissements recevant du public (ERP) et les immeubles de grande hauteur (IGH).</p>
+  {% endif %}
   <p style="margin:0 0 12px;">La formation est organisée en petit groupe à <strong>{{ summary_place }}</strong>. Je vous conseille de réserver votre place dès que possible.</p>
   {{ notice("⚠️ Places limitées pour garantir une préparation de qualité à l’examen.") }}
 {% endblock %}
 
 {% block facts %}
-  {{ fact("👮", "Diplôme SSIAP 1 officiel", "Pour exercer en sécurité incendie en ERP et IGH") }}
-  {{ fact("✅", "Programme officiel de 67 heures", "Environ 2 semaines, hors examen", divider=true) }}
-  {{ fact("💶", "Financements possibles", "CPF, France Travail, personnel", divider=true) }}
+  {{ fact("👮", "Diplôme " ~ level ~ " officiel", "Pour diriger un service de sécurité incendie en ERP et IGH" if level_three else "Pour exercer en sécurité incendie en ERP et IGH") }}
+  {{ fact("✅", "Programme officiel de 216 heures" if level_three else "Programme officiel de 67 heures", "En présentiel, hors examen" if level_three else "Environ 2 semaines, hors examen", divider=true) }}
+  {{ fact("💶", "Financements possibles", "Selon votre situation" if level_three else "CPF, France Travail, personnel", divider=true) }}
 {% endblock %}
 
 {% block details %}
 {% call section("📄 Dossier de présentation", "dossier", lead="📄 Dossier") %}
-  <p style="margin:0 0 12px;">Vous pouvez consulter le dossier complet de présentation de la formation SSIAP 1.</p>
-  {{ button("Télécharger le dossier de présentation", "https://www.integraleacademy.com/dossiersfc", primary=true) }}
+  <p style="margin:0 0 12px;">Vous pouvez consulter le dossier complet de présentation de la formation {{ level }}.</p>
+  {{ button("Télécharger le dossier de présentation", course.dossier_url if level_three else "https://www.integraleacademy.com/dossiersfc", primary=true) }}
 {% endcall %}
 
 {% call section("📅 Prochaines sessions", lead="📅 Prochaines") %}
@@ -39,7 +47,12 @@
 {% endcall %}
 
 {% call section("🎓 Durée et organisation", lead="🎓 Durée et") %}
+  {% if level_three %}
+  <p style="margin:0;"><strong>{{ course.duration }}</strong> en présentiel<br> {{ course.capacity }}<br> {{ course.rhythm }}</p>
+  <p style="margin:10px 0 0;"><strong>Examen</strong> · {{ course.assessment }}</p>
+  {% else %}
   <p style="margin:0;"><strong>67 heures de formation</strong> hors examen<br> Formation en <strong>présentiel</strong><br> Durée : <strong>environ 2 semaines</strong></p>
+  {% endif %}
 {% endcall %}
 
 {% call section("📍 Lieu de formation", lead="📍 Lieu de") %}
@@ -48,29 +61,41 @@
 
 {% call section("💶 Tarif et financement", "finance", lead="💶 Tarif et") %}
   {{ price(tarif_display) }}
+  {% if level_three %}
+  <p style="margin:0 0 12px;">{{ course.funding }}</p>
+  {% else %}
   <p style="margin:0 0 12px;">{{ secourisme_info }}</p>
   <p style="margin:0 0 12px;">Financements possibles :</p>
   <ul style="margin:0 0 14px;padding-left:22px;"><li><strong>Compte Personnel de Formation (CPF)</strong></li> <li><strong>Demande de financement</strong> auprès de <strong>France Travail</strong></li> <li><strong>Financement personnel</strong> : acompte de 30 % + paiement en plusieurs fois</li> </ul>
   <p style="margin:0 0 12px;">Pour utiliser votre compte CPF, vous devez créer et activer votre <strong>Identité Numérique La Poste</strong>.</p>
-  {{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}
+  {% endif %}
+  {% if devis_url or not level_three %}{{ button("Télécharger mon devis détaillé", devis_url, primary=true) }}{% endif %}
 {% endcall %}
 
 
 {% call section("✅ Prérequis obligatoires", lead="✅ Prérequis") %}
+  {% if level_three %}
+  <p style="margin:0;">{{ course.prerequisites }}</p>
+  {% else %}
   <ul style="margin:0 0 14px;padding-left:22px;"><li>SST en cours de validité, PSC1 de moins de 2 ans, PSE1 ou équivalent</li> <li>Certificat médical d’aptitude physique de moins de 3 mois</li> <li>Capacité suffisante à lire, écrire et comprendre le français</li> </ul>
+  {% endif %}
 {% endcall %}
 
 {% call section("🔥 Objectifs de la formation", lead="🔥 Objectifs de") %}
+  {% if level_three %}
+  <p style="margin:0;">{% for topic in course.topics %}✅ {{ topic }}{% if not loop.last %}<br> {% endif %}{% endfor %}</p>
+  {% else %}
   <p style="margin:0;">✅ Prévenir les risques d’incendie<br> ✅ Sensibiliser les occupants aux consignes de sécurité<br> ✅ Intervenir face à un début d’incendie<br> ✅ Assurer l’alerte et l’accueil des secours<br> ✅ Participer à l’évacuation et porter assistance aux personnes</p>
+  {% endif %}
 {% endcall %}
 
-{{ digital_identity() }}
+{{ digital_identity(cpf_only=level_three) }}
 
 {% if not prominent_phone_booking_html %}{{ google_review(*review, maps_url=google_reviews_url, rating=google_rating) }}{% endif %}
 
 {% call section("📞 Prochaine étape", "action", lead="📞 Prochaine") %}
   <p style="margin:0 0 12px;">Pour démarrer votre projet, discuter des possibilités de financement ou réserver votre place, vous pouvez réserver un rendez-vous téléphonique avec notre équipe.</p>
-  {{ button("Réserver un rendez-vous téléphonique", "https://calendly.com/integraleacademy/ssiap1", primary=true, centered=true) }}
+  {{ button("Réserver un rendez-vous téléphonique", course.calendly if level_three else "https://calendly.com/integraleacademy/ssiap1", primary=true, centered=true) }}
 {% endcall %}
 {% endblock %}
 

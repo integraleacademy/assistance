@@ -14,7 +14,7 @@ import hebergement_reminders
 import crm_external_access
 from secretariat_catalogue import (
     BTS_ADMISSIONS, BTS_COURSES, BTS_INTAKES, PROFESSIONAL_COURSES,
-    PUBLIC_CATALOGUE, SESSION_FEES, SSIAP3_BOOKING_URL, SST_FEES, is_ssiap3,
+    PUBLIC_CATALOGUE, SESSION_FEES, SSIAP_BOOKING_URL, SSIAP3_BOOKING_URL, SST_FEES, is_ssiap3,
 )
 import crm_public_sessions
 import crm_call_conversion
@@ -571,7 +571,7 @@ SECRETARIAT_FORMATIONS = {
     },
     "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "purpose": "Se former à la protection rapprochée des personnes et exercer comme agent de protection physique.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/apr"},
     "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "purpose": "Obtenir les compétences nécessaires aux missions de surveillance, de prévention et de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/aps"},
-    "SSIAP": {"short": "SSIAP 1", "duration": "70 h · 2 semaines", "price": "980 € seul · 1 230 € avec SST", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/ssiap1"},
+    "SSIAP": {"short": "SSIAP 1", "duration": "70 h · 2 semaines", "price": "980 € seul · 1 230 € avec SST", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": SSIAP_BOOKING_URL},
     "SSIAP3": {
         "short": "SSIAP 3", "duration": "216 heures hors examen", "format": "Présentiel",
         "price": _eur_display(PLAN_TARIFS["SSIAP3"]),
@@ -2324,7 +2324,7 @@ ABANDONED_TRAINING_EMAIL_CONFIG = {
             ("✅", "Programme réglementé", "67 heures hors examen"),
             ("📍", "Formation en présentiel", "Puget-sur-Argens"),
         ],
-        "calendly": "https://calendly.com/integraleacademy/ssiap1",
+        "calendly": SSIAP_BOOKING_URL,
     },
     "SSIAP3": {
         "short": "Formation SSIAP 3", "project_title": "de formation SSIAP 3",
@@ -3024,7 +3024,7 @@ def _ssiap3_information_email(prenom, dates, centre, devis_url, data_store):
         "Contact : 04 22 47 07 68", CASSANDRE_SIGNATURE_TEXT,
     )))
     body = _render_training_email(
-        "training/ssiap3.html", prenom=prenom, course=course, centre_label=centre_label,
+        "training/ssiap3.html", prenom=prenom, course=course, tarif_display=tariff, centre_label=centre_label,
         centre_address=address, devis_url=devis_url, summary_date=_next_email_session(labels, dates),
         summary_place=TRAINING_VENUES[_normalize_centre_code(centre)]["city"],
         session_html=_format_upcoming_sessions_for_email(centre, "SSIAP3", selected=dates, labels=labels),
@@ -11551,16 +11551,17 @@ def _crm_calendly_formation(payload):
         return "Chauffeur VTC", ""
     if is_ssiap3(compact):
         return "SSIAP 3", ""
+    tracking = payload.get("tracking")
+    level_three_booking = isinstance(tracking, dict) and tracking.get("utm_campaign") == "ssiap3"
     if "ssiap" in words or "incendie" in words:
-        return "SSIAP 1", ""
+        return ("SSIAP 3" if level_three_booking else "SSIAP 1"), ""
     if "dirigeant" in words or "desp" in words:
         return "DESP", "VAE" if "vae" in words else "INITIAL"
     if "a3p" in words or "apr" in words or "protection rapprochee" in compact or "garde du corps" in compact:
         return "A3P", ""
     if "aps" in words or "agent de securite" in compact or "agent de prevention" in compact:
         return "APS", ""
-    tracking = payload.get("tracking")
-    if isinstance(tracking, dict) and tracking.get("utm_campaign") == "ssiap3":
+    if level_three_booking:
         return "SSIAP 3", ""
     return "", ""
 
@@ -11583,7 +11584,7 @@ def _crm_calendly_new_contact(data, payload, appointment):
         first_name = first_name or parts[0]
         last_name = last_name or (parts[1] if len(parts) > 1 else "")
 
-    formation, desp_type = _crm_calendly_formation(payload)
+    formation, desp_type = _crm_calendly_formation(_crm_calendly_cached_payload(appointment))
     now = _crm_now()
     contact = {
         "id": str(uuid.uuid4()),
@@ -11959,6 +11960,17 @@ def _crm_calendly_booking_supersedes_active_relance(contact, appointment):
     return False
 
 
+def _crm_calendly_same_invitee(previous, current):
+    """Verify the identity before carrying a course over to a rescheduled invitation."""
+    old_email = _crm_normalize_email(previous.get("invitee_email"))
+    new_email = _crm_normalize_email(current.get("invitee_email"))
+    if old_email and new_email:
+        return old_email == new_email
+    old_phone = _crm_normalize_phone(previous.get("invitee_phone"))
+    return bool(old_phone and previous.get("callback_checked") and current.get("callback_checked")
+                and old_phone == _crm_normalize_phone(current.get("invitee_phone")))
+
+
 def _crm_upsert_calendly_appointment(
     data,
     payload,
@@ -12032,7 +12044,7 @@ def _crm_upsert_calendly_appointment(
         "cancel_url": payload.get("cancel_url") or appointment.get("cancel_url") or "",
         "reschedule_url": payload.get("reschedule_url") or appointment.get("reschedule_url") or "",
         "rescheduled": bool(payload.get("rescheduled")),
-        "old_invitee": payload.get("old_invitee"),
+        "old_invitee": payload.get("old_invitee") or appointment.get("old_invitee"),
         "new_invitee": payload.get("new_invitee"),
         "cancellation": payload.get("cancellation"),
         "calendly_created_at": payload.get("created_at") or appointment.get("calendly_created_at") or "",
@@ -12040,6 +12052,14 @@ def _crm_upsert_calendly_appointment(
         "source": source,
         "updated_at": now,
     })
+
+    if not appointment.get("booking_course") and appointment["old_invitee"]:
+        previous_invitation = next((row for row in appointments
+                                    if row.get("invitee_uri") == appointment["old_invitee"]), None)
+        if (previous_invitation and previous_invitation.get("booking_course") == "ssiap3"
+                and not previous_invitation.get("identity_conflict")
+                and _crm_calendly_same_invitee(previous_invitation, appointment)):
+            appointment["booking_course"] = "ssiap3"
 
     previous_contact = _crm_contact(data, appointment.get("contact_id"))
     preferred = _crm_contact(data, contact_id) if contact_id else previous_contact
@@ -12070,7 +12090,7 @@ def _crm_upsert_calendly_appointment(
     _crm_calendly_set_owner(appointment, previous_contact, contact)
     if previous_contact and previous_contact is not contact:
         _crm_sync_contact_calendly_status(data, previous_contact)
-    inferred_formation, inferred_desp_type = _crm_calendly_formation(payload)
+    inferred_formation, inferred_desp_type = _crm_calendly_formation(_crm_calendly_cached_payload(appointment))
     if contact and inferred_formation and not str(contact.get("formation") or "").strip():
         contact["formation"] = inferred_formation
         if inferred_desp_type:
@@ -14132,10 +14152,6 @@ def _secretariat_formation_name(formation_code):
 def _build_secretariat_followup_sms(formation_code):
     config = _secretariat_formation_config(formation_code)
     formation_name = config["label"]
-    if formation_code == "SSIAP3":
-        return (f"Suite à notre échange sur la formation {formation_name}, voici le programme : "
-                f"{config['dossier_url']}\nRéserver un rendez-vous téléphonique : {config['calendly']}"
-                "\nCassandre MENARD · Intégrale Academy · 04 22 47 07 68")
     if config.get("apprenticeship"):
         return (
             f"Suite à notre échange sur le {formation_name}, vous pouvez préparer "
@@ -14147,7 +14163,7 @@ def _build_secretariat_followup_sms(formation_code):
         f"{formation_name}. Merci de votre intérêt !\n\n"
         "▶️ Vous pouvez télécharger dès maintenant notre dossier de présentation "
         "(programme détaillé, dates, tarifs) en cliquant ici :\n\n"
-        f"👉 {SECRETARIAT_DOSSIER_URL}\n\n"
+        f"👉 {config.get('dossier_url') or SECRETARIAT_DOSSIER_URL}\n\n"
         "ℹ️ Si vous souhaitez financer la formation via votre Compte Personnel de "
         "Formation (CPF), il vous faudra créer votre Identité Numérique La Poste.\n\n"
         "N’hésitez pas à me contacter si vous avez la moindre question, je serai ravi d’y répondre 😉\n\n"
@@ -17607,7 +17623,7 @@ def _calendly_event_type_matches_formation(event_type, formation):
     event_name = event_type.get("name") or ""
     if is_ssiap3(normalized_formation):
         return (is_ssiap3(event_name)
-                or str(event_type.get("scheduling_url") or "").rstrip("/") == SSIAP3_BOOKING_URL.partition("?")[0])
+                or str(event_type.get("scheduling_url") or "").rstrip("/") == SSIAP_BOOKING_URL)
     if normalized_formation == "ssiap 1" and is_ssiap3(event_name):
         return False
     expected = CALENDLY_EVENT_TYPE_TOKENS_BY_FORMATION.get(
@@ -17868,6 +17884,8 @@ def crm_contact_calendly_appointments(contact_id, *, _scope_guard=None):
             "start_time": start_time,
             "invitee": invitee,
         }
+        if is_ssiap3(contact_formation):
+            booking_body["tracking"] = {"utm_campaign": "ssiap3"}
         if booking_location:
             booking_body["location"] = booking_location
         if answers:
@@ -17906,6 +17924,9 @@ def crm_contact_calendly_appointments(contact_id, *, _scope_guard=None):
                 "event_memberships": [],
             }
         appointment_payload = {**invitee_resource, "scheduled_event": scheduled_event}
+        if "tracking" in booking_body:
+            # Some Calendly creation responses omit the tracking sent in the request.
+            appointment_payload["tracking"] = booking_body["tracking"]
         with _CRM_RECONCILIATION_LOCK:
             latest_data = load_data()
             latest_contact = _crm_contact(latest_data, contact_id)
