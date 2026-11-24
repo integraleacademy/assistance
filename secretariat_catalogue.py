@@ -93,8 +93,8 @@ PROFESSIONAL_COURSES = {
     "DESP_INIT": {
         "source_url": PUBLIC_CATALOGUE + "/formations-securite/desp-initial",
         "audience": "Créateurs, repreneurs et futurs responsables d’une entreprise de sécurité privée.",
-        "prerequisites": "Aucun diplôme ni expérience préalable exigés pour la formation initiale. Le projet est précisé lors de l’entretien.",
-        "location": "Puget-sur-Argens, Aurillac ou Paris selon la session",
+        "prerequisites": "Être majeur et maîtriser le français. Niveau bac ou équivalent, SSIAP 3, expérience à responsabilités ou avis favorable à l’entretien d’admission.",
+        "location": "Puget-sur-Argens ou Paris selon la session",
         "format": "Distanciel et présentiel", "rhythm": "5 semaines à distance (175 h), puis 2 semaines en centre (70 h).",
         "topics": ["Créer ou reprendre une entreprise de sécurité", "Respecter les obligations réglementaires", "Construire un budget et une offre commerciale", "Gérer le personnel et piloter les prestations"],
         "certification": "Titre Dirigeant d’entreprise de sécurité privée, niveau 5. L’agrément dirigeant relève ensuite du CNAPS.",
@@ -137,7 +137,7 @@ PROFESSIONAL_COURSES = {
 BTS_COURSES = {
     "BTS_MOS": {
         "path": "mos", "audience": "Candidats qui souhaitent préparer et encadrer des prestations de sécurité.",
-        "prerequisites": "Bac ou titre équivalent, puis étude du dossier. Pour une mission de sécurité privée en entreprise, vérifier la carte professionnelle adaptée avec l’école.",
+        "prerequisites": "Bac ou titre équivalent, puis étude du dossier. Pour ce parcours en sécurité privée, détenir la carte professionnelle du ministère de l’Intérieur (CNAPS) avant l’entrée en formation.",
         "rhythm": "15 jours à l’école, puis 15 jours en entreprise.", "training_hours": "1 350 h de formation",
         "topics": ["Analyser les risques et préparer un dispositif de sécurité", "Organiser les équipes et leurs plannings", "Piloter la prestation, la qualité et la relation client"],
         "assessment": "Épreuves du BTS sur la préparation d’une prestation, le management des équipes et la relation client, en plus des matières générales.",
@@ -184,4 +184,57 @@ BTS_COURSES = {
         "careers": "Assistant comptable, collaborateur de cabinet ou comptable clients et fournisseurs.",
         "rncp": "39159",
     },
+}
+
+
+# Questions que le secrétariat peut lire au téléphone, dans l’ordre de l’entretien.
+PRIVATE_SECURITY_CHECKS = [
+    ("Démarche", "Si vous débutez, l’école vous remet un justificatif de préinscription. Il sert à demander l’autorisation d’entrer en formation au Conseil national des activités privées de sécurité, sous la tutelle du ministère de l’Intérieur (CNAPS)."),
+    ("Français", "Pouvez-vous lire une consigne et rédiger un compte rendu en français ? Pour les ressortissants étrangers, y compris européens, un justificatif de niveau B1 est demandé."),
+    ("Pièces du dossier", "Prévoyez une pièce d’identité et un justificatif de domicile. Pour un ressortissant hors Union européenne et Espace économique européen, le CNAPS examine aussi le droit au travail et la durée de détention du titre de séjour, selon la situation."),
+]
+BTS_CHECKS = [
+    ("Diplôme", "Quel baccalauréat préparez-vous ou avez-vous obtenu ? Un titre de niveau équivalent permet aussi de candidater."),
+    ("Admission", "Le service BTS étudie le dossier et le projet professionnel. La candidature se dépose sur le portail des admissions de l’école."),
+    ("Entreprise", "Avez-vous déjà un employeur pour l’alternance ? Le contrat d’apprentissage permet de suivre les cours tout en exerçant en entreprise."),
+]
+FIRST_AID_CHECK = ("Secourisme", "Quel diplôme de premiers secours avez-vous, et de quand date-t-il ? Il faut un PSC ou PSC1 de moins de deux ans, ou un certificat SST ou PSE 1 en cours de validité.")
+
+DESK_ADMISSION = {
+    "A3P": [("Accès", "Avez-vous une carte professionnelle de sécurité privée valide ? Sinon, une autorisation préalable pour la protection physique des personnes est nécessaire avant la rentrée."), *PRIVATE_SECURITY_CHECKS],
+    "APS": [("Accès", "Avez-vous déjà une carte professionnelle de sécurité privée valide ? Sinon, il faut obtenir l’autorisation préalable pour la surveillance humaine ou le gardiennage avant de commencer."), *PRIVATE_SECURITY_CHECKS],
+    "SSIAP": [FIRST_AID_CHECK, ("Aptitude physique", "Un médecin doit remplir le certificat médical réglementaire moins de trois mois avant l’entrée en formation."),
+              ("Expression écrite", "Le candidat doit comprendre les consignes et pouvoir décrire par écrit un incident dans le registre du poste de sécurité, appelé main courante.")],
+    "SSIAP3": [("Voie diplôme", "Êtes-vous titulaire d’un diplôme de niveau 4, soit le niveau du baccalauréat, ou d’un niveau supérieur ?"),
+               ("Autre voie d’accès", "À défaut, il faut un SSIAP 2 ou l’ancien diplôme ERP 2 ou IGH 2, avec trois ans d’exercice comme chef d’équipe. Préparez le diplôme et les justificatifs d’emploi."), FIRST_AID_CHECK],
+    "DESP_INIT": [("Projet", "Souhaitez-vous créer, reprendre ou diriger une entreprise de sécurité privée ? Il faut être majeur et maîtriser le français oral et écrit."),
+                  ("Admission", "Demandez si la personne a le niveau bac, le SSIAP 3 ou une expérience à responsabilités. L’entretien d’admission permet aussi d’étudier un autre profil."),
+                  ("Après le titre", "Pour diriger l’entreprise, une demande distincte d’agrément est à déposer auprès du ministère de l’Intérieur (CNAPS).")],
+    "DESP_VAE": [("Expérience", "Quelles responsabilités avez-vous déjà exercées en sécurité privée ? Par exemple, gérer une équipe, un budget, des contrats ou l’exploitation d’une agence."),
+                 ("Justificatifs", "Prévoyez des preuves de ces activités, comme une fiche de poste, une attestation d’employeur ou des réalisations professionnelles."),
+                 ("Recevabilité", "Le certificateur examine d’abord le dossier de faisabilité. Si la demande est recevable, le candidat prépare son dossier de validation puis le présente au jury.")],
+    "VTC": [("Permis", "Depuis quand avez-vous le permis B ? Il faut trois ans de permis, ou deux ans après la conduite accompagnée."),
+            ("Aptitude médicale", "Pour exercer, il faut un avis favorable d’un médecin agréé par la préfecture pour la conduite professionnelle."),
+            ("Accès au métier", "L’examen comprend la théorie puis la pratique. Après la réussite, le candidat demande sa carte professionnelle de chauffeur VTC à la préfecture.")],
+    "PARCOURS_SECURITE_ALTERNANCE": [("Profil", "Ce parcours de l’école s’adresse aux moins de 26 ans. Avez-vous le permis B et pouvez-vous vous déplacer entre le centre et l’entreprise ?"),
+                                     ("Apprentissage", "Vérifiez le droit de travailler en France et la disponibilité pendant un an. Le parcours alterne cours au centre et périodes chez l’employeur."),
+                                     ("Accès aux modules", "Pour la sécurité privée, il faut le titre d’accès du ministère de l’Intérieur (CNAPS). Le module incendie comporte aussi des conditions de secourisme et d’aptitude médicale.")],
+    "BTS_MOS": [*BTS_CHECKS, ("Sécurité privée", "Pour le parcours MOS de l’école en sécurité privée, la carte professionnelle du ministère de l’Intérieur (CNAPS) doit être valide à l’entrée. Si vous débutez, demandez également des renseignements sur la formation APS.")],
+}
+
+DESK_INTRODUCTIONS = {
+    "A3P": "Vous voulez travailler comme garde du corps ? Cette formation vous prépare à protéger un client au quotidien, à organiser ses déplacements et à réagir si sa sécurité est menacée. Le métier s’appelle aussi agent de protection rapprochée (APR).",
+    "APS": "Cette formation prépare au métier d’agent de sécurité. Sur un site, vous contrôlez les accès, effectuez des rondes et intervenez en cas d’incident. Après réussite à l’examen, vous pouvez demander la carte professionnelle nécessaire pour exercer.",
+    "SSIAP": "Le SSIAP 1 prépare au métier d’agent de sécurité incendie. Dans un hôpital, un centre commercial ou un immeuble de grande hauteur, vous surveillez les installations, donnez l’alerte et aidez le public à évacuer.",
+    "SSIAP3": "Le SSIAP 3 prépare à diriger un service de sécurité incendie. Vous encadrez les équipes, conseillez la direction du bâtiment et préparez les visites de la commission de sécurité.",
+    "DESP_INIT": "Ce parcours prépare à créer, reprendre ou diriger une entreprise de sécurité privée. Vous apprenez à chiffrer une prestation, organiser les équipes et respecter les obligations du dirigeant.",
+    "DESP_VAE": "Si vous avez déjà exercé des responsabilités en sécurité privée, la validation des acquis de l’expérience (VAE) vous permet de présenter ce que vous savez faire à un jury pour obtenir le titre de dirigeant.",
+    "VTC": "Vous souhaitez transporter des clients sur réservation ? Le parcours prépare aux deux épreuves de l’examen de chauffeur VTC, avec la théorie en ligne et la préparation à la conduite avec un formateur.",
+    "PARCOURS_SECURITE_ALTERNANCE": "En un an, vous préparez trois qualifications pour travailler dans la surveillance, la protection rapprochée et la sécurité incendie. Vous alternez les cours à l’école et les missions en entreprise.",
+    "BTS_MOS": "Ce BTS prépare à organiser la sécurité d’un site ou d’un événement. Vous apprenez à dimensionner une équipe, préparer son planning et suivre la prestation avec le client.",
+    "BTS_MCO": "Ce BTS prépare à gérer un rayon ou un point de vente. Vous apprenez à conseiller les clients, suivre les ventes et les stocks, et animer une équipe.",
+    "BTS_NDRC": "Ce BTS forme aux métiers commerciaux. Vous apprenez à trouver des clients, négocier une vente et fidéliser votre clientèle en rendez-vous, par téléphone et en ligne.",
+    "BTS_CI": "Ce BTS prépare à travailler avec des clients et fournisseurs à l’étranger. Vous apprenez à suivre les ventes, les achats et les expéditions à l’international.",
+    "BTS_PI": "Ce BTS prépare aux métiers de l’immobilier en agence ou chez un syndic. Vous apprenez à accompagner une vente, mettre un bien en location et participer à la gestion d’une copropriété.",
+    "BTS_CG": "Ce BTS prépare à travailler dans un service comptable ou en cabinet. Vous apprenez à enregistrer les opérations, contrôler les factures et préparer les déclarations de l’entreprise.",
 }

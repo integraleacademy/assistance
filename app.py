@@ -13,7 +13,7 @@ from werkzeug.utils import secure_filename
 import hebergement_reminders
 import crm_external_access
 from secretariat_catalogue import (
-    BTS_ADMISSIONS, BTS_COURSES, BTS_INTAKES, PROFESSIONAL_COURSES,
+    BTS_ADMISSIONS, BTS_CHECKS, BTS_COURSES, BTS_INTAKES, DESK_ADMISSION, DESK_INTRODUCTIONS, PROFESSIONAL_COURSES,
     PUBLIC_CATALOGUE, SESSION_FEES, SSIAP_BOOKING_URL, SSIAP3_BOOKING_URL, SST_FEES, is_ssiap3,
 )
 import crm_public_sessions
@@ -21,6 +21,7 @@ import crm_call_conversion
 from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS, next_five_weekdays
 import secretariat_calls
 import secretariat_messages
+from secretariat_booking import confirmed_receipt
 import training_information_sms
 import sys
 import crm_callback_email
@@ -605,13 +606,13 @@ _SECRETARIAT_WEBSITE_CACHE_SECONDS = 15 * 60
 _SECRETARIAT_WEBSITE_MAX_PAGES = 8
 _SECRETARIAT_WEBSITE_ALIASES = {
     "PARCOURS_SECURITE_ALTERNANCE": ("parcours", "alternance", "apprentissage"),
-    "A3P": ("a3p", "apr", "protection", "garde du corps"),
-    "APS": ("aps", "agent de prevention", "agent de sécurité"),
-    "SSIAP": ("ssiap", "incendie"),
+    "A3P": ("a3p", "apr", "protection rapprochée", "garde du corps", "garde de corps", "gardes du corps", "bodyguard", "body guard"),
+    "APS": ("aps", "agent de prévention", "agent de sécurité", "vigile", "gardiennage", "surveillance humaine", "CQP APS", "TFP APS"),
+    "SSIAP": ("ssiap 1", "ssiap1", "agent incendie", "pompier de site"),
     "SSIAP3": ("ssiap-3", "ssiap 3", "chef de service"),
     "DESP_INIT": ("desp", "dirigeant", "entreprise de sécurité"),
     "DESP_VAE": ("desp", "vae", "dirigeant"),
-    "VTC": ("vtc", "chauffeur"),
+    "VTC": ("vtc", "chauffeur privé", "voiture de transport avec chauffeur"),
     "BTS_MOS": ("bts mos", "management opérationnel"),
     "BTS_MCO": ("bts mco", "management commercial"),
     "BTS_CI": ("bts ci", "commerce international"),
@@ -3625,9 +3626,11 @@ def confirmation():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    desk_next = request.args.get("next")
+    desk_paths = {"/secretariat", "/secretariat/gestion", "/secretariat/message"}
     if session.get("user_email"):
-        if request.args.get("next") == "/secretariat" and _secretariat_role():
-            return redirect(url_for("secretariat"))
+        if desk_next in desk_paths and _secretariat_role():
+            return redirect(desk_next)
         return redirect(url_for("crm"))
 
     if request.method == "POST":
@@ -3659,8 +3662,8 @@ def login():
                 session["external_session_version"] = user["session_version"]
             session.permanent = True
 
-            if request.args.get("next") == "/secretariat" and (not external or user.get("desk_access") is True):
-                return redirect(url_for("secretariat"))
+            if desk_next in desk_paths and (not external or user.get("desk_access") is True):
+                return redirect(desk_next)
             next_url = (crm_external_access.HOME if external else
                         _safe_next_url(request.args.get("next")) or url_for("crm"))
             return redirect(next_url)
@@ -4217,6 +4220,9 @@ def _secretariat_catalogue(data_store):
             "centres": centres,
             "category": category,
             "description": description,
+            "aliases": _SECRETARIAT_WEBSITE_ALIASES.get(code, ()),
+            "introduction": DESK_INTRODUCTIONS.get(code, details["purpose"]),
+            "admission_checks": DESK_ADMISSION.get(code, BTS_CHECKS if category == "bts" else []),
             **details,
             "month_choices": list(dict.fromkeys(month_choices)),
             "session_fees": SESSION_FEES.get(code, {}),
@@ -4227,10 +4233,10 @@ def _secretariat_catalogue(data_store):
 
 
 @app.route("/secretariat")
-def secretariat():
+def secretariat(formation_first=False):
     role = _secretariat_role()
     page = render_template(
-        "secretariat.html", formations=_secretariat_catalogue(load_data()),
+        "secretariat.html", formations=_secretariat_catalogue(load_data()), formation_first=formation_first,
         generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
         team_contacts=TEAM_CONTACTS,
         recipients=[member["name"] for member in USERS.values()],
@@ -4754,6 +4760,13 @@ def api_secretariat_demandes():
             return jsonify(error=str(exc)), 400
         if call_key and (not _normaliser_telephone_sms(entry["telephone"]) or not entry["notes"]):
             return jsonify(error="Indiquez un numéro de rappel valide et le motif du rappel."), 400
+    if payload.get("desk_calendly_booked") is True:
+        receipt = confirmed_receipt(sys.modules[__name__], call_key, entry)
+        if not receipt:
+            return jsonify(error="Le rendez-vous réservé ne correspond plus à cet appel. Vérifiez les coordonnées."), 409
+        entry.update(rdv=receipt["label"], rdv_status="scheduled", rdv_date=receipt["date"],
+                     rdv_time=receipt["time"], rdv_mode=receipt["mode"], rdv_name=receipt["name"],
+                     rdv_invitee_uri=receipt["invitee_uri"], rdv_event_uri=receipt["event_uri"])
     if call_key:
         entry["call_key_hash"] = call_key
     if entry["formation_date_status"] == "a_definir":
@@ -12411,7 +12424,9 @@ def _calendly_phone_number(value):
         digits = digits[2:]
     if len(digits) == 10 and digits.startswith("0"):
         digits = f"33{digits[1:]}"
-    if digits.startswith("33") or raw.startswith("+"):
+    if re.fullmatch(r"330[1-9]\d{8}", digits):
+        digits = "33" + digits[3:]
+    if digits.startswith("33") or raw.startswith(("+", "00")):
         normalized = f"+{digits}"
         if re.fullmatch(r"\+[1-9]\d{7,14}", normalized):
             return normalized
@@ -13854,6 +13869,15 @@ def _secretariat_hydrate_appointment_from_crm(data, entry, contact):
     of truth here: the appointment cached on the CRM contact is looked up again
     immediately before the summary e-mail is generated.
     """
+    if entry.get("rdv_invitee_uri"):
+        # The new booking can coexist with an earlier appointment for this caller.
+        appointment = next((item for item in data.get("crm_calendly_appointments", [])
+                            if item.get("invitee_uri") == entry["rdv_invitee_uri"]), None)
+        if appointment and contact.get("id") and appointment.get("contact_id") in (None, "", contact["id"]):
+            appointment["contact_id"] = contact["id"]
+            entry["rdv_host_name"] = appointment.get("host_name") or ""
+        contact["formulaire"] = {**(contact.get("formulaire") or {}), **entry}
+        return appointment
     match = _crm_next_phone_appointment(data, entry, contact)
     if not match:
         return None

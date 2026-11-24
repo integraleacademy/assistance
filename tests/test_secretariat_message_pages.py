@@ -9,7 +9,7 @@ def test_message_link_displays_contact_fields_first_then_routing_fields():
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "private, no-store"
     page = response.get_data(as_text=True)
-    fields = ['id="firstName"', 'id="lastName"', 'id="email"',
+    fields = ['id="lastName"', 'id="firstName"', 'id="email"',
               'id="telephone"', 'id="recipient"', 'id="callReason"',
               'id="messageText"']
     assert [page.index(field) for field in fields] == sorted(page.index(field) for field in fields)
@@ -17,7 +17,11 @@ def test_message_link_displays_contact_fields_first_then_routing_fields():
         assert field in page
     assert 'id="messageForm"' in page
     assert 'id="messageSuccess"' in page
-    assert 'href="/secretariat/gestion"' in page
+    assert 'href="/secretariat/gestion"' not in page
+    assert 'Autres demandes' not in page and 'Accéder aux autres demandes' not in page
+    for name, function in [('Cassandre MENARD', 'Responsable commerciale'), ('Aurélie CHAUSSEZ', 'Responsable BTS et relation clients'),
+                           ('Elsa DUQUESNE', 'Comptabilité'), ('Clément VAILLANT', 'Direction générale')]:
+        assert f'value="{name}">{name} — {function}</option>' in page
 
 
 def test_other_demands_page_keeps_full_flow_without_message_choice(monkeypatch):
@@ -26,11 +30,13 @@ def test_other_demands_page_keeps_full_flow_without_message_choice(monkeypatch):
     response = application.app.test_client().get("/secretariat/gestion")
     assert response.status_code == 200
     page = response.get_data(as_text=True)
-    assert 'data-request="formation"' in page
-    assert 'data-request="suivi"' in page
-    assert 'data-request="autre"' not in page
-    assert 'id="browseCourses"' in page
-    assert 'href="/secretariat/message"' in page
+    assert 'data-step="3"><h2>Quelle formation' in page
+    assert 'data-step="1"' not in page
+    assert all(f'data-formation-code="{code}"' in page for code in application.SECRETARIAT_FORMATIONS)
+    assert all(item not in page for item in ['Nouveau prospect', 'Suivre un dossier', 'Les formations en détails', 'Transmettre un message'])
+    assert 'href="/secretariat/message"' not in page
+    assert 'Solde à confirmer avec le conseiller' not in page
+    assert 'value="A_CONFIRMER"' not in page
 
 
 def test_historical_link_stays_usable_with_original_choices(monkeypatch):

@@ -50,6 +50,7 @@ from crm_salesforce_tasks_status_guardrails import (
 from crm_salesforce_transaction_guardrails import serialize_salesforce_writes
 from secretariat_followup_patch import register_secretariat_followup_patch
 from secretariat_message_pages import register_secretariat_message_pages
+from secretariat_booking import register_secretariat_booking
 
 
 app = legacy_app.app
@@ -58,6 +59,7 @@ install_crm_location_normalization(legacy_app)
 install_crm_pipeline_status_consistency(legacy_app)
 register_secretariat_followup_patch(legacy_app)
 register_secretariat_message_pages(legacy_app)
+register_secretariat_booking(legacy_app)
 legacy_app._crm_restore_secretariat_answers_once()
 legacy_app._crm_repair_ft_funding_at_startup()
 legacy_app._crm_repair_meta_courses_at_startup()
