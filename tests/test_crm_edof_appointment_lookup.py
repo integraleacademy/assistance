@@ -80,6 +80,16 @@ def fixture(tmp_path):
                 selected.append((start,a))
         return min(selected,key=lambda item:item[0]) if selected else None
 
+    def display_owner(appointment, contact):
+        name = normalized(appointment.get("invitee_name"))
+        first, last = normalized(contact.get("prenom")), normalized(contact.get("nom"))
+        if not name or name in {first + last, last + first}:
+            return True
+        return bool(appointment.get("historical_identity_contact_id") == contact["id"]
+                    and appointment.get("callback_checked")
+                    and appointment.get("invitee_phone") == contact.get("telephone")
+                    and appointment.get("invitee_email") == contact.get("mail"))
+
     host=SimpleNamespace(
         app=app,
         _edof_token=lambda:"unit-test-only-secret",
@@ -95,12 +105,7 @@ def fixture(tmp_path):
         _crm_normalize_email=lambda s:str(s or "").strip().lower(),
         _crm_normalize_phone=lambda s:re.sub(r"\D","",str(s or "")),
         _crm_next_phone_appointment=next_phone,
-        _crm_calendly_name_match=lambda c,guest: (
-            None if not guest else normalized(guest) in (
-                normalized(c.get("prenom","")+c.get("nom","")),
-                normalized(c.get("nom","")+c.get("prenom","")),
-            )
-        ),
+        _crm_calendly_display_owner=display_owner,
     )
     register_edof_appointment_lookup(host)
     return app.test_client(), data, appointments, host
@@ -173,3 +178,15 @@ def test_shared_email_with_wrong_calendly_invitee_is_not_attributed(tmp_path):
     appointments[0]["invitee_name"]="Une Autre Personne"
     result=signed(client,["111111"]).get_json()["appointments"]
     assert result["111111"]["status"]=="none"
+
+
+def test_confirmed_callback_and_email_override_only_the_calendly_alias(tmp_path):
+    client, data, appointments, _ = fixture(tmp_path)
+    owner = data["crm_contacts"][0]
+    owner["telephone"] = "0699887766"
+    appointments[0].update(invitee_name="Autre Nom", callback_checked=True,
+                           historical_identity_contact_id=owner["id"], invitee_phone=owner["telephone"],
+                           invitee_email=owner["mail"])
+    assert signed(client, ["111111"]).get_json()["appointments"]["111111"]["status"] == "scheduled"
+    owner["nom"] = "Nouveau"
+    assert signed(client, ["111111"]).get_json()["appointments"]["111111"]["status"] == "unmatched"

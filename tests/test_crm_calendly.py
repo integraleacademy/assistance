@@ -2043,7 +2043,10 @@ def test_same_name_on_the_wrong_sheet_cannot_authorize_a_followup(tmp_path, monk
     row = dict(legacy_calendar_row(guest, "first"), callback_checked=True)
     data["crm_calendly_appointments"] = [row]
     application.save_data(data)
-    assert [a["id"] for a in application._crm_calendly_pending_reviews("", {})] == [row["id"]]
+    assert [a["id"] for a in application._crm_calendly_pending_reviews({})] == [row["id"]]
+    for values in ({"response_status": "answered"}, {"enrollment_outcome": "enrolled"}):
+        result = client.patch("/api/crm/calendly/appointments/booking-to-check", json={"contact_id": "first", **values})
+        assert result.status_code == 409
     monkeypatch.setattr(application, "_calendly_request", lambda *a, **kw: {"resource": guest})
     monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected_followup)
     response = client.patch("/api/crm/calendly/appointments/booking-to-check",
@@ -2077,3 +2080,192 @@ def test_no_answer_honors_provider_cancellation_and_rejects_subsequent_attempts(
     current = application.load_data()["crm_calendly_appointments"][0]
     assert current["status"] == "canceled" and current["cancellation"] == guest["cancellation"]
     assert not current.get("response_status")
+
+
+def test_new_booking_uses_the_callback_and_email_even_with_another_surname(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    owner = client.post("/api/crm/contacts", json={
+        "prenom": "Lina", "nom": "Durand", "telephone": "06 99 88 77 66", "mail": "lina@example.test",
+    }).get_json()
+    # A legacy import contains another person with the same family email only.
+    data = application.load_data()
+    data["crm_contacts"].append({"id": "other", "prenom": "Autre", "nom": "Personne", "mail": "lina@example.test"})
+    application.save_data(data)
+    guest = calendly_payload("LINA@example.test")
+    guest["name"] = "Martin Lina"
+    guest["questions_and_answers"] = [{"question": "Téléphone", "answer": "0033 6 99 88 77 66"}]
+    sends = []
+    monkeypatch.setattr(application, "_crm_send_appointment_followup",
+                        lambda data, contact, label: sends.append(contact["id"]) or {"sms": True, "email": True})
+    for _ in range(2):
+        assert signed_webhook(client, monkeypatch, "invitee.created", guest).get_json()["contact_id"] == owner["id"]
+    assert sends == []
+    data = application.load_data()
+    assert len(data["crm_contacts"]) == 2
+    row, = data["crm_calendly_appointments"]
+    agenda, = client.get("/api/crm/calendly/appointments?date=2099-08-12").get_json()["appointments"]
+    assert agenda["contact"]["id"] == owner["id"] and not agenda["identity_conflict"]
+    assert agenda["contact"]["integration_score"]["score"] is not None
+    fiche = client.get(f"/api/crm/contacts/{owner['id']}/calendly/appointments").get_json()
+    assert fiche["contact_status"] == "RDV programmé" and fiche["appointments"][0]["id"] == row["id"]
+    assert application._crm_next_phone_appointment(data, {}, application._crm_contact(data, owner["id"]))[1]["id"] == row["id"]
+    for _ in range(2):
+        result = client.patch(f"/api/crm/calendly/appointments/{row['id']}",
+                              json={"contact_id": owner["id"], "response_status": "no_answer"})
+        assert result.status_code == 200
+    assert sends == [owner["id"]]
+
+
+def test_exact_pair_skips_an_explicit_duplicate_but_not_other_disqualified_people():
+    kept = {"id": "kept", "prenom": "Lina", "nom": "Martin", "telephone": "0699887766", "mail": "x@example.test"}
+    duplicate = dict(kept, id="duplicate", statut="Disqualifié",
+                     disqualification_reason="Autre", disqualification_detail="Doublon.")
+    row = {"invitee_name": "Lina Mr Martin", "invitee_phone": "+33699887766", "callback_checked": True,
+           "invitee_email": "X@example.test"}
+    for contacts in ([kept, duplicate], [duplicate, kept]):
+        assert application._crm_calendly_resolve_identity({"crm_contacts": contacts}, row, duplicate) == (kept, False)
+    duplicate["disqualification_detail"] = "En recherche de financement"
+    assert application._crm_calendly_resolve_identity({"crm_contacts": [kept, duplicate]}, row, kept) == (None, True)
+    assert application._crm_calendly_resolve_identity({"crm_contacts": [duplicate]}, row) == (duplicate, False)
+    assert application._crm_calendly_resolve_identity({"crm_contacts": [kept]}, dict(row, callback_checked=False)) == (None, True)
+    assert application._crm_calendly_resolve_identity({"crm_contacts": [kept]}, dict(row, invitee_email="other@example.test")) == (None, True)
+
+
+def test_pair_selects_the_matching_course_only_within_that_person():
+    owner = {"id": "main", "formation": "APS", "nom": "Martin", "telephone": "0699887766", "mail": "x@example.test"}
+    course = dict(owner, id="course", formation="A3P", meta_course_root_id="main")
+    row = {"name": "Formation garde du corps (APR)", "invitee_name": "Autre Nom",
+           "invitee_email": owner["mail"], "invitee_phone": owner["telephone"], "callback_checked": True}
+    assert application._crm_calendly_resolve_identity({"crm_contacts": [owner, course]}, row, owner) == (course, False)
+    course["telephone"] = "0611000000"
+    assert application._crm_calendly_resolve_identity({"crm_contacts": [owner, course]}, row, course) == (owner, False)
+
+
+def test_background_revisits_v2_conflicts_and_old_calls_without_creating_leads_or_resending(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    owner = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin",
+                        "telephone": "0699887766", "mail": "lina@example.test"}).get_json()
+    guests = {}
+    rows = []
+    for number, archived in enumerate((True, True, True, False, False), 1):
+        guest = calendly_payload("unknown@example.test" if number == 3 else "lina@example.test")
+        guest["name"] = "Autre Nom"
+        guest["uri"] = f"{guest['event']}/invitees/INVITEE{number}"
+        guest["questions_and_answers"] = [{"question": "Téléphone de rappel", "answer":
+                                          "0633000000" if number == 3 else "0699887766"}]
+        if archived:
+            guest["scheduled_event"]["start_time"] = f"2020-01-0{number}T08:00:00Z"
+        row = legacy_calendar_row(guest, owner["id"] if number == 2 else None)
+        row["id"] = str(number)
+        if number == 2:
+            row.update(response_status="answered", response_status_updated_at="2020-01-02T08:15:00Z")
+        if not archived:
+            row.update(identity_conflict=True, identity_review_version=2, callback_checked=True,
+                       invitee_phone="+33699887766")
+        rows.append(row)
+        guests[guest["uri"].rsplit("/", 1)[-1]] = guest
+    data = application.load_data()
+    data["crm_calendly_appointments"] = rows
+    application.save_data(data)
+    calls = []
+    def provider(method, path, **kwargs):
+        assert method == "GET"
+        key = path.rsplit("/", 1)[-1]
+        calls.append(key)
+        return {"resource": guests[key]}
+    monkeypatch.setattr(application, "_calendly_request", provider)
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected_followup)
+    for _ in range(3):
+        application._crm_calendly_auto_review()
+    assert calls[:2] == ["INVITEE4", "INVITEE5"] and len(calls) == len(set(calls)) == 5
+    result = application.load_data()
+    assert len(result["crm_contacts"]) == 1
+    checked = {r["id"]: r for r in result["crm_calendly_appointments"]}
+    for number in ("1", "2", "4", "5"):
+        assert checked[number]["contact_id"] == owner["id"] and not checked[number]["identity_conflict"]
+        assert application._crm_calendly_display_owner(checked[number], owner)
+    assert checked["2"]["response_status"] == "answered"
+    assert checked["2"]["response_status_updated_at"] == "2020-01-02T08:15:00Z"
+    assert not checked["3"].get("contact_id")
+
+
+def test_an_explicit_duplicate_keeps_the_recorded_call_on_the_retained_dossier(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    kept = {"id": "kept", "prenom": "Lina", "nom": "Martin", "telephone": "0699887766", "mail": "lina@example.test"}
+    dup = dict(kept, id="duplicate", statut="Disqualifié", disqualification_reason="Doublon")
+    data = application.load_data()
+    data["crm_contacts"] = [dup, kept]
+    guest = calendly_payload("lina@example.test")
+    guest.update(name="Lina Martin", questions_and_answers=[{"question": "Téléphone", "answer": "+33699887766"}])
+    row = legacy_calendar_row(guest, dup["id"])
+    row.update(start_time="2020-01-01T08:00:00Z", response_status="no_answer", response_status_updated_at="2020-01-01T08:03:00Z")
+    data["crm_calendly_appointments"] = [row]
+    application.save_data(data)
+    monkeypatch.setattr(application, "_calendly_request", lambda *a, **kw: {"resource": guest})
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected_followup)
+    application._crm_calendly_auto_review()
+    updated, = application.load_data()["crm_calendly_appointments"]
+    assert updated["contact_id"] == "kept" and not updated["identity_conflict"]
+    assert updated["response_status"] == "no_answer" and updated["response_status_updated_at"] == "2020-01-01T08:03:00Z"
+
+
+def test_late_import_preserves_a_followup_planned_after_the_actual_booking(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    owner = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin",
+                        "telephone": "0699887766", "mail": "lina@example.test"}).get_json()
+    scheduled = client.patch(f"/api/crm/contacts/{owner['id']}",
+                             json={"statut": "A relancer", "relance_date": "2099-08-10"})
+    assert scheduled.status_code == 200
+    data = application.load_data()
+    contact = application._crm_contact(data, owner["id"])
+    contact["relances"][0]["created_at"] = "2099-08-02T08:00:00Z"
+    guest = calendly_payload("lina@example.test")
+    guest.update(name="Autre Nom", created_at="2099-08-01T08:00:00Z",
+                 questions_and_answers=[{"question": "Téléphone", "answer": "+33699887766"}])
+    row = dict(legacy_calendar_row(guest), created_at="2099-08-03T08:00:00Z")
+    data["crm_calendly_appointments"] = [row]
+    application._crm_calendly_repair_invitee(data, row, guest)
+    assert row["contact_id"] == contact["id"] and row["calendly_created_at"] == guest["created_at"]
+    assert (contact["statut"], contact["relance_date"]) == ("A relancer", "2099-08-10")
+
+
+def test_a_disqualified_course_duplicate_never_owns_a_followup_or_a_replayed_booking():
+    old = {"id": "main", "formation": "APS", "prenom": "Lina", "nom": "Martin",
+           "telephone": "0699887766", "mail": "lina@example.test"}
+    dup = dict(old, id="dup", telephone="0611000000", formation="A3P", statut="Disqualifié",
+               disqualification_reason="Doublon", meta_course_root_id="main")
+    row = {"id": "one", "contact_id": "dup", "name": "Formation garde du corps (APR)",
+           "start_time": "2099-11-25T09:30:00Z", "invitee_name": "Lina Martin", "invitee_email": old["mail"]}
+    data = {"crm_contacts": [old, dup], "crm_calendly_appointments": [row]}
+    assert application._crm_calendly_resolve_identity(data, row, dup) == (old, False)
+    assert not application._crm_calendly_followup_owner(data, row, dup)
+    assert application._crm_calendly_duplicate_booking_contact(data, dict(row, id="two")) is None
+    agenda = application._crm_calendly_appointments_payload(data)["appointments"]
+    assert not agenda[0]["contact"].get("id")
+
+
+def test_new_course_does_not_take_another_dossiers_confirmed_booking_or_outcome():
+    old = {"id": "old", "formation": "APS", "prenom": "Lina", "nom": "Martin",
+           "telephone": "0699887766", "mail": "lina@example.test"}
+    course = dict(old, id="course", formation="A3P", meta_course_root_id="old")
+    other = dict(old, id="other", telephone="0611000000", mail="other@example.test")
+    row = {"contact_id": "old", "name": "Formation garde du corps (APR)", "start_time": "2099-11-25T09:30:00Z",
+           "invitee_name": "Autre Nom", "invitee_email": other["mail"], "invitee_phone": other["telephone"],
+           "callback_checked": True, "response_status": "answered"}
+    data = {"crm_contacts": [old, course, other], "crm_calendly_appointments": [row]}
+    application._crm_move_course_bookings(data, course)
+    assert (row["contact_id"], row["response_status"]) == ("old", "answered")
+
+
+def test_partial_notification_never_replaces_a_confirmed_callback_with_a_reminder(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    owner = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin",
+                        "telephone": "0699887766", "mail": "lina@example.test"}).get_json()
+    guest = calendly_payload("lina@example.test")
+    guest.update(name="Autre Nom", questions_and_answers=[{"question": "Téléphone", "answer": "+33699887766"}])
+    assert signed_webhook(client, monkeypatch, "invitee.created", guest).get_json()["contact_id"] == owner["id"]
+    del guest["questions_and_answers"], guest["scheduled_event"]["location"]
+    guest["text_reminder_number"] = "+33611000000"
+    assert signed_webhook(client, monkeypatch, "invitee.created", guest).get_json()["contact_id"] == owner["id"]
+    current, = application.load_data()["crm_calendly_appointments"]
+    assert current["invitee_phone"] == "+33699887766" and not current["identity_conflict"]

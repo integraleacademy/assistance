@@ -128,7 +128,9 @@ def local_calendly_contact(legacy, contact_id, warning=""):
             # Preserve visibility of legacy orphans without writing during a
             # consultation. Explicit refresh persists the existing repair rules.
             if legacy._crm_calendly_resolve_identity(data, item, contact)[0] is contact:
-                appointments.append(dict(item, contact_id=contact_id))
+                projected = dict(item)
+                legacy._crm_calendly_set_owner(projected, None, contact)
+                appointments.append(projected)
     appointments = sorted(
         appointments,
         key=lambda item: item.get("start_time") or "", reverse=True,
