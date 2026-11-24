@@ -184,10 +184,14 @@ def install(legacy):
         if request.endpoint in {"login", "logout"}:
             return None
         # The call desk has its own identity checks and scoped agenda actions.
-        if user.get("desk_access") is True and request.endpoint in {"secretariat", "secretariat_agenda", "secretariat_calendly_prefill_schema"} and request.method in {"GET", "HEAD"}:
+        if user.get("desk_access") is True and request.endpoint in {
+            "secretariat", "secretariat_autres_demandes", "secretariat_transmettre_message",
+            "secretariat_agenda", "secretariat_calendly_prefill_schema", "secretariat_booking_slots",
+        } and request.method in {"GET", "HEAD"}:
             return None
         if user.get("desk_access") is True and request.method == "POST" and request.endpoint in {
-            "api_secretariat_crm_contact", "secretariat_suivi_cnaps", "api_secretariat_demandes",
+            "api_secretariat_crm_contact", "secretariat_coordonnees", "secretariat_book_slot",
+            "secretariat_suivi_cnaps", "api_secretariat_demandes",
             "secretariat_waiting_call", "secretariat_message_supplement",
             "secretariat_retry_channel", "api_secretariat_ai_question", "api_secretariat_calendly_appointment",
         }:
@@ -201,7 +205,8 @@ def install(legacy):
                               "crm.css", "crm_workspace.css", "crm_dashboard_origins.css",
                               "crm_title.js", "crm_sidebar_state.js", "crm_appointment_state.js",
                               "crm_workspace.js", "crm.js", "crm_external_contact.js",
-                              "crm_external_contact.css", "secretariat.css", "secretariat-team.svg", "variante_couleur.png"}
+                              "crm_external_contact.css", "secretariat.css", "secretariat_message.css",
+                              "secretariat_message.js", "secretariat-team.svg", "variante_couleur.png"}
             if (request.view_args or {}).get("filename") in allowed_assets:
                 return None
         if request.endpoint in {"crm", "crm_uppercase"} and request.method in {"GET", "HEAD"}:

@@ -1,5 +1,5 @@
-let browsingCourses = false;
-let fromCatalogue = false;
+let browsingCourses = formationFirst;
+let fromCatalogue = formationFirst;
 function newDeskCallKey() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -11,26 +11,28 @@ const notesForm = document.getElementById('notesForm');
 const interruption = document.getElementById('interruptedFields');
 const receiptArea = document.getElementById('callReceipt');
 
-document.getElementById('browseCourses').onclick = () => {
+document.getElementById('browseCourses')?.addEventListener('click', () => {
   browsingCourses = true;
   fromCatalogue = false;
   requestType = '';
   showStep(3);
   formationSearch.focus();
-};
+});
 
 function setCpfBalance(consulted) {
   const balance = document.getElementById('cpf_montant');
   const pending = document.getElementById('cpfPending');
   cpfMontantField.hidden = !consulted;
-  pending.disabled = !consulted;
-  pending.required = false;
-  if (!consulted) pending.checked = false;
-  balance.disabled = !consulted || pending.checked;
-  balance.required = !balance.disabled;
+  if (pending) {
+    pending.disabled = !consulted;
+    pending.required = false;
+    if (!consulted) pending.checked = false;
+  }
+  balance.disabled = !consulted || Boolean(pending?.checked);
+  balance.required = !formationFirst && !balance.disabled;
   if (balance.disabled) balance.value = '';
 }
-document.getElementById('cpfPending').addEventListener('change', () => setCpfBalance(true));
+document.getElementById('cpfPending')?.addEventListener('change', () => setCpfBalance(true));
 
 function deskJsonHeaders() {
   const headers = {'Content-Type': 'application/json'};
@@ -182,7 +184,8 @@ refreshDeskCnaps.onclick = () => loadDeskCnaps(true);
 
 function setCallbackMode(active) {
   interruption.hidden = !active;
-  prepareCallback.hidden = resumeCall.hidden = active;
+  resumeCall.hidden = active;
+  prepareCallback.hidden = active || deskBookingConfirmed() || bookingPending;
   saveInterrupted.hidden = !active;
   liveNotes.required = interruptPhone.required = active;
   notesHeading.textContent = active ? 'Enregistrer un rappel' : 'Notes d’appel';
@@ -201,17 +204,20 @@ liveNotes.addEventListener('input', () => { precision.value = liveNotes.value; }
 interruptDue.oninput = () => { callbackDue.value = interruptDue.value; };
 interruptOwner.onchange = () => { callbackRecipient.value = interruptOwner.value; };
 interruptPhone.oninput = () => {
+  if (deskBookingConfirmed() || bookingPending) return;
   callerForm.elements.telephone.value = interruptPhone.value;
   callerForm.elements.telephone.dispatchEvent(new Event('input', {bubbles: true}));
 };
 notesDialog.addEventListener('cancel', event => { if (saveInterrupted.disabled) event.preventDefault(); });
 for (const button of [closeCallNotes, resumeCall]) button.onclick = () => notesDialog.close();
 prepareCallback.onclick = () => {
+  if (deskBookingConfirmed() || bookingPending) return;
   setCallbackMode(true);
   (interruptPhone.value ? liveNotes : interruptPhone).focus();
 };
 notesForm.addEventListener('submit', async event => {
   event.preventDefault();
+  if (deskBookingConfirmed() || bookingPending) return;
   if (interruption.hidden || saveInterrupted.disabled || !notesForm.reportValidity()) return;
   if (!normalizedPhone(interruptPhone.value) || !liveNotes.value.trim()) {
     interruptError.textContent = 'Indiquez un numéro de téléphone valide et le motif du rappel.';

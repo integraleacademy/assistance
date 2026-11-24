@@ -83,6 +83,6 @@
     error.hidden = true;
     success.hidden = true;
     form.hidden = false;
-    document.getElementById('firstName').focus();
+    document.getElementById('lastName').focus();
   });
 })();
