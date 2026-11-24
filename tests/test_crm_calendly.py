@@ -1891,3 +1891,189 @@ def test_historical_name_disagreement_keeps_the_recorded_call_and_owner(tmp_path
         assert (row["contact_id"], row["response_status"], row["identity_conflict"]) == (owner["id"], "answered", disputed)
         if disputed:
             assert client.patch("/api/crm/calendly/appointments/historical", json={"response_status":"no_answer"}).status_code == 409
+
+
+def legacy_calendar_row(guest, contact_id=None):
+    return {
+        "id": "booking-to-check", "contact_id": contact_id, "status": "active",
+        "invitee_uri": guest["uri"], "event_uri": guest["event"], "invitee_name": guest["name"],
+        "invitee_email": guest["email"], "invitee_phone": guest["text_reminder_number"],
+        "start_time": guest["scheduled_event"]["start_time"], "name": guest["scheduled_event"]["name"],
+    }
+
+
+def unexpected_followup(*args):
+    raise AssertionError("Verifying an identity must not send a follow-up")
+
+
+def test_automatic_review_moves_future_booking_and_updates_pipeline_without_opening_sheet(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    correct = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin",
+                          "mail": "lina@example.com", "telephone": "0699887766"}).get_json()
+    other = client.post("/api/crm/contacts", json={"prenom": "Pierre", "nom": "Legrand",
+                        "telephone": "0612345678"}).get_json()
+    guest = calendly_payload()
+    guest["questions_and_answers"] = [{"question": "Numéro de téléphone", "answer": "+33699887766"}]
+    data = application.load_data()
+    row = legacy_calendar_row(guest, other["id"])
+    data["crm_calendly_appointments"] = [row]
+    application._crm_contact(data, other["id"])["statut"] = "RDV programmé"
+    application.save_data(data)
+    calls = []
+
+    def fetch(method, path, **kwargs):
+        assert method == "GET" and path.endswith("/EVENT1/invitees/INVITEE1")
+        calls.append(path)
+        return {"resource": guest}
+
+    monkeypatch.setattr(application, "_calendly_request", fetch)
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected_followup)
+    application._crm_calendly_auto_review()
+    application._crm_calendly_auto_review()
+    data = application.load_data()
+    booking, = data["crm_calendly_appointments"]
+    assert (booking["id"], booking["contact_id"], booking["identity_conflict"]) == (row["id"], correct["id"], False)
+    assert application._crm_contact(data, correct["id"])["statut"] == "RDV programmé"
+    assert application._crm_contact(data, other["id"])["statut"] == "En cours"
+    assert len(calls) == 1
+    # An action from the previous owner's open tab must never reach the new owner.
+    assert client.patch("/api/crm/calendly/appointments/booking-to-check",
+                        json={"contact_id": other["id"], "response_status": "no_answer"}).status_code == 409
+    fresh = client.get(f"/api/crm/contacts/{correct['id']}/calendly/appointments").get_json()
+    assert fresh["contact_status"] == "RDV programmé"
+    assert [item["id"] for item in fresh["appointments"]] == [row["id"]]
+
+
+def test_incoming_form_links_a_prior_booking_before_any_contact_read(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    data = application.load_data()
+    guest = calendly_payload()
+    data["crm_calendly_appointments"] = [legacy_calendar_row(guest)]
+    fields = {"prenom": "Lina", "nom": "Martin", "mail": guest["email"],
+              "telephone": "0609090909", "formation": "VTC"}
+    with application.app.test_request_context():
+        record = {"form_id": "test-abandoned-first"}
+        contact = application._crm_create_or_match_abandoned_form_contact(data, record, fields, application._crm_now())
+    assert data["crm_calendly_appointments"][0]["contact_id"] == contact["id"]
+    assert contact["statut"] == "RDV programmé"
+
+
+def test_no_answer_confirms_legacy_spelling_with_two_coordinates_and_sends_only_once(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    owner = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin",
+                        "mail": "lina@example.com", "telephone": "0699887766"}).get_json()
+    guest = calendly_payload()
+    guest["name"] = "Liina Martin"
+    guest["scheduled_event"]["start_time"] = "2020-11-23T13:15:00Z"
+    guest["questions_and_answers"] = [{"question": "Numéro de téléphone", "answer": "+33699887766"}]
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [legacy_calendar_row(guest, owner["id"])]
+    application.save_data(data)
+    reads, sends = [], []
+    def provider(method, path, **kwargs):
+        reads.append((method, path))
+        return {"resource": guest}
+    def send(data, contact, label):
+        sends.append(contact["id"])
+        return {"sms": True, "email": True}
+    monkeypatch.setattr(application, "_calendly_request", provider)
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", send)
+    request = {"contact_id": owner["id"], "response_status": "no_answer"}
+    for _ in range(2):
+        response = client.patch("/api/crm/calendly/appointments/booking-to-check", json=request)
+        assert response.status_code == 200
+    stored = application.load_data()
+    appointment, = stored["crm_calendly_appointments"]
+    assert appointment["historical_identity_contact_id"] == owner["id"]
+    assert appointment["response_status"] == "no_answer"
+    saved = application._crm_contact(stored, owner["id"])
+    assert saved["statut"] == "A relancer" and len(saved["relances"]) == 1
+    assert reads == [("GET", "/scheduled_events/EVENT1/invitees/INVITEE1")]
+    assert sends == [owner["id"]]
+
+
+def test_automatic_check_keeps_genuine_coordinate_conflicts_blocked(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    owner = client.post("/api/crm/contacts", json={"prenom":"Lina","nom":"Martin",
+                        "mail":"lina@example.com","telephone":"0612345678"}).get_json()
+    client.post("/api/crm/contacts", json={"prenom":"Jean","nom":"Robin","telephone":"0699887766"})
+    guest = calendly_payload()
+    guest["name"] = "Liina Martin"
+    guest["questions_and_answers"] = [{"question":"Numéro de téléphone","answer":"0699887766"}]
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [legacy_calendar_row(guest, owner["id"])]
+    application.save_data(data)
+    monkeypatch.setattr(application, "_calendly_request", lambda *a, **kw: {"resource": guest})
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected_followup)
+    response = client.patch("/api/crm/calendly/appointments/booking-to-check",
+                            json={"contact_id":owner["id"],"response_status":"no_answer"})
+    assert response.status_code == 409
+    stored = application.load_data()["crm_calendly_appointments"][0]
+    assert stored["identity_conflict"] and not stored.get("response_status")
+
+
+def test_slow_identity_check_cannot_overwrite_an_intervening_cancellation(tmp_path, monkeypatch):
+    authenticated_client(tmp_path, monkeypatch)
+    guest = calendly_payload()
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [legacy_calendar_row(guest)]
+    application.save_data(data)
+    def provider(*args, **kwargs):
+        live = application.load_data()
+        live["crm_calendly_appointments"][0]["status"] = "canceled"
+        application.save_data(live)
+        return {"resource": guest}
+    monkeypatch.setattr(application, "_calendly_request", provider)
+    application._crm_calendly_auto_review()
+    data = application.load_data()
+    assert not data["crm_contacts"]
+    assert data["crm_calendly_appointments"][0]["status"] == "canceled"
+    assert not data["crm_calendly_appointments"][0].get("identity_checked_at")
+
+
+def test_same_name_on_the_wrong_sheet_cannot_authorize_a_followup(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    # Legacy imports can contain homonyms. The appointment was linked to the wrong one.
+    data = application.load_data()
+    data["crm_contacts"] = [
+        {"id": "first", "prenom": "Lina", "nom": "Martin", "mail": "first@example.test", "telephone": "0600000001"},
+        {"id": "second", "prenom": "Lina", "nom": "Martin", "mail": "lina@example.com", "telephone": "0612345678"},
+    ]
+    guest = calendly_payload()
+    row = dict(legacy_calendar_row(guest, "first"), callback_checked=True)
+    data["crm_calendly_appointments"] = [row]
+    application.save_data(data)
+    assert [a["id"] for a in application._crm_calendly_pending_reviews("", {})] == [row["id"]]
+    monkeypatch.setattr(application, "_calendly_request", lambda *a, **kw: {"resource": guest})
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected_followup)
+    response = client.patch("/api/crm/calendly/appointments/booking-to-check",
+                            json={"contact_id": "first", "response_status": "no_answer"})
+    assert response.status_code == 409
+    current = application.load_data()["crm_calendly_appointments"][0]
+    assert current["contact_id"] == "second" and not current.get("response_status")
+
+
+def test_no_answer_honors_provider_cancellation_and_rejects_subsequent_attempts(tmp_path, monkeypatch):
+    client = authenticated_client(tmp_path, monkeypatch)
+    contact = client.post("/api/crm/contacts", json={"prenom": "Lina", "nom": "Martin",
+                          "mail": "lina@example.com", "telephone": "0612345678"}).get_json()
+    guest = calendly_payload(status="canceled")
+    guest.update(name="Liina Martin", cancellation={"reason": "Indisponible"})
+    guest["scheduled_event"]["start_time"] = "2020-11-23T13:15:00Z"
+    data = application.load_data()
+    data["crm_calendly_appointments"] = [legacy_calendar_row(guest, contact["id"])]
+    application.save_data(data)
+    reads = []
+    def provider(*args, **kwargs):
+        reads.append(args)
+        return {"resource": guest}
+    monkeypatch.setattr(application, "_calendly_request", provider)
+    monkeypatch.setattr(application, "_crm_send_appointment_followup", unexpected_followup)
+    for _ in range(2):
+        response = client.patch("/api/crm/calendly/appointments/booking-to-check",
+                                json={"contact_id": contact["id"], "response_status": "no_answer"})
+        assert response.status_code == 409 and "annulé" in response.get_json()["error"]
+    assert len(reads) == 1
+    current = application.load_data()["crm_calendly_appointments"][0]
+    assert current["status"] == "canceled" and current["cancellation"] == guest["cancellation"]
+    assert not current.get("response_status")

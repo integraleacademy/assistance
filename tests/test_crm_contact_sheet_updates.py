@@ -162,7 +162,9 @@ def test_next_phone_appointment_is_displayed_beside_the_next_action():
         "PROCHAIN RDV TÉLÉPHONIQUE"
     )
     assert "function nextTelephoneAppointment(c,now=Date.now())" in javascript
-    assert "if(contact)renderContactNextTelephoneAppointment(contact)" in javascript
+    assert "if(contact)renderContactAppointmentSummary(contact)" in javascript
+    summary = javascript.split("function renderContactAppointmentSummary(c){", 1)[1].split("\n}", 1)[0]
+    assert "renderContactNextTelephoneAppointment(c)" in summary
     assert ".contact-next-row{grid-column:2/-1;display:grid" in stylesheet
 
     calendly_helpers = javascript[
@@ -176,10 +178,8 @@ def test_next_phone_appointment_is_displayed_beside_the_next_action():
     ]
     script = r"""
 let crmAppointments=[];
-const window={CRMAppointmentState:{nextAppointment:(contactId,appointments)=>
- appointments.filter(item=>item.contact_id===contactId)
-  .sort((a,b)=>Date.parse(a.start_time)-Date.parse(b.start_time))[0]||null}};
-""" + calendly_helpers + r"""
+const window={};
+""" + (ROOT / "static/crm_appointment_state.js").read_text(encoding="utf-8") + calendly_helpers + r"""
 const now=Date.parse('2026-09-01T08:00:00Z');
 crmAppointments=[
  {id:'video',contact_id:'contact-1',name:'Visio',start_time:'2026-09-01T09:00:00Z',status:'active'},
@@ -278,3 +278,44 @@ def test_personal_funding_question_is_hidden_when_cpf_covers_training():
         "document.querySelector('[data-show=personal-financing]')?.classList."
         "toggle('hidden',cpfCoversTraining)"
     ) in javascript
+
+
+def test_booking_lookup_renders_the_new_status_count_and_date_in_the_open_sheet():
+    source = CRM_JS.read_text(encoding="utf-8")
+    renderers = source[source.index("function renderContactPrimaryStatus("):source.index("function replaceContactAppointments(")]
+    lookup = source[source.index("let calendlyLookupRevision="):source.index("async function setupCalendly(")]
+    script = r"""
+const assert=require('node:assert/strict');
+const C={}, S=['Nouveaux','RDV programmé'], location={search:'?fiche=one'};
+const contact={id:'one',statut:'Nouveaux'}, badgeEl={}, counter={}, steps=S.map(label=>({
+  dataset:{primaryStep:label},classList:{toggle(key,value){this[key]=value;}}
+}));
+const document={querySelectorAll:()=>steps,querySelector:key=>({
+  '.contact-header-statuses .badge':badgeEl,'.contact-activity-summary':counter
+})[key]||null};
+const badge=s=>s, contactHeaderActivitySummary=c=>c.count;
+const renderContactNextTelephoneAppointment=c=>{dateShown=c.date;};
+const mergeContactInStore=(id,data)=>Object.assign(contact,data);
+const replaceContactAppointments=(id,rows)=>{
+  contact.count=rows.length;contact.date=rows[0]?.start_time;
+  renderContactAppointmentSummary(contact);
+};
+const updateVisibleAppointmentData=()=>{}, renderCalendlyAppointments=()=>{};
+let activeCalendlyContactId='',dateShown;
+const pending=[];
+const api=()=>new Promise(resolve=>pending.push(resolve));
+""" + renderers + lookup + r"""
+(async()=>{
+  const stale=loadCalendlyAppointments(contact), latest=loadCalendlyAppointments(contact);
+  pending[1]({contact_status:'RDV programmé',appointments:[{start_time:'2099-01-02'}]});
+  await latest;
+  pending[0]({contact_status:'Nouveaux',appointments:[]});
+  await stale;
+  assert.equal(badgeEl.outerHTML,'RDV programmé');
+  assert.equal(steps[1].classList.current,true);
+  assert.equal(steps[0].classList.done,true);
+  assert.equal(counter.outerHTML,1);
+  assert.equal(dateShown,'2099-01-02');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+    subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)

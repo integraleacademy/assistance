@@ -60,7 +60,7 @@ def test_flask_json_response_and_status_are_compatible():
     response = client.get("/calendly/one", headers={"X-Test-Login": "yes"})
     assert response.status_code == 200
     assert response.get_json() == {
-        "appointments": [], "integration": {"configured": False},
+        "appointments": [], "integration": {"configured": False}, "contact_status": None,
         "lookup": {"method": "local", "processed_events": 0, "matched_appointments": 0},
     }
     assert client.get("/calendly/missing", headers={"X-Test-Login": "yes"}).status_code == 404
