@@ -1,5 +1,7 @@
 const directBooking = document.getElementById('directBooking');
 const hostedBooking = document.getElementById('hostedBooking');
+const chooseSmsBooking = document.getElementById('chooseSmsBooking');
+let useSmsBooking = false;
 let deskBookingWeek = 0, deskBookingCourse = '', deskBookingEvent = '';
 let bookingSlotsVersion = 0, bookingPending = false, bookingUncertain = false, nativeReceipt = null;
 function deskBookingConfirmed() { return Boolean(formationFirst && calendlyEvent); }
@@ -7,7 +9,7 @@ function lockBookingChoice() {
   document.querySelectorAll('[name=wants_rdv]').forEach(input => { input.disabled = true; });
   document.querySelector('[data-step="6"] [data-back]').disabled = true;
   calendlyInline.hidden = true;
-  if (directBooking) directBooking.hidden = hostedBooking.hidden = true;
+  if (directBooking) directBooking.hidden = hostedBooking.hidden = chooseSmsBooking.hidden = true;
   document.getElementById('hostedBookingIntro').hidden = true;
   updateProgress();
 }
@@ -95,7 +97,7 @@ function openDeskBooking() {
     return;
   }
   directBooking.hidden = false;
-  hostedBooking.hidden = true;
+  hostedBooking.hidden = false;
   document.getElementById('hostedBookingIntro').hidden = true;
   calendlyInline.hidden = true;
   const number = callerForm.elements.telephone.value.trim();
@@ -109,6 +111,11 @@ function openDeskBooking() {
   return listDeskSlots();
 }
 if (directBooking) {
+  chooseSmsBooking.onclick = () => {
+    const yes = document.querySelector('[name=wants_rdv][value=oui]');
+    yes.checked = true;
+    selectAppointmentChoice(yes, true);
+  };
   document.getElementById('deskSlot').onchange = event => { document.getElementById('bookDeskSlot').disabled = !event.target.value; };
   document.getElementById('deskBookingAgenda').onchange = event => {
     deskBookingEvent = event.target.value; deskBookingWeek = 0;
@@ -117,7 +124,11 @@ if (directBooking) {
   document.getElementById('previousBookingWeek').onclick = () => { if (deskBookingWeek > 0) deskBookingWeek--; listDeskSlots(); };
   document.getElementById('nextBookingWeek').onclick = () => { deskBookingWeek++; listDeskSlots(); };
   document.getElementById('deskSmsConsent').onchange = event => { document.getElementById('deskSmsNumber').required = event.target.checked; };
-  hostedBooking.onclick = () => { if (bookingPending || deskBookingConfirmed() || bookingUncertain) return; hostedBooking.hidden = true; renderCalendlyWidget(true); };
+  hostedBooking.onclick = () => {
+    if (bookingPending || deskBookingConfirmed() || bookingUncertain) return;
+    useSmsBooking = false;
+    renderCalendlyWidget();
+  };
   directBooking.onsubmit = async event => {
     event.preventDefault();
     if (bookingPending || deskBookingConfirmed() || bookingUncertain || !directBooking.reportValidity()) return;
@@ -159,6 +170,7 @@ if (directBooking) {
       bookingPending = false;
       openCallNotes.disabled = false;
       directBooking.inert = false;
+      hostedBooking.hidden = Boolean(nativeReceipt || bookingUncertain);
       document.querySelectorAll('[name=wants_rdv]').forEach(input => { input.disabled = Boolean(nativeReceipt); });
       updateProgress();
     }

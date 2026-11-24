@@ -1,7 +1,7 @@
 """Parcours de gestion d’un appel, du catalogue à la réservation effective chez Calendly."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from crm_app import legacy_app as app
@@ -66,6 +66,8 @@ def test_external_desk_login_and_exact_coordinate_completion(desk):
     assert login.location == "/secretariat/gestion"
     for path in (login.location, "/secretariat/message", "/static/secretariat_message.css", "/static/secretariat_message.js"):
         assert operator.get(path).status_code == 200
+    assert b'id="chooseSmsBooking"' in operator.get(login.location).data
+    assert b'id="chooseSmsBooking"' not in app.app.test_client().get(login.location).data
     with operator.session_transaction() as session:
         scoped = {"X-CSRF-Token": session["external_access_csrf"]}
     url = "/api/secretariat/coordonnees"
@@ -161,10 +163,11 @@ def test_location_compatibility_and_uncertain_booking_are_not_replayed(desk, cal
     assert len(posts) == 2
 
 
-def test_formation_first_browser_flow(desk, calendar):
+@pytest.mark.parametrize("booking_mode", ["calendly", "sms", "return_to_calendly"])
+def test_formation_first_browser_flow(desk, calendar, booking_mode):
     browser_api = pytest.importorskip("playwright.sync_api")
     client, _ = desk
-    calls, _, _ = calendar
+    calls, _, event = calendar
     signin(client)
     errors = []
     with browser_api.sync_playwright() as runner:
@@ -175,10 +178,26 @@ def test_formation_first_browser_flow(desk, calendar):
         try:
             page = browser.new_page(viewport={"width": 1280, "height": 900})
             page.on("pageerror", lambda error: errors.append(str(error)))
+            requested_paths = []
             def route(req):
                 url = urlsplit(req.request.url)
+                if url.netloc == "assets.calendly.com" and url.path.endswith("/widget.js"):
+                    return req.fulfill(content_type="application/javascript", body="""
+                        window.Calendly = {initInlineWidget({url, parentElement}) {
+                          const iframe = document.createElement('iframe');
+                          iframe.src = url;
+                          parentElement.append(iframe);
+                        }};
+                    """)
+                if url.netloc == "calendly.com":
+                    return req.fulfill(content_type="text/html", body="""
+                        <button onclick="parent.postMessage({event: 'calendly.event_scheduled'}, 'https://desk.test')">Confirmer</button>
+                    """)
                 if url.netloc != "desk.test":
                     return req.abort()
+                requested_paths.append(url.path)
+                if url.path.endswith("/prefill-schema"):
+                    return req.fulfill(json=app._secretariat_booking_schema(event["scheduling_url"], [event]))
                 response = client.open(url.path + ("?" + url.query if url.query else ""), method=req.request.method,
                                        data=req.request.post_data, headers={k:v for k,v in req.request.headers.items() if k in {"content-type", "x-csrf-token"}})
                 req.fulfill(status=response.status_code, content_type=response.content_type, body=response.data)
@@ -208,20 +227,47 @@ def test_formation_first_browser_flow(desk, calendar):
             for key in ["cpf_consulte", "france_travail", "financement_perso", "identite_numerique", "cnaps_ok", "devis"]:
                 page.check(f'[name="{key}"][value="OUI" i]' if key == "cnaps_ok" else f'[name="{key}"][value="NON"]')
             page.click("#nextQualification")
-            page.check('[name="wants_rdv"][value="oui"]')
-            page.locator("#deskSlot optgroup option").wait_for(state="attached")
-            assert page.input_value("#deskSmsNumber") == "+33639980042"
-            assert page.locator('#deskEventQuestions input[type=tel]').input_value() == "+33639980042"
-            page.check("#deskSmsConsent")
-            page.select_option("#deskSlot", index=1)
-            page.click("#bookDeskSlot")
-            page.get_by_text("Rendez-vous réservé le ", exact=False).wait_for()
+            if booking_mode == "calendly":
+                page.check('[name="wants_rdv"][value="oui"]')
+            else:
+                page.click("#chooseSmsBooking")
+                page.locator("#deskSlot optgroup option").wait_for(state="attached")
+                assert page.locator("#calendlyInline iframe").count() == 0
+                assert page.input_value("#deskSmsNumber") == "+33639980042"
+                assert page.locator('#deskEventQuestions input[type=tel]').input_value() == "+33639980042"
+                if booking_mode == "return_to_calendly":
+                    page.click("#hostedBooking")
+            if booking_mode == "sms":
+                page.check("#deskSmsConsent")
+                page.select_option("#deskSlot", index=1)
+                page.click("#bookDeskSlot")
+                page.get_by_text("Rendez-vous réservé le ", exact=False).wait_for()
+                assert len(calls) == 1 and calls[0]["invitee"]["text_reminder_number"] == "+33639980042"
+            else:
+                frame = page.locator("#calendlyInline iframe")
+                frame.wait_for()
+                assert page.locator("#directBooking").is_hidden() and page.locator("#chooseSmsBooking").is_hidden()
+                url = urlsplit(frame.get_attribute("src"))
+                fields = parse_qs(url.query)
+                assert url.netloc == "calendly.com" and url.path == "/integraleacademy/apr"
+                assert (fields["first_name"], fields["email"], fields["a2"]) == (["Chloé"], [MAIL], ["+33639980042"])
+                confirm = page.frame_locator("#calendlyInline iframe").get_by_role("button", name="Confirmer", include_hidden=True)
+                if booking_mode == "calendly":
+                    assert "/api/secretariat/calendly/creneaux" not in requested_paths
+                    # Calendly can confirm after the operator has already collapsed its iframe.
+                    page.check('[name="wants_rdv"][value="non"]')
+                    confirm.evaluate("button => button.click()")
+                else:
+                    confirm.click()
+                page.get_by_text("Rendez-vous réservé. Vous pouvez continuer.", exact=True).wait_for()
+                assert page.locator('[name="wants_rdv"][value="oui"]').is_checked()
+                assert calls == []
+            assert page.locator('[name="wants_rdv"][value="oui"]').is_disabled()
             page.click("#openCallNotes")
             assert page.locator("#prepareCallback").is_hidden()
             page.click("#resumeCall")
             page.click("#reviewRequest")
             assert page.locator('[data-step="7"]').is_visible()
-            assert len(calls) == 1 and calls[0]["invitee"]["text_reminder_number"] == "+33639980042"
             assert errors == []
         finally:
             browser.close()
