@@ -11,6 +11,8 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable
 
+from secretariat_catalogue import is_ssiap3
+
 AIRCALL_AI_WEBHOOK_PATH = "/api/integrations/aircall/ai-voice-agent"
 AIRCALL_AI_SOURCE = "aircall_ai_voice_agent"
 AIRCALL_AI_ORIGIN = "Aircall – Assistante IA"
@@ -366,6 +368,8 @@ def normalize_training(value: Any) -> tuple[str, str]:
     ):
         subtype = "VAE" if "vae" in compact or "validation des acquis" in text else ""
         return "DESP", subtype or ("INITIAL" if "initial" in text else "")
+    if is_ssiap3(text):
+        return "SSIAP 3", ""
     if any(term in compact for term in ("ssiap", "siappe", "ssiape")) or "securite incendie" in text:
         return "SSIAP 1", ""
     if "vtc" in compact or "chauffeur" in text:

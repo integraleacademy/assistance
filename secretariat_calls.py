@@ -44,6 +44,7 @@ DESK_COURSES = {
     "APS": ("Agent de prévention et de sécurité (APS)", "Surveiller des sites, contrôler les accès et prévenir les incidents."),
     "A3P": ("Agent de protection physique des personnes (A3P)", "Assurer la protection rapprochée d’une personne, comme garde du corps."),
     "SSIAP": ("Agent de sécurité incendie (SSIAP 1)", "Prévenir les incendies, donner l’alerte et aider à évacuer un bâtiment."),
+    "SSIAP3": ("Chef de service de sécurité incendie (SSIAP 3)", "Diriger le service incendie, conseiller l’établissement et gérer son budget."),
     "DESP_INIT": ("Dirigeant d’entreprise de sécurité privée (DESP)", "Se former à la création et à la gestion d’une entreprise de sécurité."),
     "DESP_VAE": ("Dirigeant d’entreprise de sécurité privée par validation des acquis de l’expérience (DESP par VAE)", "Faire reconnaître son expérience de direction pour obtenir le titre."),
     "VTC": ("Voiture de transport avec chauffeur (VTC)", "Se préparer à l’examen pour transporter des clients sur réservation."),

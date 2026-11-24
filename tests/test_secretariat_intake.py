@@ -508,7 +508,8 @@ async function caller(t,type,mail='camille@example.com'){
     assert.ok(visible().some(b=>b.dataset.formationCode==='BTS_MOS'));
     t.fill('formationSearch','securite parcours'); assert.deepEqual(visible().map(b=>b.dataset.formationCode),[course]);
     t.fill('formationSearch','inconnu'); assert.equal(t.$('#formationEmpty').hidden,false);
-    t.click('#resetFormationFilters'); assert.equal(visible().length,13);
+    t.click('#resetFormationFilters'); assert.equal(visible().length,14);
+    assert.ok(visible().some(b=>b.dataset.formationCode==='SSIAP3'));
     t.click('[data-filter="transport"]'); assert.deepEqual(visible().map(b=>b.dataset.formationCode),['VTC']);
     t.click('[data-filter="security"]'); t.fill('formationSearch','apprentissage');
     t.$('#formationSearch').dispatchEvent(new t.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
@@ -552,7 +553,7 @@ async function caller(t,type,mail='camille@example.com'){
     const codes=[...t.d.querySelectorAll('[data-formation-code]')].map(b=>b.dataset.formationCode);
     const profiles={
       PARCOURS_SECURITE_ALTERNANCE:'surveillance', A3P:'garde du corps', APS:'magasin',
-      SSIAP:'sécurité incendie', DESP_INIT:'responsable d’exploitation', DESP_VAE:'faisabilité', VTC:'Chauffeur',
+      SSIAP:'sécurité incendie', SSIAP3:'chef de service', DESP_INIT:'responsable d’exploitation', DESP_VAE:'faisabilité', VTC:'Chauffeur',
       BTS_MOS:'chef d’équipe', BTS_MCO:'responsable de rayon', BTS_NDRC:'animateur de réseau',
       BTS_CI:'agent de transit', BTS_PI:'copropriété', BTS_CG:'cabinet'
     };

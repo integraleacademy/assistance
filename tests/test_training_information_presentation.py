@@ -76,7 +76,7 @@ def test_visual_layout_preserves_submission_fields_and_conditional_modes(secreta
         assert "required" in form.fields[name][0]
     for name in ("mail", "mail_confirm"):
         assert form.fields[name][0]["type"] == "email"
-    assert form.options["formation"] == ["", "A3P", "APS", "SSIAP", "DESP_INIT", "DESP_VAE", "VTC"]
+    assert form.options["formation"] == ["", "A3P", "APS", "SSIAP", "SSIAP3", "DESP_INIT", "DESP_VAE", "VTC"]
     assert [field["value"] for field in form.fields["centre"]] == ["paris", "cote_azur"]
     for image in ("destination-paris.webp", "destination-cote-azur.webp"):
         assert f'{application.PUBLIC_CATALOGUE}/images/illustrations-2026/{image}' in page

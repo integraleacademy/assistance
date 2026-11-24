@@ -154,6 +154,7 @@ def _formation(row: dict[str, str]) -> str:
         "vtc": "Chauffeur VTC",
         "ssiap": "SSIAP 1",
         "ssiap 1": "SSIAP 1",
+        "ssiap 3": "SSIAP 3", "ssiap3": "SSIAP 3",
         "poei": "POEI",
         "bts": "BTS",
         "bts mos": "BTS MOS",

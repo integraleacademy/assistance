@@ -4,12 +4,16 @@ const CALENDLY_AVAILABILITY_WINDOW_DAYS=7;
 const calendlyBookingsInFlight=new Set();
 const CALENDLY_APPOINTMENT_PAST_DELAY_MS=2*60*60*1000;
 const CALENDLY_COMPLETED_RESPONSE_STATUSES=new Set(['answered','no_answer']);
-const CRM_SALE_PRICES=Object.freeze({APS:1650,A3P:4200,VTC:1500,DESP_INITIAL:4300,DESP_VAE:3800,SSIAP_1:1230});
+const CRM_SALE_PRICES=Object.freeze({APS:1650,A3P:4200,VTC:1500,DESP_INITIAL:4300,DESP_VAE:3800,SSIAP_1:1230,SSIAP_3:3900});
+function isSsiap3(label){
+ return /\bSSIAP[\s_-]*(?:3|III|TROIS)\b/i.test(label)||/chef de service de s[ée]curit[ée] incendie/i.test(label);
+}
 function crmSalePriceFor(formation,despType=''){
  const normalized=String(formation||'').trim().toUpperCase();
  if(normalized==='DESP')return CRM_SALE_PRICES[String(despType||'').trim().toUpperCase()==='VAE'?'DESP_VAE':'DESP_INITIAL'];
  if(['VAE','VAE DESP','DESP VAE'].includes(normalized))return CRM_SALE_PRICES.DESP_VAE;
  if(normalized==='VTC'||normalized==='CHAUFFEUR VTC')return CRM_SALE_PRICES.VTC;
+ if(isSsiap3(normalized))return CRM_SALE_PRICES.SSIAP_3;
  if(normalized.startsWith('SSIAP'))return CRM_SALE_PRICES.SSIAP_1;
  return CRM_SALE_PRICES[normalized]||null;
 }
@@ -86,7 +90,7 @@ const contactLastContact=c=>{
  return [...activityContacts,...answeredAppointments].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
 };
 const contactJourney=c=>c.formation==='DESP'&&c.desp_type?`${c.formation} · Parcours ${c.desp_type}`:(c.formation||'Formation à définir');
-const contactFormationOptions = ['APS', 'A3P', 'DESP', 'SSIAP 1', 'Chauffeur VTC', 'Parcours sécurité en alternance'];
+const contactFormationOptions = ['APS', 'A3P', 'DESP', 'SSIAP 1', 'SSIAP 3', 'Chauffeur VTC', 'Parcours sécurité en alternance'];
 const contactFormationTone=c=>{const formation=String(c?.formation||'').trim().toUpperCase();if(formation==='A3P')return'formation-a3p';if(formation==='APS')return'formation-aps';if(formation==='VTC'||formation==='CHAUFFEUR VTC')return'formation-vtc';if(formation==='DESP'||formation==='VAE'||formation==='DESP VAE')return'formation-desp';if(formation.startsWith('SSIAP'))return'formation-ssiap';return'formation-empty'};
 const isFranceTravailFundingFileEligible=(formation,despType='')=>String(formation||'').trim().toUpperCase()==='A3P'||(String(formation||'').trim().toUpperCase()==='DESP'&&String(despType||'').trim().toUpperCase()==='INITIAL');
 const isDespVae=c=>String(c?.formation||'').trim().toUpperCase()==='DESP'&&String(c?.desp_type||'').trim().toUpperCase()==='VAE';
@@ -319,7 +323,8 @@ const crmExportDefinitions=[
  {key:'aps',title:'Fichier APS',formation:'APS'},
  {key:'desp-initial',title:'Fichier DESP initial',formation:'DESP initial'},
  {key:'desp-vae',title:'Fichier DESP VAE',formation:'DESP VAE'},
- {key:'ssiap',title:'Fichier SSIAP',formation:'SSIAP 1'},
+ {key:'ssiap',title:'Fichier SSIAP 1',formation:'SSIAP 1'},
+ {key:'ssiap-3',title:'Fichier SSIAP 3',formation:'SSIAP 3'},
  {key:'chauffeur-vtc',title:'Fichier Chauffeur VTC',formation:'Chauffeur VTC'},
 ];
 function crmExportKey(contact){
@@ -327,6 +332,7 @@ function crmExportKey(contact){
  if(formation.includes('DESP')||formation.includes('DIRIGEANT'))return combined.includes('VAE')?'desp-vae':'desp-initial';
  if(formation.includes('A3P'))return'a3p';
  if(formation.split(' ').includes('APS'))return'aps';
+ if(isSsiap3(formation))return'ssiap-3';
  if(formation.includes('SSIAP'))return'ssiap';
  if(formation.includes('VTC'))return'chauffeur-vtc';
  return'';
@@ -580,7 +586,7 @@ async function refreshWaitingCallNotice(){
 }
 function updateCallbackRequestNavCount(){const count=Math.max(0,Number(callbackRequestPendingCount)||0),badge=document.querySelector('#callbackRequestNavCount');if(!badge)return;badge.textContent=count;badge.hidden=!count;const link=badge.closest('[data-nav="demandes-rappel"]'),suffix=count?` · ${count} à traiter`:'';if(link){link.dataset.label=`Demande de rappel${suffix}`;link.setAttribute('aria-label',count?`Demande de rappel : ${count} demande${count>1?'s':''} à traiter`:'Demande de rappel')}}
 const sessionFilterSeparator='\u001f';
-function sessionFilterRows(){const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},formationLabels={SSIAP:'SSIAP 1',VTC:'Chauffeur VTC',DESP_INIT:'DESP',DESP_VAE:'DESP'},rows=[];Object.entries(formationSessions).forEach(([centre,formations])=>Object.entries(formations||{}).forEach(([formation,sessions])=>(sessions||[]).forEach(session=>rows.push({formation:formationLabels[formation]||formation,lieu:centreLabels[centre]||centre,label:session.label}))));contacts.filter(c=>c.formation&&c.dates_formation).forEach(c=>rows.push({formation:c.formation,lieu:c.lieu||'',label:c.dates_formation}));return [...new Map(rows.filter(row=>row.label).map(row=>[[row.formation,row.lieu,row.label].join(sessionFilterSeparator),row])).values()].sort((a,b)=>`${a.formation} ${a.label} ${a.lieu}`.localeCompare(`${b.formation} ${b.label} ${b.lieu}`,'fr',{numeric:true}))}
+function sessionFilterRows(){const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},formationLabels={SSIAP:'SSIAP 1',SSIAP3:'SSIAP 3',VTC:'Chauffeur VTC',DESP_INIT:'DESP',DESP_VAE:'DESP'},rows=[];Object.entries(formationSessions).forEach(([centre,formations])=>Object.entries(formations||{}).forEach(([formation,sessions])=>(sessions||[]).forEach(session=>rows.push({formation:formationLabels[formation]||formation,lieu:centreLabels[centre]||centre,label:session.label}))));contacts.filter(c=>c.formation&&c.dates_formation).forEach(c=>rows.push({formation:c.formation,lieu:c.lieu||'',label:c.dates_formation}));return [...new Map(rows.filter(row=>row.label).map(row=>[[row.formation,row.lieu,row.label].join(sessionFilterSeparator),row])).values()].sort((a,b)=>`${a.formation} ${a.label} ${a.lieu}`.localeCompare(`${b.formation} ${b.label} ${b.lieu}`,'fr',{numeric:true}))}
 function sessionFilterValue(row){return [row.formation,row.lieu,row.label].join(sessionFilterSeparator)}
 function callbackRequestInitials(row){return String(row.display_name||'?').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toUpperCase()||'?'}
 function callbackRequestReceivedAt(row){if(row.created_at){const date=new Date(row.created_at);if(!Number.isNaN(date.getTime()))return fmt(row.created_at)}return esc(row.date||'—')}
@@ -1503,7 +1509,7 @@ function editCallActivityModal(c,activity,onSaved){
   };
   editCallNote.focus();
 }
-function sessionKeys(c){const formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','Chauffeur VTC':'VTC'}[c.formation]||(c.formation==='DESP'?(c.desp_type==='VAE'?'DESP_VAE':'DESP_INIT'):'');return {formation,centre:{'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'}[c.lieu]||''}}
+function sessionKeys(c){const formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','SSIAP 3':'SSIAP3','Chauffeur VTC':'VTC'}[c.formation]||(c.formation==='DESP'?(c.desp_type==='VAE'?'DESP_VAE':'DESP_INIT'):'');return {formation,centre:{'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'}[c.lieu]||''}}
 function renderIntegrationScore(c){
  renderContactHeaderScore(c);
  const score=c.integration_score,card=document.querySelector('#integrationScoreCard'),financial=document.querySelector('#scoreFinancialReadonly');if(!card)return;
@@ -1630,7 +1636,7 @@ function bindContact(c,initialTab='contactInfoTab'){
   const renderCnapsFormState=()=>{if(!cnapsFormButton)return;const sentOn=cnapsFormDate(c.cnaps_form_sent_at);cnapsFormButton.classList.toggle('is-sent',Boolean(sentOn));cnapsFormButton.textContent='Envoyer formulaire';cnapsFormButton.disabled=false;if(cnapsFormStatus)cnapsFormStatus.textContent=sentOn?`Formulaire envoyé le ${sentOn}`:''};
   if(cnapsFormButton){renderCnapsFormState();cnapsFormButton.onclick=async()=>{if(cnapsFormButton.disabled)return;cnapsFormButton.disabled=true;cnapsFormButton.textContent='Envoi…';try{const cnapsPayload=contactFormPayload(form);if(cnapsPayload.statut_demande_financement_ft===String(c.statut_demande_financement_ft||''))delete cnapsPayload.statut_demande_financement_ft;clearTimeout(timer);const saved=await api(`/api/crm/contacts/${c.id}`,{method:'PATCH',body:JSON.stringify(cnapsPayload)});Object.assign(c,saved);mergeContactInStore(c.id,saved);const updated=await api(`/api/crm/contacts/${c.id}/cnaps-form`,{method:'POST'});Object.assign(c,updated);mergeContactInStore(c.id,updated);renderActivityFeed();toast('Formulaire CNAPS envoyé')}catch(e){toast(e.message,true)}finally{renderCnapsFormState()}}}
   const refreshSessions=()=>{
-   const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},centreKeys={'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'},formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','Chauffeur VTC':'VTC'}[form.formation.value]||(form.formation.value==='DESP'?(form.desp_type.value==='VAE'?'DESP_VAE':'DESP_INIT'):'');
+   const centreLabels={paris:'Paris',cote_azur:'Côte d’Azur',auvergne:'Auvergne'},centreKeys={'Paris':'paris','Côte d’Azur':'cote_azur','Auvergne':'auvergne'},formation={'APS':'APS','A3P':'A3P','SSIAP 1':'SSIAP','SSIAP 3':'SSIAP3','Chauffeur VTC':'VTC'}[form.formation.value]||(form.formation.value==='DESP'?(form.desp_type.value==='VAE'?'DESP_VAE':'DESP_INIT'):'');
    const selectedLocation=String(form.lieu.value||c.lieu||'').trim(),selectedSession=String(form.dates_formation.value||c.dates_formation||'').trim(),available=Object.entries(formationSessions).filter(([,value])=>(value[formation]||[]).length),availableLocations=available.map(([key])=>centreLabels[key]||key);
    const storedLocation=selectedLocation&&selectedLocation!=='À déterminer'&&!availableLocations.includes(selectedLocation)?`<option value="${esc(selectedLocation)}">${esc(selectedLocation)} — valeur enregistrée</option>`:'';
    const metaLocation=metaFieldPlaceholder(c,'lieu',form.formation.value),emptyLocation=metaLocation?'':'À déterminer';

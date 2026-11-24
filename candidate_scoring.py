@@ -4,6 +4,8 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 import unicodedata
 
+from secretariat_catalogue import is_ssiap3
+
 CANDIDATE_SCORING_VERSION = 10
 FINANCIAL_WEIGHT = 80
 REGULATORY_WEIGHT = 20
@@ -51,6 +53,7 @@ TRAINING_PRICES_CENTS = {
     "DESP_VAE": 380_000,
     "A3P": 420_000,
     "SSIAP_1": 123_000,
+    "SSIAP_3": 390_000,
 }
 
 
@@ -136,6 +139,8 @@ def resolve_training_code(contact):
     if "DESP" in normalized or "DIRIGEANT" in normalized:
         kind = str(contact.get("desp_type") or "").upper()
         return "DESP_VAE" if "VAE" in normalized or kind == "VAE" else "DESP_INITIAL"
+    if is_ssiap3(raw):
+        return "SSIAP_3"
     if "SSIAP" in normalized:
         return "SSIAP_1"
     if "CHAUFFEUR" in normalized or normalized == "VTC" or normalized.startswith("VTC_"):

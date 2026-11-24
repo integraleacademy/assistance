@@ -12,6 +12,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from secretariat_catalogue import is_ssiap3
+
 
 CRM_EXPORT_DEFINITIONS = {
     "a3p": {
@@ -38,6 +40,11 @@ CRM_EXPORT_DEFINITIONS = {
         "label": "SSIAP 1",
         "filename": "fichier_ssiap",
         "sheet": "SSIAP 1",
+    },
+    "ssiap-3": {
+        "label": "SSIAP 3",
+        "filename": "fichier_ssiap_3",
+        "sheet": "SSIAP 3",
     },
     "chauffeur-vtc": {
         "label": "Chauffeur VTC",
@@ -78,6 +85,8 @@ def crm_export_key_for_contact(contact):
         return "a3p"
     if "APS" in formation.split():
         return "aps"
+    if is_ssiap3(formation):
+        return "ssiap-3"
     if "SSIAP" in formation:
         return "ssiap"
     if "VTC" in formation:

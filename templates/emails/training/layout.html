@@ -62,7 +62,7 @@
     </tr>
     {% include "emails/training/session_summary.html" %}
     <tr><td align="center" bgcolor="#111c28" style="padding:0;font-size:0;line-height:0;">
-      <img class="cover-art" src="https://raw.githubusercontent.com/integraleacademy/integraleacademyofficiel/df275ac017f9b3fe594354f5a38e978ca212f0dd/public{{ scene }}" width="660" height="212" alt="" style="display:block;width:100%;max-width:660px;height:212px;object-fit:cover;object-position:center {{ focal }}%;border:0;">
+      <img class="cover-art" src="{{ scene_url or ('https://raw.githubusercontent.com/integraleacademy/integraleacademyofficiel/df275ac017f9b3fe594354f5a38e978ca212f0dd/public' ~ scene) }}" width="660" height="212" alt="" style="display:block;width:100%;max-width:660px;height:212px;object-fit:cover;object-position:center {{ focal }}%;border:0;">
     </td></tr>
     <tr><td class="inset" bgcolor="{{ tint }}" style="padding:13px 30px;border-bottom:3px solid {{ accent }};">
       <p class="caption" style="margin:0;color:#182b38;font:italic 20px/25px Georgia,'Times New Roman',serif;">{{ subtitle }}</p>

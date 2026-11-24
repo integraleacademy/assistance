@@ -55,6 +55,7 @@ def test_calendar_combines_local_sessions_and_published_details(monkeypatch):
     ("APS", "Du 4 janvier au 8 février 2027", "", 1700, 1650),
     ("DESP_INIT", "Du 4 janvier au 18 février 2027", "", 4350, 4300),
     ("DESP_VAE", "", "Mars 2027", 3850, 3800),
+    ("SSIAP3", "Du 19 avril au 2 juin 2027", "", 3900, 3900),
     ("SSIAP", "Du 15 au 26 février 2027 (sans SST)", "", 980, 1230),
     ("SSIAP", "Du 11 au 26 février 2027 (avec SST)", "", 1230, 1230),
 ])

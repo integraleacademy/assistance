@@ -125,6 +125,9 @@ def test_each_formation_has_its_own_file_and_desp_paths_are_separated(
             "nom": "SSIAP",
         },
         {
+            "id": "ssiap3", "statut": "Converti", "formation": "SSIAP 3", "nom": "CHEF",
+        },
+        {
             "id": "vtc", "statut": "Converti", "formation": "Chauffeur VTC",
             "nom": "VTC",
         },
@@ -137,6 +140,7 @@ def test_each_formation_has_its_own_file_and_desp_paths_are_separated(
         "desp-initial": ("DESP initial", "INITIAL"),
         "desp-vae": ("DESP VAE", "VAE"),
         "ssiap": ("SSIAP 1", "SSIAP"),
+        "ssiap-3": ("SSIAP 3", "CHEF"),
         "chauffeur-vtc": ("Chauffeur VTC", "VTC"),
     }
     for export_key, (formation_label, last_name) in expectations.items():

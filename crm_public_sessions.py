@@ -16,7 +16,7 @@ PUBLIC_CALENDAR = "https://integraleacademyofficiel-1.onrender.com/api/sessions"
 REFRESH_SECONDS = 900
 _MONTHS = "janvier février mars avril mai juin juillet août septembre octobre novembre décembre".split()
 _CENTRES = {"Côte d’Azur": "cote_azur", "Auvergne": "auvergne", "Paris": "paris"}
-_SLUGS = {"aps": "APS", "a3p-apr": "A3P", "desp-dssp": "DESP_INIT", "ssiap-1": "SSIAP"}
+_SLUGS = {"aps": "APS", "a3p-apr": "A3P", "desp-dssp": "DESP_INIT", "ssiap-1": "SSIAP", "ssiap-3": "SSIAP3"}
 _lock = threading.Lock()
 _next_refresh = 0
 _calendar = {}
@@ -115,19 +115,24 @@ def _published_sessions():
         return _calendar
 
 
-def website_ssiap_selection(session_id, formula, today):
+def website_ssiap_selection(session_id, formula, today, formation="SSIAP"):
     """A website handoff is a request for a published session, never a seat reservation."""
     if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
         return None
-    for item in _published_sessions().get(("cote_azur", "SSIAP"), []):
+    if formation not in {"SSIAP", "SSIAP3"}:
+        return None
+    for item in _published_sessions().get(("cote_azur", formation), []):
         if item.public_id != session_id or item.start < today or item.badge == "Complet":
             continue
+        if formation == "SSIAP3":
+            return {"id": session_id, "formation": formation, "label": item.email_label,
+                    "date_examen": item.exam.isoformat() if item.exam else ""}
         variants = {"avec SST": "ssiap-1-sst", "sans SST": "ssiap-1"}
         selected = variants.get(item.variant, formula)
         if selected not in {"ssiap-1", "ssiap-1-sst"}:
             return None
         label = "SSIAP 1 + SST" if selected == "ssiap-1-sst" else "SSIAP 1 sans SST"
-        return {"id": session_id, "formula": selected, "formula_label": label,
+        return {"id": session_id, "formation": formation, "formula": selected, "formula_label": label,
                 "label": f"{item.label} · {label}", "date_examen": item.exam.isoformat() if item.exam else ""}
     return None
 
