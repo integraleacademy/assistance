@@ -9533,7 +9533,7 @@ CRM_FT_STATUS_BY_SECONDARY = {
     for funding_status, secondary in CRM_FT_SECONDARY_BY_STATUS.items()
 }
 CRM_MANUAL_STATUS_SOURCE = "manual"
-CRM_ASSET_VERSION = "20261124-ssiap3"
+CRM_ASSET_VERSION = "20261125-diffusion-sessions"
 CRM_PAGE_LABELS = {
     "accueil": "Accueil",
     "fil-actu": "Fil d’actualité",
@@ -21258,8 +21258,10 @@ def crm_bootstrap():
         # journal entry visible before the callback workspace is returned.
         _crm_reconcile_callback_reads()
     read_model_key = _crm_read_model_key()
+    catalogue = crm_managed_sessions.read()
     bootstrap_etag = hashlib.sha256(repr((
         CRM_ASSET_VERSION,
+        hashlib.sha256(repr(catalogue).encode()).hexdigest(),
         int(time.time()) // crm_public_sessions.REFRESH_SECONDS,
         section,
         workspace,
@@ -21280,6 +21282,7 @@ def crm_bootstrap():
         "contacts": contacts,
         **(_crm_cpf_folder_lists(data) if section == "pistes" else {}),
         "formation_sessions": get_upcoming_formation_sessions(data, include_internal=True),
+        "withdrawn_session_filters": crm_managed_sessions.withdrawn_contact_filters(contacts, catalogue, _session_date_range),
         "notifications": _crm_notifications_payload(
             data, user_email,
         ),

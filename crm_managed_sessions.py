@@ -66,6 +66,51 @@ def best_key(context, row):
     return max(keys, key=rank)
 
 
+def matching_rows(catalogue, context, identifier="", *, handoff=False):
+    # A stable catalogue ID must never transfer an old enrolment link to a replacement.
+    if identifier:
+        direct = [row for row in catalogue if identifier == row["id"] or
+                  row["slug"] == "ssiap-1" and identifier == row["id"] + "-sans-sst"]
+        if direct:
+            return [(row, best_key(context, row)) for row in direct]
+        if identifier.startswith("platform-"):
+            return []
+    matches = [(row, key) for row in catalogue if (key := best_key(context, row))]
+    managed_matches = [(row, key) for row, key in matches if row.get("managed")]
+    if managed_matches:
+        matches = managed_matches
+    if handoff and any(row.get("deleted") or row["visibility"] in ("closed", "internal") for row, _ in matches):
+        return [(row, key) for row, key in matches if row.get("deleted") or row["visibility"] in ("closed", "internal")]
+    current = [(row, key) for row, key in matches if not row.get("deleted") and same(context, row)]
+    return current or matches
+
+
+def details(row):
+    return {"session_name": row.get("name") or "", "venue": row.get("venue") or ""}
+
+
+def withdrawn_contact_filters(contacts, catalogue, date_range):
+    if not catalogue:
+        return []
+    centres = {"Paris": "paris", "Côte d’Azur": "cote_azur", "Auvergne": "auvergne"}
+    courses = {"APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP 2": "SSIAP2",
+               "SSIAP 3": "SSIAP3", "DESP": "DESP_INIT", "VTC": "VTC"}
+    groups = [r for r in catalogue if r.get("managed")]
+    choices = {(c.get("formation"), c.get("lieu"), c.get("dates_formation")) for c in contacts if c.get("dates_formation")}
+    retired = []
+    for course, centre, label in choices:
+        if course not in courses or centre not in centres:
+            continue
+        start, end = date_range(label)
+        if not start or not end:
+            continue
+        ctx = (centres[centre], courses[course], start.isoformat(), end.isoformat(), "")
+        hits = matching_rows(groups, ctx)
+        if hits and not any(r["visibility"] != "closed" and same(ctx, r) for r, _ in hits):
+            retired.append([course, centre, label])
+    return sorted(retired)
+
+
 def availability(row):
     sold = row.get("sold")
     left = max(0, (row.get("capacity") or 12) - sold) if isinstance(sold, int) else None
@@ -79,15 +124,13 @@ def website_selection(choice, catalogue, date_range):
     start, end = date_range(choice["label"])
     context = ("cote_azur", choice["formation"], start.isoformat() if start else "",
                end.isoformat() if end else "", choice.get("date_examen"))
-    hits = [row for row in catalogue if choice["id"] == row["id"] or
-            row["slug"] == "ssiap-1" and choice["id"] == row["id"] + "-sans-sst" or any(
-            same(context, key) for key in [row, *row.get("aliases", [])])]
+    hits = matching_rows(catalogue, context, choice["id"], handoff=True)
     if not hits:
         return None if choice["id"].startswith("platform-") else choice
     if len(hits) != 1:
         return None
-    row = hits[0]
-    if (row["visibility"] not in ("public", "match") or best_key(context, row) != row
+    row, key = hits[0]
+    if (row["visibility"] not in ("public", "match") or key != row
             or (choice.get("date_examen") and row["exam"] and choice["date_examen"] != row["exam"])
             or isinstance(row.get("sold"), int) and row["sold"] >= (row.get("capacity") or 12)):
         return None
@@ -95,7 +138,7 @@ def website_selection(choice, catalogue, date_range):
         expected = row["standard_start"] if choice["formula"] == "ssiap-1" else row["start"]
         if context[2] != expected:
             return None
-    return {**choice, **availability(row), "catalogue_id": row["id"]}
+    return {**choice, **availability(row), **details(row), "catalogue_id": row["id"]}
 
 
 def options(catalogue, local, date_range, *, include_internal=False):
@@ -118,14 +161,14 @@ def options(catalogue, local, date_range, *, include_internal=False):
             old, _ = date_range(base["label"])
             if old:
                 start = (date.fromisoformat(start) + (old - date.fromisoformat(alias["start"]))).isoformat()
-        if row["visibility"] != "match" or not base:
+        if row["visibility"] != "match" or row.get("edited") or not base:
             form_name = ("sans SST" if formula == "ssiap-1" else "avec SST") if formula else (variant[0] if variant else "")
             base["label"] = f"Du {french(start)} au {french(end)}" + (f" ({form_name})" if form_name else "")
             base["date_examen"] = row.get("exam") or ""
             base["start_date"] = start
-        base.update(catalogue_id=row["id"], **availability(row))
+        base.update(catalogue_id=row["id"], **availability(row), **details(row))
         periods = []
-        for key, label in (("remote", "À distance"), ("onsite", "En centre")):
+        for key, label in (("remote", "À distance"), ("onsite", "Au centre de formation")):
             lo, hi = row.get(key+"_start"), row.get(key+"_end")
             if formula == "ssiap-1" and key == "onsite" and lo:
                 lo = start
@@ -133,10 +176,12 @@ def options(catalogue, local, date_range, *, include_internal=False):
                 periods.append(f"{label} du {french(lo)} au {french(hi)}")
         if periods:
             base["periods"] = " · ".join(periods)
+        elif row.get("edited"):
+            base.pop("periods", None)
         return base
 
     def add_row(centre, course, row, base=None, alias=None):
-        if course == "SSIAP" and row.get("standard_start") and row["visibility"] != "match":
+        if course == "SSIAP" and row.get("standard_start") and (row["visibility"] != "match" or row.get("edited")):
             for formula in ("ssiap-1-sst", "ssiap-1"):
                 put(centre, course, managed(row, base, alias, formula))
         else:
@@ -149,10 +194,15 @@ def options(catalogue, local, date_range, *, include_internal=False):
             for value in values:
                 start, end = date_range(value.get("label", ""))
                 ctx = (centre, code, start.isoformat() if start else "", end.isoformat() if end else "", value.get("date_examen"))
-                hits = [(r, best_key(ctx, r)) for r in catalogue]
-                hits = [(r,k) for r,k in hits if k or (value.get("catalogue_id") and value["catalogue_id"] == r["id"])]
+                identifier = value.get("catalogue_id") or ""
+                hits = matching_rows(catalogue, ctx, identifier)
                 if not hits:
-                    put(centre, code, value)
+                    if not identifier.startswith("platform-"):
+                        put(centre, code, value)
+                    continue
+                if len(hits) > 1 and any(r.get("managed") for r, _ in hits):
+                    # Drop the ambiguous historical choice. Each explicitly offered group
+                    # is added below under its own source ID, with its own visibility.
                     continue
                 handled.update(r["id"] for r,k in hits)
                 if len(hits) == 1:

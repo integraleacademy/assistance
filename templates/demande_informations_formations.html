@@ -830,6 +830,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const dateExamen = document.getElementById('dateExamen');
     const sessions = {{ sessions|tojson }};
     const websiteChoice = {{ website_choice|default(none)|tojson }};
+    const unavailableWebsiteFormation = {{ (preselected_formation if website_choice_unavailable else "")|default("")|tojson }};
     function updateWebsiteSelection() {
       const level3 = formation.value === 'SSIAP3';
       const active = websiteChoice && formation.value === websiteChoice.formation && datesSelect.value === websiteChoice.label;
@@ -1050,12 +1051,19 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           ${examLine}
           ${badgeLine}
         `;
+        const sessionInfo = [r.session_name, r.venue].filter(Boolean).join(' · ');
+        if (sessionInfo) {
+          const heading = document.createElement('strong');
+          heading.className = 'session-pill-meta';
+          heading.textContent = sessionInfo;
+          btn.prepend(heading);
+        }
         btn.addEventListener('click', () => {
           datesSelect.value = r.label;
           datesSelect.dispatchEvent(new Event('change'));
         });
         if (datesSelect.value && datesSelect.value === r.label) btn.classList.add('active');
-        if (!datesSelect.value && index === 0 && datesSelect.required) {
+        if (!datesSelect.value && index === 0 && datesSelect.required && formation.value !== unavailableWebsiteFormation) {
           btn.classList.add('active');
           datesSelect.value = r.label;
           dateExamen.value = (r.date_examen || '').trim();
@@ -1363,7 +1371,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       rows.forEach((r) => {
         const option = document.createElement('option');
         option.value = r.label;
-        option.textContent = r.badge ? `${r.label} — ${r.badge}` : r.label;
+        option.textContent = [r.session_name, r.label, r.venue, r.badge].filter(Boolean).join(' — ');
         option.dataset.dateExamen = (r.date_examen || '').trim();
         option.dataset.formula = r.formula || '';
         option.dataset.catalogueId = r.catalogue_id || '';
