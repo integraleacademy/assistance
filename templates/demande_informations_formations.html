@@ -528,6 +528,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <option value="A3P">Agent de Protection Physique des Personnes (A3P)</option>
           <option value="APS">Agent de Prévention et de Sécurité (APS)</option>
           <option value="SSIAP">Agent de sécurité incendie SSIAP 1</option>
+          {% if sessions.get("cote_azur", {}).get("SSIAP2") %}<option value="SSIAP2">Chef d’équipe de sécurité incendie SSIAP 2</option>{% endif %}
           <option value="SSIAP3">Chef de service de sécurité incendie SSIAP 3</option>
           <option value="DESP_INIT">Dirigeant d’entreprise de sécurité privée (DESP) en initial</option>
           <option value="DESP_VAE">Dirigeant d’entreprise de sécurité privée (DESP) en VAE</option>

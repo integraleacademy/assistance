@@ -13,10 +13,10 @@ from crm_location_normalization import canonical_crm_location
 
 
 PUBLIC_CALENDAR = "https://integraleacademyofficiel-1.onrender.com/api/sessions"
-REFRESH_SECONDS = 900
+REFRESH_SECONDS = 60
 _MONTHS = "janvier février mars avril mai juin juillet août septembre octobre novembre décembre".split()
 _CENTRES = {"Côte d’Azur": "cote_azur", "Auvergne": "auvergne", "Paris": "paris"}
-_SLUGS = {"aps": "APS", "a3p-apr": "A3P", "desp-dssp": "DESP_INIT", "ssiap-1": "SSIAP", "ssiap-3": "SSIAP3"}
+_SLUGS = {"aps": "APS", "a3p-apr": "A3P", "desp-dssp": "DESP_INIT", "ssiap-1": "SSIAP", "ssiap-2": "SSIAP2", "ssiap-3": "SSIAP3"}
 _lock = threading.Lock()
 _next_refresh = 0
 _calendar = {}
