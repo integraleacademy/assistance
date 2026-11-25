@@ -10,6 +10,7 @@ import uuid
 
 import pytz
 from flask import has_request_context, url_for
+from secretariat_catalogue import SECURITY_AUTHORITY, FUNDING_REQUEST_HELP, authority_wording
 
 
 PUBLIC_BASE_URL = "https://assistance-alw9.onrender.com"
@@ -157,7 +158,7 @@ def register_secretariat_followup_patch(app_module):
             elif status in {"approved", "accepted", "acceptee", "accepte"}:
                 financing.append("Votre demande de financement auprès de France Travail est indiquée comme acceptée.")
             else:
-                financing.append("Vous souhaitez également connaître les possibilités de prise en charge par France Travail.")
+                financing.append("Vous souhaitez étudier les possibilités de prise en charge par France Travail. " + FUNDING_REQUEST_HELP)
         if _yes(entry.get("ft_refus_ok")) or _yes(entry.get("financement_perso")):
             if _yes(entry.get("france_travail")):
                 financing.append("Vous avez prévu un financement personnel si cette solution n’aboutit pas.")
@@ -177,29 +178,11 @@ def register_secretariat_followup_patch(app_module):
             administrative.append("Votre Identité Numérique La Poste est déjà créée.")
         elif identity == "NON":
             administrative.append("Votre Identité Numérique La Poste n’est pas encore créée ; elle sera nécessaire pour mobiliser votre CPF.")
-        if code == "APS":
+        if code in {"APS", "A3P"}:
             if _yes(entry.get("cnaps_ok")):
-                administrative.append("Vous disposez déjà d’une carte professionnelle CNAPS en cours de validité.")
+                administrative.append(f"Vous avez indiqué détenir une carte professionnelle du {SECURITY_AUTHORITY} en cours de validité. Notre équipe vérifiera votre justificatif.")
             else:
-                administrative.append(
-                    "Vous ne disposez pas encore d’une carte professionnelle ou d'une autorisation préalable délivrée par le CNAPS "
-                    "(Ministère de l'intérieur) ; Notre équipe vous accompagnera dans cette démarche auprès du CNAPS."
-                )
-        elif code == "A3P":
-            if _yes(entry.get("cnaps_ok")):
-                administrative.append("Votre carte professionnelle CNAPS est indiquée comme valide ; notre équipe vérifiera avec vous les justificatifs nécessaires.")
-            else:
-                if identity == "NON":
-                    administrative = [
-                        "Il est à noter que vous n’avez pas encore créé votre identité numérique et n’êtes pas encore "
-                        "titulaire d’une autorisation préalable d’entrée en formation délivrée par le CNAPS "
-                        "(Ministère de l’Intérieur). Toutefois, notre équipe vous accompagnera dans cette démarche."
-                    ]
-                else:
-                    administrative.append(
-                        "Vous n’êtes pas encore titulaire d’une autorisation préalable d’entrée en formation délivrée "
-                        "par le CNAPS (Ministère de l’Intérieur). Toutefois, notre équipe vous accompagnera dans cette démarche."
-                    )
+                administrative.append(f"Si une autorisation préalable d’entrée en formation est nécessaire, le centre prépare et dépose votre demande auprès du {SECURITY_AUTHORITY} avec votre accord.")
         if administrative:
             paragraphs.append(" ".join(administrative))
         if len(paragraphs) == 1:
@@ -214,8 +197,7 @@ def register_secretariat_followup_patch(app_module):
         )
         if code in {"APS", "A3P"}:
             financing += (
-                " Si nécessaire, demande d'autorisation préalable d'entrée en formation auprès du CNAPS "
-                "(Ministère de l'intérieur). Cette démarche est réalisée par nos soins."
+                f" Si nécessaire, notre centre prépare et dépose votre demande d’autorisation préalable auprès du {SECURITY_AUTHORITY}."
             )
         return [
             "Réserver un rendez-vous téléphonique avec notre équipe pour aborder ensemble tous les détails de votre projet de formation.",
@@ -229,7 +211,7 @@ def register_secretariat_followup_patch(app_module):
                 raw = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", raw, flags=re.I)
                 start, end = raw.find("{"), raw.rfind("}")
                 raw = json.loads(raw[start : end + 1])
-            paragraphs = [_text(item) for item in raw.get("summary_paragraphs", []) if _text(item)]
+            paragraphs = [authority_wording(_text(item)) for item in raw.get("summary_paragraphs", []) if _text(item)]
             steps = [_text(item) for item in raw.get("next_steps", []) if _text(item)]
             if not 2 <= len(paragraphs) <= 4 or not 2 <= len(steps) <= 4:
                 raise ValueError("structure")
@@ -531,6 +513,7 @@ def register_secretariat_followup_patch(app_module):
             "code_formation": code, "intitule_formation": config.get("label"), "session_choisie": session,
             "centre": centre, "ville": city, "objectif": objective(code, config), "tarif_ttc": training_price(code, entry),
             "montant_cpf": app_module._parse_cpf_value(entry.get("cpf_montant")),
+            "inscription_france_travail": _text(entry.get("inscrit_ft")),
             "souhaite_financement_france_travail": _yes(entry.get("france_travail")),
             "statut_france_travail": _text(entry.get("france_travail_status")),
             "financement_personnel_si_refus": _yes(entry.get("ft_refus_ok")),
@@ -545,9 +528,9 @@ def register_secretariat_followup_patch(app_module):
             "Commence directement par « Vous souhaitez des renseignements concernant la formation… ». Ne présente jamais cette demande de renseignements comme un souhait de s'inscrire, d'intégrer ou de suivre la formation. Emploie exclusivement vous, votre et vos. Ne mentionne jamais le prénom, le candidat, le prospect, il ou elle. "
             "Reprends fidèlement la session, le centre, l'objectif, le montant CPF, le tarif et les choix de financement fournis. Un simple souhait de financement France Travail n'est jamais une demande déposée ou en cours. "
             "Pour le centre Côte d’Azur, écris toujours « au sein de notre centre de formation Intégrale Academy Côte d’Azur à Puget-sur-Argens ». Ne parle jamais d’un refus de CPF : seul France Travail peut refuser sa prise en charge. "
-            "Pour APS, l'absence de carte professionnelle avant la formation est normale et l'équipe accompagne la démarche d'autorisation CNAPS. N'invente aucune information, aucun statut et aucun montant. Aucun HTML ni Markdown."
+            "Pour une autorisation préalable, le centre prépare et dépose la demande avec l’accord de la personne. N'invente aucune information, aucun statut et aucun montant. Aucun HTML ni Markdown."
             " Lorsqu’un financement personnel est possible, précise que le reste peut être financé par ses propres moyens et que le paiement peut être étalé en plusieurs fois jusqu’à la fin de la formation."
-            " Pour A3P, si l’identité numérique et l’autorisation préalable CNAPS ne sont pas acquises, indique clairement ces deux éléments et l’accompagnement de l’équipe dans cette démarche."
+            f" Écris toujours « {SECURITY_AUTHORITY} ». Distingue la carte de l’autorisation préalable. Si le financement France Travail est souhaité, le centre prépare la demande avec la personne en rendez-vous, avec son Identité Numérique La Poste active."
         )
         if entry.get("financement_a_confirmer"):
             content = backup

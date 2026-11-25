@@ -14,6 +14,7 @@ import hebergement_reminders
 import crm_external_access
 from secretariat_catalogue import (
     BTS_ADMISSIONS, BTS_CHECKS, BTS_COURSES, BTS_INTAKES, DESK_ADMISSION, DESK_INTRODUCTIONS, PROFESSIONAL_COURSES,
+    AUTHORIZATION_HELP, FUNDING_REQUEST_HELP, SECURITY_AUTHORITY, authority_wording, residence_permit_help,
     PUBLIC_CATALOGUE, SESSION_FEES, SSIAP_BOOKING_URL, SSIAP3_BOOKING_URL, SST_FEES, is_ssiap3,
 )
 import crm_public_sessions
@@ -558,7 +559,7 @@ SECRETARIAT_FORMATIONS = {
         "purpose": "Se former à la surveillance, à la protection rapprochée et à la sécurité incendie en contrat d’apprentissage.",
         "funding": "La brochure 2027 chiffre le parcours à 6 880 €. Les frais sont pris en charge après validation du contrat et l’apprenti est rémunéré.",
         "audience": "Candidats de moins de 26 ans, disponibles sur toute la durée du parcours.",
-        "prerequisites": "Permis B et mobilité. Droit de travailler en France, dossier CNAPS et aptitude médicale à vérifier avec les admissions.",
+        "prerequisites": f"Permis B et mobilité. Les admissions vérifient le droit au travail, le dossier auprès du {SECURITY_AUTHORITY} et l’aptitude médicale.",
         "certification": "Deux titres à finalité professionnelle (APS et A3P) et le diplôme SSIAP 1, sous réserve de réussite aux épreuves.",
         "topics": ["APS · Prévention et sécurité · 175 h", "A3P · Protection rapprochée · 328 h", "SSIAP 1 · Sécurité incendie · 70 h"],
         "intake_centre": "cote_azur",
@@ -3952,6 +3953,28 @@ def admin_formation_sessions():
         sessions.setdefault(centre, {})
         sessions[centre].setdefault(formation, [])
 
+        period_dates = {}
+        if formation == "APS" and action in {"add", "update"}:
+            for field in crm_public_sessions.DELIVERY_DATE_FIELDS:
+                if field in request.form:
+                    value = request.form[field].strip()
+                    if value:
+                        try:
+                            value = datetime.date.fromisoformat(value).isoformat()
+                        except ValueError:
+                            return "Date de période invalide.", 400
+                    period_dates[field] = value
+            start, end = _session_date_range(request.form.get("label"))
+            for prefix in crm_public_sessions.DELIVERY_MODES:
+                first, last = (period_dates.get(prefix + key) for key in ("StartDate", "EndDate"))
+                if first and last and first > last:
+                    return "La fin d’une période doit suivre son début.", 400
+                if start and end and any(day and not start.isoformat() <= day <= end.isoformat() for day in (first, last)):
+                    return "Les périodes doivent être comprises dans les dates de la session.", 400
+            if (period_dates.get("remoteEndDate") and period_dates.get("inPersonStartDate")
+                    and period_dates["remoteEndDate"] > period_dates["inPersonStartDate"]):
+                return "Le présentiel doit commencer après le distanciel.", 400
+
         if action == "add":
             label = (request.form.get("label") or "").strip()
             badge = (request.form.get("badge") or "").strip()
@@ -3961,6 +3984,7 @@ def admin_formation_sessions():
                     "label": label,
                     "badge": badge,
                     "date_examen": date_examen,
+                    **period_dates,
                 })
         elif action == "update":
             try:
@@ -3969,6 +3993,7 @@ def admin_formation_sessions():
                 idx = -1
             if 0 <= idx < len(sessions[centre][formation]):
                 current_row = sessions[centre][formation][idx]
+                current_row.update(period_dates)
                 for field in ("label", "badge", "date_examen"):
                     if field in request.form:
                         current_row[field] = (request.form.get(field) or "").strip()
@@ -4235,13 +4260,16 @@ def _secretariat_catalogue(data_store):
 @app.route("/secretariat")
 def secretariat(formation_first=False):
     role = _secretariat_role()
+    today = datetime.datetime.now(secretariat_calls.PARIS).date()
     page = render_template(
         "secretariat.html", formations=_secretariat_catalogue(load_data()), formation_first=formation_first,
         generic_calendly=SECRETARIAT_GENERIC_CALENDLY_URL,
         team_contacts=TEAM_CONTACTS,
         recipients=[member["name"] for member in USERS.values()],
         desk_role=role, desk_csrf=crm_external_access.csrf_token() if role else "",
-        desk_today=datetime.datetime.now(secretariat_calls.PARIS).date().isoformat(),
+        desk_today=today.isoformat(), security_authority=SECURITY_AUTHORITY,
+        authorization_help=AUTHORIZATION_HELP, funding_request_help=FUNDING_REQUEST_HELP,
+        permit_help=residence_permit_help(today),
     )
     return _secretariat_private(page)
 
@@ -4583,7 +4611,7 @@ def secretariat_suivi_cnaps():
     if response.status_code == 200 or (response.status_code == 404 and remote.get("reason") == "cnaps_not_found"):
         snapshot = remote.get("scoring_snapshot") or scoring_snapshot_from_remote(remote, response.status_code)
         return _secretariat_private(jsonify(cnaps=secretariat_calls.cnaps_overview(contact, code, snapshot, remote)))
-    return _secretariat_private(jsonify(error="Le suivi CNAPS est momentanément indisponible."), 503)
+    return _secretariat_private(jsonify(error=f"Le suivi auprès du {SECURITY_AUTHORITY} est momentanément indisponible."), 503)
 
 
 _SECRETARIAT_CALENDLY_SCHEMA_CACHE = {}
@@ -4725,6 +4753,7 @@ def api_secretariat_demandes():
         "calendly_url": str(payload.get("calendly_url", "")).strip(),
         "cpf_consulte": str(payload.get("cpf_consulte", "")).strip(),
         "cpf_montant": str(payload.get("cpf_montant", "")).strip(),
+        "inscrit_ft": payload.get("inscrit_ft") if payload.get("inscrit_ft") in ("OUI", "NON", "A_CONFIRMER") else "",
         "france_travail": str(payload.get("france_travail", "")).strip(),
         "france_travail_status": str(payload.get("france_travail_status", "")).strip(),
         "ft_refus_ok": str(payload.get("ft_refus_ok", "")).strip(),
@@ -4777,7 +4806,7 @@ def api_secretariat_demandes():
     if (SECRETARIAT_FORMATIONS.get(entry["formation"], {}).get("apprenticeship")
             or entry["formation"].startswith("BTS_")):
         # A previous individual training choice must not qualify an apprenticeship request.
-        for field in ("cpf_consulte", "cpf_montant", "france_travail", "ft_refus_ok",
+        for field in ("cpf_consulte", "cpf_montant", "inscrit_ft", "france_travail", "ft_refus_ok",
                       "financement_perso", "identite_numerique", "cnaps_ok", "garde_vue", "titre_sejour", "devis"):
             entry[field] = ""
     secretariat_calls.collect_pending_financing(entry, payload)
@@ -4840,6 +4869,7 @@ def api_secretariat_demandes():
         "origine": "Secrétariat",
         "cpf_consulte": entry["cpf_consulte"],
         "cpf_montant": entry["cpf_montant"],
+        "inscrit_ft": entry["inscrit_ft"],
         "france_travail": entry["france_travail"],
         "ft_refus_ok": entry["ft_refus_ok"],
         "financement_perso": entry["financement_perso"],
@@ -4862,7 +4892,7 @@ def api_secretariat_demandes():
     # Salesforce expects these exact generic form keys. Without them, its lead
     # received neither the selected campus nor the requested training dates.
     crm_payload.update({"centre": centre_code, "dates": session_label})
-    crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload)
+    crm_contact = _crm_create_contact_from_secretariat(data_store, entry, crm_payload, refresh_registration=True)
     if entry.get("callback_requested"):
         _crm_prepare_callback_request(data_store, entry)
     if crm_contact:
@@ -4959,6 +4989,9 @@ def _secretariat_ai_context(formation_code):
     return {
         **course, "nom": course["label"], "price": price or course["price"],
         "centres_et_sessions": [{"centre": item["label"], "sessions": item["sessions"]} for item in course["centres"]],
+        "demande_france_travail": FUNDING_REQUEST_HELP,
+        **({"titre_de_sejour": residence_permit_help(datetime.datetime.now(secretariat_calls.PARIS).date())}
+           if formation_code in {"APS", "A3P"} else {}),
     }
 
 
@@ -4972,7 +5005,9 @@ def _call_secretariat_ai(formation_code, task, conversation=None):
         "Tu aides le secrétariat d'Intégrale Academy pendant un appel. Réponds en français, "
         "de façon claire et directement exploitable. Utilise EXCLUSIVEMENT la fiche fiable et les "
         "extraits du site officiel integraleacademy.com fournis ci-dessous, y compris pour les dates, "
-        "tarifs et règles. Cherche d'abord la réponse dans ces deux sources. N'invente jamais et ne "
+        f"tarifs et règles. Emploie toujours le libellé exact « {SECURITY_AUTHORITY} ». Pour les démarches, "
+        "suis les consignes du centre dans la fiche : le centre prépare et dépose la demande d’autorisation préalable avec le candidat. "
+        "Pour les dates de chaque modalité, utilise uniquement les périodes confirmées de la session demandée. N'invente jamais et ne "
         "complète pas avec tes connaissances générales. Si la réponse n'est explicitement présente "
         "dans aucune des deux sources, réponds exactement : « Cette information n’est pas disponible "
         "dans la fiche de la formation ni sur le site officiel. »"
@@ -4983,7 +5018,7 @@ def _call_secretariat_ai(formation_code, task, conversation=None):
             f"HISTORIQUE SUR CETTE FORMATION :\n{json.dumps(history, ensure_ascii=False)}\n\n"
             f"TÂCHE :\n{task}")
     try:
-        return _crm_ai(system, user, max_tokens=900)
+        return authority_wording(_crm_ai(system, user, max_tokens=900))
     finally:
         app.logger.info("Appel IA secrétariat formation=%s durée_ms=%d",
                         formation_code, round((time.monotonic() - started) * 1000))
@@ -5022,7 +5057,7 @@ def api_secretariat_ai_key_information(formation_code):
     if formation_code not in SECRETARIAT_FORMATIONS:
         return jsonify({"ok": False, "error": "Formation inconnue."}), 404
     task = ("Crée une synthèse structurée et facile à lire : nom, objectif, débouchés, public, prérequis, "
-            "conditions CNAPS, tarif, durée, modalité, centres et prochaines dates, financements, déroulement, "
+            f"conditions du {SECURITY_AUTHORITY}, tarif, durée, modalité, centres et prochaines dates, financements, déroulement, "
             "examen, certification et points importants. Termine par « Résumé oral (30 à 45 secondes) » avec "
             "un texte naturel à lire. Omet les rubriques sans donnée plutôt que de les inventer.")
     try:
@@ -5044,11 +5079,12 @@ def api_secretariat_ai_request_summary():
         "type": "Type de demande", "nom": "Appelant", "telephone": "Téléphone",
         "email": "E-mail", "rdv": "Rendez-vous téléphonique",
         "cpf_consulte": "Compte CPF consulté", "cpf_montant": "Montant CPF disponible",
+        "inscrit_ft": "Inscription à France Travail",
         "france_travail": "Financement France Travail souhaité",
         "ft_refus_ok": "Financement personnel en cas de refus France Travail",
         "financement_perso": "Financement personnel ou reste à charge possible",
         "identite_numerique": "Identité Numérique La Poste créée",
-        "cnaps_ok": "Carte professionnelle CNAPS valide",
+        "cnaps_ok": f"Carte professionnelle du {SECURITY_AUTHORITY} valide",
         "garde_vue": "Garde à vue ou prise d’empreintes",
         "titre_sejour": "Titre de séjour", "devis": "Devis détaillé",
         "formation_date_souhaitee": "Session de formation souhaitée",
@@ -5063,7 +5099,7 @@ def api_secretariat_ai_request_summary():
         "Écris en français professionnel, clair, concis et factuel. N'invente aucune information. "
         "Mentionne la formation souhaitée, les prochaines dates disponibles, le financement, les "
         "conditions réglementaires et le rendez-vous uniquement lorsque ces éléments sont fournis. "
-        "Omet toute donnée non renseignée."
+        f"Omets toute donnée non renseignée. Pour les autorisations, utilise le libellé « {SECURITY_AUTHORITY} »."
     )
     user = (
         f"DONNÉES DE L'APPEL :\n{json.dumps(facts, ensure_ascii=False)}\n\n"
@@ -5073,7 +5109,7 @@ def api_secretariat_ai_request_summary():
         "Rédige le résumé final à envoyer au CRM en un court paragraphe structuré."
     )
     try:
-        summary = _crm_ai(system, user, max_tokens=700)
+        summary = authority_wording(_crm_ai(system, user, max_tokens=700))
         return jsonify({"ok": True, "summary": summary})
     except Exception:
         app.logger.exception("Résumé IA de la demande du secrétariat indisponible")
@@ -13583,6 +13619,7 @@ def _crm_secretariat_answer_values(entry):
         "antecedents": str(entry.get("garde_vue") or "").strip(),
         "desp_type": "VAE" if formation_key == "DESP_VAE" else ("INITIAL" if formation_key == "DESP_INIT" else ""),
         "identite_creation": str(entry.get("identite_numerique") or "").strip(),
+        "inscrit_ft": entry.get("inscrit_ft") if entry.get("inscrit_ft") in ("OUI", "NON") else "",
         "financement_ft": str(entry.get("france_travail") or "").strip(),
         "financement_perso_possible": str(entry.get("ft_refus_ok") or "").strip(),
         "refus_ft_perso": str(entry.get("ft_refus_ok") or "").strip(),
@@ -13642,7 +13679,7 @@ def _crm_restore_secretariat_answers_once():
 
 
 def _crm_create_contact_from_secretariat(
-        data, entry, crm_payload, *, create_on_ambiguity=False):
+        data, entry, crm_payload, *, create_on_ambiguity=False, refresh_registration=False):
     """Create or complete the safely matched CRM record from a secretary call."""
     from crm_secretariat_answers import apply_answers
     now = _crm_now()
@@ -13658,7 +13695,6 @@ def _crm_create_contact_from_secretariat(
         "identite_ok": "",
         "statut_demande_financement_ft": "", "montant_accorde_ft": "",
         "origine": "Secrétariat",
-        "inscrit_ft": "",
         "commentaires": str(entry.get("notes") or "").strip(),
         "relance_date": "",
         "created_at": now,
@@ -13698,6 +13734,13 @@ def _crm_create_contact_from_secretariat(
                 matched, values, is_empty=_crm_is_empty,
                 normalize_amount=normalize_cpf_amount,
             )
+            if refresh_registration and "inscrit_ft" in conflicts and entry.get("inscrit_ft") in {"OUI", "NON"}:
+                previous = matched.get("inscrit_ft")
+                matched["inscrit_ft"] = entry["inscrit_ft"]
+                conflicts.remove("inscrit_ft")
+                _crm_activity(matched, "inbound_request", "Inscription à France Travail actualisée",
+                              f"L’appelant déclare {entry['inscrit_ft'].lower()} (réponse précédente : {previous}).")
+                matched["updated_at"] = now
             differences = inbound.setdefault("differences", [])
             new_conflicts = [field for field in conflicts if field not in differences]
             differences.extend(new_conflicts)
@@ -13713,11 +13756,13 @@ def _crm_create_contact_from_secretariat(
 def _crm_ensure_secretariat_publication(contact, entry):
     """Publish the secretary's call details once on the matched CRM contact."""
     text = str(entry.get("notes") or "").strip()
-    if text:
+    registration = {"OUI": "oui", "NON": "non"}.get(entry.get("inscrit_ft"))
+    if text or registration:
         text = "\n".join(filter(None, [
             f"Destinataire : {entry['callback_recipient']}" if entry.get("callback_recipient") else "",
             f"À rappeler avant le {secretariat_calls.date_label(entry['callback_due_at'])}" if entry.get("callback_due_at") else "",
             _secretariat_formation_name(entry["formation"]) if entry.get("type") == "autre" and entry.get("formation") else "",
+            f"Inscription à France Travail déclarée lors de l’appel : {registration}." if registration else "",
             secretariat_calls.funding_note(entry),
             f"{_secretariat_period_label(entry)} : {entry['rentree_souhaitee']}" if entry.get("rentree_souhaitee") else "",
             text,

@@ -1,3 +1,15 @@
+{% macro delivery_dates(row, form_id) %}
+<details class="session-periods"><summary>Périodes de distanciel et de présentiel</summary>
+  {% for prefix, mode in [('remote','Distanciel'), ('inPerson','Présentiel')] %}
+    <fieldset><legend>{{ mode }}</legend>
+    {% for suffix, label in [('StartDate','Du'), ('EndDate','Au')] %}
+      {% set field = prefix ~ suffix %}
+      <label>{{ label }} <input type="date" form="{{ form_id }}" name="{{ field }}" value="{{ row.get(field, '') }}" aria-label="{{ mode }} · {{ label }}"></label>
+    {% endfor %}
+    </fieldset>
+  {% endfor %}
+</details>
+{% endmacro %}
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -74,6 +86,10 @@
     details.formation > summary::-webkit-details-marker { display: none; }
     .summary-meta { font-size: 12px; color: var(--muted); font-weight: 500; }
 
+    .session-periods { margin-top: 8px; font-size: 13px; }
+    .session-periods summary { cursor: pointer; }
+    .session-periods fieldset { display: flex; gap: 8px; margin-top: 6px; border: 1px solid var(--line); }
+    .session-periods label { min-width: 0; }
     .table-wrap { overflow-x: auto; padding: 10px; }
     table { width: 100%; border-collapse: collapse; min-width: 880px; table-layout: fixed; }
     th, td { border: 1px solid var(--line); padding: 8px; text-align: left; }
@@ -153,6 +169,7 @@
                     <tr>
                       <td>
                         <input form="{{ row_form_id }}" name="label" value="{{ item.label }}" placeholder="Session">
+                        {% if code == "APS" %}{{ delivery_dates(item, row_form_id) }}{% endif %}
                       </td>
                       <td>
                         <input form="{{ row_form_id }}" name="date_examen" type="date" value="{{ item.date_examen or '' }}">
@@ -181,16 +198,18 @@
                       </td>
                     </tr>
                   {% endfor %}
+                  {% set add_form_id = "add-" ~ centre ~ "-" ~ code %}
                   <tr>
-                    <form method="POST">
+                    <td><input form="{{ add_form_id }}" name="label" placeholder="Ajouter une nouvelle date">
+                      {% if code == "APS" %}{{ delivery_dates({}, add_form_id) }}{% endif %}</td>
+                    <td><input form="{{ add_form_id }}" name="date_examen" type="date"></td>
+                    <td><input form="{{ add_form_id }}" name="badge" placeholder="COMPLET / 1 place dispo"></td>
+                    <td class="actions-col"><form id="{{ add_form_id }}" method="POST">
                       <input type="hidden" name="action" value="add">
                       <input type="hidden" name="centre" value="{{ centre }}">
                       <input type="hidden" name="formation" value="{{ code }}">
-                      <td><input name="label" placeholder="Ajouter une nouvelle date"></td>
-                      <td><input name="date_examen" type="date"></td>
-                      <td><input name="badge" placeholder="COMPLET / 1 place dispo"></td>
-                      <td class="actions-col"><button class="a" type="submit">➕ Ajouter</button></td>
-                    </form>
+                      <button class="a" type="submit">➕ Ajouter</button>
+                    </form></td>
                   </tr>
                 </table>
               </div>
@@ -223,11 +242,11 @@
         body: new FormData(form),
         credentials: "same-origin"
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new Error(response.status === 400 ? await response.text() : "Erreur de sauvegarde");
       dirtyForms.delete(form);
       setStatus(form, "Enregistré", "saved");
     } catch (error) {
-      setStatus(form, "Erreur de sauvegarde", "error");
+      setStatus(form, error.message, "error");
       console.error(error);
     }
   }

@@ -5,6 +5,7 @@ import re
 import unicodedata
 
 import pytz
+from secretariat_catalogue import SECURITY_AUTHORITY, authority_wording
 from candidate_scoring import normalize_cnaps_tracking_status
 from crm_cnaps_tracking import _cnaps_activity_code
 
@@ -13,6 +14,7 @@ PARIS = pytz.timezone("Europe/Paris")
 FINANCING_FIELDS = {
     "cpf_consulte": "consultation du compte CPF",
     "cpf_montant": "solde CPF",
+    "inscrit_ft": "inscription à France Travail",
     "france_travail": "financement France Travail",
     "ft_refus_ok": "financement personnel si France Travail refuse",
     "financement_perso": "financement personnel du reste à charge",
@@ -20,16 +22,16 @@ FINANCING_FIELDS = {
 }
 
 CNAPS_LABELS = {
-    "registered": "Enregistré", "transmitted": "Transmis au CNAPS", "in_review": "En instruction",
+    "registered": "Enregistré", "transmitted": f"Transmis au {SECURITY_AUTHORITY}", "in_review": "En instruction",
     "accepted": "Accepté", "refused": "Refusé", "no_result": "Aucun dossier retrouvé",
 }
 
 CNAPS_REQUEST_WORDING = {
-    "registered": "La demande est enregistrée. Son envoi au CNAPS reste à confirmer.",
-    "transmitted": "La demande a été envoyée au CNAPS. Nous attendons sa décision.",
-    "in_review": "Le CNAPS étudie votre demande. Nous attendons sa décision.",
-    "accepted": "Le suivi indique que le CNAPS a accepté votre demande.",
-    "refused": "Le suivi indique un refus du CNAPS. Je peux demander à un conseiller de faire le point avec vous.",
+    "registered": f"Le centre a enregistré votre demande. Son envoi au {SECURITY_AUTHORITY} reste à confirmer.",
+    "transmitted": f"Votre demande a été envoyée au {SECURITY_AUTHORITY}. Nous attendons sa décision.",
+    "in_review": f"Le {SECURITY_AUTHORITY} étudie votre demande. Nous attendons sa décision.",
+    "accepted": f"Le suivi indique que le {SECURITY_AUTHORITY} a accepté votre demande.",
+    "refused": f"Le suivi indique un refus du {SECURITY_AUTHORITY}. Je peux demander à un conseiller de faire le point avec vous.",
     "no_result": "Je ne retrouve pas de demande à votre nom dans notre suivi. Je peux demander à l’école de vérifier.",
 }
 
@@ -266,7 +268,7 @@ def _desk_documents(remote, card, today):
     checked = ""
     for source in sources:
         if source.get("nub_missing"):
-            problems.append("Le numéro de dossier CNAPS manque. L’école doit le vérifier pour consulter les documents.")
+            problems.append(f"Le numéro de dossier auprès du {SECURITY_AUTHORITY} manque. L’école doit le vérifier pour consulter les documents.")
             continue
         if source.get("cnaps_unavailable") or source.get("error") or source.get("check_status") in {"error", "failed", "unavailable"}:
             problems.append("La vérification des documents est indisponible. Réessayez ou transmettez la question à un conseiller.")
@@ -297,7 +299,7 @@ def cnaps_overview(contact, course, snapshot=None, remote=None):
     remote = remote or {}
     cnaps = remote.get("cnaps") or {}
     status = normalize_cnaps_tracking_status(snapshot)
-    label = CNAPS_LABELS.get(status) or str(snapshot.get("raw_status") or "").strip()
+    label = CNAPS_LABELS.get(status) or authority_wording(str(snapshot.get("raw_status") or "").strip())
     last_check = (cnaps.get("last_checked_at") or cnaps.get("checked_at") or cnaps.get("date_derniere_verification")
                   or snapshot.get("last_checked_at") or snapshot.get("synced_at"))
     wording = CNAPS_REQUEST_WORDING.get(status, "L’avancement de votre demande reste à confirmer avec l’école.")
@@ -394,6 +396,9 @@ def desk_summary(contact, callbacks, appointment, *, staff=True):
     financing = []
     if contact.get("cpf") == "OUI":
         financing.append("Compte personnel de formation (CPF) consulté")
+    registration = {"OUI": "Inscrit à France Travail", "NON": "Non inscrit à France Travail"}.get(contact.get("inscrit_ft"))
+    if registration:
+        financing.append(registration)
     if contact.get("financement_ft") == "OUI":
         financing.append("Demande de financement France Travail souhaitée")
     if contact.get("reste_a_charge_perso") == "OUI":

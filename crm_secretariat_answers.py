@@ -6,7 +6,7 @@ from collections import defaultdict
 VERSION = "2026-09-23-v1"
 REPAIR_KEY = "crm_secretariat_answers_repair"
 FIELDS = (
-    "cpf", "cpf_montant", "financement_ft", "financement_perso_possible",
+    "cpf", "cpf_montant", "inscrit_ft", "financement_ft", "financement_perso_possible",
     "refus_ft_perso", "reste_a_charge_perso", "identite_creation",
     "carte_pro", "garde_vue", "antecedents", "titre_sejour",
     "dates_formation", "desp_type",

@@ -1,7 +1,8 @@
 const directBooking = document.getElementById('directBooking');
 const hostedBooking = document.getElementById('hostedBooking');
-const chooseSmsBooking = document.getElementById('chooseSmsBooking');
-let useSmsBooking = false;
+const reminderChoice = document.getElementById('deskReminderChoice');
+const smsNumber = document.getElementById('deskSmsNumber');
+let bookingMode = null;
 let deskBookingWeek = 0, deskBookingCourse = '', deskBookingEvent = '';
 let bookingSlotsVersion = 0, bookingPending = false, bookingUncertain = false, nativeReceipt = null;
 function deskBookingConfirmed() { return Boolean(formationFirst && calendlyEvent); }
@@ -9,7 +10,7 @@ function lockBookingChoice() {
   document.querySelectorAll('[name=wants_rdv]').forEach(input => { input.disabled = true; });
   document.querySelector('[data-step="6"] [data-back]').disabled = true;
   calendlyInline.hidden = true;
-  if (directBooking) directBooking.hidden = hostedBooking.hidden = chooseSmsBooking.hidden = true;
+  if (directBooking) directBooking.hidden = hostedBooking.hidden = reminderChoice.hidden = true;
   document.getElementById('hostedBookingIntro').hidden = true;
   updateProgress();
 }
@@ -63,7 +64,7 @@ async function listDeskSlots() {
     const data = await response.json();
     if (version !== bookingSlotsVersion || currentStep !== 6 || directBooking.hidden) return;
     if (!response.ok || data.hosted_only) {
-      showProviderFallback(data.error || 'Cet agenda utilise le formulaire Calendly. Le numéro de rappel SMS peut y être copié.');
+      showProviderFallback(data.error || 'Cet agenda utilise le formulaire Calendly. Pour conserver le rappel demandé, copiez le numéro ci-dessus dans « Envoyer un SMS à » avant de confirmer.');
       return;
     }
     const select = document.getElementById('deskBookingAgenda');
@@ -100,21 +101,40 @@ function openDeskBooking() {
   hostedBooking.hidden = false;
   document.getElementById('hostedBookingIntro').hidden = true;
   calendlyInline.hidden = true;
+  return listDeskSlots();
+}
+function prepareDeskReminder() {
   const number = callerForm.elements.telephone.value.trim();
   const signature = [formation.value, number, callerForm.elements.email.value].join('|');
   if (deskBookingCourse !== signature) {
-    deskBookingCourse = signature; deskBookingWeek = 0; deskBookingEvent = '';
+    deskBookingCourse = signature;
+    deskBookingWeek = 0;
+    deskBookingEvent = '';
+    bookingMode = null;
     directBooking.reset();
     document.getElementById('deskEventQuestions').replaceChildren();
-    document.getElementById('deskSmsNumber').value = normalizedPhone(number) || number;
+    smsNumber.setCustomValidity('');
+    smsNumber.value = normalizedPhone(number) || number;
   }
-  return listDeskSlots();
+  reminderChoice.hidden = bookingMode === 'hosted' || bookingUncertain;
+  document.getElementById('hostedSmsHint').hidden = bookingMode !== 'hostedSms';
+  document.getElementById('deskReminderActions').hidden = bookingMode !== null;
+  smsNumber.required = bookingMode === 'sms';
 }
 if (directBooking) {
-  chooseSmsBooking.onclick = () => {
-    const yes = document.querySelector('[name=wants_rdv][value=oui]');
-    yes.checked = true;
-    selectAppointmentChoice(yes, true);
+  document.getElementById('chooseSmsBooking').onclick = () => {
+    if (!normalizedPhone(smsNumber.value)) {
+      smsNumber.setCustomValidity('Indiquez le numéro sur lequel l’appelant souhaite recevoir le rappel.');
+      smsNumber.reportValidity();
+      return;
+    }
+    bookingMode = 'sms';
+    renderCalendlyWidget();
+  };
+  smsNumber.oninput = () => smsNumber.setCustomValidity('');
+  document.getElementById('skipSmsBooking').onclick = () => {
+    bookingMode = 'hosted';
+    renderCalendlyWidget();
   };
   document.getElementById('deskSlot').onchange = event => { document.getElementById('bookDeskSlot').disabled = !event.target.value; };
   document.getElementById('deskBookingAgenda').onchange = event => {
@@ -123,25 +143,23 @@ if (directBooking) {
   };
   document.getElementById('previousBookingWeek').onclick = () => { if (deskBookingWeek > 0) deskBookingWeek--; listDeskSlots(); };
   document.getElementById('nextBookingWeek').onclick = () => { deskBookingWeek++; listDeskSlots(); };
-  document.getElementById('deskSmsConsent').onchange = event => { document.getElementById('deskSmsNumber').required = event.target.checked; };
   hostedBooking.onclick = () => {
     if (bookingPending || deskBookingConfirmed() || bookingUncertain) return;
-    useSmsBooking = false;
+    bookingMode = 'hostedSms';
     renderCalendlyWidget();
   };
   directBooking.onsubmit = async event => {
     event.preventDefault();
     if (bookingPending || deskBookingConfirmed() || bookingUncertain || !directBooking.reportValidity()) return;
-    const consent = document.getElementById('deskSmsConsent').checked;
-    const sms = consent ? normalizedPhone(document.getElementById('deskSmsNumber').value) : '';
-    if (consent && !sms) { bookingNotice('Vérifiez le numéro du rappel SMS.', 'is-error'); return; }
+    const sms = bookingMode === 'sms' ? normalizedPhone(smsNumber.value) : '';
+    if (bookingMode === 'sms' && !sms) { bookingNotice('Vérifiez le numéro du rappel SMS.', 'is-error'); return; }
     const payload = {...Object.fromEntries(new FormData(callerForm)), call_key: deskCallKey, formation: formation.value,
       event_type: deskBookingEvent, start_time: document.getElementById('deskSlot').value, sms,
       answers: Object.fromEntries([...directBooking.querySelectorAll('[data-answer]')].map(input => [input.dataset.answer, input.value]))};
     bookingPending = true;
     hostedBooking.hidden = true;
     openCallNotes.disabled = true;
-    directBooking.inert = true;
+    directBooking.inert = reminderChoice.inert = true;
     document.querySelectorAll('[name=wants_rdv]').forEach(input => { input.disabled = true; });
     bookingNotice('Réservation du créneau…');
     try {
@@ -169,7 +187,7 @@ if (directBooking) {
     } finally {
       bookingPending = false;
       openCallNotes.disabled = false;
-      directBooking.inert = false;
+      directBooking.inert = reminderChoice.inert = false;
       hostedBooking.hidden = Boolean(nativeReceipt || bookingUncertain);
       document.querySelectorAll('[name=wants_rdv]').forEach(input => { input.disabled = Boolean(nativeReceipt); });
       updateProgress();

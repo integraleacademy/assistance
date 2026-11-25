@@ -523,9 +523,9 @@ def test_secretariat_summary_template_is_safe_complete_and_has_no_unwanted_appoi
     assert "Certification et objectif" in rendered
     assert rendered.count("5 semaines") == 1
     assert "exercer le métier d’agent de surveillance humaine" in rendered
-    assert "carte professionnelle ou d&#39;une autorisation préalable" in rendered
+    assert "Si une autorisation préalable d’entrée en formation est nécessaire" in rendered
     assert "Un projet de formation ? Notre équipe vous accompagne dans toutes vos démarches" in rendered
-    assert "Cette démarche est réalisée par nos soins" in rendered
+    assert "notre centre prépare et dépose votre demande d’autorisation préalable" in rendered
     assert "Il a été généré à partir de la formation" not in rendered
     assert "Ce lien est personnel et vous permet" not in rendered
     assert "financement en attente" not in rendered.lower()
@@ -653,8 +653,8 @@ def test_secretariat_a3p_wording_and_project_values_are_normalized(monkeypatch):
     assert "refus de CPF" not in rendered
     assert ">Financement personnel possible</td>" in rendered
     assert "d’étaler le paiement en plusieurs fois jusqu’à la fin de la formation" in rendered
-    assert "autorisation préalable d’entrée en formation délivrée par le CNAPS" in rendered
-    assert "notre équipe vous accompagnera dans cette démarche" in rendered
+    assert "le centre prépare et dépose votre demande" in rendered
+    assert application.SECURITY_AUTHORITY in unescape(rendered)
 
 
 def test_secretariat_uses_crm_calendly_appointment_before_sending(client, monkeypatch):
