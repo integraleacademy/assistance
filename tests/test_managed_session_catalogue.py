@@ -93,3 +93,45 @@ def test_named_legacy_formula_without_separate_start_keeps_its_fee():
                                {"label":"Du 5 février 2098 au 12 mars 2098"}]}}
     choices=managed.options([row], local, app._session_date_range)["cote_azur"]["SSIAP"]
     assert [r.get("formula") for r in choices]==["ssiap-1","ssiap-1-sst",None]
+
+
+def test_retrait_remplacement_et_visibilite_sur_crm_formulaire_et_secretariat(monkeypatch):
+    groupe = source(name="Promotion Azur", venue="Salle Atlas", managed=True, edited=True)
+    local = {"cote_azur":{"APS":[{"label":"Du 5 février 2098 au 12 mars 2098","date_examen":groupe["exam"]}]}}
+    def choices(rows, staff=False):
+        return managed.options(rows, local, app._session_date_range, include_internal=staff)["cote_azur"]["APS"]
+    ferme = {**groupe, "visibility":"closed"}
+    supprime = {**ferme, "deleted":True}
+    ancienne_fiche = {**groupe, "id":"gestion-ancienne", "managed":False, "visibility":"match"}
+    for staff in (True, False):
+        assert choices([ferme, ancienne_fiche], staff) == choices([supprime, ancienne_fiche], staff) == []
+    nouveau = {**groupe,"id":"platform-nouveau","sold":2}
+    for staff in (False, True):
+        assert [r["catalogue_id"] for r in choices([ferme, nouveau], staff)] == [nouveau["id"]]
+    for rows in ([supprime,nouveau], [nouveau,supprime,ancienne_fiche]):
+        choix, = choices(rows)
+        assert (choix["catalogue_id"],choix["session_name"],choix["venue"],choix["badge"]) == (
+            nouveau["id"],"Promotion Azur","Salle Atlas","10 places restantes")
+        old_url = dict(id=groupe["id"], formation="APS",label=choix["label"],date_examen=groupe["exam"])
+        assert managed.website_selection(old_url,rows,app._session_date_range) is None
+        assert managed.website_selection({**old_url, "id":"ancienne-fiche-cms"},rows,app._session_date_range) is None
+        assert managed.website_selection({**old_url, "id":nouveau["id"]},rows,app._session_date_range)["catalogue_id"] == nouveau["id"]
+    report = {**groupe, "visibility":"match", "start":"2098-04-03","end":"2098-05-05","exam":"","aliases":[groupe]}
+    choix, = choices([report])
+    assert choix["label"] == "Du 3 avril 2098 au 5 mai 2098" and not choix["date_examen"]
+    monkeypatch.setattr(managed, "read", lambda:[ferme])
+    monkeypatch.setattr(app.crm_public_sessions, "_published_sessions", lambda:{})
+    public = app.get_upcoming_formation_sessions({"formation_sessions":local})["cote_azur"]["APS"]
+    assert public == []
+    desk = next(c for c in app._secretariat_catalogue({"formation_sessions":local}) if c["code"]=="APS")
+    assert not any(s.get("session_name")=="Promotion Azur" for c in desk["centres"] for s in c["sessions"])
+
+
+def test_filter_hides_retired_contact_choice_without_changing_its_record():
+    labels = ["Du 5 février 2098 au 12 mars 2098", "Du 4 avril 2098 au 8 mai 2098"]
+    contacts = [dict(formation="APS", lieu="Côte d’Azur", dates_formation=label) for label in labels]
+    old = source(managed=True)
+    moved = {**old, "start":"2098-04-04", "end":"2098-05-08", "aliases":[old]}
+    assert managed.withdrawn_contact_filters(contacts,[moved],app._session_date_range) == [["APS","Côte d’Azur",labels[0]]]
+    assert len(managed.withdrawn_contact_filters(contacts,[{**moved,"visibility":"closed"}],app._session_date_range)) == 2
+    assert contacts[0]["dates_formation"] == labels[0]

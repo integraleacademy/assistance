@@ -1119,7 +1119,7 @@ def test_crm_bootstrap_reads_the_shared_data_file_once(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert len(calls) == 1
     assert set(response.get_json()) == {
-        "contacts", "templates", "formation_sessions", "notifications",
+        "contacts", "templates", "formation_sessions", "withdrawn_session_filters", "notifications",
         "appointments", "calendly_integration", "settings",
         "callback_requests", "callback_pending_count",
     }
