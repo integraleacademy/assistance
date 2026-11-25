@@ -39,7 +39,8 @@ def test_moves_and_tombstones_keep_existing_choices(monkeypatch):
 def test_legacy_links_and_duplicate_reschedules():
     first=source(slug="ssiap-3")
     choice={"id":"old-website-id","formation":"SSIAP3","label":"Du 5 février 2098 au 12 mars 2098","date_examen":first["exam"]}
-    assert managed.website_selection(choice,[first],app._session_date_range)==choice
+    verified=managed.website_selection(choice,[first],app._session_date_range)
+    assert verified["label"] == choice["label"] and verified["badge"] == "5 places restantes"
     for change in ({"sold":12},{"visibility":"closed"},{"visibility":"internal"},{"start":"2098-04-03","end":"2098-05-04","exam":"2098-05-05","aliases":[first]}):
         assert managed.website_selection(choice,[{**first,**change}],app._session_date_range) is None
     future=source(start="2098-05-05",end="2098-06-12",exam="2098-06-13",aliases=[source()])
@@ -54,3 +55,41 @@ def test_ssiap_start_only_move_prefers_exact_previous_key():
     local={"cote_azur":{"SSIAP":[{"label":"Du 5 février 2098 au 12 mars 2098 (sans SST)","date_examen":original["exam"]}]}}
     only,=managed.options([moved],local,app._session_date_range)["cote_azur"]["SSIAP"]
     assert only["label"].startswith("Du 6 février")
+
+
+def test_two_ssiap_start_dates_use_one_count_and_correct_fee(monkeypatch, tmp_path):
+    import json
+    import re
+    group = source(slug="ssiap-1", standard_start="2098-02-09", sold=11)
+    monkeypatch.setattr(managed, "read", lambda: [group])
+    monkeypatch.setattr(app, "DATA_FILE", str(tmp_path/"form.json"))
+    monkeypatch.setitem(app.app.config, "CRM_USE_PUBLIC_CALENDAR", False)
+    html = app.app.test_client().get("/demande-informations-formations").get_data(as_text=True)
+    choices = json.loads(re.search(r"const sessions = (.+?);\n", html)[1])["cote_azur"]["SSIAP"]
+    assert [(r["formula"],r["start_date"],r["badge"]) for r in choices] == [
+        ("ssiap-1-sst","2098-02-05","1 place restante"), ("ssiap-1","2098-02-09","1 place restante")]
+    assert "computeDynamicPlaces" not in html and "ssiap-1-sst" in html
+    choice = dict(id="published", formation="SSIAP", label=choices[1]["label"], date_examen=group["exam"], formula="ssiap-1")
+    assert managed.website_selection(choice,[group],app._session_date_range)["badge"] == "1 place restante"
+    assert managed.website_selection({**choice,"formula":"ssiap-1-sst"},[group],app._session_date_range) is None
+
+def test_ssiap_without_exam_rejects_closed_or_outdated_variants_by_url_and_dates():
+    group = source(slug="ssiap-1", standard_start="2098-02-09", exam="", sold=5)
+    label = "Du 9 février 2098 au 12 mars 2098 (sans SST)"
+    for identifier in (group["id"]+"-sans-sst", "ancienne-fiche"):
+        link = dict(id=identifier, formation="SSIAP", label=label, formula="ssiap-1", date_examen="")
+        assert managed.website_selection(link, [group], app._session_date_range)["badge"] == "7 places restantes"
+        for result in ({"sold":12}, {"visibility":"internal"}, {"visibility":"closed"},
+                       {"standard_start":"2098-02-10","aliases":[group]}):
+            assert managed.website_selection(link, [{**group,**result}], app._session_date_range) is None
+    assert managed.website_selection({**link,"id":group["id"]+"-sans-sst"}, [], app._session_date_range) is None
+    view = managed.options([group], {"cote_azur":{"SSIAP":[{"label":label}]}}, app._session_date_range)
+    assert len(view["cote_azur"]["SSIAP"]) == 2
+
+def test_named_legacy_formula_without_separate_start_keeps_its_fee():
+    row=source(slug="ssiap-1", visibility="match")
+    local={"cote_azur":{"SSIAP":[{"label":"Du 5 février 2098 au 12 mars 2098 (sans SST)"},
+                               {"label":"Du 5 février 2098 au 12 mars 2098 (avec SST)"},
+                               {"label":"Du 5 février 2098 au 12 mars 2098"}]}}
+    choices=managed.options([row], local, app._session_date_range)["cote_azur"]["SSIAP"]
+    assert [r.get("formula") for r in choices]==["ssiap-1","ssiap-1-sst",None]

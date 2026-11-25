@@ -483,11 +483,11 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <strong>Votre session {{ 'SSIAP 3' if website_choice.formation == 'SSIAP3' else 'SSIAP 1' }}</strong> · {{ website_choice.label }} ·
         {{ website_choice.fee_label }}
       </div>
-      <input type="hidden" name="ssiap_session_id" id="websiteSessionId" disabled>
-      <input type="hidden" name="ssiap_formule" id="websiteFormula" disabled>
       {% elif website_choice_unavailable %}
       <p class="small-note" role="status">La disponibilité de la session choisie n’a pas pu être confirmée. Vérifiez les dates proposées ou contactez l’école au 04 22 47 07 68.</p>
       {% endif %}
+      <input type="hidden" name="ssiap_session_id" id="websiteSessionId" disabled>
+      <input type="hidden" name="ssiap_formule" id="websiteFormula" disabled>
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
       <input type="hidden" name="wbraid" id="wbraidField" value="{{ wbraid or '' }}">
       <input type="hidden" name="gbraid" id="gbraidField" value="{{ gbraid or '' }}">
@@ -833,15 +833,20 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     function updateWebsiteSelection() {
       const level3 = formation.value === 'SSIAP3';
       const active = websiteChoice && formation.value === websiteChoice.formation && datesSelect.value === websiteChoice.label;
-      document.getElementById('ssiapFeeDisplay').textContent = level3 ? {{ ssiap3.price|tojson }} : (active ? websiteChoice.fee_label : '1 230 € TTC');
-      if (!websiteChoice) return;
-      const id = document.getElementById('websiteSessionId');
-      const formula = document.getElementById('websiteFormula');
-      id.disabled = !active;
-      formula.disabled = !active || !websiteChoice.formula;
-      id.value = active ? websiteChoice.id : '';
-      formula.value = active ? (websiteChoice.formula || '') : '';
-      document.getElementById('websiteChoiceSummary').hidden = !active;
+      const selected = datesSelect.selectedOptions[0];
+      const fees = {{ ssiap_fees|default({})|tojson }};
+      const formula = active ? websiteChoice.formula : (formation.value === 'SSIAP' ? selected?.dataset.formula : '');
+      const sessionId = active ? websiteChoice.id : (formula ? selected?.dataset.catalogueId : '');
+      document.getElementById('ssiapFeeDisplay').textContent = level3 ? {{ ssiap3.price|tojson }}
+        : (active ? websiteChoice.fee_label : fees[formula] || '1 230 € TTC');
+      const idField = document.getElementById('websiteSessionId');
+      const formulaField = document.getElementById('websiteFormula');
+      idField.value = sessionId || '';
+      idField.disabled = !sessionId;
+      formulaField.value = formula || '';
+      formulaField.disabled = !formula;
+      const summary = document.getElementById('websiteChoiceSummary');
+      if (summary) summary.hidden = !active;
     }
     const gclidField = document.getElementById('gclidField');
     const googleAdsAttributionNames = [
@@ -1008,45 +1013,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           year: 'numeric',
         }).format(parsed);
       };
-      const parseSessionDate = (rawLabel) => {
-        const label = (rawLabel || '').trim();
-        if (!label) return null;
-        const match = label.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-        if (!match) return null;
-        const [, day, month, year] = match;
-        const parsed = new Date(Number(year), Number(month) - 1, Number(day));
-        return Number.isNaN(parsed.getTime()) ? null : parsed;
-      };
-      const computeDynamicPlaces = (sessionDate) => {
-        if (!sessionDate) return null;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const target = new Date(sessionDate);
-        target.setHours(0, 0, 0, 0);
-        const diffDays = Math.ceil((target.getTime() - today.getTime()) / 86400000);
-        if (diffDays <= 7) return 1;
-        if (diffDays <= 14) return 2;
-        if (diffDays <= 30) return 4;
-        if (diffDays <= 60) return 6;
-        return 8;
-      };
-      const getBadgeInfo = (rawBadge, sessionLabel) => {
-        const cleanBadge = (rawBadge || '').trim();
-        const dynamicPlaces = computeDynamicPlaces(parseSessionDate(sessionLabel));
-        const countMatch = cleanBadge.match(/(\d+)/);
-        const countFromBadge = countMatch ? Number(countMatch[1]) : null;
-        const finalCount = Number.isFinite(dynamicPlaces) ? dynamicPlaces : countFromBadge;
-
-        if (Number.isFinite(finalCount)) {
-          const safeCount = Math.max(0, finalCount);
-          const text = `${safeCount} ${safeCount > 1 ? 'places disponibles' : 'place disponible'}`;
-          if (safeCount <= 4) return { text: `⚠️ ${text}`, className: 'badge-danger' };
-          if (safeCount <= 6) return { text, className: 'badge-warning' };
-          return { text: `✅ ${text}`, className: 'badge-success' };
-        }
-
-        if (!cleanBadge) return null;
-        return { text: cleanBadge, className: 'badge-warning' };
+      const getBadgeInfo = (value) => {
+        const text = (value || '').trim();
+        if (!text) return null;
+        const number = text.match(/^(\d+) places? (?:restantes?|disponibles?)$/i);
+        const count = number ? Number(number[1]) : null;
+        const className = count === null ? 'badge-warning' : count <= 4 ? 'badge-danger' : count <= 6 ? 'badge-warning' : 'badge-success';
+        return { text, className };
       };
       rows.forEach((r, index) => {
         const btn = document.createElement('button');
@@ -1067,7 +1040,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           .replace(/\s*-\s*examen\s+le\s+[^,;]+$/i, '')
           .trim();
         const rawBadge = (r.badge || '').trim();
-        const badgeInfo = getBadgeInfo(rawBadge, fullLabel);
+        const badgeInfo = getBadgeInfo(rawBadge);
         const badgeLine = badgeInfo
           ? `<span class="session-pill-badge ${badgeInfo.className}">${badgeInfo.text}</span>`
           : '';
@@ -1106,7 +1079,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     function sessionRows(code, centre) {
       const rows = sessions[centre]?.[code] || [];
       if (websiteChoice && code === websiteChoice.formation && centre === 'cote_azur') {
-        return [websiteChoice, ...rows.filter(row => row.label !== websiteChoice.label)];
+        return [websiteChoice, ...rows.filter(row => row.label !== websiteChoice.label &&
+          !(websiteChoice.catalogue_id && row.catalogue_id === websiteChoice.catalogue_id && row.formula === websiteChoice.formula))];
       }
       return rows;
     }
@@ -1391,9 +1365,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         option.value = r.label;
         option.textContent = r.badge ? `${r.label} — ${r.badge}` : r.label;
         option.dataset.dateExamen = (r.date_examen || '').trim();
+        option.dataset.formula = r.formula || '';
+        option.dataset.catalogueId = r.catalogue_id || '';
         datesSelect.appendChild(option);
       });
       renderSessionPills(rows);
+      updateWebsiteSelection();
       if (websiteSelected) {
         datesSelect.value = websiteChoice.label;
         datesSelect.dispatchEvent(new Event('change'));

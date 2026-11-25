@@ -5591,6 +5591,7 @@ def demande_informations_formations():
         "demande_informations_formations.html",
         website_choice=website_choice, preselected_formation=requested_formation,
         ssiap3=SECRETARIAT_FORMATIONS["SSIAP3"],
+        ssiap_fees={"ssiap-1": _eur_display(SST_FEES["sans"]), "ssiap-1-sst": _eur_display(SST_FEES["avec"])},
         website_choice_unavailable=bool(session_id and not website_choice),
         centres={key: {**details, "formations": [code for code in details["formations"]
                     if code != "SSIAP2" or any(not r.get("full") for r in sessions.get(key, {}).get(code, []))]}
