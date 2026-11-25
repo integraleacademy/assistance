@@ -71,10 +71,10 @@ def test_fresh_registry_results_replace_stale_titles_and_explain_absence_or_outa
     first = desk.cnaps_overview(person, "APS", {"raw_status": "INCONNU"})
     assert first["documents"] and first["card"] == "Oui" and "à confirmer" in first["request_wording"]
     for fields, message in [({}, "Aucun document retrouvé"), ({"cnaps_unavailable": True}, "indisponible"),
-                            ({"nub_missing": True}, "numéro de dossier CNAPS manque")]:
+                            ({"nub_missing": True}, "numéro de dossier auprès du Ministère de l'intérieur (CNAPS) manque")]:
         live = desk.cnaps_overview(person, "APS", {"raw_status": "TRANSMIS"}, {"cnaps": {"titles": [], **fields}})
         assert not live["documents"] and not live["titles"] and message in live["document_note"]
-        assert "envoyée au CNAPS" in live["request_wording"] and live["card"] == "Oui"
+        assert "envoyée au Ministère de l'intérieur (CNAPS)" in live["request_wording"] and live["card"] == "Oui"
     both = desk.cnaps_overview(person, "APS", {}, {"card_pro": {"titles": []}, "cnaps": {"titles": [old, old, {"type": "CP A3P", "state": "EXPIRE"}]}})
     assert len(both["documents"]) == 2 and "expiré" in both["documents"][1]["wording"]
     multiple = desk.cnaps_overview(person, "APS", {"raw_status": "ACCEPTE"}, {"match_count": 2, "cnaps": {"titles": [old]}})

@@ -66,7 +66,7 @@ function renderDeskCnaps(facts) {
   const documentCount = facts.documents?.length || 0;
   document.getElementById('cnapsPreview').textContent = documentCount ? documentCount + (documentCount === 1 ? ' document' : ' documents') : '';
   dossierGroup(cnapsResult, [
-    ['Demande auprès du CNAPS', facts.request_wording], ['Dernière consultation', facts.checked],
+    [`Demande auprès du ${securityAuthority}`, facts.request_wording], ['Dernière consultation', facts.checked],
   ]);
   if (facts.documents?.length) {
     const list = document.createElement('ul');
@@ -84,12 +84,12 @@ function renderDeskCnaps(facts) {
   dossierGroup(cnapsResult, [
     ['Vérification des documents', facts.document_note], ['Documents consultés le', facts.card_checked !== facts.checked ? facts.card_checked : ''],
     ['Ce que l’appelant a déclaré', [
-      facts.account === 'Créé' ? 'Compte en ligne du CNAPS créé.' : (facts.account === 'Non créé' ? 'Compte en ligne du CNAPS non créé.' : ''),
+      facts.account === 'Créé' ? `Compte en ligne du ${securityAuthority} créé.` : (facts.account === 'Non créé' ? `Compte en ligne du ${securityAuthority} non créé.` : ''),
       facts.card === 'Oui' ? 'Dit détenir une carte professionnelle.' : (facts.card === 'Non' ? 'Dit ne pas détenir de carte professionnelle.' : ''),
     ].filter(Boolean).join(' ')],
   ]);
   dossierGroup(original, [
-    ['Suivi CNAPS', facts.status], ['Références des documents', (facts.titles || []).join(' • ')],
+    [`Suivi du ${securityAuthority}`, facts.status], ['Références des documents', (facts.titles || []).join(' • ')],
   ]);
   refreshDeskCnaps.hidden = !facts.can_check;
 }

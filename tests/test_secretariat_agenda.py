@@ -165,7 +165,7 @@ def test_confirmed_dossier_and_live_cnaps_are_separate_from_declared_card(desk, 
     summary = client.post("/api/secretariat/crm-contact", json=lookup).json["summary"]
     assert (summary["statut"], summary["motif_disqualification"], summary["reactivation"]) == ("Disqualifié", "Projet reporté", "10/01/2027")
     assert (summary["centre"], summary["session"], summary["conseiller"]) == ("Paris", "Février 2027", "Conseiller Test")
-    assert summary["cnaps"]["status"] == "Transmis au CNAPS" and summary["cnaps"]["card"] == "Oui"
+    assert summary["cnaps"]["status"] == "Transmis au Ministère de l'intérieur (CNAPS)" and summary["cnaps"]["card"] == "Oui"
     assert "03/11/2026" in summary["cnaps"]["checked"]
     calls = []
     def live(ident, *, refresh_requested):
@@ -293,7 +293,7 @@ def test_external_operator_requires_desk_permission_and_verified_identity(desk):
     assert limited["summary"]["stage_label"] == "Demande clôturée"
     assert limited["summary"]["course_label"] == "Agent de prévention et de sécurité (APS)"
     assert "surveiller des sites" in limited["summary"]["course_purpose"].lower()
-    assert "envoyée au CNAPS" in limited["summary"]["cnaps"]["request_wording"]
+    assert "envoyée au Ministère de l'intérieur (CNAPS)" in limited["summary"]["cnaps"]["request_wording"]
     data["crm_contacts"].append({"id": "second", "telephone": known["telephone"]})
     assert operator.post(url, json=known, headers=scoped).status_code == 404
 
@@ -439,6 +439,9 @@ def test_busy_day_matches_the_rendered_crm_and_scrolls_inside_the_agenda(desk):
             "host_name": ["Aurélie", "Cassandre", "Clément", "Conseiller test"][sequence % 4],
             "contact_id": "test" if sequence == 0 else "", "response_status": "answered" if sequence == 1 else "",
         })
+    # A linked appointment has a verified caller coordinate on both agenda views.
+    caller = data["crm_contacts"][0]
+    records[0].update(invitee_email=caller["mail"], invitee_name=f"{caller['prenom']} {caller['nom']}")
     data["crm_calendly_appointments"] = records
     with playwright.sync_playwright() as engine:
         try:

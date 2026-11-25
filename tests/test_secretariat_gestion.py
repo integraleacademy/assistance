@@ -210,7 +210,7 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
             page.press("#formationSearch", "Enter")
             assert page.locator('[data-step="5"]').is_visible()
             assert "garde du corps" in page.locator("#trainingPurpose").inner_text()
-            assert "ministère de l’Intérieur (CNAPS)" in page.locator("#trainingChecks").inner_text()
+            assert app.SECURITY_AUTHORITY in page.locator("#trainingChecks").inner_text()
             page.click("#nextDates")
             assert page.locator("#callerFields input").evaluate_all("(fields) => fields.map(f => f.id)") == ["nom","prenom","email","telephone"]
             page.fill("#nom", "Dup")
@@ -223,12 +223,17 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
             page.click("#callerSubmit")
             assert page.locator("#qualificationForm").evaluate("f => getComputedStyle(f.firstElementChild).gridTemplateColumns.split(' ').length") == 1
             page.get_by_label("Aide sur l’Identité Numérique La Poste", exact=True).click()
-            assert page.get_by_text("Elle permet de valider une inscription CPF", exact=False).is_visible()
-            for key in ["cpf_consulte", "france_travail", "financement_perso", "identite_numerique", "cnaps_ok", "devis"]:
+            assert page.get_by_text("Avant le rendez-vous, ouvrez l’application", exact=False).is_visible()
+            questions = page.locator('#qualificationForm [id$="-question"]').all_text_contents()
+            assert questions.index("Êtes-vous inscrit à France Travail ?") < questions.index("Souhaitez-vous demander un financement à France Travail ?")
+            for key in ["cpf_consulte", "inscrit_ft", "france_travail", "financement_perso", "identite_numerique", "cnaps_ok", "devis"]:
                 page.check(f'[name="{key}"][value="OUI" i]' if key == "cnaps_ok" else f'[name="{key}"][value="NON"]')
             page.click("#nextQualification")
+            page.check('[name="wants_rdv"][value="oui"]')
+            assert page.input_value("#deskSmsNumber") == "+33639980042"
+            assert page.locator("#calendlyInline iframe").count() == 0
             if booking_mode == "calendly":
-                page.check('[name="wants_rdv"][value="oui"]')
+                page.click("#skipSmsBooking")
             else:
                 page.click("#chooseSmsBooking")
                 page.locator("#deskSlot optgroup option").wait_for(state="attached")
@@ -236,9 +241,11 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
                 assert page.input_value("#deskSmsNumber") == "+33639980042"
                 assert page.locator('#deskEventQuestions input[type=tel]').input_value() == "+33639980042"
                 if booking_mode == "return_to_calendly":
+                    page.fill("#deskSmsNumber", "+33601020304")
                     page.click("#hostedBooking")
+                    assert page.locator("#hostedSmsHint").is_visible()
+                    assert page.input_value("#deskSmsNumber") == "+33601020304"
             if booking_mode == "sms":
-                page.check("#deskSmsConsent")
                 page.select_option("#deskSlot", index=1)
                 page.click("#bookDeskSlot")
                 page.get_by_text("Rendez-vous réservé le ", exact=False).wait_for()
@@ -271,3 +278,68 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
             assert errors == []
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize(("known", "registered", "wants_funding"), [
+    (False, "OUI", "NON"), (True, "NON", "OUI"), (True, "", "OUI"),
+])
+def test_desk_registration_reaches_the_crm_independently_of_funding(desk, known, registered, wants_funding):
+    client, data = desk
+    headers = signin(client)
+    email = MAIL if known else "lea@example.test"
+    payload = {"type": "formation", "formation": "APS", "formation_date_status": "a_definir",
+               "nom": "Chloé Du-Pré" if known else "Léa Durand", "nom_famille": "Du-Pré" if known else "Durand",
+               "prenom": "Chloé" if known else "Léa", "email": email,
+               "telephone": NUMBER if known else "0601020304", "notes": "Demande de renseignements",
+               "france_travail": wants_funding}
+    if known and registered == "NON":
+        existing = next(c for c in data["crm_contacts"] if c["mail"] == MAIL)
+        existing["inscrit_ft"] = "OUI"
+    if registered:
+        payload["inscrit_ft"] = registered
+    response = client.post("/api/secretariat/demandes", headers=headers, json=payload)
+    assert response.status_code == 201
+    entry, = data["secretariat_demandes"]
+    contact = next(c for c in data["crm_contacts"] if c["id"] == entry["crm_contact_id"])
+    assert (entry["inscrit_ft"], contact.get("inscrit_ft") or "") == (registered, registered)
+    assert contact["financement_ft"] == wants_funding
+    assert not contact.get("statut_demande_financement_ft")
+    if registered:
+        assert f"Inscription à France Travail déclarée lors de l’appel : {registered.lower()}" in contact["publications"][0]["texte"]
+
+
+def test_aps_prerequisites_and_residence_example_for_the_paris_date(desk):
+    from datetime import date
+    from html import unescape
+    from secretariat_catalogue import DESK_ADMISSION, authority_wording, residence_permit_help
+
+    client, _ = desk
+    page = unescape(client.get("/secretariat/gestion").get_data(as_text=True))
+    guide = " ".join(detail for _, detail in DESK_ADMISSION["APS"])
+    for point in ("le centre de formation prépare et dépose", "test de compréhension", "B1", "bulletin n° 2",
+                  "cinq ans", "recto et du verso", "attestation signée de l’hébergeant"):
+        assert point in guide
+    assert "Êtes-vous inscrit à France Travail ?" in page
+    assert app.FUNDING_REQUEST_HELP in page
+    assert residence_permit_help(datetime.now(app.secretariat_calls.PARIS).date()) in page
+    assert "25/11/2021 au plus tard" in residence_permit_help(date(2026, 11, 25))
+    assert "28/02/2023 au plus tard" in residence_permit_help(date(2028, 2, 29))
+    for name in ("CNAPS", "CNAPS (ministère de l’Intérieur)", "ministère de l’Intérieur (CNAPS)", app.SECURITY_AUTHORITY):
+        assert authority_wording(f"Auprès du {name}.") == f"Auprès du {app.SECURITY_AUTHORITY}."
+
+
+def test_desk_calendar_accepts_local_aps_periods_and_preserves_older_records(desk):
+    client, data = desk
+    signin(client)
+    label = "Du 5 février au 11 mars 2099"
+    data["formation_sessions"] = {"cote_azur": {"APS": [{"label": label, "date_examen": "2099-03-12"}]}}
+    form = {"action": "update", "centre": "cote_azur", "formation": "APS", "idx": "0", "label": label,
+            "remoteStartDate": "2099-02-05", "remoteEndDate": "2099-02-16",
+            "inPersonStartDate": "2099-02-17", "inPersonEndDate": "2099-03-11"}
+    assert client.post("/admin/formation-sessions", data=form).status_code == 302
+    course = next(item for item in app._secretariat_catalogue(data) if item["code"] == "APS")
+    session, = course["centres"][0]["sessions"]
+    assert session["periods"] == "Distanciel du 05/02/2099 au 16/02/2099 · Présentiel du 17/02/2099 au 11/03/2099"
+    assert session["date_examen"] == "2099-03-12"
+    assert client.post("/admin/formation-sessions", data={**form, "inPersonEndDate": "2099-01-31"}).status_code == 400
+    assert data["formation_sessions"]["cote_azur"]["APS"][0]["inPersonEndDate"] == "2099-03-11"

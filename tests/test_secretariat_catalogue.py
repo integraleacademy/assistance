@@ -39,7 +39,9 @@ def test_calendar_combines_local_sessions_and_published_details(monkeypatch):
     assert [r["start_date"] for r in result["APS"]] == ["2027-01-04", "2027-02-04"]
     january = result["APS"][0]
     assert january["date_examen"] == "2027-02-09"
-    assert january["periods"] == "À distance du 04/01 au 14/01/2027 · En centre du 15/01 au 08/02/2027"
+    assert january["periods"] == "Distanciel du 04/01/2027 au 14/01/2027 · Présentiel du 15/01/2027 au 08/02/2027"
+    february = result["APS"][1]
+    assert february["periods"] == "Distanciel : dates à confirmer par le centre · Présentiel : dates à confirmer par le centre"
     assert [r["label"] for r in result["A3P"]] == ["Du 10 novembre 2026 au 14 janvier 2027"]
     assert len(result["SSIAP"]) == 2
     assert "avec SST" in result["SSIAP"][0]["label"] and not result["SSIAP"][0].get("badge")

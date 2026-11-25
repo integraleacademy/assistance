@@ -41,14 +41,32 @@ def _sst_variant(text):
     return match[1].lower() + " SST" if match else ""
 
 
+DELIVERY_MODES = {"remote": "Distanciel", "inPerson": "Présentiel"}
+DELIVERY_DATE_FIELDS = tuple(prefix + suffix for prefix in DELIVERY_MODES for suffix in ("StartDate", "EndDate"))
+
+
 def _delivery_periods(row):
-    periods = []
-    for prefix, label in (("remote", "À distance"), ("inPerson", "En centre")):
+    periods = {}
+    for prefix, label in DELIVERY_MODES.items():
         start = _iso_day(row.get(prefix + "StartDate"))
         end = _iso_day(row.get(prefix + "EndDate"))
         if start and end and start <= end:
-            periods.append(f"{label} du {start:%d/%m} au {end:%d/%m/%Y}")
-    return " · ".join(periods)
+            periods[prefix] = f"{label} du {start:%d/%m/%Y} au {end:%d/%m/%Y}"
+            if prefix == "inPerson":
+                pause = _iso_day(row.get("inPersonFirstEndDate"))
+                resume = _iso_day(row.get("inPersonResumeDate"))
+                if pause and resume and start <= pause < resume <= end:
+                    periods[prefix] = (f"{label} du {start:%d/%m/%Y} au {pause:%d/%m/%Y}, "
+                                       f"puis du {resume:%d/%m/%Y} au {end:%d/%m/%Y}")
+    return periods
+
+
+def _desk_periods(row, code, published=None):
+    periods = {**(published or {}), **_delivery_periods(row)}
+    if code == "APS":
+        for prefix, label in DELIVERY_MODES.items():
+            periods.setdefault(prefix, f"{label} : dates à confirmer par le centre")
+    return " · ".join(periods[prefix] for prefix in DELIVERY_MODES if prefix in periods)
 
 
 @dataclass(frozen=True)
@@ -57,7 +75,7 @@ class PublishedSession:
     end: datetime.date
     exam: datetime.date | None
     variant: str
-    periods: str
+    periods: dict[str, str]
     badge: str
     public_id: str = ""
 
@@ -164,6 +182,8 @@ def desk_calendar(local, *, today, date_range, use_public):
                 continue
             row = dict(original)
             row["start_date"] = start.isoformat() if start else ""
+            if details := _desk_periods(row, code):
+                row["periods"] = details
             if (code in {"DESP_VAE", "VTC"} and start and end and not row.get("date_examen")
                     and start.day == 1 and start.replace(day=calendar.monthrange(start.year, start.month)[1]) == end):
                 row["month_preference"] = f"{_MONTHS[start.month - 1].capitalize()} {start.year}"
@@ -192,7 +212,7 @@ def desk_calendar(local, *, today, date_range, use_public):
                 match["badge"] = session.badge
             if session.variant and not _sst_variant(match["label"]):
                 match["label"] += f" ({session.variant})"
-            if session.periods:
-                match["periods"] = session.periods
+            if details := _desk_periods(match, code, session.periods):
+                match["periods"] = details
         result.setdefault(centre, {})[code] = sorted(rows, key=lambda row: row["start_date"] or "9999")
     return result
