@@ -2806,7 +2806,7 @@ def _upcoming_session_labels(centre_code, formation_code, data_store=None, today
         today = today or datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
         published = crm_public_sessions.email_session_labels(centre, formation_code, labels, today, _session_date_range)
         catalogue = crm_managed_sessions.read()
-        if not catalogue:
+        if catalogue == []:
             return published
         candidates = {centre: {formation_code: [{"label": label} for label in published]}}
         merged = crm_managed_sessions.options(catalogue, candidates, _session_date_range)
@@ -2825,6 +2825,8 @@ def _match_requested_session(labels, selected):
         matches = [label for label in labels if period[0] and _session_date_range(label) == period]
         if len(matches) == 1:
             return matches[0]
+        if crm_managed_sessions.read() != []:
+            return ""
     return chosen
 
 
@@ -2946,7 +2948,7 @@ def _a3p_information_email_content(
     *, include_phone_booking=True, prominent_phone_booking=False, tuition=4200, lodging=300,
 ):
     """Return the A3P message shared by the public form and META leads."""
-    session_date = _format_selected_session_date(dates_txt)
+    session_date = _match_requested_session(_upcoming_session_labels(centre_code, "A3P", data_store), dates_txt)
     centre_label, centre_address = _centre_label_and_address(centre_code)
     booking_text = (
         "Réserver un rendez-vous téléphonique : https://calendly.com/integraleacademy/apr\n\n"
@@ -3050,6 +3052,7 @@ def _ssiap3_information_email(prenom, dates, centre, devis_url, data_store):
     course = SECRETARIAT_FORMATIONS["SSIAP3"]
     centre_label, address = _centre_label_and_address(centre)
     labels = _upcoming_session_labels(centre, "SSIAP3", data_store)
+    dates = _match_requested_session(labels, dates)
     tariff = course["price"]
     plain = "\n".join(filter(None, (
         f"Bonjour {prenom},", f"Voici les informations sur la formation {course['label']}.",
@@ -5213,6 +5216,22 @@ def demande_informations_formations():
             centre = INFORMATION_FORM_CENTRES.get(form_data.get("centre"), {})
             if "SSIAP3" not in centre.get("formations", ()):
                 abort(400, description="Sélectionnez Puget-sur-Argens pour la formation SSIAP 3.")
+        if form_data.get("dates") and form_data.get("formation") in crm_managed_sessions.PLANNING_COURSES:
+            course, centre = form_data["formation"], form_data.get("centre")
+            catalogue = crm_managed_sessions.read()
+            def offered_choices():
+                yield from get_upcoming_formation_sessions(data_store).get(centre, {}).get(course, [])
+                website_id = form_data.get("ssiap_session_id", "")
+                if course == "SSIAP" and centre == "cote_azur" and website_id:
+                    today = datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
+                    choice = crm_public_sessions.website_ssiap_selection(website_id, form_data.get("ssiap_formule"), today, course)
+                    verified = crm_managed_sessions.website_selection(choice, catalogue, _session_date_range)
+                    if verified:
+                        yield verified
+            if not crm_managed_sessions.requested_date_available(catalogue, form_data, _session_date_range, offered_choices):
+                rows = offered_choices()
+                return jsonify(error="Cette session n’est plus proposée à ces dates. Vérifiez les choix disponibles.",
+                               session_choices=[r for r in rows if not r.get("full")]), 409
         creer_piste_salesforce(request.form)
         form_data.update(_crm_google_ads_tracking_fields(form_data))
 
@@ -5401,11 +5420,11 @@ def demande_informations_formations():
             html = build_aps_email_html(prenom, form_data.get("dates", ""), form_data.get("centre", ""), devis_url, data_store)
             email_subject = _training_email_subject("APS", form_data.get("centre"))
         elif form_data.get("formation") == "SSIAP":
-            session_date = _format_selected_session_date(form_data.get("dates", ""))
             tarif_ssiap = get_formation_tarif("SSIAP", form_data)
             secourisme_info = _ssiap_first_aid_note(form_data.get("ssiap_secourisme_valide"), form_data.get("ssiap_formule"))
             centre_label, centre_address = _centre_label_and_address(form_data.get("centre"))
             upcoming = _upcoming_session_labels(form_data.get("centre", ""), "SSIAP", data_store)
+            session_date = _match_requested_session(upcoming, form_data.get("dates", ""))
             plain = (
                 f"Bonjour {prenom},\n\n"
                 "Voici les informations concernant notre formation Agent de sécurité incendie SSIAP 1.\n"

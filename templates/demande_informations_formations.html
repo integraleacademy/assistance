@@ -486,6 +486,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       {% elif website_choice_unavailable %}
       <p class="small-note" role="status">La disponibilité de la session choisie n’a pas pu être confirmée. Vérifiez les dates proposées ou contactez l’école au 04 22 47 07 68.</p>
       {% endif %}
+      <input type="hidden" name="catalogue_session_id" id="catalogueSessionId" disabled>
       <input type="hidden" name="ssiap_session_id" id="websiteSessionId" disabled>
       <input type="hidden" name="ssiap_formule" id="websiteFormula" disabled>
       <input type="hidden" name="gclid" id="gclidField" value="{{ gclid or '' }}">
@@ -829,12 +830,15 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     const datesSelect = document.getElementById('datesSelect');
     const dateExamen = document.getElementById('dateExamen');
     const sessions = {{ sessions|tojson }};
-    const websiteChoice = {{ website_choice|default(none)|tojson }};
-    const unavailableWebsiteFormation = {{ (preselected_formation if website_choice_unavailable else "")|default("")|tojson }};
+    let websiteChoice = {{ website_choice|default(none)|tojson }};
+    let unavailableWebsiteFormation = {{ (preselected_formation if website_choice_unavailable else "")|default("")|tojson }};
     function updateWebsiteSelection() {
       const level3 = formation.value === 'SSIAP3';
       const active = websiteChoice && formation.value === websiteChoice.formation && datesSelect.value === websiteChoice.label;
       const selected = datesSelect.selectedOptions[0];
+      const catalogueField = document.getElementById('catalogueSessionId');
+      catalogueField.value = selected?.dataset.catalogueId || '';
+      catalogueField.disabled = !catalogueField.value;
       const fees = {{ ssiap_fees|default({})|tojson }};
       const formula = active ? websiteChoice.formula : (formation.value === 'SSIAP' ? selected?.dataset.formula : '');
       const sessionId = active ? websiteChoice.id : (formula ? selected?.dataset.catalogueId : '');
@@ -1756,6 +1760,22 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           headers: { Accept: 'application/json' },
           body: new URLSearchParams(new FormData(form)),
         });
+        if (response.status === 409) {
+          const change = await response.json();
+          if (Array.isArray(change.session_choices)) {
+            const centre = selectedCentre(), code = formation.value;
+            sessions[centre] ??= {};
+            sessions[centre][code] = change.session_choices;
+            websiteChoice = null;
+            unavailableWebsiteFormation = code;
+            resetSendingState();
+            loadDates();
+            goToSlide(3);
+            datesHelp.textContent = change.error;
+            document.getElementById('datesHeading').focus();
+            return;
+          }
+        }
         if (!response.ok) throw new Error('Submission failed');
         const { confirmation_url } = await response.json();
         if (!confirmation_url) throw new Error('Missing confirmation');

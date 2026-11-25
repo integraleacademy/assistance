@@ -11,6 +11,7 @@ import requests
 URL = "https://gestionstagiaires-r5no.onrender.com/api/integrations/session-availability"
 CODES = {"aps":"APS", "a3p-apr":"A3P", "ssiap-1":"SSIAP", "ssiap-2":"SSIAP2", "ssiap-3":"SSIAP3", "desp-dssp":"DESP_INIT", "desp-vae":"DESP_VAE", "vtc":"VTC"}
 CENTRES = {"paris":"paris", "puget":"cote_azur", "auvergne":"auvergne"}
+PLANNING_COURSES = frozenset({"APS", "A3P", "SSIAP", "SSIAP2", "SSIAP3", "DESP_INIT"})
 MONTHS = "janvier février mars avril mai juin juillet août septembre octobre novembre décembre".split()
 _lock = threading.Lock()
 _next = _success = 0
@@ -36,7 +37,7 @@ def read():
             except (ValueError, requests.RequestException) as exc:
                 logging.getLogger(__name__).warning("Calendrier des sessions indisponible (%s)", type(exc).__name__)
                 _next = now + 10
-        return _rows if now - _success <= 120 else [{**row, "sold": None} for row in _rows]
+        return _rows if _success and time.monotonic() - _success <= 120 else None
 
 
 def french(value):
@@ -90,13 +91,16 @@ def details(row):
 
 
 def withdrawn_contact_filters(contacts, catalogue, date_range):
-    if not catalogue:
+    if catalogue == []:
         return []
     centres = {"Paris": "paris", "Côte d’Azur": "cote_azur", "Auvergne": "auvergne"}
     courses = {"APS": "APS", "A3P": "A3P", "SSIAP 1": "SSIAP", "SSIAP 2": "SSIAP2",
                "SSIAP 3": "SSIAP3", "DESP": "DESP_INIT", "VTC": "VTC"}
-    groups = [r for r in catalogue if r.get("managed")]
     choices = {(c.get("formation"), c.get("lieu"), c.get("dates_formation")) for c in contacts if c.get("dates_formation")}
+    if catalogue is None:
+        return sorted([course, centre, label] for course, centre, label in choices
+                      if courses.get(course) in PLANNING_COURSES and centre in centres)
+    groups = [r for r in catalogue if r.get("managed")]
     retired = []
     for course, centre, label in choices:
         if course not in courses or centre not in centres:
@@ -119,8 +123,10 @@ def availability(row):
 
 
 def website_selection(choice, catalogue, date_range):
-    if not choice:
+    if not choice or catalogue is None and choice["formation"] in PLANNING_COURSES:
         return None
+    if catalogue is None:
+        return choice
     start, end = date_range(choice["label"])
     context = ("cote_azur", choice["formation"], start.isoformat() if start else "",
                end.isoformat() if end else "", choice.get("date_examen"))
@@ -141,7 +147,42 @@ def website_selection(choice, catalogue, date_range):
     return {**choice, **availability(row), **details(row), "catalogue_id": row["id"]}
 
 
+def requested_date_available(catalogue, form, date_range, projected_choices=None):
+    course, label = form.get("formation"), form.get("dates")
+    if course not in PLANNING_COURSES or not label or catalogue == []:
+        return True
+    if catalogue is None:
+        return False
+    start, end = date_range(label)
+    if not start or not end:
+        return not form.get("catalogue_session_id")
+    context = (form.get("centre"), course, start.isoformat(), end.isoformat(), form.get("date_examen"))
+    identifier = form.get("catalogue_session_id") or form.get("ssiap_session_id") or ""
+    matches = matching_rows(catalogue, context, identifier, handoff=True)
+    if not matches:
+        return not identifier.startswith("platform-")
+    if len(matches) != 1:
+        return False
+    row, _ = matches[0]
+    if (row["visibility"] not in ("public", "match") or availability(row)["full"] or
+            CENTRES.get(row["centre"]) != context[0] or CODES.get(row["slug"]) != course):
+        return False
+    if course == "SSIAP" and projected_choices is not None:
+        # A legacy course can have two offered starts even without a stored standard_start.
+        return any(option.get("catalogue_id") == row["id"] and not option.get("full")
+                   and date_range(option["label"]) == (start, end)
+                   and (not form.get("ssiap_formule") or option.get("formula") == form["ssiap_formule"])
+                   and (not context[4] or context[4] == option.get("date_examen"))
+                   for option in projected_choices())
+    return (context[2] in (row["start"], row.get("standard_start")) and context[3] == row["end"]
+            and (not context[4] or row["exam"] == context[4]))
+
+
 def options(catalogue, local, date_range, *, include_internal=False):
+    if catalogue is None:
+        # Cached website or CRM calendars can still contain a withdrawn or private group.
+        return {centre: {course: [] if course in PLANNING_COURSES else values for course, values in courses.items()}
+                for centre, courses in local.items()}
     if not catalogue:
         return local
     handled = set()

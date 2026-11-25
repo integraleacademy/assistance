@@ -135,3 +135,62 @@ def test_filter_hides_retired_contact_choice_without_changing_its_record():
     assert managed.withdrawn_contact_filters(contacts,[moved],app._session_date_range) == [["APS","Côte d’Azur",labels[0]]]
     assert len(managed.withdrawn_contact_filters(contacts,[{**moved,"visibility":"closed"}],app._session_date_range)) == 2
     assert contacts[0]["dates_formation"] == labels[0]
+
+
+def test_unavailable_catalogue_does_not_restore_private_dates_from_crm_or_a_cached_url(monkeypatch):
+    private = {"label":"Du 5 février 2098 au 12 mars 2098","date_examen":"2098-03-13"}
+    local = {"cote_azur":{"APS":[private],"VTC":[private]}}
+    for staff in (False,True):
+        assert managed.options(None,local,app._session_date_range,include_internal=staff) == {"cote_azur":{"APS":[],"VTC":[private]}}
+    assert managed.options([],local,app._session_date_range) == local
+    contact = dict(formation="APS", lieu="Côte d’Azur", dates_formation=private["label"])
+    assert managed.withdrawn_contact_filters([contact],None,app._session_date_range) == [["APS","Côte d’Azur",private["label"]]]
+    assert managed.website_selection({**private,"formation":"SSIAP","id":"ancienne"},None,app._session_date_range) is None
+    monkeypatch.setattr(managed,"read",lambda:None)
+    monkeypatch.setattr(app.crm_public_sessions,"email_session_labels",lambda *args:[private["label"]])
+    monkeypatch.setitem(app.app.config,"CRM_USE_PUBLIC_CALENDAR",True)
+    assert app._upcoming_session_labels("cote_azur","APS",{"formation_sessions":local},today=date(2098,1,1)) == []
+
+
+def test_stale_form_requires_a_new_explicit_choice_before_any_lead_or_email(monkeypatch,tmp_path):
+    row=source(managed=True,edited=True)
+    selected=dict(formation="APS",centre="cote_azur",dates="Du 5 février 2098 au 12 mars 2098",date_examen=row["exam"],catalogue_session_id=row["id"])
+    monkeypatch.setattr(app,"DATA_FILE",str(tmp_path/"form.json"))
+    monkeypatch.setitem(app.app.config,"CRM_USE_PUBLIC_CALENDAR",False)
+    monkeypatch.setattr(app,"creer_piste_salesforce",lambda *_: (_ for _ in ()).throw(AssertionError("envoi externe")))
+    for current in (None,[{**row,"visibility":"closed"}],[{**row,"start":"2098-02-09","aliases":[row]}],[{**row,"sold":12}]):
+        monkeypatch.setattr(managed,"read",lambda:current)
+        response=app.app.test_client().post("/demande-informations-formations",data=selected)
+        assert response.status_code==409 and isinstance(response.json["session_choices"],list)
+        for email in (app.build_aps_email_html("Test",selected["dates"],"cote_azur","",{}),
+                      *app._ssiap3_information_email("Test",selected["dates"],"cote_azur","",{})[1:]):
+            assert selected["dates"] not in email
+    assert managed.requested_date_available([row],selected,app._session_date_range)
+    monkeypatch.setattr(managed,"read",lambda:[])
+    assert app._match_requested_session([],selected["dates"])==selected["dates"]
+
+
+def test_legacy_ssiap_variant_post_uses_the_same_offers_as_the_form():
+    group=source(managed=True,slug="ssiap-1",visibility="match")
+    label="Du 9 février 2098 au 12 mars 2098 (sans SST)"
+    stored={"cote_azur":{"SSIAP":[dict(label=label,date_examen=group["exam"])]}}
+    def offered(): return managed.options([group],stored,app._session_date_range)["cote_azur"]["SSIAP"]
+    data=dict(formation="SSIAP",centre="cote_azur",dates=label,date_examen=group["exam"],ssiap_formule="ssiap-1",catalogue_session_id=group["id"])
+    assert managed.requested_date_available([group],data,app._session_date_range,offered)
+    assert not managed.requested_date_available([group],{**data,"ssiap_formule":"ssiap-1-sst"},app._session_date_range,offered)
+    assert not managed.requested_date_available([{**group,"visibility":"closed"}],data,app._session_date_range,offered)
+
+
+def test_current_website_only_ssiap_formula_is_accepted_on_post(monkeypatch,tmp_path):
+    row=source(slug="ssiap-1",managed=True)
+    label="Du 5 février 2098 au 12 mars 2098 · SSIAP 1 sans SST"
+    native=dict(id=row["id"],formation="SSIAP",formula="ssiap-1",label=label,date_examen=row["exam"])
+    data=dict(formation="SSIAP",centre="cote_azur",dates=label,date_examen=row["exam"],
+              ssiap_formule="ssiap-1",catalogue_session_id=row["id"],ssiap_session_id=row["id"])
+    monkeypatch.setattr(managed,"read",lambda:[row])
+    monkeypatch.setattr(app,"DATA_FILE",str(tmp_path/"test.json"))
+    monkeypatch.setattr(app.crm_public_sessions,"website_ssiap_selection", lambda *args:native)
+    from flask import abort
+    monkeypatch.setattr(app,"creer_piste_salesforce",lambda *args:abort(418))
+    assert app.app.test_client().post("/demande-informations-formations",data=data).status_code==418
+    assert app.app.test_client().post("/demande-informations-formations",data={**data,"ssiap_formule":"ssiap-1-sst"}).status_code==409
