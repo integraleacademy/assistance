@@ -44,11 +44,45 @@ def french(value):
     return f"{'1er' if day.day == 1 else day.day} {MONTHS[day.month-1]} {day.year}"
 
 
-def same(context, key):
+def match_score(context, key):
     centre, course, start, end, exam = context
     if CENTRES.get(key.get("centre")) != centre or CODES.get(key.get("slug")) != course:
-        return False
-    return sum(bool(day) and day == key.get(field) for day, field in ((start,"start"),(end,"end"),(exam,"exam"))) >= 2
+        return 0
+    return sum(bool(day) and day == key.get(field) for day, field in ((start,"start"),(end,"end"),(exam,"exam")))
+
+
+def same(context, key):
+    return match_score(context, key) >= 2
+
+
+def best_key(context, row):
+    keys = [key for key in [row, *row.get("aliases", [])] if same(context, key)]
+    if not keys:
+        return None
+    def rank(key):
+        delta = abs((date.fromisoformat(context[2]) - date.fromisoformat(key["start"])).days) if context[2] and key.get("start") else 99999
+        return match_score(context, key), -delta
+    return max(keys, key=rank)
+
+
+def website_selection(choice, catalogue, date_range):
+    if not choice:
+        return None
+    start, end = date_range(choice["label"])
+    context = ("cote_azur", choice["formation"], start.isoformat() if start else "",
+               end.isoformat() if end else "", choice.get("date_examen"))
+    hits = [row for row in catalogue if row["id"] == choice["id"] or any(
+            same(context, key) for key in [row, *row.get("aliases", [])])]
+    if not hits:
+        return choice
+    if len(hits) != 1:
+        return None
+    row = hits[0]
+    if (row["visibility"] not in ("public", "match") or best_key(context, row) != row
+            or (choice.get("date_examen") and row["exam"] and choice["date_examen"] != row["exam"])
+            or isinstance(row.get("sold"), int) and row["sold"] >= (row.get("capacity") or 12)):
+        return None
+    return choice
 
 
 def options(catalogue, local, date_range, *, include_internal=False):
@@ -90,7 +124,7 @@ def options(catalogue, local, date_range, *, include_internal=False):
             for value in values:
                 start, end = date_range(value.get("label", ""))
                 ctx = (centre, code, start.isoformat() if start else "", end.isoformat() if end else "", value.get("date_examen"))
-                hits = [(r, next((k for k in [r, *r.get("aliases", [])] if same(ctx, k)), None)) for r in catalogue]
+                hits = [(r, best_key(ctx, r)) for r in catalogue]
                 hits = [(r,k) for r,k in hits if k or (value.get("catalogue_id") and value["catalogue_id"] == r["id"])]
                 if not hits:
                     put(centre, code, value)
@@ -110,6 +144,15 @@ def options(catalogue, local, date_range, *, include_internal=False):
         if code and place and row["id"] not in handled and (row["visibility"] == "public" or include_internal and row["visibility"] == "internal"):
             put(place, code, managed(row))
     for courses in output.values():
-        for values in courses.values():
+        for code, values in courses.items():
+            # A moved local entry and an already updated one can describe the same offer.
+            seen = set()
+            unique = []
+            for item in values:
+                key = (item.get("catalogue_id"), item.get("label"))
+                if not key[0] or key not in seen:
+                    unique.append(item)
+                    seen.add(key)
+            courses[code] = values = unique
             values.sort(key=lambda v: date_range(v.get("label", ""))[0] or date.max)
     return output

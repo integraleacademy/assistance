@@ -5574,6 +5574,8 @@ def demande_informations_formations():
     website_choice = crm_public_sessions.website_ssiap_selection(
         session_id, request.args.get("formule"), today, requested_formation,
     ) if session_id else None
+    if website_choice:
+        website_choice = crm_managed_sessions.website_selection(website_choice, crm_managed_sessions.read(), _session_date_range)
     sessions = get_upcoming_formation_sessions(data_store)
     if website_choice:
         fee = get_formation_tarif(requested_formation, {"ssiap_formule": website_choice.get("formula")})
