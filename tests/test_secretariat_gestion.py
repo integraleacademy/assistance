@@ -168,7 +168,12 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
     browser_api = pytest.importorskip("playwright.sync_api")
     client, _ = desk
     calls, _, event = calendar
-    signin(client)
+    headers = signin(client)
+    if booking_mode == "calendly":
+        account = {"name": "Accueil Calendly", "email": "accueil@example.test", "password": "Test-password-7820", "desk_access": True}
+        assert client.post("/api/crm/external-accounts", json=account, headers=headers).status_code == 201
+        client = app.app.test_client()
+        assert client.post("/login?next=/secretariat/gestion", data={"email": account["email"], "password": account["password"]}).location == "/secretariat/gestion"
     errors = []
     with browser_api.sync_playwright() as runner:
         try:
@@ -229,11 +234,12 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
             for key in ["cpf_consulte", "inscrit_ft", "france_travail", "financement_perso", "identite_numerique", "cnaps_ok", "devis"]:
                 page.check(f'[name="{key}"][value="OUI" i]' if key == "cnaps_ok" else f'[name="{key}"][value="NON"]')
             page.click("#nextQualification")
-            page.check('[name="wants_rdv"][value="oui"]')
-            assert page.input_value("#deskSmsNumber") == "+33639980042"
             assert page.locator("#calendlyInline iframe").count() == 0
             if booking_mode == "calendly":
-                page.click("#skipSmsBooking")
+                page.get_by_label("Oui, prendre un RDV", exact=True).check()
+                page.locator("#calendlyInline iframe").wait_for(state="visible")
+                assert page.locator("#deskReminderChoice").is_hidden()
+                assert page.locator("#reviewRequest").is_disabled()
             else:
                 page.click("#chooseSmsBooking")
                 page.locator("#deskSlot optgroup option").wait_for(state="attached")
@@ -247,6 +253,9 @@ def test_formation_first_browser_flow(desk, calendar, booking_mode):
                     assert page.input_value("#deskSmsNumber") == "+33601020304"
             if booking_mode == "sms":
                 page.select_option("#deskSlot", index=1)
+                page.click("#bookDeskSlot")
+                assert calls == [] and page.locator("#deskSmsConsent").evaluate("field => field.validity.valueMissing")
+                page.check("#deskSmsConsent")
                 page.click("#bookDeskSlot")
                 page.get_by_text("Rendez-vous réservé le ", exact=False).wait_for()
                 assert len(calls) == 1 and calls[0]["invitee"]["text_reminder_number"] == "+33639980042"
