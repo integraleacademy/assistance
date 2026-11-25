@@ -18,6 +18,7 @@ from secretariat_catalogue import (
     PUBLIC_CATALOGUE, SESSION_FEES, SSIAP_BOOKING_URL, SSIAP3_BOOKING_URL, SST_FEES, is_ssiap3,
 )
 import crm_public_sessions
+import crm_managed_sessions
 import crm_call_conversion
 from crm_calendar_availability import CassandreCalendar, PARIS as CALENDAR_PARIS, next_five_weekdays
 import secretariat_calls
@@ -252,6 +253,7 @@ def creer_piste_salesforce(form):
         "VTC": "CHAUFFEUR VTC",
         "BTS": "BTS",
         "SSIAP": "SSIAP",
+        "SSIAP2": "SSIAP 2",
         "SSIAP3": "SSIAP 3",
         "POEI": "POEI",
     }
@@ -508,6 +510,7 @@ PLAN_FORMATIONS = {
     "DESP_INIT": "DESP – Dirigeant d’entreprise de sécurité (initial)",
     "DESP_VAE": "DESP – Dirigeant d’entreprise de sécurité (VAE)",
     "SSIAP": "SSIAP 1 – Agent de sécurité incendie",
+    "SSIAP2": "SSIAP 2 – Chef d’équipe de sécurité incendie",
     "SSIAP3": "SSIAP 3 – Chef de service de sécurité incendie",
 }
 
@@ -540,7 +543,7 @@ INFORMATION_FORM_CENTRES = {
     },
     "cote_azur": {
         "name": "Côte d’Azur", "locality": "Puget-sur-Argens",
-        "formations": ("A3P", "APS", "SSIAP", "SSIAP3", "DESP_INIT", "VTC"),
+        "formations": ("A3P", "APS", "SSIAP", "SSIAP2", "SSIAP3", "DESP_INIT", "VTC"),
     },
 }
 
@@ -575,6 +578,8 @@ SECRETARIAT_FORMATIONS = {
     "A3P": {"short": "A3P", "duration": "328 h", "price": "4 200 € TTC", "format": "Présentiel", "purpose": "Se former à la protection rapprochée des personnes et exercer comme agent de protection physique.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/apr"},
     "APS": {"short": "APS", "duration": "175 h · 5 semaines", "price": "1 650 € TTC", "format": "Présentiel", "purpose": "Obtenir les compétences nécessaires aux missions de surveillance, de prévention et de sécurité privée.", "funding": "CPF, France Travail, financement employeur ou personnel (selon éligibilité).", "calendly": "https://calendly.com/integraleacademy/aps"},
     "SSIAP": {"short": "SSIAP 1", "duration": "70 h · 2 semaines", "price": "980 € seul · 1 230 € avec SST", "format": "Présentiel", "purpose": "Devenir agent de sécurité incendie dans les ERP et les immeubles de grande hauteur.", "funding": "France Travail, employeur ou financement personnel (selon éligibilité).", "calendly": SSIAP_BOOKING_URL},
+    "SSIAP2": {"short": "SSIAP 2", "duration": "70 h hors examen", "price": "Sur devis", "format": "Présentiel", "purpose": "Chef d’équipe de sécurité incendie.",
+               "calendly": SECRETARIAT_GENERIC_CALENDLY_URL, "source_url": PUBLIC_CATALOGUE + "/formations-securite/ssiap-2"},
     "SSIAP3": {
         "short": "SSIAP 3", "duration": "216 heures hors examen", "format": "Présentiel",
         "price": _eur_display(PLAN_TARIFS["SSIAP3"]),
@@ -837,7 +842,12 @@ DEFAULT_FORMATION_SESSIONS = {
     }
 }
 
-def get_formation_sessions(data_store=None):
+def get_formation_sessions(data_store=None, *, include_internal=False):
+    return crm_managed_sessions.options(crm_managed_sessions.read(), get_stored_formation_sessions(data_store),
+                                        _session_date_range, include_internal=include_internal)
+
+
+def get_stored_formation_sessions(data_store=None):
     source = data_store if isinstance(data_store, dict) else load_data()
     sessions = source.get("formation_sessions")
     if isinstance(sessions, dict):
@@ -916,12 +926,12 @@ def _session_start_date(label):
     return _session_date_range(label)[0]
 
 
-def get_upcoming_formation_sessions(data_store=None, today=None):
+def get_upcoming_formation_sessions(data_store=None, today=None, *, include_internal=False):
     """Return form sessions whose start date has not passed yet."""
     today = today or datetime.datetime.now(
         pytz.timezone("Europe/Paris")
     ).date()
-    sessions = get_formation_sessions(data_store)
+    sessions = get_formation_sessions(data_store, include_internal=include_internal)
     for formations in sessions.values():
         for formation_code, rows in formations.items():
             formations[formation_code] = [
@@ -2212,7 +2222,7 @@ def _training_email_subject(code, centre="cote_azur"):
         return "VAE DESP — commencez votre Livret 1"
     if code == "VTC":
         return "Chauffeur VTC — votre formation et les dates d’examen"
-    title = {"APS": "APS", "A3P": "A3P", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3", "DESP_INIT": "DESP"}[code]
+    title = {"APS": "APS", "A3P": "A3P", "SSIAP": "SSIAP 1", "SSIAP2": "SSIAP 2", "SSIAP3": "SSIAP 3", "DESP_INIT": "DESP"}[code]
     city = TRAINING_VENUES[_normalize_centre_code(centre)]["city"]
     if code == "APS":
         return f"Formation APS à {city} — prochaine session"
@@ -2584,7 +2594,7 @@ def _crm_create_or_match_abandoned_form_contact(data, record, fields, now_str):
     ), None)
     formation_key = str(fields.get("formation") or "").strip()
     formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3",
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP2": "SSIAP 2", "SSIAP3": "SSIAP 3",
         "VTC": "Chauffeur VTC",
     }.get(formation_key, formation_key)
     centre_key = str(fields.get("centre") or "").strip()
@@ -2794,8 +2804,18 @@ def _upcoming_session_labels(centre_code, formation_code, data_store=None, today
     ]
     if formation_code in {"APS", "SSIAP", "SSIAP3"} and app.config["CRM_USE_PUBLIC_CALENDAR"]:
         today = today or datetime.datetime.now(pytz.timezone("Europe/Paris")).date()
-        return crm_public_sessions.email_session_labels(centre, formation_code, labels, today, _session_date_range)
-    return labels
+        published = crm_public_sessions.email_session_labels(centre, formation_code, labels, today, _session_date_range)
+        catalogue = crm_managed_sessions.read()
+        if not catalogue:
+            return published
+        candidates = {centre: {formation_code: [{"label": label} for label in published]}}
+        merged = crm_managed_sessions.options(catalogue, candidates, _session_date_range)
+        return list(dict.fromkeys(
+            row["label"] + (f" — examen le {crm_managed_sessions.french(row['date_examen'])}" if row.get("date_examen") and "examen" not in row["label"].lower() else "")
+            for row in merged.get(centre, {}).get(formation_code, []) if not row.get("full")
+            and (_session_start_date(row["label"]) or today) >= today
+        ))
+    return [_format_selected_session_date(row["label"]) for row in rows if row.get("label") and not row.get("full")]
 
 
 def _match_requested_session(labels, selected):
@@ -3942,7 +3962,7 @@ def choisir_centre_formation():
 @login_required
 def admin_formation_sessions():
     data = load_data()
-    sessions = get_formation_sessions(data)
+    sessions = get_stored_formation_sessions(data)
 
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
@@ -4220,6 +4240,7 @@ def _secretariat_catalogue(data_store):
         get_upcoming_formation_sessions(data_store), today=today, date_range=_session_date_range,
         use_public=app.config["CRM_USE_PUBLIC_CALENDAR"],
     )
+    sessions = crm_managed_sessions.options(crm_managed_sessions.read(), sessions, _session_date_range)
     current_month = today.strftime("%Y-%m")
     for code, details in SECRETARIAT_FORMATIONS.items():
         centres = []
@@ -5569,9 +5590,11 @@ def demande_informations_formations():
         website_choice=website_choice, preselected_formation=requested_formation,
         ssiap3=SECRETARIAT_FORMATIONS["SSIAP3"],
         website_choice_unavailable=bool(session_id and not website_choice),
-        centres=INFORMATION_FORM_CENTRES,
+        centres={key: {**details, "formations": [code for code in details["formations"]
+                    if code != "SSIAP2" or any(not r.get("full") for r in sessions.get(key, {}).get(code, []))]}
+                 for key, details in INFORMATION_FORM_CENTRES.items()},
         catalogue_url=PUBLIC_CATALOGUE,
-        sessions={centre: sessions.get(centre, {}) for centre in INFORMATION_FORM_CENTRES},
+        sessions={centre: {code: [r for r in rows if not r.get("full")] for code, rows in sessions.get(centre, {}).items()} for centre in INFORMATION_FORM_CENTRES},
         formations=PLAN_FORMATIONS,
         secretariat=request.args.get("secretariat") == "1",
         **google_ads_attribution,
@@ -8949,6 +8972,8 @@ def plan_financement_devis(devis_id):
         formation_details=infos,
     )
 
+    if formation == "SSIAP2":
+        return render_template("ssiap2_quote_request.html", dates=infos.get("dates", ""))
     tarif = get_formation_tarif(formation, infos)
 
     try:
@@ -9301,6 +9326,8 @@ def plan_public(token):
         formation_details=infos,
     )
 
+    if formation == "SSIAP2":
+        return render_template("ssiap2_quote_request.html", dates=infos.get("dates", ""))
     tarif = get_formation_tarif(formation, infos)
 
     try:
@@ -13446,7 +13473,7 @@ def _crm_create_contact_from_information_request(data, fields, demande_id, devis
     )
     formation_key = str(fields.get("formation") or "").strip()
     formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3",
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP2": "SSIAP 2", "SSIAP3": "SSIAP 3",
         "VTC": "Chauffeur VTC",
     }.get(formation_key, formation_key)
     lieu = {
@@ -13596,7 +13623,7 @@ def _crm_secretariat_answer_values(entry):
     """Map actual submitted answers, shared by live submissions and recovery."""
     formation_key = str(entry.get("formation") or "").strip()
     formation = {
-        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP3": "SSIAP 3",
+        "DESP_INIT": "DESP", "DESP_VAE": "DESP", "SSIAP": "SSIAP 1", "SSIAP2": "SSIAP 2", "SSIAP3": "SSIAP 3",
         "VTC": "Chauffeur VTC",
         "PARCOURS_SECURITE_ALTERNANCE": SECURITY_APPRENTICESHIP_LABEL,
     }.get(formation_key, formation_key)
@@ -13820,6 +13847,7 @@ def _secretariat_information_template(data, kind, formation_code):
     # généralement regroupés sous « Informations DESP »).
     aliases = {
         "SSIAP": ["SSIAP 1"],
+        "SSIAP2": ["SSIAP 2"],
         "SSIAP3": ["SSIAP 3"],
         "DESP_INIT": ["DESP initial", "DESP"],
         "DESP_VAE": ["VAE DESP", "DESP VAE", "DESP"],
@@ -21248,7 +21276,7 @@ def crm_bootstrap():
     payload = {
         "contacts": contacts,
         **(_crm_cpf_folder_lists(data) if section == "pistes" else {}),
-        "formation_sessions": get_upcoming_formation_sessions(data),
+        "formation_sessions": get_upcoming_formation_sessions(data, include_internal=True),
         "notifications": _crm_notifications_payload(
             data, user_email,
         ),
@@ -21598,6 +21626,7 @@ def _crm_formation_label(contact):
         "A3P": "Agent de protection physique des personnes (A3P)",
         "APS": "Agent de prévention et de sécurité (APS)",
         "SSIAP": "Agent de sécurité incendie (SSIAP 1)",
+        "SSIAP2": "Chef d’équipe de sécurité incendie (SSIAP 2)",
         "SSIAP3": "Chef de service de sécurité incendie (SSIAP 3)",
         "VTC": "Chauffeur de transport avec chauffeur (VTC)",
         "DESP_INIT": "Dirigeant d’entreprise de sécurité privée (DESP – initial)",
