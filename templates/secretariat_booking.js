@@ -2,7 +2,8 @@ const directBooking = document.getElementById('directBooking');
 const hostedBooking = document.getElementById('hostedBooking');
 const reminderChoice = document.getElementById('deskReminderChoice');
 const smsNumber = document.getElementById('deskSmsNumber');
-let bookingMode = null;
+const chooseSmsBooking = document.getElementById('chooseSmsBooking');
+let bookingMode = 'hosted';
 let deskBookingWeek = 0, deskBookingCourse = '', deskBookingEvent = '';
 let bookingSlotsVersion = 0, bookingPending = false, bookingUncertain = false, nativeReceipt = null;
 function deskBookingConfirmed() { return Boolean(formationFirst && calendlyEvent); }
@@ -10,7 +11,7 @@ function lockBookingChoice() {
   document.querySelectorAll('[name=wants_rdv]').forEach(input => { input.disabled = true; });
   document.querySelector('[data-step="6"] [data-back]').disabled = true;
   calendlyInline.hidden = true;
-  if (directBooking) directBooking.hidden = hostedBooking.hidden = reminderChoice.hidden = true;
+  if (directBooking) directBooking.hidden = hostedBooking.hidden = reminderChoice.hidden = chooseSmsBooking.hidden = true;
   document.getElementById('hostedBookingIntro').hidden = true;
   updateProgress();
 }
@@ -110,31 +111,20 @@ function prepareDeskReminder() {
     deskBookingCourse = signature;
     deskBookingWeek = 0;
     deskBookingEvent = '';
-    bookingMode = null;
     directBooking.reset();
     document.getElementById('deskEventQuestions').replaceChildren();
-    smsNumber.setCustomValidity('');
     smsNumber.value = normalizedPhone(number) || number;
   }
   reminderChoice.hidden = bookingMode === 'hosted' || bookingUncertain;
   document.getElementById('hostedSmsHint').hidden = bookingMode !== 'hostedSms';
-  document.getElementById('deskReminderActions').hidden = bookingMode !== null;
   smsNumber.required = bookingMode === 'sms';
 }
 if (directBooking) {
-  document.getElementById('chooseSmsBooking').onclick = () => {
-    if (!normalizedPhone(smsNumber.value)) {
-      smsNumber.setCustomValidity('Indiquez le numéro sur lequel l’appelant souhaite recevoir le rappel.');
-      smsNumber.reportValidity();
-      return;
-    }
-    bookingMode = 'sms';
-    renderCalendlyWidget();
-  };
-  smsNumber.oninput = () => smsNumber.setCustomValidity('');
-  document.getElementById('skipSmsBooking').onclick = () => {
-    bookingMode = 'hosted';
-    renderCalendlyWidget();
+  chooseSmsBooking.onclick = () => {
+    if (bookingPending || bookingUncertain || deskBookingConfirmed() || calendlyInline.querySelector('iframe')) return;
+    const yes = document.querySelector('[name=wants_rdv][value=oui]');
+    yes.checked = true;
+    selectAppointmentChoice(yes, 'sms');
   };
   document.getElementById('deskSlot').onchange = event => { document.getElementById('bookDeskSlot').disabled = !event.target.value; };
   document.getElementById('deskBookingAgenda').onchange = event => {
@@ -150,9 +140,9 @@ if (directBooking) {
   };
   directBooking.onsubmit = async event => {
     event.preventDefault();
-    if (bookingPending || deskBookingConfirmed() || bookingUncertain || !directBooking.reportValidity()) return;
-    const sms = bookingMode === 'sms' ? normalizedPhone(smsNumber.value) : '';
-    if (bookingMode === 'sms' && !sms) { bookingNotice('Vérifiez le numéro du rappel SMS.', 'is-error'); return; }
+    if (bookingMode !== 'sms' || bookingPending || deskBookingConfirmed() || bookingUncertain || !directBooking.reportValidity()) return;
+    const sms = normalizedPhone(smsNumber.value);
+    if (!sms) { bookingNotice('Vérifiez le numéro du rappel SMS.', 'is-error'); return; }
     const payload = {...Object.fromEntries(new FormData(callerForm)), call_key: deskCallKey, formation: formation.value,
       event_type: deskBookingEvent, start_time: document.getElementById('deskSlot').value, sms,
       answers: Object.fromEntries([...directBooking.querySelectorAll('[data-answer]')].map(input => [input.dataset.answer, input.value]))};
