@@ -4251,7 +4251,7 @@ def _secretariat_catalogue(data_store):
         for centre_code, centre_label in FORMATION_CENTRES.items():
             rows = sessions.get(centre_code, {}).get(code, [])
             month_choices.extend(row["month_preference"] for row in rows if row.get("month_preference"))
-            rows = [row for row in rows if not row.get("month_preference")]
+            rows = [crm_public_sessions.display_session(row) for row in rows if not row.get("month_preference")]
             if rows:
                 centres.append({"code": centre_code, "label": centre_label, "sessions": rows})
         category = "bts" if code.startswith("BTS_") else "security"
@@ -5229,9 +5229,10 @@ def demande_informations_formations():
                     if verified:
                         yield verified
             if not crm_managed_sessions.requested_date_available(catalogue, form_data, _session_date_range, offered_choices):
-                rows = offered_choices()
+                rows = [crm_public_sessions.display_session(row) for row in offered_choices()]
                 return jsonify(error="Cette session n’est plus proposée à ces dates. Vérifiez les choix disponibles.",
-                               session_choices=[r for r in rows if not r.get("full")]), 409
+                               session_choices=[r for r in rows if not r.get("full")],
+                               full_sessions=[r for r in rows if r.get("full")]), 409
         creer_piste_salesforce(request.form)
         form_data.update(_crm_google_ads_tracking_fields(form_data))
 
@@ -5613,10 +5614,11 @@ def demande_informations_formations():
         ssiap_fees={"ssiap-1": _eur_display(SST_FEES["sans"]), "ssiap-1-sst": _eur_display(SST_FEES["avec"])},
         website_choice_unavailable=bool(session_id and not website_choice),
         centres={key: {**details, "formations": [code for code in details["formations"]
-                    if code != "SSIAP2" or any(not r.get("full") for r in sessions.get(key, {}).get(code, []))]}
+                    if code != "SSIAP2" or sessions.get(key, {}).get(code)]}
                  for key, details in INFORMATION_FORM_CENTRES.items()},
         catalogue_url=PUBLIC_CATALOGUE,
-        sessions={centre: {code: [r for r in rows if not r.get("full")] for code, rows in sessions.get(centre, {}).items()} for centre in INFORMATION_FORM_CENTRES},
+        sessions={centre: {code: [crm_public_sessions.display_session(row) for row in rows]
+                           for code, rows in sessions.get(centre, {}).items()} for centre in INFORMATION_FORM_CENTRES},
         formations=PLAN_FORMATIONS,
         secretariat=request.args.get("secretariat") == "1",
         **google_ads_attribution,

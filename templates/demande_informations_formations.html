@@ -359,7 +359,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     .small-note { margin: 16px 0 0; font-size: 13px; color: var(--academy-muted); line-height: 1.65; }
     .session-pills { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; margin: 12px 0; }
     .session-pill { width: 100%; padding: 19px; text-align: left; background: #fdfdfb; border: 1px solid #dce0d4; border-radius: 16px; transition: background .2s, border-color .2s; }
-    .session-pill:hover { border-color: #b99a4d; background: #fffcf4; }
+    .session-pill:enabled:hover { border-color: #b99a4d; background: #fffcf4; }
     .session-pill.active { background: #fffaeb; border-color: #b38a23; box-shadow: inset 0 0 0 1px #b38a23; }
     .session-pill-title { display: block; font-size: 15px; font-weight: 700; color: var(--academy-navy); line-height: 1.5; margin-bottom: 9px; }
     .session-pill-meta { display: block; font-size: 13px; color: var(--academy-muted); }
@@ -1026,11 +1026,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         const className = count === null ? 'badge-warning' : count <= 4 ? 'badge-danger' : count <= 6 ? 'badge-warning' : 'badge-success';
         return { text, className };
       };
-      rows.forEach((r, index) => {
+      rows.forEach((r) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'session-pill';
-        btn.dataset.value = r.label;
         const fullLabel = (r.label || '').trim();
         const formattedExamDate = formatExamDateFr(r.date_examen);
         const examLine = formattedExamDate
@@ -1062,17 +1061,22 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           heading.textContent = sessionInfo;
           btn.prepend(heading);
         }
+        sessionPills.appendChild(btn);
+        if (r.full) {
+          btn.disabled = true;
+          return;
+        }
+        btn.dataset.value = r.label;
         btn.addEventListener('click', () => {
           datesSelect.value = r.label;
           datesSelect.dispatchEvent(new Event('change'));
         });
         if (datesSelect.value && datesSelect.value === r.label) btn.classList.add('active');
-        if (!datesSelect.value && index === 0 && datesSelect.required && formation.value !== unavailableWebsiteFormation) {
+        if (!datesSelect.value && datesSelect.required && formation.value !== unavailableWebsiteFormation) {
           btn.classList.add('active');
           datesSelect.value = r.label;
           dateExamen.value = (r.date_examen || '').trim();
         }
-        sessionPills.appendChild(btn);
       });
     }
 
@@ -1370,9 +1374,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       } else if (f !== 'VTC') {
         datesHelp.textContent = 'Les dates proposées s’adaptent selon la formation et le centre choisi.';
       }
-      datesSelect.required = true;
+      const availableRows = rows.filter(row => !row.full);
+      datesSelect.required = availableRows.length > 0;
+      if (!availableRows.length) {
+        datesHelp.textContent = 'Vous pouvez poursuivre votre demande pour être recontacté par notre équipe.';
+      }
 
-      rows.forEach((r) => {
+      availableRows.forEach((r) => {
         const option = document.createElement('option');
         option.value = r.label;
         option.textContent = [r.session_name, r.label, r.venue, r.badge].filter(Boolean).join(' — ');
@@ -1765,7 +1773,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           if (Array.isArray(change.session_choices)) {
             const centre = selectedCentre(), code = formation.value;
             sessions[centre] ??= {};
-            sessions[centre][code] = change.session_choices;
+            sessions[centre][code] = change.session_choices.concat(change.full_sessions || []);
             websiteChoice = null;
             unavailableWebsiteFormation = code;
             resetSendingState();

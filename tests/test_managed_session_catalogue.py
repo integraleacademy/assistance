@@ -1,4 +1,6 @@
 from datetime import date
+import json
+import re
 
 from crm_app import legacy_app as app
 import crm_managed_sessions as managed
@@ -7,6 +9,14 @@ import crm_managed_sessions as managed
 def source(**kwargs):
     return dict(dict(id="platform-session", slug="aps", centre="puget", start="2098-02-05", end="2098-03-12",
                      exam="2098-03-13", visibility="public", aliases=[], capacity=12, sold=7), **kwargs)
+
+
+def test_saved_full_badge_is_formatted_without_changing_the_stored_label():
+    stored = {"label": "Session APS", "badge": " COMPLET "}
+    displayed = app.crm_public_sessions.display_session(stored)
+    assert displayed == {**stored, "full": True, "badge": "Complet, sur liste d'attente"}
+    assert stored == {"label": "Session APS", "badge": " COMPLET "}
+    assert app.crm_public_sessions.display_session(displayed) == displayed
 
 
 def test_catalogue_form_crm_and_admin(monkeypatch, tmp_path):
@@ -19,7 +29,17 @@ def test_catalogue_form_crm_and_admin(monkeypatch, tmp_path):
     assert any(r.get("catalogue_id")=="platform-session" for r in local["cote_azur"]["APS"])
     assert all("catalogue_id" not in r for r in app.get_stored_formation_sessions({})["cote_azur"]["APS"])
     rows[0]["sold"]=12
-    assert b"platform-session" not in app.app.test_client().get("/demande-informations-formations").data
+    client = app.app.test_client()
+    form = client.get("/demande-informations-formations").get_data(as_text=True)
+    sessions = json.loads(re.search(r"const sessions = (.+?);\n", form)[1])
+    full = next(row for row in sessions["cote_azur"]["APS"] if row.get("catalogue_id") == "platform-session")
+    assert full["full"] is True and full["badge"] == "Complet, sur liste d'attente"
+    for path in ("/secretariat", "/secretariat/gestion"):
+        desk = client.get(path).get_data(as_text=True)
+        courses, _ = json.JSONDecoder().raw_decode(desk.split("const formations=", 1)[1])
+        aps = next(course for course in courses if course["code"] == "APS")
+        assert any(row.get("catalogue_id") == full["catalogue_id"] and row["badge"] == full["badge"]
+                   for centre in aps["centres"] for row in centre["sessions"])
     rows[0]["visibility"]="internal"
     assert all(r.get("catalogue_id")!="platform-session" for r in app.get_formation_sessions({})["cote_azur"]["APS"])
     assert any(r.get("catalogue_id")=="platform-session" for r in app.get_formation_sessions({},include_internal=True)["cote_azur"]["APS"])
@@ -58,8 +78,6 @@ def test_ssiap_start_only_move_prefers_exact_previous_key():
 
 
 def test_two_ssiap_start_dates_use_one_count_and_correct_fee(monkeypatch, tmp_path):
-    import json
-    import re
     group = source(slug="ssiap-1", standard_start="2098-02-09", sold=11)
     monkeypatch.setattr(managed, "read", lambda: [group])
     monkeypatch.setattr(app, "DATA_FILE", str(tmp_path/"form.json"))
@@ -162,6 +180,10 @@ def test_stale_form_requires_a_new_explicit_choice_before_any_lead_or_email(monk
         monkeypatch.setattr(managed,"read",lambda:current)
         response=app.app.test_client().post("/demande-informations-formations",data=selected)
         assert response.status_code==409 and isinstance(response.json["session_choices"],list)
+        if current and current[0]["sold"] == 12:
+            assert not any(choice.get("catalogue_id") == row["id"] for choice in response.json["session_choices"])
+            assert any(choice.get("catalogue_id") == row["id"] and choice["badge"] == "Complet, sur liste d'attente"
+                       for choice in response.json["full_sessions"])
         for email in (app.build_aps_email_html("Test",selected["dates"],"cote_azur","",{}),
                       *app._ssiap3_information_email("Test",selected["dates"],"cote_azur","",{})[1:]):
             assert selected["dates"] not in email

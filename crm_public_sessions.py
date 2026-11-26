@@ -22,6 +22,13 @@ _next_refresh = 0
 _calendar = {}
 
 
+def display_session(row):
+    """Format the availability shown to visitors and the call desk, including saved CRM badges."""
+    if row.get("full") or str(row.get("badge") or "").strip().casefold() == "complet":
+        return {**row, "full": True, "badge": "Complet, sur liste d'attente"}
+    return row
+
+
 def _french_date(day):
     number = "1er" if day.day == 1 else str(day.day)
     return f"{number} {_MONTHS[day.month - 1]} {day.year}"
